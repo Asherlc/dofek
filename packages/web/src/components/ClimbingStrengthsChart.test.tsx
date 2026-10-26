@@ -24,6 +24,30 @@ vi.mock("./DofekChart.tsx", () => ({
 afterEach(cleanup);
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
+it("spells out percentage-point units for positive, negative and recorded zero gaps", () => {
+  const { rerender } = render(
+    <ClimbingStrengthsChart
+      panel={panel}
+      view="gaps"
+      grade="V4"
+      selectedRow={null}
+      onSelectCell={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByText("Exact values"));
+  expect(screen.getByRole("cell", { name: "+12.5 percentage points" })).toBeVisible();
+  expect(screen.getByRole("cell", { name: "-37.5 percentage points" })).toBeVisible();
+  rerender(
+    <ClimbingStrengthsChart
+      panel={panel}
+      view="gaps"
+      grade="V3"
+      selectedRow={null}
+      onSelectCell={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("cell", { name: "0 percentage points" })).toBeVisible();
+});
 it("exposes every curve baseline's supplied exact rate and sample without climb-selection buttons", () => {
   const onSelectCell = vi.fn();
   render(

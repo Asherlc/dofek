@@ -28,6 +28,15 @@ describe("ClimbingStrengthsChart", () => {
       }
     },
   );
+  it.each(["gaps", "exposure"] as const)("%s identifies the gap axis unit in full", (view) => {
+    const rendered = render(
+      <ClimbingStrengthsChart panel={panel} view={view} grade="V4" onSelect={() => {}} />,
+    );
+    expect(screen.getByText("Gap (percentage points)")).toBeTruthy();
+    expect(
+      rendered.container.querySelector('[role="image"]')?.getAttribute("aria-label"),
+    ).toContain("percentage points");
+  });
   it("draws observed and baseline radar polygons only with enough observed axes", () => {
     const comparison = climbingStrengthsComparisonFixture.panels[0];
     if (!comparison) throw new Error("Missing comparison fixture");

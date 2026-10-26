@@ -1,6 +1,7 @@
 import { init } from "echarts";
 import { expect, it } from "vitest";
 import { z } from "zod";
+import { chartThemeColors } from "../lib/chartTheme.ts";
 import { climbingStrengthsChartOption } from "./climbing-strengths-chart-options.ts";
 import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
 
@@ -233,4 +234,392 @@ it("escapes source labels in tooltip HTML while retaining exact values and limit
   expect(html).not.toContain("<img");
   expect(html).toContain("0 sends / 2 climbs");
   expect(html).toContain("Limited data");
+});
+
+const outcomePoint = z.object({
+  name: z.string(),
+  rowKey: z.string(),
+  grade: z.string(),
+  value: z.unknown(),
+  displayValue: z.string(),
+  tooltipText: z.string(),
+  symbol: z.string(),
+  itemStyle: z.object({
+    color: z.string(),
+    borderColor: z.string(),
+    borderWidth: z.number(),
+    opacity: z.number(),
+  }),
+});
+
+it("highlights only the selected style and visually distinguishes limited samples", () => {
+  const option = climbingStrengthsChartOption(panel, "curves", "V4", "vertical");
+  const vertical = outcomePoint.array().parse(option.series[0]?.data);
+  const overhang = outcomePoint.array().parse(option.series[1]?.data);
+  const selected = vertical[1];
+  const available = overhang[0];
+  const limited = overhang[1];
+  if (!selected || !available || !limited) throw new Error("Missing fixture points");
+  expect(selected.itemStyle.borderWidth).toBeGreaterThan(available.itemStyle.borderWidth);
+  expect(selected.itemStyle.borderColor).not.toBe(selected.itemStyle.color);
+  expect(available.itemStyle).toMatchObject({
+    borderWidth: 0,
+    borderColor: available.itemStyle.color,
+    opacity: 1,
+  });
+  expect(limited.itemStyle.opacity).toBeLessThan(available.itemStyle.opacity);
+  expect(selected.symbol).toBe("circle");
+  expect(limited.symbol).toBe("emptyCircle");
+  expect(limited.displayValue).toBe("0% · 0 sends / 2 climbs · Limited data");
+  expect(selected.tooltipText).toBe(
+    "Vertical · V4\n50% · 3 sends / 6 climbs\n12.5 percentage points vs same-grade baseline",
+  );
+});
+
+it("keeps missing comparisons out of tooltip text and includes full monthly scope", () => {
+  const gaps = climbingStrengthsChartOption(panel, "gaps", "V4", null);
+  const formatter = gaps.tooltip.formatter;
+  if (typeof formatter !== "function") throw new Error("Missing formatter");
+  const missing = formatter({ data: gaps.series[0]?.data[2] });
+  expect(missing).toBe("Slab · V4<br/>No data · 0 sends / 0 climbs");
+  const progress = climbingStrengthsChartOption(panel, "progress", "V4", null);
+  expect(formatter({ data: progress.series[0]?.data[0] })).toBe(
+    "Vertical · V4 · 2026-08-15 – 2026-08-31<br/>0% · 0 sends / 1 climbs · Limited data",
+  );
+});
+
+it.each([undefined, null, false, 0, "text", {}, { tooltipText: 42 }])(
+  "ignores tooltip payloads that are not chart points (%j)",
+  (data) => {
+    const option = climbingStrengthsChartOption(panel, "gaps", "V4", null);
+    const formatter = option.tooltip.formatter;
+    if (typeof formatter !== "function") throw new Error("Missing formatter");
+    expect(formatter({ data })).toBe("");
+  },
+);
+
+it("keeps signed gap and exposure axes comparable and includes the zero-gap reference", () => {
+  expect(climbingStrengthsChartOption(panel, "gaps", "V4", null)).toMatchObject({
+    xAxis: {
+      min: -100,
+      max: 100,
+      name: "Percentage points vs same-grade baseline",
+      nameLocation: "middle",
+    },
+    yAxis: {
+      show: true,
+      inverse: true,
+      data: ["Vertical", "Overhang", "Slab"],
+      axisLabel: { interval: 0, overflow: "truncate" },
+    },
+    legend: { show: true, type: "scroll" },
+    aria: { label: { description: expect.stringContaining("Bouldering · V scale. V4.") } },
+  });
+  const exposure = climbingStrengthsChartOption(panel, "exposure", "V4", null);
+  expect(exposure).toMatchObject({
+    xAxis: { name: "Distinct climbs", min: 0, nameLocation: "middle" },
+    yAxis: { name: "Gap (percentage points)", min: -100, max: 100 },
+    series: [
+      {
+        markLine: {
+          silent: true,
+          symbol: "none",
+          data: [{ yAxis: 0 }],
+          lineStyle: { type: "dashed" },
+        },
+      },
+    ],
+  });
+  const points = z
+    .array(
+      outcomePoint.extend({ label: z.object({ show: z.literal(true), formatter: z.string() }) }),
+    )
+    .parse(exposure.series[0]?.data);
+  expect(points.map((point) => [point.name, point.label.formatter])).toEqual([
+    ["Vertical · V4", "Vertical"],
+    ["Overhang · V4", "Overhang"],
+  ]);
+});
+
+it("shows individual ordered-grade observations and an explicit baseline without smoothing", () => {
+  const curves = climbingStrengthsChartOption(panel, "curves", "V4", null);
+  expect(curves).toMatchObject({
+    xAxis: { show: true, data: ["V3", "V4", "V5", "V6"] },
+    yAxis: { name: "Success (%)", min: 0, max: 100 },
+  });
+  expect(curves.series[0]).toMatchObject({ smooth: false, symbol: "circle" });
+  expect(curves.series.at(-1)).toMatchObject({
+    smooth: false,
+    symbol: "diamond",
+    lineStyle: { type: "dashed" },
+  });
+});
+
+it("filters missing radar axes while retaining zero outcomes and the server's baseline", () => {
+  const radar = climbingStrengthsChartOption(panel, "radar", "V4", null);
+  expect(radar).toMatchObject({
+    radar: {
+      indicator: [
+        { name: "Vertical", min: 0, max: 100 },
+        { name: "Overhang", min: 0, max: 100 },
+      ],
+      axisName: { overflow: "break" },
+    },
+  });
+  expect(radar.series[0]?.data).toEqual([
+    expect.objectContaining({
+      name: "Observed success",
+      value: [50, 0],
+      tooltipText:
+        "Vertical · V4\n50% · 3 sends / 6 climbs\nOverhang · V4\n0% · 0 sends / 2 climbs · Limited data",
+      areaStyle: { opacity: expect.any(Number) },
+    }),
+    expect.objectContaining({
+      name: "Same-grade baseline",
+      value: [37.5, 37.5],
+      tooltipText: "Same-grade baseline · V4\n37.5% · 3 sends / 8 climbs",
+      lineStyle: expect.objectContaining({ type: "dashed" }),
+    }),
+  ]);
+});
+
+it("uses selected-grade monthly cells from each style's own observations", () => {
+  const progress = climbingStrengthsChartOption(panel, "progress", "V3", null);
+  expect(
+    progress.series.map((series) =>
+      series.data.map((point) => outcomePoint.nullable().parse(point)?.value ?? null),
+    ),
+  ).toEqual([
+    [66.7, null, 80],
+    [50, null, 60],
+    [100, null, 100],
+  ]);
+  expect(progress).toMatchObject({
+    legend: { show: false },
+    xAxis: [
+      expect.objectContaining({
+        show: true,
+        gridIndex: 0,
+        axisLabel: expect.objectContaining({ hideOverlap: true }),
+      }),
+      expect.objectContaining({ show: true, gridIndex: 1 }),
+      expect.objectContaining({ show: true, gridIndex: 2 }),
+    ],
+  });
+  for (const [index, series] of progress.series.entries())
+    expect(series).toMatchObject({
+      xAxisIndex: index,
+      yAxisIndex: index,
+      smooth: false,
+      connectNulls: false,
+      symbol: "circle",
+    });
+});
+
+function withRenderedChart(
+  option: Record<string, unknown>,
+  verify: (chart: ReturnType<typeof init>) => void,
+  height = 900,
+) {
+  const chart = init(null, undefined, { renderer: "svg", ssr: true, width: 900, height });
+  try {
+    chart.setOption({ ...option, animation: false });
+    verify(chart);
+  } finally {
+    chart.dispose();
+  }
+}
+
+function renderedText(chart: ReturnType<typeof init>) {
+  return chart
+    .getZr()
+    .storage.getDisplayList()
+    .flatMap((element) => {
+      const style = z
+        .object({ text: z.union([z.string(), z.number()]) })
+        .safeParse(Reflect.get(element, "style"));
+      if (element.type !== "tspan" || !style.success) return [];
+      const bounds = element.getBoundingRect().clone();
+      const transform = element.getComputedTransform();
+      if (transform) bounds.applyTransform(transform);
+      return [{ text: String(style.data.text), bounds }];
+    });
+}
+
+it("renders readable gap style labels and the full quantity label inside the chart", () => {
+  withRenderedChart(
+    climbingStrengthsChartOption(panel, "gaps", "V4", null),
+    (chart) => {
+      const text = renderedText(chart);
+      for (const label of [
+        "Vertical",
+        "Overhang",
+        "Slab",
+        "Success gap",
+        "Percentage points vs same-grade baseline",
+      ]) {
+        const item = text.find((item) => item.text === label);
+        expect(item, `Rendered label: ${label}`).toBeDefined();
+        if (!item) throw new Error("Missing readable label");
+        expect(item.bounds.x).toBeGreaterThanOrEqual(0);
+        expect(item.bounds.x + item.bounds.width).toBeLessThanOrEqual(900);
+      }
+      const labelY = ["Vertical", "Overhang", "Slab"].map(
+        (label) => text.find((item) => item.text === label)?.bounds.y ?? Number.NaN,
+      );
+      expect(labelY[1]).toBeGreaterThan(labelY[0] ?? 0);
+      expect(labelY[2]).toBeGreaterThan(labelY[1] ?? 0);
+    },
+    350,
+  );
+});
+
+it("renders separate pyramid facets with a common count scale and count-proportional widths", () => {
+  const option = climbingStrengthsChartOption(panel, "pyramids", "V4", "vertical");
+  expect(option).toMatchObject({
+    xAxis: [
+      expect.objectContaining({ min: 0, max: 10, gridIndex: 0 }),
+      expect.objectContaining({ min: 0, max: 10, gridIndex: 1 }),
+      expect.objectContaining({ min: 0, max: 10, gridIndex: 2 }),
+    ],
+  });
+  withRenderedChart(
+    option,
+    (chart) => {
+      const rectangle = z.object({
+        x: z.number(),
+        y: z.number(),
+        width: z.number(),
+        height: z.number(),
+      });
+      const tracks = chart
+        .getZr()
+        .storage.getDisplayList()
+        .filter((element) => element.type === "rect")
+        .flatMap((element) => {
+          const shape = rectangle.safeParse(Reflect.get(element, "shape"));
+          const style = z.object({ fill: z.string() }).safeParse(Reflect.get(element, "style"));
+          return shape.success &&
+            style.success &&
+            style.data.fill === chartThemeColors.axisLine &&
+            shape.data.height === 18 &&
+            shape.data.width > 0
+            ? [shape.data]
+            : [];
+        });
+      const counts = panel.rows.flatMap((row) =>
+        [...row.cells].reverse().flatMap((cell) => (cell.climbs > 0 ? [cell.climbs] : [])),
+      );
+      expect(tracks).toHaveLength(counts.length);
+      const first = tracks[0];
+      const firstCount = counts[0];
+      if (!first || !firstCount) throw new Error("Missing count tracks");
+      for (const [index, track] of tracks.entries())
+        expect(track.width / (counts[index] ?? 1)).toBeCloseTo(first.width / firstCount, 5);
+      const text = renderedText(chart);
+      const headings = panel.rows.map((row) => text.find((item) => item.text === row.label));
+      for (const [index, heading] of headings.entries()) {
+        if (!heading) throw new Error("Missing style heading");
+        const next = headings[index + 1];
+        const own = tracks.filter(
+          (track) => track.y > heading.bounds.y && (!next || track.y < next.bounds.y),
+        );
+        expect(own.length).toBeGreaterThan(0);
+        if (next)
+          expect(Math.max(...own.map((track) => track.y + track.height))).toBeLessThan(
+            next.bounds.y,
+          );
+        const grades = text
+          .filter(
+            (item) =>
+              panel.grades.some((grade) => grade.grade === item.text) &&
+              item.bounds.y > heading.bounds.y &&
+              (!next || item.bounds.y < next.bounds.y),
+          )
+          .sort((firstLabel, secondLabel) => firstLabel.bounds.y - secondLabel.bounds.y);
+        expect(grades.map((grade) => grade.text)).toEqual(["V6", "V5", "V4", "V3"]);
+      }
+    },
+    800,
+  );
+});
+
+it("renders monthly facets with independent style headings and visible shared success bounds", () => {
+  withRenderedChart(
+    climbingStrengthsChartOption(panel, "progress", "V3", null),
+    (chart) => {
+      const text = renderedText(chart);
+      const headings = panel.rows.map((row) => text.find((item) => item.text === row.label));
+      expect(headings.every(Boolean)).toBe(true);
+      for (const [index, heading] of headings.entries()) {
+        if (!heading) throw new Error("Missing progress heading");
+        const next = headings[index + 1];
+        const labels = text
+          .filter(
+            (item) => item.bounds.y > heading.bounds.y && (!next || item.bounds.y < next.bounds.y),
+          )
+          .map((item) => item.text);
+        expect(labels).toEqual(
+          expect.arrayContaining([
+            "0",
+            "50",
+            "100",
+            "2026-08-15 – 2026-08-31",
+            "2026-09-01 – 2026-09-30",
+            "2026-10-01 – 2026-10-26",
+          ]),
+        );
+      }
+    },
+    650,
+  );
+});
+
+it("renders an isolated observation with a marker and retains every dense style", () => {
+  const grade = panel.grades[1];
+  if (!grade) throw new Error("Missing grade");
+  const dense = {
+    ...panel,
+    grades: [grade],
+    rows: Array.from({ length: 12 }, (_, index) => ({
+      key: `row-${index}`,
+      label: `Distinct style ${index}`,
+      cells: panel.rows[index % 2]?.cells.filter((cell) => cell.grade === grade.grade) ?? [],
+    })),
+  };
+  const option = climbingStrengthsChartOption(dense, "curves", "V4", null);
+  expect(option.series).toHaveLength(13);
+  for (const series of option.series) expect(series.data).toHaveLength(1);
+  withRenderedChart(
+    option,
+    (chart) => {
+      const svg = chart.renderToSVGString();
+      expect(svg).toContain("Distinct style 11");
+      expect(svg).toContain("Same-grade baseline");
+    },
+    350,
+  );
+  withRenderedChart(
+    { ...option, legend: { show: false } },
+    (chart) => {
+      const markers = chart
+        .getZr()
+        .storage.getDisplayList()
+        .filter((element) => {
+          const shape = z
+            .object({ symbolType: z.enum(["circle", "diamond"]) })
+            .safeParse(Reflect.get(element, "shape"));
+          return element.type === "path" && shape.success;
+        });
+      expect(markers).toHaveLength(13);
+      for (const marker of markers) {
+        const bounds = marker.getBoundingRect().clone();
+        const transform = marker.getComputedTransform();
+        if (transform) bounds.applyTransform(transform);
+        expect(bounds.width).toBeGreaterThan(0);
+        expect(bounds.height).toBeGreaterThan(0);
+      }
+    },
+    350,
+  );
 });

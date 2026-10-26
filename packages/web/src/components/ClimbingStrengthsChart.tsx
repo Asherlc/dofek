@@ -104,7 +104,7 @@ export function ClimbingStrengthsChart({
                   <td>
                     {"differencePercentagePoints" in cell &&
                     typeof cell.differencePercentagePoints === "number"
-                      ? `${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} pp`
+                      ? `${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`
                       : "No comparison"}
                   </td>
                 ) : null}

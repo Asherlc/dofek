@@ -25,7 +25,7 @@ const explanations: Record<ViewKind, string> = {
   gaps: "Success gap in percentage points from the same-grade baseline. Zero is the baseline.",
   curves: "Success rate by grade, from 0 to 100%. Missing observations leave gaps.",
   exposure:
-    "Distinct climbs on the horizontal axis; success gap from the same-grade baseline on the vertical axis.",
+    "Distinct climbs on the horizontal axis; success gap in percentage points from the same-grade baseline on the vertical axis.",
   pyramids:
     "Sent climbs overlaid on centered total-climb tracks, grouped by style from harder to easier grades. All tracks use the same count scale.",
   progress:
@@ -115,6 +115,9 @@ export function ClimbingStrengthsChart({
           Radar needs at least three styles with recorded success rates for this grade.
         </Text>
       )}
+      {(view === "gaps" || view === "exposure") && (
+        <Text style={styles.meta}>Gap (percentage points)</Text>
+      )}
       <AccessibleChart title={title} summary={`${grade}. ${explanations[view]}`} rows={exactRows}>
         {!insufficientRadar && (
           <ScrollView horizontal contentContainerStyle={{ minWidth: width }}>
@@ -129,7 +132,7 @@ export function ClimbingStrengthsChart({
                     stroke={colors.textTertiary}
                   />
                   <SvgText {...svgText} x={left} y={height - 12}>
-                    −100 pp
+                    −100
                   </SvgText>
                   <SvgText
                     {...svgText}
@@ -140,7 +143,7 @@ export function ClimbingStrengthsChart({
                     0
                   </SvgText>
                   <SvgText {...svgText} x={right} y={height - 12} textAnchor="end">
-                    +100 pp
+                    +100
                   </SvgText>
                   {selected.map(({ row, cell, index }) => {
                     const pointY = top + index * 44;
@@ -340,7 +343,7 @@ export function ClimbingStrengthsChart({
                           stroke={colors.surfaceSecondary}
                         />
                         <SvgText {...svgText} x={0} y={pointY + 4}>
-                          {value} pp
+                          {value}
                         </SvgText>
                       </G>
                     );

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- No branch switching, new dependencies, persistence, schema, provider changes, or new HTTP servers. Every new commit must be pushed automatically.
+- No new dependencies, stored preferences, database schema changes, or provider changes.
 - All metric values remain server-computed; clients may format and position supplied values.
 - Shared picker values/labels: profile / Grade profile; gaps / Style gaps; curves / Success curves; exposure / Exposure map; pyramids / Grade pyramids; progress / Progress; radar / Radar profile.
 - Default profile preserves current presentation. Switching views preserves valid context, setting, grade, row and source-detail selection.
@@ -21,7 +21,7 @@
 - Progress dates are clipped calendar months in the same required analysis window as the repository query. Monthly outcomes use original observations after whole-window identity/context/grade/trait resolution.
 - Progress selection refers to the overall style/grade detail and labels that scope. All rows/grades remain available in exact-data disclosures.
 - Use ECharts through DofekChart on web and react-native-svg/AccessibleChart on mobile; no alternate chart dependency.
-- Run tests before implementation. Do not commit output/ mockups or diagnostic artifacts.
+- Run tests before implementation. Keep mockups and diagnostic artifacts separate from the production change.
 
 ## Review Focus
 
@@ -94,7 +94,7 @@
 ### Task 4: Integrate, verify, and update PR
 
 - [ ] Independently review each task's concrete diff and test report, followed by one whole-change review.
-- [ ] Browser-check all views in light/dark desktop and narrow mobile Storybook, including context/grade changes and preserved detail. Reuse existing tunneled Storybook servers where alive; if starting a server, start and retain its quick tunnel.
+- [ ] Browser-check all views in light/dark desktop and narrow mobile Storybook, including context/grade changes and preserved detail.
 - [ ] Run full lint, root/server/web/mobile/training typechecks, spelling, full unit/mobile tests, relevant real PostgreSQL regressions and production web build. Run bounded changed-line mutation checks for new branches.
-- [ ] Commit the integrated contract/client change atomically after cross-platform checks, push immediately, and update existing PR #3089. The user subsequently authorized merging; merge manually after all required checks pass. Do not enable automerge.
+- [ ] Commit and push the integrated contract/client change after cross-platform checks, and update the pull request. Merge manually after all required checks pass. Do not enable automerge.
 - [ ] Monitor required CI and actionable review feedback to completion, fix valid findings, and report outcome plus concise retrospective.

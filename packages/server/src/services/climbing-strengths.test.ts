@@ -49,7 +49,7 @@ describe("climbing strengths", () => {
       }),
       dated("2026-10-20", { outcome: null }),
     ]);
-    const panel = result.panels.find((p) => p.dimension === "hold_type");
+    const panel = result.panels.find((candidatePanel) => candidatePanel.dimension === "hold_type");
     expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 1, climbs: 1, successRate: 100 });
     expect(panel?.progress).toEqual([
       {
@@ -87,9 +87,10 @@ describe("climbing strengths", () => {
         ],
       },
     ]);
-    expect(result.panels.find((p) => p.dimension === "wall_angle")?.progress[1]?.rows[0]?.key).toBe(
-      "0°",
-    );
+    expect(
+      result.panels.find((candidatePanel) => candidatePanel.dimension === "wall_angle")?.progress[1]
+        ?.rows[0]?.key,
+    ).toBe("0°");
   });
   it("retains empty clipped months, grade order and row keys while excluding global grade conflicts", () => {
     const result = analyze([
@@ -98,7 +99,7 @@ describe("climbing strengths", () => {
       dated("2026-10-20", { identity: "kept", outcome: "sent", grade: "V3", gradeSortValue: 3 }),
       dated("2026-10-20", { identity: "failed", grade: "V4", gradeSortValue: 4 }),
     ]);
-    const panel = result.panels.find((p) => p.dimension === "setting");
+    const panel = result.panels.find((candidatePanel) => candidatePanel.dimension === "setting");
     expect(result.coverage.missingGrades).toBe(2);
     expect(panel?.progress[0]).toEqual({
       startDate: "2026-08-15",
@@ -368,7 +369,9 @@ describe("climbing strengths", () => {
       observation({ outcome: "sent" }),
       observation({ identity: "other" }),
     ]);
-    expect(result.panels.find((p) => p.dimension === "setting")?.grades[0]).toMatchObject({
+    expect(
+      result.panels.find((candidatePanel) => candidatePanel.dimension === "setting")?.grades[0],
+    ).toMatchObject({
       climbs: 2,
       sends: 1,
       successRate: 50,
@@ -394,18 +397,21 @@ describe("climbing strengths", () => {
       }),
     ]);
     const indoor = result.panels.find(
-      (p) => p.dimension === "wall_angle" && p.setting === "indoor",
+      (candidatePanel) =>
+        candidatePanel.dimension === "wall_angle" && candidatePanel.setting === "indoor",
     );
     expect(indoor?.coverage.missingTraits).toBe(1);
-    const settings = result.panels.find((p) => p.dimension === "setting");
+    const settings = result.panels.find((candidatePanel) => candidatePanel.dimension === "setting");
     expect(settings?.rows[0]?.cells[0]).toMatchObject({ successRate: 0, sampleStatus: "limited" });
     expect(settings?.rows[0]?.cells[1]).toMatchObject({
       successRate: null,
       sampleStatus: "no_data",
     });
     expect(
-      result.panels.find((p) => p.dimension === "hold_type" && p.setting === "outdoor")?.rows[0]
-        ?.label,
+      result.panels.find(
+        (candidatePanel) =>
+          candidatePanel.dimension === "hold_type" && candidatePanel.setting === "outdoor",
+      )?.rows[0]?.label,
     ).toBe("Crimp");
   });
   it("marks five climbs available, computes same-grade differences and caps examples", () => {

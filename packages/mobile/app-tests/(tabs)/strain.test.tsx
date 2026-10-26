@@ -3,6 +3,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  defaultMockTrainingData,
+  recentCyclingActivityFixture,
+} from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
@@ -86,53 +90,6 @@ const mockMonotonyState: MockTrainingState = {
   isError: false,
   error: null,
 };
-
-function defaultMockTrainingData(): MockTrainingData {
-  return {
-    workloadRatio: {
-      context: {
-        label: "Recent-to-baseline workload ratio",
-        description:
-          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
-        recentDays: 7,
-        baselineDays: 28,
-      },
-      displayedStrain: 16,
-      displayedDate: "2026-03-28",
-      timeSeries: [
-        {
-          date: "2026-03-28",
-          acuteLoad: 27.4,
-          chronicLoad: 24.9,
-          workloadRatio: 1.1,
-          strain: 16,
-        },
-      ],
-    },
-    strainTarget: undefined,
-    activities: [],
-    weeklyVolume: [],
-    progressiveOverload: [],
-    verticalAscent: [],
-    climbing: {
-      gradeProgression: [],
-      volumeByGrade: [],
-      sessionSummary: [],
-      hangboarding: {
-        sessionCount: 0,
-        totalDurationSeconds: 0,
-        averageDurationSeconds: null,
-        totalWorkDurationSeconds: null,
-        totalRestDurationSeconds: null,
-        workIntervalCount: null,
-        averageHeartRate: null,
-        peakHeartRate: null,
-        latestSession: null,
-        daily: [],
-      },
-    },
-  };
-}
 
 function resetMockTrainingState() {
   mockTodayQueryDate = "2026-03-28";
@@ -654,21 +611,7 @@ describe("StrainScreen recent activity navigation", () => {
         workloadRatio: 1.13,
         readinessScore: 78,
       },
-      activities: [
-        {
-          id: 42,
-          name: "Morning Ride",
-          canonical_type: "cycling",
-          started_at: "2026-03-28T07:00:00.000Z",
-          ended_at: "2026-03-28T08:00:00.000Z",
-          avg_hr: 150,
-          max_hr: 178,
-          avg_power: 240,
-          distance_meters: 24000,
-          distance_state: { status: "available" },
-          calories: 640,
-        },
-      ],
+      activities: [recentCyclingActivityFixture()],
     };
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
@@ -683,21 +626,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("navigates to detail screen when a recent activity card is tapped", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
-      activities: [
-        {
-          id: 42,
-          name: "Morning Ride",
-          canonical_type: "cycling",
-          started_at: "2026-03-28T07:00:00.000Z",
-          ended_at: "2026-03-28T08:00:00.000Z",
-          avg_hr: 150,
-          max_hr: 178,
-          avg_power: 240,
-          distance_meters: 24000,
-          distance_state: { status: "available" },
-          calories: 640,
-        },
-      ],
+      activities: [recentCyclingActivityFixture()],
     };
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
@@ -850,21 +779,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("navigates to activities list when tapping View all", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
-      activities: [
-        {
-          id: 42,
-          name: "Morning Ride",
-          canonical_type: "cycling",
-          started_at: "2026-03-28T07:00:00.000Z",
-          ended_at: "2026-03-28T08:00:00.000Z",
-          avg_hr: 150,
-          max_hr: 178,
-          avg_power: 240,
-          distance_meters: 24000,
-          distance_state: { status: "available" },
-          calories: 640,
-        },
-      ],
+      activities: [recentCyclingActivityFixture()],
     };
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
@@ -1007,6 +922,7 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("keeps cached climbing data visible during background refetch failures", async () => {
+    mockStrengthsState.data = undefined;
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
@@ -1023,7 +939,7 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.queryByText("Climbing refresh failed")).toBeNull();
     expect(screen.getByText("Bouldering")).toBeTruthy();
-    expect(screen.getAllByText("V4").length).toBeGreaterThan(0);
+    expect(screen.getByText("V4")).toBeTruthy();
   });
 
   it("reports the same cached training query error only once across remounts", async () => {
