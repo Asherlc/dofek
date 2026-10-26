@@ -56,7 +56,7 @@ function PickerHarness({ initialId = "watch-recording" }: { initialId?: string }
 afterEach(cleanup);
 
 describe("ActivityMetricSourcePicker", () => {
-  it("opens an anchored nonmodal dropdown with attribution icons in each option", () => {
+  it("opens an anchored dropdown with attribution icons in each option", () => {
     render(<PickerHarness />);
     fireEvent.click(screen.getByRole("button", { name: /Heart Rate source/ }));
     const dropdown = screen.getByRole("dialog", { name: "Heart Rate source" });
