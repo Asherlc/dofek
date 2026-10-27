@@ -277,14 +277,15 @@ describe("climbingRouter", () => {
     ]);
     expect(panel?.progress[0]?.rows[0]?.cells[0]).toMatchObject({ climbs: 0, successRate: null });
     expect(panel?.progress[1]?.rows[0]?.cells[0]).toMatchObject({
-      climbs: 2,
+      climbs: 3,
       sends: 1,
+      unknownOutcomes: 1,
       successRate: 50,
     });
     expect(panel).toMatchObject({
       contextKey: "boulder-free-v",
       setting: "indoor",
-      grades: [{ grade: "V4", sends: 1, climbs: 2, successRate: 50 }],
+      grades: [{ grade: "V4", sends: 1, climbs: 3, unknownOutcomes: 1, successRate: 50 }],
       rows: [
         {
           key: "crimp",
@@ -292,12 +293,14 @@ describe("climbingRouter", () => {
             {
               grade: "V4",
               sends: 1,
-              climbs: 2,
+              climbs: 3,
+              unknownOutcomes: 1,
               successRate: 50,
               sampleStatus: "limited",
               examples: [
                 example,
                 expect.objectContaining({ logEntryId: "project-log", outcome: "not_sent" }),
+                expect.objectContaining({ outcome: null }),
               ],
             },
           ],
@@ -356,7 +359,14 @@ describe("climbingRouter", () => {
             {
               key: "crimp",
               cells: [
-                { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+                {
+                  grade: "V4",
+                  sends: 0,
+                  climbs: 1,
+                  unknownOutcomes: 0,
+                  successRate: 0,
+                  sampleStatus: "limited",
+                },
               ],
             },
           ],

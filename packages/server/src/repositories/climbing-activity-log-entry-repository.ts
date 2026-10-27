@@ -298,7 +298,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       CASE WHEN catalogue.id IS NOT NULL THEN jsonb_build_object(
         'id',catalogue.id,'userId',catalogue.user_id,'providerId',catalogue.provider_id,
         'externalId',catalogue.external_id,'name',catalogue.name,'kind',catalogue.kind,'areaId',catalogue.area_id,
-        'publishedGrades',entry.published_grades,'setting',catalogue.setting,'routeProtection',catalogue.route_protection,
+        'publishedGrades',entry.published_grades,'setting',entry.setting,'routeProtection',catalogue.route_protection,
         'coordinates',CASE WHEN catalogue.coordinates IS NOT NULL THEN jsonb_build_object('latitude',catalogue.coordinates[1],'longitude',catalogue.coordinates[0]) END,
         'areaPath',entry.area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id',pitch.id,'climbId',pitch.climb_id,'externalId',pitch.external_id,'number',pitch.number,'name',pitch.name,

@@ -6,6 +6,7 @@ import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
 import {
   climbingStrengthsComparisonFixture,
   climbingStrengthsFixture,
+  climbingStrengthsUnknownResultsFixture,
 } from "./climbing-strengths-fixtures";
 
 const panel = climbingStrengthsFixture.panels[0];
@@ -39,9 +40,7 @@ describe("ClimbingStrengthsChart", () => {
     (view) => {
       render(<ClimbingStrengthsChart panel={panel} view={view} grade="V4" onSelect={() => {}} />);
       fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
-      expect(
-        screen.getByLabelText(/Slab · V4.*0%.*0 sends \/ 2 climbs.*Limited data/),
-      ).toBeTruthy();
+      expect(screen.getByLabelText(/Slab · V4.*0%.*0 sends \/ 2 climbs/)).toBeTruthy();
       if (view !== "progress") {
         expect(screen.getByLabelText(/Vertical · V3.*No data.*0 sends \/ 0 climbs/)).toBeTruthy();
       }
@@ -124,6 +123,7 @@ describe("ClimbingStrengthsChart", () => {
           cells: [
             {
               ...firstCell,
+              unknownOutcomes: 0,
               sends: 7,
               climbs: 11,
               successRate: 17,
@@ -185,8 +185,40 @@ describe("ClimbingStrengthsChart", () => {
         expect(Number(points[0]?.getAttribute("cy"))).toBeCloseTo(110.4);
       }
       fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
-      expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 sends \/ 3 climbs/)).toBeTruthy();
+      expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 send \/ 3 climbs/)).toBeTruthy();
       result.unmount();
     }
   });
 });
+
+it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const)(
+  "%s exposes unknown-result counts in exact values",
+  (view) => {
+    const unknownPanel = climbingStrengthsUnknownResultsFixture.panels[0];
+    if (!unknownPanel) throw new Error("Missing unknown results fixture");
+    render(
+      <ClimbingStrengthsChart panel={unknownPanel} view={view} grade="V3" onSelect={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+    expect(
+      screen.getByLabelText(
+        /Vertical · V3.*Result unknown.*0 sends \/ 4 climbs · 4 results unknown/,
+      ),
+    ).toBeTruthy();
+  },
+);
+
+it.each(["gaps", "pyramids"] as const)(
+  "%s labels unknown-result climbs inside the visible plot",
+  (view) => {
+    const unknownPanel = climbingStrengthsUnknownResultsFixture.panels[0];
+    if (!unknownPanel) throw new Error("Missing unknown results fixture");
+    const rendered = render(
+      <ClimbingStrengthsChart panel={unknownPanel} view={view} grade="V3" onSelect={() => {}} />,
+    );
+    const plotLabels = Array.from(rendered.container.querySelectorAll("SvgText")).map(
+      (label) => label.textContent,
+    );
+    expect(plotLabels).toContain("Result unknown");
+  },
+);

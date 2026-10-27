@@ -74,6 +74,44 @@ import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
 describe("KayaSyncProvider", () => {
+  it.each([false, true])(
+    "preserves an attempted route's explicit send status %s across its counted attempts",
+    async (sent) => {
+      const source = {
+        ...ascent("source", { lead: false, climbType: "Routes", grade: "5.9" }).climb,
+        id: "1000_2001",
+        attempts: 3,
+        sent,
+      };
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      mocks.listSessions.mockResolvedValue([{ ...session("1000"), attempted_climbs: [source] }]);
+      mocks.ascents.mockResolvedValue([]);
+      mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+      expect(await new KayaSyncProvider().sync(run(database()))).toMatchObject({ errors: [] });
+      expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
+        raw: source,
+        attempts: sent
+          ? [
+              {
+                scope: "climb",
+                ropeMethod: "top_rope",
+                sourceResult: "Send",
+                qualifier: "free-send",
+              },
+              { scope: "climb", ropeMethod: "top_rope" },
+              { scope: "climb", ropeMethod: "top_rope" },
+            ]
+          : Array.from({ length: 3 }, () => ({
+              scope: "climb",
+              ropeMethod: "top_rope",
+              sourceResult: "Attempt",
+            })),
+      });
+    },
+  );
   it.each(routeAttemptCases)(
     "preserves $label with $count reported route attempts",
     async ({ count, additionalAttempts, label, attempt }) => {
@@ -216,7 +254,7 @@ describe("KayaSyncProvider", () => {
     });
     sent.session_id = "1000";
     sent.climb.id = "2001";
-    const attempted = { ...sent.climb, id: "1000_2001", attempts: 4 };
+    const attempted = { ...sent.climb, id: "1000_2001", attempts: 4, sent: false };
     mocks.loadTokens.mockResolvedValue({
       accessToken: "token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
@@ -243,7 +281,11 @@ describe("KayaSyncProvider", () => {
       }),
       expect.objectContaining({
         externalId: "kaya:session:1000:attempted:1000_2001",
-        attempts: [{ scope: "climb", ropeMethod: null }],
+        attempts: Array.from({ length: 4 }, () => ({
+          scope: "climb",
+          ropeMethod: null,
+          sourceResult: "Attempt",
+        })),
         reportedAttemptCounts: [{ scope: "climb", count: 4 }],
         climb: expect.objectContaining({ externalId: "2001" }),
         raw: attempted,
@@ -319,7 +361,10 @@ describe("KayaSyncProvider", () => {
         scopes: JSON.stringify({ kayaUserId: "42" }),
       });
       mocks.listSessions.mockResolvedValue([
-        { ...session("1000"), attempted_climbs: [{ ...source.climb, id, attempts: 2 }] },
+        {
+          ...session("1000"),
+          attempted_climbs: [{ ...source.climb, id, attempts: 2, sent: false }],
+        },
       ]);
       mocks.ascents.mockResolvedValue([]);
       mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });

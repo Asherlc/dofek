@@ -1149,6 +1149,27 @@
       "when": 1792886400000,
       "tag": "0163_activity_device_observation",
       "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1793053745114,
+      "tag": "0164_climbing_catalogue_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1793054593792,
+      "tag": "0165_mountain_project_top_rope_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1793055512990,
+      "tag": "0166_openbeta_tick_completion",
+      "breakpoints": true
     }
   ]
 }

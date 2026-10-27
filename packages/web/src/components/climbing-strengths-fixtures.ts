@@ -1,4 +1,8 @@
-import type { ClimbingStrengths, ClimbingStrengthsCell } from "@dofek/training/climbing-strengths";
+import type {
+  ClimbingStrengths,
+  ClimbingStrengthsCell,
+  ClimbingStrengthsPanel,
+} from "@dofek/training/climbing-strengths";
 
 function cell(
   grade: string,
@@ -10,6 +14,7 @@ function cell(
 ): ClimbingStrengthsCell {
   return {
     grade,
+    unknownOutcomes: 0,
     sends,
     climbs,
     successRate,
@@ -30,7 +35,14 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
       setting: "indoor",
       allGrades: {
         grades: [
-          { grade: "All grades", gradeSortValue: 0, sends: 34, climbs: 63, successRate: 54 },
+          {
+            grade: "All grades",
+            gradeSortValue: 0,
+            unknownOutcomes: 0,
+            sends: 34,
+            climbs: 63,
+            successRate: 54,
+          },
         ],
         rows: [
           {
@@ -76,10 +88,38 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
         ],
       },
       grades: [
-        { grade: "V3", gradeSortValue: 3, sends: 24, climbs: 30, successRate: 80 },
-        { grade: "V4", gradeSortValue: 4, sends: 3, climbs: 8, successRate: 37.5 },
-        { grade: "V5", gradeSortValue: 5, sends: 6, climbs: 20, successRate: 30 },
-        { grade: "V6", gradeSortValue: 6, sends: 1, climbs: 5, successRate: 20 },
+        {
+          grade: "V3",
+          gradeSortValue: 3,
+          unknownOutcomes: 0,
+          sends: 24,
+          climbs: 30,
+          successRate: 80,
+        },
+        {
+          grade: "V4",
+          gradeSortValue: 4,
+          unknownOutcomes: 0,
+          sends: 3,
+          climbs: 8,
+          successRate: 37.5,
+        },
+        {
+          grade: "V5",
+          gradeSortValue: 5,
+          unknownOutcomes: 0,
+          sends: 6,
+          climbs: 20,
+          successRate: 30,
+        },
+        {
+          grade: "V6",
+          gradeSortValue: 6,
+          unknownOutcomes: 0,
+          sends: 1,
+          climbs: 5,
+          successRate: 20,
+        },
       ],
       rows: [
         {
@@ -230,6 +270,88 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
           ],
         },
       ],
+    },
+  ],
+};
+
+const unknownBase = climbingStrengthsFixture.panels[0];
+if (!unknownBase) throw new Error("Missing climbing strengths panel");
+const unknownRow = unknownBase.rows[0];
+const unknownExample = unknownRow?.cells.flatMap((cell) => cell.examples)[0];
+if (!unknownRow || !unknownExample) throw new Error("Missing climbing strengths examples");
+const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
+  {
+    grade: "V3",
+    sends: 0,
+    climbs: 4,
+    unknownOutcomes: 4,
+    successRate: null,
+    differencePercentagePoints: null,
+    sampleStatus: "limited",
+    examples: [
+      {
+        ...unknownExample,
+        logEntryId: "log-unknown-v3",
+        name: "Unknown ascent",
+        grade: "V3",
+        outcome: null,
+      },
+    ],
+  },
+  {
+    grade: "V4",
+    sends: 2,
+    climbs: 5,
+    unknownOutcomes: 2,
+    successRate: 67,
+    differencePercentagePoints: 0,
+    sampleStatus: "available",
+    examples: [
+      {
+        ...unknownExample,
+        logEntryId: "log-known-v4",
+        name: "Known ascent",
+        grade: "V4",
+        outcome: "sent",
+      },
+    ],
+  },
+];
+const unknownPooled = {
+  grade: "All grades",
+  sends: 2,
+  climbs: 9,
+  unknownOutcomes: 6,
+  successRate: 67,
+  differencePercentagePoints: 0,
+  sampleStatus: "available" as const,
+  examples: unknownCells.flatMap((cell) => cell.examples),
+};
+export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
+  coverage: { unknownOutcomes: 6, missingGrades: 0, missingIdentity: 0 },
+  panels: [
+    {
+      ...unknownBase,
+      grades: unknownCells.map((cell, index) => ({ ...cell, gradeSortValue: index })),
+      rows: [{ key: "vertical", label: "Vertical", cells: unknownCells }],
+      progress: [
+        {
+          startDate: "2026-10-01",
+          endDate: "2026-10-26",
+          rows: [{ key: "vertical", cells: unknownCells }],
+        },
+      ],
+      allGrades: {
+        grades: [{ ...unknownPooled, gradeSortValue: 0 }],
+        rows: [{ key: "vertical", label: "Vertical", cells: [unknownPooled] }],
+        progress: [
+          {
+            startDate: "2026-10-01",
+            endDate: "2026-10-26",
+            rows: [{ key: "vertical", cells: [unknownPooled] }],
+          },
+        ],
+      },
     },
   ],
 };

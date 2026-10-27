@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { within } from "storybook/test";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
-import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
+import {
+  climbingStrengthsUnknownResultsFixture,
+  climbingStrengthsFixture as fixture,
+} from "./climbing-strengths-fixtures.ts";
 
 const meta = {
   title: "Training/ClimbingStrengths",
@@ -55,11 +58,18 @@ export const UnknownOnly: Story = {
       panels: fixture.panels.map((panel) => ({
         ...panel,
         coverage: { ...panel.coverage, unknownOutcomes: 9 },
-        grades: panel.grades.map((grade) => ({ ...grade, sends: 0, climbs: 0, successRate: null })),
+        grades: panel.grades.map((grade) => ({
+          ...grade,
+          unknownOutcomes: 0,
+          sends: 0,
+          climbs: 0,
+          successRate: null,
+        })),
         rows: panel.rows.map((row) => ({
           ...row,
           cells: row.cells.map((cell) => ({
             ...cell,
+            unknownOutcomes: 0,
             sends: 0,
             climbs: 0,
             successRate: null,
@@ -74,6 +84,7 @@ export const UnknownOnly: Story = {
             ...row,
             cells: row.cells.map((cell) => ({
               ...cell,
+              unknownOutcomes: 0,
               sends: 0,
               climbs: 0,
               successRate: null,
@@ -144,6 +155,7 @@ export const SettingsAndContexts: Story = {
               cells: [
                 {
                   grade: "V3",
+                  unknownOutcomes: 0,
                   sends: 16,
                   climbs: 20,
                   successRate: 80,
@@ -153,6 +165,7 @@ export const SettingsAndContexts: Story = {
                 },
                 {
                   grade: "V4",
+                  unknownOutcomes: 0,
                   sends: 0,
                   climbs: 2,
                   successRate: 0,
@@ -162,6 +175,7 @@ export const SettingsAndContexts: Story = {
                 },
                 {
                   grade: "V5",
+                  unknownOutcomes: 0,
                   sends: 4,
                   climbs: 15,
                   successRate: 26.7,
@@ -171,6 +185,7 @@ export const SettingsAndContexts: Story = {
                 },
                 {
                   grade: "V6",
+                  unknownOutcomes: 0,
                   sends: 1,
                   climbs: 5,
                   successRate: 20,
@@ -214,3 +229,17 @@ export const SettingsAndContexts: Story = {
     },
   },
 };
+
+export const MissingDimension: Story = {
+  args: {
+    data: {
+      ...fixture,
+      panels: fixture.panels.filter((panel) => panel.dimension === "wall_angle"),
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Hold type" }));
+  },
+};
+
+export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownResultsFixture } };
