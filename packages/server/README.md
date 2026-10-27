@@ -583,8 +583,10 @@ activity ownership and stream downsampling.
 mechanical work in kJ plus recorded-power coverage. Its
 [loader](src/repositories/activity-metric-sources-repository.ts) resolves full samples
 within the owned canonical activity window and reuses the
-[cycling workout calculation](../training/src/cycling-workout-metrics.ts), including
-its gap policy. It keeps zero power distinct from missing power. Chart downsampling
+[power-work summary](../training/src/cycling-workout-metrics.ts), including
+the shared cycling gap policy. The summary allocates buckets proportional to native power
+observations rather than elapsed duration, preserving sparse multi-day rides. It keeps zero
+power distinct from missing power. Chart downsampling
 does not affect this calculation. Watts are joules per second
 ([NIST](https://www.nist.gov/glossary-term/34606)); this endpoint does not estimate
 metabolic calorie expenditure.

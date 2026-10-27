@@ -1,7 +1,7 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { activityMetricSourcePresentation } from "@dofek/providers/activity-metric-source";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
-import { computeCyclingWorkoutMetrics } from "@dofek/training/cycling-workout-metrics";
+import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { mapHrZones } from "@dofek/zones/zones";
 import { z } from "zod";
 import {
@@ -82,20 +82,18 @@ export async function getActivityPowerWork(
       ...(powerSourceId ? { powerSourceId } : {}),
     },
   );
-  const metrics = computeCyclingWorkoutMetrics({
-    durationSeconds,
-    samples: samples.map((sample) => ({
+  const metrics = computeCyclingPowerWork(
+    samples.map((sample) => ({
       elapsedSeconds: sample.elapsed_seconds,
       powerWatts: sample.power,
     })),
-    settings: null,
-    intervals: [],
-  });
+    durationSeconds,
+  );
   return {
-    workKilojoules: metrics.power.workKilojoules,
+    workKilojoules: metrics.workKilojoules,
     coverage: {
-      coveredSeconds: metrics.coverage.power.coveredSeconds,
-      coveragePct: metrics.coverage.power.coveragePct,
+      coveredSeconds: metrics.coverage.coveredSeconds,
+      coveragePct: metrics.coverage.coveragePct,
     },
   };
 }

@@ -70,6 +70,39 @@ describe("activity power work", () => {
     });
   });
 
+  it("returns missing power across a huge empty recorded window", async () => {
+    expect(
+      await getActivityPowerWork(storeWithRows([]), {
+        ...window,
+        endedAt: "2400-10-20T12:00:00.000Z",
+      }),
+    ).toEqual({ workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } });
+  });
+
+  it("keeps sparse measured work in a huge recorded window", async () => {
+    expect(
+      await getActivityPowerWork(
+        storeWithRows([
+          { elapsed_seconds: 0, power: 200 },
+          { elapsed_seconds: 1, power: 0 },
+        ]),
+        { ...window, endedAt: "2400-10-20T12:00:00.000Z" },
+      ),
+    ).toEqual({ workKilojoules: 0.2, coverage: { coveredSeconds: 2, coveragePct: 0 } });
+  });
+
+  it("keeps native sparse coverage for a multi-day ride", async () => {
+    expect(
+      await getActivityPowerWork(
+        storeWithRows([
+          { elapsed_seconds: 0, power: 200 },
+          { elapsed_seconds: 86_400, power: 300 },
+        ]),
+        { ...window, endedAt: "2026-10-23T12:00:00.000Z" },
+      ),
+    ).toEqual({ workKilojoules: 5, coverage: { coveredSeconds: 20, coveragePct: 0 } });
+  });
+
   it("returns unavailable work when the activity has no recorded end", async () => {
     expect(
       await getActivityPowerWork(storeWithRows([{ elapsed_seconds: 0, power: 200 }]), {

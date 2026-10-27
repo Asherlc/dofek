@@ -4,6 +4,13 @@
 
 **Approved approach:** Reuse the existing cycling modality classification and server-side workout calculation. Add a narrow power-work query over full samples rather than integrating the downsampled chart stream or multiplying average power by elapsed duration.
 
+**Approved review scope:** Extract the existing sampling rules into a shared sparse
+bucket core. A production-used `computeCyclingPowerWork(samples, durationSeconds,
+barriers?)` summary allocates by sample count; the full-workout resampler retains
+its existing dense output. Recompute completion tracking is a separate follow-up.
+Input-driven synchronous work should remain bounded, following
+[Node.js event-loop guidance](https://nodejs.org/learn/asynchronous-work/dont-block-the-event-loop).
+
 **Architecture:** `activity.powerWork({ id, powerSourceId? })` returns `{ workKilojoules, coverage: { coveredSeconds, coveragePct } }`. Resolve the owned canonical activity window before reading power. Both clients render this result and follow the selected power source. Mechanical output uses kJ: watts are joules per second ([NIST](https://www.nist.gov/glossary-term/34606)).
 
 ## Constraints and review focus
@@ -38,5 +45,21 @@ integration tests pass. Root, server, web and mobile typechecks pass, as do
 confirms the indoor header and partial-coverage qualifier. Review identified
 cross-activity placeholder reuse; regression tests now restrict retained output
 to source changes within the same activity.
+
+## Task 3: Bound power-work memory by observations
+
+- [x] Add failing summary tests for empty and sparse streams over a huge elapsed
+  window, ordinary multi-day recordings, zeros, gaps, fractional buckets and barriers.
+- [x] Extract the existing private sampling core and add `computeCyclingPowerWork`.
+  Reuse that core in `resampleCyclingStream`; preserve existing rounding and coverage.
+- [x] Change the server loader to call only the power summary, with no SQL or API change.
+- [x] Verify parity with existing full-workout metrics on representative small fixtures,
+  run focused shared/server tests and the real ClickHouse suite, and independently review.
+- [x] File the approved recompute follow-up as [#3106](https://github.com/Asherlc/dofek/issues/3106).
+
+Memory-fix validation: 31 focused files / 866 unit tests and all 13 ClickHouse
+integration tests pass. Training and server typechecks, full lint and repository
+spelling checks pass. Independent review found no actionable issue; 10,000 bounded
+resampling fixtures and 5,000 summary fixtures matched the prior calculation.
 
 Execution notes and test evidence are maintained during implementation; review uses [Google’s code-review dimensions](https://google.github.io/eng-practices/review/reviewer/looking-for.html).
