@@ -18,3 +18,10 @@ import { AxiomLogExporter } from "@dofek/telemetry";
 
 const axiomExporter = new AxiomLogExporter(new OTLPLogExporter());
 ```
+
+`classifyHandledFailure` from `@dofek/telemetry/handled-failure` shares the
+web/mobile policy for handled offline requests, cancellations, and explicitly
+marked invalid credentials. Unknown authorization, parse, and storage failures
+remain exceptions. The classifier is independent of SDK exporters. See the
+[application reporting policy](../../docs/sentry.md#handled-operational-failures)
+and Sentry's [handled error guidance](https://docs.sentry.io/platforms/javascript/usage/).

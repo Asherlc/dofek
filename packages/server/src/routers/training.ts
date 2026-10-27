@@ -1,7 +1,17 @@
+import {
+  sportVolumeMetricSchema,
+  sportVolumeMetrics,
+  sportVolumeResultSchema,
+} from "@dofek/training/sport-volume";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import {
+  selectedChartCustomRangeQuery,
+  selectedChartRangeQuery,
+  selectedChartRangeSchema,
+} from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { SportVolumeRepository } from "../repositories/sport-volume-repository.ts";
 import {
   type TrainingHrZonesResult,
   TrainingRepository,
@@ -52,6 +62,31 @@ function requireSensorStore(
 }
 
 export const trainingRouter = router({
+  sportVolume: selectedChartCustomRangeQuery(
+    "training.sportVolume",
+    CacheTTL.LONG,
+    z
+      .object({
+        days: selectedChartRangeSchema("training.sportVolume"),
+        sport: z.string().min(1).max(100).optional(),
+        metric: sportVolumeMetricSchema.default("time"),
+      })
+      .refine(
+        (input) =>
+          input.sport === undefined
+            ? input.metric === "time"
+            : sportVolumeMetrics(input.sport).some((metric) => metric.key === input.metric),
+        { message: "Choose a volume metric supported by this sport.", path: ["metric"] },
+      ),
+    async ({ ctx, input }) =>
+      new SportVolumeRepository(
+        requireSensorStore(ctx.sensorStore, "Sport volume"),
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getVolume(input),
+    sportVolumeResultSchema,
+  ),
   weeklyVolume: selectedChartRangeQuery(
     "training.weeklyVolume",
     CacheTTL.LONG,

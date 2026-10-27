@@ -80,7 +80,54 @@ pnpm tsx scripts/with-env.ts -- sh -c '
 '
 ```
 
-## Failure modes
+## Handled operational failures
+
+Web and mobile count `handled_failure` events in the existing PostHog pipeline
+instead of creating exception issues for handled offline requests, cancellations,
+and confirmed invalid credentials. Break down event counts by `kind` in
+[PostHog Trends](https://posthog.com/docs/product-analytics/insights/trends).
+These are counts of reporting observations, not unique requests or guaranteed
+data loss. Repeated reports of the same operation can produce multiple events.
+No user ID, request URL, or error text is supplied as a custom count property.
+The existing SDK identity/consent behavior still applies.
+
+Mobile also records informational logs and breadcrumbs. The existing background
+sync policy counts known timeouts and lost connections as `background_transport`;
+it includes WHOOP IMU/realtime uploads. This does not promise subsequent delivery.
+Inspect retained buffers and sync progress when investigating sustained failure.
+Query the existing log destination using its [map-field contract](axiom-observability-runbook.md):
+
+```apl
+['dofek-logs']
+| where _time > ago(24h)
+| where body == '[handled-failure] Handled operational failure'
+| summarize reports = count() by kind = tostring(['attributes.custom']['kind'])
+```
+
+Provider lifecycle diagnostics emit the OpenTelemetry counter
+`provider.auth.events` with only `provider` and `event` labels, including
+`sign_in_started`, `sign_in_succeeded`, `sign_in_failed`, and refresh outcomes.
+Successful transactional events count only after commit. Failed lifecycle
+diagnostics retain their structured logs without manufacturing a second
+exception; the caller still reports unexpected failures. OpenTelemetry describes
+[counter aggregation](https://opentelemetry.io/docs/specs/otel/metrics/api/#counter).
+
+Classification requires a known transport shape or an explicit credential
+marker from Dofek's own password-check rejection. A generic 401/403, BAD_REQUEST,
+or vendor credential error class does not establish invalid credentials: existing
+Kaya and Zepp classes also represent unexpected response failures. Unknown HTTP authorization diagnostics, malformed responses,
+storage failures, and unhandled exceptions remain reportable. Browser console
+messages do not independently create PostHog exception issues; explicit reports
+and genuine unhandled errors/rejections still do. See PostHog's
+[exception capture options](https://posthog.com/docs/error-tracking/installation/web).
+
+For wrapped errors, the underlying cause establishes the outcome. A cancellation
+message copied onto an outer wrapper does not make an underlying storage or
+authorization failure expected. Parse/schema evidence anywhere in the chain
+remains reportable; a generic wrapper around a genuine abort remains a handled
+cancellation. See the [shared classifier](../packages/telemetry/src/handled-failure.ts).
+
+## Access failures
 
 - `403`: the token does not have read permissions for issues/events.
 - `401`: the token is missing, malformed, or expired.

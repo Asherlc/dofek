@@ -20,7 +20,7 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Resting heart rate trend**: The dashboard renders the server's trailing seven-calendar-day average as a line without visible point markers. The card and hover labels identify the average; daily readings remain on the heart-rate detail page. See [`Dashboard`](src/pages/Dashboard.tsx) and the [server window calculation](../server/src/repositories/daily-metrics-repository.ts).
 - **Climbing progression**: Grade-colored stacked bars show sends per recorded climbing day in separate kind, scope, rope-method, solo, aid, and grade-system lanes. Charts display bouldering and routes with recorded rope methods, each with recorded aid status; ordinary climbs use their style name and aided climbs retain an "Aid" qualifier. Patterns distinguish indoor, outdoor, and unknown settings. The server supplies counts and chart values; [shared chart selection and labels](../training/src/climbing-progression.ts) keep both clients consistent. See [`ClimbingGradeProgressionChart`](src/components/ClimbingGradeProgressionChart.tsx).
-- **Climbing strengths**: The training page's [strengths section](src/components/ClimbingStrengths.tsx) defaults to the existing grade-profile heatmap. Its local View picker also offers style gaps, success curves, exposure, grade pyramids, monthly progress, and radar. The page-wide climbing filters select the context and indoor/outdoor setting. The strengths box has one grouping control and View picker; multiple returned contexts and settings render as separate labeled sections. Grouping buttons remain clickable when no observations exist and show an empty state. View changes retain valid grade and source-climb selections across refreshed responses. The [shared contract](../training/src/climbing-strengths.ts) supplies per-grade and pooled All grades counts, rates, comparisons, calendar-month outcomes and missing-data states. Logged climbs with an unrecorded result remain in total counts and appear as "Result unknown"; success rates use only climbs with known results, and source examples retain unknown outcomes. Unknown settings have a separate group. Grade controls appear only in single-grade views; the existing All time range reaches the [strengths query](../server/src/routers/climbing.ts) as an unbounded start date. The [chart renderer](src/components/ClimbingStrengthsChart.tsx) exposes selectable exact values and explains radar grades with fewer than three observed styles. Progress preserves missing-month gaps and opens whole-period source climbs with an explicit scope label. Recorded degree angles retain their source values. Successful [attachment actions](src/components/ClimbingLogAttachment.tsx) refresh strengths. Alternatives reuse the [DofekChart accessibility wrapper](src/components/DofekChart.tsx) and ECharts' [line](https://echarts.apache.org/handbook/en/how-to/chart-types/line/basic-line/) and [bar](https://echarts.apache.org/handbook/en/how-to/chart-types/bar/basic-bar/) presentations.
+- **Climbing strengths**: The climbing page keeps climbing type and setting visible above all charts, with other factual filters under More filters. Its [strengths section](src/components/ClimbingStrengths.tsx) offers Styles, Grades and Progress. Styles defaults to an individual-grade comparison; Grades uses the grade/style heatmap; Progress uses monthly outcomes. Wall angle and Hold type are local breakdowns. Chart options discloses the other formats and indoor/outdoor comparison. All grades explicitly pools difficulties and carries a qualifier. Source-climb selection and valid grades survive format changes and refreshed responses; zero, missing data and unknown results remain distinct. Values come from the [shared server-computed contract](../training/src/climbing-strengths.ts). See the [data exploration guidance](../../docs/data-exploration.md) for the research and interaction rules, including [ONS guidance](https://service-manual.ons.gov.uk/data-visualisation/guidance/interactive-charts-and-animations).
 - **Climbing locations**: The training page renders server-sized circles that split into smaller groups and individual climb locations as the map zooms in. Selecting a location lists its recorded climbs, source-location scope, and attached activities. The [shared response contract](../training/src/climbing-location-map.ts) supplies the zoom bands, counts, and radii; [ClimbingLocationMap](src/components/ClimbingLocationMap.tsx) renders them with [Leaflet circle markers](https://leafletjs.com/reference.html#circlemarker).
   Unattached logs offer **Attach to activity**, which opens the
   [activity picker](src/components/ClimbingLogAttachment.tsx) for that log's
@@ -77,6 +77,14 @@ Activity-list cards use the stored cycling modality to show training stats inste
 of distance and elevation for indoor and virtual rides, including reported zeros.
 See [the card](src/components/ActivityCardContent.tsx) and the
 [shared cycling classification](../training/src/endurance-types.ts).
+
+The [activity detail header](src/pages/ActivityDetailPage.tsx) also omits distance
+for indoor and virtual cycling. Rides show **Energy Output** in kJ from the
+server's full recorded power samples, following the selected power source.
+Incomplete coverage carries a **Partial power data** qualifier. This is mechanical
+work: a watt is a joule per second ([NIST](https://www.nist.gov/glossary-term/34606)).
+The [server query](../server/src/routers/activity.ts) reuses the
+[cycling workout calculation](../training/src/cycling-workout-metrics.ts).
 
 The [Activities cards](src/components/ActivityCardContent.tsx) show an inset map
 panel beside activity details on wider screens and below them on narrow screens.
@@ -166,10 +174,11 @@ and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
-The [source picker](src/components/ActivityMetricSourcePicker.tsx) displays a
-provider icon, compact source name, and small attribution badge. Its chooser
-retains the complete source label, including any recording-device or file-creator
-qualification. Both clients consume the same
+The [source picker](src/components/ActivityMetricSourcePicker.tsx) and its chooser
+display provider logos, short device names where needed, and attribution icons.
+Unknown sources retain identifying text. Complete source descriptions remain in
+hover text and accessible names, following the [WAI accessible-name guidance](https://www.w3.org/WAI/ARIA/apg/practices/names-and-descriptions/).
+Both clients consume the same
 [structured presentation](../providers-meta/src/activity-metric-source.ts).
 
 Activity views offer independent source controls for heart rate, power, speed,

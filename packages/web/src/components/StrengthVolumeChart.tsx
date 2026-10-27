@@ -1,5 +1,6 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import type { VolumeOverTimeRow } from "dofek-server/types";
+import { useState } from "react";
 import {
   chartColors,
   dofekAxis,
@@ -8,6 +9,7 @@ import {
   dofekTooltip,
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StrengthVolumeChartProps {
@@ -16,6 +18,14 @@ interface StrengthVolumeChartProps {
 }
 
 export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps) {
+  const units = useUnitConverter();
+  const [metric, setMetric] = useState<"weight" | "sets" | "time">("weight");
+  const label =
+    metric === "weight"
+      ? `Weight lifted (${units.weightLabel})`
+      : metric === "sets"
+        ? "Sets"
+        : "Time (minutes)";
   const option = {
     grid: dofekGrid("single", { top: 30, bottom: 40, left: 60 }),
     tooltip: dofekTooltip({
@@ -26,14 +36,21 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
         const dataPoint = data[index];
         if (!dataPoint) return "";
         const dateLabel = formatDateMedium(dataPoint.week);
+        const selectedValue =
+          metric === "weight"
+            ? dataPoint.recordedVolumeKg == null
+              ? null
+              : units.convertWeight(dataPoint.recordedVolumeKg)
+            : metric === "sets"
+              ? dataPoint.recordedSetCount
+              : dataPoint.durationMinutes;
         return `<strong>${escapeTooltipHtml(dateLabel ?? "")}</strong><br/>
-          Volume: ${Math.round(dataPoint.totalVolumeKg).toLocaleString()} kg<br/>
-          Sets: ${dataPoint.setCount}`;
+          ${escapeTooltipHtml(label)}: ${selectedValue == null ? "Not recorded" : selectedValue.toLocaleString()}`;
       },
     }),
-    xAxis: dofekAxis.time(),
+    xAxis: dofekAxis.time({ show: true }),
     yAxis: dofekAxis.value({
-      name: "Volume (kg)",
+      name: label,
       axisLabel: {
         formatter(value: number) {
           return value >= 1000 ? `${formatNumber(value / 1000)}k` : String(value);
@@ -44,7 +61,16 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
       {
         ...dofekSeries.bar(
           "Volume",
-          data.map((d) => [d.week, d.totalVolumeKg]),
+          data.map((d) => [
+            d.week,
+            metric === "weight"
+              ? d.recordedVolumeKg == null
+                ? null
+                : units.convertWeight(d.recordedVolumeKg)
+              : metric === "sets"
+                ? d.recordedSetCount
+                : d.durationMinutes,
+          ]),
           {
             color: chartColors.emerald,
           },
@@ -61,12 +87,39 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
   };
 
   return (
-    <DofekChart
-      option={option}
-      loading={loading}
-      empty={data.length === 0}
-      height={280}
-      emptyMessage="No strength volume data"
-    />
+    <>
+      <label>
+        Metric{" "}
+        <select
+          aria-label="Strength volume metric"
+          value={metric}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === "weight" || value === "sets" || value === "time") setMetric(value);
+          }}
+        >
+          <option value="weight">Weight lifted</option>
+          <option value="sets">Sets</option>
+          <option value="time">Time</option>
+        </select>
+      </label>
+      {data.some(
+        (row) =>
+          (metric === "weight"
+            ? row.recordedVolumeKg
+            : metric === "sets"
+              ? row.recordedSetCount
+              : row.durationMinutes) === null,
+      ) ? (
+        <p className="text-xs text-muted">Weeks with incomplete records are not plotted.</p>
+      ) : null}
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={280}
+        emptyMessage="No strength volume data"
+      />
+    </>
   );
 }

@@ -149,6 +149,9 @@ enum climbing_hold_type {
   pinch
   pocket
   jug
+  volume
+  jam
+  no_grips
 }
 
 enum finger_loading_exercise {
@@ -1006,7 +1009,7 @@ table fitness.climbing_log_entry {
   notes text
   board jsonb
   wall_angle jsonb
-  hold_type climbing_hold_type
+  hold_types climbing_hold_type[]
   source_name text
   raw jsonb
   provider_absent_at "timestamp with time zone"
@@ -1020,6 +1023,7 @@ table fitness.climbing_log_entry {
     activity_id [name: 'climbing_log_entry_activity_idx']
     climb_id [name: 'climbing_log_entry_climb_idx']
     (user_id, provider_id, climbed_on) [name: 'climbing_log_entry_source_date_idx']
+
 
 
 

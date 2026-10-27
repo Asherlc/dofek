@@ -309,7 +309,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         'id',entry.id,'userId',entry.user_id,'providerId',entry.provider_id,'externalId',entry.external_id,
         'climbId',entry.climb_id,'activityId',entry.activity_id,'climbedOn',entry.climbed_on,
         'discipline',entry.discipline,'title',entry.title,'notes',entry.notes,'reportedGrades',entry.reported_grades,
-        'board',entry.board,'wallAngle',entry.wall_angle,'holdType',entry.hold_type,'sourceName',entry.source_name,
+        'board',entry.board,'wallAngle',entry.wall_angle,'holdTypes',entry.hold_types,'sourceName',entry.source_name,
         'raw',entry.raw,'providerAbsentAt',entry.provider_absent_at,'createdAt',entry.created_at
       ) AS log,
       CASE WHEN catalogue.id IS NOT NULL THEN jsonb_build_object(

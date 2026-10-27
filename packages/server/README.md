@@ -7,6 +7,24 @@ separate published and reported grades, and scoped attempt facts. See the
 
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
+The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
+weekly volume queries provide the charts with attempt counts, working sets,
+weight multiplied by repetitions, and recorded activity duration. The
+[climbing repository](src/repositories/climbing-repository.ts) applies climbing
+filters and retains unknown attempt counts; the
+[strength repository](src/repositories/strength-repository.ts) reports unknown
+set or weight totals when a workout or a working set lacks the required data.
+
+The [`training.sportVolume` query](src/routers/training.ts) extends weekly volume
+to the other recorded sports. Its [shared metric definitions](../training/src/sport-volume.ts)
+offer time for every sport, distance and elevation for applicable sports, and
+power-derived mechanical work for cycling. The
+[repository](src/repositories/sport-volume-repository.ts) reads existing activity
+and sensor projections, respects local weeks and activity access limits, excludes
+indoor/virtual cycling distance, and retains missing totals as unknown. Cycling
+work uses the [shared power integration and coverage calculation](../training/src/cycling-workout-metrics.ts),
+with incomplete power coverage withheld from weekly totals.
+
 ## Architecture
 
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.
@@ -58,8 +76,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   total climb counts and grade lists; success rates use known outcomes only.
   Conflicting grades remain excluded.
   Coverage reports unidentified/missing-grade observation records separately from
-  distinct-climb trait and outcome coverage. Known degree values are shown literally;
-  missing units and contradictory traits remain unknown.
+  distinct-climb trait and outcome coverage. Recorded degree values are shown
+  literally and source categories retain their labels; missing units and
+  contradictory traits remain unknown. A climb contributes once to each recorded
+  grip and once to its grade baseline; see the
+  [shared trait contract](../../docs/climbing-context.md#enums).
   Gradeless source observations contribute only when the same identified climb and
   semantic lane have one recognized grade-system context; ambiguous contexts stay
   excluded. The optional `endDate` input anchors an inclusive calendar-day window,
@@ -92,6 +113,20 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)
   adds user/provider-scoped PostgreSQL log counts to existing provider statistics.
+- **Climbing response versions**: The existing `climbing.activityLogEntries`,
+  `climbing.unattachedClimbingLogEntries`, and `providerDetail.recordDetail`
+  procedures accept `responseVersion: 1 | 2`, defaulting to `1`. Version `1`
+  projects supported scalar grips and numeric angles; version `2` serves complete
+  plural grips and categorical angles. Canonical repositories remain plural.
+  Updated web/mobile clients request `2` and strictly decode either supported
+  wire shape, allowing independent API and client releases. Raw request inputs
+  separate server cache entries; mobile keeps persisted-cache contract `16` with
+  versioned query keys. See the
+  [serializers and decoders](src/contracts/climbing-log-contracts.ts),
+  [shared version policy](../training/src/climbing-log-response.ts), and
+  [full compatibility contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
+  tRPC documents [input and output validation](https://trpc.io/docs/server/validators),
+  and Zod documents [unknown-key handling](https://zod.dev/api#objects).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
@@ -445,6 +480,15 @@ Progression lanes preserve independent kind, scope, rope method, solo and aid va
 system. See the [progression repository](src/repositories/climbing-progression-repository.ts) and
 [wire contract](src/mcp/climbing-progression-output.ts).
 
+`get_activity_details`, `get_climbing_sessions`, and `get_climbing_progression`
+accept `response_version: 1 | 2`, defaulting to `1` for older consumers. Version
+projection happens before `jsonToolResult` builds text and structured content.
+Progression log entries use scalar `hold_type` for version `1` and plural
+`hold_types` for version `2`; numeric `wall_angle_degrees` retains its existing
+meaning. See the [activity](src/mcp/activity-details-tool.ts),
+[sessions](src/mcp/climbing-sessions-tool.ts), and
+[progression](src/mcp/climbing-progression-tool.ts) tool contracts.
+
 Canonical activity groups count as one session. Exact matching entry observations from different
 member activities/providers are consolidated once while retaining every contributing entry,
 activity, and provider ID. Conflicting cross-provider observations with the same climb identity
@@ -578,6 +622,18 @@ accepts a `sources` map; zone endpoints accept their metric's source ID.
 The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
+
+`activity.powerWork` accepts the activity ID and optional `powerSourceId`, returning
+mechanical work in kJ plus recorded-power coverage. Its
+[loader](src/repositories/activity-metric-sources-repository.ts) resolves full samples
+within the owned canonical activity window and reuses the
+[power-work summary](../training/src/cycling-workout-metrics.ts), including
+the shared cycling gap policy. The summary allocates buckets proportional to native power
+observations rather than elapsed duration, preserving sparse multi-day rides. It keeps zero
+power distinct from missing power. Chart downsampling
+does not affect this calculation. Watts are joules per second
+([NIST](https://www.nist.gov/glossary-term/34606)); this endpoint does not estimate
+metabolic calorie expenditure.
 
 WHOOP Bluetooth uploads retain the strap's reported BPM independently of beat
 intervals through the [upload repository](src/repositories/whoop-ble-sync-repository.ts).

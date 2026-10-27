@@ -1,10 +1,13 @@
 import {
   type ClimbingFilterKey,
+  climbingContextPreset,
+  climbingContextPresets,
   climbingFilterKeys,
   climbingFilterLabels,
   climbingFilterOptions,
   climbingFiltersSchema,
   type ClimbingFilters as Filters,
+  selectClimbingContext,
 } from "@dofek/training/climbing-filters";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -18,7 +21,11 @@ export function ClimbingFilters({
   onChange: (value: Filters) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const keys = climbingFilterKeys;
+  const keys = climbingFilterKeys.filter((key) => key !== "setting");
+  const preset = climbingContextPreset(value);
+  const chipKeys = keys.filter(
+    (key) => preset === null || (key !== "climbKind" && key !== "ropeMethod"),
+  );
   function remove(key: ClimbingFilterKey) {
     const next = { ...value };
     delete next[key];
@@ -26,6 +33,46 @@ export function ClimbingFilters({
   }
   return (
     <View style={styles.container}>
+      <Text style={styles.label}>Climbing type</Text>
+      <View style={styles.row}>
+        {climbingContextPresets.map((item) => (
+          <TouchableOpacity
+            key={item.value}
+            accessibilityRole="button"
+            accessibilityLabel={item.label}
+            accessibilityState={{ selected: preset === item.value }}
+            onPress={() => onChange(selectClimbingContext(value, item.value))}
+            style={[styles.chip, preset === item.value && styles.selected]}
+          >
+            <Text style={styles.text}>{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {preset === null ? <Text style={styles.label}>Custom climbing selection</Text> : null}
+      <Text style={styles.label}>Setting</Text>
+      <View style={styles.row}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="All settings"
+          accessibilityState={{ selected: value.setting === undefined }}
+          onPress={() => remove("setting")}
+          style={[styles.chip, value.setting === undefined && styles.selected]}
+        >
+          <Text style={styles.text}>All settings</Text>
+        </TouchableOpacity>
+        {climbingFilterOptions.setting.map(([option, label]) => (
+          <TouchableOpacity
+            key={option}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: value.setting === option }}
+            onPress={() => onChange({ ...value, setting: option })}
+            style={[styles.chip, value.setting === option && styles.selected]}
+          >
+            <Text style={styles.text}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <View style={styles.row}>
         <TouchableOpacity
           accessibilityRole="button"
@@ -33,11 +80,18 @@ export function ClimbingFilters({
           onPress={() => setOpen(!open)}
           style={styles.chip}
         >
-          <Text style={styles.text}>
-            {Object.keys(value).length ? "Filter climbing" : "All climbing"}
-          </Text>
+          <Text style={styles.text}>More filters</Text>
         </TouchableOpacity>
-        {keys.map((key) => {
+        {Object.keys(value).length ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => onChange({})}
+            style={styles.chip}
+          >
+            <Text style={styles.text}>Clear filters</Text>
+          </TouchableOpacity>
+        ) : null}
+        {chipKeys.map((key) => {
           const label = climbingFilterOptions[key].find(([option]) => option === value[key])?.[1];
           return label ? (
             <TouchableOpacity

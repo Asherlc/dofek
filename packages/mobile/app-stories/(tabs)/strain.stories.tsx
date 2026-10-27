@@ -1,3 +1,4 @@
+import { sportVolumeMetricSchema, sportVolumeMetrics } from "@dofek/training/sport-volume";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
@@ -6,6 +7,7 @@ import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { z } from "zod";
 import StrainScreen from "../../app/(tabs)/strain";
 import { createFixtureDates, type FixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
@@ -25,6 +27,21 @@ const STRAIN_COMPANION_RESPONSES = {
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
   "climbing.strengths": climbingStrengthsFixture,
+  "climbing.volumeOverTime": [
+    { week: "2026-09-28", attempts: 12, minutes: 120 },
+    { week: "2026-10-05", attempts: 8, minutes: 90 },
+  ],
+  "strength.volumeOverTime": [
+    {
+      week: "2026-09-28",
+      totalVolumeKg: 2000,
+      setCount: 12,
+      workoutCount: 2,
+      recordedVolumeKg: 2000,
+      recordedSetCount: 12,
+      durationMinutes: 120,
+    },
+  ],
   "training.hrZones": {
     maxHr: 190,
     weeks: [],
@@ -70,6 +87,41 @@ function createTrainingFailureStoryLink(): TRPCLink<AppRouter> {
             TRPCClientError.from<AppRouter>(new Error("Training analytics are unavailable.")),
           );
           return { unsubscribe: () => {} };
+        },
+        pipe() {
+          return result;
+        },
+      };
+      return result;
+    };
+}
+
+function createSportVolumeStoryLink(): TRPCLink<AppRouter> {
+  return () =>
+    ({ op, next }) => {
+      if (op.path !== "training.sportVolume") return next(op);
+      const input = z
+        .object({ sport: z.string().optional(), metric: sportVolumeMetricSchema })
+        .parse(op.input);
+      const sport = input.sport ?? "running";
+      const metrics = sportVolumeMetrics(sport);
+      const data = {
+        sport,
+        sports: ["cycling", "running", "swimming", "yoga"],
+        metric: input.metric,
+        metrics,
+        unit: metrics.find((entry) => entry.key === input.metric)?.unit ?? "min",
+        weeks: [
+          { week: "2026-10-05", value: 90 },
+          { week: "2026-10-12", value: null },
+          { week: "2026-10-19", value: 120 },
+        ],
+      };
+      const result: OperationResultObservable<AppRouter, unknown> = {
+        subscribe(observer) {
+          observer.next?.({ result: { data } });
+          observer.complete?.();
+          return { unsubscribe() {} };
         },
         pipe() {
           return result;
@@ -299,6 +351,7 @@ function MockProviders({
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
         links: [
+          createSportVolumeStoryLink(),
           ...(trainingUnavailable ? [createTrainingFailureStoryLink()] : []),
           createProcessingStatusStoryLink(
             seededProviders.processingStatus,

@@ -38,6 +38,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const RecordedAidCompletion: Story = {};
+export const CategoricalWallAndMultipleGrips: Story = {
+  args: { entry: { ...entry, wallAngle: { category: "slab" }, holdTypes: ["crimp", "jug"] } },
+};
 export const UnknownAttemptCount: Story = {
   args: { entry: { ...entry, providerId: "mountain-project", recordedClimbAttemptCount: null } },
 };

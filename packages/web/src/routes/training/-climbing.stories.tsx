@@ -52,39 +52,44 @@ const mockLink: TRPCLink<AppRouter> = () => {
               ? { attached: true }
               : op.path === "climbing.gradeProgression"
                 ? [climbingProgressionFixture("route", { ropeMethod: "lead" })]
-                : op.path === "climbing.volumeByGrade"
-                  ? [{ ...grade, attempts: 3, recordedAttempts: 3, sends: 2 }]
-                  : op.path === "climbing.sessionSummary"
-                    ? [
-                        {
-                          activityId: "demo",
-                          date: "2026-10-04",
-                          name: "Afternoon climbing",
-                          locationName: "Crag",
-                          attempts: 3,
-                          sends: 2,
-                          hardestBoulderGrade: null,
-                          hardestBoulderGradeSortValue: null,
-                          hardestRouteGrade: "5.10a",
-                          hardestRouteGradeSortValue: 10,
-                        },
-                      ]
-                    : op.path === "activity.list"
-                      ? { items: [], totalCount: 0 }
-                      : op.path === "climbing.hangboardingSummary"
-                        ? {
-                            sessionCount: 0,
-                            totalDurationSeconds: 0,
-                            averageDurationSeconds: null,
-                            totalWorkDurationSeconds: null,
-                            totalRestDurationSeconds: null,
-                            workIntervalCount: null,
-                            averageHeartRate: null,
-                            peakHeartRate: null,
-                            latestSession: null,
-                            daily: [],
-                          }
-                        : null;
+                : op.path === "climbing.volumeOverTime"
+                  ? [
+                      { week: "2026-09-28", attempts: 12, minutes: 120 },
+                      { week: "2026-10-05", attempts: 8, minutes: 90 },
+                    ]
+                  : op.path === "climbing.volumeByGrade"
+                    ? [{ ...grade, attempts: 3, recordedAttempts: 3, sends: 2 }]
+                    : op.path === "climbing.sessionSummary"
+                      ? [
+                          {
+                            activityId: "demo",
+                            date: "2026-10-04",
+                            name: "Afternoon climbing",
+                            locationName: "Crag",
+                            attempts: 3,
+                            sends: 2,
+                            hardestBoulderGrade: null,
+                            hardestBoulderGradeSortValue: null,
+                            hardestRouteGrade: "5.10a",
+                            hardestRouteGradeSortValue: 10,
+                          },
+                        ]
+                      : op.path === "activity.list"
+                        ? { items: [], totalCount: 0 }
+                        : op.path === "climbing.hangboardingSummary"
+                          ? {
+                              sessionCount: 0,
+                              totalDurationSeconds: 0,
+                              averageDurationSeconds: null,
+                              totalWorkDurationSeconds: null,
+                              totalRestDurationSeconds: null,
+                              workIntervalCount: null,
+                              averageHeartRate: null,
+                              peakHeartRate: null,
+                              latestSession: null,
+                              daily: [],
+                            }
+                          : null;
     const result: OperationResultObservable<AppRouter, unknown> = {
       subscribe(observer) {
         observer.next?.({ result: { data } });
@@ -132,6 +137,28 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const ExplorationInteraction: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Bouldering" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Indoor" }));
+    await expect(canvas.getByRole("button", { name: "Bouldering" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(canvas.getByRole("button", { name: "Indoor" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
+    await userEvent.click(await canvas.findByRole("button", { name: /Vertical · V4/ }));
+    await userEvent.click(canvas.getByRole("button", { name: "Progress" }));
+    await expect(canvas.getByLabelText("Grade")).toHaveValue("V4");
+    await expect(canvas.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+      "Evening Arete",
+    );
+  },
+};
 export const AttachClimbToActivity: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);

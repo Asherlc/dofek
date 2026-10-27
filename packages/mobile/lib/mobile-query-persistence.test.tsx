@@ -40,6 +40,36 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
+  it("discards v15 climbing responses before restoring the hold collection contract", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "climbing-owner";
+    const queryKey = [
+      ["climbing", "activityLogEntries"],
+      { input: { activityId: "activity-1" }, type: "query" },
+    ];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, [
+      { id: "log", holdType: "crimp", wallAngle: { value: -20, unit: null } },
+    ]);
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v15`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
+  });
+
   it("persists normal query data while leaving short-lived signed image URLs in memory", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const client = createQueryClient();

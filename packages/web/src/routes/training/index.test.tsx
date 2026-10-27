@@ -217,3 +217,5 @@ describe("TrainingOverview training insights", () => {
     );
   });
 });
+
+vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));

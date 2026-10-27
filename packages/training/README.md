@@ -52,17 +52,18 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `activity-chart-series` | [Shared activity-chart timing, gap, marker, and nearest-observation presentation policy](src/activity-chart-series.ts) |
 | `activity-images` | [Activity-image metadata, captions, and shared web/mobile query refresh policy](src/activity-images.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
-| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
+| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and grip context |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
 | `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
 | `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `climbing-log-response` | [Supported response-version input schema and faithful version-1 projection of canonical grip collections and wall angles](src/climbing-log-response.ts) |
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), chart selection for recorded aid status and route methods, concise lane and setting labels, and period/exact-value formatting shared by web and mobile |
 | `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles with server-computed rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
-| `climbing-strengths-views` | [Selectable strengths view names and value union](src/climbing-strengths-views.ts), with Grade profile as the default presentation |
+| `climbing-strengths-views` | [Shared Styles / Grades / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with Styles opening the same-grade comparison by default |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
@@ -134,6 +135,17 @@ separate. Server queries derive completion, result labels and counts; see the
 [current model](../../docs/climbing-context.md) and
 [schemas](src/climbing-log.ts).
 
+Canonical grip collections are nullable and nonempty when supplied. Wall angles
+retain either numeric values with known/unknown units or explicit source
+categories. The [response-version module](src/climbing-log-response.ts) defines
+versions `1` and `2`, defaults omitted requests to `1`, and projects only the
+traits that the original scalar contract can express. A single supported grip
+remains scalar; multiple grips, newer grip kinds, and categorical angles become
+null in version `1` without altering canonical records. Version `2` retains the
+complete collection and angle object. See the
+[shared model](src/climbing-log.ts), [angle schema](src/climbing-experience.ts),
+and [server response-version contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
+
 The [log-card grouping helper](src/climbing-log-groups.ts) groups areas across
 sources when their complete ordered name paths match, ignoring case and extra
 whitespace. Distinct parent paths remain separate. If one source has multiple
@@ -194,6 +206,9 @@ missing, and zero seconds, median sample interval, and largest gap independently
 
 Average power and work use covered power seconds only. Normalized power uses the package's canonical
 30-second rolling/fourth-power calculation and is withheld when any elapsed power second is missing.
+Summary-only callers can use `computeCyclingPowerWork`, which shares the
+[bucket calculation](src/cycling-workout-metrics.ts) and returns work and power coverage while
+allocating only buckets touched by native observations, independent of missing elapsed time.
 Intensity factor is normalized power divided by the FTP effective for that activity. Power TSS uses
 `duration_hours × intensity_factor² × 100`, following the package's documented power-stress model;
 both values are unavailable rather than manufactured when FTP or normalized power is missing.

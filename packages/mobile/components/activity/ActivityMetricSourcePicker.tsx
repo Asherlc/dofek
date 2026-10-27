@@ -1,4 +1,7 @@
-import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
+import {
+  type ActivityMetricSource,
+  activityMetricSourceText,
+} from "@dofek/providers/activity-metric-source";
 import { providerSourceLogo } from "@dofek/providers/providers";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
@@ -51,6 +54,7 @@ export function ActivityMetricSourcePicker({
   const [open, setOpen] = useState(false);
   const selected = sources.find((source) => source.id === selectedId);
   const presentation = selected?.presentation;
+  const sourceText = presentation ? activityMetricSourceText(presentation) : null;
   return (
     <View>
       <Pressable
@@ -74,9 +78,11 @@ export function ActivityMetricSourcePicker({
             />
           </View>
         )}
-        <Text numberOfLines={1} style={styles.sourceName}>
-          {presentation?.displayName}
-        </Text>
+        {sourceText && (
+          <Text numberOfLines={1} style={styles.sourceName}>
+            {sourceText}
+          </Text>
+        )}
         <AttributionIcon attribution={presentation?.attribution} serverUrl={serverUrl} />
         <Ionicons name="chevron-down" size={14} color={colors.textTertiary} accessible={false} />
       </Pressable>
@@ -87,45 +93,58 @@ export function ActivityMetricSourcePicker({
               <Text accessibilityRole="header" style={styles.dialogTitle}>
                 {label} source
               </Text>
-              {sources.map((source) => (
-                <Pressable
-                  key={source.id}
-                  accessibilityRole="radio"
-                  accessibilityLabel={source.label}
-                  accessibilityState={{ checked: source.id === selectedId }}
-                  onPress={() => {
-                    onChange(source.id);
-                    setOpen(false);
-                  }}
-                  style={[styles.choice, styles.sourceChoice]}
-                >
-                  <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                    <ProviderLogo
-                      provider={
-                        providerSourceLogo(
-                          source.presentation.providerId,
-                          source.presentation.sourceName,
-                        ).provider
-                      }
-                      sourceName={source.presentation.sourceName}
-                      serverUrl={serverUrl}
-                      size={22}
-                    />
-                  </View>
-                  <Text
-                    style={{
-                      flex: 1,
-                      color: source.id === selectedId ? colors.accent : colors.text,
+              {sources.map((source) => {
+                const sourceText = activityMetricSourceText(source.presentation);
+                return (
+                  <Pressable
+                    key={source.id}
+                    accessibilityRole="radio"
+                    accessibilityLabel={source.label}
+                    accessibilityState={{ checked: source.id === selectedId }}
+                    onPress={() => {
+                      onChange(source.id);
+                      setOpen(false);
                     }}
+                    style={[styles.choice, styles.sourceChoice]}
                   >
-                    {source.presentation.displayName}
-                  </Text>
-                  <AttributionIcon
-                    attribution={source.presentation.attribution}
-                    serverUrl={serverUrl}
-                  />
-                </Pressable>
-              ))}
+                    <View
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      <ProviderLogo
+                        provider={
+                          providerSourceLogo(
+                            source.presentation.providerId,
+                            source.presentation.sourceName,
+                          ).provider
+                        }
+                        sourceName={source.presentation.sourceName}
+                        serverUrl={serverUrl}
+                        size={22}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      {sourceText && (
+                        <Text
+                          style={{ color: source.id === selectedId ? colors.accent : colors.text }}
+                        >
+                          {sourceText}
+                        </Text>
+                      )}
+                    </View>
+                    <AttributionIcon
+                      attribution={source.presentation.attribution}
+                      serverUrl={serverUrl}
+                    />
+                    <Ionicons
+                      name={source.id === selectedId ? "radio-button-on" : "radio-button-off"}
+                      size={20}
+                      color={source.id === selectedId ? colors.accent : colors.textTertiary}
+                      accessible={false}
+                    />
+                  </Pressable>
+                );
+              })}
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setOpen(false)}

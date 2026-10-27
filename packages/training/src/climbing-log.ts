@@ -18,6 +18,17 @@ export const ROPE_METHODS = ["lead", "top_rope", "follow", "unroped"] as const;
 export const PROTECTION_STYLES = ["sport", "trad"] as const;
 export const ATTEMPT_SCOPES = ["climb", "pitch"] as const;
 export const ATTEMPT_OUTCOMES = ["completed", "failed"] as const;
+export const CLIMBING_HOLD_TYPES = [
+  "crimp",
+  "sloper",
+  "pinch",
+  "pocket",
+  "jug",
+  "volume",
+  "jam",
+  "no_grips",
+] as const;
+export const climbingHoldTypesSchema = z.array(z.enum(CLIMBING_HOLD_TYPES)).nonempty();
 
 export const climbKindSchema = z.enum(CLIMB_KINDS);
 export const climbSettingSchema = z.enum(CLIMB_SETTINGS);
@@ -82,7 +93,7 @@ export const climbingLogEntrySchema = z.strictObject({
   reportedGrades: z.array(gradeComponentSchema),
   board: climbingBoardSchema.nullable(),
   wallAngle: climbingWallAngleSchema.nullable(),
-  holdType: z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]).nullable(),
+  holdTypes: climbingHoldTypesSchema.nullable(),
   sourceName: recordedTextSchema.nullable(),
   raw: z.json().nullable(),
   providerAbsentAt: z.iso.datetime().nullable(),

@@ -106,3 +106,16 @@ it.each([
   );
   expect(screen.queryByTestId("ascent-photos")).toBeNull();
 });
+
+it("displays all recorded grips and the source wall category", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        holdTypes: ["crimp", "volume", "no_grips"],
+        wallAngle: { category: "roof" },
+      })}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp, volume, no grips")).toBeTruthy();
+  expect(screen.getByText("Wall angle: Roof")).toBeTruthy();
+});

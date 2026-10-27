@@ -14,6 +14,44 @@ function repository(rows: Record<string, unknown>[], preference?: ClimbingGradeP
 }
 const boulder = { climb_kind: "boulder", grade_system: "v_scale", grade: "V4" };
 const route = { climb_kind: "route", grade_system: "yds", grade: "5.10c" };
+describe("ClimbingRepository weekly volume", () => {
+  it.each([30, null])(
+    "returns weekly observations without replacing unknown values for %s days",
+    async (days) => {
+      const weeks = [
+        { week: "2026-10-19", attempts: null, minutes: 90 },
+        { week: "2026-10-26", attempts: 5, minutes: null },
+      ];
+      expect(await repository(weeks).getVolumeOverTime(days)).toEqual(weeks);
+    },
+  );
+  it.each([
+    [{}, false],
+    [{ setting: undefined }, false],
+    [{ setting: "outdoor" }, true],
+    [{ setting: "outdoor", climbKind: undefined }, true],
+  ] as const)("binds the recorded-activity filter gate for %j", async (filters, expected) => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const repo = new ClimbingRepository({ execute }, "user", "UTC");
+    await repo.getVolumeOverTime(30, filters);
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.params.at(-1)).toBe(expected);
+  });
+  it("binds a caller-local end date for an all-time query", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T01:00:00Z"));
+    try {
+      const execute = vi.fn().mockResolvedValue([]);
+      const repo = new ClimbingRepository({ execute }, "user", "America/Los_Angeles");
+      await repo.getVolumeOverTime(null);
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params).toContain("2026-10-26");
+      expect(query.params).not.toContain(undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 describe("ClimbingRepository map entries", () => {
   const location = {
     coordinates: { latitude: 0, longitude: -122.25 },

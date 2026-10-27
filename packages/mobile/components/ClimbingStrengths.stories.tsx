@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
@@ -15,6 +16,21 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const Narrow: Story = {
+  args: {
+    data: {
+      ...climbingStrengthsFixture,
+      panels: climbingStrengthsFixture.panels.filter((panel) => panel.contextKey === "boulder-v"),
+    },
+  },
+  decorators: [
+    (Story) => (
+      <View style={{ width: 340, alignSelf: "center" }}>
+        <Story />
+      </View>
+    ),
+  ],
+};
 export const Loading: Story = { args: { data: undefined, loading: true } };
 export const Empty: Story = {
   args: {
@@ -37,6 +53,11 @@ export const Sparse: Story = {
   },
 };
 export const Setting: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Chart options" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Compare indoor/outdoor" }));
+  },
   args: {
     data: {
       ...climbingStrengthsFixture,

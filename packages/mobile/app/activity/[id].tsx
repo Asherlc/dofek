@@ -9,6 +9,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { cadenceUnit, isActivityDetailType, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -27,6 +28,7 @@ import type {
   ActivityMetricSourceSelection,
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
+import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
@@ -58,7 +60,7 @@ const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
 
 // ── Stats Grid ──
 
-type StatItem = ActivityMetric | { label: string; value: string };
+type StatItem = ActivityMetric | { label: string; value: string; qualifier?: string };
 
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
@@ -86,6 +88,11 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
                   : stat.label}
               </Text>
               <Text style={statsStyles.value}>{displayedValue}</Text>
+              {"qualifier" in stat && stat.qualifier && (
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                  {stat.qualifier}
+                </Text>
+              )}
             </View>
           );
         })}
@@ -308,6 +315,7 @@ export default function ActivityDetailScreen() {
           trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
           trpcUtils.activity.hrZones.invalidate({ id }),
           trpcUtils.activity.powerZones.invalidate({ id }),
+          trpcUtils.activity.powerWork.invalidate({ id }),
           trpcUtils.activity.strengthExercises.invalidate({ id }),
           trpcUtils.activity.hangboardDetails.invalidate({ id }),
           trpcUtils.activity.list.invalidate(),
@@ -394,6 +402,21 @@ export default function ActivityDetailScreen() {
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const powerWork = trpc.activity.powerWork.useQuery(
+    { id: id ?? "", powerSourceId: sources.power },
+    {
+      enabled: !!id && isCycling,
+      placeholderData: (previousData, previousQuery) => {
+        const previousInput = previousQuery?.queryKey[1]?.input;
+        return previousInput &&
+          typeof previousInput === "object" &&
+          "id" in previousInput &&
+          previousInput.id === id
+          ? previousData
+          : undefined;
+      },
+    },
+  );
   const powerZones = trpc.activity.powerZones.useQuery(
     { id: id ?? "", powerSourceId: sources.power },
     {
@@ -410,12 +433,12 @@ export default function ActivityDetailScreen() {
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "" },
-    { enabled: !!id && isClimbingActivity },
+    { activityId: id ?? "", responseVersion: 2 },
+    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id },
-    { enabled: !!id && isClimbingActivity },
+    { activityId: id, responseVersion: 2 },
+    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
@@ -441,13 +464,17 @@ export default function ActivityDetailScreen() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
-        trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
+        trpcUtils.climbing.activityLogEntries.invalidate({
+          activityId: input.activityId,
+          responseVersion: 2,
+        }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
+          responseVersion: 2,
         }),
       ]);
     },
@@ -601,14 +628,18 @@ export default function ActivityDetailScreen() {
       value: formatDurationRange(activity.startedAt, activity.endedAt),
     });
   }
+  if (!(isCycling && isIndoorCyclingModality(activity.modality))) {
+    stats.push(
+      formatActivityMetric(
+        "Distance",
+        activity.totalDistance,
+        activity.totalDistanceState,
+        (distanceMeters) =>
+          `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+      ),
+    );
+  }
   stats.push(
-    formatActivityMetric(
-      "Distance",
-      activity.totalDistance,
-      activity.totalDistanceState,
-      (distanceMeters) =>
-        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
-    ),
     formatActivityMetric(
       "Elevation Gain",
       activity.elevationGain,
@@ -640,6 +671,15 @@ export default function ActivityDetailScreen() {
       activity.maxPowerState,
       (value) => `${Math.round(value)} W`,
     ),
+  );
+  if (isCycling && powerWork.data?.workKilojoules != null) {
+    stats.push({
+      label: "Energy Output",
+      value: `${formatNumber(powerWork.data.workKilojoules, 0)} kJ`,
+      qualifier: powerWork.data.coverage.coveragePct < 99 ? "Partial power data" : undefined,
+    });
+  }
+  stats.push(
     formatActivityMetric(
       "Avg Speed",
       activity.avgSpeed,
@@ -671,6 +711,9 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
+      {isCycling && powerWork.error && (
+        <QueryStatePanel variant="error" message={powerWork.error.message} />
+      )}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
       <ActivityImages
         key={id}
@@ -770,7 +813,10 @@ export default function ActivityDetailScreen() {
       )}
       {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
       {sourceControls.length > 0 &&
-        (stream.isFetching || hrZones.isFetching || powerZones.isFetching) && (
+        (stream.isFetching ||
+          hrZones.isFetching ||
+          powerZones.isFetching ||
+          powerWork.isFetching) && (
           <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
             Updating metrics…
           </Text>

@@ -486,3 +486,5 @@ describe("RunningTab", () => {
     expect(screen.getAllByText("--")).toHaveLength(3);
   });
 });
+
+vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));

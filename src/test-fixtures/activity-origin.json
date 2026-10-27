@@ -5,7 +5,7 @@
       {
         "id": "00000000-0000-4000-8000-000000000001",
         "providerId": "apple_health",
-        "sourceName": "Asher’s Apple\u00a0Watch",
+        "sourceName": "Asher’s Apple Watch",
         "raw": null
       },
       {
@@ -26,7 +26,10 @@
         "providerId": "peloton",
         "externalId": "c4e019f3387447ad8a2420e7c7918cf5",
         "sourceName": null,
-        "raw": { "platform": "whoop", "deviceType": "whoop" }
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "whoop"
+        }
       }
     ],
     "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
@@ -124,7 +127,9 @@
         "id": "00000000-0000-4000-8000-000000000001",
         "providerId": "apple_health",
         "sourceName": "Apple Watch",
-        "raw": { "sourceBundle": "com.strava.strava" }
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
       },
       {
         "id": "00000000-0000-4000-8000-000000000002",
@@ -916,5 +921,567 @@
       "00000000-0000-4000-8000-000000000001",
       "00000000-0000-4000-8000-000000000002"
     ]
+  },
+  {
+    "name": "Native Peloton bike initiates alongside WHOOP and its Health copy",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "bike"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Peloton Bike",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"],
+    "expectedEvidence": [
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000001",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000002",
+        "field": "source_name",
+        "value": "peloton bike"
+      },
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000003",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000004",
+        "field": "source_name",
+        "value": "whoop"
+      }
+    ]
+  },
+  {
+    "name": "Native Peloton home_bike_plus initiates alongside WHOOP and its Health copy",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Peloton Bike",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"],
+    "expectedEvidence": [
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000001",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000002",
+        "field": "source_name",
+        "value": "peloton bike"
+      },
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000003",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000004",
+        "field": "source_name",
+        "value": "whoop"
+      }
+    ]
+  },
+  {
+    "name": "Native Peloton labels normalize case and surrounding whitespace",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "  HoMe_BiKe  ",
+          "deviceType": "  HoMe_BiKe_PlUs  "
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "  PeLoToN BiKe  ",
+        "raw": {
+          "device_name": " PELOTON BIKE "
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"],
+    "expectedEvidence": [
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000001",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000002",
+        "field": "source_name",
+        "value": "peloton bike"
+      },
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000003",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000004",
+        "field": "source_name",
+        "value": "whoop"
+      }
+    ]
+  },
+  {
+    "name": "Peloton raw device attribution keeps WHOOP independent",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": null,
+        "raw": {
+          "device_name": "  pElOtOn BiKe  "
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"],
+    "expectedEvidence": [
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000001",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000002",
+        "field": "raw.device_name",
+        "value": "peloton bike"
+      },
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000003",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000004",
+        "field": "source_name",
+        "value": "whoop"
+      }
+    ]
+  },
+  {
+    "name": "Peloton SQL-null metadata remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton missing platform remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton missing deviceType remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton JSON-null platform remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": null,
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton JSON-null deviceType remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": null
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton WHOOP platform with bike device remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton bike platform with WHOOP device remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "whoop"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton unknown native device remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "bike_v2"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Peloton nonnative platform remains unresolved alongside WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "web",
+          "deviceType": "bike"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Multiple native Peloton initiators remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "bike"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Native Peloton and Apple Watch initiators remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Native Peloton and Strong initiators remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Native Peloton with contradictory Strava labels remains unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "home_bike",
+          "deviceType": "home_bike_plus"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Peloton Bike",
+        "raw": {
+          "device_name": "Garmin Edge 530"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ],
+    "expectedEvidence": []
   }
 ]

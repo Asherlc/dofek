@@ -6,7 +6,12 @@ import { ClimbingStrengthsViewPicker } from "./ClimbingStrengthsViewPicker";
 const meta = {
   title: "Components/ClimbingStrengthsViewPicker",
   component: ClimbingStrengthsViewPicker,
-  args: { value: "profile", onChange: () => {} },
+  args: {
+    value: "gaps",
+    onChange: () => {},
+    compareSettings: false,
+    onCompareSettingsChange: () => {},
+  },
   decorators: [
     (Story) => (
       <View style={{ padding: 16 }}>
@@ -16,7 +21,16 @@ const meta = {
   ],
   render: function ViewPickerStory(args) {
     const [value, setValue] = useState(args.value);
-    return <ClimbingStrengthsViewPicker {...args} value={value} onChange={setValue} />;
+    const [compareSettings, setCompareSettings] = useState(args.compareSettings);
+    return (
+      <ClimbingStrengthsViewPicker
+        {...args}
+        value={value}
+        onChange={setValue}
+        compareSettings={compareSettings}
+        onCompareSettingsChange={setCompareSettings}
+      />
+    );
   },
 } satisfies Meta<typeof ClimbingStrengthsViewPicker>;
 export default meta;

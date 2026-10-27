@@ -262,6 +262,7 @@ export class KayaSyncProvider implements SyncProvider {
                 date: ascent.date,
                 label: ascent.ascent_type.name,
                 attempts: ascent.attempts,
+                reportedGrade: ascent.grade,
                 gym: ascent.climb.gym ?? ascent.gym ?? session.gym,
                 notes: ascent.comment,
                 raw: ascent,
@@ -297,6 +298,7 @@ export class KayaSyncProvider implements SyncProvider {
               date: ascent.date,
               label: ascent.ascent_type.name,
               attempts: ascent.attempts,
+              reportedGrade: ascent.grade,
               gym: ascent.climb.gym ?? ascent.gym ?? null,
               notes: ascent.comment,
               raw: ascent,
@@ -397,6 +399,7 @@ function kayaLogEntry(
     gym: KayaAscent["climb"]["gym"];
     notes?: string | null;
     raw: SourceClimbingLogEntry["raw"];
+    reportedGrade?: KayaAscent["grade"];
   },
 ): SourceClimbingLogEntry {
   const boulder = climb.climb_type.name.toLowerCase().includes("boulder");
@@ -406,6 +409,7 @@ function kayaLogEntry(
   }
   const setting = areas.length ? "outdoor" : source.gym ? "indoor" : null;
   if (!areas.length && source.gym) areas.push(kayaArea(source.gym));
+  if (climb.wallarea) areas.push(kayaArea(climb.wallarea));
   const climbedOn = source.date.trim() === "" ? null : source.date.slice(0, 10);
   if (
     climbedOn !== null &&
@@ -425,6 +429,20 @@ function kayaLogEntry(
           : undefined;
   const grade = climb.grade?.name.trim();
   const system = boulder ? "v_scale" : "yds";
+  const holdTypes = kayaGripTypes(climb.tags);
+  let wallAngle: SourceClimbingLogEntry["wallAngle"] =
+    climb.angle === null ? null : { value: climb.angle, unit: null };
+  // KAYA's outdoor editor stores category codes, independently of board angles.
+  if (setting === "outdoor" && !climb.board && climb.angle !== null) {
+    const categories: Record<number, "slab" | "vertical" | "overhang" | "roof"> = {
+      [-20]: "slab",
+      0: "vertical",
+      20: "overhang",
+      50: "roof",
+    };
+    const category = categories[climb.angle];
+    if (category) wallAngle = { category };
+  }
   const ropeMethod = boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope";
   const attempts: SourceClimbingAttempt[] = [
     {
@@ -450,7 +468,17 @@ function kayaLogEntry(
     ...(source.notes === undefined ? {} : { notes: source.notes }),
     raw: source.raw,
     board: climb.board ? { name: climb.board.name, externalId: climb.board.id } : null,
-    wallAngle: climb.angle == null ? null : { value: climb.angle, unit: null },
+    wallAngle,
+    holdTypes,
+    reportedGrades:
+      source.reportedGrade == null
+        ? []
+        : [
+            {
+              value: source.reportedGrade.name,
+              system: isValidClimbingGrade(source.reportedGrade.name, system) ? system : null,
+            },
+          ],
     ...(source.attempts === null
       ? {}
       : { reportedAttemptCounts: [{ scope: "climb", count: source.attempts }] }),
@@ -460,6 +488,14 @@ function kayaLogEntry(
       name: climb.name,
       kind: boulder ? "boulder" : "route",
       setting,
+      ...(climb.latitude == null || climb.longitude == null
+        ? {}
+        : {
+            coordinates: gpsCoordinatesSchema.parse({
+              latitude: climb.latitude,
+              longitude: climb.longitude,
+            }),
+          }),
       ...(grade === undefined
         ? {}
         : {
@@ -470,6 +506,28 @@ function kayaLogEntry(
       ...(areas.length ? { areas } : {}),
     },
   };
+}
+
+function kayaGripTypes(tags: KayaAscent["climb"]["tags"]): SourceClimbingLogEntry["holdTypes"] {
+  const grips = new Map<string, NonNullable<SourceClimbingLogEntry["holdTypes"]>[number]>([
+    ["Crimp", "crimp"],
+    ["Sloper", "sloper"],
+    ["Pinch", "pinch"],
+    ["Pocket", "pocket"],
+    ["Jug", "jug"],
+    ["Volume", "volume"],
+    ["Jam", "jam"],
+    ["No Grips", "no_grips"],
+  ]);
+  const holds = [
+    ...new Set(
+      tags.flatMap((tag) => {
+        const hold = tag.tag_type_id === "3" ? grips.get(tag.name) : undefined;
+        return hold === undefined ? [] : [hold];
+      }),
+    ),
+  ];
+  return holds.length === 0 ? null : holds;
 }
 
 function kayaArea(location: NonNullable<KayaAscent["climb"]["gym"]>): SourceAreaDefinition {

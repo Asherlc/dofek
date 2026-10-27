@@ -224,3 +224,5 @@ export function resetRangePlumbingState() {
     error: null,
   };
 }
+
+vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));

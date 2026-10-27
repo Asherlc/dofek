@@ -1184,6 +1184,20 @@
       "when": 1793077854638,
       "tag": "0168_v_activity_primary_title",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1793107916820,
+      "tag": "0169_peloton_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1793109000000,
+      "tag": "0170_climbing_traits",
+      "breakpoints": true
     }
   ]
 }

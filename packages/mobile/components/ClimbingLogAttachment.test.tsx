@@ -138,7 +138,7 @@ describe("ClimbingLogAttachment", () => {
       getQueryKey(trpc.climbing.locationMap),
       getQueryKey(
         trpc.climbing.activityLogEntries,
-        { activityId: "00000000-0000-4000-8000-000000000001" },
+        { activityId: "00000000-0000-4000-8000-000000000001", responseVersion: 2 },
         "query",
       ),
       getQueryKey(
@@ -148,7 +148,7 @@ describe("ClimbingLogAttachment", () => {
       ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "00000000-0000-4000-8000-000000000002" },
+        { activityId: "00000000-0000-4000-8000-000000000002", responseVersion: 2 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary),

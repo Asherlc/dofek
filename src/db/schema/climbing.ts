@@ -203,7 +203,7 @@ export const climbingLogEntry = fitness.table(
     notes: text("notes"),
     board: jsonb("board").$type<ClimbingBoard>(),
     wallAngle: jsonb("wall_angle").$type<ClimbingWallAngle>(),
-    holdType: climbingHoldTypeEnum("hold_type"),
+    holdTypes: climbingHoldTypeEnum("hold_types").array(),
     sourceName: text("source_name"),
     raw: jsonb("raw"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
@@ -249,6 +249,10 @@ export const climbingLogEntry = fitness.table(
       sql`${table.sourceName} IS NULL OR btrim(${table.sourceName}) <> ''`,
     ),
     check("climbing_log_entry_board_valid", sql`fitness.climbing_board_valid(${table.board})`),
+    check(
+      "climbing_log_entry_hold_types_valid",
+      sql`${table.holdTypes} IS NULL OR (cardinality(${table.holdTypes}) > 0 AND array_ndims(${table.holdTypes}) = 1 AND array_position(${table.holdTypes}, NULL) IS NULL)`,
+    ),
     check(
       "climbing_log_entry_wall_angle_valid",
       sql`fitness.climbing_wall_angle_valid(${table.wallAngle})`,

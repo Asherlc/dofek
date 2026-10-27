@@ -80,6 +80,9 @@ vi.mock("../../lib/trpc.ts", () => ({
     climbing: {
       gradeProgression: { useQuery: gradeProgressionQuery },
       volumeByGrade: { useQuery: volumeByGradeQuery },
+      volumeOverTime: {
+        useQuery: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
+      },
       sessionSummary: { useQuery: sessionSummaryQuery },
       hangboardingSummary: { useQuery: hangboardingSummaryQuery },
       locationMap: { useQuery: locationMapQuery },
@@ -119,8 +122,9 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
     expect(screen.getByText("Error: Reconnect strengths provider")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Grades" }));
     expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(strengthsQuery).toHaveBeenLastCalledWith(
       { days: 90, endDate: "2026-10-26", ropeMethod: "lead" },
@@ -191,7 +195,7 @@ describe("ClimbingTab", () => {
     sessionSummaryQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
-    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(screen.getByText("Loading data.")).toBeTruthy();
   });
@@ -213,7 +217,7 @@ describe("ClimbingTab", () => {
     });
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
-    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(screen.getByRole("link", { name: "Cached climbing" })).toBeTruthy();
     expect(screen.getByText("Error: Climbing query unavailable")).toBeTruthy();
@@ -221,7 +225,7 @@ describe("ClimbingTab", () => {
   it("keeps filters collapsed and applies independent selections with removable chips", async () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
-    const toggle = screen.getByRole("button", { name: "All climbing" });
+    const toggle = screen.getByRole("button", { name: "More filters" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByLabelText("Protection used")).toBeNull();
     fireEvent.click(toggle);
@@ -245,7 +249,7 @@ describe("ClimbingTab", () => {
       "/activity/matched",
     );
     fireEvent.change(screen.getByLabelText("Protection used"), { target: { value: "trad" } });
-    fireEvent.change(screen.getByLabelText("Setting"), { target: { value: "outdoor" } });
+    fireEvent.click(screen.getByRole("button", { name: "Outdoor" }));
     expect(volumeByGradeQuery).toHaveBeenLastCalledWith(
       { days: 90, ropeMethod: "lead", protectionUsed: "trad", setting: "outdoor" },
       expect.any(Object),
@@ -263,7 +267,7 @@ describe("ClimbingTab", () => {
   it("preserves explicit false and null solo values in server requests", async () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
-    fireEvent.click(screen.getByRole("button", { name: /All climbing/ }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "false" } });
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(

@@ -5,6 +5,7 @@ import { normalizeActivityHardware } from "../models/activity-hardware.ts";
 import {
   activityMetricParams,
   getActivityMetricSources,
+  getActivityPowerWork,
   getActivitySourceHrZones,
 } from "./activity-metric-sources-repository.ts";
 
@@ -33,7 +34,125 @@ function storeWithRows(rows: unknown[]) {
   };
 }
 
+describe("activity power work", () => {
+  it("integrates fully covered power seconds while preserving zero and recording gaps", async () => {
+    const result = await getActivityPowerWork(
+      storeWithRows([
+        { elapsed_seconds: 0, power: 200 },
+        { elapsed_seconds: 1, power: 0 },
+        { elapsed_seconds: 2, power: 300 },
+        { elapsed_seconds: 10, power: 100 },
+        { elapsed_seconds: 11, power: 100 },
+      ]),
+      { ...window, endedAt: "2026-10-20T12:00:12.000Z" },
+      "wahoo",
+    );
+
+    expect(result).toEqual({
+      workKilojoules: 0.7,
+      coverage: { coveredSeconds: 5, coveragePct: 41.7 },
+    });
+  });
+
+  it("returns recorded zero work for all-zero power", async () => {
+    expect(
+      await getActivityPowerWork(storeWithRows([{ elapsed_seconds: 0, power: 0 }]), {
+        ...window,
+        endedAt: "2026-10-20T12:00:01.000Z",
+      }),
+    ).toEqual({ workKilojoules: 0, coverage: { coveredSeconds: 1, coveragePct: 100 } });
+  });
+
+  it("returns unavailable work when no valid power was recorded", async () => {
+    expect(await getActivityPowerWork(storeWithRows([]), window)).toEqual({
+      workKilojoules: null,
+      coverage: { coveredSeconds: 0, coveragePct: 0 },
+    });
+  });
+
+  it("returns missing power across a huge empty recorded window", async () => {
+    expect(
+      await getActivityPowerWork(storeWithRows([]), {
+        ...window,
+        endedAt: "2400-10-20T12:00:00.000Z",
+      }),
+    ).toEqual({ workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } });
+  });
+
+  it("keeps sparse measured work in a huge recorded window", async () => {
+    expect(
+      await getActivityPowerWork(
+        storeWithRows([
+          { elapsed_seconds: 0, power: 200 },
+          { elapsed_seconds: 1, power: 0 },
+        ]),
+        { ...window, endedAt: "2400-10-20T12:00:00.000Z" },
+      ),
+    ).toEqual({ workKilojoules: 0.2, coverage: { coveredSeconds: 2, coveragePct: 0 } });
+  });
+
+  it("keeps native sparse coverage for a multi-day ride", async () => {
+    expect(
+      await getActivityPowerWork(
+        storeWithRows([
+          { elapsed_seconds: 0, power: 200 },
+          { elapsed_seconds: 86_400, power: 300 },
+        ]),
+        { ...window, endedAt: "2026-10-23T12:00:00.000Z" },
+      ),
+    ).toEqual({ workKilojoules: 5, coverage: { coveredSeconds: 20, coveragePct: 0 } });
+  });
+
+  it("returns unavailable work when the activity has no recorded end", async () => {
+    expect(
+      await getActivityPowerWork(storeWithRows([{ elapsed_seconds: 0, power: 200 }]), {
+        ...window,
+        endedAt: null,
+      }),
+    ).toEqual({ workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } });
+  });
+});
+
 describe("activity heart-rate sources", () => {
+  it("keeps Peloton and Strava provenance while supplying only the reported device name", async () => {
+    const hardware: ActivityHardware = {
+      items: [
+        {
+          id: "strava-recorder",
+          activityId: window.activityId,
+          providerId: "strava",
+          sourceName: null,
+          role: "recorder",
+          label: "Peloton Bike",
+          model: null,
+          manufacturer: null,
+          evidence: "Reported",
+          details: [],
+        },
+      ],
+      power: [],
+    };
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        { channel: "power", provider_id: "peloton", device_id: null, source_id: "peloton" },
+        { channel: "power", provider_id: "strava", device_id: null, source_id: "strava" },
+      ]),
+      window,
+      hardware,
+    );
+    expect(result[0]).toMatchObject({
+      defaultSourceId: "peloton",
+      sources: [
+        { id: "peloton", label: "Peloton", presentation: { displayName: "Peloton" } },
+        {
+          id: "strava",
+          label: "Strava · recorded by Peloton Bike",
+          presentation: { displayName: "Peloton Bike", providerId: "strava" },
+        },
+      ],
+    });
+  });
+
   it("keeps distinct source identifiers separate when their display names are identical", async () => {
     const hardware = normalizeActivityHardware([
       {
@@ -61,7 +180,7 @@ describe("activity heart-rate sources", () => {
         id: "distinct-watch",
         label: "Garmin · Forerunner 955",
         presentation: {
-          displayName: "Garmin · Forerunner 955",
+          displayName: "Forerunner 955",
           providerId: "garmin",
           sourceName: "forerunner955",
           attribution: null,
@@ -115,7 +234,7 @@ describe("activity heart-rate sources", () => {
         id: "raw-id",
         label: "Garmin · Forerunner 955 · recorded by My custom watch",
         presentation: {
-          displayName: "Garmin · Forerunner 955 · recorded by My custom watch",
+          displayName: "My custom watch",
           providerId: "garmin",
           sourceName: "fr955",
           attribution: null,
@@ -290,7 +409,7 @@ it("enriches recorder labels without changing identities, order, defaults, or at
     id: "strava",
     label: "Strava · recorded by Edge 530",
     presentation: {
-      displayName: "Strava · recorded by Edge 530",
+      displayName: "Edge 530",
       providerId: "strava",
       sourceName: null,
       attribution: null,
@@ -384,7 +503,7 @@ it("qualifies a creator name even when it already appears in the original source
     id: sourceId,
     label: "FIT File · file created by Export platform",
     presentation: {
-      displayName: "FIT File · file created by Export platform",
+      displayName: "Export platform",
       providerId: "fit-file",
       sourceName: "Export platform",
       attribution: null,

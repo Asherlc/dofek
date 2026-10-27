@@ -4,6 +4,7 @@ import { ElevationGainChart } from "../../components/ElevationGainChart.tsx";
 import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { WalkingBiomechanicsChart } from "../../components/WalkingBiomechanicsChart.tsx";
 import { HIKING_PACE_COPY } from "../../lib/hikingPaceCopy.ts";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
@@ -43,6 +44,9 @@ function HikingTab() {
 
   return (
     <>
+      <div className="card p-4">
+        <SportVolumeChart days={days} sport="hiking" />
+      </div>
       <Section title={HIKING_PACE_COPY.title}>
         {shouldShowQueryError(gradeAdjustedPace) ? (
           <QueryStatePanel error={gradeAdjustedPace.error} />

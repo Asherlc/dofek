@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import {
   type ClimbingGradePreference,
@@ -24,6 +25,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   type ClimbingActivityLogEntry,
@@ -146,6 +148,11 @@ const volumeRowSchema = z.object({
   recorded_attempts: z.coerce.number().nullable(),
   sends: z.coerce.number(),
 });
+const weeklyVolumeRowSchema = z.object({
+  week: dateStringSchema,
+  attempts: z.coerce.number().nullable(),
+  minutes: z.coerce.number().nullable(),
+});
 const sessionRowSchema = z.object({
   activity_id: z.string(),
   session_date: dateStringSchema,
@@ -196,7 +203,7 @@ export class ClimbingRepository extends BaseRepository {
     this.#gradePreference = gradePreference;
   }
   #canonicalLogCtes(
-    range: number | { startDate: string; endDate: string },
+    range: number | { startDate?: string; endDate: string },
     filters: ClimbingFilters,
   ) {
     return canonicalClimbingLogCtes(
@@ -336,6 +343,37 @@ export class ClimbingRepository extends BaseRepository {
     return [...byGrade.values()]
       .sort((a, b) => a.gradeSortValue - b.gradeSortValue)
       .map((row) => new ClimbingVolumeByGrade(row));
+  }
+  async getVolumeOverTime(days: number | null, filters: ClimbingFilters = {}) {
+    const endDate = formatDateYmdInTimeZone(new Date(), this.timezone);
+    const range = days ?? { endDate };
+    const hasFilters = Object.values(filters).some((value) => value !== undefined);
+    const rows = await executeWithSchema(
+      this.db,
+      weeklyVolumeRowSchema,
+      sql`WITH ${this.#canonicalLogCtes(range, filters)},
+      weekly_attempts AS (
+        SELECT date_trunc('week', session_date::date)::date AS week,
+          CASE WHEN COUNT(canonical_attempt_count) = COUNT(*)
+            THEN SUM(canonical_attempt_count)::int END AS attempts
+        FROM canonical_logs GROUP BY 1
+      ), weekly_time AS (
+        SELECT date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
+          CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS minutes,
+          COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM canonical_logs logs WHERE logs.canonical_activity_id = a.id)) AS activities_without_logs
+        FROM fitness.v_activity a
+        WHERE a.user_id = ${this.userId} AND a.canonical_type = 'climbing'
+          ${ChartRange.fromDays(days).postgresDateAfterEndDate(sql`(a.started_at AT TIME ZONE ${this.timezone})::date`, endDate)}
+          AND (a.started_at AT TIME ZONE ${this.timezone})::date <= (NOW() AT TIME ZONE ${this.timezone})::date
+          ${this.dateAccessPredicate(sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
+          AND (NOT ${hasFilters} OR a.id IN (SELECT canonical_activity_id FROM canonical_logs))
+        GROUP BY 1
+      )
+      SELECT COALESCE(weekly_attempts.week, weekly_time.week)::text AS week,
+        CASE WHEN COALESCE(weekly_time.activities_without_logs, 0) = 0 THEN weekly_attempts.attempts END AS attempts, weekly_time.minutes
+      FROM weekly_attempts FULL JOIN weekly_time USING (week) ORDER BY week`,
+    );
+    return rows;
   }
   async getSessionSummaries(
     days: number,

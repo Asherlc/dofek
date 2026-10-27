@@ -1,4 +1,7 @@
-import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
+import {
+  type ActivityMetricSource,
+  activityMetricSourceText,
+} from "@dofek/providers/activity-metric-source";
 import { providerSourceLogo } from "@dofek/providers/providers";
 import * as Popover from "@radix-ui/react-popover";
 import { useId, useRef, useState } from "react";
@@ -63,6 +66,7 @@ export function ActivityMetricSourcePicker({
   const selected = sources.find((source) => source.id === selectedId);
   if (!selected) return null;
   const { presentation } = selected;
+  const selectedText = activityMetricSourceText(presentation);
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -70,6 +74,7 @@ export function ActivityMetricSourcePicker({
         <button
           type="button"
           aria-label={`${label} source: ${selected.label}`}
+          title={selected.label}
           aria-haspopup="dialog"
           aria-expanded={open}
           className={`inline-flex min-h-11 min-w-0 max-w-full items-center gap-2 bg-transparent py-2 text-xs text-foreground transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
@@ -79,7 +84,7 @@ export function ActivityMetricSourcePicker({
             sourceName={presentation.sourceName}
             size={19}
           />
-          <span className="min-w-0 truncate font-medium">{presentation.displayName}</span>
+          {selectedText && <span className="min-w-0 truncate font-medium">{selectedText}</span>}
           <AttributionIcon attribution={presentation.attribution} />
           <svg
             className="ml-1 shrink-0 text-muted"
@@ -104,7 +109,7 @@ export function ActivityMetricSourcePicker({
             event.preventDefault();
             selectedRef.current?.focus();
           }}
-          className="z-50 w-80 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface p-2 text-foreground shadow-xl"
+          className="z-50 w-max min-w-32 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface p-2 text-foreground shadow-xl"
         >
           <fieldset className="space-y-1">
             <legend className="sr-only">Available recordings</legend>
@@ -125,7 +130,7 @@ export function ActivityMetricSourcePicker({
                   size={22}
                 />
                 <span className="min-w-0 flex-1 break-words text-sm font-medium">
-                  {source.presentation.displayName}
+                  {activityMetricSourceText(source.presentation)}
                 </span>
                 <AttributionIcon attribution={source.presentation.attribution} />
                 <input

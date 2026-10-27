@@ -27,7 +27,10 @@ export function ClimbingLogAttachment({
     onSuccess: async (_result, input) => {
       await Promise.all([
         utils.climbing.locationMap.invalidate(),
-        utils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
+        utils.climbing.activityLogEntries.invalidate({
+          activityId: input.activityId,
+          responseVersion: 2,
+        }),
         utils.climbing.unattachedClimbingLogEntries.invalidate(),
         utils.climbing.sessionSummary.invalidate(),
         utils.climbing.gradeProgression.invalidate(),

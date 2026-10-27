@@ -39,8 +39,10 @@ import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { SportVolumeChart } from "../../components/SportVolumeChart";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
+import { TrainingVolumeChart } from "../../components/TrainingVolumeChart";
 import { isTransientNetworkError } from "../../lib/query-client";
 import { safeParseData, safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
@@ -111,6 +113,22 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const climbingVolumeQuery = trpc.climbing.volumeOverTime.useQuery(
+    { days, ...climbingFilters },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const strengthVolumeQuery = trpc.strength.volumeOverTime.useQuery(
+    { days },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(climbingVolumeQuery);
+  useReportQueryError(strengthVolumeQuery);
   const hrZonesQuery = trpc.training.hrZones.useQuery(
     { days },
     {
@@ -215,7 +233,10 @@ export default function StrainScreen() {
         utils.mobileDashboard.training.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
+        utils.climbing.volumeOverTime.invalidate(),
+        utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
+        utils.training.sportVolume.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
@@ -389,7 +410,26 @@ export default function StrainScreen() {
         </>
       )}
 
+      <SportVolumeChart days={days} enabled={isHydrated} />
       <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
+      {climbingVolumeQuery.error ? (
+        <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />
+      ) : null}
+      {climbingVolumeQuery.isLoading && !climbingVolumeQuery.data ? (
+        <QueryStatePanel variant="loading" />
+      ) : null}
+      {climbingVolumeQuery.data ? (
+        <TrainingVolumeChart sport="climbing" data={climbingVolumeQuery.data} />
+      ) : null}
+      {strengthVolumeQuery.error ? (
+        <QueryStatePanel variant="error" message={strengthVolumeQuery.error.message} />
+      ) : null}
+      {strengthVolumeQuery.isLoading && !strengthVolumeQuery.data ? (
+        <QueryStatePanel variant="loading" />
+      ) : null}
+      {strengthVolumeQuery.data ? (
+        <TrainingVolumeChart sport="strength" data={strengthVolumeQuery.data} />
+      ) : null}
       {climbingStrengths.data && climbingStrengthsQuery.isFetching ? (
         <Text accessibilityLiveRegion="polite" style={styles.emptyChartText}>
           Updating climbing strengths…

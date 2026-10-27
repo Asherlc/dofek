@@ -21,9 +21,95 @@ const emptyClimbContext = {
   subarea: null,
   board: null,
   angle: null,
+  tags: [],
 };
 
 describe("KayaClient", () => {
+  it("requests and retains grip tags and source metadata on both logbook feeds", async () => {
+    const tags = [
+      { id: "937", name: "Crimp", color: "#ff757e", icon: "hand-paper", tag_type_id: "3" },
+      { id: "939", name: "Jug", color: null, icon: null, tag_type_id: "3" },
+    ];
+    const metadata = {
+      description: "A thin crack on a slab.",
+      protection_description: "Small cams.",
+      latitude: "37.891",
+      longitude: "-122.267",
+      pitches: 1,
+      length: 12,
+      wallarea: { id: "zone", name: "Slab wall", photo_url: null },
+      destination: {
+        id: "crag",
+        name: "Test crag",
+        description: "A granite crag.",
+        approach_minutes: 10,
+      },
+    };
+    const grade = { id: "personal", name: "v3", climb_type_group: "6" };
+    const video = { video_url: "https://cdn.test/ascent.mp4", thumb_url: null };
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const { query } = JSON.parse(String(init?.body));
+      const climb = {
+        ...attemptedClimb("1000_2001", 1),
+        ...(query.includes("tags {") ? { tags } : {}),
+        ...(query.includes("protection_description") ? metadata : {}),
+        ...(query.includes("website")
+          ? { gym: { id: "gym", name: "Test gym", website: "https://gym.test" } }
+          : {}),
+      };
+      return query.includes("query sessionsForUser")
+        ? jsonResponse({
+            data: { sessionsForUser: [{ ...session("1000"), attempted_climbs: [climb] }] },
+          })
+        : jsonResponse({
+            data: {
+              ascentsForUser: [
+                {
+                  id: "ascent",
+                  session_id: "1000",
+                  date: "2026-08-01T10:30:00Z",
+                  attempts: 1,
+                  ascent_type: { id: "flash", name: "Flash" },
+                  climb,
+                  ...(query.includes("grade {") ? { grade } : {}),
+                  ...(query.includes("video {") ? { video } : {}),
+                },
+              ],
+            },
+          });
+    });
+    const client = new KayaClient("token", fetchFn);
+    const sessions = await client.listSessions("42");
+    const ascents = await client.listAscents("42");
+    const expectedMetadata = { ...metadata, latitude: 37.891, longitude: -122.267 };
+    expect(sessions[0]?.attempted_climbs[0]).toMatchObject({ tags, ...expectedMetadata });
+    expect(ascents[0]).toMatchObject({ grade, video, climb: { tags, ...expectedMetadata } });
+    expect(ascents[0]?.climb.gym).toMatchObject({ website: "https://gym.test" });
+  });
+
+  it("rejects malformed source tags before the logbook can be persisted", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("1000"),
+              attempted_climbs: [
+                {
+                  ...attemptedClimb("1000_2001", 1),
+                  tags: [{ id: "937", name: "Crimp", tag_type_id: null }],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toBeInstanceOf(
+      ZodError,
+    );
+  });
+
   it.each([
     null,
     { photo_url: "https://cdn.test/original", thumb_url: "https://cdn.test/thumb" },
@@ -150,6 +236,7 @@ describe("KayaClient", () => {
                 rating: 4,
                 stiffness: 3,
                 attempts: 2,
+                grade: null,
                 ascent_type: { id: "redpoint", name: "Redpoint" },
                 gym: { id: "gym-1", name: "Kaya Gym" },
                 climb: {
@@ -238,6 +325,7 @@ describe("KayaClient", () => {
               session_id: "session-1",
               date: "2026-08-01T10:30:00.000Z",
               attempts: 1,
+              grade: null,
               ascent_type: { id: "flash", name: "Flash" },
               climb: {
                 ...emptyClimbContext,
@@ -342,6 +430,7 @@ describe("KayaClient", () => {
                 session_id: "session-1",
                 date: "2026-08-01T10:30:00Z",
                 attempts: null,
+                grade: null,
                 ascent_type: { id: "send", name: "Send" },
                 climb,
               },
@@ -366,9 +455,7 @@ describe("KayaClient", () => {
       const query = String(JSON.parse(String(init?.body)).query).replace(/\s+/g, " ");
       const selection = query.slice(query.indexOf(index === 0 ? "attempted_climbs {" : "climb {"));
       for (const field of ["destination", "area", "subarea", "board"]) {
-        expect(selection).toContain(
-          field === "board" ? `${field} { id name }` : `${field} { id name latitude longitude }`,
-        );
+        expect(selection).toContain(`${field} { id name latitude longitude`);
       }
       expect(selection).toContain("angle");
     }
@@ -680,6 +767,7 @@ describe("KayaClient", () => {
       session_id: "1000",
       date: "2026-08-01T10:30:00.000Z",
       attempts: null,
+      grade: null,
       ascent_type: { id: "flash", name: "Flash" },
       climb,
     };
@@ -742,6 +830,7 @@ function ascentResponse(gymCoordinates: Record<string, unknown>): Response {
           session_id: "session-1",
           date: "2026-08-01T10:30:00.000Z",
           attempts: 1,
+          grade: null,
           ascent_type: { id: "flash", name: "Flash" },
           climb: {
             ...emptyClimbContext,

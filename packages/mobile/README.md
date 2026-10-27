@@ -47,6 +47,13 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 The [metric strip](components/ActivityMetricStrip.tsx) and activity accessibility
 labels use the [shared cycling classification](../training/src/endurance-types.ts).
 
+The [activity detail screen](<app/activity/[id].tsx>) also hides distance for
+indoor and virtual cycling. Cycling details display server-computed mechanical
+Energy Output in kJ from the selected power source, including measured zero.
+The [activity API](../server/src/routers/activity.ts) supplies work and power
+coverage; the screen labels coverage below 99% as “Partial power data” and
+keeps the previous output visible while the selected source refreshes.
+
 The [Activities list](<app/(tabs)/activities.tsx>) uses
 [ActivityMapTile](components/ActivityMapTile.tsx) to show a full-width 16:9 map
 below each activity's details when location data is available, matching the
@@ -137,13 +144,17 @@ The Training route coordinates query states and delegates climbing payload valid
 
 The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 `climbing.strengths` query using the current training dates and climbing filters.
-The compact View chooser keeps Grade profile as its default and offers Style
-gaps, Success curves, Exposure map, Grade pyramids, Progress, and Radar profile
-from the [shared view definitions](../training/src/climbing-strengths-views.ts).
+The [shared navigation](../training/src/climbing-strengths-views.ts) offers Styles,
+Grades and Progress. Styles starts at an individual grade; Grades displays a
+scrollable heatmap whose cells select the source climbs. Chart options discloses
+the additional formats and indoor/outdoor comparison. All grades is an explicit
+pooled selection with a mixed-difficulty qualifier. These choices follow the
+[data exploration guidance](../../docs/data-exploration.md).
 The [native modal](https://reactnative.dev/docs/modal) uses radio choices and
 retains the selected grade and style when changing views. The page-wide climbing
-filters select context and setting; strengths uses one grouping control and View
-picker, with separate labeled sections for multiple returned contexts and
+filters keep climbing type and setting visible, with other facts under More
+filters; strengths uses Wall angle or Hold type as its breakdown, with separate
+labeled sections for multiple returned contexts and
 settings. Every grouping stays clickable and shows an empty state when its
 observations are absent. Logged climbs with unrecorded results remain in total
 counts and appear as "Result unknown". Success rates use only known results;
@@ -458,10 +469,10 @@ require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set uses Expo 58.0.19, Expo Router 58.0.26, Expo Updates
+native dependency set uses Expo 58.0.20, Expo Router 58.0.27, Expo Updates
 58.0.18, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.19/packages/expo/bundledNativeModules.json)
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.20/packages/expo/bundledNativeModules.json)
 and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
 versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with
@@ -714,9 +725,11 @@ using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
 ## Activity metric sources
 
 Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
-for heart rate, power, speed, cadence, and elevation. Compact source names and
-attribution icons keep the controls concise; the chooser and accessible names
-retain the complete source wording. Each control preselects its existing priority winner
+for heart rate, power, speed, cadence, and elevation. Provider logos, short device
+names where needed, and attribution icons keep the controls and chooser concise.
+Unknown sources retain identifying text; accessible names retain the complete
+source wording using React Native's [accessibility labels](https://reactnative.dev/docs/accessibility#accessibilitylabel).
+Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.

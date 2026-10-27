@@ -97,6 +97,24 @@ export const Onsight: Story = {
     },
   },
 };
+export const Sent: Story = {
+  args: {
+    location: undefined,
+    entry: {
+      ...meta.args.entry,
+      freeSend: true,
+      recordedClimbOutcome: "completed",
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        climbingAttemptFixture(meta.args.entry.id, {
+          outcome: "completed",
+          ropeMethod: "lead",
+          rockResultLabels: ["sent"],
+        }),
+      ],
+    },
+  },
+};
 export const RouteWithTicks: Story = {
   args: {
     entry: {

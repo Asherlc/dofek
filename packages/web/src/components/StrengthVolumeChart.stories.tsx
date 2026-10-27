@@ -3,11 +3,51 @@ import type { VolumeOverTimeRow } from "dofek-server/types";
 import { StrengthVolumeChart } from "./StrengthVolumeChart.tsx";
 
 const volumeData: VolumeOverTimeRow[] = [
-  { week: "2026-05-04", totalVolumeKg: 8_450, setCount: 42, workoutCount: 3 },
-  { week: "2026-05-11", totalVolumeKg: 9_180, setCount: 45, workoutCount: 3 },
-  { week: "2026-05-18", totalVolumeKg: 10_240, setCount: 51, workoutCount: 4 },
-  { week: "2026-05-25", totalVolumeKg: 7_900, setCount: 38, workoutCount: 3 },
-  { week: "2026-06-01", totalVolumeKg: 11_350, setCount: 54, workoutCount: 4 },
+  {
+    week: "2026-05-04",
+    totalVolumeKg: 8_450,
+    setCount: 42,
+    workoutCount: 3,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-05-11",
+    totalVolumeKg: 9_180,
+    setCount: 45,
+    workoutCount: 3,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-05-18",
+    totalVolumeKg: 10_240,
+    setCount: 51,
+    workoutCount: 4,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-05-25",
+    totalVolumeKg: 7_900,
+    setCount: 38,
+    workoutCount: 3,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-06-01",
+    totalVolumeKg: 11_350,
+    setCount: 54,
+    workoutCount: 4,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
 ];
 
 const meta = {

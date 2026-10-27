@@ -285,7 +285,15 @@ describe("StrengthRepository", () => {
 
     it("returns VolumeWeek instances", async () => {
       const { repo } = makeRepository([
-        { week: "2024-01-15", total_volume_kg: 12500, set_count: 45, workout_count: 3 },
+        {
+          week: "2024-01-15",
+          total_volume_kg: 12500,
+          set_count: 45,
+          workout_count: 3,
+          duration_minutes: 180,
+          recorded_volume_kg: 12500,
+          recorded_set_count: 45,
+        },
       ]);
       const result = await repo.getVolumeOverTime(90);
       expect(result).toHaveLength(1);

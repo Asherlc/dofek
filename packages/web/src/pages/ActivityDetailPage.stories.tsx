@@ -89,7 +89,42 @@ export default headerMeta;
 type HeaderStory = StoryObj<typeof headerMeta>;
 
 export const CyclingMetric: HeaderStory = {
-  args: {},
+  args: {
+    powerWork: { workKilojoules: 1188, coverage: { coveredSeconds: 5400, coveragePct: 100 } },
+  },
+};
+
+export const IndoorCycling: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      name: "45 min Power Zone Ride",
+      modality: "indoor",
+      endedAt: "2026-03-31T08:45:00Z",
+      totalDistance: 0,
+      elevationGain: null,
+      elevationGainState: missingMetricState("Elevation gain"),
+      avgPower: 177,
+      maxPower: 294,
+      avgSpeed: null,
+      avgSpeedState: missingMetricState("Average speed"),
+      avgCadence: 71,
+    },
+    powerWork: { workKilojoules: 477.8, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByText("Distance")).not.toBeInTheDocument();
+    await expect(canvas.getByText("Energy Output")).toBeVisible();
+    await expect(canvas.getByText("478 kJ")).toBeVisible();
+  },
+};
+
+export const PartialPowerOutput: HeaderStory = {
+  args: {
+    ...IndoorCycling.args,
+    powerWork: { workKilojoules: 400, coverage: { coveredSeconds: 2200, coveragePct: 81.5 } },
+  },
 };
 
 export const WalkingSourcesCollapsed: HeaderStory = {

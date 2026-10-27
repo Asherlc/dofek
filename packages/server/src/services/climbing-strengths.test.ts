@@ -13,7 +13,7 @@ const observation = (
   grade: "V4",
   gradeSortValue: 4,
   wallAngle: null,
-  holdType: null,
+  holdTypes: null,
   outcome: "not_sent",
   example: {
     logEntryId: "log",
@@ -36,6 +36,56 @@ const dated = (date: string, patch: Partial<ClimbingStrengthsObservation> = {}) 
   return { ...entry, example: { ...entry.example, date } };
 };
 describe("climbing strengths", () => {
+  it("counts each grip once while preserving distinct-climb grade baselines and monthly counts", () => {
+    const result = analyze([
+      observation({
+        holdTypes: ["crimp", "sloper", "crimp"],
+        wallAngle: { category: "slab" },
+        outcome: "sent",
+      }),
+      observation({
+        holdTypes: ["sloper", "crimp"],
+        wallAngle: { category: "slab" },
+        outcome: "sent",
+      }),
+      observation({ identity: "other", holdTypes: ["jug"] }),
+    ]);
+    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    expect(panel?.grades[0]).toMatchObject({ climbs: 2, sends: 1, successRate: 50 });
+    expect(panel?.allGrades.grades[0]).toMatchObject({ climbs: 2, sends: 1 });
+    for (const key of ["crimp", "sloper"]) {
+      expect(panel?.rows.find((row) => row.key === key)?.cells[0]).toMatchObject({
+        climbs: 1,
+        sends: 1,
+      });
+      expect(panel?.progress.at(-1)?.rows.find((row) => row.key === key)?.cells[0]).toMatchObject({
+        climbs: 1,
+        sends: 1,
+      });
+    }
+    const angle = result.panels.find((panel) => panel.dimension === "wall_angle");
+    expect(angle?.rows[0]).toMatchObject({
+      key: "slab",
+      label: "Slab",
+      cells: [{ climbs: 1, sends: 1 }],
+    });
+  });
+
+  it("keeps a known grip set with missing metadata but excludes contradictory sets", () => {
+    const panel = analyze([
+      observation({ holdTypes: ["crimp", "sloper"] }),
+      observation({ holdTypes: null }),
+      observation({ identity: "conflict", holdTypes: ["crimp", "sloper"] }),
+      observation({ identity: "conflict", holdTypes: ["crimp"] }),
+    ]).panels.find((panel) => panel.dimension === "hold_type");
+    expect(panel?.coverage.missingTraits).toBe(1);
+    expect(panel?.grades[0]?.climbs).toBe(2);
+    expect(panel?.rows.map((row) => [row.key, row.cells[0]?.climbs])).toEqual([
+      ["crimp", 1],
+      ["sloper", 1],
+    ]);
+  });
+
   it("retains grades with unknown outcomes and computes rates only from known results", () => {
     const result = analyze([
       observation({ identity: "sent", outcome: "sent" }),
@@ -78,8 +128,8 @@ describe("climbing strengths", () => {
 
   it("shows genuinely unknown settings without dropping their known or unknown results", () => {
     const result = analyze([
-      observation({ identity: "unknown", setting: null, outcome: null, holdType: "crimp" }),
-      observation({ identity: "known", setting: null, outcome: "sent", holdType: "crimp" }),
+      observation({ identity: "unknown", setting: null, outcome: null, holdTypes: ["crimp"] }),
+      observation({ identity: "known", setting: null, outcome: "sent", holdTypes: ["crimp"] }),
     ]);
     const settings = result.panels.find((panel) => panel.dimension === "setting");
     expect(settings?.rows.find((row) => row.key === "unknown")).toMatchObject({
@@ -153,18 +203,23 @@ describe("climbing strengths", () => {
           identity: `easy-${index}`,
           grade: "V3",
           gradeSortValue: 3,
-          holdType: index === 4 ? null : "crimp",
+          holdTypes: index === 4 ? null : ["crimp"],
         }),
       ),
-      dated("2026-08-16", { identity: "hard", grade: "V5", gradeSortValue: 5, holdType: "crimp" }),
+      dated("2026-08-16", {
+        identity: "hard",
+        grade: "V5",
+        gradeSortValue: 5,
+        holdTypes: ["crimp"],
+      }),
       dated("2026-10-20", {
         identity: "hard",
         grade: "V5",
         gradeSortValue: 5,
-        holdType: "crimp",
+        holdTypes: ["crimp"],
         outcome: "sent",
       }),
-      dated("2026-10-20", { identity: "unknown", outcome: null, holdType: "crimp" }),
+      dated("2026-10-20", { identity: "unknown", outcome: null, holdTypes: ["crimp"] }),
     ];
     const result = analyze(entries);
     const panel = result.panels.find((item) => item.dimension === "hold_type");
@@ -211,7 +266,7 @@ describe("climbing strengths", () => {
   });
   it("projects independent monthly outcomes after whole-window context and trait resolution", () => {
     const result = analyze([
-      dated("2026-08-15", { holdType: "crimp", wallAngle: { value: 0, unit: "degrees" } }),
+      dated("2026-08-15", { holdTypes: ["crimp"], wallAngle: { value: 0, unit: "degrees" } }),
       dated("2026-08-31", { outcome: null }),
       dated("2026-09-01", {
         grade: null,
@@ -365,23 +420,23 @@ describe("climbing strengths", () => {
     const result = analyze([
       dated("2026-08-16", {
         identity: "sloper-high",
-        holdType: "sloper",
+        holdTypes: ["sloper"],
         grade: "V10",
         gradeSortValue: 10,
         outcome: null,
       }),
       dated("2026-08-17", {
         identity: "crimp-high",
-        holdType: "crimp",
+        holdTypes: ["crimp"],
         grade: "V10",
         gradeSortValue: 10,
         outcome: "sent",
       }),
-      dated("2026-08-18", { identity: "sloper-low", holdType: "sloper" }),
-      dated("2026-09-01", { identity: "sloper-low", holdType: "sloper", outcome: "sent" }),
+      dated("2026-08-18", { identity: "sloper-low", holdTypes: ["sloper"] }),
+      dated("2026-09-01", { identity: "sloper-low", holdTypes: ["sloper"], outcome: "sent" }),
       dated("2026-09-30", {
         identity: "sloper-high",
-        holdType: "sloper",
+        holdTypes: ["sloper"],
         grade: "V10",
         gradeSortValue: 10,
         outcome: "sent",
@@ -389,16 +444,16 @@ describe("climbing strengths", () => {
       ...Array.from({ length: 5 }, (_, index) =>
         dated("2026-08-19", {
           identity: `crimp-low-${index}`,
-          holdType: "crimp",
+          holdTypes: ["crimp"],
           outcome: index < 2 ? "sent" : "not_sent",
         }),
       ),
-      dated("2026-08-20", { identity: "crimp-low-0", holdType: "crimp", outcome: null }),
-      dated("2026-08-21", { identity: "crimp-low-0", holdType: "crimp" }),
-      dated("2026-10-20", { identity: "crimp-low-0", holdType: "crimp", outcome: null }),
+      dated("2026-08-20", { identity: "crimp-low-0", holdTypes: ["crimp"], outcome: null }),
+      dated("2026-08-21", { identity: "crimp-low-0", holdTypes: ["crimp"] }),
+      dated("2026-10-20", { identity: "crimp-low-0", holdTypes: ["crimp"], outcome: null }),
       dated("2026-08-20", {
         identity: "outdoor",
-        holdType: "crimp",
+        holdTypes: ["crimp"],
         setting: "outdoor",
         outcome: "sent",
       }),
@@ -676,11 +731,11 @@ describe("climbing strengths", () => {
       dated("2026-08-16", {
         identity: "conflict",
         setting: "indoor",
-        holdType: "crimp",
+        holdTypes: ["crimp"],
         outcome: "sent",
       }),
-      dated("2026-09-16", { identity: "conflict", setting: "outdoor", holdType: "crimp" }),
-      dated("2026-08-20", { identity: "kept", holdType: "crimp" }),
+      dated("2026-09-16", { identity: "conflict", setting: "outdoor", holdTypes: ["crimp"] }),
+      dated("2026-08-20", { identity: "kept", holdTypes: ["crimp"] }),
     ]);
     const panel = result.panels.find(
       (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
@@ -765,7 +820,7 @@ describe("climbing strengths", () => {
         setting: "outdoor",
         grade: "V5",
         gradeSortValue: 5,
-        holdType: "crimp",
+        holdTypes: ["crimp"],
       }),
     ]);
     const indoor = result.panels.find(
@@ -791,13 +846,13 @@ describe("climbing strengths", () => {
       observation({
         identity: `climb-${index}`,
         outcome: index < 2 ? "sent" : "not_sent",
-        holdType: "crimp",
+        holdTypes: ["crimp"],
         wallAngle: { value: 0, unit: "degrees" },
       }),
     );
     const result = analyze([
       ...entries,
-      observation({ identity: "sloper", holdType: "sloper", outcome: "sent" }),
+      observation({ identity: "sloper", holdTypes: ["sloper"], outcome: "sent" }),
     ]);
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.grades[0]).toMatchObject({ successRate: 50, climbs: 6 });
@@ -828,7 +883,7 @@ describe("climbing strengths", () => {
   it("merges known setting and traits across observations without duplicating the climb", () => {
     const result = analyze([
       observation({ setting: null, outcome: "sent" }),
-      observation({ holdType: "crimp", wallAngle: { value: 20, unit: "degrees" } }),
+      observation({ holdTypes: ["crimp"], wallAngle: { value: 20, unit: "degrees" } }),
     ]);
     expect(result.panels.find((panel) => panel.dimension === "setting")?.grades[0]?.climbs).toBe(1);
     expect(
@@ -842,10 +897,10 @@ describe("climbing strengths", () => {
     const result = analyze([
       observation({
         outcome: "sent",
-        holdType: "crimp",
+        holdTypes: ["crimp"],
         wallAngle: { value: 20, unit: "degrees" },
       }),
-      observation({ holdType: "jug", wallAngle: { value: 30, unit: "degrees" } }),
+      observation({ holdTypes: ["jug"], wallAngle: { value: 30, unit: "degrees" } }),
     ]);
     expect(
       result.panels.find((panel) => panel.dimension === "wall_angle")?.coverage.missingTraits,

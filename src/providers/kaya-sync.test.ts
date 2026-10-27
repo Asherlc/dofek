@@ -81,6 +81,89 @@ import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
 describe("KayaSyncProvider", () => {
+  it.each([
+    [-20, "slab"],
+    [0, "vertical"],
+    [20, "overhang"],
+    [50, "roof"],
+  ])("imports the outdoor angle code %s as the source category %s", async (angle, category) => {
+    const source = ascent("traits", { lead: true, climbType: "Routes", grade: "5.10a" });
+    source.climb.gym = null;
+    const climb = {
+      ...source.climb,
+      destination: { id: "destination", name: "Outdoor crag" },
+      angle,
+      tags: [
+        { id: "937", name: "Crimp", tag_type_id: "3", color: null, icon: null },
+        { id: "939", name: "Jug", tag_type_id: "3", color: null, icon: null },
+        { id: "937", name: "Crimp", tag_type_id: "3", color: null, icon: null },
+        { id: "custom", name: "Sloper", tag_type_id: "1", color: null, icon: null },
+      ],
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([]);
+    mocks.ascents.mockResolvedValue([
+      {
+        ...source,
+        session_id: null,
+        climb,
+        grade: { id: "reported", name: "5.9", climb_type_group: "routes" },
+      },
+    ]);
+    expect(await new KayaSyncProvider().sync(run(database()))).toMatchObject({ errors: [] });
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
+      wallAngle: { category },
+      holdTypes: ["crimp", "jug"],
+      reportedGrades: [{ value: "5.9", system: "yds" }],
+      raw: { climb: { angle, tags: climb.tags } },
+      climb: { publishedGrades: [{ value: "5.10a", system: "yds" }] },
+    });
+  });
+
+  it("retains the fourth source location and native climb coordinates without guessing a grip", async () => {
+    const base = ascent("location", { lead: true, climbType: "Routes", grade: "5.6" });
+    const source = {
+      ...base,
+      session_id: null,
+      climb: {
+        ...base.climb,
+        gym: null,
+        destination: { id: "destination", name: "Destination" },
+        area: { id: "area", name: "Area" },
+        subarea: { id: "subarea", name: "Subarea" },
+        wallarea: { id: "wall", name: "Wall" },
+        latitude: 0,
+        longitude: 0,
+        angle: 25,
+        tags: [{ id: "new-grip", name: "constructor", tag_type_id: "3", color: null, icon: null }],
+      },
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([]);
+    mocks.ascents.mockResolvedValue([source]);
+    expect(await new KayaSyncProvider().sync(run(database()))).toMatchObject({ errors: [] });
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
+      holdTypes: null,
+      wallAngle: { value: 25, unit: null },
+      climb: {
+        coordinates: { latitude: 0, longitude: 0 },
+        areas: [
+          { externalId: "destination" },
+          { externalId: "area" },
+          { externalId: "subarea" },
+          { externalId: "wall" },
+        ],
+      },
+      raw: source,
+    });
+  });
+
   describe("KAYA ascent photo discovery", () => {
     function discoverPhoto(fields: Record<string, unknown>) {
       mocks.loadTokens.mockResolvedValue({
@@ -430,6 +513,8 @@ describe("KayaSyncProvider", () => {
         raw: source,
         board: null,
         wallAngle: null,
+        holdTypes: null,
+        reportedGrades: [],
         ...(count === null ? {} : { reportedAttemptCounts: [{ scope: "climb", count }] }),
         attempts: [attempt, ...additionalAttempts],
         climb: {

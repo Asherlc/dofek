@@ -11,6 +11,7 @@ import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
+import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
 import {
@@ -115,6 +116,9 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
 
   return (
     <>
+      <div className="card p-4">
+        <SportVolumeChart days={days} sport="cycling" />
+      </div>
       {performanceUnavailable ? (
         <QueryStatePanel contextLabel="Cycling performance" error={performance.error} />
       ) : (
