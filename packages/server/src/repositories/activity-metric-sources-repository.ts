@@ -201,6 +201,7 @@ export async function getActivityMetricSources(
             row.provider_id,
             peripheralName ?? row.device_id,
             label,
+            name,
           ),
         };
       });

@@ -42,6 +42,7 @@ const cases = z
       ),
       expectedPrimaryMemberId: z.string().nullable(),
       expectedCandidateMemberIds: z.array(z.string()),
+      expectedEvidence: z.array(z.record(z.string(), z.string())).optional(),
     }),
   )
   .parse(
@@ -75,6 +76,23 @@ const fixtureMembers = (name: string) => {
 const whoopMembers = fixtureMembers("WHOOP workout propagated to Peloton");
 const missingMembers = fixtureMembers("missing provenance");
 const viewCases = [
+  ...cases
+    .filter((fixture) => fixture.expectedEvidence !== undefined)
+    .map((fixture) => ({
+      name: fixture.name,
+      members: fixture.members,
+      expected: {
+        primary_activity_id: fixture.expectedPrimaryMemberId,
+        primary_provider_id:
+          fixture.members.find((member) => member.id === fixture.expectedPrimaryMemberId)
+            ?.providerId ?? null,
+        primary_source_name:
+          fixture.members.find((member) => member.id === fixture.expectedPrimaryMemberId)
+            ?.sourceName ?? null,
+        origin_candidate_member_ids: fixture.expectedCandidateMemberIds,
+        origin_evidence: fixture.expectedEvidence,
+      },
+    })),
   {
     name: "personalized Apple Watch alongside WHOOP copies",
     members: fixtureMembers("Personalized Apple Watch initiates alongside WHOOP and its copies"),
@@ -517,14 +535,24 @@ describe("PostgreSQL provenance-only origin", () => {
 
   it.each(cases)("$name", async (fixture) => {
     const rows = await context.db.execute(sql`SELECT primary_activity_id::text AS primary,
-      origin_candidate_member_ids::text[] AS candidates
+      origin_candidate_member_ids::text[] AS candidates, origin_evidence
       FROM fitness.resolve_activity_origin(${JSON.stringify(fixture.members)}::jsonb)`);
     expect(
       z
-        .array(z.object({ primary: z.string().nullable(), candidates: z.array(z.string()) }))
+        .array(
+          z.object({
+            primary: z.string().nullable(),
+            candidates: z.array(z.string()),
+            origin_evidence: z.array(z.record(z.string(), z.string())),
+          }),
+        )
         .parse(rows),
     ).toEqual([
-      { primary: fixture.expectedPrimaryMemberId, candidates: fixture.expectedCandidateMemberIds },
+      {
+        primary: fixture.expectedPrimaryMemberId,
+        candidates: fixture.expectedCandidateMemberIds,
+        origin_evidence: fixture.expectedEvidence ?? expect.any(Array),
+      },
     ]);
   });
 });

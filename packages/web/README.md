@@ -174,10 +174,11 @@ and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
-The [source picker](src/components/ActivityMetricSourcePicker.tsx) displays a
-provider icon, compact source name, and small attribution badge. Its chooser
-retains the complete source label, including any recording-device or file-creator
-qualification. Both clients consume the same
+The [source picker](src/components/ActivityMetricSourcePicker.tsx) and its chooser
+display provider logos, short device names where needed, and attribution icons.
+Unknown sources retain identifying text. Complete source descriptions remain in
+hover text and accessible names, following the [WAI accessible-name guidance](https://www.w3.org/WAI/ARIA/apg/practices/names-and-descriptions/).
+Both clients consume the same
 [structured presentation](../providers-meta/src/activity-metric-source.ts).
 
 Activity views offer independent source controls for heart rate, power, speed,

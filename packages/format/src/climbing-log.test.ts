@@ -2,7 +2,7 @@ import type { ClimbingAttempt } from "@dofek/training/climbing-log";
 import { describe, expect, it } from "vitest";
 import {
   climbingAttemptDetailFields,
-  formatClimbingAttemptStyles,
+  climbingAttemptStyleLabels,
   formatClimbingGradeComponents,
   formatClimbingRecordedResult,
 } from "./climbing-log.ts";
@@ -34,22 +34,25 @@ function attempt(overrides: Partial<ClimbingAttempt> = {}): ClimbingAttempt {
 
 describe("climbing log formatting", () => {
   it.each([
-    { ropeMethod: "lead", expected: "Lead · Fell/Hung" },
-    { ropeMethod: "top_rope", expected: "Top rope · Fell/Hung" },
-    { ropeMethod: "follow", expected: "Follow · Fell/Hung" },
-    { ropeMethod: null, expected: "Fell/Hung" },
+    { ropeMethod: "lead", expected: [["Lead", "Fell/Hung"]] },
+    { ropeMethod: "top_rope", expected: [["Top rope", "Fell/Hung"]] },
+    { ropeMethod: "follow", expected: [["Follow", "Fell/Hung"]] },
+    { ropeMethod: null, expected: [["Fell/Hung"]] },
   ] as const)("retains fall/hang evidence for $ropeMethod", ({ ropeMethod, expected }) => {
-    expect(formatClimbingAttemptStyles([attempt({ ropeMethod, fellOrHung: true })])).toBe(expected);
+    expect(climbingAttemptStyleLabels([attempt({ ropeMethod, fellOrHung: true })])).toEqual(
+      expected,
+    );
   });
 
   it("keeps fall/hang evidence attached to its recorded method", () => {
     expect(
-      formatClimbingAttemptStyles([
+      climbingAttemptStyleLabels([
         attempt({ ropeMethod: "lead", fellOrHung: true }),
         attempt({ ropeMethod: "lead", fellOrHung: true }),
         attempt({ ropeMethod: "top_rope", fellOrHung: false }),
+        attempt({ ropeMethod: "top_rope", fellOrHung: true }),
       ]),
-    ).toBe("Lead · Fell/Hung · Top rope");
+    ).toEqual([["Lead", "Fell/Hung"], ["Top rope"], ["Top rope", "Fell/Hung"]]);
   });
 
   it("preserves every advertised grade component and its recorded system", () => {
@@ -101,9 +104,11 @@ describe("climbing log formatting", () => {
     expect(formatClimbingRecordedResult(null, null, null, [], freeSend)).toBeNull();
   });
   it("labels each recorded rope method once without exposing unreported methods", () => {
-    expect(formatClimbingAttemptStyles([attempt({ ropeMethod: "top_rope" })])).toBe("Top rope");
+    expect(climbingAttemptStyleLabels([attempt({ ropeMethod: "top_rope" })])).toEqual([
+      ["Top rope"],
+    ]);
     expect(
-      formatClimbingAttemptStyles([
+      climbingAttemptStyleLabels([
         attempt({ ropeMethod: "lead" }),
         attempt({ ropeMethod: null }),
         attempt({ ropeMethod: "top_rope" }),
@@ -111,9 +116,9 @@ describe("climbing log formatting", () => {
         attempt({ ropeMethod: "follow" }),
         attempt({ ropeMethod: "unroped" }),
       ]),
-    ).toBe("Lead · Top rope · Follow · Unroped");
-    expect(formatClimbingAttemptStyles([attempt({ ropeMethod: null })])).toBeNull();
-    expect(formatClimbingAttemptStyles([])).toBeNull();
+    ).toEqual([["Lead"], ["Top rope"], ["Follow"], ["Unroped"]]);
+    expect(climbingAttemptStyleLabels([attempt({ ropeMethod: null })])).toEqual([]);
+    expect(climbingAttemptStyleLabels([])).toEqual([]);
   });
   it.each([true, false])("renders independently reported boolean facts as %s", (value) => {
     const fields = climbingAttemptDetailFields(

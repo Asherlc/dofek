@@ -37,22 +37,18 @@ export function isFirstTryClimbingResult(labels: readonly string[]): boolean {
   return labels.some((label) => label === "Onsight" || label === "Flash");
 }
 
-export function formatClimbingAttemptStyles(
+export function climbingAttemptStyleLabels(
   attempts: readonly Pick<ClimbingAttempt, "ropeMethod" | "fellOrHung">[],
-): string | null {
-  const labels = new Set(
-    attempts
-      .map((attempt) =>
-        [
-          formatClimbingRopeMethod(attempt.ropeMethod),
-          attempt.fellOrHung === true ? "Fell/Hung" : null,
-        ]
-          .filter((label) => label !== null)
-          .join(" · "),
-      )
-      .filter((label) => label.length > 0),
-  );
-  return labels.size === 0 ? null : [...labels].join(" · ");
+): string[][] {
+  const styles = new Map<string, string[]>();
+  for (const attempt of attempts) {
+    const labels = [
+      formatClimbingRopeMethod(attempt.ropeMethod),
+      attempt.fellOrHung === true ? "Fell/Hung" : null,
+    ].filter((label) => label !== null);
+    if (labels.length > 0) styles.set(labels.join(":"), labels);
+  }
+  return [...styles.values()];
 }
 
 export function formatClimbingGradeComponents(components: readonly GradeComponent[]): string {

@@ -29,6 +29,21 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const Sent: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: true,
+      recordedClimbAttemptCount: 1,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, {
+          ropeMethod: "lead",
+          rockResultLabels: ["sent"],
+        }),
+      ],
+    },
+  },
+};
 export const Completed: Story = {
   args: {
     entry: {

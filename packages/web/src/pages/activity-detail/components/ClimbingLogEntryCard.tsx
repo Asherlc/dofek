@@ -1,5 +1,5 @@
 import {
-  formatClimbingAttemptStyles,
+  climbingAttemptStyleLabels,
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
@@ -40,7 +40,7 @@ export function ClimbingLogEntryCard({
   onAttach?: (entryId: string) => void;
 }) {
   const name = climbingLogEntryName(entry);
-  const methods = formatClimbingAttemptStyles(entry.attempts);
+  const attemptStyles = climbingAttemptStyleLabels(entry.attempts);
   const climbResultLabels = entry.attempts
     .filter((attempt) => attempt.scope === "climb")
     .flatMap((attempt) => attempt.rockResultLabels);
@@ -85,7 +85,25 @@ export function ClimbingLogEntryCard({
         )}
       </div>
       <div className="space-y-1 text-xs text-subtle">
-        {methods && <p>{methods}</p>}
+        {attemptStyles.map((labels) => (
+          <div key={labels.join(":")} className="flex flex-wrap gap-1">
+            {labels.map((label) => {
+              const palette =
+                label === "Fell/Hung"
+                  ? operationalStatusColors.warning
+                  : operationalStatusColors.neutral;
+              return (
+                <span
+                  key={label}
+                  className={badgeClassName}
+                  style={{ color: palette.foreground, backgroundColor: palette.surface }}
+                >
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        ))}
         {(outcome || recordedResult) && (
           <div className="flex flex-wrap items-center gap-2">
             {outcome && (

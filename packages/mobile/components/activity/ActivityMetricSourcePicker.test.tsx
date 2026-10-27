@@ -37,6 +37,75 @@ const sources: ActivityMetricSource[] = [
 ];
 
 describe("ActivityMetricSourcePicker", () => {
+  it("uses provider logos while retaining device names and complete accessible choices", () => {
+    const choices: ActivityMetricSource[] = [
+      {
+        id: "peloton",
+        label: "Peloton",
+        presentation: {
+          displayName: "Peloton",
+          providerId: "peloton",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+      {
+        id: "strava-bike",
+        label: "Strava · recorded by Peloton Bike",
+        presentation: {
+          displayName: "Peloton Bike",
+          providerId: "strava",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+    ];
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <ActivityMetricSourcePicker
+        label="Power"
+        showLabel={false}
+        sources={choices}
+        selectedId="peloton"
+        onChange={onChange}
+        serverUrl="https://api.example.test"
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Power source: Peloton" });
+    expect(trigger.textContent).toBe("");
+    expect(
+      trigger.querySelector('[uri="https://api.example.test/logos/peloton.svg"]'),
+    ).toBeTruthy();
+    fireEvent.click(trigger);
+    const selected = screen.getByRole("radio", { name: "Peloton", checked: true });
+    expect(selected.textContent).toBe("");
+    expect(selected.querySelector('[data-icon="radio-button-on"]')).toBeTruthy();
+    const bike = screen.getByRole("radio", {
+      name: "Strava · recorded by Peloton Bike",
+      checked: false,
+    });
+    expect(bike.textContent).toBe("Peloton Bike");
+    expect(bike.querySelector('[uri="https://api.example.test/logos/strava.svg"]')).toBeTruthy();
+    expect(bike.querySelector('[data-icon="radio-button-off"]')).toBeTruthy();
+    fireEvent.click(bike);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("strava-bike");
+    expect(screen.queryByRole("radio")).toBeNull();
+    rerender(
+      <ActivityMetricSourcePicker
+        label="Power"
+        showLabel={false}
+        sources={choices}
+        selectedId="strava-bike"
+        onChange={onChange}
+        serverUrl="https://api.example.test"
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Power source: Strava · recorded by Peloton Bike" })
+        .textContent,
+    ).toBe("Peloton Bike");
+  });
+
   it("shows a compact device name while keeping full provenance accessible", () => {
     const source: ActivityMetricSource = {
       id: "edge",
@@ -103,11 +172,11 @@ describe("ActivityMetricSourcePicker", () => {
     const trigger = screen.getByRole("button", { name: `Heart Rate source: ${fullLabel}` });
     expect(trigger.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
     expect(trigger.querySelector('[data-icon="chevron-down"]')).toBeTruthy();
-    expect(trigger.textContent).toBe("Heart Rate · WHOOP");
+    expect(trigger.textContent).toBe("Heart Rate · ");
     fireEvent.click(trigger);
     const option = screen.getByRole("radio", { name: fullLabel });
     expect(option.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
-    expect(option.textContent).toBe("WHOOP");
+    expect(option.textContent).toBe("");
   });
 
   it("distinguishes duplicate names and switches by source ID", () => {
@@ -146,7 +215,7 @@ describe("ActivityMetricSourcePicker", () => {
     );
     expect(
       screen.getByRole("button", { name: "Heart Rate source: WHOOP (via Bluetooth)" }).textContent,
-    ).toBe("Heart Rate · WHOOP");
+    ).toBe("Heart Rate · ");
   });
 
   it("dismisses the chooser without changing the selected source", () => {
