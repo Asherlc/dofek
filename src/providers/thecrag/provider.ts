@@ -150,7 +150,7 @@ export class TheCragProvider implements SyncProvider {
           while (next) {
             if (visited.has(next) || visited.size >= 100)
               throw new Error(
-                "theCrag public feed pagination could not complete because it looped or exceeded 100 pages. Try again or contact support.",
+                "theCrag public feed pagination could not complete because it looped or exceeded 100 pages. Contact support to investigate the public feed pagination.",
               );
             visited.add(next);
             const response = await publicResponse(this.#fetchFn, next, options.signal);
