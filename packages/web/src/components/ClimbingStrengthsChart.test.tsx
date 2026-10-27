@@ -200,3 +200,29 @@ it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const
     ).toBeVisible();
   },
 );
+
+it("labels limited adjusted scores and keeps their table columns aligned", () => {
+  const pooled = {
+    ...panel,
+    ...panel.allGrades,
+    gradeAdjustedStrengths: panel.gradeAdjustedStrengths.map((entry) => ({
+      ...entry,
+      sampleStatus: "limited" as const,
+    })),
+  };
+  render(
+    <ClimbingStrengthsChart
+      panel={pooled}
+      view="radar"
+      grade="All grades"
+      selectedRow={null}
+      onSelectCell={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByText("Exact values"));
+  const point = screen.getByRole("button", { name: /Vertical · All grades.*Limited sample/ });
+  const row = point.closest("tr");
+  if (!row) throw new Error("Missing row");
+  expect(within(row).getAllByRole("cell")).toHaveLength(1);
+  expect(screen.getAllByRole("columnheader")).toHaveLength(2);
+});

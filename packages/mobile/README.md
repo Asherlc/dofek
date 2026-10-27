@@ -144,36 +144,11 @@ The Training route coordinates query states and delegates climbing payload valid
 
 The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 `climbing.strengths` query using the current training dates and climbing filters.
-The [shared navigation](../training/src/climbing-strengths-views.ts) offers Styles,
-Grades and Progress. Styles starts at an individual grade; Grades displays a
-scrollable heatmap whose cells select the source climbs. Chart options discloses
-the additional formats. All grades is an explicit
-pooled selection with a mixed-difficulty qualifier. These choices follow the
-[data exploration guidance](../../docs/data-exploration.md).
-The [native modal](https://reactnative.dev/docs/modal) uses radio choices and
-retains the selected grade and style when changing views. The page-wide climbing
-filters show a compact type/setting summary. Filters opens a [native modal](https://reactnative.dev/docs/modal) with independent Type and Setting checkboxes; each All checkbox selects or clears its group and exposes partial selections with the [WAI mixed checkbox state](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Other facts stay under More
-filters; strengths uses Wall angle or Hold type as its breakdown, with separate
-labeled sections for multiple returned contexts and
-settings. Every grouping stays clickable and shows an empty state when its
-observations are absent. Logged climbs with unrecorded results remain in total
-counts and appear as "Result unknown". Success rates use only known results;
-unknown-result counts and source examples remain visible. Unknown settings
-have a separate group.
-Selecting a grade and style reveals recorded success counts and source climbs;
-wall-angle, hold-type, and indoor/outdoor groups share the web client's
-[server-computed contract](../training/src/climbing-strengths.ts).
-[SVG alternatives](components/ClimbingStrengthsChart.tsx) measure their container,
-retain missing observations as gaps, and expose supplied exact values through
-[AccessibleChart](components/AccessibleChart.tsx). Radar needs three styles with
-recorded rates; progress uses the supplied clipped calendar months and labels
-source-climb details as applying across the selected period. Native grade/style
-buttons provide selection independently of the SVG marks, using React Native's
-[accessibility roles and state](https://reactnative.dev/docs/accessibility).
-All grades displays the server's pooled result per style; individual grades
-filter those results. The card offers the current training period or All time
-through the [Training route](<app/(tabs)/strain.tsx>), preserving its explicit
-end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
+The [strengths chart](components/ClimbingStrengthsChart.tsx) keeps one visualization per tab: Styles uses the server-computed grade-adjusted radar, Grades uses a grade/style heatmap, and Progress shows monthly send rates on one shared plot. Wall angle / Hold type apply to all tabs, with no grade picker or format menu. The radar places the same-grade baseline at zero; results outside its dashed outline are stronger and those inside weaker. It needs three scored styles; smaller samples remain accessible through the exact-value disclosure. Progress combines grades and says that changes may reflect difficulty mix. Settings are controlled only by the page-wide filter; selected settings feed the same chart. Selecting a heatmap cell or exact-value row reveals source climbs, with zeros, unknown outcomes, missing observations and limited known-result samples distinct. Exact-value controls use [React Native accessibility roles and state](https://reactnative.dev/docs/accessibility) through [AccessibleChart](components/AccessibleChart.tsx).
+
+Page-wide filters show a compact type/setting summary. Filters opens a [native modal](https://reactnative.dev/docs/modal) with independent Type and Setting checkboxes; each All checkbox selects or clears its group and exposes partial selections with the [WAI mixed checkbox state](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Other facts stay under More filters.
+
+Values and source-climb details use the [server-computed contract](../training/src/climbing-strengths.ts). The card offers the current training period or All time through the [Training route](<app/(tabs)/strain.tsx>), preserving its explicit end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
 Unknown angle units remain
 unclassified, while known degrees retain their recorded numeric labels.
 The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date

@@ -1,4 +1,7 @@
-import { ALL_CLIMBING_GRADES } from "@dofek/training/climbing-strengths";
+import {
+  ALL_CLIMBING_GRADES,
+  climbingStrengthsGradePanel,
+} from "@dofek/training/climbing-strengths";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import {
@@ -15,9 +18,10 @@ import { DofekChart } from "./DofekChart.tsx";
 
 const views = [
   {
-    value: "curves",
+    value: "radar",
     label: "Styles",
-    description: "Compare styles across every recorded grade.",
+    description:
+      "Compared with your usual results at the same grades. Outside the dashed line is stronger; inside is weaker.",
   },
   {
     value: "profile",
@@ -32,7 +36,7 @@ const views = [
 ] as const;
 function SimplifiedStrengths() {
   const [dimension, setDimension] = useState("wall_angle");
-  const [view, setView] = useState<(typeof views)[number]["value"]>("curves");
+  const [view, setView] = useState<(typeof views)[number]["value"]>("radar");
   const panel = climbingStrengthsFixture.panels.find((item) => item.dimension === dimension);
   if (!panel) return null;
   return (
@@ -40,7 +44,7 @@ function SimplifiedStrengths() {
       <section className="mx-auto max-w-4xl rounded-xl border border-border bg-surface p-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-lg font-semibold">Climbing strengths</h1>
-          <span className="text-sm text-muted">Bouldering · Indoor</span>
+          <span className="text-sm text-muted">Bouldering</span>
         </div>
         <fieldset className="mb-5 flex flex-wrap items-center gap-3" aria-label="Analyze">
           <legend className="mb-2 text-xs text-muted">Analyze</legend>
@@ -76,7 +80,7 @@ function SimplifiedStrengths() {
         </div>
         <div className="mt-5 rounded-lg border border-border p-4">
           <h2 className="mb-2 font-medium">
-            {view === "curves"
+            {view === "radar"
               ? "Send rate across grades"
               : view === "profile"
                 ? "Send rate by grade and style"
@@ -157,9 +161,9 @@ function SimplifiedStrengths() {
             />
           ) : (
             <ClimbingStrengthsChart
-              panel={panel}
+              panel={climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES)}
               grade={ALL_CLIMBING_GRADES}
-              view="curves"
+              view="radar"
               selectedRow={null}
               onSelectCell={() => {}}
             />
@@ -188,7 +192,7 @@ function AllGradesStrengths() {
       <section className="mx-auto max-w-4xl rounded-xl border border-border bg-surface p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-lg font-semibold">Climbing strengths</h1>
-          <span className="text-sm text-muted">Bouldering · Indoor</span>
+          <span className="text-sm text-muted">Bouldering</span>
         </div>
         <fieldset aria-label="Analyze" className="mb-5 flex gap-2">
           {[

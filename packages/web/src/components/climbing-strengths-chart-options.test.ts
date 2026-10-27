@@ -1,3 +1,4 @@
+import { climbingStrengthsGradePanel } from "@dofek/training/climbing-strengths";
 import { init } from "echarts";
 import { expect, it } from "vitest";
 import { z } from "zod";
@@ -133,18 +134,8 @@ it("uses server counts and differences for exposure and overlays sends on total 
 it("preserves calendar bucket dates and missing-month gaps without smoothing", () => {
   const option = climbingStrengthsChartOption(panel, "progress", "V4", null);
   expect(option).toMatchObject({
-    xAxis: [
-      expect.objectContaining({
-        data: ["2026-08-15 – 2026-08-31", "2026-09-01 – 2026-09-30", "2026-10-01 – 2026-10-26"],
-      }),
-      expect.anything(),
-      expect.anything(),
-    ],
-    yAxis: [
-      expect.objectContaining({ min: 0, max: 100 }),
-      expect.objectContaining({ min: 0, max: 100 }),
-      expect.objectContaining({ min: 0, max: 100 }),
-    ],
+    xAxis: { data: ["2026-08", "2026-09", "2026-10"], show: true },
+    yAxis: { min: 0, max: 100 },
   });
   expect(option.series).toEqual(
     expect.arrayContaining([
@@ -161,7 +152,7 @@ it("preserves calendar bucket dates and missing-month gaps without smoothing", (
     ]),
   );
 });
-it.each([320, 900])("keeps progress headings clear of axis labels at %ipx", (width) => {
+it.each([320, 900])("keeps progress legend clear of axis labels at %ipx", (width) => {
   const chart = init(null, undefined, { renderer: "svg", ssr: true, width, height: 610 });
   try {
     chart.setOption({
@@ -173,13 +164,13 @@ it.each([320, 900])("keeps progress headings clear of axis labels at %ipx", (wid
       const heading = labels.find((label) => label.text === row.label);
       expect(heading).toBeDefined();
       if (!heading) throw new Error(`Missing heading: ${row.label}`);
-      for (const label of labels.filter((label) => label !== heading)) {
+      for (const label of labels.filter((label) => /^(\d+%|2026-|Send rate)/.test(label.text))) {
         expect(heading.bounds.intersect(label.bounds), `${row.label} overlaps ${label.text}`).toBe(
           false,
         );
       }
     }
-    expect(labels.filter((label) => label.text === "100%")).toHaveLength(panel.rows.length);
+    expect(labels.filter((label) => label.text === "100%")).toHaveLength(1);
   } finally {
     chart.dispose();
   }
@@ -426,25 +417,12 @@ it("uses selected-grade monthly cells from each style's own observations", () =>
     [100, null, 100],
   ]);
   expect(progress).toMatchObject({
-    legend: { show: false },
-    xAxis: [
-      expect.objectContaining({
-        show: true,
-        gridIndex: 0,
-        axisLabel: expect.objectContaining({ hideOverlap: true }),
-      }),
-      expect.objectContaining({ show: true, gridIndex: 1 }),
-      expect.objectContaining({ show: true, gridIndex: 2 }),
-    ],
+    legend: { show: true },
+    xAxis: { show: true, axisLabel: expect.objectContaining({ hideOverlap: true }) },
+    yAxis: { min: 0, max: 100 },
   });
-  for (const [index, series] of progress.series.entries())
-    expect(series).toMatchObject({
-      xAxisIndex: index,
-      yAxisIndex: index,
-      smooth: false,
-      connectNulls: false,
-      symbol: "circle",
-    });
+  for (const series of progress.series)
+    expect(series).toMatchObject({ smooth: false, connectNulls: false, symbol: "circle" });
 });
 
 function withRenderedChart(
@@ -575,37 +553,23 @@ it("renders separate pyramid facets with a common count scale and count-proporti
   );
 });
 
-it("renders monthly facets with independent style headings and visible shared success bounds", () => {
-  withRenderedChart(
-    climbingStrengthsChartOption(panel, "progress", "V3", null),
-    (chart) => {
-      const text = renderedText(chart);
-      const headings = panel.rows.map((row) => text.find((item) => item.text === row.label));
-      expect(headings.every(Boolean)).toBe(true);
-      for (const [index, heading] of headings.entries()) {
-        if (!heading) throw new Error("Missing progress heading");
-        const next = headings[index + 1];
-        const labels = text
-          .filter(
-            (item) => item.bounds.y > heading.bounds.y && (!next || item.bounds.y < next.bounds.y),
-          )
-          .map((item) => item.text);
-        expect(labels).toEqual(
-          expect.arrayContaining([
-            "0%",
-            "50%",
-            "100%",
-            "2026-08-15 – 2026-08-31",
-            "2026-09-01 – 2026-09-30",
-            "2026-10-01 – 2026-10-26",
-          ]),
-        );
-      }
-    },
-    650,
-  );
+it("renders monthly style series together on shared success bounds", () => {
+  withRenderedChart(climbingStrengthsChartOption(panel, "progress", "V3", null), (chart) => {
+    const text = renderedText(chart).map((item) => item.text);
+    expect(text).toEqual(
+      expect.arrayContaining([
+        "Vertical",
+        "Overhang",
+        "Slab",
+        "0%",
+        "100%",
+        "2026-08",
+        "2026-09",
+        "2026-10",
+      ]),
+    );
+  });
 });
-
 it("renders an isolated observation with a marker and retains every dense style", () => {
   const grade = panel.grades[1];
   if (!grade) throw new Error("Missing grade");
@@ -679,5 +643,37 @@ it("retains unknown-result logged climbs in pyramids and total mixed exposure co
   expect(curve.series[0]?.data[0]).toMatchObject({
     value: null,
     displayValue: "Result unknown · 0 sends / 4 climbs · 4 results unknown",
+  });
+});
+
+it("announces all-grade coverage after selecting an individual curve point", () => {
+  const option = climbingStrengthsChartOption(panel, "curves", "V4", "vertical");
+  expect(option.aria.label.description).toContain("All grades");
+});
+
+it("renders the server grade-adjusted radar scores around a zero baseline", () => {
+  const option = climbingStrengthsChartOption(
+    climbingStrengthsGradePanel(panel, "All grades"),
+    "radar",
+    "All grades",
+    null,
+  );
+  expect(option).toMatchObject({
+    radar: {
+      indicator: [
+        { name: "Vertical", min: -100, max: 100 },
+        { name: "Overhang", min: -100, max: 100 },
+        { name: "Slab", min: -100, max: 100 },
+      ],
+    },
+    series: [
+      {
+        type: "radar",
+        data: [
+          { name: "Grade-adjusted strengths", value: [6, 1.8, -7] },
+          { name: "Same-grade baseline", value: [0, 0, 0] },
+        ],
+      },
+    ],
   });
 });

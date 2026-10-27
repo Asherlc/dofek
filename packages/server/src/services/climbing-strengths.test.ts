@@ -52,6 +52,26 @@ describe("climbing strengths", () => {
     ]);
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.grades[0]).toMatchObject({ climbs: 2, sends: 1, successRate: 50 });
+    expect(panel?.gradeAdjustedStrengths).toEqual([
+      {
+        key: "crimp",
+        expectedSuccessRate: 50,
+        differencePercentagePoints: 50,
+        sampleStatus: "limited",
+      },
+      {
+        key: "jug",
+        expectedSuccessRate: 50,
+        differencePercentagePoints: -50,
+        sampleStatus: "limited",
+      },
+      {
+        key: "sloper",
+        expectedSuccessRate: 50,
+        differencePercentagePoints: 50,
+        sampleStatus: "limited",
+      },
+    ]);
     expect(panel?.allGrades.grades[0]).toMatchObject({ climbs: 2, sends: 1 });
     for (const key of ["crimp", "sloper"]) {
       expect(panel?.rows.find((row) => row.key === key)?.cells[0]).toMatchObject({
@@ -136,9 +156,7 @@ describe("climbing strengths", () => {
       label: "Unknown setting",
       cells: [{ sends: 1, climbs: 2, unknownOutcomes: 1, successRate: 100 }],
     });
-    const holds = result.panels.find(
-      (panel) => panel.dimension === "hold_type" && panel.setting === "unknown",
-    );
+    const holds = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(holds?.rows[0]?.cells[0]).toMatchObject({
       sends: 1,
       climbs: 2,
@@ -416,7 +434,7 @@ describe("climbing strengths", () => {
       successRate: 0,
     });
   });
-  it("keeps monthly styles, grades and settings independent while deduplicating known outcomes", () => {
+  it("keeps monthly styles and grades independent across the selected cohort while deduplicating known outcomes", () => {
     const result = analyze([
       dated("2026-08-16", {
         identity: "sloper-high",
@@ -464,9 +482,7 @@ describe("climbing strengths", () => {
         outcome: "sent",
       }),
     ]);
-    const panel = result.panels.find(
-      (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
-    );
+    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.rows).toEqual([
       {
         key: "crimp",
@@ -474,10 +490,10 @@ describe("climbing strengths", () => {
         cells: [
           expect.objectContaining({
             grade: "V4",
-            sends: 2,
-            climbs: 5,
+            sends: 3,
+            climbs: 6,
             unknownOutcomes: 0,
-            successRate: 40,
+            successRate: 50,
             sampleStatus: "available",
           }),
           expect.objectContaining({
@@ -541,10 +557,10 @@ describe("climbing strengths", () => {
             cells: [
               {
                 grade: "V4",
-                sends: 2,
-                climbs: 5,
+                sends: 3,
+                climbs: 6,
                 unknownOutcomes: 0,
-                successRate: 40,
+                successRate: 50,
                 sampleStatus: "available",
               },
               {
@@ -726,7 +742,7 @@ describe("climbing strengths", () => {
       },
     ]);
   });
-  it("keeps globally conflicting settings outside setting-specific monthly samples", () => {
+  it("keeps observations with conflicting setting facts in the selected cohort", () => {
     const result = analyze([
       dated("2026-08-16", {
         identity: "conflict",
@@ -737,30 +753,28 @@ describe("climbing strengths", () => {
       dated("2026-09-16", { identity: "conflict", setting: "outdoor", holdTypes: ["crimp"] }),
       dated("2026-08-20", { identity: "kept", holdTypes: ["crimp"] }),
     ]);
-    const panel = result.panels.find(
-      (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
-    );
+    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.rows[0]?.cells[0]).toMatchObject({
-      sends: 0,
-      climbs: 1,
+      sends: 1,
+      climbs: 2,
       unknownOutcomes: 0,
-      successRate: 0,
+      successRate: 50,
     });
     expect(panel?.progress[0]?.rows[0]?.cells[0]).toEqual({
+      grade: "V4",
+      sends: 1,
+      climbs: 2,
+      unknownOutcomes: 0,
+      successRate: 50,
+      sampleStatus: "limited",
+    });
+    expect(panel?.progress[1]?.rows[0]?.cells[0]).toEqual({
       grade: "V4",
       sends: 0,
       climbs: 1,
       unknownOutcomes: 0,
       successRate: 0,
       sampleStatus: "limited",
-    });
-    expect(panel?.progress[1]?.rows[0]?.cells[0]).toEqual({
-      grade: "V4",
-      sends: 0,
-      climbs: 0,
-      unknownOutcomes: 0,
-      successRate: null,
-      sampleStatus: "no_data",
     });
     expect(result.panels.find((panel) => panel.dimension === "setting")?.grades[0]).toMatchObject({
       sends: 1,
@@ -812,7 +826,7 @@ describe("climbing strengths", () => {
     ]);
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingIdentity: 1, missingGrades: 1 });
   });
-  it("keeps settings separate, unknown units missing, and zero/no-data/limited distinct", () => {
+  it("keeps unknown units missing and zero/no-data/limited distinct in the selected cohort", () => {
     const result = analyze([
       observation({ wallAngle: { value: 20, unit: null } }),
       observation({
@@ -824,10 +838,9 @@ describe("climbing strengths", () => {
       }),
     ]);
     const indoor = result.panels.find(
-      (candidatePanel) =>
-        candidatePanel.dimension === "wall_angle" && candidatePanel.setting === "indoor",
+      (candidatePanel) => candidatePanel.dimension === "wall_angle",
     );
-    expect(indoor?.coverage.missingTraits).toBe(1);
+    expect(indoor?.coverage.missingTraits).toBe(2);
     const settings = result.panels.find((candidatePanel) => candidatePanel.dimension === "setting");
     expect(settings?.rows[0]?.cells[0]).toMatchObject({ successRate: 0, sampleStatus: "limited" });
     expect(settings?.rows[0]?.cells[1]).toMatchObject({
@@ -835,10 +848,8 @@ describe("climbing strengths", () => {
       sampleStatus: "no_data",
     });
     expect(
-      result.panels.find(
-        (candidatePanel) =>
-          candidatePanel.dimension === "hold_type" && candidatePanel.setting === "outdoor",
-      )?.rows[0]?.label,
+      result.panels.find((candidatePanel) => candidatePanel.dimension === "hold_type")?.rows[0]
+        ?.label,
     ).toBe("Crimp");
   });
   it("marks five climbs available, computes same-grade differences and caps examples", () => {
@@ -1002,4 +1013,29 @@ describe("climbing strengths", () => {
       grades: [{ climbs: 1, sends: 1, successRate: 100 }],
     });
   });
+});
+
+it("builds one selected-cohort profile across the settings selected by the filter", () => {
+  const result = analyze([
+    observation({
+      identity: "indoor",
+      setting: "indoor",
+      outcome: "sent",
+      wallAngle: { category: "slab" },
+      holdTypes: ["crimp"],
+    }),
+    observation({
+      identity: "outdoor",
+      setting: "outdoor",
+      outcome: "not_sent",
+      wallAngle: { category: "slab" },
+      holdTypes: ["crimp"],
+    }),
+  ]);
+  for (const dimension of ["wall_angle", "hold_type"]) {
+    const panels = result.panels.filter((panel) => panel.dimension === dimension);
+    expect(panels).toHaveLength(1);
+    expect(panels[0]?.rows[0]?.cells[0]).toMatchObject({ climbs: 2, sends: 1, successRate: 50 });
+    expect(panels[0]?.gradeAdjustedStrengths[0]).toMatchObject({ differencePercentagePoints: 0 });
+  }
 });

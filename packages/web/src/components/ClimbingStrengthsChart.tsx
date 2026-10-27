@@ -1,5 +1,11 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
-import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
+import {
+  ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
+  climbingStrengthsBaselineLabel,
+  climbingStrengthsCountLabel,
+  climbingStrengthsRateLabel,
+} from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import {
   climbingStrengthsChartOption,
@@ -21,19 +27,24 @@ export function ClimbingStrengthsChart({
   onSelectCell: (rowKey: string, grade: string) => void;
 }) {
   const baselineLabel =
-    view === "curves" || view === "pyramids"
+    view === "curves" || view === "pyramids" || (view === "radar" && grade === ALL_CLIMBING_GRADES)
       ? "Same-grade baseline"
       : climbingStrengthsBaselineLabel(grade);
+  const adjustedRadar = view === "radar" && grade === ALL_CLIMBING_GRADES;
   const sparseRadar =
     view === "radar" &&
     panel.rows.filter((row) =>
-      row.cells.some((cell) => cell.grade === grade && cell.successRate !== null),
+      adjustedRadar
+        ? panel.gradeAdjustedStrengths.some(
+            (entry) => entry.key === row.key && entry.differencePercentagePoints !== null,
+          )
+        : row.cells.some((cell) => cell.grade === grade && cell.successRate !== null),
     ).length < 3;
   const allGrades = view === "curves" || view === "pyramids";
   const baselines =
     view === "curves"
       ? panel.grades
-      : view === "radar"
+      : view === "radar" && !adjustedRadar
         ? panel.grades.filter((item) => item.grade === grade)
         : [];
   const exact =
@@ -54,13 +65,13 @@ export function ClimbingStrengthsChart({
   const height =
     view === "pyramids"
       ? 40 + panel.rows.length * (panel.grades.length * 28 + 100)
-      : view === "progress"
-        ? 40 + panel.rows.length * 190
-        : view === "gaps"
-          ? Math.max(300, panel.rows.length * 35 + 100)
-          : view === "radar"
-            ? Math.max(380, panel.rows.length * 20)
-            : 340;
+      : view === "gaps"
+        ? Math.max(300, panel.rows.length * 35 + 100)
+        : view === "radar"
+          ? Math.max(380, panel.rows.length * 20)
+          : 340;
+  const adjustedLabel = (key: string) =>
+    climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === key));
   const dataDisclosure = (
     <details className="text-xs text-muted">
       <summary className="cursor-pointer py-2 font-medium text-foreground">Exact values</summary>
@@ -73,8 +84,10 @@ export function ClimbingStrengthsChart({
           <thead>
             <tr>
               <th scope="col">Style / grade{view === "progress" ? " / month" : ""}</th>
-              <th scope="col">Success and sample</th>
-              {view !== "progress" ? (
+              <th scope="col">
+                {adjustedRadar ? "Grade-adjusted difference and sample" : "Success and sample"}
+              </th>
+              {view !== "progress" && !adjustedRadar ? (
                 <th scope="col">Gap vs {baselineLabel.toLowerCase()}</th>
               ) : null}
             </tr>
@@ -98,7 +111,7 @@ export function ClimbingStrengthsChart({
                   <button
                     type="button"
                     className="min-h-11 py-2 pr-3 text-left text-accent"
-                    aria-label={`${row.label} · ${cell.grade}${period ? ` · ${period}` : ""} · ${climbingStrengthsValueLabel(cell)}`}
+                    aria-label={`${row.label} · ${cell.grade}${period ? ` · ${period}` : ""} · ${adjustedRadar ? `${adjustedLabel(row.key)} · ` : ""}${climbingStrengthsValueLabel(cell)}`}
                     aria-pressed={selectedRow === row.key && grade === cell.grade}
                     onClick={() => onSelectCell(row.key, cell.grade)}
                   >
@@ -106,8 +119,13 @@ export function ClimbingStrengthsChart({
                     {period ? ` · ${period}` : ""}
                   </button>
                 </th>
-                <td className="py-2 pr-3">{climbingStrengthsValueLabel(cell)}</td>
-                {view !== "progress" ? (
+                <td className="py-2 pr-3">
+                  {adjustedRadar ? <span className="block">{adjustedLabel(row.key)}</span> : null}
+                  {adjustedRadar
+                    ? `${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`
+                    : climbingStrengthsValueLabel(cell)}
+                </td>
+                {view !== "progress" && !adjustedRadar ? (
                   <td>
                     {"differencePercentagePoints" in cell &&
                     typeof cell.differencePercentagePoints === "number"
@@ -132,15 +150,17 @@ export function ClimbingStrengthsChart({
       ) : null}
       {view === "radar" ? (
         <p className="text-xs text-muted">
-          Success on a shared 0–100% scale. Dashed line: {baselineLabel.toLowerCase()}. Groups
-          without a success rate are omitted from the polygon.
+          {adjustedRadar
+            ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: your same-grade baseline at zero."
+            : `Success on a shared 0–100% scale. Dashed line: ${baselineLabel.toLowerCase()}. Groups without a success rate are omitted from the polygon.`}
         </p>
       ) : null}
       {sparseRadar ? (
         <>
           <p className="rounded-lg border border-border p-4 text-sm text-muted">
-            Radar needs at least three style groups with recorded success at this grade. Choose
-            another grade or use the exact values below.
+            {adjustedRadar
+              ? "Radar needs at least three styles with known results. Explore the recorded values below."
+              : "Radar needs at least three style groups with recorded success at this grade. Choose another grade or use the exact values below."}
           </p>
           {dataDisclosure}
         </>

@@ -19,8 +19,8 @@ export const Default: Story = {};
 export const Narrow: Story = {
   args: {
     data: {
-      ...climbingStrengthsFixture,
-      panels: climbingStrengthsFixture.panels.filter((panel) => panel.contextKey === "boulder-v"),
+      ...climbingStrengthsComparisonFixture,
+      panels: climbingStrengthsComparisonFixture.panels,
     },
   },
   decorators: [
@@ -91,8 +91,58 @@ export const UnknownResults: Story = {
   args: { data: climbingStrengthsUnknownResultsFixture },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "V3" }));
-    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · Result unknown/ }));
+    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
+    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · V3 · Result unknown/ }));
     await expect(canvas.getByText(/V3 · .* · Result unknown/)).toBeVisible();
+  },
+};
+
+const holdTypes = [
+  { key: "crimp", label: "Crimps" },
+  { key: "sloper", label: "Slopers" },
+  { key: "pinch", label: "Pinches" },
+];
+export const HoldTypes: Story = {
+  ...Narrow,
+  args: {
+    data: {
+      ...climbingStrengthsComparisonFixture,
+      panels: climbingStrengthsComparisonFixture.panels.map((panel) => ({
+        ...panel,
+        dimension: "hold_type",
+        rows: panel.rows.map((row, index) => ({ ...row, ...holdTypes[index] })),
+        gradeAdjustedStrengths: panel.gradeAdjustedStrengths.map((entry, index) => ({
+          ...entry,
+          key: holdTypes[index]?.key ?? entry.key,
+        })),
+        allGrades: {
+          ...panel.allGrades,
+          rows: panel.allGrades.rows.map((row, index) => ({ ...row, ...holdTypes[index] })),
+          progress: panel.allGrades.progress.map((period) => ({
+            ...period,
+            rows: period.rows.map((row, index) => ({
+              ...row,
+              key: holdTypes[index]?.key ?? row.key,
+            })),
+          })),
+        },
+      })),
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Hold type" }));
+  },
+};
+
+export const Grades: Story = {
+  ...Narrow,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
+  },
+};
+export const Progress: Story = {
+  ...Narrow,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Progress" }));
   },
 };

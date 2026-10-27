@@ -33,6 +33,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
       contextLabel: "Bouldering · V scale",
       dimension: "wall_angle",
       setting: "indoor",
+      gradeAdjustedStrengths: [],
       allGrades: {
         grades: [
           {
@@ -341,6 +342,7 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
           rows: [{ key: "vertical", cells: unknownCells }],
         },
       ],
+      gradeAdjustedStrengths: [],
       allGrades: {
         grades: [{ ...unknownPooled, gradeSortValue: 0 }],
         rows: [{ key: "vertical", label: "Vertical", cells: [unknownPooled] }],
@@ -355,3 +357,49 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
     },
   ],
 };
+
+// Precomputed server response values; fixtures do not calculate metrics in the client.
+(
+  [
+    [
+      {
+        key: "vertical",
+        expectedSuccessRate: 56,
+        differencePercentagePoints: 6,
+        sampleStatus: "available",
+      },
+      {
+        key: "overhang",
+        expectedSuccessRate: 56.1,
+        differencePercentagePoints: 1.8,
+        sampleStatus: "available",
+      },
+      {
+        key: "slab",
+        expectedSuccessRate: 50.4,
+        differencePercentagePoints: -7,
+        sampleStatus: "available",
+      },
+    ],
+  ] satisfies ClimbingStrengthsPanel["gradeAdjustedStrengths"][]
+).forEach((summary, index) => {
+  const panel = climbingStrengthsFixture.panels[index];
+  if (!panel) throw new Error("Missing strengths fixture panel");
+  panel.gradeAdjustedStrengths = summary;
+});
+(
+  [
+    [
+      {
+        key: "vertical",
+        expectedSuccessRate: 66.7,
+        differencePercentagePoints: 0,
+        sampleStatus: "limited",
+      },
+    ],
+  ] satisfies ClimbingStrengthsPanel["gradeAdjustedStrengths"][]
+).forEach((summary, index) => {
+  const panel = climbingStrengthsUnknownResultsFixture.panels[index];
+  if (!panel) throw new Error("Missing strengths fixture panel");
+  panel.gradeAdjustedStrengths = summary;
+});
