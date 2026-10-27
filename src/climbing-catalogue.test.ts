@@ -2,6 +2,9 @@ import type { CatalogueCandidate, CatalogueSeed } from "@dofek/training/climbing
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
 import { MemoryCacheStore } from "./lib/cache.ts";
+import { captureException } from "./lib/error-reporting.ts";
+
+vi.mock("./lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
 const seed: CatalogueSeed = {
   userId: "user-a",
@@ -52,21 +55,27 @@ const candidate: CatalogueCandidate = {
 
 describe("ClimbingCatalogueService", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-27T12:00:00Z"));
   });
   afterEach(() => vi.useRealTimers());
   const setup = (results = [candidate], complete = true) => {
     const search = vi.fn().mockResolvedValue({ candidates: results, complete });
-    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
-      { providerId: "thecrag", search },
-    ]);
-    return { service, search };
+    const cache = new MemoryCacheStore();
+    const service = new ClimbingCatalogueService(cache, [{ providerId: "thecrag", search }]);
+    return { service, search, cache };
   };
 
   it("reads a missing cache without making an upstream request", async () => {
     const { service, search } = setup();
-    expect((await service.read(seed)).status).toBe("missing");
+    expect(await service.read(seed)).toEqual({
+      status: "missing",
+      fetchedAt: null,
+      expiresAt: null,
+      error: null,
+      sources: [],
+    });
     expect(search).not.toHaveBeenCalled();
   });
   it("reports a rejected refresh request without leaving the cache pending", async () => {
@@ -156,5 +165,254 @@ describe("ClimbingCatalogueService", () => {
     expect(retained.status).toBe("error");
     expect(retained.error).toContain("403");
     expect(retained.sources[0]?.matches[0]?.candidate.tags).toEqual([]);
+  });
+
+  it("matches names and locations ignoring case and surrounding or repeated whitespace", async () => {
+    const { service } = setup([
+      {
+        ...candidate,
+        name: "CRAGMONT\t  CRACK",
+        locations: candidate.locations.map((location) => ({
+          ...location,
+          name: "  CRAGMONT\t  PARK  ",
+        })),
+      },
+    ]);
+    expect((await service.refresh(seed)).sources[0]?.matches[0]?.confidence).toBe("corroborated");
+  });
+
+  it.each([
+    ["Another Route", "Cragmont Crack"],
+    ["Masse", "Maße"],
+  ])("does not match distinct catalogue names %s and %s", async (name, recordedName) => {
+    const { service } = setup([{ ...candidate, name }]);
+    expect((await service.refresh({ ...seed, name: recordedName })).sources[0]?.matches).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    { seedSetting: "indoor", candidateSetting: "outdoor" },
+    { seedSetting: "outdoor", candidateSetting: "indoor" },
+    { seedSetting: null, candidateSetting: "outdoor" },
+    { seedSetting: "outdoor", candidateSetting: null },
+  ] as const)(
+    "does not corroborate setting $seedSetting against $candidateSetting",
+    async ({ seedSetting, candidateSetting }) => {
+      const { service } = setup([{ ...candidate, setting: candidateSetting }]);
+      expect(
+        (await service.refresh({ ...seed, setting: seedSetting })).sources[0]?.matches[0]
+          ?.confidence,
+      ).toBe("possible");
+    },
+  );
+
+  it.each([
+    { recordedKind: "route", catalogueKind: "boulder" },
+    { recordedKind: "route", catalogueKind: null },
+    { recordedKind: null, catalogueKind: null },
+    { recordedKind: null, catalogueKind: "route" },
+  ] as const)(
+    "requires known matching kinds: $recordedKind against $catalogueKind",
+    async ({ recordedKind, catalogueKind }) => {
+      const { service } = setup([{ ...candidate, kind: catalogueKind }]);
+      expect(
+        (await service.refresh({ ...seed, kind: recordedKind })).sources[0]?.matches[0]?.confidence,
+      ).toBe("possible");
+    },
+  );
+
+  it.each([
+    { name: "different area", location: { name: "Another Park" } },
+    { name: "different scope", location: { scope: "climb" } },
+    { name: "missing coordinates", location: { coordinates: null } },
+  ] as const)("requires location evidence with $name", async ({ location }) => {
+    const { service } = setup([
+      {
+        ...candidate,
+        locations: candidate.locations.map((original) => ({ ...original, ...location })),
+      },
+    ]);
+    expect((await service.refresh(seed)).sources[0]?.matches[0]?.confidence).toBe("possible");
+  });
+
+  it("does not corroborate when the recorded location has no coordinates", async () => {
+    const { service } = setup();
+    const result = await service.refresh({
+      ...seed,
+      locations: seed.locations.map((location) => ({ ...location, coordinates: null })),
+    });
+    expect(result.sources[0]?.matches[0]?.confidence).toBe("possible");
+  });
+
+  it("uses any corroborating area in either ancestry without requiring every ancestor to match", async () => {
+    const unrelated = {
+      externalId: "unrelated",
+      name: "World",
+      scope: "area" as const,
+      coordinates: null,
+    };
+    const { service } = setup([{ ...candidate, locations: [unrelated, ...candidate.locations] }]);
+    const result = await service.refresh({ ...seed, locations: [unrelated, ...seed.locations] });
+    expect(result.sources[0]?.matches[0]?.confidence).toBe("corroborated");
+  });
+
+  it.each(["recorded", "catalogue"])("does not corroborate missing %s locations", async (side) => {
+    const { service } = setup([
+      { ...candidate, locations: side === "catalogue" ? [] : candidate.locations },
+    ]);
+    const result = await service.refresh({
+      ...seed,
+      locations: side === "recorded" ? [] : seed.locations,
+    });
+    expect(result.sources[0]?.matches[0]?.confidence).toBe("possible");
+  });
+
+  it.each([
+    { latitude: 0.001, longitude: 0, confidence: "corroborated" },
+    { latitude: -0.001, longitude: 0, confidence: "corroborated" },
+    { latitude: 0, longitude: 0.001, confidence: "corroborated" },
+    { latitude: 0, longitude: -0.001, confidence: "corroborated" },
+    { latitude: 0.001001, longitude: 0, confidence: "possible" },
+    { latitude: -0.001001, longitude: 0, confidence: "possible" },
+    { latitude: 0, longitude: 0.001001, confidence: "possible" },
+    { latitude: 0, longitude: -0.001001, confidence: "possible" },
+  ])(
+    "checks each coordinate boundary: $latitude, $longitude",
+    async ({ latitude, longitude, confidence }) => {
+      const { service } = setup([
+        {
+          ...candidate,
+          locations: candidate.locations.map((location) => ({
+            ...location,
+            coordinates: { latitude, longitude },
+          })),
+        },
+      ]);
+      const result = await service.refresh({
+        ...seed,
+        locations: seed.locations.map((location) => ({
+          ...location,
+          coordinates: { latitude: 0, longitude: 0 },
+        })),
+      });
+      expect(result.sources[0]?.matches[0]?.confidence).toBe(confidence);
+    },
+  );
+
+  it.each([
+    { providerId: "thecrag", externalId: "another-id" },
+    { providerId: "kaya", externalId: candidate.externalId },
+  ])(
+    "does not treat a partial source identity as recorded: $providerId/$externalId",
+    async (identity) => {
+      const { service } = setup();
+      const result = await service.refresh({ ...seed, ...identity });
+      expect(result.sources[0]?.matches[0]?.confidence).toBe("corroborated");
+      const renamed = setup([{ ...candidate, name: "An unrelated name" }]);
+      expect((await renamed.service.refresh({ ...seed, ...identity })).sources[0]?.matches).toEqual(
+        [],
+      );
+    },
+  );
+
+  it("deduplicates repeated source IDs without turning them into ambiguous matches", async () => {
+    const { service } = setup([candidate, { ...candidate, grade: "5.7" }]);
+    expect((await service.refresh(seed)).sources[0]?.matches).toEqual([
+      { confidence: "corroborated", candidate: { ...candidate, grade: "5.7" } },
+    ]);
+  });
+
+  it("rejects mixed-provider adapter results and reports the failure", async () => {
+    const { service, search } = setup();
+    search.mockResolvedValue({
+      candidates: [
+        candidate,
+        { ...candidate, providerId: "kaya", url: "https://kaya-app.kayaclimb.com/climb/123" },
+      ],
+      complete: true,
+    });
+    await expect(service.refresh(seed)).rejects.toThrow(
+      "Unexpected provider in thecrag catalogue response.",
+    );
+    expect(await service.read(seed)).toMatchObject({ status: "error", sources: [] });
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { phase: "climbing-catalogue-refresh" },
+    });
+  });
+
+  it("retains a positive result for seven days even when another provider has no matches", async () => {
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      { providerId: "thecrag", search: async () => ({ candidates: [candidate], complete: false }) },
+      { providerId: "kaya", search: async () => ({ candidates: [], complete: true }) },
+    ]);
+    const result = await service.refresh(seed);
+    expect(result.expiresAt).toBe("2026-11-03T12:00:00.000Z");
+    expect(result.sources.map((source) => source.searchComplete)).toEqual([false, true]);
+    vi.advanceTimersByTime(86400000);
+    expect(await service.read(seed)).toEqual(result);
+  });
+
+  it("rejects an expired payload even if the cache backend still returns it", async () => {
+    const { service, cache } = setup();
+    const cached = await service.refresh(seed);
+    vi.spyOn(cache, "get").mockResolvedValue(cached);
+    vi.setSystemTime(new Date("2026-11-03T11:59:59.999Z"));
+    expect(await service.read(seed)).toEqual(cached);
+    vi.advanceTimersByTime(1);
+    expect(await service.read(seed)).toEqual({
+      status: "missing",
+      fetchedAt: null,
+      expiresAt: null,
+      error: null,
+      sources: [],
+    });
+  });
+
+  it("invalidates only the requested fingerprint", async () => {
+    const { service } = setup();
+    const otherSeed = { ...seed, logEntryId: "log-b" };
+    const otherResult = await service.refresh(otherSeed);
+    await service.refresh(seed);
+    await service.invalidate(seed);
+    expect((await service.read(seed)).status).toBe("missing");
+    expect(await service.read(otherSeed)).toEqual(otherResult);
+  });
+
+  it("expires initial errors after one day and renews repeated errors without inventing a fetch time", async () => {
+    const { service, cache } = setup();
+    const set = vi.spyOn(cache, "set");
+    await service.markFailed(seed, "upstream unavailable");
+    expect(await service.read(seed)).toEqual({
+      status: "error",
+      fetchedAt: null,
+      expiresAt: "2026-10-28T12:00:00.000Z",
+      sources: [],
+      error: "Catalogue lookup failed. Try refreshing again.",
+    });
+    expect(set).toHaveBeenLastCalledWith(expect.any(String), expect.any(Object), 86400000);
+    vi.advanceTimersByTime(3600000);
+    await service.markFailed(seed, new Error("Retry later."));
+    expect((await service.read(seed)).expiresAt).toBe("2026-10-28T13:00:00.000Z");
+    vi.advanceTimersByTime(86400000);
+    expect((await service.read(seed)).status).toBe("missing");
+  });
+
+  it("keeps the original successful expiry and remaining TTL when a later refresh fails", async () => {
+    const { service, cache, search } = setup();
+    const successful = await service.refresh(seed);
+    const set = vi.spyOn(cache, "set");
+    vi.advanceTimersByTime(2 * 86400000);
+    const error = new Error("theCrag is unavailable. Retry later.");
+    search.mockRejectedValue(error);
+    await expect(service.refresh(seed)).rejects.toBe(error);
+    const retained = { ...successful, status: "error", error: error.message };
+    expect(await service.read(seed)).toEqual(retained);
+    expect(set).toHaveBeenLastCalledWith(expect.any(String), retained, 5 * 86400000);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      tags: { phase: "climbing-catalogue-refresh" },
+    });
+    vi.advanceTimersByTime(5 * 86400000);
+    expect((await service.read(seed)).status).toBe("missing");
   });
 });

@@ -2,10 +2,10 @@ import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClimbingCatalogueAdapters } from "./climbing-catalogue-sources.ts";
 
-const mocks = vi.hoisted(() => ({ tokens: vi.fn() }));
+const mocks = vi.hoisted(() => ({ tokens: vi.fn(), rateLimit: vi.fn() }));
 vi.mock("./db/tokens.ts", () => ({ loadTokens: mocks.tokens }));
 vi.mock("./lib/provider-rate-limit-fetch.ts", () => ({
-  createProviderRateLimitFetch: (_id: string, fetchFn: typeof fetch) => fetchFn,
+  createProviderRateLimitFetch: mocks.rateLimit,
 }));
 vi.mock("./providers/thecrag/public-transport.ts", () => ({
   createTheCragPublicFetch: () => fetch,
@@ -37,6 +37,7 @@ const source = {
 describe("catalogue source composition", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.rateLimit.mockImplementation((_id: string, fetchFn: typeof fetch) => fetchFn);
     mocks.tokens.mockResolvedValue({ accessToken: "owner-token" });
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -46,6 +47,27 @@ describe("catalogue source composition", () => {
         (adapter) => adapter.providerId,
       ),
     ).toEqual(["kaya", "mountain-project", "thecrag", "openbeta"]);
+    expect(mocks.rateLimit.mock.calls).toEqual(
+      ["kaya", "mountain-project", "thecrag", "openbeta"].map((providerId) => [
+        providerId,
+        globalThis.fetch,
+        { userId: "owner" },
+      ]),
+    );
+  });
+  it("uses public KAYA catalogue metadata when the owner has no KAYA connection", async () => {
+    mocks.tokens.mockResolvedValue(null);
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ data: { webSearchForClimb: [source] } }));
+    vi.stubGlobal("fetch", fetchFn);
+    const adapter = createClimbingCatalogueAdapters("owner", Object.create(null))[0];
+    if (!adapter) throw new Error("Expected KAYA adapter");
+    const result = await adapter.search(seed);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe(seed.name);
+    expect(mocks.tokens).toHaveBeenCalledWith(expect.anything(), "kaya", "owner");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
   it("uses the current owner's KAYA connection for live Sport classification of a cross-provider match", async () => {
     const fetchFn = vi

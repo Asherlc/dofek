@@ -184,8 +184,7 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
       from += hits.length;
       if (repeated) return { candidates, complete: false };
       if (total.relation === "eq" && from >= total.value) return { candidates, complete: true };
-      if (!hits.length)
-        return { candidates, complete: total.relation === "eq" && from >= total.value };
+      if (!hits.length) return { candidates, complete: false };
     }
     return { candidates, complete: false };
   }

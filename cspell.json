@@ -783,6 +783,10 @@
   ],
   "overrides": [
     {
+      "filename": "**/*catalogue*.test.ts",
+      "words": ["Maße", "Straße", "STRASSE", "ＣＲＡＧＭＯＮＴ", "Ｃｒａｇｍｏｎｔ"]
+    },
+    {
       "filename": "src/providers/openbeta-catalogue.ts",
       "words": ["bCGIB4sHsJRy06NFjZLtxKIMgr4aO0tX"]
     },
