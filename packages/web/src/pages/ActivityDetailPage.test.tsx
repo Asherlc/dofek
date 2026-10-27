@@ -730,6 +730,26 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("Walking")).toBeDefined();
   });
 
+  it("uses the readable representative type for the title and breadcrumb when no primary is resolved", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        name: null,
+        activityType: "hiking",
+        primaryActivityType: null,
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Hiking" })).toBeDefined();
+    expect(screen.getAllByText("Hiking")).toHaveLength(3);
+  });
+
   it("requests downloaded photos for the current activity with signed-link renewal", async () => {
     const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
     renderWithUnits(<ActivityDetailPage />);

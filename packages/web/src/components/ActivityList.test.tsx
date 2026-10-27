@@ -99,6 +99,31 @@ describe("ActivityList", () => {
     expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
   });
 
+  it("uses the representative type for selection when an unnamed activity has no resolved primary", () => {
+    const firstActivity = mockActivities[0];
+    if (!firstActivity) throw new Error("Expected an activity fixture");
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...firstActivity,
+            name: null,
+            canonical_type: "walking",
+            primary_canonical_type: null,
+          },
+        ]}
+        onBulkDelete={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    const selection = screen.getByRole("checkbox", { name: "Select Walking" });
+    fireEvent.click(selection);
+
+    expect(selection).toBeChecked();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("appends activity-specific columns", () => {
     const additionalColumns: Array<ActivityTableColumn<Activity>> = [
       {
