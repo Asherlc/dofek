@@ -90,7 +90,7 @@ export function ClimbingFilters({
               aria-label="Climbing filters"
               align="end"
               sideOffset={8}
-              className="z-50 max-h-[80vh] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto space-y-4 rounded-xl border border-border bg-surface p-5 text-foreground shadow-xl"
+              className="z-50 max-h-[80vh] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto space-y-4 rounded-xl border border-border bg-surface-solid p-5 text-foreground shadow-xl"
             >
               {checkboxes(
                 "Type",

@@ -22,6 +22,12 @@ function value() {
   return JSON.parse(screen.getByRole("status").textContent ?? "");
 }
 
+it("uses an opaque panel so charts cannot show through the filters", () => {
+  render(<Harness />);
+  open();
+  expect(screen.getByRole("dialog", { name: "Climbing filters" })).toHaveClass("bg-surface-solid");
+});
+
 it("keeps filters in a popover and summarizes multiple climbing types after closing", async () => {
   render(<Harness />);
   expect(screen.queryByRole("checkbox", { name: "Bouldering" })).toBeNull();
