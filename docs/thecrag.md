@@ -81,6 +81,12 @@ alone does not prove a lead. Reported counts use the canonical model's
 method-only occurrences, with result/qualifier evidence attached only to the
 described try. Order, beta and other unreported outcomes remain unknown; see
 the [route-method contract](../src/db/climbing-route-method.integration.test.ts).
+For combined tick labels such as `Redpoint: Top rope`, the recorded result is
+the observed `Redpoint` constituent and the rope method is stored separately.
+The full label remains in raw provenance. Database outcome and free-send
+projections consume that result without assigning outcomes to anonymous count
+occurrences; the [integration tests](../src/providers/thecrag-sync.integration.test.ts)
+exercise both serving views.
 
 This is an undocumented public-page integration and can change or become
 blocked upstream. theCrag's [terms](https://www.thecrag.com/terms) restrict

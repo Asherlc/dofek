@@ -233,7 +233,8 @@ export function parsePublicAscent(
     );
   const styles = [climbedStyle, routeStyle];
   const isBoulder = styles.includes("boulder");
-  const result = tick.split(":")[0]?.trim().toLowerCase() ?? "";
+  const sourceResult = tick.split(":")[0]?.trim() ?? "";
+  const result = sourceResult.toLowerCase();
   const suffix = tick.includes(":")
     ? tick
         .slice(tick.indexOf(":") + 1)
@@ -266,7 +267,7 @@ export function parsePublicAscent(
   const qualifier = sourceQualifier(result, usedAid);
   const attempt: SourceClimbingAttempt = {
     scope: "climb",
-    sourceResult: tick,
+    sourceResult,
     ...(ropeMethod ? { ropeMethod } : {}),
     ...(methodSources.some((value) => recordedRopeMethod(value) != null && value.includes("solo"))
       ? { solo: true }

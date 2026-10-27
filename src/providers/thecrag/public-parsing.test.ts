@@ -63,19 +63,22 @@ describe("public ascent HTML", () => {
     });
   });
   it.each([
-    ["Lead solo", "Sport", "lead"],
-    ["Top rope solo", "Trad", "top_rope"],
-    ["Lead solo: Sport", "Sport", "lead"],
-    ["Top rope solo: Trad", "Trad", "top_rope"],
-    ["Redpoint: Lead solo", "Sport", "lead"],
-    ["Lead solo: Lead", "Sport", "lead"],
-  ])("retains explicit solo evidence from tick %s", (tick, climbedStyle, ropeMethod) => {
-    const record = parse(
-      publicAscent({ tick, climbedStyle, routeStyle: climbedStyle, attempts: "1" }),
-    );
-    expect(record.attempts[0]).toMatchObject({ sourceResult: tick, ropeMethod, solo: true });
-    expect(record.climb?.kind).toBe("route");
-  });
+    ["Lead solo", "Sport", "lead", "Lead solo"],
+    ["Top rope solo", "Trad", "top_rope", "Top rope solo"],
+    ["Lead solo: Sport", "Sport", "lead", "Lead solo"],
+    ["Top rope solo: Trad", "Trad", "top_rope", "Top rope solo"],
+    ["Redpoint: Lead solo", "Sport", "lead", "Redpoint"],
+    ["Lead solo: Lead", "Sport", "lead", "Lead solo"],
+  ])(
+    "retains explicit solo evidence from tick %s",
+    (tick, climbedStyle, ropeMethod, sourceResult) => {
+      const record = parse(
+        publicAscent({ tick, climbedStyle, routeStyle: climbedStyle, attempts: "1" }),
+      );
+      expect(record.attempts[0]).toMatchObject({ sourceResult, ropeMethod, solo: true });
+      expect(record.climb?.kind).toBe("route");
+    },
+  );
   it("identifies a route from its explicit tick method when gear style is unavailable", () => {
     const record = parse(
       publicAscent({ tick: "Lead solo", climbedStyle: "", routeStyle: "", attempts: "1" }),
@@ -112,7 +115,7 @@ describe("public ascent HTML", () => {
     const record = parse(
       publicAscent({ tick: "Onsight: Lead", climbedStyle: "Lead", attempts: "1" }),
     );
-    expect(record.attempts).toEqual([expect.objectContaining({ sourceResult: "Onsight: Lead" })]);
+    expect(record.attempts).toEqual([expect.objectContaining({ sourceResult: "Onsight" })]);
     expect(record.attempts[0]).not.toHaveProperty("attemptIndex");
   });
   it("preserves public source line breaks", () => {
@@ -146,7 +149,7 @@ describe("public ascent HTML", () => {
     const record = parse(publicAscent({ tick: "Redpoint: Top rope" }));
     expect(record.attempts).toHaveLength(4);
     expect(record.attempts[0]).toMatchObject({
-      sourceResult: "Redpoint: Top rope",
+      sourceResult: "Redpoint",
       qualifier: "free-send",
       ropeMethod: "top_rope",
     });
@@ -155,6 +158,24 @@ describe("public ascent HTML", () => {
     );
     expect(record.reportedAttemptCounts).toEqual([{ scope: "climb", count: 4 }]);
   });
+  it.each([
+    ["Redpoint: Top rope", "Redpoint"],
+    ["Attempt: Top rope", "Attempt"],
+    ["rEdPoInT  : Top rope", "rEdPoInT"],
+  ])(
+    "retains the original result constituent and full provenance for tick %s",
+    (tick, sourceResult) => {
+      const record = parse(publicAscent({ tick }));
+      expect(record.attempts[0]).toMatchObject({ sourceResult, ropeMethod: "top_rope" });
+      expect(record.attempts.slice(1)).toEqual(
+        Array.from({ length: 3 }, () => ({ scope: "climb", ropeMethod: "top_rope" })),
+      );
+      expect(record.raw).toMatchObject({
+        tick,
+        publicFields: { Tick: "", "Climbed gear style": "Top rope" },
+      });
+    },
+  );
   it("does not assume one described tick's method covers the reported total", () => {
     expect(() =>
       parse(publicAscent({ tick: "Redpoint: Lead", climbedStyle: "Sport", routeStyle: "Sport" })),

@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { activity } from "../db/schema/activity.ts";
 import {
   climb,
@@ -13,6 +14,7 @@ import {
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -159,6 +161,55 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       expect.objectContaining({ ropeMethod: null, fellOrHung: false, usedAid: false }),
     ]);
   });
+
+  it.each([
+    ["Redpoint: Top rope", "completed", "top_rope", true],
+    ["Onsight: Lead", "completed", "lead", true],
+    ["Attempt: Top rope", "failed", "top_rope", null],
+  ] as const)(
+    "serves the observed outcome for %s without assigning outcomes to count placeholders",
+    async (tick, outcome, ropeMethod, freeSend) => {
+      serve(() => [{ tick, climbedStyle: ropeMethod === "lead" ? "Lead" : "Top rope" }]);
+      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+      const [entry] = await entries();
+      if (!entry) throw new Error("Expected the imported ascent");
+      expect(entry.raw).toMatchObject({ tick });
+      const attempts = await executeWithSchema(
+        context.db,
+        z.object({
+          source_result: z.string().nullable(),
+          outcome: z.enum(["completed", "failed"]).nullable(),
+          rope_method: z.string().nullable(),
+        }),
+        sql`SELECT source_result, outcome, rope_method FROM fitness.v_climbing_attempt
+      WHERE climbing_log_entry_id = ${entry.id}::uuid`,
+      );
+      expect(attempts).toHaveLength(4);
+      expect(attempts.filter((attempt) => attempt.source_result !== null)).toEqual([
+        { source_result: tick.split(":")[0], outcome, rope_method: ropeMethod },
+      ]);
+      expect(attempts.filter((attempt) => attempt.source_result === null)).toEqual([
+        { source_result: null, outcome: null, rope_method: ropeMethod },
+        { source_result: null, outcome: null, rope_method: ropeMethod },
+        { source_result: null, outcome: null, rope_method: ropeMethod },
+      ]);
+      const projected = await executeWithSchema(
+        context.db,
+        z.object({
+          recorded_climb_outcome: z.enum(["completed", "failed"]).nullable(),
+          free_send: z.boolean().nullable(),
+        }),
+        sql`SELECT recorded_climb_outcome, free_send FROM fitness.v_climbing_log_entry
+      WHERE id = ${entry.id}::uuid`,
+      );
+      expect(projected).toEqual([
+        {
+          recorded_climb_outcome: outcome === "completed" ? "completed" : null,
+          free_send: freeSend,
+        },
+      ]);
+    },
+  );
   it("rejects an unsupported route method before changing a prior import", async () => {
     let ascents: AscentFixture[] = [{}];
     serve(() => ascents);
