@@ -171,7 +171,7 @@ services:
   # Catalog migration is explicit since PeerDB removed Nexus startup migrations.
   # https://github.com/PeerDB-io/peerdb/pull/4827
   peerdb-flow-migrate:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.12
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.13
     entrypoint: ["/home/peerdb/peer-flow", "migrate"]
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -185,7 +185,7 @@ services:
     restart: "no"
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.12
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.13
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
