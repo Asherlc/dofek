@@ -1,197 +1,111 @@
-# Climbing catalogue enrichment and attributed steepness
+# Informational climbing catalogue cache
 
-Status: proposed design; implementation approval pending.
+Status: implementation authorized; revised to reflect the user's explicit
+cache-only clarification. Dofek is a personal training log, not a climb database.
 
-## Intent and approved scope
+## Intent and boundaries
 
-Import theCrag steepness, including multiple categories and inherited Area
-tags. Cross-reference Mountain Project, theCrag and KAYA climbs in both
-directions, including catalogue lookups when the user has no tick in the other
-service. Catalogue facts enrich the presentation and analysis of existing logs;
-they must not become synthetic ticks or overwrite a provider's recorded facts.
+Show informative catalogue metadata for climbs logged in KAYA, Mountain Project
+and theCrag, using cross-references in either direction. Look up catalogue climbs
+even when the user has no tick in the other service. Preserve multiple steepness
+categories and distinguish direct route tags from inherited Area context.
 
-These scope choices were approved in the task conversation. The storage,
-matching, resolution and delivery rules below are proposals for approval.
+All fetched enrichment and inferred matches are disposable, expiring cache
+entries. Do not add catalogue tables, durable identity links, canonical climb
+merges, synthetic ticks, or writes of enrichment into existing records. Clearing
+the cache loses only informative context. Recorded ticks, imported source facts,
+attempts, outcomes, grades and Activity attachments remain authoritative.
+Informative catalogue facts do not change training metrics or deduplication.
 
-## Existing behavior and evidence
+## Existing contracts
 
-- Climbs and Areas have user- and provider-scoped identities. Logs reference
-  their source Climb and retain their original payload. Names alone do not
-  establish identity. See the [schema](../../../src/db/schema/climbing.ts),
-  [writer](../../../src/db/climbing-log-sync.ts) and
-  [model guide](../../climbing-context.md).
-- Analytics group some matching observations within an Activity, using a key
-  that includes date, grade, location path, wall angle and outcome. That is
-  occurrence consolidation, not a reusable cross-catalogue climb identity.
-  See the [projection](../../../packages/server/src/repositories/climbing-canonical-observations.ts).
-- Wall angle currently represents one numeric observation or one category;
-  holds are already plural. See the
-  [shared contract](../../../packages/training/src/climbing-experience.ts).
-- The 2026-10-27 source audit observed multiple and inherited steepness tags on
-  theCrag route pages, while the importer fetches ascent pages only. Steepness
-  keys and climbing-style keys must remain distinct. See the
-  [source inventory](../../climbing-trait-coverage.md#other-climbing-providers),
-  [tag taxonomy](https://www.thecrag.com/en/article/tagging) and
-  [existing parser](../../../src/providers/thecrag/public-parsing.ts).
-- Known-ID route reads and personal logbook reads are implemented; catalogue
-  discovery still needs authenticated/live contract verification. KAYA's
-  [user guide](https://kayaclimb.com/support-articles/logging-your-climbs-on-kaya)
-  describes location-scoped climb discovery, but does not document a search
-  API. Mountain Project's [search page](https://www.mountainproject.com/search)
-  likewise does not establish a callable search contract. See the existing
-  [KAYA client](../../../packages/kaya-client/src/client.ts) and
-  [Mountain Project client](../../../packages/mountain-project-client/src/client.ts).
+The [source schema](../../../src/db/schema/climbing.ts) and
+[writer](../../../src/db/climbing-log-sync.ts) own imported records. The
+[analytics projection](../../../packages/server/src/repositories/climbing-canonical-observations.ts)
+consolidates some tick occurrences, not cross-catalogue identities. Neither is
+modified to persist enrichment. The
+[existing cache](../../../src/lib/cache.ts) already supports expiring values and
+per-user invalidation. Reuse that infrastructure without a new service.
 
-## Approaches
+The [source inventory](../../climbing-trait-coverage.md) records verified
+theCrag route-page tags and KAYA's angle/tag interpretation. theCrag's
+[taxonomy](https://www.thecrag.com/en/article/tagging) distinguishes steepness
+from other styles. Multiple tags and inherited tags must retain their scope;
+an Area tag does not establish a measured route angle.
 
-1. **Retain source catalogue observations and resolve linked metadata on read
-   (recommended).** Each fact has one source-owned storage location. Verified
-   identity links let enrichment work in either direction without changing
-   tick ownership. This requires a catalogue observation model and a shared
-   server resolver, but directly satisfies the requested source separation.
-2. **Copy another provider's facts onto each tick.** Simpler initial reads, but
-   duplicates facts, obscures provenance and makes updates disagree. Excluded
-   by the requested storage behavior and the repository's
-   [canonical-storage policy](../../schema.md).
-3. **Only join existing ticks at request time.** Avoids catalogue observation
-   storage, but cannot enrich from a service where the user has no tick. This
-   is narrower than the approved lookup scope.
+## Approach
 
-## Data ownership and identity
+Use small provider-local catalogue adapters plus a shared server-side matching
+and caching service. Reject durable catalogue storage (contrary to the user's
+clarification) and scraping during existing log queries (would make ordinary
+pages depend on external catalogue response times).
 
-Introduce a provider-agnostic, user-owned catalogue layer for source objects
-and their trait observations, plus evidence-backed identity links. A catalogue
-object is identified by provider and external ID, independently of whether it
-has a log. Existing source Climbs reference that object. A lookup creates only
-the catalogue object and its observations, never a ClimbingLogEntry or Attempt.
+Expose enrichment through a separate, owned-log query and explicit refresh
+action. Initial queries read only the cache; refresh runs bounded lookups
+through existing worker infrastructure. Both web and mobile show the result
+in climb details, with concise source links and a refresh disclosure. Existing
+record APIs keep their contracts; a separate shared enrichment schema avoids
+changing the recorded wall-angle shape or requiring a new log response version.
+MCP exposes the same informational context separately from recorded facts.
 
-Store catalogue facts once per source object, not as enrichment copies on
-every linked climb or tick. Preserve source URL, external IDs, fetch time and
-the evidence needed to interpret each fact. Existing tick payloads remain
-historical source evidence; catalogue refreshes do not rewrite them. During
-implementation, determine which existing Climb/Area-owned catalogue fields
-move into this layer and migrate every reader/writer of those fields rather
-than retaining duplicate current catalogue storage. Log-owned experience facts
-remain log-owned. No materialized resolved winner is stored.
+## Cached data and matching
 
-The initial enrichment allowlist is steepness, explicit grip types, published
-grades, setting, and native route/Area location. Personal grades, tick dates,
-methods, attempts, outcomes, notes and ascent media are not transferable
-catalogue facts. Source descriptions may support inspection but are not parsed
-into invented grip or steepness classifications.
+Cache entries are user-scoped and keyed by source identity plus a fingerprint
+of matching-relevant input (provider/external ID, name, kind, location and set
+context). Store source IDs/URLs, fetch/expiry times, matching evidence, and parsed
+traits. Use a seven-day TTL for successful observations/matches and a one-day
+TTL for verified no-match/ambiguous results; failures are errors, not negative
+matches. These TTLs are implementation choices, not upstream guarantees.
 
-Auto-link only independently verified source references, or one unique
-candidate with the same normalized climb name and kind plus established
-location identity. Uniqueness requires a complete paginated candidate set in
-the relevant location; truncated or failed searches cannot prove a match.
-Establish location identity through verified cross-references, or a uniquely
-corroborated hierarchy and native coordinates; matching Area names or paths
-alone do not establish it. For indoor climbs, identity must additionally establish the
-same gym and set/board problem; repeated names or colors do not suffice.
-Grades can support a match but cannot establish it or require exact equality.
-Area coordinates are not route coordinates. Ambiguous candidates remain
-unlinked and are counted in enrichment status. Retain the evidence for every
-accepted link, revalidate it when identity-bearing fields change, and reject
-transitive matches that introduce contradictions. No fuzzy-name-only or
-LLM-guessed automatic matches, and no new manual matching UI in this scope.
+Discover candidates using verified upstream search contracts. Prefer explicit
+cross-references; otherwise require one unique candidate with matching normalized
+name/kind and independently corroborated location. Uniqueness must hold across
+complete paginated results, not just the first page. Matching Area names alone
+cannot establish identity; native coordinates retain their route/Area scope.
+Indoor matching additionally requires the same gym and set/board problem, so
+recycled names/colors cannot match automatically. Uncertain matches stay
+suggestions, visibly distinct from verified references.
 
-## Traits and server resolution
+Return attributed source observations, not a selected canonical winner. Keep
+original tag/key, supported normalized category, source URL, and direct versus
+inherited scope, including ancestor identity/name only when supplied. Numeric
+angle values keep their units separately. Keep unsupported tags raw rather than
+inventing category mappings. Multiple categories can describe one varied climb;
+differing sources remain independently inspectable. No free-text or LLM
+classification. Published grades and native location can appear as reference
+information without replacing log facts.
 
-Expand the shared model to retain a collection of attributed steepness
-observations independently of numeric wall-angle measurements. Each observation
-retains the original source tag/key, a recognized category when available,
-source object and URL, and direct versus inherited scope. Inherited observations
-identify the supplying Area when upstream evidence provides it; never infer a
-missing ancestor ID from a display name. Unknown tags remain source evidence.
-Categories do not imply measured degrees. Tufa or climbing-style tags are not
-forced into the existing slab/vertical/overhang/roof enum.
+## Retrieval, errors and lifecycle
 
-Store an inherited fact on its supplying source Area and reference it from the
-route, rather than copying it onto each descendant. If upstream supplies an
-inherited tag without an identifiable Area, retain that provenance as a
-route-response observation with unknown ancestor identity. Migrate existing
-categorical wall-angle facts into the attributed trait storage and remove the
-old categorical storage after all writers/readers move; numeric angle facts
-retain their original values and units. Existing API versions remain projections,
-not duplicate storage paths.
+Verify KAYA, Mountain Project and theCrag search/detail contracts with live
+read-only requests and record exact asset URLs, access conditions, pagination
+and source fixtures before implementing an adapter. A
+[KAYA user guide](https://kayaclimb.com/support-articles/logging-your-climbs-on-kaya)
+or [Mountain Project search page](https://www.mountainproject.com/search) is
+evidence of a discovery surface, not proof of a callable API. Reuse existing
+provider HTTP/rate-limit/credentials code; providers do not import each other.
 
-The server resolves metadata for the selected source climb from its own facts
-and verified linked catalogue observations. Explicit log-owned observations
-take precedence for that log. Direct climb catalogue traits are distinguished
-from inherited Area context; inherited traits never become asserted direct
-route measurements. Multiple explicit categories from one source can describe
-a varied climb and are not automatically a conflict. Disagreements between
-sources stay attributed and visible instead of selecting a provider arbitrarily.
+Refresh only requested, owned climbs and deduplicate source detail fetches per
+job. No whole-catalogue crawling, historical database backfill, schema migration
+or new secret. Complete successful refreshes replace cached responses so removed
+tags disappear. Failed refreshes report actionable errors and unexpected errors
+to Sentry; unexpired cached information may remain visible with its fetch time
+and refresh error. Expired information is unavailable. User-prefix invalidation
+and account erasure cover these entries. Re-read source records before serving
+cached data, so deletion or changed matching input cannot expose an obsolete
+entry. All enrichment can be rebuilt without loss of recorded history.
 
-Strength analysis uses resolved direct climb traits and counts a climb once
-within each applicable category. Totals are not computed by summing overlapping
-categories. Inherited Area traits are available as context in details, with an
-explicit inherited label, and do not enter route-specific strengths buckets.
-All metric computation stays on the server. Enrichment must not change tick
-identity, occurrence counts or Activity attachments; remove catalogue traits
-from any occurrence grouping dependency where necessary to preserve that rule.
+## Verification and delivery
 
-## Fetching and lifecycle
+Use TDD for parsers, pagination, matching, cache expiry/invalidation, refresh and
+API ownership. Cover multiple/inherited tags, same-name routes in different
+areas, incomplete candidate sets, indoor resets, uncertain matches, failed
+refreshes and successful removal of tags. Integration tests use real Postgres
+for owned-log access and network-level mocks for catalogue requests. Verify
+web/mobile disclosures, attribution, loading/error states and MCP output against
+the same response schema. No catalogue writes or analytics changes are part of
+this feature.
 
-Use provider-local adapters behind a small shared catalogue lookup contract;
-providers do not import one another. Reuse existing HTTP, rate limiting,
-per-user credentials and worker infrastructure. Search only for climbs rooted
-in the user's existing logs, scoped to evidenced locations, and fetch each
-source catalogue object once per enrichment run. Do not crawl whole catalogues
-or make upstream requests while serving an activity/detail page.
-
-Verify search/detail contracts separately for KAYA, Mountain Project and
-theCrag, recording request shapes, access requirements, pagination and real
-response fixtures. Public documentation or a search page is a lead, not proof
-that an API works. If an adapter cannot discover candidates, report that
-explicit limitation and request direction rather than claiming three-provider
-completion or silently substituting another strategy.
-
-Refresh through normal sync/post-sync processing. Existing history is enriched
-through a bounded, resumable TypeScript operator command, not a deploy migration
-or an unbounded job. Successful empty metadata, no match, ambiguity, unavailable
-access and fetch failure remain distinct. An unsuccessful refresh retains prior
-observations with visible freshness/error state, reports unexpected errors to
-Sentry, and never reports successful enrichment. Ownership checks, account
-erasure and disconnect behavior must include catalogue records and links.
-Successful authoritative catalogue refreshes replace that source object's
-current observations, including removing tags that disappeared; partial or
-failed fetches cannot remove them. Invalidated identity links stop contributing
-to resolved results immediately, even when the old source observation is retained.
-
-## API, web and mobile
-
-Publish the expanded attributed-trait response as a new explicit response
-version, preserving existing versions' declared meaning. Old responses project
-only faithfully representable facts; they never choose an arbitrary category
-or turn an inherited tag into a direct observation. This is a durable versioned
-API contract, following the existing
-[response-version policy](../../climbing-context.md#response-versions-and-independent-releases).
-
-Update web and mobile together. Cards stay concise; details expose source
-links, inherited context and conflicts through existing disclosure patterns.
-Strengths, provider details, activity details and MCP readers use the same
-server resolution rules. Cache keys and strict decoders distinguish versions.
-Source record views still expose original provider facts alongside enrichment.
-
-## Verification and delivery checkpoints
-
-1. Verify live catalogue discovery/detail contracts and fixture provenance
-   before implementing adapters. Report provider limitations explicitly.
-2. Write failing parser/matcher/resolver tests, then implement. Cover duplicate
-   names, different areas, indoor resets, grade disagreements, multiple and
-   inherited tags, and changes that invalidate a prior match.
-3. Run executable PostgreSQL integration tests for source ownership, singular
-   catalogue storage, linked resolution, conflicts, refresh, erasure and
-   unchanged occurrence counts. No SQL-string-only substitute.
-4. Verify old/new API combinations, MCP output, web/mobile details and strengths
-   interactions, including missing, conflicting, stale and inherited states.
-5. Run the repository's required checks, then demonstrate a read-only report of
-   matched/unmatched/ambiguous catalogue candidates and resulting traits for
-   existing climbs. Historical writes and production deployment are separate
-   operator actions from design approval.
-
-No new dependency, service, secret or matching framework is proposed. Exact
-table names, migration ordering and adapter request contracts remain builder
-details to establish from the verified source shapes. If they require a
-different storage or matching strategy, return for approval before changing it.
+If a provider's discovery surface cannot be verified, report exact evidence and
+ask for direction before substituting a different discovery strategy. A partial
+adapter is not completion of the three-provider feature.
