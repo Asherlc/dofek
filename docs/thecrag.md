@@ -81,6 +81,30 @@ contract. An authenticated production response has not yet been verified;
 unauthenticated research requests were blocked by Cloudflare. Passing fixture
 tests establish Dofek's handling of that contract, not live-account access.
 
+### Public-feed research — 2026-10-26
+
+The historical ascent-feed endpoint is
+`https://www.thecrag.com/feed/ascents/climber/<account-id>`; theCrag's maintainers
+documented retaining that route when migrating Atom feeds to stream queries
+([upstream discussion](https://github.com/theCrag/website/issues/1997)).
+Fresh, logged-out Chrome retrieved a public account's feed, its ascent ID,
+and an empty next page through the feed's `rel="next"` link. The corresponding
+public ascent detail page was also readable. This verifies that example's
+anonymous discovery and detail access, not complete historical coverage or
+deletion detection. Feed entries represent events, which can group ascents
+([upstream design](https://github.com/theCrag/website/issues/1997)).
+
+Plain HTTP was tested from both the workstation and production network.
+Production Node 26.12.1 / Undici 8.12.2 returned HTTP 403 for the feed, its next
+page, and the ascent detail page. Production host curl 8.5.0 also returned 403
+for the feed. An explicit `Accept: application/atom+xml`, identifying Dofek
+User-Agent, and browser-style User-Agent did not resolve the block. The responses
+were 5,486-byte Cloudflare HTML block pages, not Atom data. The underlying blocking rule is unknown;
+these results do not establish that login is required. Public-feed sync is not
+implemented, and the existing personal-key provider remains unchanged.
+
+### Personal API contract
+
 The [importer](../src/providers/thecrag/provider.ts) recognizes supported rock, ice,
 mixed, snow, hiking, scrambling and mountaineering classifications when source
 styles establish them. theCrag supports additional valid disciplines
