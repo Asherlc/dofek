@@ -25,6 +25,21 @@ const STRAIN_COMPANION_RESPONSES = {
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
   "climbing.strengths": climbingStrengthsFixture,
+  "climbing.volumeOverTime": [
+    { week: "2026-09-28", attempts: 12, minutes: 120 },
+    { week: "2026-10-05", attempts: 8, minutes: 90 },
+  ],
+  "strength.volumeOverTime": [
+    {
+      week: "2026-09-28",
+      totalVolumeKg: 2000,
+      setCount: 12,
+      workoutCount: 2,
+      recordedVolumeKg: 2000,
+      recordedSetCount: 12,
+      durationMinutes: 120,
+    },
+  ],
   "training.hrZones": {
     maxHr: 190,
     weeks: [],

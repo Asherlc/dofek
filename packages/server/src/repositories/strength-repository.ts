@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../../../src/db/index.ts";
 import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -20,6 +21,9 @@ export interface VolumeWeekRow {
   totalVolumeKg: number;
   setCount: number;
   workoutCount: number;
+  durationMinutes: number | null;
+  recordedVolumeKg: number | null;
+  recordedSetCount: number | null;
 }
 
 /** Weekly strength training volume summary. */
@@ -36,6 +40,9 @@ export class VolumeWeek {
       totalVolumeKg: this.#row.totalVolumeKg,
       setCount: this.#row.setCount,
       workoutCount: this.#row.workoutCount,
+      durationMinutes: this.#row.durationMinutes,
+      recordedVolumeKg: this.#row.recordedVolumeKg,
+      recordedSetCount: this.#row.recordedSetCount,
     };
   }
 }
@@ -224,6 +231,9 @@ const volumeRowSchema = z.object({
   total_volume_kg: z.coerce.number(),
   set_count: z.coerce.number(),
   workout_count: z.coerce.number(),
+  duration_minutes: z.coerce.number().nullable(),
+  recorded_volume_kg: z.coerce.number().nullable(),
+  recorded_set_count: z.coerce.number().nullable(),
 });
 
 const oneRepMaxRowSchema = z.object({
@@ -284,11 +294,24 @@ export class StrengthRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #accessWindow: AccessWindow;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" },
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#accessWindow = accessWindow;
+  }
+
+  #accessFilter() {
+    return this.#accessWindow.kind === "full"
+      ? sql``
+      : sql`AND a.started_at >= (${this.#accessWindow.startDate}::date::timestamp AT TIME ZONE ${this.#timezone}) AND a.started_at < (${this.#accessWindow.endDateExclusive}::date::timestamp AT TIME ZONE ${this.#timezone})`;
   }
 
   #dedupedStrengthSets(days: RangeDays) {
@@ -332,6 +355,7 @@ export class StrengthRepository {
           WHERE a.user_id = ${this.#userId}
             AND a.canonical_type = 'strength'
             ${rangeFilter}
+            ${this.#accessFilter()}
         ),
         ranked_strength_sets AS (
           SELECT
@@ -454,18 +478,35 @@ export class StrengthRepository {
 
   /** Weekly tonnage: SUM(weight_kg * reps) grouped by week. */
   async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       volumeRowSchema,
-      sql`${this.#dedupedStrengthSets(days)}
+      sql`${this.#dedupedStrengthSets(days)}, weekly_sets AS (
           SELECT
-            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
             COALESCE(SUM(weight_kg * reps) FILTER (WHERE set_type = 'working'), 0)::real AS total_volume_kg,
             COUNT(*) FILTER (WHERE set_type = 'working')::int AS set_count,
+            CASE WHEN COUNT(*) FILTER (WHERE set_type = 'working') = COUNT(weight_kg * reps) FILTER (WHERE set_type = 'working')
+              AND COUNT(*) FILTER (WHERE set_type = 'working') > 0
+              THEN SUM(weight_kg * reps) FILTER (WHERE set_type = 'working')::real END AS recorded_volume_kg,
             COUNT(DISTINCT group_activity_id)::int AS workout_count
           FROM deduped_strength_sets
           GROUP BY 1
-          ORDER BY week`,
+          ), weekly_time AS (
+            SELECT date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
+              COUNT(*)::int AS activities,
+              CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS duration_minutes
+            FROM fitness.v_activity a WHERE a.user_id = ${this.#userId}
+              AND a.canonical_type = 'strength' ${rangeFilter} ${this.#accessFilter()} GROUP BY 1
+          )
+          SELECT COALESCE(weekly_sets.week, weekly_time.week)::text AS week,
+            COALESCE(weekly_sets.total_volume_kg, 0) AS total_volume_kg,
+            COALESCE(weekly_sets.set_count, 0) AS set_count,
+            COALESCE(weekly_sets.workout_count, 0) AS workout_count, weekly_time.duration_minutes,
+            CASE WHEN weekly_sets.workout_count = weekly_time.activities THEN weekly_sets.recorded_volume_kg END AS recorded_volume_kg,
+            CASE WHEN weekly_sets.workout_count = weekly_time.activities THEN weekly_sets.set_count END AS recorded_set_count
+          FROM weekly_sets FULL JOIN weekly_time USING (week) ORDER BY week`,
     );
 
     return rows.map(
@@ -475,6 +516,9 @@ export class StrengthRepository {
           totalVolumeKg: row.total_volume_kg,
           setCount: row.set_count,
           workoutCount: row.workout_count,
+          durationMinutes: row.duration_minutes,
+          recordedVolumeKg: row.recorded_volume_kg,
+          recordedSetCount: row.recorded_set_count,
         }),
     );
   }

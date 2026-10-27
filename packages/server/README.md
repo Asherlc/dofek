@@ -7,6 +7,14 @@ separate published and reported grades, and scoped attempt facts. See the
 
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
+The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
+weekly volume queries provide the charts with attempt counts, working sets,
+weight multiplied by repetitions, and recorded activity duration. The
+[climbing repository](src/repositories/climbing-repository.ts) applies climbing
+filters and retains unknown attempt counts; the
+[strength repository](src/repositories/strength-repository.ts) reports unknown
+set or weight totals when a workout or a working set lacks the required data.
+
 ## Architecture
 
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.

@@ -20,6 +20,9 @@ export interface VolumeOverTimeRow {
   totalVolumeKg: number;
   setCount: number;
   workoutCount: number;
+  durationMinutes: number | null;
+  recordedVolumeKg: number | null;
+  recordedSetCount: number | null;
 }
 
 export interface EstimatedOneRepMaxEntry {
@@ -62,10 +65,11 @@ export const strengthRouter = router({
     "strength.volumeOverTime",
     CacheTTL.LONG,
     async ({ ctx, range }): Promise<VolumeOverTimeRow[]> => {
-      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const weeks = await repo.getVolumeOverTime(range.days);
       return weeks.map((week) => week.toDetail());
     },
+    { keyVersion: "strength-volume-time-v2" },
   ),
 
   estimatedOneRepMax: selectedChartRangeQuery(

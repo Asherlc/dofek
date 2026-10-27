@@ -129,6 +129,15 @@ vi.mock("expo-router", () => ({
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     climbing: {
+      volumeOverTime: {
+        useQuery: () => ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+        }),
+      },
       strengths: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.strengths.push({ input, options });
@@ -140,6 +149,17 @@ vi.mock("../../lib/trpc", () => ({
           mockRangeQueryCalls.locationMap.push({ input, options });
           return { ...mockLocationMapState };
         },
+      },
+    },
+    strength: {
+      volumeOverTime: {
+        useQuery: () => ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+        }),
       },
     },
     mobileDashboard: {
@@ -193,9 +213,11 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       climbing: {
+        volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
+      strength: { volumeOverTime: { invalidate: vi.fn() } },
       mobileDashboard: {
         training: { invalidate: mockTrainingInvalidate },
       },
