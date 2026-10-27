@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { recordActivityImageDiscovery } from "../db/activity-images.ts";
+import {
+  recordActivityImageDiscovery,
+  recordClimbingImageDiscovery,
+} from "../db/activity-images.ts";
 import { getProvider } from "../providers/index.ts";
 import type { SyncRun } from "../providers/sync-run.ts";
 import { isSyncProvider } from "../providers/types.ts";
@@ -207,11 +210,21 @@ export async function refreshActivityImage(
   work: ActivityImageWork,
 ): Promise<ProviderImageCandidate> {
   const provider = getProvider(work.providerId);
-  if (!provider || !isSyncProvider(provider) || !provider.discoverActivityImages)
-    throw Error("Image refresh unavailable");
-  const discovery = await provider.discoverActivityImages(run, work.activityExternalId, {
+  if (!provider || !isSyncProvider(provider)) throw Error("Image refresh unavailable");
+  const discover =
+    work.activityId === null ? provider.discoverClimbingImages : provider.discoverActivityImages;
+  if (!discover) throw Error("Image refresh unavailable");
+  const discovery = await discover.call(provider, run, work.activityExternalId, {
     refresh: true,
   });
+  if (work.activityId === null) {
+    await recordClimbingImageDiscovery(run.db, {
+      userId: work.userId,
+      climbingLogEntryId: work.climbingLogEntryId,
+      providerId: work.providerId,
+      discovery,
+    });
+  }
   const candidate = discovery.images.find((image) => image.sourceId === work.candidate.sourceId);
   if (!candidate) throw Error("Source image no longer exposed");
   return candidate;

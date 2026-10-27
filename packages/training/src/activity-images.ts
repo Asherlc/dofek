@@ -1,5 +1,6 @@
 export interface ActivityImageSource {
-  activityId: string;
+  activityId: string | null;
+  climbingLogEntryId?: string;
   providerId: string;
   sourceId: string;
   kind: string;
@@ -18,7 +19,10 @@ export interface ActivityImage {
 }
 
 export function activityImageCaption(image: Pick<ActivityImage, "sources">): string {
-  return image.sources.map((source) => source.caption?.trim()).find(Boolean) ?? "Activity photo";
+  return (
+    image.sources.map((source) => source.caption?.trim()).find(Boolean) ??
+    (image.sources.some((source) => source.climbingLogEntryId) ? "Ascent photo" : "Activity photo")
+  );
 }
 
 interface ActivityImagesQueryState {

@@ -35,6 +35,21 @@ const databaseRowSchema = z.object({
       .pipe(climbingAttemptSchema),
   ),
 });
+function climbingDetailRaw(
+  log: Pick<ClimbingLogEntryDetail, "providerId" | "externalId" | "raw">,
+): ClimbingLogEntryDetail["raw"] {
+  const raw = log.raw;
+  if (
+    log.providerId !== "kaya" ||
+    !log.externalId?.startsWith("kaya:ascent:") ||
+    raw === null ||
+    typeof raw !== "object" ||
+    Array.isArray(raw)
+  )
+    return raw;
+  return Object.fromEntries(Object.entries(raw).filter(([key]) => key !== "photo"));
+}
+
 function mapLocation(
   climb: ClimbingLogEntryDetail["climb"],
 ): ClimbingLogEntryDetail["mapLocation"] {
@@ -165,7 +180,9 @@ function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
         [...match.log.sourceLinks, ...log.sourceLinks].map((link) => [JSON.stringify(link), link]),
       ).values(),
     ];
+    const photoLogEntryId = match.log.photoLogEntryId ?? log.photoLogEntryId;
     Object.assign(match.log, preferred, {
+      photoLogEntryId,
       sourceName: [...match.sources].join(", ") || null,
       sourceLinks,
     });
@@ -349,8 +366,13 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       });
       return climbingLogEntryDetailSchema.parse({
         ...row.log,
+        raw: climbingDetailRaw(row.log),
         climb: row.climb,
         mapLocation: mapLocation(row.climb),
+        photoLogEntryId:
+          row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")
+            ? row.log.id
+            : null,
         attempts: row.attempts.map((attempt) => ({
           ...attempt,
           rockResultLabels: resultLabels(row, attempt),

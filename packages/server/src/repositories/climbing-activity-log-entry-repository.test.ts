@@ -38,6 +38,64 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("keeps KAYA photo URLs out of active and retained details while preserving raw climb facts", async () => {
+    const log = named("kaya");
+    log.externalId = "kaya:ascent:photo-ascent";
+    log.raw = {
+      photo: {
+        photo_url: "https://upstream.test/original?signature=secret",
+        thumb_url: "https://upstream.test/thumb",
+      },
+      climb: { slug: "corner", color: "blue" },
+      comment: "Great climb",
+    };
+    const repo = repository([log]);
+    const [active] = await repo.getLogEntries([log.id]);
+    const retained = await repo.getProviderLogEntry("kaya", log.id);
+    for (const detail of [active?.toDetail(), retained]) {
+      expect(detail?.raw).toEqual({
+        climb: { slug: "corner", color: "blue" },
+        comment: "Great climb",
+      });
+      expect(detail?.sourceLinks).toContainEqual({
+        providerId: "kaya",
+        kind: "route",
+        url: "https://kaya-app.kayaclimb.com/climb/corner",
+      });
+    }
+    expect(log.raw).toHaveProperty(
+      "photo.photo_url",
+      "https://upstream.test/original?signature=secret",
+    );
+  });
+  it.each([false, true])(
+    "retains the KAYA photo owner when a richer provider wins (KAYA first: %s)",
+    async (kayaFirst) => {
+      const kaya = named("kaya");
+      kaya.externalId = "kaya:ascent:photo-ascent";
+      const richer = named("openbeta", "20000000-0000-4000-8000-000000000006", true);
+      const [result] = await repository(
+        kayaFirst ? [kaya, richer] : [richer, kaya],
+      ).getActivityLogEntries("activity");
+      expect(result?.toDetail()).toMatchObject({
+        id: richer.id,
+        providerId: "openbeta",
+        photoLogEntryId: kaya.id,
+      });
+    },
+  );
+  it.each([
+    { externalId: "kaya:ascent:standalone", expected: "20000000-0000-4000-8000-000000000001" },
+    { externalId: "kaya:attempt:standalone", expected: null },
+  ])(
+    "derives the photo query owner from a standalone source record $externalId",
+    async ({ externalId, expected }) => {
+      const log = named("kaya");
+      log.externalId = externalId;
+      const [result] = await repository([log]).getLogEntries([log.id]);
+      expect(result?.toDetail().photoLogEntryId).toBe(expected);
+    },
+  );
   it.each([true, false, null])("retains the database free-send state %s", async (freeSend) => {
     const log = named("openbeta");
     const execute = vi.fn().mockResolvedValue([{ ...climbingLogDatabaseFixture(log), freeSend }]);

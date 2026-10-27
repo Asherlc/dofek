@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { ImageDiscovery, ProviderImageCandidate } from "../../activity-images/types.ts";
 import { activity } from "./activity.ts";
+import { climbingLogEntry } from "./climbing.ts";
 import { fitness } from "./core.ts";
 import { provider, userProfile } from "./reference.ts";
 
@@ -48,7 +49,8 @@ export const activityImage = fitness.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull(),
-    activityId: uuid("activity_id").notNull(),
+    activityId: uuid("activity_id"),
+    climbingLogEntryId: uuid("climbing_log_entry_id"),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
@@ -62,6 +64,12 @@ export const activityImage = fitness.table(
   },
   (t) => [
     uniqueIndex("activity_image_source_idx").on(t.userId, t.activityId, t.providerId, t.sourceId),
+    uniqueIndex("activity_image_climbing_source_idx").on(
+      t.userId,
+      t.climbingLogEntryId,
+      t.providerId,
+      t.sourceId,
+    ),
     uniqueIndex("activity_image_user_id_idx").on(t.userId, t.id),
     index("activity_image_user_object_idx")
       .on(t.userId, t.objectId)
@@ -71,11 +79,20 @@ export const activityImage = fitness.table(
       foreignColumns: [activity.userId, activity.id],
     }).onDelete("cascade"),
     foreignKey({
+      columns: [t.userId, t.providerId, t.climbingLogEntryId],
+      foreignColumns: [climbingLogEntry.userId, climbingLogEntry.providerId, climbingLogEntry.id],
+      name: "activity_image_owned_climbing_log_fk",
+    }).onDelete("cascade"),
+    foreignKey({
       columns: [t.userId, t.objectId],
       foreignColumns: [activityImageObject.userId, activityImageObject.id],
       name: "activity_image_owned_object_fk",
     }),
     check("activity_image_generation", sql`${t.generation} > 0`),
+    check(
+      "activity_image_one_owner",
+      sql`num_nonnulls(${t.activityId}, ${t.climbingLogEntryId}) = 1`,
+    ),
   ],
 );
 
@@ -84,7 +101,8 @@ export const activityImageDiscovery = fitness.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull(),
-    activityId: uuid("activity_id").notNull(),
+    activityId: uuid("activity_id"),
+    climbingLogEntryId: uuid("climbing_log_entry_id"),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
@@ -95,11 +113,25 @@ export const activityImageDiscovery = fitness.table(
   },
   (t) => [
     uniqueIndex("activity_image_discovery_source_idx").on(t.userId, t.activityId, t.providerId),
+    uniqueIndex("activity_image_discovery_climbing_source_idx").on(
+      t.userId,
+      t.climbingLogEntryId,
+      t.providerId,
+    ),
     foreignKey({
       columns: [t.userId, t.activityId],
       foreignColumns: [activity.userId, activity.id],
       name: "activity_image_discovery_owned_activity_fk",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.userId, t.providerId, t.climbingLogEntryId],
+      foreignColumns: [climbingLogEntry.userId, climbingLogEntry.providerId, climbingLogEntry.id],
+      name: "activity_image_discovery_owned_climbing_log_fk",
+    }).onDelete("cascade"),
+    check(
+      "activity_image_discovery_one_owner",
+      sql`num_nonnulls(${t.activityId}, ${t.climbingLogEntryId}) = 1`,
+    ),
     check(
       "activity_image_discovery_coverage",
       sql`${t.coverage} IN ('complete', 'partial', 'unavailable', 'failed')`,

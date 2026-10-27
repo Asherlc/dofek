@@ -105,6 +105,8 @@ interface ActivityImagesProps {
   loading?: boolean;
   error?: { message: string } | null;
   retrying?: boolean;
+  pendingMessage?: string;
+  viewerLabel?: string;
 }
 
 export function ActivityImages({
@@ -113,16 +115,23 @@ export function ActivityImages({
   loading = false,
   error,
   retrying = false,
+  pendingMessage,
+  viewerLabel = "Activity photo",
 }: ActivityImagesProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = images.find((image) => image.id === selectedId);
   useEffect(() => {
     if (selectedId !== null && selected === undefined) setSelectedId(null);
   }, [selectedId, selected]);
-  if (!images.length && !loading && !error) return null;
+  if (!images.length && !loading && !error && !pendingMessage) return null;
   return (
     <View style={styles.gallery}>
       <Text style={styles.title}>Photos</Text>
+      {pendingMessage && (
+        <Text role="status" style={styles.source}>
+          {pendingMessage}
+        </Text>
+      )}
       {error && (
         <QueryStatePanel
           variant="error"
@@ -164,7 +173,7 @@ export function ActivityImages({
           <View
             style={styles.viewer}
             role="dialog"
-            accessibilityLabel="Activity photo"
+            accessibilityLabel={viewerLabel}
             accessibilityViewIsModal
           >
             <View style={styles.viewerHeader}>

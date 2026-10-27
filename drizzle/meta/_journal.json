@@ -1170,6 +1170,13 @@
       "when": 1793055512990,
       "tag": "0166_openbeta_tick_completion",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1793055600000,
+      "tag": "0167_climbing_image_owners",
+      "breakpoints": true
     }
   ]
 }

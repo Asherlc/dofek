@@ -12,6 +12,8 @@ import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing
 import { colors } from "../theme";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 
+import { ClimbingPhotos } from "./ClimbingPhotos";
+
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
   if (values.length === 0) return null;
   return (
@@ -125,6 +127,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           })}
         </View>
       )}
+      {entry.photoLogEntryId !== null && <ClimbingPhotos id={entry.photoLogEntryId} />}
       {entry.notes && (
         <View style={styles.section}>
           <Text style={styles.heading}>Notes</Text>

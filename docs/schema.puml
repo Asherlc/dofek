@@ -199,6 +199,14 @@ entity "activity" {
   created_at : timestamp
 }
 
+entity "activity_device_observation" {
+  * activity_id : uuid <<PK>>
+  * sequence : bigint <<PK>>
+  --
+  message_type : text
+  raw : jsonb
+}
+
 entity "activity_group" {
   * id : uuid <<PK>>
   --
@@ -404,6 +412,7 @@ entity "activity_image" {
   --
   user_id : uuid <<FK>>
   activity_id : uuid <<FK>>
+  climbing_log_entry_id : uuid <<FK>>
   provider_id : text <<FK>>
   source_id : text
   candidate : jsonb
@@ -435,6 +444,7 @@ entity "activity_image_discovery" {
   --
   user_id : uuid <<FK>>
   activity_id : uuid <<FK>>
+  climbing_log_entry_id : uuid <<FK>>
   provider_id : text <<FK>>
   coverage : text
   expected_count : integer
@@ -1293,6 +1303,7 @@ provider ||--o{ activity
 user_profile ||--o{ activity
 provider ||--o{ activity
 activity_group ||--o{ activity
+activity ||--o{ activity_device_observation
 user_profile ||--o{ activity_group
 user_profile ||--o{ activity_group_alias
 activity_group ||--o{ activity_group_alias
@@ -1316,11 +1327,13 @@ activity ||--o{ strength_set
 exercise ||--o{ strength_set
 provider ||--o{ activity_image
 activity ||--o{ activity_image
+climbing_log_entry ||--o{ activity_image
 activity_image_object ||--o{ activity_image
 user_profile ||--o{ activity_image_backfill
 provider ||--o{ activity_image_backfill
 provider ||--o{ activity_image_discovery
 activity ||--o{ activity_image_discovery
+climbing_log_entry ||--o{ activity_image_discovery
 user_profile ||--o{ activity_image_object
 activity_image ||--o{ activity_image_work
 user_profile ||--o{ area

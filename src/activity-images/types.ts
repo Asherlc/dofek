@@ -22,17 +22,21 @@ export interface ImageDiscovery {
   reason: string | null;
   images: ProviderImageCandidate[];
 }
-export interface ActivityImageWork {
+interface ImageWork {
   id: string;
   userId: string;
   providerId: string;
-  activityId: string;
   activityExternalId: string;
   imageId: string;
   generation: number;
   candidate: ProviderImageCandidate;
   attempts: number;
 }
+export type ActivityImageWork = ImageWork &
+  (
+    | { activityId: string; climbingLogEntryId?: never }
+    | { activityId: null; climbingLogEntryId: string }
+  );
 export function selectImageVariant(variants: ImageVariant[]): ImageVariant {
   const sorted = [...variants].sort(
     (a, b) => (b.width ?? 0) * (b.height ?? 0) - (a.width ?? 0) * (a.height ?? 0),

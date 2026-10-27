@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import {
   createClickHouseTestActivitySensorStore,
@@ -410,9 +412,18 @@ describe("sleep data consistency: multiple sessions per date", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
+  let fixtureDate: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+    // Keep fixture nights and request windows on one date even if the suite crosses midnight.
+    const [clock] = await executeWithSchema(
+      testCtx.db,
+      z.object({ date: z.string() }),
+      sql`SELECT CURRENT_DATE::text AS date`,
+    );
+    if (!clock) throw new Error("Database date is required for sleep fixtures");
+    fixtureDate = clock.date;
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -454,8 +465,8 @@ describe("sleep data consistency: multiple sessions per date", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'whoop', ${TEST_USER_ID}, ${`w-${daysAgo}`},
-              (CURRENT_DATE - ${daysAgo}::int)::timestamp + INTERVAL '22 hours',
-              (CURRENT_DATE - ${daysAgo}::int + 1)::timestamp + INTERVAL '6 hours',
+              (${fixtureDate}::date - ${daysAgo}::int)::timestamp + INTERVAL '22 hours',
+              (${fixtureDate}::date - ${daysAgo}::int + 1)::timestamp + INTERVAL '6 hours',
               480, 96, 106, 216, 62, 92.0, 'sleep'
             )`,
       );
@@ -468,8 +479,8 @@ describe("sleep data consistency: multiple sessions per date", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID}, ${`ah-${daysAgo}`},
-              (CURRENT_DATE - ${daysAgo}::int)::timestamp + INTERVAL '23 hours 30 minutes',
-              (CURRENT_DATE - ${daysAgo}::int + 1)::timestamp + INTERVAL '5 hours',
+              (${fixtureDate}::date - ${daysAgo}::int)::timestamp + INTERVAL '23 hours 30 minutes',
+              (${fixtureDate}::date - ${daysAgo}::int + 1)::timestamp + INTERVAL '5 hours',
               330, 50, 70, 160, 50, NULL, 'sleep'
             )`,
       );
@@ -515,6 +526,7 @@ describe("sleep data consistency: multiple sessions per date", () => {
     await queryCache.invalidateAll();
     const rows = await query<{ duration_minutes: number | null }[]>("sleep.list", {
       days: 14,
+      endDate: fixtureDate,
     });
     // v_sleep has 28 rows (14 nights × 2 providers), but sleep.list
     // deduplicates to one per date, picking the longest session
@@ -527,7 +539,7 @@ describe("sleep data consistency: multiple sessions per date", () => {
 
   it("sleepNeed.calculate picks the longest session per date in SQL", async () => {
     await queryCache.invalidateAll();
-    const endDate = new Date().toISOString().slice(0, 10);
+    const endDate = fixtureDate;
     const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
     expect(result).not.toBeNull();
 

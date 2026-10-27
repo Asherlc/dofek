@@ -524,6 +524,19 @@ table fitness.activity {
   }
 }
 
+table fitness.activity_device_observation {
+  activity_id uuid [not null]
+  sequence bigint [not null]
+  message_type text [not null]
+  raw jsonb [not null]
+
+  indexes {
+    (activity_id, sequence) [pk]
+
+
+  }
+}
+
 table fitness.activity_group {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -784,7 +797,8 @@ table fitness.strength_set {
 table fitness.activity_image {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
-  activity_id uuid [not null]
+  activity_id uuid
+  climbing_log_entry_id uuid
   provider_id text [not null]
   source_id text [not null]
   candidate jsonb [not null]
@@ -796,8 +810,11 @@ table fitness.activity_image {
 
   indexes {
     (user_id, activity_id, provider_id, source_id) [name: 'activity_image_source_idx', unique]
+    (user_id, climbing_log_entry_id, provider_id, source_id) [name: 'activity_image_climbing_source_idx', unique]
     (user_id, id) [name: 'activity_image_user_id_idx', unique]
     (user_id, object_id) [name: 'activity_image_user_object_idx']
+
+
 
 
 
@@ -822,7 +839,8 @@ table fitness.activity_image_backfill {
 table fitness.activity_image_discovery {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
-  activity_id uuid [not null]
+  activity_id uuid
+  climbing_log_entry_id uuid
   provider_id text [not null]
   coverage text [not null]
   expected_count integer
@@ -831,6 +849,9 @@ table fitness.activity_image_discovery {
 
   indexes {
     (user_id, activity_id, provider_id) [name: 'activity_image_discovery_source_idx', unique]
+    (user_id, climbing_log_entry_id, provider_id) [name: 'activity_image_discovery_climbing_source_idx', unique]
+
+
 
 
   }
@@ -994,6 +1015,7 @@ table fitness.climbing_log_entry {
   indexes {
 
 
+    (user_id, provider_id, id) [name: 'climbing_log_entry_owner_provider_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_log_entry_source_external_id_idx', unique]
     activity_id [name: 'climbing_log_entry_activity_idx']
     climb_id [name: 'climbing_log_entry_climb_idx']
@@ -2056,6 +2078,8 @@ ref activity_absence_provider_id_provider_id_fk: fitness.activity.absence_provid
 
 ref activity_user_group_fk: fitness.activity.(user_id, group_id) > fitness.activity_group.(user_id, id) [delete: no action, update: no action]
 
+ref activity_device_observation_activity_id_activity_id_fk: fitness.activity_device_observation.activity_id > fitness.activity.id [delete: cascade, update: no action]
+
 ref activity_group_user_id_user_profile_id_fk: fitness.activity_group.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref activity_group_alias_user_id_user_profile_id_fk: fitness.activity_group_alias.user_id > fitness.user_profile.id [delete: no action, update: no action]
@@ -2102,6 +2126,8 @@ ref activity_image_provider_id_provider_id_fk: fitness.activity_image.provider_i
 
 ref activity_image_user_id_activity_id_activity_user_id_id_fk: fitness.activity_image.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
 
+ref activity_image_owned_climbing_log_fk: fitness.activity_image.(user_id, provider_id, climbing_log_entry_id) > fitness.climbing_log_entry.(user_id, provider_id, id) [delete: cascade, update: no action]
+
 ref activity_image_owned_object_fk: fitness.activity_image.(user_id, object_id) > fitness.activity_image_object.(user_id, id) [delete: no action, update: no action]
 
 ref activity_image_backfill_user_id_user_profile_id_fk: fitness.activity_image_backfill.user_id > fitness.user_profile.id [delete: no action, update: no action]
@@ -2111,6 +2137,8 @@ ref activity_image_backfill_provider_id_provider_id_fk: fitness.activity_image_b
 ref activity_image_discovery_provider_id_provider_id_fk: fitness.activity_image_discovery.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref activity_image_discovery_owned_activity_fk: fitness.activity_image_discovery.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
+
+ref activity_image_discovery_owned_climbing_log_fk: fitness.activity_image_discovery.(user_id, provider_id, climbing_log_entry_id) > fitness.climbing_log_entry.(user_id, provider_id, id) [delete: cascade, update: no action]
 
 ref activity_image_object_user_id_user_profile_id_fk: fitness.activity_image_object.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

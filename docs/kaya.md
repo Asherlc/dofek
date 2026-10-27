@@ -75,8 +75,8 @@ the remaining omissions are shown below:
 | Session attempted climb, requested | `session_attempts` (aliased as `attempts`), `sent` (send status verified 2026-10-26) |
 | Climb, not requested | `description` |
 | Climb, requested | `slug`, `color { name }`, `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
-| Ascent, requested | Its own `grade`, comments, ratings and stiffness |
-| Ascent, not requested | `photo { photo_url thumb_url }`, `video { video_url thumb_url }` |
+| Ascent, requested | Its own `grade`, comments, ratings, stiffness, `photo { photo_url thumb_url }` |
+| Ascent, not requested | `video { video_url thumb_url }` |
 
 For the reported session, climb colors and slugs were populated; the other
 listed metadata was null, and ascent grades matched the climb grades. Session
@@ -137,10 +137,9 @@ and retains the earlier records. Reappearing records recover their original IDs.
 The [shared database writer](../src/db/climbing-log-sync.ts) enforces source
 scope inside the import transaction; executable [API](../packages/server/src/repositories/kaya-sync.integration.test.ts)
 and [CSV](../src/providers/kaya/import.integration.test.ts) regressions cover
-refreshes, partial exports, and record preservation. The API fetches full
-feeds: sessions are filtered locally by `since`, while standalone ascents use
-both `since` and `until`. These are current client bounds rather than an
-upstream bounded-query guarantee. See the [sync implementation](../src/providers/kaya-sync.ts).
+refreshes, partial exports, and record preservation. The API fetches and
+reconciles complete session and ascent feeds on each sync, including history
+before the requested window. See the [sync implementation](../src/providers/kaya-sync.ts).
 
 Board names can describe a model/layout, such as
 [Moonboard (2016)](https://kaya-app.kayaclimb.com/location/Moonboard-2016-701910),
@@ -167,3 +166,32 @@ Climbing card summaries show Onsight or Flash without the redundant attempts
 count and omit the generic “Completed” wording. Other reported counts and
 failure results remain visible; the underlying attempts and outcomes are unchanged.
 See the [shared formatter](../packages/format/src/climbing-log.ts).
+
+## Ascent photographs
+
+The current [Kaya application fragment](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js)
+selects `photo { photo_url thumb_url }` on `WebAscentFields` (inspected
+2026-10-26). The authenticated ascent feed requests those same photo fields;
+photographs are retained in the source log payload and discovered after its
+ClimbingLogEntry is persisted. Both session-attached and standalone ascents
+use the existing private [image pipeline](../src/db/activity-images.ts).
+
+The next normal sync discovers photographs on historical ascents using its
+already complete feed; no separate historical scan or per-ascent sync request
+is needed. The [adapter](../src/providers/kaya-sync.ts) keeps one stable photo
+slot per ascent, prefers `photo_url`, and offers `thumb_url` as an alternative.
+The [media mapper](../src/providers/kaya-sync.ts) identifies revisions from
+the underlying URL after removing signing parameters, so rotating signatures
+do not replace an image while a changed source photograph does. Explicit
+`photo: null` establishes no photograph; omitted, malformed, or empty photo
+objects remain incomplete and cannot retire stored photographs. Video
+thumbnails and climb galleries are outside this import.
+
+Expired links refresh through the same verified authenticated
+`ascentsForUser` list and select the exact ascent ID. A single-ascent lookup
+was not established by the inspected application; see the existing
+[client query contract](../packages/kaya-client/src/client.ts). This means an
+expired-link refresh can read the complete paginated ascent feed. Inspection
+verified the current application fragment, and executable client/provider
+tests cover discovery and refresh; this change has not independently verified
+an authenticated account with a populated photo or downloaded its real bytes.

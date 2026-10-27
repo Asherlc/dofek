@@ -1,6 +1,7 @@
 import { ImageDownloadError } from "../activity-images/download.ts";
 import { activityImageAcquisitions } from "../activity-images/metrics.ts";
 import type { ActivityImageWork, ProviderImageCandidate } from "../activity-images/types.ts";
+import { captureException } from "../lib/error-reporting.ts";
 
 export interface ActivityImageJobDependencies {
   load(id: string, userId: string): Promise<ActivityImageWork | null>;
@@ -34,6 +35,8 @@ export async function processActivityImageJob(
       const candidate = await deps.refresh(work);
       if (candidate.sourceId !== work.candidate.sourceId)
         throw new ImageDownloadError("image_identity_changed");
+      if (candidate.revision !== work.candidate.revision)
+        throw new ImageDownloadError("image_revision_changed");
       result = await deps.acquire({ ...work, candidate });
     }
     if (!result.stored) await deps.fail(work, false, "superseded", 0);
@@ -43,6 +46,13 @@ export async function processActivityImageJob(
     });
   } catch (error) {
     const known = error instanceof ImageDownloadError;
+    if (!known) {
+      // Provider transport errors may contain bearer image URLs; report the
+      // failure without sending those URLs to telemetry.
+      captureException(new Error("Image acquisition failed"), {
+        tags: { provider: work.providerId, context: "image-acquisition" },
+      });
+    }
     activityImageAcquisitions.add(1, {
       provider: work.providerId,
       outcome: "failed",

@@ -85,6 +85,95 @@ describe("KayaSyncProvider canonical persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
 
+  it("discovers historical and standalone photos during normal sync without per-ascent requests", async () => {
+    sessions = [kayaSessionFixture({ attempted_climbs: [] })];
+    ascents = [
+      kayaAscentFixture({ id: "5001", photo: { photo_url: "https://cdn.test/attached" } }),
+      kayaAscentFixture({
+        id: "5002",
+        session_id: null,
+        date: "2020-01-01",
+        photo: { photo_url: "https://cdn.test/historical" },
+      }),
+    ];
+    const queries: string[] = [];
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", async ({ request }) => {
+        const { query } = z.object({ query: z.string() }).parse(await request.json());
+        queries.push(query);
+        return HttpResponse.json({
+          data: query.includes("query sessionsForUser")
+            ? { sessionsForUser: sessions }
+            : { ascentsForUser: ascents },
+        });
+      }),
+    );
+    expect(await run(SyncWindow.fromSince({ since: new Date("2026-08-01") }))).toMatchObject({
+      errors: [],
+    });
+    const images = await executeWithSchema(
+      context.db,
+      z.object({
+        activityId: z.string().nullable(),
+        externalId: z.string(),
+        sourceId: z.string(),
+        state: z.string(),
+      }),
+      sql`
+      SELECT entry.activity_id AS "activityId", entry.external_id AS "externalId", image.source_id AS "sourceId", work.state
+      FROM fitness.activity_image image
+      JOIN fitness.climbing_log_entry entry ON entry.id = image.climbing_log_entry_id
+      JOIN fitness.activity_image_work work ON work.image_id = image.id
+      ORDER BY entry.external_id
+    `,
+    );
+    expect(images).toEqual([
+      {
+        activityId: expect.any(String),
+        externalId: "kaya:ascent:5001",
+        sourceId: "kaya:ascent:5001:photo",
+        state: "pending",
+      },
+      {
+        activityId: null,
+        externalId: "kaya:ascent:5002",
+        sourceId: "kaya:ascent:5002:photo",
+        state: "pending",
+      },
+    ]);
+    expect(queries).toHaveLength(2);
+  });
+
+  it("retains photos when later media is missing or malformed and retires only explicit null", async () => {
+    sessions = [];
+    const source = kayaAscentFixture({ id: "5001", session_id: null });
+    ascents = [{ ...source, photo: { photo_url: "https://cdn.test/photo" } }];
+    expect(await run()).toMatchObject({ errors: [] });
+    for (const photo of [undefined, { photo_url: 42 }]) {
+      ascents = [{ ...source, ...(photo === undefined ? {} : { photo }) }];
+      expect(await run()).toMatchObject({ errors: [] });
+      const images = await executeWithSchema(
+        context.db,
+        z.object({ retired: z.boolean(), coverage: z.string() }),
+        sql`
+        SELECT image.retired_at IS NOT NULL AS retired, discovery.coverage
+        FROM fitness.activity_image image JOIN fitness.activity_image_discovery discovery
+          ON discovery.climbing_log_entry_id = image.climbing_log_entry_id
+      `,
+      );
+      expect(images).toEqual([{ retired: false, coverage: "partial" }]);
+    }
+    ascents = [{ ...source, photo: null }];
+    expect(await run()).toMatchObject({ errors: [] });
+    const images = await executeWithSchema(
+      context.db,
+      z.object({ retired: z.boolean() }),
+      sql`
+      SELECT retired_at IS NOT NULL AS retired FROM fitness.activity_image
+    `,
+    );
+    expect(images).toEqual([{ retired: true }]);
+  });
   it("refreshes earlier method-only attempts in place when the source send status is fetched", async () => {
     const record = {
       ...kayaClimbFixture({

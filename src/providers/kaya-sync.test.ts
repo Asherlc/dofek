@@ -15,10 +15,16 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
 const mocks = vi.hoisted(() => ({
-  persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
-    logEntryIds: [],
-    recordsSynced: input.entries.length,
-  })),
+  persist: vi.fn(
+    async (
+      _db: SyncDatabase,
+      input: ClimbingLogSyncInput,
+    ): Promise<{ logEntryIds: string[]; recordsSynced: number }> => ({
+      logEntryIds: [],
+      recordsSynced: input.entries.length,
+    }),
+  ),
+  recordImages: vi.fn(),
   reconcileActivities: vi.fn(),
   ascents: vi.fn(),
   captureException: vi.fn(),
@@ -31,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   signIn: vi.fn(),
   upsertActivity: vi.fn(),
 }));
+vi.mock("../db/activity-images.ts", () => ({ recordClimbingImageDiscovery: mocks.recordImages }));
 vi.mock("../db/climbing-log-snapshot.ts", () => ({
   persistClimbingLogSnapshot: mocks.persist,
 }));
@@ -74,6 +81,286 @@ import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
 describe("KayaSyncProvider", () => {
+  describe("KAYA ascent photo discovery", () => {
+    function discoverPhoto(fields: Record<string, unknown>) {
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      mocks.ascents.mockResolvedValue([
+        { ...ascent("123", { lead: true, climbType: "Routes", grade: "5.10a" }), ...fields },
+      ]);
+      return new KayaSyncProvider().discoverClimbingImages(run(database()), "kaya:ascent:123", {
+        refresh: true,
+      });
+    }
+    it("selects the original with a stable ascent slot and retains raw photo metadata", async () => {
+      const photo = {
+        photo_url: "https://cdn.test/full?X-Amz-Signature=one",
+        thumb_url: "https://cdn.test/thumb",
+      };
+      const discovery = await discoverPhoto({ id: "123", photo });
+      expect(discovery).toMatchObject({
+        coverage: "complete",
+        expectedCount: 1,
+        images: [{ sourceId: "kaya:ascent:123:photo", kind: "photo", raw: { id: "123", photo } }],
+      });
+      expect(discovery.images[0]?.variants.map((v) => v.url)).toEqual([
+        photo.photo_url,
+        photo.thumb_url,
+      ]);
+      const rotated = await discoverPhoto({
+        id: "123",
+        photo: { ...photo, photo_url: "https://cdn.test/full?X-Amz-Signature=two" },
+      });
+      expect(rotated.images[0]?.revision).toBe(discovery.images[0]?.revision);
+      const replaced = await discoverPhoto({
+        id: "123",
+        photo: { ...photo, photo_url: "https://cdn.test/replacement" },
+      });
+      expect(replaced.images[0]?.sourceId).toBe(discovery.images[0]?.sourceId);
+      expect(replaced.images[0]?.revision).not.toBe(discovery.images[0]?.revision);
+    });
+    it("accepts explicit no-photo without interpreting video thumbnails as photos", async () => {
+      expect(
+        await discoverPhoto({
+          id: "123",
+          photo: null,
+          video_thumbnail_url: "https://cdn.test/video",
+        }),
+      ).toEqual({ coverage: "complete", expectedCount: 0, reason: null, images: [] });
+    });
+    it.each([
+      {},
+      { photo: undefined },
+      { photo: {} },
+      { photo: { photo_url: 3 } },
+      { photo: { photo_url: "bad-url" } },
+      { photo: { photo_url: "https://cdn.test/full", thumb_url: 3 } },
+    ])("keeps unknown or malformed media incomplete: %j", async (fields) => {
+      expect(await discoverPhoto({ id: "123", ...fields })).toMatchObject({
+        coverage: "partial",
+        images: [],
+      });
+    });
+    it("can retain an explicitly available thumbnail when no original is reported", async () => {
+      const discovery = await discoverPhoto({
+        id: "123",
+        photo: { photo_url: null, thumb_url: "https://cdn.test/thumb" },
+      });
+      expect(discovery).toMatchObject({
+        coverage: "complete",
+        images: [{ variants: [{ url: "https://cdn.test/thumb" }] }],
+      });
+    });
+  });
+
+  it("records attached and historical standalone photos from the fetched logbook after persistence", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      {
+        ...session("session-1"),
+        attempted_climbs: [
+          {
+            ...ascent("123", { lead: true, climbType: "Routes", grade: "5.10a" }).climb,
+            id: "session-1_123",
+            attempts: 2,
+          },
+        ],
+      },
+    ]);
+    const attached = {
+      ...ascent("10", { lead: true, climbType: "Routes", grade: "5.10a" }),
+      photo: { photo_url: "https://cdn.test/attached" },
+    };
+    const standalone = {
+      ...ascent("11", { lead: true, climbType: "Routes", grade: "5.10a" }),
+      session_id: null,
+      date: "2020-01-01",
+      photo: { photo_url: "https://cdn.test/history" },
+    };
+    mocks.ascents.mockResolvedValue([attached, standalone]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+    mocks.persist.mockResolvedValueOnce({
+      logEntryIds: ["log-attached", "log-attempted", "log-history"],
+      recordsSynced: 3,
+    });
+    expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
+      recordsSynced: 3,
+      errors: [],
+    });
+    expect(mocks.recordImages.mock.calls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        userId,
+        providerId: "kaya",
+        climbingLogEntryId: "log-attached",
+        discovery: expect.objectContaining({
+          images: [expect.objectContaining({ sourceId: "kaya:ascent:10:photo" })],
+        }),
+      }),
+      expect.objectContaining({
+        userId,
+        providerId: "kaya",
+        climbingLogEntryId: "log-history",
+        discovery: expect.objectContaining({
+          images: [expect.objectContaining({ sourceId: "kaya:ascent:11:photo" })],
+        }),
+      }),
+    ]);
+    expect(mocks.ascents).toHaveBeenCalledTimes(1);
+  });
+  it("refreshes the exact ascent photo through the verified complete logbook contract", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.ascents.mockResolvedValue([
+      {
+        ...ascent("10", { lead: true, climbType: "Routes", grade: "5.10a" }),
+        photo: { photo_url: "https://cdn.test/renewed" },
+      },
+    ]);
+    const result = await new KayaSyncProvider().discoverClimbingImages(run(db), "kaya:ascent:10", {
+      refresh: true,
+    });
+    expect(result).toMatchObject({
+      coverage: "complete",
+      images: [
+        { sourceId: "kaya:ascent:10:photo", variants: [{ url: "https://cdn.test/renewed" }] },
+      ],
+    });
+    expect(mocks.ascents).toHaveBeenCalledWith("42");
+  });
+  it("refreshes revoked access before renewing a photo and saves the replacement token", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "old",
+      refreshToken: "refresh",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+      expiresAt: new Date("2099-01-01"),
+    });
+    mocks.ascents
+      .mockRejectedValueOnce(new KayaApiError("Rejected", 401))
+      .mockResolvedValueOnce([]);
+    mocks.refreshAccessToken.mockResolvedValue("renewed");
+    expect(
+      await new KayaSyncProvider().discoverClimbingImages(run(db), "kaya:ascent:10"),
+    ).toMatchObject({ coverage: "unavailable", images: [] });
+    expect(mocks.saveTokens).toHaveBeenCalledWith(
+      db,
+      "kaya",
+      expect.objectContaining({ accessToken: "renewed" }),
+      userId,
+    );
+  });
+  it("reports unexpected photo refresh failures to error monitoring", async () => {
+    const error = new Error("Kaya unavailable");
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.ascents.mockRejectedValueOnce(error);
+    await expect(
+      new KayaSyncProvider().discoverClimbingImages(run(database()), "kaya:ascent:10"),
+    ).rejects.toBe(error);
+    expect(mocks.captureException).toHaveBeenCalledWith(error);
+  });
+  it.each([
+    "kaya:session:10:attempted:10_2",
+    "prefix:kaya:ascent:10",
+    "kaya:ascent:10suffix",
+    "kaya:ascent:0",
+    "kaya:ascent:01",
+  ])("rejects invalid ascent identity %s before reading credentials", async (externalId) => {
+    await expect(
+      new KayaSyncProvider().discoverClimbingImages(run(database()), externalId),
+    ).rejects.toThrow("valid ascent identity");
+    expect(mocks.loadTokens).not.toHaveBeenCalled();
+  });
+  it("requires a photo owner before reading Kaya credentials", async () => {
+    const sync = run(database());
+    await expect(
+      new KayaSyncProvider().discoverClimbingImages(
+        new SyncRun({ db: sync.db, window: sync.window }),
+        "kaya:ascent:1",
+      ),
+    ).rejects.toThrow("Kaya photo refresh requires a userId.");
+    expect(mocks.loadTokens).not.toHaveBeenCalled();
+  });
+  it("asks disconnected photo owners to reconnect", async () => {
+    mocks.loadTokens.mockResolvedValue(null);
+    await expect(
+      new KayaSyncProvider().discoverClimbingImages(run(database()), "kaya:ascent:1"),
+    ).rejects.toThrow("credentials — reconnect via the app");
+  });
+  it.each([-1, 0])(
+    "renews photo credentials expiring %d milliseconds from now before discovery",
+    async (expiresIn) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-26T12:00:00Z"));
+      const db = database();
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "old",
+        refreshToken: "refresh",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+        expiresAt: new Date(Date.now() + expiresIn),
+      });
+      mocks.refreshAccessToken.mockResolvedValue("renewed");
+      mocks.ascents.mockResolvedValue([
+        { ...ascent("1", { lead: true, climbType: "Routes", grade: "5.10a" }), photo: null },
+      ]);
+      expect(
+        await new KayaSyncProvider().discoverClimbingImages(run(db), "kaya:ascent:1"),
+      ).toMatchObject({ coverage: "complete", expectedCount: 0 });
+      expect(mocks.saveTokens).toHaveBeenCalledWith(
+        db,
+        "kaya",
+        expect.objectContaining({
+          accessToken: "renewed",
+          expiresAt: new Date("2026-10-26T12:25:00Z"),
+        }),
+        userId,
+      );
+      expect(mocks.kayaClient).toHaveBeenCalledWith("renewed", expect.any(Function));
+    },
+  );
+  it("selects the exact requested ascent when the logbook starts with another ascent", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.ascents.mockResolvedValue(
+      ["2", "123"].map((id) => ({
+        ...ascent(id, { lead: true, climbType: "Routes", grade: "5.10a" }),
+        photo: { photo_url: `https://cdn.test/${id}` },
+      })),
+    );
+    expect(
+      await new KayaSyncProvider().discoverClimbingImages(run(database()), "kaya:ascent:123"),
+    ).toMatchObject({
+      images: [{ sourceId: "kaya:ascent:123:photo", variants: [{ url: "https://cdn.test/123" }] }],
+    });
+  });
+  it("requires reconnect for revoked refresh credentials without reporting an unexpected photo failure", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired",
+      refreshToken: "revoked",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+      expiresAt: new Date(0),
+    });
+    mocks.refreshAccessToken.mockRejectedValueOnce(
+      new KayaApiError("Kaya token refresh failed (401)", 401),
+    );
+    await expect(
+      new KayaSyncProvider().discoverClimbingImages(run(database()), "kaya:ascent:1"),
+    ).rejects.toThrow("Kaya refresh token was revoked or expired.");
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
   it.each([false, true])(
     "preserves an attempted route's explicit send status %s across its counted attempts",
     async (sent) => {
@@ -504,6 +791,7 @@ describe("KayaSyncProvider", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
