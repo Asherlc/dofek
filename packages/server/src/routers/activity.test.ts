@@ -259,7 +259,7 @@ describe("activityRouter", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
     });
 
-    it("returns unavailable work for noncycling activities", async () => {
+    it("returns unavailable work for activities other than cycling", async () => {
       const id = "00000000-0000-0000-0000-000000000001";
       const caller = makeResolvedCaller([
         { ...makeActivityRow({ canonical_type: "running" }), member_activity_ids: [id] },

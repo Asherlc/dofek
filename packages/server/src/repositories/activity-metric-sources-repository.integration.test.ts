@@ -227,7 +227,7 @@ describe("activity metric source selection", () => {
     });
   });
 
-  it("uses canonical undownsampled power when no source is selected", async () => {
+  it("uses canonical full-resolution power when no source is selected", async () => {
     const rideId = randomUUID();
     const powerWindow = {
       ...window,
