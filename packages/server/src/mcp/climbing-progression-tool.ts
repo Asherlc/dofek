@@ -1,5 +1,9 @@
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import {
+  climbingResponseVersionSchema,
+  toClimbingLogTraitsV1,
+} from "@dofek/training/climbing-log-response";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
@@ -32,6 +36,9 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         grade_systems: z.array(z.enum(FREE_ROCK_GRADE_SYSTEMS)).max(20).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
+        response_version: climbingResponseVersionSchema.describe(
+          "Defaults to 1 for scalar hold_type. Use 2 for the complete hold_types collection.",
+        ),
       }),
       outputSchema: climbingProgressionOutputSchema,
     },
@@ -44,26 +51,36 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
       grade_systems,
       cursor,
       limit,
+      response_version,
     }) => {
       requireMcpScope(context.scopes, "activity:read");
       assertDateRange(start_date, end_date);
-      return jsonToolResult(
-        await new ClimbingProgressionRepository(
-          context.db,
-          context.userId,
-          context.timezone,
-          await loadClimbingGradePreference(context.db, context.userId),
-        ).listRange({
-          startDate: start_date,
-          endDate: end_date,
-          providers: providers ?? [],
-          filters: filters ?? {},
-          locations: locations ?? [],
-          gradeSystems: grade_systems ?? [],
-          cursor: cursor ?? null,
-          limit: limit ?? 100,
-        }),
-      );
+      const result = await new ClimbingProgressionRepository(
+        context.db,
+        context.userId,
+        context.timezone,
+        await loadClimbingGradePreference(context.db, context.userId),
+      ).listRange({
+        startDate: start_date,
+        endDate: end_date,
+        providers: providers ?? [],
+        filters: filters ?? {},
+        locations: locations ?? [],
+        gradeSystems: grade_systems ?? [],
+        cursor: cursor ?? null,
+        limit: limit ?? 100,
+      });
+      if (response_version === 2) return jsonToolResult(result);
+      return jsonToolResult({
+        ...result,
+        sessions: result.sessions.map((session) => ({
+          ...session,
+          climbing_log_entries: session.climbing_log_entries.map(({ hold_types, ...entry }) => ({
+            ...entry,
+            hold_type: toClimbingLogTraitsV1({ holdTypes: hold_types, wallAngle: null }).holdType,
+          })),
+        })),
+      });
     },
   );
 }

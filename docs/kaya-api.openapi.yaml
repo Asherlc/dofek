@@ -1,8 +1,16 @@
 openapi: 3.1.0
 info:
   title: Kaya observed application API
-  version: 1.0.0
-  description: Records responses observed from Kaya's authenticated web application.
+  version: 1.1.0
+  description: >-
+    Records the application surfaces inspected through authenticated reads on
+    2026-10-27 and the cited public application fragments. This is an observed
+    contract, not an official or exhaustive Kaya API schema. The personal-logbook
+    queries and additional metadata are documented in climbing-trait-coverage.md.
+  x-evidence:
+    - https://kaya-beta.kayaclimb.com/graphql
+    - https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js
+    - https://set.plastick.rocks/GuidebookView-11950.js.map
 servers:
   - url: https://kaya-beta.kayaclimb.com
 paths:
@@ -55,26 +63,28 @@ paths:
           application/json:
             schema:
               type: object
-              required: [query, variables]
+              required: [query]
               properties:
                 query: { type: string }
                 variables:
                   type: object
-                  required: [user_id, offset, count]
+                  description: >-
+                    sessionsForUser and ascentsForUser require user_id, offset
+                    and count. The inspected allTags dictionary query has no variables.
                   properties:
                     user_id: { type: string }
                     offset: { type: integer, minimum: 0 }
                     count: { type: integer, minimum: 1 }
       responses:
         '200':
-          description: GraphQL response for sessionsForUser or ascentsForUser
+          description: Observed sessionsForUser, ascentsForUser or allTags response
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: object
+                    type: [object, 'null']
                     properties:
                       sessionsForUser:
                         type: array
@@ -82,6 +92,19 @@ paths:
                       ascentsForUser:
                         type: array
                         items: { $ref: '#/components/schemas/KayaAscent' }
+                      allTags:
+                        type: array
+                        description: >-
+                          Read-only audit dictionary, verified 2026-10-27. The
+                          importer reads complete tags directly from each climb.
+                        items: { $ref: '#/components/schemas/KayaTag' }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [message]
+                      properties:
+                        message: { type: string }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
@@ -106,12 +129,29 @@ components:
         token: { type: string }
     KayaAscent:
       type: object
-      required: [id, session_id, date, attempts, ascent_type, climb]
+      required: [id, session_id, date, attempts, grade, ascent_type, climb]
       properties:
         id: { type: string }
         session_id: { type: [string, 'null'] }
         date: { type: string, format: date-time }
+        comment: { type: [string, 'null'] }
+        rating: { type: [number, 'null'] }
+        stiffness: { type: [number, 'null'] }
         attempts: { type: [integer, 'null'], minimum: 1 }
+        grade:
+          $ref: '#/components/schemas/KayaGrade'
+          description: >-
+            Separately reported ascent grade, selected independently from climb.grade.
+            Verified 2026-10-27; belongs to the log's reported-grade collection.
+        photo:
+          $ref: '#/components/schemas/KayaPhoto'
+          description: >-
+            Source photo metadata. Runtime validation retains JSON independently
+            so malformed optional media does not invalidate the climbing log.
+        video:
+          $ref: '#/components/schemas/KayaVideo'
+          description: Retained video metadata; not acquired as an ascent photograph.
+        gym: { $ref: '#/components/schemas/KayaGym' }
         ascent_type:
           type: object
           properties: { id: { type: string }, name: { type: string } }
@@ -123,7 +163,10 @@ components:
         id: { type: string }
         start_time: { type: string, format: date-time }
         end_time: { type: [string, 'null'], format: date-time }
-        gym: { type: [object, 'null'] }
+        notes: { type: [string, 'null'] }
+        gym: { $ref: '#/components/schemas/KayaGym' }
+        board: { $ref: '#/components/schemas/KayaClimbLocation' }
+        destination: { $ref: '#/components/schemas/KayaClimbLocation' }
         attempted_climbs:
           type: array
           description: Attempted climbs for the session, with composite session/climb IDs, explicit send status, and potentially unknown attempt counts. Observed in Kaya's authenticated application API on 2026-10-26.
@@ -152,33 +195,192 @@ components:
                       url: https://kaya-beta.kayaclimb.com/graphql
     KayaClimb:
       type: object
-      required: [id, name, lead, climb_type, grade, gym, destination, area, subarea, board, angle]
+      description: >-
+        Shared selection for session attempted climbs and ascents. Selected
+        additional metadata remains raw JSON where there is no canonical consumer;
+        acceptance of a scalar does not establish its units or interpretation.
+      required: [id, name, climb_type, grade, gym, destination, area, subarea, board, angle, tags]
+      additionalProperties: true
       properties:
         id: { type: string }
         name: { type: [string, 'null'] }
+        slug: { type: [string, 'null'] }
+        color:
+          type: [object, 'null']
+          properties:
+            name: { type: [string, 'null'] }
         lead:
-          type: boolean
+          type: [boolean, 'null']
           description: Route-level lead flag; boulders also return false and must map to null.
         climb_type:
           type: object
           properties: { id: { type: string }, name: { type: string } }
-        grade:
-          type: [object, 'null']
-          properties: { id: { type: string }, name: { type: string }, climb_type_group: { type: string } }
-        gym: { type: [object, 'null'] }
+        grade: { $ref: '#/components/schemas/KayaGrade' }
+        gym: { $ref: '#/components/schemas/KayaGym' }
         destination: { $ref: '#/components/schemas/KayaClimbLocation' }
         area: { $ref: '#/components/schemas/KayaClimbLocation' }
         subarea: { $ref: '#/components/schemas/KayaClimbLocation' }
         board: { $ref: '#/components/schemas/KayaClimbLocation' }
+        wallarea: { $ref: '#/components/schemas/KayaWallArea' }
         angle:
           type: [integer, 'null']
-          description: Reported signed value. Units and reference direction are unverified; do not assume degrees.
+          description: >-
+            Outdoor editor category codes are -20 Slab, 0 Vertical, 20 Overhang,
+            50 Roof. Decode only in established outdoor context. Board values
+            and unrecognized values retain unknown units; do not assume degrees.
+          externalDocs:
+            description: Observed outdoor Angle dropdown in GuidebookClimbsContainer.jsx
+            url: https://set.plastick.rocks/GuidebookView-11950.js.map
+        tags:
+          type: array
+          items: { $ref: '#/components/schemas/KayaTag' }
+        latitude: { $ref: '#/components/schemas/KayaCoordinate' }
+        longitude: { $ref: '#/components/schemas/KayaCoordinate' }
+        description:
+          description: Selected source description, retained as JSON provenance.
+        access_description:
+          description: Selected source access description, retained as JSON provenance.
+        protection_description:
+          description: Selected source protection description, retained as JSON provenance.
+        is_benchmark:
+          description: Selected source benchmark metadata, retained as JSON provenance.
+        bolts:
+          description: Selected source bolt metadata, retained as JSON provenance.
+        pitches:
+          description: Selected source pitch metadata, retained as JSON provenance.
+        is_trad:
+          description: Selected source protection metadata, retained as JSON provenance.
+        length:
+          description: Selected source length; no canonical units inferred.
+        fa:
+          description: Selected source first-ascent metadata, retained as JSON provenance.
+        date_set:
+          description: Selected source catalogue date, retained as JSON provenance.
+        date_updated:
+          description: Selected source catalogue update date, retained as JSON provenance.
+        photo_url:
+          description: Source catalogue photo URL; does not identify an ascent photograph.
+        thumbnail_url:
+          description: Source catalogue thumbnail URL, retained as JSON provenance.
+        video_url:
+          description: Source catalogue video URL, retained as JSON provenance.
+        video_thumbnail_url:
+          description: Source catalogue video thumbnail URL, retained as JSON provenance.
+        location:
+          description: Selected source location metadata, retained without reinterpretation.
+        risk:
+          description: Selected source risk metadata, retained without inferring a scale.
+        intensity:
+          description: Selected source intensity metadata, retained without inferring a scale.
+        complexity:
+          description: Selected source complexity metadata, retained without inferring a scale.
+        gem:
+          description: Selected source catalogue metadata, retained as JSON provenance.
+        anchor:
+          description: Selected source anchor metadata, retained as JSON provenance.
+        wall_set_id:
+          description: Selected source set reference, retained as JSON provenance.
+      externalDocs:
+        description: Authenticated shared-climb field checks on 2026-10-27
+        url: https://kaya-beta.kayaclimb.com/graphql
     KayaClimbLocation:
+      type: [object, 'null']
+      description: >-
+        Selected destination, area, subarea or board context. Additional selected
+        text, photo and parent/type metadata remains raw provenance.
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        latitude: { $ref: '#/components/schemas/KayaCoordinate' }
+        longitude: { $ref: '#/components/schemas/KayaCoordinate' }
+        description: { type: [string, 'null'] }
+        access_description: { type: [string, 'null'] }
+        approach_minutes:
+          description: Selected source approach metadata, retained without inferring units.
+        photo_url: { type: [string, 'null'] }
+        location_type:
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            name: { type: string }
+        parent_location:
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            name: { type: string }
+      externalDocs:
+        description: Observed Kaya application field selections
+        url: https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js
+    KayaGym:
+      allOf:
+        - $ref: '#/components/schemas/KayaClimbLocation'
+        - properties:
+            address: { type: [string, 'null'] }
+            city: { type: [string, 'null'] }
+            region: { type: [string, 'null'] }
+            country: { type: [string, 'null'] }
+            slug: { type: [string, 'null'] }
+            website: { type: [string, 'null'] }
+            nickname: { type: [string, 'null'] }
+            postal_code: { type: [string, 'null'] }
+            photo_url: { type: [string, 'null'] }
+            thumbnail_url: { type: [string, 'null'] }
+            banner_photo_url: { type: [string, 'null'] }
+            is_official: { type: [boolean, 'null'] }
+    KayaWallArea:
       type: [object, 'null']
       required: [id, name]
       properties:
         id: { type: string }
         name: { type: string }
+        photo_url: { type: [string, 'null'] }
+        climb_type_id: { type: [string, 'null'] }
+        location_type:
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            name: { type: string }
+    KayaCoordinate:
+      description: Selected source coordinate; the client validates finite numeric values.
+      type: [number, string, 'null']
+    KayaGrade:
+      type: [object, 'null']
+      required: [id, name, climb_type_group]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1 }
+        climb_type_group: { type: string }
+    KayaTag:
+      type: object
+      required: [id, name, color, icon, tag_type_id]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1 }
+        color: { type: [string, 'null'] }
+        icon: { type: [string, 'null'] }
+        tag_type_id:
+          type: string
+          description: >-
+            Category 3 is GRIP in the observed application definitions. Explicit
+            Crimp, Sloper, Pinch, Pocket, Jug, Volume, Jam and No Grips tags map
+            to canonical hold collections. Other and unknown tags stay raw.
       externalDocs:
-        description: Observed Kaya application field selections
-        url: https://kaya-app.kayaclimb.com/static/js/main.5bd87165.chunk.js
+        description: Observed TagFields, verified with authenticated reads on 2026-10-27
+        url: https://set.plastick.rocks/tag-11950.js.map
+    KayaPhoto:
+      type: [object, 'null']
+      properties:
+        photo_url: { type: [string, 'null'] }
+        thumb_url: { type: [string, 'null'] }
+      externalDocs:
+        description: Observed WebAscentFields photo selection
+        url: https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js
+    KayaVideo:
+      type: [object, 'null']
+      properties:
+        video_url: { type: [string, 'null'] }
+        thumb_url: { type: [string, 'null'] }
+      externalDocs:
+        description: Observed WebAscentFields video selection
+        url: https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js

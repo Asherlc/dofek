@@ -9,7 +9,7 @@ import {
   recordedGpsActivityLocationSchema,
 } from "../contracts/activity-location.ts";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
-import { climbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
+import { climbingLogEntryDetailResponseSchema } from "../contracts/climbing-log-contracts.ts";
 import { activityOriginColumnsSchema } from "../models/activity-origin.ts";
 import {
   fingerLoadingExerciseSchema,
@@ -404,7 +404,7 @@ export const climbingSessionsOutputSchema = jsonResult(
         avg_hr: nullableNumber,
         name: nullableString,
         location: nullableString,
-        climbing_log_entries: z.array(climbingLogEntryDetailSchema),
+        climbing_log_entries: z.array(climbingLogEntryDetailResponseSchema),
       }),
     ),
     aggregates: z.object({
@@ -791,7 +791,7 @@ const activityFingerLoadingSchema = z.object({
 export const activityDetailsOutputSchema = jsonResult(
   z.object({
     activity: activityDetailSchema,
-    climbing_log_entries: z.array(climbingLogEntryDetailSchema),
+    climbing_log_entries: z.array(climbingLogEntryDetailResponseSchema),
     finger_loading: z.array(activityFingerLoadingSchema),
     strength_exercises: z.array(activityDetailsExerciseSchema),
   }),

@@ -34,7 +34,7 @@ export function climbingSessionContext(): ClimbingContext {
     areaPath,
     board: { name: "Board", externalId: "board-1" },
     wallAngle: { value: -20, unit: null },
-    holdType: null,
+    holdTypes: null,
   };
 }
 export function climbingSessionDetail() {

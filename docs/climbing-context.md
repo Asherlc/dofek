@@ -9,7 +9,7 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 | Area | Owner/provider, verified source identity, name, nullable parent Area and coordinates |
 | Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
 | Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
-| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold type, raw source record and retention metadata |
+| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold types, raw source record and retention metadata |
 | ClimbingAttempt | Required log, scope, optional Pitch/parent, nullable actual order and original source result label, independent method/solo/protection/aid/fall-or-hang/dab/beta/history facts and notes |
 
 Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
@@ -46,6 +46,64 @@ The server derives a free rock send from completion with known absence of aid an
 | GradeSystem | `v_scale`, `font`, `yds`, `french`, `uiaa`, `ewbank`, `saxon`, `norwegian`, `brazilian_crux`, `british_adjectival`, `british_technical`, `aid`, `water_ice`, `alpine_ice`, `mixed`, `ifas`, `nccs` |
 
 Nullable fields carry unknown state separately from these enum values. The [shared schemas](../packages/training/src/climbing-log.ts) and [grade library](../packages/training/src/climbing-grades.ts) are authoritative. The generated [UML](schema.puml) includes the database tables, enums, and ownership relationships.
+
+Recorded grips use nullable, nonempty `holdTypes` collections containing `crimp`,
+`sloper`, `pinch`, `pocket`, `jug`, `volume`, `jam`, or `no_grips`. A wall angle is
+either a numeric value with recorded or unknown units, or a source category
+(`slab`, `vertical`, `overhang`, `roof`); categories do not imply measured degrees.
+The [shared schemas](../packages/training/src/climbing-experience.ts),
+[log contract](../packages/training/src/climbing-log.ts), and
+[forward migration](../drizzle/0170_climbing_traits.sql) define these facts.
+Strengths count each distinct climb once in each recorded grip and once in its
+grade baseline. Missing metadata preserves an evidenced set; contradictory sets
+remain unknown, as implemented by the
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
+
+## Response versions and independent releases
+
+Canonical storage and repositories always use plural `holdTypes` and the
+numeric-or-category wall-angle model above. The existing tRPC procedures
+`climbing.activityLogEntries`, `climbing.unattachedClimbingLogEntries`, and
+`providerDetail.recordDetail` accept `responseVersion: 1 | 2`, defaulting to
+`1`. For provider records, the version applies to climbing log entries only.
+The [response contract](../packages/server/src/contracts/climbing-log-contracts.ts)
+projects the canonical record at the API boundary; it does not create another
+storage path. Input and output validation follow
+[tRPC's validator contract](https://trpc.io/docs/server/validators).
+
+| Requested version | Recorded holds | Recorded wall angle |
+| --- | --- | --- |
+| Omitted or `1` | Scalar `holdType` only: one distinct `crimp`, `sloper`, `pinch`, `pocket`, or `jug` is retained. Multiple grips, newer grip kinds, and unknown grips produce null; no predominant grip is selected. | Numeric objects retain their values and units. Source categories produce null. |
+| `2` | Complete nullable `holdTypes` collection; no scalar alias. | Complete nullable numeric-or-category object. |
+
+The updated web and mobile clients request version `2` and strictly validate
+either supported response before rendering the canonical client model.
+An earlier server's original `z.object` input strips the unknown version
+option and still returns version `1`; the decoder promotes its scalar grip
+to a collection. This supports a newer client with an earlier API as well as
+an installed older client with the newer API. It does not accept malformed
+hybrid payloads or invent absent traits. See the
+[decoders](../packages/server/src/contracts/climbing-log-contracts.ts),
+[response tests](../packages/server/src/contracts/climbing-log-contracts.test.ts),
+and [Zod object behavior](https://zod.dev/api#objects).
+
+Versioned request inputs separate query keys, and the server cache includes
+the raw input and the procedure's cache version. Mobile keeps persisted-cache
+contract `16`; the new versioned keys and strict decoders handle mixed API/OTA
+release order. See the [server cache](../packages/server/src/trpc.ts),
+[mobile persistence](../packages/mobile/lib/mobile-query-persistence.ts), and
+[TanStack query-key guidance](https://tanstack.com/query/latest/docs/framework/react/guides/query-keys).
+
+MCP tools `get_activity_details`, `get_climbing_sessions`, and
+`get_climbing_progression` accept the equivalent `response_version`, also
+defaulting to `1`. Progression entries use `hold_type` in version `1` and
+`hold_types` in version `2`; their existing `wall_angle_degrees` remains a
+numeric-only field. The tools project the selected version before building
+both text and structured results, so the two representations agree. See the
+[shared version policy](../packages/training/src/climbing-log-response.ts),
+[activity tool](../packages/server/src/mcp/activity-details-tool.ts),
+[sessions tool](../packages/server/src/mcp/climbing-sessions-tool.ts), and
+[progression tool](../packages/server/src/mcp/climbing-progression-tool.ts).
 
 ## Browsing, attachment, and analytics
 

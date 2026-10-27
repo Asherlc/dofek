@@ -132,7 +132,7 @@ describe("climbing log entities", () => {
         reportedGrades: [],
         board: null,
         wallAngle: null,
-        holdType: null,
+        holdTypes: null,
         sourceName: null,
         raw: null,
         providerAbsentAt: null,

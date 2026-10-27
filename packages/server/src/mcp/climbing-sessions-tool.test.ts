@@ -33,7 +33,7 @@ import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 describe("get_climbing_sessions context", () => {
   let client: Client;
   let server: McpServer;
-  async function callTool() {
+  async function callTool(responseVersion?: 1 | 2) {
     server = new McpServer({ name: "climbing-context", version: "1.0.0" });
     registerClimbingSessionsTool(server, {
       db: { execute: vi.fn().mockResolvedValue([]), select: vi.fn(), transaction: vi.fn() },
@@ -47,15 +47,47 @@ describe("get_climbing_sessions context", () => {
     await client.connect(clientTransport);
     const result = await client.callTool({
       name: "get_climbing_sessions",
-      arguments: { start_date: "2026-09-01", end_date: "2026-09-30" },
+      arguments: {
+        start_date: "2026-09-01",
+        end_date: "2026-09-30",
+        ...(responseVersion === undefined ? {} : { response_version: responseVersion }),
+      },
     });
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
-    return climbingSessionsOutputSchema.parse(result.structuredContent).result;
+    const output = climbingSessionsOutputSchema.parse(result.structuredContent).result;
+    const text = result.content[0];
+    if (text?.type !== "text") throw new Error("Expected JSON text");
+    expect(JSON.parse(String(text.text))).toEqual(output);
+    return output;
   }
   afterEach(async () => {
     await client?.close();
     await server?.close();
     vi.clearAllMocks();
+  });
+  it.each([undefined, 1, 2] as const)("negotiates log traits for version %s", async (version) => {
+    mocks.listRange.mockResolvedValue([
+      {
+        id: "activity-1",
+        avg_hr: null,
+        ended_at: null,
+        started_at: "2026-09-29T10:00:00Z",
+        name: null,
+        canonical_type: "climbing",
+      },
+    ]);
+    const detail = {
+      ...climbingSessionDetail(),
+      holdTypes: ["crimp", "jug"],
+      wallAngle: { category: "slab" },
+    };
+    mocks.getActivityLogEntries.mockResolvedValue([{ toDetail: () => detail }]);
+    mocks.getAttachedRockObservations.mockResolvedValue([]);
+    const output = await callTool(version);
+    const { holdTypes: _holds, ...rest } = detail;
+    expect(output.sessions[0]?.climbing_log_entries[0]).toEqual(
+      version === 2 ? detail : { ...rest, holdType: null, wallAngle: null },
+    );
   });
   it("retains climbing sessions and logged hikes, using the leaf shared area", async () => {
     const activity = {
@@ -237,7 +269,7 @@ describe("get_climbing_sessions context", () => {
     await client.connect(clientTransport);
     const result = await client.callTool({
       name: "get_climbing_sessions",
-      arguments: { start_date: "2026-09-01", end_date: "2026-09-30" },
+      arguments: { start_date: "2026-09-01", end_date: "2026-09-30", response_version: 2 },
     });
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
     const output = climbingSessionsOutputSchema.parse(result.structuredContent);

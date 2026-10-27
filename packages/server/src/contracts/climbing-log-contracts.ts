@@ -7,6 +7,11 @@ import {
   climbSchema,
   pitchSchema,
 } from "@dofek/training/climbing-log";
+import {
+  type ClimbingResponseVersion,
+  climbingLogTraitsV1Schema,
+  toClimbingLogTraitsV1,
+} from "@dofek/training/climbing-log-response";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
@@ -47,6 +52,41 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
 });
 export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema>;
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
+
+export const legacyClimbingLogEntryDetailSchema = climbingLogEntryDetailSchema
+  .omit({ holdTypes: true })
+  .extend(climbingLogTraitsV1Schema.shape);
+export const climbingLogEntryDetailResponseSchema = z.union([
+  climbingLogEntryDetailSchema,
+  legacyClimbingLogEntryDetailSchema,
+]);
+const climbingLogEntriesResponseSchema = z.array(climbingLogEntryDetailResponseSchema);
+
+export function serializeClimbingLogEntryDetailResponse(
+  entry: ClimbingLogEntryDetail,
+  version: ClimbingResponseVersion,
+): z.infer<typeof climbingLogEntryDetailResponseSchema> {
+  if (version === 2) return entry;
+  const { holdTypes: _holdTypes, ...rest } = entry;
+  return { ...rest, ...toClimbingLogTraitsV1(entry) };
+}
+
+function canonicalLogEntry(
+  entry: z.infer<typeof climbingLogEntryDetailResponseSchema>,
+): ClimbingLogEntryDetail {
+  if ("holdTypes" in entry) return entry;
+  const { holdType, ...rest } = entry;
+  return { ...rest, holdTypes: holdType === null ? null : [holdType] };
+}
+
+/** Accept either supported wire contract during independent server/client releases. */
+export function decodeClimbingLogEntryDetailResponse(value: unknown): ClimbingLogEntryDetail {
+  return canonicalLogEntry(climbingLogEntryDetailResponseSchema.parse(value));
+}
+
+export function decodeClimbingLogEntriesResponse(value: unknown): ClimbingLogEntryDetail[] {
+  return climbingLogEntriesResponseSchema.parse(value).map(canonicalLogEntry);
+}
 
 export const climbingAttachmentActivitySchema = z.object({
   id: z.guid(),

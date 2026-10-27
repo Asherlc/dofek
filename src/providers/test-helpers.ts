@@ -51,6 +51,7 @@ export function kayaClimbFixture(overrides: Record<string, unknown> = {}): Recor
     subarea: null,
     board: null,
     angle: null,
+    tags: [],
     ...overrides,
   };
 }
@@ -62,6 +63,7 @@ export function kayaAscentFixture(
     session_id: "1000",
     date: "2026-08-01T10:30:00Z",
     attempts: null,
+    grade: null,
     ascent_type: { id: "flash", name: "Flash" },
     climb: kayaClimbFixture(),
     ...overrides,

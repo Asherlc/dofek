@@ -93,6 +93,33 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
 
 const groupId = "00000000-0000-4000-8000-000000000701";
 describe("climbingRouter", () => {
+  it.each([undefined, 1, 2] as const)(
+    "negotiates attached and suggested log traits for response version %s",
+    async (responseVersion) => {
+      vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
+        climbingActivityFixture({ id: groupId }),
+      );
+      const detail = climbingLogEntryFixture({
+        holdTypes: ["crimp", "jug"],
+        wallAngle: { category: "slab" },
+      });
+      vi.spyOn(ClimbingRepository.prototype, "getActivityLogEntries").mockResolvedValue([
+        new ClimbingActivityLogEntry(detail),
+      ]);
+      vi.spyOn(ClimbingLogEntryAssociator.prototype, "getSuggestions").mockResolvedValue([detail]);
+      const { caller } = makeCaller();
+      const { holdTypes: _holds, ...legacy } = detail;
+      const expected =
+        responseVersion === 2 ? detail : { ...legacy, holdType: null, wallAngle: null };
+      const input = {
+        activityId: groupId,
+        ...(responseVersion === undefined ? {} : { responseVersion }),
+      };
+      expect(await caller.activityLogEntries(input)).toEqual([expected]);
+      expect(await caller.unattachedClimbingLogEntries(input)).toEqual([expected]);
+    },
+  );
+
   beforeEach(() => {
     captureException.mockClear();
     invalidateByPrefix.mockClear();
@@ -174,7 +201,9 @@ describe("climbingRouter", () => {
         .spyOn(ClimbingRepository.prototype, "getActivityLogEntries")
         .mockResolvedValue([new ClimbingActivityLogEntry(detail)]);
       const { caller } = makeCaller();
-      expect(await caller.activityLogEntries({ activityId: requestedId })).toEqual([detail]);
+      expect(
+        await caller.activityLogEntries({ activityId: requestedId, responseVersion: 2 }),
+      ).toEqual([detail]);
       expect(activityLookup).toHaveBeenCalledWith(requestedId);
       expect(logLookup).toHaveBeenCalledWith(groupId);
     },
@@ -195,7 +224,9 @@ describe("climbingRouter", () => {
       .spyOn(ClimbingLogEntryAssociator.prototype, "getSuggestions")
       .mockResolvedValue([detail]);
     const { caller } = makeCaller();
-    expect(await caller.unattachedClimbingLogEntries({ activityId: groupId })).toEqual([detail]);
+    expect(
+      await caller.unattachedClimbingLogEntries({ activityId: groupId, responseVersion: 2 }),
+    ).toEqual([detail]);
     expect(lookup).toHaveBeenCalledWith(groupId);
   });
   it("returns activity attachment choices with their local start times", async () => {
@@ -302,7 +333,7 @@ describe("climbingRouter", () => {
       grade: "V4",
       gradeSortValue: 4,
       wallAngle: null,
-      holdType: "crimp",
+      holdTypes: ["crimp"],
       outcome: "sent",
       example,
     };
@@ -398,7 +429,7 @@ describe("climbingRouter", () => {
             grade: "V4",
             gradeSortValue: 4,
             wallAngle: null,
-            holdType: "crimp",
+            holdTypes: ["crimp"],
             outcome: "not_sent",
             example: {
               logEntryId: "log",

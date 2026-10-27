@@ -58,6 +58,12 @@ describe("ClimbingProgressionRepository database semantics", () => {
             discipline: "rock_climbing",
             sourceName: providerId === kayaProvider ? "Kaya" : "Mirror",
             wallAngle: { value: angle, unit: "degrees" },
+            holdTypes:
+              name === "Blue Arete"
+                ? providerId === kayaProvider
+                  ? ["crimp", "jug"]
+                  : ["jug", "crimp", "crimp"]
+                : null,
             climb: {
               externalId: value,
               kind: "boulder",

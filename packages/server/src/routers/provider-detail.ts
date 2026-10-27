@@ -1,3 +1,4 @@
+import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
 import { withProviderOperationFence } from "dofek/db/provider-operation-fence";
@@ -7,6 +8,10 @@ import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
+import {
+  climbingLogEntryDetailSchema,
+  serializeClimbingLogEntryDetailResponse,
+} from "../contracts/climbing-log-contracts.ts";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema } from "../lib/operation-progress.ts";
 import { logger } from "../logger.ts";
@@ -49,6 +54,7 @@ const SYNC_LOG_FILTER_FIELDS = {
   authFailureReason: "auth_failure_reason",
   durationMs: "duration_ms",
 } as const;
+const recordDetailOutputSchema = z.record(z.string(), z.unknown()).nullable();
 
 /** Revoke provider credentials before deleting the local authorization. */
 async function revokeTokensOnDisconnect(
@@ -216,17 +222,29 @@ export const providerDetailRouter = router({
     }),
 
   /** Single record detail with raw data */
-  recordDetail: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  recordDetail: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "provider-record-detail-response-v1",
+    outputSchema: recordDetailOutputSchema,
+  })
     .input(
       z.object({
         providerId: z.string(),
         dataType: dataTypeEnum,
         recordId: z.string(),
+        responseVersion: climbingResponseVersionSchema,
       }),
     )
+    .output(recordDetailOutputSchema)
     .query(async ({ ctx, input }) => {
       const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
-      return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
+      const record = await repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
+      return input.dataType === "climbingLogEntries" && record !== null
+        ? serializeClimbingLogEntryDetailResponse(
+            climbingLogEntryDetailSchema.parse(record),
+            input.responseVersion,
+          )
+        : record;
     }),
 
   /** Disconnect a provider while retaining previously imported records. */

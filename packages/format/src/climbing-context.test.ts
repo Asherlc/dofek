@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatClimbingAttemptCount,
+  formatClimbingHoldTypes,
   formatClimbingLocationPath,
   formatClimbingRecordedOutcome,
   formatClimbingRopeMethod,
@@ -8,6 +9,21 @@ import {
 } from "./climbing-context.ts";
 
 describe("climbing context labels", () => {
+  it("formats every explicit grip with readable labels", () => {
+    expect(formatClimbingHoldTypes(["crimp", "volume", "no_grips"])).toBe(
+      "Hold types: crimp, volume, no grips",
+    );
+    expect(formatClimbingHoldTypes(null)).toBeNull();
+  });
+  it.each(["slab", "vertical", "overhang", "roof"] as const)(
+    "formats the %s category without inventing degrees",
+    (category) => {
+      expect(formatClimbingWallAngle({ category })).toBe(
+        `Wall angle: ${category[0]?.toUpperCase()}${category.slice(1)}`,
+      );
+    },
+  );
+
   it("displays the full location path in source order", () => {
     expect(
       formatClimbingLocationPath(

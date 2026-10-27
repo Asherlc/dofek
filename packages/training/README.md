@@ -52,12 +52,13 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `activity-chart-series` | [Shared activity-chart timing, gap, marker, and nearest-observation presentation policy](src/activity-chart-series.ts) |
 | `activity-images` | [Activity-image metadata, captions, and shared web/mobile query refresh policy](src/activity-images.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
-| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
+| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and grip context |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
 | `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
 | `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `climbing-log-response` | [Supported response-version input schema and faithful version-1 projection of canonical grip collections and wall angles](src/climbing-log-response.ts) |
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), chart selection for recorded aid status and route methods, concise lane and setting labels, and period/exact-value formatting shared by web and mobile |
@@ -133,6 +134,17 @@ source history facts. The raw record schema and computed response schema are
 separate. Server queries derive completion, result labels and counts; see the
 [current model](../../docs/climbing-context.md) and
 [schemas](src/climbing-log.ts).
+
+Canonical grip collections are nullable and nonempty when supplied. Wall angles
+retain either numeric values with known/unknown units or explicit source
+categories. The [response-version module](src/climbing-log-response.ts) defines
+versions `1` and `2`, defaults omitted requests to `1`, and projects only the
+traits that the original scalar contract can express. A single supported grip
+remains scalar; multiple grips, newer grip kinds, and categorical angles become
+null in version `1` without altering canonical records. Version `2` retains the
+complete collection and angle object. See the
+[shared model](src/climbing-log.ts), [angle schema](src/climbing-experience.ts),
+and [server response-version contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
 
 The [log-card grouping helper](src/climbing-log-groups.ts) groups areas across
 sources when their complete ordered name paths match, ignoring case and extra

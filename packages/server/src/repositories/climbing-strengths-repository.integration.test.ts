@@ -62,6 +62,36 @@ describe("climbing strengths PostgreSQL", () => {
       ],
       ...patch,
     });
+  it("serves multiple grips and categorical angles without duplicating baseline climbs", async () => {
+    const originalId = await write("multi", {
+      holdTypes: ["crimp", "jam"],
+      wallAngle: { category: "overhang" },
+    });
+    const repeatId = await write("repeat", {
+      holdTypes: ["jam", "crimp"],
+      wallAngle: { category: "overhang" },
+    });
+    const observations = await repo().getObservations(30);
+    expect(observations.find((entry) => entry.example.logEntryId === originalId)).toMatchObject({
+      holdTypes: ["crimp", "jam"],
+      wallAngle: { category: "overhang" },
+    });
+    expect(observations.find((entry) => entry.example.logEntryId === repeatId)).toMatchObject({
+      holdTypes: ["jam", "crimp"],
+      wallAngle: { category: "overhang" },
+    });
+    const result = analyze(observations);
+    const holds = result.panels.find((panel) => panel.dimension === "hold_type");
+    expect(holds?.grades[0]?.climbs).toBe(1);
+    expect(holds?.rows.map((row) => [row.key, row.cells[0]?.climbs])).toEqual([
+      ["crimp", 1],
+      ["jam", 1],
+    ]);
+    expect(result.panels.find((panel) => panel.dimension === "wall_angle")?.rows[0]?.key).toBe(
+      "overhang",
+    );
+  });
+
   it("uses canonical outcome facts and counts repeated and cross-provider climbs once", async () => {
     await write("send");
     await write("repeat");
@@ -243,7 +273,7 @@ describe("climbing strengths PostgreSQL", () => {
   it("retains supplementary canonical traits from a second source for the same attached climb", async () => {
     const outing = await seedClimbingActivity(context.db, "mountain-project", "trait-outing");
     await write("first", { activityId: outing.id });
-    await write("second", { activityId: outing.id, holdType: "crimp" }, "openbeta");
+    await write("second", { activityId: outing.id, holdTypes: ["crimp"] }, "openbeta");
     const result = analyze(await repo().getObservations(30));
     expect(
       result.panels.find((panel) => panel.dimension === "hold_type")?.rows[0]?.cells[0],
@@ -311,7 +341,7 @@ describe("climbing strengths PostgreSQL", () => {
   it("projects cross-month original outcomes after resolving missing source grades and zero-angle traits", async () => {
     await write("august-failure", {
       climbedOn: "2026-08-15",
-      holdType: "crimp",
+      holdTypes: ["crimp"],
       wallAngle: { value: 0, unit: "degrees" },
       attempts: [{ scope: "climb", ropeMethod: "lead", usedAid: false, sourceResult: "Failed" }],
     });

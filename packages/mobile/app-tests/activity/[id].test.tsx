@@ -1,5 +1,6 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
+import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -499,7 +500,7 @@ const attachedClimbingEntry = climbingLogEntryFixture({
   displayGrade: "V3",
   board: null,
   wallAngle: null,
-  holdType: null,
+  holdTypes: null,
   recordedClimbAttemptCount: 1,
   recordedClimbOutcome: "completed",
   climb: {
@@ -850,8 +851,12 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(mockClimbingEntriesQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id },
-      expect.objectContaining({ enabled: true }),
+      { activityId: baseCyclingActivity.id, responseVersion: 2 },
+      expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
+    );
+    expect(mockEntrySuggestionsQuery).toHaveBeenCalledWith(
+      { activityId: baseCyclingActivity.id, responseVersion: 2 },
+      expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(screen.getByText("Summit outing")).toBeTruthy();
     expect(screen.getByText("Ridge traverse")).toBeTruthy();
@@ -1147,7 +1152,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V4",
           board: null,
           wallAngle: null,
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 2,
           recordedClimbOutcome: "completed",
           climb: {
@@ -1198,7 +1203,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "5.10a",
           board: null,
           wallAngle: null,
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 1,
           recordedClimbOutcome: null,
           climb: {
@@ -1309,9 +1314,11 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
+        responseVersion: 2,
       });
       expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
+        responseVersion: 2,
       });
       expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
@@ -1423,6 +1430,7 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
+        responseVersion: 2,
       });
     });
   });
@@ -1974,7 +1982,7 @@ describe("ActivityDetailScreen", () => {
         displayGrade: "5.6",
         board: null,
         wallAngle: null,
-        holdType: null,
+        holdTypes: null,
         recordedClimbAttemptCount: null,
         recordedClimbOutcome: "completed",
         climb: {
@@ -2063,7 +2071,7 @@ describe("ActivityDetailScreen", () => {
       displayGrade: "5.4",
       board: null,
       wallAngle: null,
-      holdType: null,
+      holdTypes: null,
       recordedClimbAttemptCount: null,
       recordedClimbOutcome: null,
       climb: {
@@ -2161,7 +2169,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V4",
           board: { name: "Training Board", externalId: "board-1" },
           wallAngle: { value: -20, unit: null },
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 7,
           recordedClimbOutcome: "completed",
           climb: {
@@ -2237,7 +2245,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V5",
           board: null,
           wallAngle: { value: 35, unit: "degrees" },
-          holdType: "crimp",
+          holdTypes: ["crimp"],
           recordedClimbAttemptCount: 1,
           recordedClimbOutcome: "failed",
           climb: {
@@ -2280,7 +2288,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V3",
           board: null,
           wallAngle: null,
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 1,
           recordedClimbOutcome: null,
           climb: {

@@ -1,5 +1,6 @@
 import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -2336,8 +2337,12 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
       expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123" },
-        expect.objectContaining({ enabled: true }),
+        { activityId: "test-123", responseVersion: 2 },
+        expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
+      );
+      expect(mockEntrySuggestionsUseQuery).toHaveBeenCalledWith(
+        { activityId: "test-123", responseVersion: 2 },
+        expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(screen.getByText("Summit outing")).toBeInTheDocument();
       expect(screen.getByText("Ridge traverse")).toBeInTheDocument();
@@ -2417,7 +2422,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V3",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2473,7 +2478,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V4",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 2,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2527,7 +2532,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "5.10a",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: null,
             climb: {
@@ -2593,9 +2598,15 @@ describe("ActivityDetailPage", () => {
         climbingLogEntryId: "tick-2",
       });
       await waitFor(() => {
-        expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
+        expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          responseVersion: 2,
+        });
         expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-        expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
+        expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          responseVersion: 2,
+        });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingStrengthsInvalidate).toHaveBeenCalledWith();
@@ -2636,7 +2647,7 @@ describe("ActivityDetailPage", () => {
               displayGrade: "5.10a",
               board: null,
               wallAngle: null,
-              holdType: null,
+              holdTypes: null,
               recordedClimbAttemptCount: 1,
               recordedClimbOutcome: "completed",
               climb: {
@@ -2695,7 +2706,10 @@ describe("ActivityDetailPage", () => {
           climbingLogEntryId: "available-tick",
         });
         await waitFor(() =>
-          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ activityId: "test-123" }),
+          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
+            activityId: "test-123",
+            responseVersion: 2,
+          }),
         );
         Object.assign(mockActivity, originalActivity);
       },
@@ -2717,7 +2731,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "5.10a",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2822,7 +2836,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V4",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 7,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2898,7 +2912,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V5",
             board: null,
             wallAngle: { value: 35, unit: "degrees" },
-            holdType: "crimp",
+            holdTypes: ["crimp"],
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "failed",
             climb: {
@@ -2941,7 +2955,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V3",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: null,
             climb: {

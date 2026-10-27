@@ -40,6 +40,7 @@ the exact section.
 | [climbing-ascent-photo-retrieval.md](climbing-ascent-photo-retrieval.md) | Provider photo retrieval evidence and limits on ascent attribution. |
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
 | [climbing-context.md](climbing-context.md) | Canonical climbing graph, grade ownership, scoped attempts, execution facts and server projections. |
+| [climbing-trait-coverage.md](climbing-trait-coverage.md) | Observed climbing source fields, verified Kaya metadata, intentional exclusions, and hold/angle interpretation. |
 | [climbing-log-model-cutover.md](climbing-log-model-cutover.md) | Tested preparation, bounded conversion, validation and finalization for populated upgrades. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
@@ -70,6 +71,7 @@ the exact section.
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |
+| Kaya | [kaya.md](kaya.md) | Authenticated logbook sync, separate ascent grades, grip tags, categorical outdoor angles and source metadata coverage. |
 | theCrag | [thecrag.md](thecrag.md) | Public-profile tick sync, browser-free HTTP, additive climbing logs and feed limitations. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |

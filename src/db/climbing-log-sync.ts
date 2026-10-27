@@ -121,7 +121,7 @@ const sourceLogSchema = climbingLogEntrySchema
     board: true,
     wallAngle: true,
     reportedGrades: true,
-    holdType: true,
+    holdTypes: true,
     raw: true,
   })
   .partial()
