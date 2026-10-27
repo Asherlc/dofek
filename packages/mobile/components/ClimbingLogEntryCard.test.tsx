@@ -25,7 +25,13 @@ describe("ClimbingLogEntryCard", () => {
         />,
       );
       const method = { lead: "Lead", top_rope: "Top rope", follow: "Follow" }[ropeMethod];
-      expect(screen.getByText(`${method} · Fell/Hung`)).toBeTruthy();
+      const methodLabel = screen.getByText(method);
+      const fallLabel = screen.getByText("Fell/Hung");
+      expect(methodLabel.parentElement?.style.borderRadius).toBe("999px");
+      expect(fallLabel.parentElement?.style.borderRadius).toBe("999px");
+      expect(methodLabel.parentElement?.style.backgroundColor).toBe("rgb(241, 245, 249)");
+      expect(fallLabel.parentElement?.style.backgroundColor).toBe("rgb(254, 243, 199)");
+      expect(methodLabel.parentElement?.parentElement).toBe(fallLabel.parentElement?.parentElement);
       expect(screen.queryByText(/Attempted|Completed|Sent/)).toBeNull();
     },
   );
@@ -124,6 +130,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
     expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText("Sent").parentElement?.style.borderRadius).toBe("999px");
   });
 
   it("shows a known recorded attempt count alongside its outcome", () => {
@@ -262,6 +269,7 @@ it.each(["Onsight", "Flash"] as const)(
     expect(screen.getByText("Blue boulder")).toBeTruthy();
     expect(screen.getByText("V5")).toBeTruthy();
     expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText(label).parentElement?.style.borderRadius).toBe("999px");
     expect(screen.queryByText(/Attempts:|completed/i)).toBeNull();
   },
 );
