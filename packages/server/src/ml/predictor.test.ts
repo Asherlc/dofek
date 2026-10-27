@@ -1,7 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DailyFeatureRow, ExtractedDataset } from "./features.ts";
 import { PREDICTION_TARGETS } from "./features.ts";
-import { trainFromDataset, trainHrvPredictor, trainPredictor } from "./predictor.ts";
+import { trainFromDataset, trainPredictor } from "./predictor.ts";
+
+const telemetryMocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  incrementLinearFitFallback: vi.fn(),
+  logError: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({ captureException: telemetryMocks.captureException }));
+vi.mock("../lib/metrics.ts", () => ({
+  predictorLinearFitFallbacksTotal: {
+    inc: telemetryMocks.incrementLinearFitFallback,
+  },
+}));
+vi.mock("../logger.ts", () => ({
+  logger: {
+    error: telemetryMocks.logError,
+  },
+}));
+
+beforeEach(() => {
+  telemetryMocks.captureException.mockReset();
+  telemetryMocks.incrementLinearFitFallback.mockReset();
+  telemetryMocks.logError.mockReset();
+});
 
 function mulberry32(seed: number): () => number {
   let s = seed;
@@ -46,7 +70,6 @@ function generateSyntheticDays(n: number, seed: number = 42): DailyFeatureRow[] 
       hrv: Math.round(hrv * 10) / 10,
       spo2_avg: 96 + rng() * 3,
       steps: Math.round(5000 + rng() * 10000),
-      active_energy_kcal: 200 + rng() * 500,
       skin_temp_c: 33 + rng() * 2,
       sleep_duration_min: Math.round(sleepDuration),
       deep_min: Math.round(deepMin),
@@ -66,15 +89,18 @@ function generateSyntheticDays(n: number, seed: number = 42): DailyFeatureRow[] 
   return days;
 }
 
-describe("trainHrvPredictor (legacy wrapper)", () => {
+describe("trainPredictor (HRV target)", () => {
+  const target = PREDICTION_TARGETS.find((candidate) => candidate.id === "hrv");
+  if (!target) throw new Error("expected hrv target");
+
   it("returns null with insufficient data", () => {
     const days = generateSyntheticDays(10);
-    expect(trainHrvPredictor(days)).toBeNull();
+    expect(trainPredictor(days, target)).toBeNull();
   });
 
   it("trains both models on synthetic data", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();
     expect(result?.targetId).toBe("hrv");
@@ -85,18 +111,18 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("produces reasonable R² values", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     expect(result.diagnostics.linearRSquared).toBeGreaterThan(0.01);
     expect(result.diagnostics.linearRSquared).toBeLessThanOrEqual(1);
     expect(result.diagnostics.treeRSquared).toBeGreaterThan(0.1);
-    expect(result.diagnostics.crossValidatedRSquared).toBeGreaterThan(-0.5);
+    expect(result.diagnostics.crossValidatedRSquared).toBeGreaterThan(-1);
   });
 
   it("ranks sleep features highly for HRV", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     const topFeatures = result.featureImportances.slice(0, 5).map((f) => f.name);
@@ -107,7 +133,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("excludes hrv and resting_hr from HRV features", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     const featureNames = result.featureImportances.map((f) => f.name);
@@ -117,7 +143,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("generates tomorrow prediction from latest data", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     expect(result.tomorrowPrediction).not.toBeNull();
@@ -127,7 +153,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("predictions have correct shape", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     for (const pred of result.predictions) {
@@ -140,34 +166,34 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("is deterministic for a fixed seed and preserves date alignment", () => {
     const days = generateSyntheticDays(60, 42);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     expect(result.diagnostics).toEqual({
-      linearRSquared: 0.3248,
-      linearAdjustedRSquared: 0.0675,
-      treeRSquared: 0.9906,
-      crossValidatedRSquared: -0.2926,
+      linearRSquared: 0.206,
+      linearAdjustedRSquared: -0.0709,
+      treeRSquared: 0.9894,
+      crossValidatedRSquared: -0.8389,
       sampleCount: 59,
-      featureCount: 16,
+      featureCount: 15,
       linearFallbackUsed: false,
     });
 
     expect(result.predictions[0]).toEqual({
       date: "2024-01-01",
-      actual: 57.7,
-      linearPrediction: 65.09,
-      treePrediction: 58.81,
+      actual: 65.1,
+      linearPrediction: 68.16,
+      treePrediction: 65.63,
     });
     expect(result.predictions[30]).toEqual({
       date: "2024-01-31",
-      actual: 72,
-      linearPrediction: 67.76,
-      treePrediction: 71.94,
+      actual: 82.2,
+      linearPrediction: 70.46,
+      treePrediction: 79.91,
     });
-    expect(result.tomorrowPrediction).toEqual({ linear: 71.21, tree: 71.8 });
-    expect(result.featureImportances[0]?.name).toBe("calories");
-    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.23712690166277647, 8);
+    expect(result.tomorrowPrediction).toEqual({ linear: 73.89, tree: 75.38 });
+    expect(result.featureImportances[0]?.name).toBe("sleep_duration");
+    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.16618574353847174, 8);
     expect(
       result.featureImportances.some(
         (feature) => feature.linearCoefficient !== 0 && feature.linearImportance > 0,
@@ -179,22 +205,6 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
       const sourceDay = days[i];
       if (!prediction || !sourceDay) continue;
       expect(prediction.date).toBe(sourceDay.date);
-    }
-  });
-
-  it("returns null when HRV target is unavailable", () => {
-    const originalTargets = [...PREDICTION_TARGETS];
-    PREDICTION_TARGETS.splice(
-      0,
-      PREDICTION_TARGETS.length,
-      ...originalTargets.filter((target) => target.id !== "hrv"),
-    );
-
-    try {
-      const days = generateSyntheticDays(60);
-      expect(trainHrvPredictor(days)).toBeNull();
-    } finally {
-      PREDICTION_TARGETS.splice(0, PREDICTION_TARGETS.length, ...originalTargets);
     }
   });
 
@@ -211,7 +221,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
       }
     }
 
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     expect(result).not.toBeNull();
     const featureNames = result?.featureImportances.map((f) => f.name);
     expect(featureNames).not.toContain("calories");
@@ -381,6 +391,56 @@ describe("trainFromDataset", () => {
       expect(importance.linearImportance).toBe(0);
       expect(importance.linearCoefficient).toBe(0);
     }
+
+    expect(telemetryMocks.captureException).toHaveBeenCalledOnce();
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: {
+        component: "predictor",
+        operation: "linear-fit",
+        predictionTarget: "cardio_power",
+      },
+      extra: {
+        featureCount: 3,
+        sampleCount: 24,
+      },
+    });
+    const capturedError = telemetryMocks.captureException.mock.calls[0]?.[0];
+    expect(capturedError).toBeInstanceOf(Error);
+    expect(telemetryMocks.logError).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "predictor.linear_fit_fallback",
+        featureCount: 3,
+        predictionTarget: "cardio_power",
+        sampleCount: 24,
+        errorMessage: capturedError instanceof Error ? capturedError.message : "",
+        errorName: capturedError instanceof Error ? capturedError.name : "",
+        errorStack: capturedError instanceof Error ? capturedError.stack : undefined,
+      }),
+    );
+    expect(telemetryMocks.incrementLinearFitFallback).toHaveBeenCalledWith({
+      prediction_target: "cardio_power",
+    });
+  });
+
+  it("does not report telemetry when linear regression fits successfully", () => {
+    const featureNames = ["x"];
+    const featureMatrix = Array.from({ length: 24 }, (_, index) => [index + 1]);
+    const targets = featureMatrix.map(([featureValue]) => (featureValue ?? 0) * 2 + 1);
+    const dates = featureMatrix.map((_, index) =>
+      new Date(2024, 0, 1 + index).toISOString().slice(0, 10),
+    );
+
+    const result = trainFromDataset(
+      { featureNames, X: featureMatrix, y: targets, dates },
+      "cardio_power",
+      "Cardio Power Output",
+      "W",
+    );
+
+    expect(result.diagnostics.linearFallbackUsed).toBe(false);
+    expect(telemetryMocks.captureException).not.toHaveBeenCalled();
+    expect(telemetryMocks.logError).not.toHaveBeenCalled();
+    expect(telemetryMocks.incrementLinearFitFallback).not.toHaveBeenCalled();
   });
 
   it("computes non-zero cross-validation at the 25-sample boundary", () => {
@@ -438,7 +498,6 @@ describe("trainPredictor", () => {
         hrv: null, // all null — can't build target
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
         sleep_duration_min: 420,
         deep_min: 80,
@@ -501,7 +560,6 @@ describe("trainPredictor", () => {
         hrv: 50,
         spo2_avg: 98,
         steps: 5000,
-        active_energy_kcal: 300,
         skin_temp_c: 34,
         sleep_duration_min: 420,
         deep_min: 80,

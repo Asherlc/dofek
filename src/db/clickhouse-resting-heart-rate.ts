@@ -17,11 +17,19 @@ ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, sleep_id)`;
 }
 
-export function buildRestingHeartRateCteSql(): string {
+interface BuildRestingHeartRateCteSqlOptions {
+  includeWindowStart?: boolean;
+}
+
+export function buildRestingHeartRateCteSql({
+  includeWindowStart = true,
+}: BuildRestingHeartRateCteSqlOptions = {}): string {
   return loadClickHouseSql("resting-heart-rate-query.cte.sql", {
     timezone_param: "{timezone:String}",
     user_id_param: "{userId:UUID}",
-    window_start_param: "{rhrWindowStart:String}",
+    window_start_predicate: includeWindowStart
+      ? "AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({rhrWindowStart:String})"
+      : "",
     end_date_param: "{rhrEndDate:String}",
   });
 }

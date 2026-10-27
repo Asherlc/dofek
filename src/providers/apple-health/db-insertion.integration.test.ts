@@ -1,9 +1,10 @@
-import { eq, sql } from "drizzle-orm";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../../db/schema.ts";
+import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
-import type { MetricStreamEventV1, MetricStreamRowInput } from "../../metric-stream/events.ts";
+import type { MetricStreamEventV2, MetricStreamRowInput } from "../../metric-stream/events.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
@@ -16,10 +17,11 @@ import {
 } from "./db-insertion.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import { healthRecord } from "./test-helpers.ts";
+import { hangTenWorkout, healthRecord } from "./test-helpers.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const PROVIDER_ID = "apple_health";
+const INTERVAL_PROVENANCE_PROVIDER_ID = "healthkit_bridge";
 
 let ctx: TestContext;
 
@@ -27,10 +29,10 @@ describe("db-insertion deduplication (integration)", () => {
   beforeAll(async () => {
     ctx = await setupTestDatabase();
 
-    await ctx.db.insert(schema.provider).values({
-      id: PROVIDER_ID,
-      name: "Apple Health",
-    });
+    await ctx.db.insert(schema.provider).values([
+      { id: PROVIDER_ID, name: "Apple Health" },
+      { id: INTERVAL_PROVENANCE_PROVIDER_ID, name: "HealthKit Bridge" },
+    ]);
   }, 60_000);
 
   afterAll(async () => {
@@ -44,20 +46,18 @@ describe("db-insertion deduplication (integration)", () => {
 
       const workouts: HealthWorkout[] = [
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "Apple Watch",
           durationSeconds: 1800,
           startDate: sharedStart,
           endDate: sharedEnd,
-          calories: 300,
         },
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "iPhone",
           durationSeconds: 1800,
           startDate: sharedStart,
           endDate: sharedEnd,
-          calories: 310,
         },
       ];
 
@@ -80,21 +80,21 @@ describe("db-insertion deduplication (integration)", () => {
 
       const workouts: HealthWorkout[] = [
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "Apple Watch",
           durationSeconds: 1800,
           startDate: start1,
           endDate: new Date("2024-07-01T08:30:00Z"),
         },
         {
-          activityType: "running",
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
           sourceName: "iPhone",
           durationSeconds: 1800,
           startDate: start1,
           endDate: new Date("2024-07-01T08:30:00Z"),
         },
         {
-          activityType: "cycling",
+          activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
           sourceName: "Apple Watch",
           durationSeconds: 3600,
           startDate: start2,
@@ -106,6 +106,258 @@ describe("db-insertion deduplication (integration)", () => {
 
       // 2 unique workouts (the two running dupes collapse into 1, plus the cycling)
       expect(count).toBe(2);
+    });
+
+    it("preserves an existing ordinary workout name on reimport", async () => {
+      const start = new Date("2026-08-06T14:00:00Z");
+      const workout: HealthWorkout = {
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
+        sourceName: "Apple Watch",
+        durationSeconds: 1800,
+        startDate: start,
+        endDate: new Date("2026-08-06T14:30:00Z"),
+      };
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      await ctx.db
+        .update(schema.activity)
+        .set({ name: "Morning Trail Run" })
+        .where(eq(schema.activity.externalId, `ah:workout:${start.toISOString()}`));
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, `ah:workout:${start.toISOString()}`));
+      expect(storedActivity?.name).toBe("Morning Trail Run");
+    });
+
+    it("replaces Hang Ten intervals on reimport", async () => {
+      const start = new Date("2026-08-07T14:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-08-07T14:00:10Z"),
+      });
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.planName = "Updated Repeaters";
+      workout.hangTen.activitySegments = [
+        {
+          stepID: "step-2",
+          stepNumber: 2,
+          kind: "work",
+          holdIDs: [],
+          durationSeconds: 4,
+        },
+      ];
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:22222222-2222-4222-8222-222222222222"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+      expect(storedActivity.name).toBe("Updated Repeaters");
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
+
+      expect(intervals).toHaveLength(1);
+      expect(intervals.map((interval) => interval.label)).toEqual(["Step 2: Work"]);
+    });
+
+    it("persists provider-recorded Hang Ten interval provenance on reimport", async () => {
+      const start = new Date("2026-09-10T14:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-09-10T14:00:10Z"),
+      });
+
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.sessionId = "55555555-5555-4555-8555-555555555555";
+      await upsertWorkoutBatch(ctx.db, INTERVAL_PROVENANCE_PROVIDER_ID, [workout]);
+      workout.hangTen.activitySegments = [
+        {
+          stepID: "step-2",
+          stepNumber: 2,
+          kind: "work",
+          holdIDs: ["jug-24"],
+          holdType: "jug",
+          durationSeconds: 4,
+        },
+        {
+          stepID: "step-3",
+          stepNumber: 3,
+          kind: "rest",
+          holdIDs: [],
+          durationSeconds: 6,
+        },
+      ];
+
+      await upsertWorkoutBatch(ctx.db, INTERVAL_PROVENANCE_PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:55555555-5555-4555-8555-555555555555"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
+
+      expect(intervals).toEqual([
+        expect.objectContaining({
+          sourceKind: "provider_recorded",
+          sourceProvider: INTERVAL_PROVENANCE_PROVIDER_ID,
+          sourceActivityId: storedActivity.id,
+          segmentType: "work",
+          workRecoveryKind: "work",
+          raw: {
+            stepID: "step-2",
+            stepNumber: 2,
+            kind: "work",
+            holdIDs: ["jug-24"],
+            holdType: "jug",
+            durationSeconds: 4,
+          },
+        }),
+        expect.objectContaining({
+          sourceKind: "provider_recorded",
+          sourceProvider: INTERVAL_PROVENANCE_PROVIDER_ID,
+          sourceActivityId: storedActivity.id,
+          segmentType: "rest",
+          workRecoveryKind: "recovery",
+          raw: {
+            stepID: "step-3",
+            stepNumber: 3,
+            kind: "rest",
+            holdIDs: [],
+            durationSeconds: 6,
+          },
+        }),
+      ]);
+    });
+
+    it("keeps existing Hang Ten intervals after a malformed reimport", async () => {
+      const start = new Date("2026-08-07T15:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-08-07T15:00:10Z"),
+      });
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.sessionId = "44444444-4444-4444-8444-444444444444";
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      workout.hangTen.rawActivitySegments = "{not-json}";
+      workout.hangTen.activitySegments = undefined;
+      workout.hangTen.activitySegmentsError = "Unexpected token n in JSON at position 1";
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:44444444-4444-4444-8444-444444444444"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
+
+      expect(intervals).toHaveLength(2);
+      expect(intervals.map((interval) => interval.label)).toEqual([
+        "Step 1: 19 mm edge",
+        "Step 1: Rest",
+      ]);
+    });
+
+    it("keeps existing Hang Ten intervals when replacement insertion fails", async () => {
+      const start = new Date("2026-08-08T14:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-08-08T14:00:07Z"),
+        hangTen: {
+          sessionId: "33333333-3333-4333-8333-333333333333",
+          planName: "Atomic Replacement",
+          activitySegments: [
+            {
+              stepID: "step-1",
+              stepNumber: 1,
+              kind: "work",
+              holdIDs: [],
+              durationSeconds: 7,
+            },
+          ],
+        },
+      });
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      const hangTen = workout.hangTen;
+      if (!hangTen) throw new Error("Expected Hang Ten metadata");
+      try {
+        await ctx.db.execute(sql`
+          ALTER TABLE fitness.activity_interval
+          ADD CONSTRAINT activity_interval_replacement_failure_test
+          CHECK (label <> 'Step 2: Work') NOT VALID
+        `);
+        hangTen.activitySegments = [
+          {
+            stepID: "step-2",
+            stepNumber: 2,
+            kind: "work",
+            holdIDs: [],
+            durationSeconds: 7,
+          },
+        ];
+        hangTen.planName = "Rejected Replacement";
+
+        await expect(upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout])).rejects.toThrow();
+
+        const [storedActivity] = await ctx.db
+          .select()
+          .from(schema.activity)
+          .where(eq(schema.activity.externalId, "ah:workout:33333333-3333-4333-8333-333333333333"));
+        expect(storedActivity).toBeDefined();
+        if (!storedActivity) return;
+        expect(storedActivity.name).toBe("Atomic Replacement");
+        expect(storedActivity.raw).toMatchObject({
+          hangTen: {
+            planName: "Atomic Replacement",
+            activitySegments: [
+              {
+                stepID: "step-1",
+                stepNumber: 1,
+                kind: "work",
+                durationSeconds: 7,
+              },
+            ],
+          },
+        });
+
+        const intervals = await ctx.db
+          .select()
+          .from(schema.activityInterval)
+          .where(eq(schema.activityInterval.activityId, storedActivity.id));
+        expect(intervals.map((interval) => interval.label)).toEqual(["Step 1: Work"]);
+      } finally {
+        await ctx.db.execute(sql`
+          ALTER TABLE fitness.activity_interval
+          DROP CONSTRAINT IF EXISTS activity_interval_replacement_failure_test
+        `);
+      }
     });
   });
 
@@ -187,15 +439,17 @@ describe("db-insertion deduplication (integration)", () => {
 
       const publishedRows: MetricStreamRowInput[] = [];
       const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records, undefined, {
-        publishRows: async (rows): Promise<MetricStreamEventV1[]> => {
+        publishRows: async (rows, options): Promise<MetricStreamEventV2[]> => {
           publishedRows.push(...rows);
           return rows.map((row, index) => ({
-            version: 1,
+            version: 2,
+            operationRevision: options.operationRevision,
             id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
             recordedAt:
               row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
             userId: row.userId,
             providerId: row.providerId,
+            generation: row.generation ?? 0,
             externalId: row.externalId ?? null,
             deviceId: row.deviceId ?? null,
             sourceType: row.sourceType,
@@ -350,6 +604,7 @@ describe("db-insertion deduplication (integration)", () => {
       // Stage aggregation should still work on the deduplicated session
       expect(matching[0]?.deepMinutes).toBe(90);
       expect(matching[0]?.remMinutes).toBe(90);
+      expect(matching[0]?.stagingAvailable).toBe(true);
     });
 
     it("preserves unique sleep sessions while deduplicating duplicates", async () => {
@@ -384,6 +639,27 @@ describe("db-insertion deduplication (integration)", () => {
 
       // 2 unique sessions (the two duplicate night-1 records collapse into 1, plus night-2)
       expect(count).toBe(2);
+
+      const matching = await ctx.db
+        .select()
+        .from(schema.sleepSession)
+        .where(
+          sql`${schema.sleepSession.externalId} IN (
+            ${`ah:sleep:${bedStart1.toISOString()}`},
+            ${`ah:sleep:${bedStart2.toISOString()}`}
+          )`,
+        );
+
+      expect(matching).toHaveLength(2);
+      expect(
+        matching.every(
+          (row) =>
+            row.stagingAvailable === false &&
+            row.deepMinutes === null &&
+            row.remMinutes === null &&
+            row.lightMinutes === null,
+        ),
+      ).toBe(true);
     });
   });
 

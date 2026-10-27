@@ -1,4 +1,4 @@
-import { formatPace } from "@dofek/format/format";
+import { formatDateMedium, formatPace } from "@dofek/format/format";
 import type { ActivityComparisonRow } from "dofek-server/types";
 import {
   dofekAxis,
@@ -6,6 +6,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
   seriesColor,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -46,9 +47,9 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         const pace = typeof rawValue[1] === "number" ? rawValue[1] : 0;
         const seriesName = String(params.seriesName ?? "");
         return [
-          `<strong>${seriesName}</strong>`,
-          `Date: ${date}`,
-          `Pace: ${formatPace(pace)} ${units.paceLabel}`,
+          `<strong>${escapeTooltipHtml(seriesName)}</strong>`,
+          `Date: ${escapeTooltipHtml(formatDateMedium(date))}`,
+          `Pace: ${escapeTooltipHtml(formatPace(pace))} ${escapeTooltipHtml(units.paceLabel)}`,
         ].join("<br/>");
       },
     }),
@@ -77,10 +78,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         height={280}
         emptyMessage="No repeated routes found (need 2+ instances with the same name)"
       />
-      <p className="text-xs text-dim mt-1">
-        Each line tracks pace over time for a repeated route. Y-axis is inverted so lower (faster)
-        pace appears higher.
-      </p>
+      <p className="text-xs text-dim mt-1">Higher points mean faster pace.</p>
     </div>
   );
 }

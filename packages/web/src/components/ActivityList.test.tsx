@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
 import type { UnitSystem } from "@dofek/format/units";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList";
+import type { ActivityTableColumn } from "./ActivityTable.tsx";
 
 // Mock @tanstack/react-router
 const mockNavigate = vi.fn();
@@ -50,18 +51,20 @@ describe("ActivityList", () => {
       id: "1",
       started_at: "2026-03-18T07:00:00Z",
       ended_at: "2026-03-18T07:45:00Z",
-      activity_type: "running",
+      canonical_type: "running",
+      primary_canonical_type: null,
       name: "Morning Run",
       provider_id: "strava",
       source_providers: ["strava"],
       distance_meters: 5000,
-      calories: 450,
+      distance_state: { status: "available" },
+      elevation_gain_m: 120,
+      elevation_state: { status: "available" },
       location: {
+        kind: "recorded_gps",
         centroidLat: 37.7749,
         centroidLng: -122.4194,
         mapPreview,
-        distanceMeters: 5000,
-        elevationGainM: 120,
       },
     },
   ];
@@ -71,7 +74,46 @@ describe("ActivityList", () => {
     expect(screen.getByText("Morning Run")).toBeDefined();
     expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("5.0 km")).toBeDefined();
-    expect(screen.getByText("450 kcal")).toBeDefined();
+  });
+
+  it("uses the primary activity type for unnamed activity names and selection labels", () => {
+    const firstActivity = mockActivities[0];
+    if (!firstActivity) throw new Error("Expected an activity fixture");
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...firstActivity,
+            name: null,
+            canonical_type: "walking",
+            primary_canonical_type: "running",
+          },
+        ]}
+        onBulkDelete={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByText("Walking")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
+  });
+
+  it("appends activity-specific columns", () => {
+    const additionalColumns: Array<ActivityTableColumn<Activity>> = [
+      {
+        key: "attempts",
+        label: "Attempts",
+        renderCell: () => 8,
+      },
+    ];
+
+    renderWithUnits(
+      <ActivityList activities={mockActivities} additionalColumns={additionalColumns} />,
+    );
+
+    expect(screen.getByText("Attempts")).toBeDefined();
+    expect(screen.getByText("8")).toBeDefined();
   });
 
   it("renders distances in imperial units", () => {
@@ -79,10 +121,49 @@ describe("ActivityList", () => {
     expect(screen.getByText("3.1 mi")).toBeDefined();
   });
 
+  it("selects concise columns and supports deletion when distance is hidden", () => {
+    const onBulkDelete = vi.fn();
+    renderWithUnits(
+      <ActivityList activities={mockActivities} showDistance={false} onBulkDelete={onBulkDelete} />,
+    );
+
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Map",
+      "Date",
+      "Type",
+      "Name",
+      "Duration",
+      "Provider",
+      "Sources",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Morning Run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Delete" }));
+    expect(onBulkDelete).toHaveBeenCalledWith(["1"]);
+  });
+
   it("renders a compact map tile when an activity has a location summary", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
     const image = screen.getByTestId("activity-map-preview-tile");
     expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/15/5241/12665.png");
+  });
+
+  it("shows a compact processing state while a map is prepared and its tiles load", () => {
+    const first = mockActivities[0];
+    if (!first) throw new Error("Expected an activity");
+    const view = renderWithUnits(
+      <ActivityList activities={[{ ...first, location: { kind: "processing" } }]} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    view.rerender(
+      <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+        <ActivityList activities={mockActivities} />
+      </UnitContext.Provider>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    fireEvent.load(screen.getByTestId("activity-map-preview-tile"));
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("allows compact map tile requests to include the page origin as the referrer", () => {
@@ -101,6 +182,7 @@ describe("ActivityList", () => {
           {
             ...mockActivity,
             location: {
+              kind: "recorded_gps",
               centroidLat: 37.7749,
               centroidLng: -122.4194,
               mapPreview: {
@@ -111,17 +193,38 @@ describe("ActivityList", () => {
                   { x: 305.85, y: 359.36 },
                 ],
               },
-              distanceMeters: 5000,
-              elevationGainM: 120,
             },
           },
         ]}
       />,
     );
 
-    expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
-      "278.54,379.51 292.2,370.88 305.85,359.36",
+    expect(screen.getByTestId("activity-route-path").getAttribute("d")).toBe(
+      "M 278.54 379.51 C 283.093 376.633, 287.648 374.238, 292.2 370.88 C 296.752 367.522, 301.3 363.2, 305.85 359.36",
     );
+  });
+
+  it("renders a compact type icon when an activity has no location summary", () => {
+    const activityWithoutLocation: Activity[] = [
+      {
+        id: "4",
+        started_at: "2026-03-18T09:00:00Z",
+        ended_at: "2026-03-18T09:45:00Z",
+        canonical_type: "cycling",
+        primary_canonical_type: null,
+        name: "Trainer Ride",
+        provider_id: "strava",
+        source_providers: ["strava"],
+        distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
+      },
+    ];
+
+    renderWithUnits(<ActivityList activities={activityWithoutLocation} />);
+    expect(screen.getByTestId("activity-type-icon")).toBeDefined();
+    expect(screen.getByLabelText("Cycling activity")).toBeDefined();
   });
 
   it("uses the exported map preview canvas for compact route thumbnails", () => {
@@ -143,24 +246,29 @@ describe("ActivityList", () => {
     });
   });
 
-  it("toggles selected activities instead of navigating in select mode", () => {
+  it("explains bulk deletion and exposes the selected count as a status", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
+    fireEvent.load(screen.getByTestId("activity-map-preview-tile"));
 
-    fireEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("status")).toHaveTextContent("0 activities selected");
     const row = screen.getByText("Morning Run").closest("tr");
     if (!row) throw new Error("Row not found");
     fireEvent.click(row);
 
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByRole("status")).toHaveTextContent("1 activity selected");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status").getAttribute("aria-atomic")).toBe("true");
   });
 
   it("confirms bulk delete with selected ids", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
 
-    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByText("Morning Run"));
     fireEvent.click(screen.getByText("Delete"));
     fireEvent.click(screen.getByText("Confirm Delete"));
@@ -185,6 +293,17 @@ describe("ActivityList", () => {
     expect(screen.getByText("No recent activities")).toBeDefined();
   });
 
+  it("shows a scoped empty-state message when provided", () => {
+    renderWithUnits(
+      <ActivityList
+        activities={[]}
+        emptyMessage="No strength workouts in the selected 30-day range."
+      />,
+    );
+    expect(screen.getByText("No strength workouts in the selected 30-day range.")).toBeDefined();
+    expect(screen.queryByText("No recent activities")).toBeNull();
+  });
+
   it("shows error message when error prop is set", () => {
     renderWithUnits(<ActivityList activities={[]} error="Failed to load activities." />);
     expect(screen.getByText("Failed to load activities.")).toBeDefined();
@@ -198,24 +317,49 @@ describe("ActivityList", () => {
     expect(skeleton).toBeDefined();
   });
 
-  it("handles activities without distance or calories", () => {
+  it("handles activities without distance", () => {
     const activityWithoutStats: Activity[] = [
       {
         id: "2",
         started_at: "2026-03-18T08:00:00Z",
         ended_at: "2026-03-18T08:30:00Z",
-        activity_type: "walking",
+        canonical_type: "walking",
+        primary_canonical_type: null,
         name: "Morning Walk",
         provider_id: "apple",
         source_providers: ["apple"],
         distance_meters: null,
-        calories: undefined,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
     renderWithUnits(<ActivityList activities={activityWithoutStats} />);
-    // Should show the dash/placeholder
-    const cells = screen.getAllByText("—");
-    expect(cells.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Distance unavailable: Distance not recorded")).toBeDefined();
+  });
+
+  it("keeps a recorded zero distance distinct from a missing distance", () => {
+    const zeroDistanceActivity: Activity[] = [
+      {
+        id: "zero-distance",
+        started_at: "2026-03-18T08:00:00Z",
+        ended_at: "2026-03-18T08:30:00Z",
+        canonical_type: "walking",
+        primary_canonical_type: null,
+        name: "Stationary Walk",
+        provider_id: "apple",
+        source_providers: ["apple"],
+        distance_meters: 0,
+        distance_state: { status: "available" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
+      },
+    ];
+
+    renderWithUnits(<ActivityList activities={zeroDistanceActivity} />);
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
   });
 
   it("uses placeholders when timestamps are invalid", () => {
@@ -224,18 +368,70 @@ describe("ActivityList", () => {
         id: "3",
         started_at: "not-a-date",
         ended_at: "still-not-a-date",
-        activity_type: "running",
+        canonical_type: "running",
+        primary_canonical_type: null,
         name: "Bad Timestamps",
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
-        calories: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
       },
     ];
 
     render(<ActivityList activities={invalidTimestampActivity} />);
     expect(screen.queryByText("Invalid Date")).toBeNull();
     expect(screen.queryByText("NaNm")).toBeNull();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders incomplete activity data and supports a paginated result set", () => {
+    const onPageChange = vi.fn();
+    const firstActivity = mockActivities[0];
+    if (!firstActivity) throw new Error("Expected the activity fixture");
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...firstActivity,
+            ended_at: null,
+            name: null,
+            source_providers: null,
+          },
+          {
+            ...firstActivity,
+            id: "negative-duration",
+            ended_at: "2026-03-18T06:45:00Z",
+            name: "Clock-skewed Run",
+          },
+        ]}
+        totalCount={4}
+        page={0}
+        pageSize={2}
+        onPageChange={onPageChange}
+      />,
+    );
+
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Running")).toHaveLength(3);
+    expect(screen.getByRole("navigation", { name: "activities pagination" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+    expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it("clears bulk selection after an asynchronous deletion succeeds", async () => {
+    const onBulkDelete = vi.fn(async () => undefined);
+    renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Morning Run"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => expect(onBulkDelete).toHaveBeenCalledWith(["1"]));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select activities" })).toBeTruthy(),
+    );
   });
 });

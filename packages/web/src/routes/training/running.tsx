@@ -1,10 +1,13 @@
+import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
+import type { TrainingChartAvailability } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState.tsx";
 import {
   chartColors,
   dofekAxis,
@@ -12,8 +15,11 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../../lib/chartTheme.ts";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { useUnitConverter } from "../../lib/unitContext.ts";
 
@@ -21,50 +27,78 @@ export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-import { formatNumber, formatPace } from "@dofek/format/format";
-
-const RUNNING_ACTIVITY_TYPES = ["running", "trail_running"] as const;
+const RUNNING_ACTIVITY_TYPES = ["running"] as const;
 
 export function RunningTab() {
   const { days } = useTrainingDays();
   const units = useUnitConverter();
 
-  const paceCurve = trpc.durationCurves.paceCurve.useQuery({ days });
-  const paceTrend = trpc.running.paceTrend.useQuery({ days });
-  const dynamics = trpc.running.dynamics.useQuery({ days });
+  const paceCurve = trpc.durationCurves.paceCurve.useQuery(
+    selectedRangeQueryInput(days),
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const paceTrend = trpc.running.paceTrendV2.useQuery(selectedRangeQueryInput(days));
+  const dynamics = trpc.running.dynamicsV2.useQuery(selectedRangeQueryInput(days));
 
   return (
     <>
       {/* Pace Duration Curve */}
-      <Section title="Pace Duration Curve" subtitle="Best sustained pace at each duration">
-        <PaceCurveChart
-          data={paceCurve.data?.points ?? []}
-          loading={paceCurve.isLoading}
-          units={units}
-        />
+      <Section title="Pace Duration Curve">
+        {paceCurve.error && !paceCurve.data ? (
+          <QueryStatePanel error={paceCurve.error} />
+        ) : (
+          <PaceCurveChart
+            data={paceCurve.data?.points ?? []}
+            availability={paceCurve.data?.availability}
+            loading={paceCurve.isLoading}
+            units={units}
+          />
+        )}
       </Section>
 
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Pace Trend" subtitle="Average pace per run over time">
-          <PaceTrendChart data={paceTrend.data ?? []} loading={paceTrend.isLoading} units={units} />
+        <Section title="Pace Trend">
+          {paceTrend.error && !paceTrend.data ? (
+            <QueryStatePanel error={paceTrend.error} />
+          ) : (
+            <PaceTrendChart
+              data={paceTrend.data?.data ?? []}
+              availability={paceTrend.data?.availability}
+              loading={paceTrend.isLoading}
+              units={units}
+            />
+          )}
         </Section>
 
-        <Section title="Cadence Trend" subtitle="Steps per minute over time">
-          <CadenceTrendChart data={dynamics.data ?? []} loading={dynamics.isLoading} />
+        <Section title="Cadence Trend">
+          {dynamics.error && !dynamics.data ? (
+            <QueryStatePanel error={dynamics.error} />
+          ) : (
+            <CadenceTrendChart
+              data={dynamics.data?.data ?? []}
+              availability={dynamics.data?.availability}
+              loading={dynamics.isLoading}
+            />
+          )}
         </Section>
       </div>
 
       {/* Running Dynamics Table */}
-      <Section title="Running Form" subtitle="Per-activity running dynamics">
-        <RunningDynamicsTable
-          data={dynamics.data ?? []}
-          loading={dynamics.isLoading}
-          units={units}
-        />
+      <Section title="Running Form">
+        {dynamics.error && !dynamics.data ? (
+          <QueryStatePanel error={dynamics.error} />
+        ) : (
+          <RunningDynamicsTable
+            data={dynamics.data?.data ?? []}
+            availability={dynamics.data?.availability}
+            loading={dynamics.isLoading}
+            units={units}
+          />
+        )}
       </Section>
 
-      <Section title="Recent Runs" subtitle="Recent running activities">
+      <Section title="Recent Runs">
         <RecentActivitiesSection activityTypes={RUNNING_ACTIVITY_TYPES} />
       </Section>
     </>
@@ -82,13 +116,19 @@ interface PaceCurvePoint {
 
 function PaceCurveChart({
   data,
+  availability,
   loading,
   units,
 }: {
   data: PaceCurvePoint[];
+  availability?: TrainingChartAvailability;
   loading: boolean;
   units: UnitConverter;
 }) {
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   const option = {
     grid: { ...dofekGrid("single"), top: 30, bottom: 40, left: 65 },
     tooltip: dofekTooltip({
@@ -101,7 +141,7 @@ function PaceCurveChart({
             : seconds < 3600
               ? `${Math.round(seconds / 60)}min`
               : `${Math.round(seconds / 3600)}h`;
-        return `${durLabel}: <strong>${formatPace(pace)} ${units.paceLabel}</strong>`;
+        return `${durLabel}: <strong>${formatPace(pace)} ${escapeTooltipHtml(units.paceLabel)}</strong>`;
       },
     }),
     xAxis: {
@@ -172,10 +212,12 @@ interface PaceTrendPoint {
 
 function PaceTrendChart({
   data,
+  availability,
   loading,
   units,
 }: {
   data: PaceTrendPoint[];
+  availability?: TrainingChartAvailability;
   loading: boolean;
   units: UnitConverter;
 }) {
@@ -187,10 +229,10 @@ function PaceTrendChart({
         const dataPoint = data[params.dataIndex];
         if (!dataPoint) return "";
         return [
-          `<strong>${dataPoint.activityName}</strong>`,
-          `${dataPoint.date}`,
-          `Pace: ${formatPace(units.convertPace(dataPoint.paceSecondsPerKm))} ${units.paceLabel}`,
-          `Distance: ${formatNumber(units.convertDistance(dataPoint.distanceKm))} ${units.distanceLabel} · ${dataPoint.durationMinutes} min`,
+          `<strong>${escapeTooltipHtml(dataPoint.activityName)}</strong>`,
+          escapeTooltipHtml(formatDateMedium(dataPoint.date)),
+          `Pace: ${formatPace(units.convertPace(dataPoint.paceSecondsPerKm))} ${escapeTooltipHtml(units.paceLabel)}`,
+          `Distance: ${formatNumber(units.convertDistance(dataPoint.distanceKm))} ${escapeTooltipHtml(units.distanceLabel)} · ${dataPoint.durationMinutes} min`,
         ].join("<br/>");
       },
     }),
@@ -219,6 +261,10 @@ function PaceTrendChart({
     ],
   };
 
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   return (
     <DofekChart
       option={option}
@@ -244,7 +290,15 @@ interface DynamicsRow {
   distanceKm: number;
 }
 
-function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: boolean }) {
+function CadenceTrendChart({
+  data,
+  availability,
+  loading,
+}: {
+  data: DynamicsRow[];
+  availability?: TrainingChartAvailability;
+  loading: boolean;
+}) {
   const option = {
     grid: { ...dofekGrid("single"), top: 20, bottom: 40, left: 55 },
     tooltip: dofekTooltip({
@@ -252,7 +306,7 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const dataPoint = data[params.dataIndex];
         if (!dataPoint) return "";
-        return `<strong>${dataPoint.activityName}</strong><br/>${dataPoint.date}<br/>Cadence: ${dataPoint.cadence} spm`;
+        return `<strong>${escapeTooltipHtml(dataPoint.activityName)}</strong><br/>${escapeTooltipHtml(formatDateMedium(dataPoint.date))}<br/>Cadence: ${dataPoint.cadence} spm`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -272,6 +326,10 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     ],
   };
 
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   return (
     <DofekChart
       option={option}
@@ -287,14 +345,20 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
 
 function RunningDynamicsTable({
   data,
+  availability,
   loading,
   units,
 }: {
   data: DynamicsRow[];
+  availability?: TrainingChartAvailability;
   loading: boolean;
   units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
+
+  if (availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
 
   if (data.length === 0) {
     return (
@@ -310,7 +374,7 @@ function RunningDynamicsTable({
       label: "Date",
       headerClassName: "py-2 pr-3",
       cellClassName: "py-1.5 pr-3 text-subtle",
-      renderCell: (row) => row.date,
+      renderCell: (row) => formatDateMedium(row.date),
     },
     {
       key: "activity",
@@ -382,27 +446,13 @@ function RunningDynamicsTable({
 
 // ── Section helper ──
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  const description = subtitle ?? `${title} chart.`;
-
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
       </div>
-      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

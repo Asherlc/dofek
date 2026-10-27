@@ -1,16 +1,18 @@
 import { and, eq } from "drizzle-orm";
-import { sleepSession, sleepStage } from "../../db/schema.ts";
+import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
+import { resolveWhoopCycleDay } from "./cycle-day.ts";
 import {
-  extractSleepIdsFromCycle,
   inlineSleepSchema,
   parseInlineSleep,
   parseSleepStages,
+  resolveInlineSleepExternalId,
 } from "./parsing.ts";
-import type { WhoopSyncContext } from "./sync-types.ts";
+import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
 
-export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise<number> {
+export async function syncWhoopSleepSessions(context: WhoopPersistenceContext): Promise<number> {
   const { db, cycles, providerId, options } = context;
 
   try {
@@ -31,7 +33,8 @@ export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise
               );
               continue;
             }
-            const parsed = parseInlineSleep(parseResult.data, sleepIndex);
+            const externalId = resolveInlineSleepExternalId(cycle, parseResult.data, sleepIndex);
+            const parsed = parseInlineSleep(parseResult.data, sleepIndex, externalId);
             sleepIndex++;
             if (!parsed) {
               logger.warn("[whoop] Skipping inline sleep: invalid timestamps");
@@ -52,12 +55,10 @@ export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
+                  stagingAvailable: parsed.stagingAvailable,
                   efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
-                  sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
-                  sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
-                  sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
-                  sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
+                  isNap: parsed.isNap,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -69,14 +70,33 @@ export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise
                     remMinutes: parsed.remMinutes,
                     lightMinutes: parsed.lightMinutes,
                     awakeMinutes: parsed.awakeMinutes,
+                    stagingAvailable: parsed.stagingAvailable,
                     efficiencyPct: parsed.efficiencyPct,
                     sleepType: parsed.sleepType,
-                    sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
-                    sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
-                    sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
-                    sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
+                    isNap: parsed.isNap,
                   },
                 });
+              if (!parsed.isNap && parsed.respiratoryRateAvg != null) {
+                const metricDate = resolveWhoopCycleDay(cycle, parsed.endedAt);
+                await db
+                  .insert(dailyMetrics)
+                  .values({
+                    date: metricDate,
+                    providerId,
+                    respiratoryRateAvg: parsed.respiratoryRateAvg,
+                  })
+                  .onConflictDoUpdate({
+                    target: [
+                      dailyMetrics.userId,
+                      dailyMetrics.date,
+                      dailyMetrics.providerId,
+                      dailyMetrics.sourceName,
+                    ],
+                    set: {
+                      respiratoryRateAvg: parsed.respiratoryRateAvg,
+                    },
+                  });
+              }
               count++;
             } catch (err) {
               context.errors.push({
@@ -99,64 +119,43 @@ export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise
   }
 }
 
-export async function syncWhoopSleepStages(context: WhoopSyncContext): Promise<number> {
-  const { db, client, cycles, providerId, options } = context;
+export async function syncWhoopSleepStagesForId(
+  context: WhoopSyncContext,
+  sleepId: string,
+): Promise<number> {
+  const { db, client, providerId, options } = context;
+  const userId = options?.userId ?? getTokenUserId();
+  if (!userId) return 0;
 
-  try {
-    return await withSyncLog(
-      db,
-      providerId,
-      "sleep_stages",
-      async () => {
-        let count = 0;
-        const sleepIds = new Set<string>();
-        for (const cycle of cycles) {
-          const ids = extractSleepIdsFromCycle(cycle);
-          for (const id of ids) sleepIds.add(id);
-        }
+  const record = await client.getSleep(sleepId);
+  if (!record.stages || record.stages.length === 0) return 0;
 
-        for (const sleepId of sleepIds) {
-          try {
-            const record = await client.getSleep(sleepId);
-            if (!record.stages || record.stages.length === 0) continue;
+  const stages = parseSleepStages(record);
+  if (stages.length === 0) return 0;
 
-            const stages = parseSleepStages(record);
-            if (stages.length === 0) continue;
+  const sessionRows = await db
+    .select({ id: sleepSession.id })
+    .from(sleepSession)
+    .where(
+      and(
+        eq(sleepSession.userId, userId),
+        eq(sleepSession.providerId, providerId),
+        eq(sleepSession.externalId, sleepId),
+      ),
+    )
+    .limit(1);
 
-            const sessionRows = await db
-              .select({ id: sleepSession.id })
-              .from(sleepSession)
-              .where(
-                and(eq(sleepSession.providerId, providerId), eq(sleepSession.externalId, sleepId)),
-              )
-              .limit(1);
+  const sessionId = sessionRows[0]?.id;
+  if (!sessionId) return 0;
 
-            const sessionId = sessionRows[0]?.id;
-            if (!sessionId) continue;
-
-            await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
-            await db.insert(sleepStage).values(
-              stages.map((stage) => ({
-                sessionId,
-                stage: stage.stage,
-                startedAt: stage.startedAt,
-                endedAt: stage.endedAt,
-              })),
-            );
-            count++;
-          } catch (err) {
-            logger.warn(`[whoop] Failed to fetch sleep stages for ${sleepId}: ${err}`);
-          }
-        }
-        return { recordCount: count, result: count };
-      },
-      options?.userId,
-    );
-  } catch (err) {
-    context.errors.push({
-      message: `sleep_stages: ${err instanceof Error ? err.message : String(err)}`,
-      cause: err,
-    });
-    return 0;
-  }
+  await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
+  await db.insert(sleepStage).values(
+    stages.map((stage) => ({
+      sessionId,
+      stage: stage.stage,
+      startedAt: stage.startedAt,
+      endedAt: stage.endedAt,
+    })),
+  );
+  return 1;
 }

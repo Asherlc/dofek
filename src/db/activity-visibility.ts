@@ -7,10 +7,11 @@
 
 const SCANNED_RELATIVE_PATHS = [
   "packages/server/src/repositories/activities-calendar-repository.ts",
+  "packages/server/src/repositories/activity-overview-repository.ts",
+  "packages/server/src/repositories/provider-absent-activities-calendar-repository.ts",
   "packages/server/src/repositories/efficiency-repository.ts",
   "packages/server/src/repositories/intervals-repository.ts",
   "packages/server/src/repositories/predictions-repository.ts",
-  "packages/server/src/repositories/raw-activity-count.ts",
   "packages/server/src/repositories/strength-repository.ts",
   "packages/server/src/routers/admin.ts",
   "packages/server/src/routers/sync.ts",
@@ -28,7 +29,7 @@ const SCANNED_RELATIVE_PATHS = [
 ] as const;
 
 const PROVIDER_ABSENT_FILTER =
-  /provider_absent_at\s+IS\s+(?:NULL|null)(?!\s+AND\s+deleted_at\s+IS\s+(?:NULL|null))/i;
+  /provider_absent_at\s+IS\s+(?:NULL|null)(?!\s+AND\s+(?:\w+\.)?deleted_at\s+IS\s+(?:NULL|null))/i;
 
 /**
  * Returns relative paths whose contents mention `provider_absent_at IS NULL`

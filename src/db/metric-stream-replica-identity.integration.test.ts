@@ -1,56 +1,26 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
-import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
+import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
 // cspell:ignore conrelid contype pgcrypto pkey relnamespace segmentby
 
 describe("metric_stream replica identity migration", () => {
-  let connectionString: string;
-  let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
+  let context: TestContext;
 
   beforeAll(async () => {
-    container = await new GenericContainer(
-      "mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all",
-    )
-      .withEnvironment({
-        POSTGRES_DB: "test",
-        POSTGRES_USER: "test",
-        POSTGRES_PASSWORD: "test",
-      })
-      .withExposedPorts(5432)
-      .start();
-
-    connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
-
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const probe = new Client({ connectionString });
-      try {
-        await probe.connect();
-        await probe.query("SELECT 1");
-        return;
-      } catch {
-        if (attempt === 29) {
-          throw new Error("Database did not become ready in time");
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      } finally {
-        await probe.end().catch(() => undefined);
-      }
-    }
+    context = await setupTestDatabase();
   }, 120_000);
 
   afterAll(async () => {
-    if (container) {
-      await container.stop();
-    }
+    await context?.cleanup();
   });
 
   it("adds replica identity first, then backfills metric stream IDs and adds the primary key", async () => {
-    const client = new Client({ connectionString });
+    const client = new Client({ connectionString: context.connectionString });
     let tmpDir: string | undefined;
     await client.connect();
     try {
@@ -97,9 +67,15 @@ describe("metric_stream replica identity migration", () => {
         join(import.meta.dirname, "../../drizzle/0007_metric_stream_primary_key.sql"),
         "utf-8",
       );
-      writeFileSync(join(tmpDir, "0007_metric_stream_primary_key.sql"), migrationContent);
+      writeTestMigrationFiles(tmpDir, [
+        {
+          content: migrationContent,
+          file: "0007_metric_stream_primary_key.sql",
+          when: 2_100_000_000_000,
+        },
+      ]);
 
-      const migrationCount = await runMigrations(connectionString, tmpDir);
+      const migrationCount = await runMigrations(context.connectionString, tmpDir);
       expect(migrationCount).toBe(1);
 
       const replicaIdentityResult = await client.query<{
@@ -173,12 +149,20 @@ describe("metric_stream replica identity migration", () => {
         join(import.meta.dirname, "../../drizzle/0009_metric_stream_id_not_null_primary_key.sql"),
         "utf-8",
       );
-      writeFileSync(
-        join(tmpDir, "0009_metric_stream_id_not_null_primary_key.sql"),
-        primaryKeyMigrationContent,
-      );
+      writeTestMigrationFiles(tmpDir, [
+        {
+          content: migrationContent,
+          file: "0007_metric_stream_primary_key.sql",
+          when: 2_100_000_000_000,
+        },
+        {
+          content: primaryKeyMigrationContent,
+          file: "0009_metric_stream_id_not_null_primary_key.sql",
+          when: 2_100_000_000_001,
+        },
+      ]);
 
-      const primaryKeyMigrationCount = await runMigrations(connectionString, tmpDir);
+      const primaryKeyMigrationCount = await runMigrations(context.connectionString, tmpDir);
       expect(primaryKeyMigrationCount).toBe(1);
 
       const backfilledResult = await client.query<{ missing_id_count: string }>(

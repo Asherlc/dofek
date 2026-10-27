@@ -16,7 +16,7 @@ export const heartRateRouter = router({
    * Per-minute heart rate samples for a single day, grouped by source, read
    * from the Redpanda-fed ClickHouse metric-stream mirror.
    */
-  dailyBySource: cachedProtectedQuery(CacheTTL.MEDIUM)
+  dailyBySource: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateInputSchema)
     .query(async ({ ctx, input }): Promise<HeartRateSourceSeries[]> => {
       const repo = new HeartRateRepository(ctx.sensorStore, ctx.userId, ctx.timezone);

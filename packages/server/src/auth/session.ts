@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 const SESSION_DURATION_DAYS = 30;
 
@@ -18,11 +18,15 @@ export interface SessionInfo {
 }
 
 const sessionRowSchema = z.object({
+  created_at: timestampStringSchema,
   user_id: z.string(),
 });
 
 /** Create a new session for a user. Returns the session token and expiry. */
-export async function createSession(db: Database, userId: string): Promise<SessionInfo> {
+export async function createSession(
+  db: Pick<Database, "execute">,
+  userId: string,
+): Promise<SessionInfo> {
   const sessionId = generateSessionToken();
   const expiresAt = new Date(Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -36,28 +40,23 @@ export async function createSession(db: Database, userId: string): Promise<Sessi
 
 /** Validate a session token. Returns userId if valid and not expired, null otherwise. */
 export async function validateSession(
-  db: Database,
+  db: Pick<Database, "execute">,
   sessionId: string,
-): Promise<{ userId: string } | null> {
+): Promise<{ authenticatedAt?: Date; userId: string } | null> {
   const rows = await executeWithSchema(
     db,
     sessionRowSchema,
-    sql`SELECT user_id FROM fitness.session
+    sql`SELECT user_id, created_at FROM fitness.session
         WHERE id = ${sessionId} AND expires_at > NOW()
         LIMIT 1`,
   );
 
   const row = rows[0];
   if (!row) return null;
-  return { userId: row.user_id };
+  return { authenticatedAt: new Date(row.created_at), userId: row.user_id };
 }
 
 /** Delete a session (logout). */
 export async function deleteSession(db: Database, sessionId: string): Promise<void> {
   await db.execute(sql`DELETE FROM fitness.session WHERE id = ${sessionId}`);
-}
-
-/** Delete all expired sessions (cleanup). */
-export async function deleteExpiredSessions(db: Database): Promise<void> {
-  await db.execute(sql`DELETE FROM fitness.session WHERE expires_at <= NOW()`);
 }

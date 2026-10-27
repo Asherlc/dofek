@@ -119,14 +119,6 @@ export function computeReadinessScore(
   return Math.round(raw);
 }
 
-export function shouldPreferRest(
-  readinessLevel: ReadinessLevel,
-  consecutiveTrainingDays: number,
-  acwr: number | null,
-): boolean {
-  return readinessLevel === "low" || consecutiveTrainingDays >= 6 || (acwr != null && acwr > 1.5);
-}
-
 export function shouldDoStrengthToday(input: {
   strengthReady: boolean;
   strengthUnderTarget: boolean;

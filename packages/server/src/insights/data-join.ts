@@ -22,7 +22,6 @@ export interface JoinedDay {
   hrv: number | null;
   spo2_avg: number | null;
   steps: number | null;
-  active_energy_kcal: number | null;
   skin_temp_c: number | null;
   // sleep (night before → this date)
   sleep_duration_min: number | null;
@@ -59,8 +58,7 @@ export function classifyActivity(type: string): "cardio" | "strength" | "flexibi
       "hiking",
       "running",
       "swimming",
-      "cross_country_skiing",
-      "downhill_skiing",
+      "skiing",
       "cardio",
       "cross_training",
       "tennis",
@@ -68,8 +66,7 @@ export function classifyActivity(type: string): "cardio" | "strength" | "flexibi
     ].includes(typeLower)
   )
     return "cardio";
-  if (["strength_training", "functional_strength", "strength"].includes(typeLower))
-    return "strength";
+  if (typeLower === "strength") return "strength";
   if (["yoga", "stretching", "preparation_and_recovery"].includes(typeLower)) return "flexibility";
   return "other";
 }
@@ -105,21 +102,20 @@ export function joinByDate(
     { minutes: number; cardio: number; strength: number; flexibility: number }
   >();
   for (const a of activities) {
-    const dateStr = new Date(a.started_at).toISOString().slice(0, 10);
+    if (!a.ended_at) continue;
+    const dateStr = a.date ? toDateStr(a.date) : new Date(a.started_at).toISOString().slice(0, 10);
     const existing = activityByDate.get(dateStr) ?? {
       minutes: 0,
       cardio: 0,
       strength: 0,
       flexibility: 0,
     };
-    if (a.ended_at) {
-      const dur = (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000;
-      existing.minutes += dur;
-      const cat = classifyActivity(a.activity_type);
-      if (cat === "cardio") existing.cardio += dur;
-      else if (cat === "strength") existing.strength += dur;
-      else if (cat === "flexibility") existing.flexibility += dur;
-    }
+    const dur = (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000;
+    existing.minutes += dur;
+    const cat = classifyActivity(a.canonical_type);
+    if (cat === "cardio") existing.cardio += dur;
+    else if (cat === "strength") existing.strength += dur;
+    else if (cat === "flexibility") existing.flexibility += dur;
     activityByDate.set(dateStr, existing);
   }
 
@@ -130,24 +126,31 @@ export function joinByDate(
   // Body comp: one measurement per date (latest if multiple)
   const bodyCompByDate = new Map<string, BodyCompRow>();
   for (const b of bodyComp) {
-    const dateStr = new Date(b.recorded_at).toISOString().slice(0, 10);
+    const dateStr = b.date ? toDateStr(b.date) : new Date(b.recorded_at).toISOString().slice(0, 10);
     bodyCompByDate.set(dateStr, b); // last wins (data sorted ASC)
   }
 
+  const dates = new Set([
+    ...metricsByDate.keys(),
+    ...sleepByWakeDate.keys(),
+    ...activityByDate.keys(),
+    ...nutritionByDate.keys(),
+    ...bodyCompByDate.keys(),
+  ]);
   const joined: JoinedDay[] = [];
-  for (const [date, m] of metricsByDate) {
+  for (const date of dates) {
+    const metricRow = metricsByDate.get(date);
     const sleepRow = sleepByWakeDate.get(date);
     const activityRow = activityByDate.get(date);
     const nutritionRow = nutritionByDate.get(date);
     const bc = bodyCompByDate.get(date);
     joined.push({
       date,
-      resting_hr: m.resting_hr,
-      hrv: m.hrv,
-      spo2_avg: m.spo2_avg,
-      steps: m.steps,
-      active_energy_kcal: m.active_energy_kcal,
-      skin_temp_c: m.skin_temp_c,
+      resting_hr: metricRow?.resting_hr ?? null,
+      hrv: metricRow?.hrv ?? null,
+      spo2_avg: metricRow?.spo2_avg ?? null,
+      steps: metricRow?.steps ?? null,
+      skin_temp_c: metricRow?.skin_temp_c ?? null,
       sleep_duration_min: sleepRow?.duration_minutes ?? null,
       deep_min: sleepRow?.deep_minutes ?? null,
       rem_min: sleepRow?.rem_minutes ?? null,

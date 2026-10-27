@@ -1,0 +1,590 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import { createClient } from "@clickhouse/client";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
+
+const historicalActivityId = "00000000-0000-0000-0000-000000000901";
+const unrelatedActivityId = "00000000-0000-0000-0000-000000000902";
+const tombstonedActivityId = "00000000-0000-0000-0000-000000000903";
+const singleAltitudeActivityId = "00000000-0000-0000-0000-000000000904";
+const staleActivityId = "00000000-0000-0000-0000-000000000905";
+const testUserId = "00000000-0000-0000-0000-000000000001";
+
+type ClickHouseClient = ReturnType<typeof createClient>;
+
+interface SensorSummaryResultRow {
+  activity_id: string;
+  avg_power: number | null;
+  power_sample_count: number;
+}
+
+const scanCountRowsSchema = z.array(z.object({ scan_count: z.number() }));
+const elevationRowsSchema = z.array(
+  z.object({
+    elevation_gain_m: z.number().nullable(),
+    elevation_loss_m: z.number().nullable(),
+  }),
+);
+const sourceElevationRowsSchema = z.array(
+  z.object({
+    elevation_gain_m: z.number(),
+    elevation_loss_m: z.number(),
+    elevation_gain_legacy: z.number(),
+    climbing_elevation_gain_m: z.number(),
+    climbing_seconds: z.number(),
+    sample_count: z.number(),
+  }),
+);
+const activitySummaryStateRowsSchema = z.array(
+  z.object({
+    activity_id: z.string(),
+    avg_power: z.number().nullable(),
+    is_deleted: z.number(),
+  }),
+);
+const staleActivitySummaryStateRowsSchema = z.array(
+  z.object({
+    activity_id: z.string(),
+    is_deleted: z.number(),
+  }),
+);
+
+describe("activity_sensor_summary_rows historical dirty keys", () => {
+  let client: ClickHouseClient | undefined;
+  const targetSchema = `analytics_activity_sensor_summary_test_${randomBytes(6).toString("hex")}`;
+
+  beforeAll(async () => {
+    client = createClient({
+      url: requireClickHouseUrl(),
+      request_timeout: 120_000,
+    });
+    await waitForClickHouse(client);
+  }, 120_000);
+
+  afterAll(async () => {
+    if (client) {
+      await client.command({ query: `DROP DATABASE IF EXISTS ${targetSchema} SYNC` });
+      await client.close();
+    }
+  });
+
+  it("summarizes historical samples even after an unrelated row advanced the table watermark", async () => {
+    const activeClient = requireClient(client);
+    await seedHistoricalBackfillFixture(activeClient, targetSchema);
+    const queryId = `activity-sensor-summary-${randomUUID()}`;
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+      query_id: queryId,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT
+          toString(activity_id) AS activity_id,
+          avg_power,
+          toUInt32(ifNull(power_sample_count, 0)) AS power_sample_count
+        FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+        WHERE is_deleted = 0
+          AND activity_id = '${historicalActivityId}'`,
+      format: "JSONEachRow",
+    });
+    const rows = await result.json<SensorSummaryResultRow>();
+
+    expect(rows).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        power_sample_count: 2,
+      },
+    ]);
+
+    const tombstoneResult = await activeClient.query({
+      query: `SELECT count() AS tombstone_count
+        FROM ${targetSchema}.activity_sensor_summary_rows
+        WHERE activity_id = '${tombstonedActivityId}'
+          AND is_deleted = 1`,
+      format: "JSONEachRow",
+    });
+    const tombstoneRows = await tombstoneResult.json<{ tombstone_count: number }>();
+
+    expect(tombstoneRows).toEqual([{ tombstone_count: 1 }]);
+
+    await activeClient.command({ query: "SYSTEM FLUSH LOGS" });
+    const scanCountResult = await activeClient.query({
+      query: `SELECT countIf(startsWith(message, 'Filtering marks')) AS scan_count
+        FROM system.text_log
+        WHERE query_id = {queryId:String}
+          AND startsWith(logger_name, {tableName:String})`,
+      query_params: {
+        queryId,
+        tableName: `${targetSchema}.activity_sensor_sample`,
+      },
+      format: "JSONEachRow",
+    });
+    const scanCountRows = scanCountRowsSchema.parse(await scanCountResult.json<unknown>());
+
+    expect(scanCountRows).toEqual([{ scan_count: 2 }]);
+  }, 180_000);
+
+  it("keeps elevation unavailable when an activity has only one altitude sample", async () => {
+    const activeClient = requireClient(client);
+    await seedHistoricalBackfillFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT elevation_gain_m, elevation_loss_m
+        FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+        WHERE is_deleted = 0
+          AND activity_id = '${singleAltitudeActivityId}'`,
+      format: "JSONEachRow",
+    });
+
+    expect(elevationRowsSchema.parse(await result.json<unknown>())).toEqual([
+      { elevation_gain_m: null, elevation_loss_m: null },
+    ]);
+  }, 180_000);
+
+  it.each(["member_activity_id", "provider_id", "device_id"] as const)(
+    "calculates ascent and descent from one altitude source when %s differs",
+    async (sourceField) => {
+      const activeClient = requireClient(client);
+      await seedHistoricalBackfillFixture(activeClient, targetSchema);
+      const sourceValues =
+        sourceField === "member_activity_id"
+          ? ["00000000-0000-0000-0000-000000000011", "00000000-0000-0000-0000-000000000012"]
+          : ["source-a", "source-b"];
+      await activeClient.insert({
+        table: `${targetSchema}.activity_sensor_sample`,
+        format: "JSONEachRow",
+        values: [100, -80, 120, -50, 110, -60].map((scalar, index) => ({
+          activity_id: historicalActivityId,
+          user_id: testUserId,
+          recorded_at: `2019-07-16 14:56:${37 + index}`,
+          recorded_date: "2019-07-16",
+          channel: "altitude",
+          scalar,
+          [sourceField]: sourceValues[index % 2],
+          refresh_version: 300,
+          is_deleted: 0,
+          refreshed_at: "2026-07-10 05:31:41",
+        })),
+      });
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+      });
+      const result = await activeClient.query({
+        query: `SELECT elevation_gain_m, elevation_loss_m, elevation_gain_legacy,
+            climbing_elevation_gain_m, climbing_seconds, sample_count
+          FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+          WHERE activity_id = '${historicalActivityId}' AND is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(sourceElevationRowsSchema.parse(await result.json<unknown>())).toEqual([
+        {
+          elevation_gain_m: 20,
+          elevation_loss_m: 10,
+          elevation_gain_legacy: 20,
+          climbing_elevation_gain_m: 20,
+          climbing_seconds: 2,
+          sample_count: 8,
+        },
+      ]);
+
+      // A denser source wins even when its identity sorts after the first one.
+      await activeClient.insert({
+        table: `${targetSchema}.activity_sensor_sample`,
+        format: "JSONEachRow",
+        values: [
+          {
+            activity_id: historicalActivityId,
+            user_id: testUserId,
+            recorded_at: "2019-07-16 14:56:43",
+            recorded_date: "2019-07-16",
+            channel: "altitude",
+            scalar: -70,
+            [sourceField]: sourceValues[1],
+            refresh_version: 400,
+            is_deleted: 0,
+            refreshed_at: "2026-07-10 05:31:42",
+          },
+        ],
+      });
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+      });
+      const denserResult = await activeClient.query({
+        query: `SELECT elevation_gain_m, elevation_loss_m
+          FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+          WHERE activity_id = '${historicalActivityId}' AND is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(elevationRowsSchema.parse(await denserResult.json<unknown>())).toEqual([
+        { elevation_gain_m: 30, elevation_loss_m: 20 },
+      ]);
+
+      // A later tombstone removes the extra sample and restores the tie winner.
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.activity_sensor_sample
+          SELECT * REPLACE (toUInt64(500) AS refresh_version, toUInt8(1) AS is_deleted)
+          FROM ${targetSchema}.activity_sensor_sample FINAL
+          WHERE activity_id = '${historicalActivityId}'
+            AND recorded_at = toDateTime64('2019-07-16 14:56:43', 6, 'UTC')`,
+      });
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+      });
+      const restoredResult = await activeClient.query({
+        query: `SELECT elevation_gain_m, elevation_loss_m
+          FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+          WHERE activity_id = '${historicalActivityId}' AND is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(elevationRowsSchema.parse(await restoredResult.json<unknown>())).toEqual([
+        { elevation_gain_m: 20, elevation_loss_m: 10 },
+      ]);
+    },
+    180_000,
+  );
+
+  it("drains dirty activities across oldest-first bounded builds", async () => {
+    const activeClient = requireClient(client);
+    await seedHistoricalBackfillFixture(activeClient, targetSchema);
+    const boundedModelSql = renderActivitySensorSummaryRowsSelectSql(targetSchema, 1);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    expect(await readActivitySummaryState(activeClient, targetSchema)).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        is_deleted: 0,
+      },
+    ]);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    expect(await readActivitySummaryState(activeClient, targetSchema)).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        is_deleted: 0,
+      },
+      {
+        activity_id: singleAltitudeActivityId,
+        avg_power: null,
+        is_deleted: 0,
+      },
+    ]);
+  }, 180_000);
+
+  it("tombstones stale summaries with retained samples so bounded builds keep draining", async () => {
+    const activeClient = requireClient(client);
+    await seedStaleSummaryFixture(activeClient, targetSchema);
+    const boundedModelSql = renderActivitySensorSummaryRowsSelectSql(targetSchema, 1);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    const staleState = await activeClient.query({
+      query: `SELECT
+          toString(activity_id) AS activity_id,
+          is_deleted
+        FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+        WHERE activity_id = '${staleActivityId}'`,
+      format: "JSONEachRow",
+    });
+
+    expect(staleActivitySummaryStateRowsSchema.parse(await staleState.json<unknown>())).toEqual([
+      {
+        activity_id: staleActivityId,
+        is_deleted: 1,
+      },
+    ]);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    expect(await readActivitySummaryState(activeClient, targetSchema)).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        is_deleted: 0,
+      },
+    ]);
+  }, 180_000);
+});
+
+function requireClickHouseUrl(): string {
+  const url = process.env.CLICKHOUSE_URL?.trim();
+  if (!url) {
+    throw new Error("CLICKHOUSE_URL is required for activity sensor summary integration tests");
+  }
+  return url;
+}
+
+function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
+  if (!client) {
+    throw new Error("ClickHouse client was not initialized");
+  }
+  return client;
+}
+
+async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
+  let lastError: unknown;
+  for (let attemptIndex = 0; attemptIndex < 60; attemptIndex += 1) {
+    try {
+      await client.query({ query: "SELECT 1", format: "JSONEachRow" });
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolveAfterDelay) => setTimeout(resolveAfterDelay, 1_000));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
+}
+
+function renderActivitySensorSummaryRowsSelectSql(
+  targetSchema: string,
+  activitySensorSummaryBatchSize = 100,
+): string {
+  return renderDbtModelSql(readModelSql("activity_sensor_summary_rows.sql"), {
+    isIncremental: true,
+    activityRefreshScoped: false,
+  })
+    .replaceAll("{{ initial_lookback_days }}", "120")
+    .replaceAll(
+      "{{ var('activity_sensor_summary_batch_size', 100) }}",
+      String(activitySensorSummaryBatchSize),
+    )
+    .replaceAll("{{ this }}", `${targetSchema}.activity_sensor_summary_rows`)
+    .replaceAll("{{ ref('activity_sensor_sample') }}", `${targetSchema}.activity_sensor_sample`)
+    .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.source_activity`)
+    .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`)
+    .concat("\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1");
+}
+
+async function readActivitySummaryState(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<z.infer<typeof activitySummaryStateRowsSchema>> {
+  const result = await client.query({
+    query: `SELECT
+        toString(activity_id) AS activity_id,
+        avg_power,
+        is_deleted
+      FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+      WHERE activity_id IN ('${historicalActivityId}', '${singleAltitudeActivityId}')
+        AND is_deleted = 0
+      ORDER BY activity_id`,
+    format: "JSONEachRow",
+  });
+  return activitySummaryStateRowsSchema.parse(await result.json<unknown>());
+}
+
+async function seedHistoricalBackfillFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createSourceActivityTableSql(targetSchema),
+    createActivitySensorSampleTableSql(targetSchema),
+    buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
+    insertCurrentActivitiesSql(targetSchema),
+    insertHistoricalPowerSamplesSql(targetSchema),
+    insertSingleAltitudeSampleSql(targetSchema),
+    insertDeletedPowerSampleSql(targetSchema),
+    insertExistingHistoricalSummarySql(targetSchema),
+    insertUnrelatedFreshSummarySql(targetSchema),
+    insertExistingTombstoneSql(targetSchema),
+  ]);
+}
+
+async function seedStaleSummaryFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createSourceActivityTableSql(targetSchema),
+    createActivitySensorSampleTableSql(targetSchema),
+    buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
+    `INSERT INTO ${targetSchema}.source_activity VALUES
+    ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), 0)`,
+    insertHistoricalPowerSamplesSql(targetSchema),
+    insertExistingHistoricalSummarySql(targetSchema),
+    `INSERT INTO ${targetSchema}.activity_sensor_sample
+    (activity_id, user_id, recorded_at, recorded_date, channel, scalar, refresh_version, is_deleted, refreshed_at) VALUES
+    ('${staleActivityId}', '${testUserId}', toDateTime64('2020-01-01 12:00:00', 6, 'UTC'), toDate('2020-01-01'), 'power', 180.0, 50, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`,
+    `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+      activity_id,
+      user_id,
+      avg_power,
+      power_sample_count,
+      source_refresh_version,
+      refresh_version,
+      is_deleted,
+      refreshed_at
+    ) VALUES (
+      '${staleActivityId}',
+      '${testUserId}',
+      180.0,
+      1,
+      50,
+      150,
+      0,
+      toDateTime64('2026-07-10 05:00:00', 9, 'UTC')
+    )`,
+  ]);
+}
+
+async function runStatements(client: ClickHouseClient, statements: string[]): Promise<void> {
+  for (const [statementIndex, statement] of statements.entries()) {
+    try {
+      await client.command({ query: statement });
+    } catch (error) {
+      const statementPreview = statement.replace(/\s+/g, " ").slice(0, 240);
+      throw new Error(
+        `ClickHouse fixture statement ${statementIndex + 1} failed: ${statementPreview}`,
+        { cause: error },
+      );
+    }
+  }
+}
+
+function createSourceActivityTableSql(targetSchema: string): string {
+  return `CREATE TABLE ${targetSchema}.source_activity (
+  activity_id UUID,
+  user_id UUID,
+  started_at DateTime64(6, 'UTC'),
+  is_deleted UInt8
+)
+ENGINE = ReplacingMergeTree()
+ORDER BY activity_id`;
+}
+
+function createActivitySensorSampleTableSql(targetSchema: string): string {
+  return `CREATE TABLE ${targetSchema}.activity_sensor_sample (
+  activity_id UUID,
+  user_id UUID,
+  recorded_at DateTime64(6, 'UTC'),
+  recorded_date Date,
+  channel String,
+  scalar Nullable(Float64),
+  refresh_version UInt64,
+  is_deleted UInt8,
+  refreshed_at DateTime64(9, 'UTC'),
+  provider_id Nullable(String),
+  member_activity_id Nullable(UUID),
+  device_id Nullable(String)
+)
+ENGINE = ReplacingMergeTree(refresh_version)
+ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`;
+}
+
+function insertCurrentActivitiesSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.source_activity VALUES
+  ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), 0),
+  ('${unrelatedActivityId}', '${testUserId}', toDateTime64('2026-07-04 01:00:00', 6, 'UTC'), 0),
+  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), 0),
+  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), 0)`;
+}
+
+function insertHistoricalPowerSamplesSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_sample
+  (activity_id, user_id, recorded_at, recorded_date, channel, scalar, refresh_version, is_deleted, refreshed_at) VALUES
+  ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), toDate('2019-07-16'), 'power', 200.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC')),
+  ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:38', 6, 'UTC'), toDate('2019-07-16'), 'power', 220.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
+}
+
+function insertSingleAltitudeSampleSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_sample
+  (activity_id, user_id, recorded_at, recorded_date, channel, scalar, refresh_version, is_deleted, refreshed_at) VALUES
+  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), toDate('2026-07-06'), 'altitude', 15.0, 200, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
+}
+
+function insertDeletedPowerSampleSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_sample
+  (activity_id, user_id, recorded_at, recorded_date, channel, scalar, refresh_version, is_deleted, refreshed_at) VALUES
+  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), toDate('2026-07-05'), 'power', 180.0, 100, 1, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
+}
+
+function insertExistingHistoricalSummarySql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+    activity_id,
+    user_id,
+    avg_power,
+    power_sample_count,
+    source_refresh_version,
+    refresh_version,
+    is_deleted,
+    refreshed_at
+  ) VALUES (
+    '${historicalActivityId}',
+    '${testUserId}',
+    100.0,
+    1,
+    50,
+    150,
+    0,
+    toDateTime64('2026-07-10 05:00:00', 9, 'UTC')
+  )`;
+}
+
+function insertUnrelatedFreshSummarySql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+    activity_id,
+    user_id,
+    sample_count,
+    source_refresh_version,
+    refresh_version,
+    is_deleted,
+    refreshed_at
+  ) VALUES (
+    '${unrelatedActivityId}',
+    '${testUserId}',
+    1,
+    200,
+    200,
+    0,
+    toDateTime64('2026-07-10 15:00:00', 9, 'UTC')
+  )`;
+}
+
+function insertExistingTombstoneSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+    activity_id,
+    user_id,
+    sample_count,
+    source_refresh_version,
+    refresh_version,
+    is_deleted,
+    refreshed_at
+  ) VALUES (
+    '${tombstonedActivityId}',
+    '${testUserId}',
+    0,
+    100,
+    200,
+    1,
+    toDateTime64('2026-07-10 15:00:00', 9, 'UTC')
+  )`;
+}

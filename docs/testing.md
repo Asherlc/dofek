@@ -1,14 +1,313 @@
 # Testing Notes
 
-## Integration Dependencies
+## Native Swift mutation testing
 
-Start the local backing services before running integration tests:
+Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the
+repository root on macOS with Swift and Muter installed:
 
 ```bash
-docker compose up -d db clickhouse redis
-docker compose ps db clickhouse redis
-pnpm exec vitest run --project integration
+pnpm tsx scripts/run-swift-mutation.ts --base origin/main
 ```
+
+The base comparison uses Git's merge base with `HEAD`, so unrelated commits on
+main and uncommitted-only paths are not selected. Muter tests the working
+copy of each selected package. For each changed Swift file, the
+runner finds the owning `Package.swift`, reads SwiftPM's compiled source
+inventory, and keeps non-test Swift targets. Test files, manifests and excluded
+Expo bridge files do not become mutation inputs. See the
+[Git comparison contract](https://git-scm.com/docs/git-diff) and
+[SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift).
+
+Muter runs inside each affected package, with package-relative source paths.
+The [canonical configuration](../packages/mobile/muter.conf.yml) is shared by
+package-local symlinks; Muter loads it from its current working directory and
+copies that project to a sibling mutation directory:
+[configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
+[mutation project location](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/CreateTempDirectoryURL.swift).
+Only an empty compiled-source intersection skips mutation testing. A selected
+run must exit successfully and produce a valid positive-work JSON report under
+`reports/swift-mutation/`; missing configuration, invalid reports, and all
+nonzero statuses fail. Exit 255 does not identify benign empty work:
+[Muter error handling](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/CLICommands/RunCommand/Run.swift).
+
+Inspect the actual JSON mutation results for surviving mutants and build
+errors. A successful Muter process means the run completed; it does not imply
+every mutation was killed. The runner preserves this tool contract rather
+than introducing a new score threshold:
+[Muter report schema](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/MuterTestReport.swift),
+[mutation scoring](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/mutationScoring.swift).
+Native unit tests and a signed Simulator build remain separate checks;
+physical background reconnection and capture still require a device.
+
+## Integration Dependencies
+
+The default and changed-test commands are intentionally Docker-free:
+
+```bash
+pnpm test
+pnpm test:changed
+pnpm test:coverage
+```
+
+Use an explicit integration command when database behavior is under test:
+
+```bash
+pnpm test:integration
+pnpm test:integration -- src/db/db.integration.test.ts
+pnpm test:peerdb-integration
+pnpm test:all
+pnpm test:changed:all
+pnpm test:coverage:all
+```
+
+These commands start the current workspace's Postgres, ClickHouse, Redis, and
+Redpanda services through `pnpm compose:up` and wait for their Compose health
+checks before Vitest starts. Docker documents the `--wait` health-gated startup
+behavior in its [Compose startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+The command loads `.env.local` and sets `TEST_DATABASE_URL` to the workspace
+Postgres URL. Redpanda-backed integration
+tests receive the generated workspace-local `REDPANDA_BROKERS` value so they
+cannot connect to another workspace's broker. `setupTestDatabase()` fails
+immediately when the Postgres URL is absent; it never creates an unbounded
+generic Testcontainers instance. Within a Vitest process it creates one
+migrated template database and clones an isolated database for each test file.
+
+`pnpm test:peerdb-integration` is the end-to-end CDC contract tier. It adds the
+pinned PeerDB/Temporal stack from `docker-compose.peerdb.yml`, runs only
+`*.peerdb.integration.test.ts`, and removes the current workspace's disposable
+containers and volumes when it finishes. The suite builds the current
+ClickHouse raw schema directly, creates mirrors from the checked-in production
+contract, and proves that Postgres rows normalize through PeerDB while excluded
+source columns remain absent from ClickHouse. This tier intentionally does not
+replay heavyweight historical ClickHouse backfills. PeerDB documents table
+mapping column exclusions in its
+[CREATE MIRROR reference](https://docs.peerdb.io/sql/commands/create-mirror).
+
+The stack runs PeerDB's catalog migration command before starting the API,
+workers, and SQL server, following the upstream
+[migration service ordering](https://github.com/PeerDB-io/peerdb/blob/v0.37.12/docker-compose.yml).
+On startup or test failure, the runner prints container status and service logs
+before teardown, preserving evidence from failed initialization services; see
+[Compose logs](https://docs.docker.com/reference/cli/docker/compose/logs/).
+
+The Vitest projects remain separate in CI: unit, mobile, four database integration
+shards, and the PeerDB CDC integration tier are invoked explicitly. Stryker uses the Docker-free mutation config and
+must not collect `*.integration.test.ts` files. CI mutation discovery therefore
+only sends changed TypeScript files with a colocated `.test.ts` or `.test.tsx`
+unit suite to Stryker; integration-only implementations are covered by the
+integration shards instead of being counted as uncovered Docker-free mutants.
+Use `pnpm test:integration` for integration behavior and `pnpm test:mutation`
+for mutation quality; do not mix the two execution models.
+
+Sources:
+
+- PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
+- Vitest test projects: https://vitest.dev/guide/projects
+- Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
+- Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
+- Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
+
+### Isolated browser end-to-end stack
+
+Use the repository Compose wrapper with the `e2e` project suffix for every
+browser E2E command. The wrapper resolves that to `<workspace>-e2e`, which is
+stable within the workspace and distinct from the normal `<workspace>` project:
+
+```bash
+pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml ps -a
+if ! pnpm e2e:web:run; then
+  pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml ps -a
+  pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml logs --no-color
+  pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml down -v
+  exit 1
+fi
+pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml down -v
+```
+
+The isolated topology includes Redpanda and explicit metric-stream producer
+configuration. Server startup connects the producer before opening the HTTP
+listener, and Compose waits for both broker health and `/readyz`; Docker
+documents health-gated dependency startup in its
+[startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+
+Use the `e2e` suffix for startup, reuse, service inspection, logs, and teardown.
+Docker documents project-name isolation and precedence here:
+<https://docs.docker.com/compose/how-tos/project-name/>.
+
+The failure branch preserves container state and complete service logs before
+teardown. Both paths remove only this isolated project's containers and fresh
+volumes.
+
+The default Compose service uses a bounded ClickHouse review profile: a 1536
+MiB container ceiling and a 1280 MiB `max_server_memory_usage` setting. The
+isolated E2E service uses its own bounded profile: a 2048 MiB container ceiling
+and a 1792 MiB `max_server_memory_usage` setting. The E2E profile is larger
+because the CI browser stack runs the complete seeded analytics build, not just
+the small review fixture; both profiles retain an explicit server cap and a
+256 MiB outer headroom gap. Docker documents `mem_limit` as the Compose service
+memory ceiling ([service reference](https://docs.docker.com/reference/compose-file/services/#mem_limit));
+ClickHouse documents `max_server_memory_usage` in its
+[server settings reference](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#max_server_memory_usage).
+
+If a review analytics build reaches the tracked limit, treat the ClickHouse
+memory error as a fixture/profile sizing failure and collect the rendered
+Compose config plus container inspection before changing the profile. Do not
+add retries or waits to the review workflow.
+
+This topology currently validates browser paths. It is not a complete mobile
+write-path environment; that confirmed gap is tracked in
+[#1806](https://github.com/Asherlc/dofek/issues/1806).
+
+### Native FIT Decoder
+
+Wahoo, Coros, and Suunto integration tests invoke the native FIT decoder at
+`.build/fit-decoder/bin/dofek-fit-decoder`. If they report `Unable to start the
+native FIT decoder`, first verify that the file exists and matches the host
+architecture:
+
+```bash
+file .build/fit-decoder/bin/dofek-fit-decoder
+```
+
+The `fit-decoder-linux` CI artifact is an ELF executable and cannot run on
+macOS. On macOS, build a native decoder with the repository's pinned vcpkg
+toolchain:
+
+```bash
+VCPKG_ROOT=/path/to/full/vcpkg/checkout pnpm build:fit-decoder
+```
+
+Use the vcpkg commit and bootstrap sequence from
+[`test.yml`](../.github/workflows/test.yml); the project uses vcpkg manifest
+mode as documented by Microsoft:
+<https://learn.microsoft.com/vcpkg/concepts/manifest-mode>.
+
+### Docker Address-Pool Exhaustion
+
+If `pnpm compose:up` fails with `all predefined address pools have been fully
+subnetted`, inspect networks before changing daemon configuration:
+
+```bash
+docker network ls
+docker network inspect NETWORK_NAME --format '{{json .Labels}} {{len .Containers}}'
+```
+
+Resolve the owning workspace from the Compose labels. Obtain explicit approval
+before removing another workspace's network, then recheck that it has zero
+attached containers immediately before `docker network rm NETWORK_NAME`.
+Never disconnect live containers to make a network removable. Docker documents
+[network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and requires connected containers to be disconnected before
+[network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+After freeing an approved unused network, rerun `pnpm compose:up` from the
+current workspace; do not replace its generated service ports while running.
+
+If all existing networks are occupied and the current workspace's default
+network is absent, create only that network with an explicitly chosen subnet.
+From the repository root, obtain the project and default-network names through
+the [workspace Compose wrapper](../scripts/compose-command.ts), which uses the
+physical workspace directory rather than inherited shell configuration:
+
+```bash
+pnpm --silent compose -- config --format json | jq '{project: .name, defaultNetwork: .networks.default.name}'
+docker network ls --quiet | xargs docker network inspect --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+
+Check host and VPN destination ranges as well: use `netstat -rn -f inet` on
+macOS or `ip -4 route show table all` on Linux, with the relevant VPN connected.
+Choose a private CIDR that overlaps none of the Docker subnets or host/VPN
+destination ranges, excluding default routes. Do not copy a subnet from a
+previous incident; it may now be allocated. Docker requires non-overlapping
+subnets and supports explicit allocation through
+[`network create --subnet`](https://docs.docker.com/reference/cli/docker/network/create/).
+
+Confirm the reported default network is still absent with
+`docker network inspect CURRENT_WORKSPACE_DEFAULT_NETWORK`, then replace all
+three placeholders below with the checked subnet and the wrapper's reported
+names:
+
+```bash
+docker network create --driver bridge --subnet CHECKED_UNUSED_PRIVATE_CIDR \
+  --label com.docker.compose.project=CURRENT_WORKSPACE_PROJECT \
+  --label com.docker.compose.network=default \
+  CURRENT_WORKSPACE_DEFAULT_NETWORK
+```
+
+The labels match [Compose's network metadata](https://docs.docker.com/reference/compose-file/networks/#labels).
+Inspect the created network's labels and subnet, then rerun the original
+command unchanged through the workspace wrapper. Preserve every occupied
+network and other workspace's containers and volumes. This operator action
+does not expand the daemon's default address pools; future workspaces need
+their own checked-unused subnet or a separately approved pool change.
+
+### Shared Docker VM Resource Pressure
+
+When independent services restart or database setup times out, collect capacity
+and usage evidence before increasing timeouts:
+
+```bash
+docker info --format 'CPUs={{.NCPU}} Memory={{.MemTotal}} Running={{.ContainersRunning}}'
+docker ps --format '{{.ID}} {{.Names}} {{.Label "com.docker.compose.project"}}'
+docker stats --no-stream
+```
+
+Inspect CPU, memory, and process/thread counts together. Docker's
+[`stats` documentation](https://docs.docker.com/reference/cli/docker/container/stats/)
+explains that `PIDS` includes kernel threads, not just processes. Start with
+current-workspace cleanup. If resource relief requires another workspace to
+stop, obtain explicit approval from that workspace's owner and record the
+approved container IDs before using `docker stop CONTAINER_ID` with those
+inspected identifiers. Without that approval, preserve its running services.
+Preserve containers and volumes rather than deleting state; the
+[`stop` command](https://docs.docker.com/reference/cli/docker/container/stop/)
+signals the running process and may forcibly terminate it after its grace
+period. Warn active users before interrupting their services.
+
+Measure capacity again, verify current-workspace service health, and rerun the
+exact failed command unchanged. Record what was stopped so those workspaces
+can restart their services when needed. The September 7 recovery evidence is in
+the [incident baseline](production-incident-baseline.md#2026-09-07--local-docker-capacity-blocked-modification-system-validation).
+
+### Docker Disk Recovery
+
+If a required validation command fails with `No space left on device`, inspect usage before
+deleting anything:
+
+```bash
+docker system df -v
+```
+
+Remove disposable containers created by the current workspace while retaining
+named database volumes, then prune the build cache, which Docker can recreate:
+
+```bash
+pnpm compose -- down --remove-orphans
+docker builder prune -af
+```
+
+Compose retains named volumes when `down` runs without `--volumes`; see Docker's
+[`down` documentation](https://docs.docker.com/reference/cli/docker/compose/down/).
+
+If that does not reclaim enough space, prune images that are not used by any container:
+
+```bash
+docker image prune -af
+```
+
+Preserve running containers belonging to other workspaces and all named database volumes. Do not run
+`docker volume prune` or `docker system prune --volumes` unless the user explicitly approves
+deleting unused cross-workspace data. Docker documents which object types each prune command
+removes in its [resource pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+
+Paseo teardown and Conductor archive share the
+[workspace archive command](../scripts/workspace-archive.ts). It shuts down
+the default `<workspace>`, isolated `<workspace>-e2e`, and
+`<workspace>-peerdb-integration` projects from the archived workspace's physical
+directory, including all profiles and PeerDB's declared volumes. See the
+[workspace lifecycle and verification procedure](development-environment.md#workspace-setup-and-archive)
+and Docker Compose's documented
+[`down --volumes` behavior](https://docs.docker.com/reference/cli/docker/compose/down/).
 
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
 test stores. The test helper isolates ClickHouse databases per test database, creates
@@ -18,6 +317,39 @@ and drops the isolated databases during test cleanup.
 Do not make router integration setup call the tracked production ClickHouse migration
 runner. Historical one-off migrations and backfills should not be replayed by broad
 test suites; tests should validate application behavior against the current schema.
+
+## Web E2E
+
+Use the full reset command when Dockerfiles, migrations, analytics models, or seeded
+state changed:
+
+```bash
+pnpm e2e:web
+```
+
+For repeated local runs after the E2E image and volumes already exist, reuse the
+stack instead:
+
+```bash
+pnpm e2e:web:reuse
+```
+
+`pnpm e2e:web:reuse` starts the existing E2E compose services with `--no-build`,
+waits for migrations and analytics setup, keeps volumes after Cypress exits, and
+passes extra flags through to Cypress. Both commands use the isolated
+`<workspace>-e2e` Compose project:
+
+```bash
+pnpm e2e:web:reuse -- --spec cypress/e2e/dashboard.cy.ts
+```
+
+CI runs Cypress specs in one job because the Docker build, service startup,
+migrations, analytics setup, and server startup dominate the runtime. Manual
+spec sharding on GitHub-hosted runners repeats that setup for each shard.
+Cypress's built-in `--parallel` orchestration requires recorded Cypress Cloud
+runs, so the workflow does not use Cloud orchestration either.
+
+Source: Cypress parallelization requirements: https://docs.cypress.io/cloud/features/smart-orchestration/parallelization
 
 ## Chain-Mock Assertions (`values(...)`)
 

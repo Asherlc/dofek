@@ -55,9 +55,30 @@ const trainingImpulseConstantsSchema = z.object({
   r2: z.number(),
 });
 
+export const personalizationModelKeys = [
+  "exponentialMovingAverage",
+  "readinessWeights",
+  "sleepTarget",
+  "stressThresholds",
+  "trainingImpulseConstants",
+] as const;
+
+export type PersonalizationModelKey = (typeof personalizationModelKeys)[number];
+
+const successfulFitAtSchema = z.object({
+  exponentialMovingAverage: z.iso.datetime().nullable(),
+  readinessWeights: z.iso.datetime().nullable(),
+  sleepTarget: z.iso.datetime().nullable(),
+  stressThresholds: z.iso.datetime().nullable(),
+  trainingImpulseConstants: z.iso.datetime().nullable(),
+});
+
+export type SuccessfulFitAt = z.infer<typeof successfulFitAtSchema>;
+
 export const personalizedParamsSchema = z.object({
   version: z.number().int().min(1),
   fittedAt: z.string(),
+  successfulFitAt: successfulFitAtSchema.optional(),
   exponentialMovingAverage: exponentialMovingAverageParamsSchema.nullable(),
   readinessWeights: readinessWeightsSchema.nullable(),
   sleepTarget: sleepTargetSchema.nullable(),

@@ -29,9 +29,12 @@ final class WhoopBleFrameParser {
     /// Accumulated bytes from BLE notifications (frames may span multiple notifications)
     private var accumulator = Data()
 
-    /// Number of partial frames discarded when a new SOF arrives before the
-    /// previous frame was complete. Each drop can represent up to 100 IMU samples.
-    private(set) var droppedFrameCount: UInt64 = 0
+    /// Number of malformed byte ranges discarded while resynchronizing.
+    /// Each drop can represent up to 100 IMU samples.
+    private(set) var malformedFrameCount: UInt64 = 0
+
+    /// Number of additional valid frames parsed from feeds that yielded more than one frame.
+    private(set) var coalescedFrameCount: UInt64 = 0
 
     /// Reset the accumulator (e.g., on disconnect)
     func reset() {
@@ -42,37 +45,103 @@ final class WhoopBleFrameParser {
     /// Returns any complete frames that were assembled.
     func feed(_ data: Data) -> [WhoopFrame] {
         var frames: [WhoopFrame] = []
-
-        // If this notification starts with SOF and we have accumulated data,
-        // try to parse the accumulated frame first
-        if !data.isEmpty && data[0] == WhoopBleConstants.startOfFrame && !accumulator.isEmpty {
-            if let frame = Self.parseFrame(accumulator) {
-                frames.append(frame)
-            } else {
-                // Partial frame discarded — the accumulator had an incomplete frame
-                // that couldn't be parsed before the next SOF arrived.
-                droppedFrameCount += 1
-                NSLog("[WhoopBLE] dropped partial frame (%d bytes, total drops: %llu)",
-                      accumulator.count, droppedFrameCount)
-            }
-            accumulator = Data()
-        }
-
         accumulator.append(data)
 
-        // Try to parse the current accumulator
-        if let frame = Self.parseFrame(accumulator) {
-            frames.append(frame)
-            let payloadLen = Int(accumulator[2]) | (Int(accumulator[3]) << 8)
-            let consumed = min(8 + payloadLen, accumulator.count)
-            if consumed < accumulator.count {
-                accumulator = Data(accumulator[consumed...])
-            } else {
-                accumulator = Data()
+        while !accumulator.isEmpty {
+            guard accumulator[0] == WhoopBleConstants.startOfFrame else {
+                guard let nextFrameOffset = nextPotentialFrameOffset(after: 0) else {
+                    recordMalformedDrop(byteCount: accumulator.count)
+                    accumulator = Data()
+                    break
+                }
+                recordMalformedDrop(byteCount: nextFrameOffset)
+                accumulator = Data(accumulator.dropFirst(nextFrameOffset))
+                continue
             }
+
+            guard accumulator.count >= WhoopBleConstants.maverickHeaderSize else {
+                break
+            }
+
+            let payloadLength = Int(accumulator[2]) | (Int(accumulator[3]) << 8)
+            let frameLength = WhoopBleConstants.maverickHeaderSize + payloadLength
+
+            guard accumulator.count >= frameLength else {
+                let headerPrefix = Data(accumulator.prefix(6))
+                let computedHeaderCrc = Self.crc16modbus(headerPrefix)
+                let storedHeaderCrc = accumulator.readUInt16LE(at: 6)
+                if computedHeaderCrc == storedHeaderCrc {
+                    break
+                }
+
+                guard let nextFrameOffset = nextPotentialFrameOffset(after: 1) else {
+                    recordMalformedDrop(byteCount: accumulator.count)
+                    accumulator = Data()
+                    break
+                }
+                recordMalformedDrop(byteCount: nextFrameOffset)
+                accumulator = Data(accumulator.dropFirst(nextFrameOffset))
+                continue
+            }
+
+            let candidate = Data(accumulator.prefix(frameLength))
+            if let frame = Self.parseFrame(candidate) {
+                frames.append(frame)
+                accumulator = Data(accumulator.dropFirst(frameLength))
+                continue
+            }
+
+            guard let nextFrameOffset = nextPotentialFrameOffset(after: 1) else {
+                recordMalformedDrop(byteCount: accumulator.count)
+                accumulator = Data()
+                break
+            }
+            recordMalformedDrop(byteCount: nextFrameOffset)
+            accumulator = Data(accumulator.dropFirst(nextFrameOffset))
+        }
+
+        if frames.count > 1 {
+            coalescedFrameCount += UInt64(frames.count - 1)
         }
 
         return frames
+    }
+
+    private func nextPotentialFrameOffset(after offset: Int) -> Int? {
+        guard offset < accumulator.count else { return nil }
+
+        var incompleteFrameOffset: Int?
+        for candidateOffset in offset..<accumulator.count
+        where accumulator[candidateOffset] == WhoopBleConstants.startOfFrame {
+            let remainingByteCount = accumulator.count - candidateOffset
+            guard remainingByteCount >= WhoopBleConstants.maverickHeaderSize else {
+                incompleteFrameOffset = incompleteFrameOffset ?? candidateOffset
+                continue
+            }
+
+            let payloadLength =
+                Int(accumulator[candidateOffset + 2]) |
+                (Int(accumulator[candidateOffset + 3]) << 8)
+            let frameLength = WhoopBleConstants.maverickHeaderSize + payloadLength
+            guard remainingByteCount >= frameLength else {
+                incompleteFrameOffset = incompleteFrameOffset ?? candidateOffset
+                continue
+            }
+
+            let frameEndOffset = candidateOffset + frameLength
+            let candidate = Data(accumulator[candidateOffset..<frameEndOffset])
+            if Self.parseFrame(candidate) != nil {
+                return candidateOffset
+            }
+        }
+
+        return incompleteFrameOffset
+    }
+
+    private func recordMalformedDrop(byteCount: Int) {
+        malformedFrameCount += 1
+        NSLog("[WhoopBLE] dropped malformed frame prefix (%d bytes, total drops: %llu)",
+              byteCount, malformedFrameCount)
     }
 
     // MARK: - Static parsing (testable without BLE)
@@ -115,6 +184,24 @@ final class WhoopBleFrameParser {
         let payload = data[maverickHeaderSize..<payloadEnd]
 
         guard !payload.isEmpty else { return nil }
+
+        // Validate header CRC16 (CRC16-MODBUS of bytes 0-5)
+        let headerPrefix = Data(data[0..<6])
+        let computedHeaderCrc = crc16modbus(headerPrefix)
+        let storedHeaderCrc = data.readUInt16LE(at: 6)
+        guard computedHeaderCrc == storedHeaderCrc else {
+            return nil
+        }
+
+        // Validate payload CRC32 (last 4 bytes of payload)
+        guard payloadLen >= 4 else { return nil }
+        let payloadData = Data(payload)
+        let storedPayloadCrc = payloadData.readUInt32LE(at: payloadLen - 4)
+        let payloadBody = Data(payloadData[0..<payloadLen - 4])
+        let computedPayloadCrc = crc32ieee(payloadBody)
+        guard computedPayloadCrc == storedPayloadCrc else {
+            return nil
+        }
 
         let packetType = payload[payload.startIndex]
 
@@ -232,8 +319,8 @@ final class WhoopBleFrameParser {
     /// - **Full (≥57 bytes)**: HR at offset 22, quaternion at 41-56, optical at 23-40
     /// - **Compact (~24 bytes)**: Minimal format; raw payload preserved for analysis
     ///
-    /// Both formats are captured. For compact packets, HR and quaternion fields
-    /// are zero but the raw payload is preserved in opticalBytes for decoding.
+    /// Compact packets report heart rate independently of their interval count.
+    /// Their quaternion fields are absent; raw bytes remain in opticalBytes.
     static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
     // swiftlint:enable function_body_length
         // Handle 0x2F HISTORICAL_DATA record type 18 (116-byte payload)
@@ -243,8 +330,8 @@ final class WhoopBleFrameParser {
             && frame.payload.count >= 50 {
             let payload = frame.payload
             let heartRate = payload[payload.startIndex + 14]
-            let validFlag = payload[payload.startIndex + 15]
-            let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 16) : 0
+            let intervalCount = payload[payload.startIndex + 15]
+            let rrIntervalMs = intervalCount != 0 ? payload.readUInt16LE(at: payload.startIndex + 16) : 0
 
             let quaternionW = payload.readFloat32LE(at: payload.startIndex + 33)
             let quaternionX = payload.readFloat32LE(at: payload.startIndex + 37)
@@ -315,7 +402,7 @@ final class WhoopBleFrameParser {
         //   [2] sequence counter (u8, increments per packet)
         //   [3-7] device/session identifiers (constant per session)
         //   [8] heart rate (bpm) — confirmed from PacketLogger capture (60-62 bpm range)
-        //   [9] flag (0x01 = valid reading, 0x00 = no reading)
+        //   [9] interval count (0 means no R-R intervals, even when HR is present)
         //   [10-11] u16 LE — likely PPG ADC value or R-R interval in ms (~900-1010)
         //   [12-17] zeros (reserved)
         //   [18] constant 0x01
@@ -324,8 +411,8 @@ final class WhoopBleFrameParser {
         guard payload.count >= 12 else { return nil }
 
         let heartRate = payload[payload.startIndex + 8]
-        let validFlag = payload[payload.startIndex + 9]
-        let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 10) : 0
+        let intervalCount = payload[payload.startIndex + 9]
+        let rrIntervalMs = intervalCount != 0 ? payload.readUInt16LE(at: payload.startIndex + 10) : 0
 
         // Preserve the full payload after header for analysis
         var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
@@ -403,39 +490,5 @@ final class WhoopBleFrameParser {
         frame.append(payload)
 
         return frame
-    }
-
-    // MARK: - CRC algorithms
-
-    /// CRC16-MODBUS: polynomial 0xA001 (reflected 0x8005), init 0xFFFF.
-    static func crc16modbus(_ data: Data) -> UInt16 {
-        var crc: UInt16 = 0xFFFF
-        for byte in data {
-            crc ^= UInt16(byte)
-            for _ in 0..<8 {
-                if crc & 1 != 0 {
-                    crc = (crc >> 1) ^ 0xA001
-                } else {
-                    crc >>= 1
-                }
-            }
-        }
-        return crc
-    }
-
-    /// IEEE 802.3 CRC32 (same as java.util.zip.CRC32).
-    static func crc32ieee(_ data: Data) -> UInt32 {
-        var crc: UInt32 = 0xFFFFFFFF
-        for byte in data {
-            crc ^= UInt32(byte)
-            for _ in 0..<8 {
-                if crc & 1 != 0 {
-                    crc = (crc >> 1) ^ 0xEDB88320
-                } else {
-                    crc >>= 1
-                }
-            }
-        }
-        return crc ^ 0xFFFFFFFF
     }
 }

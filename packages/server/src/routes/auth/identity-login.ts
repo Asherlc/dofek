@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import {
   isValidMobileScheme,
@@ -64,7 +64,7 @@ export async function handleIdentityLogin(req: Request, res: Response): Promise<
 
     res.redirect(url.toString());
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`[auth] Failed to start login flow: ${message}`);
     res.status(500).send("Auth error: failed to start login flow");

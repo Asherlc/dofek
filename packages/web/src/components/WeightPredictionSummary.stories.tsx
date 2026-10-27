@@ -1,5 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
+import type {
+  BodyFatPrediction,
+  WeightPrediction,
+} from "../../../server/src/routers/body-analytics.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 import { WeightPredictionSummary } from "./WeightPredictionSummary";
 
@@ -63,6 +66,44 @@ export const WithGoalOnTrack: Story = {
   },
 };
 
+export const WithPeriodDeltasOnly: Story = {
+  args: {
+    prediction: makePrediction({
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: -0.4, days14: -0.8, days30: -1.5 },
+    }),
+  },
+};
+
+export const GoalOnlyNoRate: Story = {
+  args: {
+    prediction: makePrediction({
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      goal: {
+        goalWeightKg: 75,
+        remainingKg: -5,
+        estimatedDate: null,
+        daysRemaining: null,
+      },
+    }),
+  },
+};
+
+export const InsufficientData: Story = {
+  args: {
+    prediction: makePrediction({
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      goal: null,
+    }),
+  },
+};
+
 export const WithGoalTrendingAway: Story = {
   args: {
     prediction: makePrediction({
@@ -84,6 +125,18 @@ export const MinimalData: Story = {
     prediction: makePrediction({
       periodDeltas: { days7: -0.2, days14: null, days30: null },
     }),
+  },
+};
+
+export const BodyFat: Story = {
+  args: {
+    metric: "bodyFat",
+    prediction: {
+      ratePerWeek: -0.25,
+      rateConfidence: 0.9,
+      periodDeltas: { days7: -0.25, days14: -0.5, days30: -1 },
+      projectionLine: [],
+    } satisfies BodyFatPrediction,
   },
 };
 

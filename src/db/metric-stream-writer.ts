@@ -1,6 +1,7 @@
 import {
-  createMetricStreamDeletedEvent,
+  createMetricStreamDeletePartitionKey,
   type MetricStreamDeleteScopeInput,
+  type MetricStreamProcessingContext,
   type MetricStreamRowInput,
   metricStreamRowInputSchema,
 } from "../metric-stream/events.ts";
@@ -9,8 +10,13 @@ import {
   type MetricStreamEventPublisher,
   type MetricStreamReplacementPublishResult,
 } from "../metric-stream/redpanda-producer.ts";
+import {
+  prepareMetricStreamRows,
+  withAccountErasureMetricStreamWriteFence,
+} from "../metric-stream/write-metric-stream.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 import { getTokenUserId } from "./token-user-context.ts";
+import type { Database } from "./typed-sql.ts";
 
 export interface MetricStreamInsert {
   id?: string;
@@ -91,7 +97,14 @@ interface ReplacementCapableMetricStreamPublisher extends MetricStreamEventPubli
   replaceRows(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
+    processing?: MetricStreamProcessingContext,
   ): Promise<MetricStreamReplacementPublishResult>;
+}
+
+export interface MetricStreamReplacementReceipt {
+  deletedEventId: string;
+  rowCount: number;
 }
 
 function hasReplacementPublisher(
@@ -107,6 +120,20 @@ function requireReplacementPublisher(
     throw new Error("Metric stream publisher does not support scoped replacement");
   }
   return publisher;
+}
+
+function scopeWithUserId(
+  scope: MetricStreamDeleteScopeInput,
+  rows: readonly MetricStreamRowInput[],
+): MetricStreamDeleteScopeInput & { userId: string } {
+  if (scope.userId) return { ...scope, userId: scope.userId };
+  const userIds = [...new Set(rows.map((row) => row.userId))];
+  if (userIds.length !== 1 || !userIds[0]) {
+    throw new Error(
+      "Metric stream replacement scope requires userId when rows do not identify exactly one user",
+    );
+  }
+  return { ...scope, userId: userIds[0] };
 }
 
 /**
@@ -163,7 +190,7 @@ export function sourceRowToMetricStream(
  * and batch-inserts them.
  */
 export async function writeMetricStreamBatch(
-  _db: unknown,
+  db: Database,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   batchSize = DEFAULT_BATCH_SIZE,
@@ -179,19 +206,26 @@ export async function writeMetricStreamBatch(
 
   const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
   const publishRows = rows.map(toPublishRow);
-
-  let published = 0;
-  for (let offset = 0; offset < publishRows.length; offset += batchSize) {
-    const events = await resolvedPublisher.publishRows(
-      publishRows.slice(offset, offset + batchSize),
-    );
-    published += events.length;
-  }
-  return published;
+  return withAccountErasureMetricStreamWriteFence(
+    db,
+    publishRows.map((row) => row.userId),
+    async (transaction) => {
+      const prepared = await prepareMetricStreamRows(transaction, publishRows);
+      let published = 0;
+      for (let offset = 0; offset < prepared.rows.length; offset += batchSize) {
+        const events = await resolvedPublisher.publishRows(
+          prepared.rows.slice(offset, offset + batchSize),
+          { operationRevision: prepared.operationRevision },
+        );
+        published += events.length;
+      }
+      return published;
+    },
+  );
 }
 
 export async function writeMetricStreamBatchForScope(
-  _db: unknown,
+  db: Database,
   scope: MetricStreamDeleteScopeInput,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
@@ -206,18 +240,30 @@ export async function writeMetricStreamBatchForScope(
   }
 
   const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
-  const partitionKey = createMetricStreamDeletedEvent(scope).partitionKey;
-  const events = await resolvedPublisher.publishRows(rows.map(toPublishRow), partitionKey);
-  return events.length;
+  const publishRows = rows.map(toPublishRow);
+  const attributedScope = scopeWithUserId(scope, publishRows);
+  const partitionKey = createMetricStreamDeletePartitionKey(attributedScope);
+  return withAccountErasureMetricStreamWriteFence(
+    db,
+    [attributedScope.userId, ...publishRows.map((row) => row.userId)],
+    async (transaction) => {
+      const prepared = await prepareMetricStreamRows(transaction, publishRows);
+      const events = await resolvedPublisher.publishRows(prepared.rows, {
+        operationRevision: prepared.operationRevision,
+        partitionKey,
+      });
+      return events.length;
+    },
+  );
 }
 
 export async function replaceMetricStreamBatch(
-  _db: unknown,
+  db: Database,
   scope: MetricStreamDeleteScopeInput,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   publisher?: MetricStreamEventPublisher,
-): Promise<number> {
+): Promise<MetricStreamReplacementReceipt> {
   const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
   const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
   if (rowWithoutExternalId) {
@@ -227,6 +273,22 @@ export async function replaceMetricStreamBatch(
   const resolvedPublisher = requireReplacementPublisher(
     publisher ?? (await getDefaultMetricStreamEventPublisher()),
   );
-  const result = await resolvedPublisher.replaceRows(scope, rows.map(toPublishRow));
-  return result.rows.length;
+  const publishRows = rows.map(toPublishRow);
+  const attributedScope = scopeWithUserId(scope, publishRows);
+  return withAccountErasureMetricStreamWriteFence(
+    db,
+    [attributedScope.userId, ...publishRows.map((row) => row.userId)],
+    async (transaction) => {
+      const prepared = await prepareMetricStreamRows(transaction, publishRows);
+      const result = await resolvedPublisher.replaceRows(
+        attributedScope,
+        prepared.rows,
+        prepared.operationRevision,
+      );
+      return {
+        deletedEventId: result.deleted.eventId,
+        rowCount: result.rows.length,
+      };
+    },
+  );
 }

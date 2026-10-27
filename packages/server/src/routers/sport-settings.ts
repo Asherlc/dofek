@@ -1,3 +1,4 @@
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import { SportSettingsRepository } from "../repositories/sport-settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -24,7 +25,7 @@ export const sportSettingsRouter = router({
    * List all sport settings for the user, grouped by sport.
    * Returns the most recent effective setting per sport.
    */
-  list: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
+  list: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(async ({ ctx }) => {
     const repository = new SportSettingsRepository(ctx.db, ctx.userId);
     return repository.list();
   }),
@@ -33,7 +34,7 @@ export const sportSettingsRouter = router({
    * Get sport settings for a specific sport, optionally at a specific date.
    * Returns the most recent setting effective on or before the given date.
    */
-  getBySport: cachedProtectedQuery(CacheTTL.LONG)
+  getBySport: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(
       z.object({
         sport: z.string(),
@@ -51,7 +52,7 @@ export const sportSettingsRouter = router({
   /**
    * Get full history of sport settings for a specific sport.
    */
-  history: cachedProtectedQuery(CacheTTL.LONG)
+  history: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ sport: z.string() }))
     .query(async ({ ctx, input }) => {
       const repository = new SportSettingsRepository(ctx.db, ctx.userId);
@@ -64,16 +65,18 @@ export const sportSettingsRouter = router({
    */
   upsert: protectedProcedure.input(sportSettingsInput).mutation(async ({ ctx, input }) => {
     const repository = new SportSettingsRepository(ctx.db, ctx.userId);
-    return repository.upsert(input);
+    const settings = await repository.upsert(input);
+    await invalidateUserQueryDomains(ctx.userId, ["sportSettings"]);
+    return settings;
   }),
 
   /**
    * Delete a sport settings entry.
    */
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const repository = new SportSettingsRepository(ctx.db, ctx.userId);
-      return repository.delete(input.id);
-    }),
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    const repository = new SportSettingsRepository(ctx.db, ctx.userId);
+    const result = await repository.delete(input.id);
+    await invalidateUserQueryDomains(ctx.userId, ["sportSettings"]);
+    return result;
+  }),
 });

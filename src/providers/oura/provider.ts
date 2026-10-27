@@ -1,13 +1,13 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
+  finishProviderActivityListSync,
   hasProviderActivityListSyncErrors,
-  reconcileProviderActivityAbsence,
-} from "../../db/provider-activity-absence.ts";
+} from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -21,18 +21,12 @@ import type {
 import { OURA_API_BASE, OuraClient } from "./client.ts";
 import { formatDate, ouraOAuthConfig } from "./oauth.ts";
 import {
-  syncCardiovascularAge,
   syncDailyMetricsComposite,
-  syncDailyResilience,
-  syncDailyResilienceWebhook,
-  syncDailyStress,
-  syncDailyStressWebhook,
   syncEnhancedTags,
   syncHeartRate,
   syncRestMode,
   syncSessions,
   syncSleep,
-  syncSleepTime,
   syncTags,
   syncWorkouts,
 } from "./sync-steps.ts";
@@ -44,7 +38,7 @@ export class OuraProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "oura" });
+    this.#fetchFn = createProviderRateLimitFetch("oura", fetchFn);
   }
 
   validate(): string | null {
@@ -66,16 +60,7 @@ export class OuraProvider implements WebhookProvider {
     }
 
     // Oura requires one subscription per data type. We register for all supported types.
-    const dataTypes = [
-      "daily_activity",
-      "daily_readiness",
-      "daily_sleep",
-      "workout",
-      "session",
-      "daily_spo2",
-      "daily_stress",
-      "daily_resilience",
-    ];
+    const dataTypes = ["daily_activity", "daily_sleep", "workout", "session", "daily_spo2"];
 
     let subscriptionId = "";
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // ~30 days
@@ -195,6 +180,7 @@ export class OuraProvider implements WebhookProvider {
         return {
           providerAccountId: data.id,
           email: data.email ?? null,
+          emailVerified: false,
           name: null,
         };
       },
@@ -257,7 +243,7 @@ export class OuraProvider implements WebhookProvider {
 
     if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
       try {
-        await reconcileProviderActivityAbsence(db, {
+        await finishProviderActivityListSync(db, {
           providerId: this.id,
           userId: options?.userId,
           windowStart: since,
@@ -277,29 +263,17 @@ export class OuraProvider implements WebhookProvider {
     // 4. Sync heart rate → metric_stream table (batched)
     recordsSynced += await syncHeartRate(context, since);
 
-    // 5. Sync daily stress → healthEvent table
-    recordsSynced += await syncDailyStress(context);
-
-    // 6. Sync daily resilience → healthEvent table
-    recordsSynced += await syncDailyResilience(context);
-
-    // 7. Sync daily cardiovascular age → healthEvent table
-    recordsSynced += await syncCardiovascularAge(context);
-
-    // 8. Sync tags → healthEvent table
+    // 5. Sync tags → healthEvent table
     recordsSynced += await syncTags(context);
 
-    // 9. Sync enhanced tags → healthEvent table
+    // 6. Sync enhanced tags → healthEvent table
     recordsSynced += await syncEnhancedTags(context);
 
-    // 10. Sync rest mode periods → healthEvent table
+    // 7. Sync rest mode periods → healthEvent table
     recordsSynced += await syncRestMode(context);
 
-    // 11. Sync sleep time recommendations → healthEvent table
-    recordsSynced += await syncSleepTime(context);
-
-    // 12. Sync daily metrics (readiness + activity + SpO2 + VO2 max + stress + resilience merged by day)
-    recordsSynced += await syncDailyMetricsComposite(context, true);
+    // 8. Sync daily metrics (activity + SpO2 + measured sleep observations merged by day)
+    recordsSynced += await syncDailyMetricsComposite(context);
 
     return {
       provider: this.id,
@@ -364,29 +338,10 @@ export class OuraProvider implements WebhookProvider {
         break;
       }
 
-      case "daily_stress": {
-        // Sync stress healthEvents
-        recordsSynced += await syncDailyStressWebhook(context);
-
-        // Also refresh daily metrics composite (stress columns merge into daily_metrics row)
-        recordsSynced += await syncDailyMetricsComposite(context, false);
-        break;
-      }
-
-      case "daily_resilience": {
-        // Sync resilience healthEvents
-        recordsSynced += await syncDailyResilienceWebhook(context);
-
-        // Also refresh daily metrics composite (resilience columns merge into daily_metrics row)
-        recordsSynced += await syncDailyMetricsComposite(context, false);
-        break;
-      }
-
       case "daily_activity":
-      case "daily_readiness":
       case "daily_spo2": {
         // These types only contribute to the daily_metrics composite row
-        recordsSynced += await syncDailyMetricsComposite(context, false);
+        recordsSynced += await syncDailyMetricsComposite(context);
         break;
       }
 

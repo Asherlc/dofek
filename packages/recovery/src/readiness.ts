@@ -21,26 +21,14 @@ export interface ReadinessWeights {
   respiratoryRate: number;
 }
 
-// ── Default weights ─────────────────────────────────────────────
-
-export function defaultReadinessWeights(): ReadinessWeights {
-  return {
-    hrv: 0.5,
-    restingHr: 0.2,
-    sleep: 0.15,
-    respiratoryRate: 0.15,
-  };
-}
-
 // ── ReadinessScore ──────────────────────────────────────────────
 
 export class ReadinessScore {
+  readonly components: ReadinessComponents;
   readonly #weights: ReadinessWeights;
 
-  constructor(
-    readonly components: ReadinessComponents,
-    weights: ReadinessWeights,
-  ) {
+  constructor(components: ReadinessComponents, weights: ReadinessWeights) {
+    this.components = components;
     this.#weights = weights;
   }
 

@@ -3,35 +3,56 @@ import { describe, expect, it } from "vitest";
 import { Activity, type ActivityRow, type ProviderLookup } from "./activity.ts";
 
 const mockLookup: ProviderLookup = (id: string) => {
-  const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> = {
-    strava: {
-      name: "Strava",
-      activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
-    },
-    wahoo: {
-      name: "Wahoo",
-      activityUrl: (externalId: string) =>
-        `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
-    },
-    garmin: {
-      name: "Garmin",
-      activityUrl: (externalId: string) =>
-        `https://connect.garmin.com/modern/activity/${externalId}`,
-    },
-  };
+  const providers: Record<string, { name: string; activityUrl?: (externalId: string) => string }> =
+    {
+      apple_health: {
+        name: "Apple Health",
+      },
+      strava: {
+        name: "Strava",
+        activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
+      },
+      wahoo: {
+        name: "Wahoo",
+        activityUrl: (externalId: string) =>
+          `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
+      },
+      whoop: {
+        name: "WHOOP (Cloud)",
+      },
+      garmin: {
+        name: "Garmin",
+        activityUrl: (externalId: string) =>
+          `https://connect.garmin.com/modern/activity/${externalId}`,
+      },
+    };
   return providers[id];
 };
 
 const fullRow: ActivityRow = {
+  primary_activity_id: null,
+  primary_provider_id: null,
+  primary_source_name: null,
+  origin_candidate_member_ids: [],
   id: "abc-123",
-  activity_type: "cycling",
+  canonical_type: "cycling",
+  primary_canonical_type: null,
+  raw_type: "road_cycling",
+  modality: null,
   started_at: "2026-03-01T10:00:00+00:00",
+  displayed_date: "2026-03-01",
   ended_at: "2026-03-01T11:30:00+00:00",
+  timezone: null,
+  start_utc_offset_minutes: null,
+  end_utc_offset_minutes: null,
+  local_time_source: "unknown",
+  perceived_exertion: 6,
   name: "Morning Ride",
   notes: "Felt good",
   provider_id: "wahoo",
   subsource: null,
   source_providers: ["wahoo", "strava"],
+  origin_evidence: [],
   source_external_ids: [
     { providerId: "strava", externalId: "99999" },
     { providerId: "wahoo", externalId: "42" },
@@ -51,11 +72,35 @@ const fullRow: ActivityRow = {
 };
 
 describe("Activity", () => {
+  it("exposes the primary source type separately from the representative classification", () => {
+    const row = {
+      ...fullRow,
+      canonical_type: "walking",
+      primary_canonical_type: "running",
+      name: null,
+    };
+
+    expect(new Activity(row, mockLookup).toDetail()).toMatchObject({
+      activityType: "walking",
+      primaryActivityType: "running",
+      name: null,
+    });
+  });
+
+  it("serializes the server-resolved displayed calendar date", () => {
+    const row: ActivityRow = { ...fullRow, displayed_date: "2026-03-01" };
+
+    expect(new Activity(row, mockLookup).toDetail()).toMatchObject({
+      displayedDate: "2026-03-01",
+    });
+  });
+
   it("exposes all scalar fields as getters", () => {
     const activity = new Activity(fullRow, mockLookup);
 
     expect(activity.id).toBe("abc-123");
     expect(activity.activityType).toBe("cycling");
+    expect(activity.rawType).toBe("road_cycling");
     expect(activity.startedAt).toBe("2026-03-01T10:00:00+00:00");
     expect(activity.endedAt).toBe("2026-03-01T11:30:00+00:00");
     expect(activity.name).toBe("Morning Ride");
@@ -82,12 +127,16 @@ describe("Activity", () => {
     expect(activity.sourceLinks).toEqual([
       {
         providerId: "strava",
+        externalId: "99999",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/99999",
         providerAbsentAt: null,
       },
       {
         providerId: "wahoo",
+        externalId: "42",
+        subsource: null,
         label: "Wahoo",
         url: "https://systm.wahoofitness.com/history/activity-details/42",
         providerAbsentAt: null,
@@ -115,12 +164,16 @@ describe("Activity", () => {
     expect(activity.sourceLinks).toEqual([
       {
         providerId: "garmin",
+        externalId: "123",
+        subsource: null,
         label: "Garmin",
         url: "https://connect.garmin.com/modern/activity/123",
         providerAbsentAt: null,
       },
       {
         providerId: "strava",
+        externalId: "99999",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/99999",
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -129,7 +182,7 @@ describe("Activity", () => {
     ]);
   });
 
-  it("skips providers without activityUrl", () => {
+  it("labels providers without activityUrl", () => {
     const row: ActivityRow = {
       ...fullRow,
       source_external_ids: [
@@ -139,8 +192,83 @@ describe("Activity", () => {
     };
     const activity = new Activity(row, mockLookup);
 
-    expect(activity.sourceLinks).toHaveLength(1);
-    expect(activity.sourceLinks[0]?.providerId).toBe("strava");
+    expect(activity.sourceLinks).toEqual([
+      {
+        providerId: "apple_health",
+        externalId: "ah:workout:2024-01-01",
+        subsource: null,
+        label: "Apple Health",
+        url: null,
+        providerAbsentAt: null,
+      },
+      {
+        providerId: "strava",
+        externalId: "12345",
+        subsource: null,
+        label: "Strava",
+        url: "https://www.strava.com/activities/12345",
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
+  it("labels multiple Apple Health upstream apps in one deduped activity", () => {
+    const row: ActivityRow = {
+      ...fullRow,
+      provider_id: "whoop",
+      subsource: "WHOOP",
+      source_providers: ["apple_health", "whoop"],
+      source_external_ids: [
+        {
+          providerId: "apple_health",
+          externalId: "hk:workout:strong",
+          memberActivityId: "strong-member",
+          subsource: "Strong",
+        },
+        {
+          providerId: "apple_health",
+          externalId: "hk:workout:whoop",
+          memberActivityId: "whoop-apple-member",
+          subsource: "WHOOP",
+        },
+        {
+          providerId: "whoop",
+          externalId: "whoop-cloud",
+          memberActivityId: "whoop-cloud-member",
+        },
+      ],
+    };
+    const activity = new Activity(row, mockLookup);
+
+    expect(activity.sourceLinks).toEqual([
+      {
+        providerId: "apple_health",
+        externalId: "hk:workout:strong",
+        subsource: "Strong",
+        label: "Strong (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+        memberActivityId: "strong-member",
+      },
+      {
+        providerId: "apple_health",
+        externalId: "hk:workout:whoop",
+        subsource: "WHOOP",
+        label: "WHOOP (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+        memberActivityId: "whoop-apple-member",
+      },
+      {
+        providerId: "whoop",
+        externalId: "whoop-cloud",
+        subsource: null,
+        label: "WHOOP (Cloud)",
+        url: null,
+        providerAbsentAt: null,
+        memberActivityId: "whoop-cloud-member",
+      },
+    ]);
   });
 
   it("keeps source providers when source_external_ids is null", () => {
@@ -214,48 +342,213 @@ describe("Activity", () => {
     expect(activity.toDetail().providerAbsentAt).toBe("2026-03-05T14:30:00.000Z");
   });
 
+  it("exposes the requested id only when it was resolved to a different stable group", () => {
+    const activity = new Activity(
+      {
+        ...fullRow,
+        id: "stable-group-id",
+        resolved_from: "requested-member-id",
+      },
+      mockLookup,
+    );
+
+    expect(activity.resolvedFrom).toBe("requested-member-id");
+    expect(activity.toDetail()).toMatchObject({
+      id: "stable-group-id",
+      resolvedFrom: "requested-member-id",
+    });
+    expect(new Activity(fullRow, mockLookup).toDetail()).not.toHaveProperty("resolvedFrom");
+  });
+
   describe("toDetail", () => {
+    it("projects explicit branches and keeps disconnected records in the required source tree", () => {
+      const recording = "00000000-0000-4000-8000-000000000001";
+      const stravaCopy = "00000000-0000-4000-8000-000000000002";
+      const healthCopy = "00000000-0000-4000-8000-000000000003";
+      const other = "00000000-0000-4000-8000-000000000004";
+      const detail = new Activity(
+        {
+          ...fullRow,
+          primary_activity_id: recording,
+          primary_provider_id: "wahoo",
+          source_external_ids: [
+            { memberActivityId: recording, providerId: "wahoo", externalId: "42" },
+            { memberActivityId: stravaCopy, providerId: "strava", externalId: "123" },
+            { memberActivityId: healthCopy, providerId: "apple_health", externalId: "health" },
+            { memberActivityId: other, providerId: "strava", externalId: "456" },
+          ],
+          origin_evidence: [stravaCopy, healthCopy].map((downstreamMemberActivityId) => ({
+            upstreamMemberActivityId: recording,
+            downstreamMemberActivityId,
+            field: "external_id",
+            value: "42",
+          })),
+        },
+        mockLookup,
+      ).toDetail();
+      expect(detail.sourceTree).toMatchObject({
+        primary: {
+          id: recording,
+          label: "Wahoo",
+          url: "https://systm.wahoofitness.com/history/activity-details/42",
+          children: [
+            { id: healthCopy, providerId: "apple_health", children: [] },
+            { id: stravaCopy, url: "https://www.strava.com/activities/123", children: [] },
+          ],
+        },
+        otherSources: [{ id: other, description: null, children: [] }],
+      });
+    });
+
+    it("includes a single-source tree independently of its absent source decision", () => {
+      const memberId = "00000000-0000-4000-8000-000000000001";
+      const detail = new Activity(
+        {
+          ...fullRow,
+          primary_activity_id: memberId,
+          primary_provider_id: "garmin",
+          primary_source_name: "Forerunner 965",
+          source_external_ids: [
+            { memberActivityId: memberId, providerId: "garmin", externalId: "123" },
+          ],
+          origin_evidence: [],
+        },
+        mockLookup,
+      ).toDetail();
+      expect(detail.sourceDecision).toBeNull();
+      expect(detail.sourceTree).toMatchObject({
+        primary: {
+          id: memberId,
+          providerId: "garmin",
+          sourceName: "Forerunner 965",
+          label: "Forerunner 965",
+          children: [],
+        },
+        otherSources: [],
+      });
+    });
+
+    it("keeps unresolved detail records disconnected without inventing a primary", () => {
+      const detail = new Activity({ ...fullRow, origin_evidence: [] }, mockLookup).toDetail();
+      expect(detail.sourceTree).toMatchObject({
+        primary: null,
+        otherSources: [
+          { id: "strava:99999:", providerId: "strava", children: [] },
+          { id: "wahoo:42:", providerId: "wahoo", children: [] },
+        ],
+      });
+    });
+
     it("serializes to ActivityDetail shape", () => {
       const activity = new Activity(fullRow, mockLookup);
       const detail = activity.toDetail();
 
       expect(detail).toEqual({
         id: "abc-123",
+        displayedDate: "2026-03-01",
         activityType: "cycling",
+        primaryActivityType: null,
+        rawType: "road_cycling",
+        modality: null,
         startedAt: "2026-03-01T10:00:00+00:00",
         endedAt: "2026-03-01T11:30:00+00:00",
+        localTimeContext: {
+          timezone: null,
+          startUtcOffsetMinutes: null,
+          endUtcOffsetMinutes: null,
+          source: "unknown",
+        },
         name: "Morning Ride",
         notes: "Felt good",
+        perceivedExertion: 6,
         providerId: "wahoo",
         subsource: null,
         sourceProviders: ["strava", "wahoo"],
         sourceLinks: [
           {
             providerId: "strava",
+            externalId: "99999",
+            subsource: null,
             label: "Strava",
             url: "https://www.strava.com/activities/99999",
             providerAbsentAt: null,
           },
           {
             providerId: "wahoo",
+            externalId: "42",
+            subsource: null,
             label: "Wahoo",
             url: "https://systm.wahoofitness.com/history/activity-details/42",
             providerAbsentAt: null,
           },
         ],
+        sourceTree: {
+          primary: null,
+          otherSources: [
+            {
+              id: "strava:99999:",
+              providerId: "strava",
+              sourceName: null,
+              label: "Strava",
+              description: null,
+              url: "https://www.strava.com/activities/99999",
+              children: [],
+            },
+            {
+              id: "wahoo:42:",
+              providerId: "wahoo",
+              sourceName: null,
+              label: "Wahoo",
+              description: null,
+              url: "https://systm.wahoofitness.com/history/activity-details/42",
+              children: [],
+            },
+          ],
+        },
         avgHr: 145,
+        avgHrState: { status: "available" },
         maxHr: 175,
+        maxHrState: { status: "available" },
         avgPower: 220,
+        avgPowerState: { status: "available" },
         maxPower: 450,
+        maxPowerState: { status: "available" },
         avgSpeed: 8.5,
+        avgSpeedState: { status: "available" },
         maxSpeed: 15.2,
+        maxSpeedState: { status: "available" },
         avgCadence: 85,
+        avgCadenceState: { status: "available" },
         totalDistance: 42000,
+        totalDistanceState: { status: "available" },
         elevationGain: 350,
+        elevationGainState: { status: "available" },
         elevationLoss: 340,
+        elevationLossState: { status: "available" },
         sampleCount: 5400,
+        sampleCountState: { status: "available" },
         providerAbsentAt: null,
+        sourceDecision: {
+          origin: { status: "unresolved", candidateMemberActivityIds: [] },
+          sourceCount: 2,
+          primarySourceLabel: null,
+          explanation:
+            "The available source information does not establish which record is closest to the original recording.",
+        },
       });
+    });
+
+    it("omits sourceDecision when there is only one source link", () => {
+      const activity = new Activity(
+        {
+          ...fullRow,
+          source_providers: ["wahoo"],
+          source_external_ids: [{ providerId: "wahoo", externalId: "42" }],
+        },
+        mockLookup,
+      );
+
+      expect(activity.toDetail().sourceDecision).toBeNull();
     });
   });
 });

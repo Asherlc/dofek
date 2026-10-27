@@ -30,12 +30,6 @@ export function getAllMetrics(): MetricDef[] {
     // Action variables — controllable inputs
     { key: "steps", label: "steps", role: "action", extract: (d) => d.steps },
     {
-      key: "active_kcal",
-      label: "active calories",
-      role: "action",
-      extract: (d) => d.active_energy_kcal,
-    },
-    {
       key: "exercise",
       label: "exercise duration",
       role: "action",
@@ -151,7 +145,6 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
     rem_sleep: "sleep",
     sleep_eff: "sleep",
     steps: "activity",
-    active_kcal: "activity",
     exercise: "activity",
   };
   // Body comp metrics shouldn't appear in short-lag (0-2 day) discovery — only meaningful at monthly scale
@@ -171,7 +164,7 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
       const mxBase = derivedGroups[mx.key] ?? mx.key;
       const myBase = derivedGroups[my.key] ?? my.key;
       if (mxBase === myBase) continue;
-      // Skip intra-category correlations (e.g., calories↔carbs, weight↔body_fat, steps↔active_kcal)
+      // Skip intra-category correlations (e.g., calories↔carbs or weight↔body_fat).
       const mxCat = categoryMap[mx.key];
       const myCat = categoryMap[my.key];
       if (mxCat && myCat && mxCat === myCat) continue;

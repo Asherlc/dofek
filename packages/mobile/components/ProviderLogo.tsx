@@ -1,9 +1,20 @@
-import { BRAND_COLORS, PROVIDER_LABELS, providerLogoType } from "@dofek/providers/providers";
+import { garminDeviceThumbnail } from "@dofek/providers/garmin-devices";
+import {
+  BRAND_COLORS,
+  PROVIDER_LABELS,
+  providerLogoId,
+  providerLogoType,
+  providerSourceLogo,
+} from "@dofek/providers/providers";
+import { useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
+import { SvgUri } from "react-native-svg";
+import { captureException } from "../lib/telemetry";
 
 interface ProviderLogoProps {
   /** Provider ID (e.g. "strava", "wahoo") */
   provider: string;
+  sourceName?: string | null;
   /** Server base URL for loading logo assets */
   serverUrl: string;
   /** Width & height in px (default 20) */
@@ -12,20 +23,99 @@ interface ProviderLogoProps {
 
 function logoUrl(serverUrl: string, provider: string): string | null {
   const type = providerLogoType(provider);
-  if (type === "png") return `${serverUrl}/logos/${provider}.${type}`;
+  if (type) return `${serverUrl}/logos/${providerLogoId(provider)}.${type}`;
   return null;
 }
 
-export function ProviderLogo({ provider, serverUrl, size = 20 }: ProviderLogoProps) {
+function GarminThumbnail({
+  imageUrl,
+  sourceName,
+  serverUrl,
+  size,
+}: {
+  imageUrl: string;
+  sourceName?: string | null;
+  serverUrl: string;
+  size: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <ProviderLogo provider="garmin" serverUrl={serverUrl} size={size} />;
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+      accessibilityElementsHidden
+      onError={() => {
+        setFailed(true);
+        captureException(new Error("Unable to load Garmin device thumbnail"), {
+          provider: "garmin",
+          sourceName,
+          imageUrl,
+        });
+      }}
+    />
+  );
+}
+
+export function ProviderLogo({ provider, sourceName, serverUrl, size = 20 }: ProviderLogoProps) {
+  const source = providerSourceLogo(provider, sourceName);
+  if (source.viaAppleHealth) {
+    const badgeSize = Math.round(size * 0.45);
+    return (
+      <View style={{ position: "relative", width: size, height: size }} accessibilityElementsHidden>
+        <ProviderLogo provider={source.provider} size={size} serverUrl={serverUrl} />
+        <Image
+          source={{ uri: `${serverUrl}/logos/apple_health.png` }}
+          style={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: badgeSize * 0.2,
+          }}
+        />
+      </View>
+    );
+  }
+  provider = source.provider;
+  const thumbnail = provider === "garmin" ? garminDeviceThumbnail(sourceName) : null;
+  if (thumbnail) {
+    return (
+      <GarminThumbnail
+        key={thumbnail}
+        imageUrl={thumbnail}
+        sourceName={sourceName}
+        serverUrl={serverUrl}
+        size={size}
+      />
+    );
+  }
   const url = logoUrl(serverUrl, provider);
 
   if (url) {
     return (
-      <Image
-        source={{ uri: url }}
-        style={{ width: size, height: size }}
+      <View
+        style={[styles.logoContainer, { width: size, height: size, borderRadius: size * 0.2 }]}
         accessibilityElementsHidden
-      />
+      >
+        {providerLogoType(provider) === "svg" ? (
+          <SvgUri
+            uri={url}
+            width={size}
+            height={size}
+            accessibilityElementsHidden
+            onError={captureException}
+          />
+        ) : (
+          <Image
+            source={{ uri: url }}
+            style={{ width: size, height: size }}
+            accessibilityElementsHidden
+          />
+        )}
+      </View>
     );
   }
 
@@ -49,6 +139,10 @@ export function ProviderLogo({ provider, serverUrl, size = 20 }: ProviderLogoPro
 }
 
 const styles = StyleSheet.create({
+  logoContainer: {
+    backgroundColor: "transparent",
+    overflow: "hidden",
+  },
   letterContainer: {
     alignItems: "center",
     justifyContent: "center",

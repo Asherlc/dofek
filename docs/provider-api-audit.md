@@ -2,26 +2,81 @@
 
 An assessment of every provider we considered reverse engineering, documenting what the official API provides, what gaps exist, and whether reverse engineering is feasible or worthwhile.
 
-Last updated: 2026-03-14
+Garmin sections updated: 2026-10-21. Other provider assessments retain their
+previous research dates and require current verification before implementation.
 
 ---
 
-## Reverse Engineered (done)
+## Menstrual-cycle record providers
 
-### Garmin Connect
-- **Package:** `packages/garmin-connect`
-- **Official API:** Garmin Health API (OAuth 2.0, developer program) — limited to activities, sleep, daily summaries, body composition
-- **Internal API:** 105+ endpoints at `connect.garmin.com` via SSO auth (5-step: embed → CSRF → login → OAuth1 ticket → OAuth2)
-- **Gaps filled:** HRV (nightly readings + baseline), body battery (charge/drain time series), stress (per-minute), training readiness, training status/load, race predictions, endurance/hill scores, fitness age, SpO2 time series, FIT/TCX/GPX downloads
-- **Source:** Based on [garth](https://github.com/matin/garth) and [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
-- **Verdict:** HIGH VALUE — massive data gap between official and internal API
+Dofek retains integration-sourced raw menstrual records without cycle screens, phase estimates,
+or cycle-specific APIs. Collection remains in the [HealthKit sync pipeline](../packages/mobile/lib/health-kit-sync.ts)
+and [Apple Health importer](../src/providers/apple-health/import.ts); users correct records in their source.
+
+### Implemented: Apple Health / HealthKit
+
+The iOS app and Apple Health XML importer read menstrual-flow records, retain cycle-start metadata
+and source attribution, and store the raw events in `fitness.health_event`. HealthKit permits one
+interval for a whole period or multiple flow samples whose first sample carries the start marker
+([menstrual-flow documentation](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
+Dofek requests read/background access but no write access. Apple deliberately does not reveal
+whether read access to a specific type was denied, so empty results remain an ambiguous
+no-readable-data state
+([HealthKit authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
+
+### Gated follow-up: Garmin Women's Health
+
+Garmin's official program includes a Women's Health API as a possible cloud
+follow-up ([program overview](https://developer.garmin.com/gc-developer-program/overview/)).
+Dofek's approved app currently enables Health and Activity. Women's Health still requires
+the app entitlement, authorized payload contract, consent, and raw-record mapping; its
+availability does not add those feeds to the [current provider](../src/providers/garmin/provider.ts).
+Starter delivery is push only,
+while Enterprise offers push or Ping/Pull; see the
+[current program overview](https://developer.garmin.com/gc-developer-program/overview/) and
+[Garmin guide](garmin.md).
+
+### Future Android source: Health Connect
+
+Android Health Connect exposes `MenstruationPeriodRecord` plus cycle-tracking data types and
+permissions
+([record API](https://developer.android.com/reference/androidx/health/connect/client/records/MenstruationPeriodRecord),
+[data types](https://developer.android.com/health-and-fitness/health-connect/data-types)). This is a
+future option when Dofek has an Android client; it is not implemented in the current iOS app.
+
+### Unsupported public menstrual-record sources
+
+- WHOOP's public `cycle` resource is an awake-to-sleep physiological day, not a menstrual cycle
+  ([WHOOP definition](https://developer.whoop.com/docs/developing/user-data/cycle/)).
+- The current public catalogs for [Oura](https://cloud.ouraring.com/v2/docs),
+  [Fitbit](https://dev.fitbit.com/build/reference/web-api/explore/),
+  [Polar](https://www.polar.com/polar-api-v4/),
+  [Withings](https://developer.withings.com/developer-guide/v3/data-api/all-available-health-data/),
+  and [Google Health](https://developers.google.com/health/data-types) do not document explicit
+  menstrual-period records. Dofek does not substitute biometric inference or private endpoints for
+  those missing public contracts.
+
+---
+
+## Garmin: official OAuth and push delivery
+
+- **Status:** The approved Starter app has Health and Activity access. The repository now uses [official OAuth and push processing](../src/providers/garmin/provider.ts); production deployment and live checks are still required before releasing portal delivery. See the [operator guide](garmin.md).
+- **Tier constraints:** Starter is push only with limited capacity and no historical API access. Enterprise offers broader delivery/history/capacity options ([official comparison](https://developer.garmin.com/gc-developer-program/overview/)).
+- **Implemented input:** Daily values/HR samples, sleep/stages, HRV, Pulse Ox, respiration, activity summaries/manual updates/FIT files, and authorization lifecycle notifications. The [schemas](../src/providers/garmin/payloads.ts), [Health mapper](../src/providers/garmin/health.ts), and [activity mapper](../src/providers/garmin/activities.ts) define actual coverage; program availability alone does not establish field parity.
+- **History and reconnect:** Existing source records and [account-export imports](../src/providers/garmin-dump.ts) remain available. Legacy private tokens require new OAuth consent ([migration](../drizzle/0156_garmin_official_authorization.sql)).
+- **Retired implementation:** Private SSO, consumer credentials, mobile identity emulation, private token exchange, polling checkpoints, and Garmin-specific pacing are historical. The private client package and its release wiring are removed. The [Garmin guide](garmin.md) records its retirement, and the [dated assessment](garmin.md#historical-assessment-2026-10-21-before-the-migration) pins old-source references to the pre-migration revision.
+
+## Reverse Engineered (done)
 
 ### WHOOP
 - **Package:** `packages/whoop-whoop`
+- **Published API client:** `@dofek/whoop`
+- **Published device client:** `@dofek/whoop-ble`
 - **Official API:** WHOOP Developer API (limited, partner access)
 - **Internal API:** Cognito-based auth, REST endpoints for cycles, recovery, sleep, workouts, weightlifting
+- **Bluetooth protocol:** Native Swift client for pairing, authentication, command transport, historical-data transfer, and IMU streaming
 - **Gaps filled:** Weightlifting service (exercise-level sets/reps/weight), cycle data at higher resolution
-- **Verdict:** HIGH VALUE — weightlifting data only available via internal API
+- **Verdict:** HIGH VALUE — weightlifting data only available via internal API, while BLE exposes direct device access
 
 ### Eight Sleep
 - **Package:** `packages/eight-sleep`
@@ -45,14 +100,6 @@ Last updated: 2026-03-14
 - **Internal API:** CSRF cookie-based form login, REST at `www.trainerroad.com/api`
 - **Data:** Activities with power data, career stats, workout history
 - **Verdict:** ONLY OPTION — no public API exists
-
-### VeloHero
-- **Package:** `packages/velohero-client`
-- **Official API:** None (has a simple SSO-based web API)
-- **Internal API:** Session token via SSO POST, REST at `app.velohero.com`
-- **Data:** Workouts with HR/power/cadence, sport type mapping
-- **Source:** Based on [tapiriik](https://github.com/cpfair/tapiriik)
-- **Verdict:** ONLY OPTION — SSO API is the only programmatic access
 
 ### TrainingPeaks
 - **Package:** `packages/trainingpeaks-connect`
@@ -87,10 +134,10 @@ Last updated: 2026-03-14
 ### Oura
 - **Official API:** Oura Cloud API v2 — 17 endpoint groups: sleep (5-min stage resolution), HR (individual timestamped readings), HRV (5-min intervals), readiness, resilience, stress (daily aggregate), SpO2 (daily aggregate), VO2 max, cardiovascular age, workouts
 - **Internal API:** Web portal at `cloud.ouraring.com` exists but no one has documented its internal endpoints
-- **Gaps:** SpO2 time-series (app shows overnight graph, API gives daily average), stress time-series (app shows daytime graph, API gives daily totals), cycle/period tracking, ring battery (BLE only)
+- **Gaps:** SpO2 time-series (app shows overnight graph, API gives daily average), stress time-series (app shows daytime graph, API gives daily totals), ring battery (BLE only)
 - **RE efforts:** Only BLE protocol RE exists ([ringverse/protocol](https://github.com/ringverse/protocol)), not cloud API
 - **Note:** Active membership ($5.99/mo) required for API access on Gen 3/Ring 4
-- **Verdict:** LOW VALUE RE — official API is solid. Gaps (SpO2/stress time-series, cycle tracking) are real but niche.
+- **Verdict:** LOW VALUE RE — official API is solid. SpO2 and stress time-series gaps are real but niche.
 
 ### Samsung Health
 - **Official API:** No public REST API. Samsung charges ~$10K for server-side access. On-device SDK deprecated July 2025, replaced by Samsung Health Data SDK (foreground Android app only).
@@ -118,12 +165,22 @@ Last updated: 2026-03-14
 - **Verdict:** TOO FRAGILE — SRAM auth migration is a significant risk. The RE'd endpoints could break at any time.
 
 ### Zepp (Amazfit/Huami)
-- **Official API:** Exists ([zepp-health/rest-api](https://github.com/zepp-health/rest-api/wiki)) with OAuth 2.0, but registration at dev.huami.com is effectively closed (months of silence, partner prioritization).
-- **Internal API:** Well-documented by community ([hacking-mifit-api](https://github.com/micw/hacking-mifit-api)). Email+password login to `account.huami.com/v2/client/login` → app_token. Data via `api-mifit.huami.com/v1/data/band_data.json`.
-- **Data:** Steps, HR (continuous), sleep (stages), SpO2, stress, workouts (GPS), PAI.
+- **Official API:** OAuth 2.0 access requires organizational partner approval; individual applicants are excluded by the published enrollment requirements. Approval availability and Dofek's detailed-workout entitlement remain unverified ([partner requirements](https://github.com/zepp-health/rest-api/wiki), [capture/access audit](zepp-capture-audit.md)).
+- **Internal API:** Implemented through `packages/zepp-client` and `src/providers/amazfit-zepp.ts`. The current credential flow uses Zepp US2 encrypted registration (`api-user-us2.zepp.com/v2/registrations/tokens`) followed by token exchange at `api-mifit-us2.zepp.com/v2/client/login`; older `account.huami.com` / `account.zepp.com` token exchange hosts are stale.
+- **Data:** First sync slice stores daily steps, distance, sleep sessions, and minute-level heart rate samples from `band_data.json`.
 - **Auth limitation:** Must use direct Zepp email+password account (not Xiaomi/Google SSO).
 - **Community projects:** [Mi-Fit-and-Zepp-workout-exporter](https://github.com/rolandsz/Mi-Fit-and-Zepp-workout-exporter), [huami-token](https://github.com/argrento/huami-token), [amazfit_pyclient](https://github.com/MyrikLD/amazfit_pyclient).
-- **Verdict:** FEASIBLE RE TARGET — good community docs, straightforward auth, rich data. Best candidate for a future `zepp-client` package.
+- **Verdict:** IMPLEMENTED RE PROVIDER — keep monitoring because the auth and data APIs are private and have changed before.
+
+### Peloton
+- **Implemented access:** `packages/peloton-client` automates Peloton's observed Auth0 Universal Login flow, supports authorization-code exchange with PKCE, refreshes tokens, and validates private workout and performance-graph responses. Auth0 describes Universal Login as a browser flow, so HTML automation remains an unstable boundary ([Auth0 Universal Login](https://auth0.com/docs/authenticate/login/auth0-universal-login), [RFC 7636 PKCE](https://www.rfc-editor.org/rfc/rfc7636), [package source](../packages/peloton-client/src/auth.ts)).
+- **Published package:** [`@dofek/peloton`](../packages/peloton-client/README.md) exposes authentication, token refresh, the standalone API client, Zod response schemas, and pure parsers without Dofek persistence code.
+- **Verdict:** IMPLEMENTED RE PROVIDER — high-value reusable access, with explicit private-API and automated-login stability warnings.
+
+### Xert
+- **Implemented access:** Xert documents password and refresh-token grants using its public client credentials; `packages/xert-client` adds a validated client for the observed paginated activity response ([Xert API documentation](https://www.xertonline.com/API.html), [package source](../packages/xert-client/src/client.ts)).
+- **Published package:** [`@dofek/xert`](../packages/xert-client/README.md) exposes sign-in, refresh, activity paging, Zod schemas, typed errors, and pure parsing while leaving environment loading and database sync in Dofek.
+- **Verdict:** IMPLEMENTED PROVIDER CLIENT — the grants are documented, while the activity-list representation remains an observed compatibility boundary.
 
 ---
 
@@ -131,19 +188,19 @@ Last updated: 2026-03-14
 
 | Provider | Official API Quality | RE Feasibility | RE Value | Status |
 |----------|---------------------|----------------|----------|--------|
-| Garmin Connect | Limited | Easy (well-documented) | Very high | Done |
+| Garmin Connect | Starter Health + Activity; push only/no API history | Retired from Dofek runtime | Official OAuth/push implemented | Deploy/live checks before portal release ([guide](garmin.md)) |
 | WHOOP | Limited/partner-only | Medium (Cognito) | High | Done |
 | Eight Sleep | None | Easy (hardcoded creds) | Essential | Done |
 | Zwift | None | Easy (Keycloak) | Essential | Done |
 | TrainerRoad | None | Medium (CSRF cookies) | Essential | Done |
-| VeloHero | None | Easy (SSO) | Essential | Done |
 | TrainingPeaks | Partner-only | Easy (cookie → Bearer) | High | Done |
+| Peloton | Private member API | Medium (Auth0 + PKCE) | High | Done |
+| Xert | Limited | Easy (password grant) | High | Done |
 | Fitbit | Excellent | N/A (no internal API) | None | Skip |
 | Polar | Good | Low (server-rendered) | Low | Skip |
 | Oura | Good | Unknown (undocumented) | Low | Skip |
 | Samsung Health | None (on-device only) | Very hard (no web surface) | N/A | Skip |
 | Rouvy | Partner-only | Hard (Firebase + GraphQL) | Low | Skip — use Strava/Garmin |
 | Hammerhead | None (on-device SDK only) | Fragile (SRAM migration) | Low | Skip — use Strava/Intervals |
-| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Future candidate |
-| Peloton | Decent | Unknown | Medium | Not investigated |
+| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Done |
 | Withings | Decent | Unknown | Medium | Not investigated |

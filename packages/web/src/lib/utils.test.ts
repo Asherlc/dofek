@@ -27,7 +27,7 @@ describe("assertRows", () => {
 
   it("throws on invalid data", () => {
     const data = [{ id: "not-a-number", name: 123 }];
-    expect(() => assertRows(data, rowSchema)).toThrow("Expected number");
+    expect(() => assertRows(data, rowSchema)).toThrow(/invalid input: expected number/i);
   });
 
   it("throws when required fields are missing", () => {

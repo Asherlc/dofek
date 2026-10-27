@@ -262,7 +262,7 @@ function listColumns(dataType: DataType): string {
     case "metricStream":
       return "id, recorded_at, provider_id, external_id, channel, activity_id, scalar";
     case "dailyMetrics":
-      return "date, provider_id, source_name, hrv, resting_hr, steps, active_energy_kcal";
+      return "date, provider_id, source_name, hrv, resting_hr, steps, distance_km";
     case "sleepSessions":
       return "id, started_at, ended_at, provider_id, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes";
     case "foodEntries":
@@ -355,7 +355,8 @@ sql`SELECT table_name, greatest(row_count, 0)::text AS row_count
           'user_profile', 'activity', 'sleep_session', 'food_entry', 'daily_metrics',
           'sync_log', 'session', 'auth_account', 'oauth_token', 'provider', 'lab_panel',
           'journal_entry', 'breathwork_session', 'supplement', 'life_events', 'nutrient',
-          'food_entry_nutrient', 'supplement_nutrient', 'metric_stream'
+          'food_entry_nutrient', 'supplement_definition',
+          'supplement_definition_nutrient', 'metric_stream'
         )
     ) counts
     ORDER BY row_count DESC`

@@ -26,16 +26,165 @@ const mapPreview = {
   routePath: null,
 };
 
-function location(overrides: Partial<ActivityMapLocation> = {}): ActivityMapLocation {
+function location(
+  overrides: Partial<Extract<ActivityMapLocation, { kind: "recorded_gps" }>> = {},
+): ActivityMapLocation {
   return {
+    kind: "recorded_gps",
+    centroidLat: 37.7749,
+    centroidLng: -122.4194,
     mapPreview,
-    distanceMeters: 5000,
-    elevationGainM: 120,
     ...overrides,
   };
 }
 
 describe("ActivityMapTile", () => {
+  it("shows processing until every map tile has loaded", () => {
+    render(<ActivityMapTile location={location()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    const tiles = screen.getAllByTestId("activity-map-preview-tile");
+    const first = tiles[0];
+    const second = tiles[1];
+    if (!first || !second) throw new Error("Expected two map tiles");
+    fireEvent.load(first);
+    fireEvent.load(first);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    fireEvent.load(second);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("resets processing and errors when the preview changes", () => {
+    const view = render(<ActivityMapTile location={location()} />);
+    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
+    expect(screen.queryByRole("status")).toBeNull();
+    const replacement = location({
+      mapPreview: {
+        ...mapPreview,
+        tiles: [
+          {
+            url: "https://tile.openstreetmap.org/15/5243/12665.png",
+            x: 0,
+            y: 0,
+            width: 256,
+            height: 256,
+          },
+        ],
+      },
+    });
+    view.rerender(<ActivityMapTile location={replacement} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    fireEvent.error(screen.getByTestId("activity-map-preview-tile"));
+    expect(screen.getByText("Map unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Processing map…")).toBeNull();
+    view.rerender(<ActivityMapTile location={location()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
+    expect(screen.queryByText("Map unavailable")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("reserves the map panel while server location data is processing", () => {
+    render(<ActivityMapTile location={{ kind: "processing" }} variant="panel" />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    expect(screen.getByTestId("activity-map-tile")).toHaveClass("min-h-48");
+    expect(screen.queryByTestId("activity-map-preview-tile")).toBeNull();
+  });
+
+  it("keeps a loaded map visible when a refetch returns the same preview", () => {
+    const view = render(<ActivityMapTile location={location()} />);
+    const tiles = screen.getAllByTestId("activity-map-preview-tile");
+    for (const tile of tiles) fireEvent.load(tile);
+    view.rerender(<ActivityMapTile location={location({ mapPreview: { ...mapPreview } })} />);
+    expect(screen.getAllByTestId("activity-map-preview-tile")[0]).toBe(tiles[0]);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("draws source-owned Area and Climb points without connecting them as a track", () => {
+    render(
+      <ActivityMapTile
+        location={{
+          kind: "climbing_source",
+          mapPreview,
+          sourcePoints: [
+            {
+              x: 100,
+              y: 200,
+              location: {
+                coordinates: { latitude: 37, longitude: -122 },
+                scope: "area",
+                objectId: "area-1",
+                providerId: "mountain-project",
+                name: "North Wall",
+              },
+            },
+            {
+              x: 300,
+              y: 400,
+              location: {
+                coordinates: { latitude: 38, longitude: -123 },
+                scope: "climb",
+                objectId: "climb-1",
+                providerId: "openbeta",
+                name: "Corner Crack",
+              },
+            },
+          ],
+        }}
+      />,
+    );
+
+    const map = screen.getByRole("img", {
+      name: /Climbing source locations.*Area location: North Wall.*Mountain Project.*Climb location: Corner Crack.*OpenBeta/,
+    });
+    const points = map.querySelectorAll("circle");
+    expect(points).toHaveLength(2);
+    expect(points[0]?.parentElement).toHaveStyle({ left: "9.765625%", top: "34.72222222222222%" });
+    expect(points[1]?.parentElement).toHaveStyle({ left: "29.296875%", top: "69.44444444444444%" });
+    for (const point of points) {
+      expect(point.parentElement).toHaveAttribute("width", "16");
+      expect(point.parentElement).toHaveAttribute("height", "16");
+    }
+    expect(map.querySelector("path")).toBeNull();
+  });
+
+  it("keeps unnamed source locations attributed without presenting an identifier as a place", () => {
+    render(
+      <ActivityMapTile
+        location={{
+          kind: "climbing_source",
+          mapPreview,
+          sourcePoints: [
+            {
+              x: 512,
+              y: 288,
+              location: {
+                coordinates: { latitude: 37, longitude: -122 },
+                scope: "area",
+                objectId: "area-123",
+                providerId: "mountain-project",
+                name: null,
+              },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("img", {
+        name: "Climbing source locations · Area location · Mountain Project",
+      }),
+    ).toBeDefined();
+  });
+
+  it("fills a horizontal activity card map panel", () => {
+    render(<ActivityMapTile location={location()} variant="panel" />);
+
+    const tile = screen.getByTestId("activity-map-tile");
+    expect(tile.className).toContain("h-full");
+    expect(tile.className).toContain("min-h-48");
+    expect(tile.className).not.toContain("aspect-[16/9]");
+  });
+
   it("replaces failed map tiles with a fallback", () => {
     render(<ActivityMapTile location={location()} />);
     fireEvent.error(screen.getAllByTestId("activity-map-preview-tile")[0] ?? document.body);

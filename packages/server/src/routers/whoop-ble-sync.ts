@@ -1,13 +1,19 @@
 import { z } from "zod";
+import {
+  SensorUploadTelemetry,
+  sensorUploadTelemetrySchema,
+} from "../lib/sensor-upload-telemetry.ts";
 import { logger } from "../logger.ts";
 import { WhoopBleSyncRepository } from "../repositories/whoop-ble-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
-import { rejectFutureSamples } from "./sample-validation.ts";
+import { filterFutureSamples } from "./sample-validation.ts";
 
 // ── Zod schemas ──
 
 const realtimeDataSampleSchema = z.object({
   timestamp: z.string(), // ISO 8601 with millisecond precision
+  /** Independently reported by the strap; 0 when unavailable. */
+  heartRateBpm: z.number().int().min(0).max(255).default(0),
   /** R-R interval in milliseconds (beat-to-beat timing from PPG). 0 when unavailable. */
   rrIntervalMs: z.number().int().min(0).max(32767).default(0),
   quaternionW: z.number(),
@@ -24,6 +30,7 @@ const realtimeDataSampleSchema = z.object({
 const pushRealtimeDataInput = z.object({
   deviceId: z.string().min(1),
   samples: z.array(realtimeDataSampleSchema),
+  telemetry: sensorUploadTelemetrySchema.optional(),
 });
 
 // ── Router ──
@@ -33,31 +40,48 @@ export const whoopBleSyncRouter = router({
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {
       const repository = new WhoopBleSyncRepository(ctx.db, ctx.userId, ctx.metricStreamPublisher);
-
-      if (input.samples.length === 0) {
-        await repository.ensureProvider();
-        logger.info("WHOOP BLE realtime push with 0 samples", { userId: ctx.userId });
-        return { inserted: 0 };
-      }
-
       const now = new Date();
-      rejectFutureSamples(input.samples, now, "WHOOP BLE");
-      await repository.ensureProvider();
-
-      const firstTimestamp = input.samples[0]?.timestamp;
-      const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
-
-      const inserted = await repository.insertRealtimeDataBatch(input.deviceId, input.samples);
-
-      logger.info("WHOOP BLE realtime data pushed", {
+      const validSamples = filterFutureSamples(input.samples, now, "WHOOP BLE");
+      const telemetry = new SensorUploadTelemetry({
+        stream: "realtime",
         userId: ctx.userId,
         deviceId: input.deviceId,
-        sampleCount: inserted,
-        firstTimestamp,
-        lastTimestamp,
-        serverTime: now.toISOString(),
+        appVersion: ctx.appVersion,
+        assetsVersion: ctx.assetsVersion,
+        telemetry: input.telemetry,
+        inputSamples: input.samples,
+        acceptedSamples: validSamples,
       });
 
-      return { inserted };
+      try {
+        if (input.samples.length === 0) {
+          await repository.ensureProvider();
+          logger.info("WHOOP BLE realtime push with 0 samples", { userId: ctx.userId });
+          telemetry.published(0);
+          return { inserted: 0 };
+        }
+
+        await repository.ensureProvider();
+
+        const { firstTimestamp, lastTimestamp } = telemetry;
+
+        const inserted = await repository.insertRealtimeDataBatch(input.deviceId, validSamples);
+        telemetry.published(inserted);
+
+        logger.info("WHOOP BLE realtime data pushed", {
+          userId: ctx.userId,
+          deviceId: input.deviceId,
+          sampleCount: inserted,
+          filteredCount: input.samples.length - validSamples.length,
+          firstTimestamp,
+          lastTimestamp,
+          serverTime: now.toISOString(),
+        });
+
+        return { inserted };
+      } catch (error) {
+        telemetry.failed(error);
+        throw error;
+      }
     }),
 });

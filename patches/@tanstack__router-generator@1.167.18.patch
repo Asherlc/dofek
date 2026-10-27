@@ -1,0 +1,43 @@
+diff --git a/dist/cjs/generator.cjs b/dist/cjs/generator.cjs
+index 2f22566416249be47e6e9673c64efeb1a161f7b8..e7eb8b1f8538e4c763cff70158b0bb021e1115c6 100644
+--- a/dist/cjs/generator.cjs
++++ b/dist/cjs/generator.cjs
+@@ -345,7 +345,7 @@ var Generator = class Generator {
+ 					!node.isNonPath || node._fsRouteType === "pathless_layout" && node.cleanedPath ? `path: '${node.cleanedPath}'` : void 0,
+ 					`getParentRoute: () => ${require_utils.findParent(node)}`
+ 				].filter(Boolean).join(",")}
+-          }${config.disableTypes ? "" : "as any"})`,
++		  }${config.disableTypes ? "" : `as Parameters<typeof ${node.variableName}RouteImport.update>[0]`})`,
+ 				loaderNode ? `.updateLoader({ loader: lazyFn(() => import('./${require_utils.replaceBackslash(require_utils.removeExt(node_path.default.relative(node_path.default.dirname(config.generatedRouteTree), node_path.default.resolve(config.routesDirectory, loaderNode.filePath)), config.addExtensions))}'), 'loader') })` : "",
+ 				componentNode || errorComponentNode || notFoundComponentNode || pendingComponentNode ? `.update({
+                 ${[
+diff --git a/dist/esm/generator.js b/dist/esm/generator.js
+index 126256753fcebb1bbf649fe09782c10f1ba8469a..026f110bdab6f0269338c63b8edf1595d1f4ad14 100644
+--- a/dist/esm/generator.js
++++ b/dist/esm/generator.js
+@@ -341,7 +341,7 @@ var Generator = class Generator {
+ 					!node.isNonPath || node._fsRouteType === "pathless_layout" && node.cleanedPath ? `path: '${node.cleanedPath}'` : void 0,
+ 					`getParentRoute: () => ${findParent(node)}`
+ 				].filter(Boolean).join(",")}
+-          }${config.disableTypes ? "" : "as any"})`,
++		  }${config.disableTypes ? "" : `as Parameters<typeof ${node.variableName}RouteImport.update>[0]`})`,
+ 				loaderNode ? `.updateLoader({ loader: lazyFn(() => import('./${replaceBackslash(removeExt(path.relative(path.dirname(config.generatedRouteTree), path.resolve(config.routesDirectory, loaderNode.filePath)), config.addExtensions))}'), 'loader') })` : "",
+ 				componentNode || errorComponentNode || notFoundComponentNode || pendingComponentNode ? `.update({
+                 ${[
+diff --git a/src/generator.ts b/src/generator.ts
+index 4203f2b44f2f8b7f6551ff3715072ce29b29feab..5c76ec683a619e555b7cdbe2379bea3354f6bfce 100644
+--- a/src/generator.ts
++++ b/src/generator.ts
+@@ -717,7 +717,11 @@ export class Generator {
+             ]
+               .filter(Boolean)
+               .join(',')}
+-          }${config.disableTypes ? '' : 'as any'})`,
++          }${
++            config.disableTypes
++              ? ''
++              : `as Parameters<typeof ${node.variableName}RouteImport.update>[0]`
++          })`,
+           loaderNode
+             ? `.updateLoader({ loader: lazyFn(() => import('./${replaceBackslash(
+                 removeExt(

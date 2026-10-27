@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { sleepListRowSchema } from "../repositories/sleep-repository.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -34,69 +33,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-describe("sleepListRowSchema", () => {
-  it("parses a row with ISO-formatted started_at", () => {
-    const row = {
-      started_at: "2026-03-19T06:26:28Z",
-      duration_minutes: 474,
-      deep_minutes: 0,
-      rem_minutes: 0,
-      light_minutes: 460,
-      awake_minutes: 20,
-      efficiency_pct: null,
-    };
-    const parsed = sleepListRowSchema.parse(row);
-    expect(parsed.started_at).toBe("2026-03-19T06:26:28Z");
-    expect(parsed.duration_minutes).toBe(474);
-    expect(parsed.light_minutes).toBe(460);
-  });
-
-  it("coerces string numbers from pg driver", () => {
-    const row = {
-      started_at: "2026-03-19T06:26:28Z",
-      duration_minutes: "474",
-      deep_minutes: "0",
-      rem_minutes: "0",
-      light_minutes: "460",
-      awake_minutes: "20",
-      efficiency_pct: "95.5",
-    };
-    const parsed = sleepListRowSchema.parse(row);
-    expect(parsed.duration_minutes).toBe(474);
-    expect(parsed.efficiency_pct).toBe(95.5);
-  });
-
-  it("handles null stage minutes", () => {
-    const row = {
-      started_at: "2026-03-11T06:17:04Z",
-      duration_minutes: 492,
-      deep_minutes: null,
-      rem_minutes: null,
-      light_minutes: null,
-      awake_minutes: 27,
-      efficiency_pct: 0,
-    };
-    const parsed = sleepListRowSchema.parse(row);
-    expect(parsed.deep_minutes).toBeNull();
-    expect(parsed.awake_minutes).toBe(27);
-  });
-
-  it("produces timestamps parseable by new Date() in strict engines", () => {
-    const row = {
-      started_at: "2026-03-19T06:26:28Z",
-      duration_minutes: 474,
-      deep_minutes: 0,
-      rem_minutes: 0,
-      light_minutes: 460,
-      awake_minutes: 20,
-      efficiency_pct: null,
-    };
-    const parsed = sleepListRowSchema.parse(row);
-    const date = new Date(parsed.started_at);
-    expect(date.getTime()).not.toBeNaN();
-  });
-});
-
 import { sleepRouter } from "./sleep.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -124,12 +60,71 @@ describe("sleepRouter access window", () => {
       accessWindow: {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2026-04-10",
         endDateExclusive: "2026-04-17",
       },
     });
     const result = await caller.list({ days: 30, endDate: "2026-04-26" });
     expect(result).toEqual([]);
+  });
+
+  it("list uses a lower date bound for finite selected ranges", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
+    });
+
+    await caller.list({ days: 30, endDate: "2026-04-26" });
+
+    const queryText = query.mock.calls[0]?.[1];
+    const queryParams = query.mock.calls[0]?.[2];
+    expect(queryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
+    expect(queryParams).toMatchObject({ endDate: "2026-04-26", days: 30 });
+  });
+
+  it("list omits the lower date bound when days is null", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
+    });
+
+    await caller.list({ days: null, endDate: "2026-04-26" });
+
+    const queryText = query.mock.calls[0]?.[1];
+    const queryParams = query.mock.calls[0]?.[2];
+    expect(queryText).toContain("WHERE sleep.user_id = {userId:UUID}");
+    expect(queryText).toContain("<= toDate({endDate:String})");
+    expect(queryText).not.toContain("subtractDays");
+    expect(queryParams).toMatchObject({ userId: "user-1", endDate: "2026-04-26" });
+    expect(queryParams).not.toHaveProperty("days");
   });
 });

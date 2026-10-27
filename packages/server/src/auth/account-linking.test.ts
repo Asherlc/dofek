@@ -15,6 +15,7 @@ function createMockDb() {
 const identity = {
   providerAccountId: "provider-acc-123",
   email: "test@example.com",
+  emailVerified: true,
   name: "Test User",
 };
 
@@ -28,7 +29,7 @@ describe("resolveOrCreateUser", () => {
 
   describe("Step 1: logged-in user linking", () => {
     it("links to the logged-in user and returns their userId", async () => {
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "logged-in-user" }]);
 
       const result = await resolveOrCreateUser(db, "google", identity, "logged-in-user");
 
@@ -40,11 +41,12 @@ describe("resolveOrCreateUser", () => {
   describe("Step 2: existing auth_account lookup", () => {
     it("returns existing user when auth_account found", async () => {
       db.execute.mockResolvedValueOnce([{ user_id: "existing-user-1" }]);
+      db.execute.mockResolvedValueOnce([{ user_id: "existing-user-1" }]);
 
       const result = await resolveOrCreateUser(db, "google", identity);
 
       expect(result).toEqual({ userId: "existing-user-1", isNewUser: false });
-      expect(db.execute).toHaveBeenCalledTimes(1);
+      expect(db.execute).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -52,11 +54,24 @@ describe("resolveOrCreateUser", () => {
     it("links to existing user by email match", async () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ id: "email-matched-user" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "email-matched-user" }]);
 
       const result = await resolveOrCreateUser(db, "google", identity);
 
       expect(result).toEqual({ userId: "email-matched-user", isNewUser: false });
+      expect(db.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not link by email when the provider has not verified it", async () => {
+      const unverifiedIdentity = { ...identity, emailVerified: false };
+
+      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
+      db.execute.mockResolvedValueOnce([{ user_id: "new-user-1" }]);
+
+      const result = await resolveOrCreateUser(db, "google", unverifiedIdentity);
+
+      expect(result).toEqual({ userId: "new-user-1", isNewUser: true });
       expect(db.execute).toHaveBeenCalledTimes(3);
     });
 
@@ -65,7 +80,7 @@ describe("resolveOrCreateUser", () => {
 
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "new-user-1" }]);
 
       const result = await resolveOrCreateUser(db, "google", noEmailIdentity);
 
@@ -92,13 +107,14 @@ describe("resolveOrCreateUser", () => {
       const stravaIdentity = {
         providerAccountId: "strava-123",
         email: "strava@example.com",
+        emailVerified: true,
         name: "Test User",
       };
 
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ user_id: "existing-user-1" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "existing-user-1" }]);
 
       const result = await resolveOrCreateUser(db, "strava", stravaIdentity);
 
@@ -109,12 +125,13 @@ describe("resolveOrCreateUser", () => {
       const noEmailIdentity = {
         providerAccountId: "strava-456",
         email: null,
+        emailVerified: false,
         name: "No Email User",
       };
 
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "new-user-1" }]);
 
       const result = await resolveOrCreateUser(db, "strava", noEmailIdentity);
 
@@ -126,7 +143,7 @@ describe("resolveOrCreateUser", () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-2" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "new-user-2" }]);
 
       const result = await resolveOrCreateUser(db, "google", identity);
 
@@ -140,7 +157,7 @@ describe("resolveOrCreateUser", () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-456" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "new-user-456" }]);
 
       const result = await resolveOrCreateUser(db, "google", identity);
 
@@ -165,7 +182,7 @@ describe("resolveOrCreateUser", () => {
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([]);
       db.execute.mockResolvedValueOnce([{ id: "new-user-789" }]);
-      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ user_id: "new-user-789" }]);
 
       const result = await resolveOrCreateUser(db, "google", noNameIdentity);
 

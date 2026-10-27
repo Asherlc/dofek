@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema/nutrition.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -348,6 +348,7 @@ export async function importCronometerCsv(
         await db.execute(
           sql`UPDATE fitness.food_entry
               SET date = ${entry.date}, meal = ${entry.meal}, food_name = ${entry.foodName},
+                  nutrition_grain = 'itemized',
                   number_of_units = ${entry.amount}, serving_unit = ${entry.unit}
               WHERE user_id = ${effectiveUserId} AND provider_id = ${CRONOMETER_PROVIDER_ID} AND external_id = ${externalId}`,
         );
@@ -360,6 +361,7 @@ export async function importCronometerCsv(
             userId: effectiveUserId,
             externalId,
             date: entry.date,
+            nutritionGrain: "itemized",
             meal: entry.meal,
             foodName: entry.foodName,
             numberOfUnits: entry.amount,

@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { Router, raw } from "express";
 import { z } from "zod";
 import { getStripeBillingConfig } from "../billing/config.ts";
@@ -14,6 +15,11 @@ const stripeSubscriptionObjectSchema = z.object({
   customer: stripeCustomerReferenceSchema,
   status: z.string(),
   current_period_end: z.number().nullable().optional(),
+});
+
+const stripeWebhookEventSchema = z.object({
+  id: z.string(),
+  created: z.number(),
 });
 
 interface StripeWebhookRouterDeps {
@@ -40,9 +46,12 @@ export function createStripeWebhookRouter({ db }: StripeWebhookRouterDeps): Rout
         event.type === "customer.subscription.updated" ||
         event.type === "customer.subscription.deleted"
       ) {
+        const webhookEvent = stripeWebhookEventSchema.parse(event);
         const subscription = stripeSubscriptionObjectSchema.parse(event.data.object);
         const billingRepository = new BillingRepository(db);
-        await billingRepository.updateSubscriptionForStripeCustomer({
+        const updatedUserIds = await billingRepository.updateSubscriptionForStripeCustomer({
+          stripeEventId: webhookEvent.id,
+          stripeEventCreated: webhookEvent.created,
           stripeCustomerId: subscription.customer,
           stripeSubscriptionId: subscription.id,
           stripeSubscriptionStatus: subscription.status,
@@ -52,6 +61,7 @@ export function createStripeWebhookRouter({ db }: StripeWebhookRouterDeps): Rout
               ? null
               : new Date(subscription.current_period_end * 1000),
         });
+        await Promise.all(updatedUserIds.map((userId) => invalidateAllUserQueries(userId)));
       }
 
       res.status(200).send("OK");

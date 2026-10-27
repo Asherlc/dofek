@@ -4,50 +4,90 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
 {% if is_incremental() %}
-target_state AS (
+location_source_versions AS MATERIALIZED (
     SELECT
-        coalesce(
-            max(refreshed_at),
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) AS last_refreshed_at,
-        count() = 0 AS is_empty
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
+),
+
+target_state AS (
+    SELECT count() = 0 AS is_empty
     FROM {{ this }}
 ),
 {% endif %}
 
 current_activity AS (
     SELECT
-        id AS activity_id,
+        activity_id,
         user_id,
         started_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
 ),
 
-existing_summary AS (
+existing_summary_state AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            user_id,
+            max(refresh_version) AS summary_refresh_version,
+            argMax(is_deleted, refresh_version) AS is_deleted
+        FROM {{ this }}
+        GROUP BY activity_id, user_id
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS summary_refresh_version,
+            CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
 ),
+
+existing_summary AS (
+    SELECT
+        activity_id,
+        user_id,
+        summary_refresh_version
+    FROM existing_summary_state
+    WHERE is_deleted = 0
+),
+
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        deduped.activity_id,
+        deduped.user_id
+    FROM {{ ref('deduped_activities') }} AS deduped FINAL
+    WHERE deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            deduped.activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(deduped.member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_summary
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
 
 initial_dirty_keys AS (
     SELECT
@@ -64,17 +104,26 @@ initial_dirty_keys AS (
 ),
 
 location_dirty_keys AS (
+    {% if is_incremental() %}
     SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_location_sample') }}
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+        location_source_versions.activity_id AS activity_id,
+        location_source_versions.user_id AS user_id
+    FROM location_source_versions
+    LEFT JOIN existing_summary_state
+        ON existing_summary_state.activity_id = location_source_versions.activity_id
+        AND existing_summary_state.user_id = location_source_versions.user_id
+    WHERE NOT (SELECT is_empty FROM target_state)
+        AND (
+            existing_summary_state.activity_id IS null
+            OR location_source_versions.refresh_version
+                > existing_summary_state.summary_refresh_version
+        )
+    {% else %}
+    SELECT
+        CAST(null, 'Nullable(UUID)') AS activity_id,
+        CAST(null, 'Nullable(UUID)') AS user_id
+    WHERE 1 = 0
+    {% endif %}
 ),
 
 stale_dirty_keys AS (
@@ -122,6 +171,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -141,6 +196,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM restored_dirty_keys
+        {% endif %}
     )
 ),
 
@@ -153,23 +209,60 @@ active_dirty_keys AS (
         AND user_id IS NOT null
 ),
 
-gps_points AS (
+current_dirty_keys AS (
     SELECT
-        location_samples.activity_id AS activity_id,
+        active_dirty_keys.activity_id AS activity_id,
+        active_dirty_keys.user_id AS user_id
+    FROM active_dirty_keys
+    INNER JOIN current_activity
+        ON current_activity.activity_id = active_dirty_keys.activity_id
+        AND current_activity.user_id = active_dirty_keys.user_id
+),
+
+affected_location_sample_keys AS (
+    SELECT DISTINCT
         location_samples.user_id AS user_id,
-        location_samples.recorded_at AS recorded_at,
-        location_samples.lat AS lat,
-        location_samples.lng AS lng
+        location_samples.activity_id AS activity_id,
+        location_samples.source_metric_stream_id AS source_metric_stream_id
     FROM {{ ref('activity_location_sample') }} AS location_samples
-    WHERE location_samples.is_deleted = 0
-        AND location_samples.lat IS NOT null
-        AND location_samples.lng IS NOT null
-        AND (location_samples.user_id, location_samples.activity_id) IN (
+    INNER JOIN current_dirty_keys
+        ON current_dirty_keys.activity_id = location_samples.activity_id
+        AND current_dirty_keys.user_id = location_samples.user_id
+),
+
+latest_location_samples AS (
+    SELECT *
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_location_sample') }}
+        WHERE (user_id, activity_id, source_metric_stream_id) IN (
             SELECT
                 user_id,
-                activity_id
-            FROM active_dirty_keys
+                activity_id,
+                source_metric_stream_id
+            FROM affected_location_sample_keys
         )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            source_metric_stream_id ASC,
+            refresh_version DESC,
+            is_deleted DESC
+        LIMIT 1 BY user_id, activity_id, source_metric_stream_id
+    )
+    WHERE is_deleted = 0
+),
+
+gps_points AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        lat,
+        lng
+    FROM latest_location_samples
+    WHERE lat IS NOT null
+        AND lng IS NOT null
 ),
 
 gps_deltas AS (
@@ -218,7 +311,7 @@ location_centroids AS (
 SELECT
     assumeNotNull(dirty_keys.activity_id) AS activity_id,
     assumeNotNull(dirty_keys.user_id) AS user_id,
-    coalesce(distance_per_activity.total_distance, CAST(0, 'Nullable(Float64)')) AS total_distance,
+    distance_per_activity.total_distance AS total_distance,
     location_centroids.centroid_lat AS centroid_lat,
     location_centroids.centroid_lng AS centroid_lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,

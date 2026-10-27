@@ -15,6 +15,17 @@ latitude/longitude only in read models. Elevation gain/loss is not stored as
 canonical raw data; ClickHouse read models derive it from deduped altitude
 deltas.
 
+The [sensor summary model](../analytics/models/read_models/activity_sensor_summary_rows.sql)
+uses one altitude source per activity, identified by provider, member activity,
+and device. It selects the source with the most valid samples in the current
+deduplicated activity stream, with the source identity as a deterministic
+tie-break. Gain, loss, altitude range, and climbing deltas use that same source;
+other sensor summaries retain their existing sample union. Raw observations
+remain intact. This prevents different altitude baselines from being treated
+as physical climbing while retaining the existing timestamp-level sensor
+resolution upstream. Source selection does not recover observations already
+excluded by that upstream resolution.
+
 This means the database currently preserves the altitude value, provider, source
 type, activity, timestamp, and optional device/source name. It does not preserve
 an explicit altitude-source classification such as `barometer`, `gnss`, `dem`,
@@ -25,14 +36,13 @@ or `sensor_fusion`.
 | Source | Ingest path | What we store | What provenance we can know |
 |---|---|---|---|
 | Apple Health workout routes | Health export `Location` elements and mobile HealthKit route sync | Location as `channel = 'location'`; altitude and speed as separate metric rows; `horizontalAccuracy` as location metadata `horizontal_accuracy_m` | Unknown. Apple/Core Location models a location as coordinate plus altitude and accuracy values, but our route payload does not include `CLLocationSourceInformation` or a source-specific altitude origin. Treat as Apple-provided location altitude, not necessarily GNSS. |
-| In-app mobile recording | `expo-location` watch updates | Location as `channel = 'location'`; altitude and speed as separate metric rows; `coords.accuracy` as location metadata `horizontal_accuracy_m` | Unknown. Expo exposes altitude and altitude accuracy but not whether altitude came from GNSS, barometer, network location, or platform fusion. |
-| FIT files: Wahoo, COROS, Suunto | Download provider FIT file, parse `enhanced_altitude ?? altitude`; parse `gps_accuracy` when present | FIT record altitude in meters, preferring `enhanced_altitude`; FIT GPS accuracy as location metadata `gps_accuracy_m` | File-level altitude source unknown. FIT is a transport format for device data; `enhanced_altitude` is a higher-resolution altitude field, not a provenance field. FIT `gps_accuracy` is explicitly a meter-valued `uint8` field in the official profile, but the profile does not define whether it is a horizontal radius, CEP, one-sigma error, or another vendor-specific confidence metric. Device/vendor docs may tell us likely behavior for a given device family, but the record itself does not prove source. |
+| FIT files: Garmin, Wahoo, COROS, Suunto | Download provider FIT file; Garmin uses official `activityFiles` delivery and the [shared FIT importer](../src/providers/garmin/activities.ts). Parse `enhanced_altitude ?? altitude`; parse `gps_accuracy` when present | FIT record altitude in meters, preferring `enhanced_altitude`; FIT GPS accuracy as location metadata `gps_accuracy_m` | File-level altitude source unknown. FIT is a transport format for device data; `enhanced_altitude` is a higher-resolution altitude field, not a provenance field. FIT `gps_accuracy` is explicitly a meter-valued `uint8` field in the official profile, but the profile does not define whether it is a horizontal radius, CEP, one-sigma error, or another vendor-specific confidence metric. Device/vendor docs may tell us likely behavior for a given device family, but the record itself does not prove source. |
 | Wahoo ELEMNT FIT files | Same FIT path | Altitude from FIT record | Likely GPS-adjusted barometric for ELEMNT/BOLT/ROAM recordings. Wahoo documents those devices as primarily using a barometric altimeter and using GPS to adjust drift. Still store as unknown unless we add device-aware provenance. |
 | COROS FIT files | Same FIT path | Altitude from FIT record | Likely barometer plus GPS calibration/fusion for COROS devices that support elevation. COROS documents barometer readings with periodic GPS calibration and possible GPS override. The FIT record we ingest does not expose the per-sample decision. |
 | Suunto FIT files | Same FIT path | Altitude from FIT record | Device-dependent. Suunto documents FIT export as containing measured altitude and says some barometric products combine GPS and barometer through FusedAlti. The exported record does not tell us whether a given sample is GPS-only, barometric, or fused. |
 | Strava streams | `altitude` stream from activity streams endpoint | Stream altitude in meters | Mixed and not explicit in API response. Strava documents that activities from known barometric devices use device-recorded barometric elevation, while non-barometric/GPS-source elevation can be cross-referenced to Strava's elevation basemap. The stream payload does not include a provenance flag, and users can request correction on the web. |
-| Garmin Connect detail API | `directElevation` samples from unofficial activity detail | Direct elevation in meters | Device/account-dependent. Garmin documents that devices with barometric altimeters record elevation from air-pressure changes, while devices without barometric altimeters can use Garmin Connect/professional survey/DEM-style elevation. The unofficial sample field does not expose which source was used. |
-| Ride with GPS trips | `track_points[].e` | Track-point elevation in meters | Unknown. The API documents `e` as elevation and says trip track points come from the recording device and may include many attributes. It does not say whether elevation is device-recorded, corrected, planned-route elevation, or imported from another platform. |
+| Retained Garmin Connect detail records | Historical `directElevation` samples from the [retired private detail API](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/src/providers/garmin/sync-orchestrator.ts); no current ingestion | Direct elevation in meters | Device/account-dependent. Garmin documents that devices with barometric altimeters record elevation from air-pressure changes, while devices without barometric altimeters can use Garmin Connect/professional survey/DEM-style elevation. The historical unofficial sample field does not expose which source was used. |
+| Ride with GPS trips | `track_points[].e` | Track-point elevation in meters | Unknown/provider-processed. Dofek stores the API value without per-sample provenance. Ride with GPS says activity elevation may originate from barometric or GPS measurements and can be replaced with its elevation dataset, so `e` does not prove the original sensor or processing path. |
 | Fitbit and Polar TCX | Download TCX, parse `AltitudeMeters` | Trackpoint altitude in meters | Unknown from TCX. The TCX schema carries `AltitudeMeters` but no source. Fitbit/Polar device capabilities vary, so any source classification would need device-specific metadata we do not currently store. |
 | Zwift | Fitness data `altitudeInCm` | Virtual altitude in meters | Virtual/course-derived, not real-world GNSS or barometer. Zwift activities are virtual routes; altitude is part of the simulated route/fitness data. |
 | Komoot, Xert, Cycling Analytics, TrainerRoad summaries | Activity summary raw JSON only | Summary elevation gain/loss in `activity.raw`, not canonical altitude stream | Summary provenance is provider-defined and not used as canonical altitude samples. Do not infer per-sample altitude source from these summary values. |
@@ -43,9 +53,6 @@ or `sensor_fusion`.
   location, altitude, accuracy, timestamp, and source information, but our route
   sync does not persist source information:
   <https://developer.apple.com/documentation/CoreLocation/CLLocation>
-- Expo Location: `LocationObjectCoords` exposes `altitude`, `altitudeAccuracy`,
-  `accuracy`, and `speed`, but not altitude-source provenance:
-  <https://docs.expo.dev/versions/latest/sdk/location/>
 - Garmin FIT SDK overview: FIT stores and transfers sport/fitness/health device
   data, and `Profile.xlsx` is the most up-to-date reference for predefined FIT
   messages:
@@ -76,12 +83,17 @@ or `sensor_fusion`.
 - Strava elevation behavior: Strava documents barometric-device elevation,
   corrected elevation from GPS plus its elevation basemap, and different mobile
   live-elevation behavior by platform:
-  <https://support.strava.com/hc/en-us/articles/115001294564-Elevation-on-Strava-FAQs>
+  <https://support.strava.com/en-us/articles/15401909-elevation>
   and
-  <https://support.strava.com/hc/articles/115000024864-Announcing-Strava-s-Elevation-Basemap>
-- Ride with GPS track points: the API documents `e` as elevation and distinguishes
-  route and trip track points:
-  <https://ridewithgps.com/api/v1/doc/reference/track_points>
+  <https://support.strava.com/en-us/articles/15401823-strava-s-elevation-basemap>
+- Ride with GPS track points and elevation processing: the live OpenAPI
+  specification defines trip track points, while current support docs explain
+  device elevation, provider smoothing, and replacement from the provider's
+  elevation dataset:
+  <https://ridewithgps.com/api/v1/openapi.yaml>,
+  <https://support.ridewithgps.com/hc/en-us/articles/4419010957467-Grade-Elevation-and-GPS-Accuracy-FAQ>,
+  and
+  <https://support.ridewithgps.com/hc/en-us/articles/4444266900763-Replace-Elevation>
 - Fitbit GPS/elevation-related behavior: Fitbit documents GPS capture modes and
   barometric altimeters for floor counting, but TCX altitude source is not
   exposed in our ingest:
@@ -89,6 +101,61 @@ or `sensor_fusion`.
   and <https://support.google.com/fitbit/answer/14237111>
 
 ## Modeling Implications
+
+### Diagnosing inflated ascent
+
+When ascent or vertical ascent rate is implausible, inspect elapsed duration,
+the altitude numerator, and consecutive samples with their `provider_id`,
+`member_activity_id`, and `device_id`. Timestamp-level deduplication can
+interleave overlapping recordings with different altitude baselines, including
+two recordings from the same provider. A source change must not be counted as
+physical ascent. Compare within-source deltas before attributing the problem to
+a sensor or filtering the chart. The October 7, 2026
+[incident record](production-incident-baseline.md#2026-10-07--vertical-ascent-outliers-from-interleaved-altitude-sources-unresolved)
+contains a confirmed example; ClickHouse's
+[`lagInFrame`](https://clickhouse.com/docs/sql-reference/window-functions/lagInFrame)
+operates on the previous row in the configured partition and frame.
+
+### Bounded repair of existing elevation summaries
+
+Changing incremental model SQL does not rewrite existing results. dbt documents
+[explicit historical rebuilding](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model).
+After deploying a correction, use the existing activity refresh scope to rebuild
+only reviewed affected groups, rather than refreshing all retained activity
+history. Follow the deployment environment and diagnostics prerequisites in the
+[analytics repair procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills).
+
+1. Record the affected user and canonical activity IDs, current elevation
+   gain/loss, elapsed seconds, source counts, and source-specific diagnostic
+   deltas. Inspect ordinary observations as well as the most conspicuous
+   outliers; inflated totals can be smaller than the two extreme chart points.
+2. From the target release's production analytics environment, run the following
+   scoped build with the verified user and group UUIDs. Scope variables are
+   defined by the [activity refresh macro](../analytics/macros/activity_refresh_scope.sql).
+   Keep the UUID list bounded and process additional groups in separate builds.
+
+   ```sh
+   pnpm tsx scripts/with-env.ts -- env \
+     DBT_TARGET=prod \
+     UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+     uv run --project analytics dbt build \
+     --project-dir analytics --profiles-dir analytics --threads 1 \
+     --vars '{"activity_refresh_user_id":"<user-uuid>","activity_refresh_activity_ids":["<canonical-activity-uuid>"]}' \
+     --select "activity_sensor_summary_rows activity_summary_rows cycling_activity hiking_activity"
+   ```
+
+3. Verify the repaired active `FINAL` rows in each affected model. Confirm that
+   source switches no longer contribute to ascent, gain/loss remain unavailable
+   for fewer than two valid samples, and activity counts and ordinary durations
+   are preserved. The cycling rate must equal the repaired gain divided by
+   elapsed hours. Refresh registered query caches through
+   `pnpm tsx scripts/warm-query-cache.ts`, then check the web and mobile responses.
+   Capture the model results, IDs, and before/after values in the incident record.
+
+The scoped summary models force reviewed keys dirty; cycling and hiking consumers
+detect the newer summary timestamps. This procedure does not replay raw
+ingestion or rebuild activity identity, and must not be added to routine deploys
+or scheduled workers.
 
 Altitude should be treated as an associated vertical measurement, not as an
 intrinsic part of a 2D GPS point. Horizontal position is a point-valued metric in

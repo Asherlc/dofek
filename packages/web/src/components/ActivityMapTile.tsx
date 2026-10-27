@@ -1,30 +1,22 @@
+import { providerSourceLabel } from "@dofek/providers/providers";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import type { ActivityLocation } from "dofek-server/types";
 import { useState } from "react";
+import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 
-export type RoutePathPoint = { x: number; y: number };
+export type ActivityMapLocation = ActivityLocation;
+type ReadyActivityMapLocation = Exclude<ActivityMapLocation, { kind: "processing" }>;
+type ActivityMapPreview = ReadyActivityMapLocation["mapPreview"];
+type RoutePathPoint = NonNullable<ActivityMapPreview["routePath"]>[number];
 
-export interface ActivityMapPreviewTile {
-  url: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface ActivityMapPreview {
-  width: number;
-  height: number;
-  tiles: ActivityMapPreviewTile[];
-  routePath: RoutePathPoint[] | null;
-}
-
-export interface ActivityMapLocation {
-  mapPreview: ActivityMapPreview;
-  distanceMeters: number | null;
-  elevationGainM: number | null;
+function sourceLocationLabel(location: ClimbingMapLocation): string {
+  const scope = location.scope === "area" ? "Area location" : "Climb location";
+  return `${scope}${location.name ? `: ${location.name}` : ""} · ${providerSourceLabel(location.providerId)}`;
 }
 
 interface ActivityMapTileProps {
   location: ActivityMapLocation;
+  variant?: "card" | "panel" | "thumbnail";
 }
 
 function formatRouteCoordinate(value: number): string {
@@ -116,13 +108,47 @@ function ActivityRouteOverlay({ mapPreview }: { mapPreview: ActivityMapPreview }
   );
 }
 
-export function ActivityMapTile({ location }: ActivityMapTileProps) {
+export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileProps) {
+  return (
+    <div
+      data-testid="activity-map-tile"
+      className={[
+        "relative isolate overflow-hidden bg-surface-secondary",
+        variant === "thumbnail" ? "h-12 w-16 rounded" : "w-full",
+        variant === "panel" ? "h-full min-h-48" : variant === "card" ? "aspect-[16/9]" : "",
+      ].join(" ")}
+    >
+      {location.kind === "processing" ? (
+        <MapProcessingIndicator compact={variant === "thumbnail"} />
+      ) : (
+        <ReadyActivityMapTile
+          key={JSON.stringify(location.mapPreview)}
+          location={location}
+          compact={variant === "thumbnail"}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReadyActivityMapTile({
+  location,
+  compact,
+}: {
+  location: ReadyActivityMapLocation;
+  compact: boolean;
+}) {
   const [loadFailed, setLoadFailed] = useState(false);
+  const [loadedTiles, setLoadedTiles] = useState<ReadonlySet<number>>(() => new Set());
+  const loading = loadedTiles.size < location.mapPreview.tiles.length;
 
   return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden bg-surface-secondary">
+    <>
       {loadFailed ? (
-        <div className="flex h-full w-full items-center justify-center text-xs text-muted">
+        <div
+          role="status"
+          className="absolute inset-0 flex items-center justify-center text-xs text-muted"
+        >
           Map unavailable
         </div>
       ) : (
@@ -130,7 +156,13 @@ export function ActivityMapTile({ location }: ActivityMapTileProps) {
           data-testid="activity-route-viewport"
           className="absolute inset-0 h-full w-full"
           role="img"
-          aria-label="Activity location map"
+          aria-label={
+            location.kind === "climbing_source"
+              ? `Climbing source locations · ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
+              : compact
+                ? "Activity route map summary"
+                : "Activity location map"
+          }
         >
           <div
             data-testid="activity-map-preview"
@@ -142,7 +174,7 @@ export function ActivityMapTile({ location }: ActivityMapTileProps) {
               height: "100%",
             }}
           >
-            {location.mapPreview.tiles.map((tile) => (
+            {location.mapPreview.tiles.map((tile, tileIndex) => (
               <img
                 key={`${tile.url}-${tile.x}-${tile.y}`}
                 data-testid="activity-map-preview-tile"
@@ -152,6 +184,7 @@ export function ActivityMapTile({ location }: ActivityMapTileProps) {
                 loading="lazy"
                 referrerPolicy="origin"
                 onError={() => setLoadFailed(true)}
+                onLoad={() => setLoadedTiles((current) => new Set([...current, tileIndex]))}
                 style={{
                   left: `${(tile.x / location.mapPreview.width) * 100}%`,
                   top: `${(tile.y / location.mapPreview.height) * 100}%`,
@@ -160,10 +193,42 @@ export function ActivityMapTile({ location }: ActivityMapTileProps) {
                 }}
               />
             ))}
-            <ActivityRouteOverlay mapPreview={location.mapPreview} />
+            {location.kind === "climbing_source" ? (
+              <div
+                className="pointer-events-none absolute inset-0 h-full w-full"
+                aria-hidden="true"
+              >
+                {location.sourcePoints.map((point) => (
+                  <svg
+                    key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    width={16}
+                    height={16}
+                    viewBox="0 0 16 16"
+                    style={{
+                      left: `${(point.x / location.mapPreview.width) * 100}%`,
+                      top: `${(point.y / location.mapPreview.height) * 100}%`,
+                    }}
+                  >
+                    <title>{sourceLocationLabel(point.location)}</title>
+                    <circle
+                      cx={8}
+                      cy={8}
+                      r={6}
+                      fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
+                      stroke="white"
+                      strokeWidth={2}
+                    />
+                  </svg>
+                ))}
+              </div>
+            ) : (
+              <ActivityRouteOverlay mapPreview={location.mapPreview} />
+            )}
           </div>
         </div>
       )}
-    </div>
+      {!loadFailed && loading ? <MapProcessingIndicator compact={compact} /> : null}
+    </>
   );
 }

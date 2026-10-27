@@ -8,6 +8,11 @@ interface PostgresFitnessActivityRawTableOptions {
   ifNotExists?: boolean;
 }
 
+interface PostgresFitnessProviderRawTableOptions {
+  tableName?: string;
+  ifNotExists?: boolean;
+}
+
 export function buildPostgresFitnessActivityRawTableStatement(
   options: PostgresFitnessActivityRawTableOptions = {},
 ): string {
@@ -18,7 +23,9 @@ export function buildPostgresFitnessActivityRawTableStatement(
   provider_id String,
   user_id UUID,
   external_id Nullable(String),
-  activity_type String,
+  canonical_type String,
+  provider_type String,
+  modality Nullable(String),
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
   name Nullable(String),
@@ -26,14 +33,78 @@ export function buildPostgresFitnessActivityRawTableStatement(
   perceived_exertion Nullable(Float32),
   source_name Nullable(String),
   timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
+  rejected_provider_timezone Nullable(String),
+  rejected_provider_start_utc_offset_minutes Nullable(Int64),
+  rejected_provider_end_utc_offset_minutes Nullable(Int64),
   strava_id Nullable(String),
   raw Nullable(String),
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
+  absence_provider_id Nullable(String),
   deleted_at Nullable(DateTime64(6, 'UTC')),
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions},
+  group_id Nullable(UUID)
+)
+${replacingMergeTreeTable("id")}`;
+}
+
+export function buildPostgresFitnessProviderRawTableStatement(
+  options: PostgresFitnessProviderRawTableOptions = {},
+): string {
+  const tableName = options.tableName ?? "postgres_fitness.provider";
+  const createTable = options.ifNotExists === false ? "CREATE TABLE" : "CREATE TABLE IF NOT EXISTS";
+  return `${createTable} ${tableName} (
+  id String,
+  name String,
+  api_base_url Nullable(String),
+  user_id Nullable(UUID),
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
-${replacingMergeTreeTable("id")}`;
+${replacingMergeTreeTable("(id)")}`;
+}
+
+export function buildPostgresFitnessProviderConnectionRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection (
+  user_id UUID,
+  provider_id String,
+  created_at DateTime64(6, 'UTC'),
+  updated_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, provider_id)")}`;
+}
+
+export function buildPostgresFitnessProviderFieldPriorityRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_field_priority (
+  provider_id String,
+  field_key String,
+  priority Int64,
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(provider_id, field_key)")}`;
+}
+
+export function buildPostgresFitnessClinicalRecordRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (
+  id UUID,
+  user_id UUID,
+  provider_id String,
+  external_id String,
+  clinical_type String,
+  display_name String,
+  source_name Nullable(String),
+  fhir_version String,
+  fhir String,
+  downloaded_at DateTime64(6, 'UTC'),
+  recorded_at Nullable(DateTime64(6, 'UTC')),
+  issued_at Nullable(DateTime64(6, 'UTC')),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, provider_id, id)")}`;
 }
 
 export function buildPostgresFitnessRawTableStatements(): string[] {
@@ -52,12 +123,14 @@ export function buildPostgresFitnessRawTableStatements(): string[] {
   light_minutes Nullable(Int32),
   awake_minutes Nullable(Int32),
   efficiency_pct Nullable(Float32),
+  staging_available Bool DEFAULT false,
   sleep_type Nullable(String),
-  sleep_need_baseline_minutes Nullable(Int32),
-  sleep_need_from_debt_minutes Nullable(Int32),
-  sleep_need_from_strain_minutes Nullable(Int32),
-  sleep_need_from_nap_minutes Nullable(Int32),
+  is_nap Bool DEFAULT false,
   source_name Nullable(String),
+  timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
@@ -82,10 +155,7 @@ ${replacingMergeTreeTable("(session_id, started_at, id)")}`,
   spo2_avg Nullable(Float32),
   respiratory_rate_avg Nullable(Float32),
   steps Nullable(Int32),
-  active_energy_kcal Nullable(Float32),
-  basal_energy_kcal Nullable(Float32),
   distance_km Nullable(Float32),
-  cycling_distance_km Nullable(Float32),
   flights_climbed Nullable(Int32),
   exercise_minutes Nullable(Int32),
   walking_speed Nullable(Float32),
@@ -95,9 +165,6 @@ ${replacingMergeTreeTable("(session_id, started_at, id)")}`,
   walking_steadiness Nullable(Float32),
   stand_hours Nullable(Int32),
   skin_temp_c Nullable(Float32),
-  stress_high_minutes Nullable(Int32),
-  recovery_high_minutes Nullable(Int32),
-  resilience_level Nullable(String),
   push_count Nullable(Int32),
   wheelchair_distance_km Nullable(Float32),
   uv_exposure Nullable(Float32),
@@ -112,6 +179,7 @@ ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
   user_id UUID,
   external_id Nullable(String),
   date Date,
+  nutrition_grain Nullable(String),
   meal Nullable(String),
   food_name Nullable(String),
   food_description Nullable(String),
@@ -121,6 +189,7 @@ ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
   number_of_units Nullable(Float32),
   logged_at Nullable(DateTime64(6, 'UTC')),
   source_name Nullable(String),
+  source_account_key Nullable(String),
   started_at Nullable(DateTime64(6, 'UTC')),
   ended_at Nullable(DateTime64(6, 'UTC')),
   barcode Nullable(String),
@@ -142,73 +211,17 @@ ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
   value_text Nullable(String),
   unit Nullable(String),
   source_name Nullable(String),
+  source_bundle Nullable(String),
+  metadata Nullable(String),
   start_date DateTime64(6, 'UTC'),
   end_date Nullable(DateTime64(6, 'UTC')),
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, start_date, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.lab_panel (
-  id UUID,
-  provider_id String,
-  user_id UUID,
-  external_id Nullable(String),
-  name String,
-  loinc_code Nullable(String),
-  status Nullable(String),
-  source_name Nullable(String),
-  recorded_at DateTime64(6, 'UTC'),
-  issued_at Nullable(DateTime64(6, 'UTC')),
-  raw Nullable(String),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, recorded_at, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.lab_result (
-  id UUID,
-  provider_id String,
-  user_id UUID,
-  panel_id Nullable(UUID),
-  external_id Nullable(String),
-  test_name String,
-  loinc_code Nullable(String),
-  value Nullable(Float32),
-  value_text Nullable(String),
-  unit Nullable(String),
-  reference_range_low Nullable(Float32),
-  reference_range_high Nullable(Float32),
-  reference_range_text Nullable(String),
-  status Nullable(String),
-  source_name Nullable(String),
-  recorded_at DateTime64(6, 'UTC'),
-  issued_at Nullable(DateTime64(6, 'UTC')),
-  raw Nullable(String),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, recorded_at, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.journal_entry (
-  id UUID,
-  date Date,
-  provider_id String,
-  user_id UUID,
-  question_slug String,
-  answer_text Nullable(String),
-  answer_numeric Nullable(Float32),
-  impact_score Nullable(Float32),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.provider (
-  id String,
-  name String,
-  api_base_url Nullable(String),
-  user_id UUID,
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, id)")}`,
+    buildPostgresFitnessClinicalRecordRawTableStatement(),
+    buildPostgresFitnessProviderRawTableStatement(),
+    buildPostgresFitnessProviderConnectionRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_priority (
   provider_id String,
   priority Int32,
@@ -219,6 +232,7 @@ ${replacingMergeTreeTable("(user_id, id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(provider_id)")}`,
+    buildPostgresFitnessProviderFieldPriorityRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.device_priority (
   provider_id String,
   source_name_pattern String,
@@ -245,6 +259,39 @@ ${replacingMergeTreeTable("(provider_id, channel)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(provider_id, source_name_pattern, channel)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker (
+  id UUID,
+  operation_id UUID,
+  dataset_key String,
+  flow_name String,
+  batch_key String,
+  source_watermark String,
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_provider_inventory (
+  id UUID,
+  operation_id UUID,
+  dataset_key String,
+  flow_name String,
+  batch_key String,
+  source_watermark String,
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_sensor_priority (
+  id UUID,
+  operation_id UUID,
+  dataset_key String,
+  flow_name String,
+  batch_key String,
+  source_watermark String,
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
     `CREATE TABLE IF NOT EXISTS postgres_fitness.user_profile (
   id UUID,
   name String,

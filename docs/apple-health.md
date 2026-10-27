@@ -106,17 +106,116 @@ As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live s
 
 ## Mobile Nutrition Write-Back
 
-The iOS app writes direct Dofek food entries back to Apple Health as dietary energy, protein, carbohydrates, and total fat. The server endpoint filters this export to confirmed `provider_id = 'dofek'` rows, so nutrition imported or synced from Apple Health, Cronometer, Slack, and other providers is never written back to Apple Health.
+Provider synchronization no longer writes food entries back to Apple Health. The iOS app can write direct Dofek food entries back to Apple Health as dietary energy, protein, carbohydrates, and total fat. The server endpoint filters this export to confirmed `provider_id = 'dofek'` rows, so nutrition imported or synced from Apple Health, Cronometer, and other providers is never written back to Apple Health.
 
 Mobile stores a local fingerprint ledger for each written food entry. If a direct Dofek entry changes, the app deletes prior Dofek-written HealthKit samples by their HealthKit sync identifiers before writing the replacement samples.
 
-Apple Health nutrition imports store each dietary sample as an unnamed `fitness.food_entry` with source/timestamp metadata plus one `fitness.food_entry_nutrient` row. Daily nutrition totals are read from `fitness.v_nutrition_daily`, which derives totals from those nutrient rows.
+The mobile account-erasure cleanup retains the ability to remove legacy Dofek-written dietary samples by their HealthKit sync identifiers.
+
+Apple Health nutrition imports store each dietary quantity sample as an unnamed
+`daily_aggregate` `fitness.food_entry` with source/timestamp metadata plus one
+`fitness.food_entry_nutrient` row. Apple documents quantity samples as numeric
+values with units and sample timestamps/source metadata:
+[`HKQuantitySample`](https://developer.apple.com/documentation/healthkit/hkquantitysample),
+[`HKSample`](https://developer.apple.com/documentation/healthkit/hksample), and
+[`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision).
+Raw per-provider totals remain available through
+`fitness.v_nutrition_provider_daily`; application totals use
+`fitness.v_nutrition_daily`, which prefers itemized sources, then meal-aggregate
+sources, then daily-aggregate sources. Multiple sources at the selected tier
+or mixed ambiguous legacy data conflict instead of being summed. Itemized and
+meal-aggregate records appear once in editable meal cards; Apple Health daily
+aggregates remain totals-only. The provider-neutral rules are defined in
+[migration 0124](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
+
+## Hang Ten Workouts
+
+Hang Ten writes contact-based intervals under `HangTen.ActivitySegments.v2`.
+The metadata key retains its `.v2` suffix even when the JSON body uses format
+version 3. Version 2 and 3 segments identify work targets as `resolvedContacts`
+or `selfSelected`; rest segments do not require contact identifiers. See the
+[metadata key](https://github.com/Asherlc/hang-ten/blob/c426d7019a65e1bb63c4c9f60ba88b4de65f22cc/HangTen/Models/WorkoutHistory.swift#L4-L8)
+and [recorded segment formats](https://github.com/Asherlc/hang-ten/blob/c426d7019a65e1bb63c4c9f60ba88b4de65f22cc/HangTen/Models/WorkoutActivityRecording.swift#L285-L369).
+
+Both XML imports and native HealthKit sync use the
+[shared workout parser](../src/providers/apple-health/workouts.ts). It also
+reads historical version 1 metadata from `HangTen.ActivitySegments`. When both
+keys are present, the current key takes precedence; invalid current metadata
+produces an import error instead of substituting older intervals. The
+[interval importer](../src/providers/apple-health/hang-ten-intervals.ts) retains
+the recorded target and hand metadata and labels exact contact depths without
+converting a depth range into an exact measurement.
+
+For a session reporting no completed hangs, resolve its displayed group ID to
+the Hang Ten member before comparing `raw.metadata` with
+`fitness.activity_interval`. Check the key and the JSON body's version
+separately. If the raw segments are present but interval rows are missing,
+reprocess the retained metadata with the current parser and interval importer
+in a transaction scoped to that member; preserve its original metadata and
+invalidate the affected user's query cache afterward. The
+[database regression](../packages/server/src/repositories/hang-ten-import.integration.test.ts)
+exercises import, reimport, and the shared detail response.
 
 ## Workout Source Attribution
 
 Apple Health workouts can preserve the upstream app name inside the workout JSON (`raw.sourceName`) even when the canonical `source_name` column is null. In production this is how workouts imported through Apple Health can still identify apps like Strong or WHOOP on the activity detail page.
 
 This attribution is still workout-level only. For Strong-backed Apple Health workouts, the stored JSON can tell us that the workout came from Strong, but it does **not** include per-exercise details like exercise names, sets, reps, or weights. That richer breakdown only exists in the Strong CSV/import path.
+
+## Workout Revisions
+
+HealthKit uses `HKMetadataKeySyncIdentifier` to identify a logical object and
+`HKMetadataKeySyncVersion` to replace it with a higher version. A revised
+workout can have a new HealthKit UUID and different start/end times; time
+overlap alone does not establish revision identity. See Apple's
+[`HKMetadataKeySyncIdentifier`](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncidentifier)
+and [`HKMetadataKeySyncVersion`](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncversion).
+
+Dofek retains every raw workout row. PostgreSQL `fitness.v_activity` and
+ClickHouse `analytics.activity_source_records` serve the highest numeric sync
+version for each user and nonempty, trimmed sync identifier. Equal versions
+use the newest `created_at`, then member UUID, to select one row. Workouts
+without a sync identifier retain their existing grouping behavior. Revision
+selection precedes absence and deletion filtering, so an older version cannot
+reappear when the newest version is removed. Absence decisions use the same
+revision selection: an older tombstone cannot hide a current group or cancel
+the newest revision's absence. See the
+[canonical view](../drizzle/_views/01_v_activity.sql) and
+[ClickHouse source model](../analytics/models/read_models/activity_source_records.sql),
+[group model](../analytics/models/read_models/deduped_activities.sql), and
+[shared revision macro](../analytics/macros/apple_health_workout_revisions.sql).
+
+Serving queries accept nonnegative signed 64-bit sync versions written as
+1–19 decimal digits, including `9223372036854775807`. Missing, malformed, or
+out-of-range values rank as zero in both databases; they must not overflow a
+cast and break unrelated users' activity queries. The
+[canonical view](../drizzle/_views/01_v_activity.sql) and
+[revision macro](../analytics/macros/apple_health_workout_revisions.sql)
+implement the same range check.
+
+Scoped refreshes expand a requested member or group to include the same user's
+Apple Health siblings with the same trimmed sync identifier and their group
+IDs. The [shared refresh scope](../analytics/macros/activity_refresh_scope.sql)
+applies that expansion before source, group, membership, and payload models,
+so refreshing only a replacement UUID also retires its superseded group. The
+[dbt regression](../src/db/activity-group-payload-union.integration.test.ts)
+checks retirement and preservation of unrelated groups and raw revisions.
+
+When an activity says “WHOOP via Apple Health” but its times differ from the
+WHOOP app, inspect the raw metadata before diagnosing a provider deletion:
+
+1. Resolve the displayed group to its `fitness.activity` members and inspect
+   sync identifier, numeric sync version, `provider_absent_at`, and `deleted_at`.
+2. Find all Apple Health rows for the same user and sync identifier, including
+   other groups. Compare their versions and start/end times with the direct
+   provider row and, when available, its current API response.
+3. Check `analytics.activity_source_records FINAL` and
+   `analytics.deduped_activities FINAL`. After an incremental refresh, the
+   superseded source and a group containing only that source should have
+   `is_deleted = 1`; both raw revisions should remain. The integration
+   [source-record tests](../analytics/models/read_models/activity_source_records.integration.test.ts)
+   and [group lifecycle test](../src/db/activity-group-payload-union.integration.test.ts)
+   exercise this boundary.
 
 ## Heart Rate Variability (HRV) Selection
 
@@ -129,7 +228,7 @@ To avoid this inflation, both ingestion paths (XML import and iOS HealthKit sync
 ### CLI
 
 ```bash
-./scripts/with-env.sh tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
+pnpm tsx scripts/with-env.ts -- tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
 ```
 
 ### Backpressure

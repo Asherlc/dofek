@@ -1,14 +1,32 @@
 import { formatDateMedium, formatDurationMinutes, formatNumber } from "@dofek/format/format";
+import { getMissingSleepStates, type MissingSleepState } from "@dofek/format/sleep-data-state";
 import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepAnalyticsChartProps {
   nightly: SleepNightlyRow[];
-  sleepDebt: number;
+  sleepDebt: number | null;
   loading?: boolean;
+}
+
+function getLatestMissingSleepState(nightly: SleepNightlyRow[]): MissingSleepState | null {
+  for (let nightIndex = nightly.length - 1; nightIndex >= 0; nightIndex -= 1) {
+    const night = nightly[nightIndex];
+    if (!night) continue;
+    const state = getMissingSleepStates(night)[0];
+    if (state) return state;
+  }
+  return null;
 }
 
 export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt: number) {
@@ -38,17 +56,26 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         const night = nightly[idx];
         if (!night) return "";
         const dateLabel = formatDateMedium(night.date);
-        let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel} (${formatDurationMinutes(night.durationMinutes)})</div>`;
+        const durationLabel =
+          night.durationMinutes == null
+            ? "Duration unavailable"
+            : formatDurationMinutes(night.durationMinutes);
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(dateLabel)} (${durationLabel})</div>`;
+        for (const state of getMissingSleepStates(night)) {
+          html += `<div style="color:#d97706">${escapeTooltipHtml(state.reason)}</div>`;
+          html += `<div style="color:#6b7280">${escapeTooltipHtml(state.nextAction)}</div>`;
+        }
         for (const p of params) {
           if (p.seriesName === "7d Avg") {
             if (p.value[1] != null) {
-              html += `<div>${p.marker} ${p.seriesName}: <b>${formatDurationMinutes(p.value[1])}</b></div>`;
+              html += `<div>${p.marker} ${escapeTooltipHtml(p.seriesName)}: <b>${formatDurationMinutes(p.value[1])}</b></div>`;
             }
             continue;
           }
           if (p.value[1] == null) continue;
+          if (night.durationMinutes == null) continue;
           const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${formatDurationMinutes(mins)})</div>`;
+          html += `<div>${p.marker} ${escapeTooltipHtml(p.seriesName)}: <b>${formatNumber(p.value[1])}%</b> (${formatDurationMinutes(mins)})</div>`;
         }
         return html;
       },
@@ -133,15 +160,29 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
 }
 
 export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
-  const option = nightly.length > 0 ? buildSleepAnalyticsOption(nightly, sleepDebt) : {};
+  const summaryNights = nightly.slice(-14);
+  const hasMeasuredSleepValues = summaryNights.some(
+    (night) =>
+      night.deepPct != null ||
+      night.remPct != null ||
+      night.lightPct != null ||
+      night.awakePct != null ||
+      night.rollingAvgDuration != null,
+  );
+  const hasSleepSummary = nightly.length > 0 && sleepDebt != null && hasMeasuredSleepValues;
+  const option = hasSleepSummary ? buildSleepAnalyticsOption(summaryNights, sleepDebt) : {};
+  const missingState = getLatestMissingSleepState(summaryNights);
+  const emptyMessage = missingState
+    ? `${missingState.reason} ${missingState.nextAction}`
+    : "No sleep data";
 
   return (
     <DofekChart
       option={option}
       loading={loading}
-      empty={nightly.length === 0}
+      empty={!hasSleepSummary}
       height={350}
-      emptyMessage="No sleep data"
+      emptyMessage={emptyMessage}
     />
   );
 }

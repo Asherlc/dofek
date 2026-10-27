@@ -45,29 +45,6 @@ export function heartRateZoneSqlParams(): Record<string, number> {
   );
 }
 
-export function heartRateZoneNumbersSql(): string {
-  return `SELECT number AS zone FROM numbers(${HEART_RATE_ZONES.length})`;
-}
-
-export function heartRateZoneCaseSql(
-  scalarExpression: string,
-  expressions: HeartRateZoneSqlExpressions = queryParamHeartRateExpressions,
-): string {
-  return HEART_RATE_ZONES.map((zone, index) => {
-    const isFirstZone = index === 0;
-    const isLastZone = index === HEART_RATE_ZONES.length - 1;
-    const condition = heartRateZoneCondition(
-      scalarExpression,
-      zoneParamName(zone.zone, "min"),
-      zoneParamName(zone.zone, "max"),
-      isFirstZone,
-      isLastZone,
-      expressions,
-    );
-    return `WHEN ${zone.zone} THEN ${condition}`;
-  }).join("\n              ");
-}
-
 export function heartRateZoneCountColumns(
   scalarExpression: string,
   expressions: HeartRateZoneSqlExpressions = queryParamHeartRateExpressions,
@@ -91,4 +68,22 @@ export function heartRateZoneSumColumns(): string {
   return HEART_RATE_ZONES.map((zone) => `sum(zone${zone.zone}) AS zone${zone.zone}`).join(
     ",\n        ",
   );
+}
+
+export function heartRateZoneWeightedCountColumns(
+  scalarExpression: string,
+  weightExpression: string,
+  expressions: HeartRateZoneSqlExpressions,
+): string {
+  return HEART_RATE_ZONES.map((zone, index) => {
+    const condition = heartRateZoneCondition(
+      scalarExpression,
+      zoneParamName(zone.zone, "min"),
+      zoneParamName(zone.zone, "max"),
+      index === 0,
+      index === HEART_RATE_ZONES.length - 1,
+      expressions,
+    );
+    return `sumIf(${weightExpression}, ${condition}) AS zone${zone.zone}`;
+  }).join(",\n          ");
 }

@@ -7,29 +7,26 @@ describe("Provider detail page", () => {
     cy.cleanTestData();
   });
 
-  it("loads provider detail page directly by URL", () => {
+  it("blocks unavailable provider actions when opened directly by URL", () => {
     cy.visit("/providers/strava");
     cy.url().should("include", "/providers/strava");
 
     // Should not redirect to login
-    cy.contains("Sign in to view your health data").should("not.exist");
+    cy.contains("Sign in to Dofek").should("not.exist");
 
-    // Should render the provider name
-    cy.contains("h1", "Strava").should("be.visible");
+    cy.contains("h1", "Provider not found").should("be.visible");
+    cy.contains("This provider is unavailable.").should("be.visible");
 
-    // Should render sync controls
-    cy.contains("Sync Controls").should("be.visible");
-
-    // Breadcrumb should link back to providers list
-    cy.get("main").contains("a", "Providers").should("be.visible");
+    // Provider capabilities are unknown, so actions must remain blocked.
+    cy.contains("Sync Controls").should("not.exist");
+    cy.get("main").contains("a", "Back to Data Sources").should("be.visible");
   });
 
-  it("breadcrumb navigates back to settings (providers moved to settings)", () => {
+  it("unavailable-provider link navigates back to settings", () => {
     cy.visit("/providers/strava");
-    cy.contains("h1", "Strava").should("be.visible");
+    cy.contains("h1", "Provider not found").should("be.visible");
 
-    // Click the breadcrumb — providers list now redirects to settings
-    cy.get("main").contains("a", "Providers").click();
+    cy.get("main").contains("a", "Back to Data Sources").click();
     cy.url().should("include", "/settings");
   });
 });

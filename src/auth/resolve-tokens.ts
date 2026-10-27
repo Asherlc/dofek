@@ -1,5 +1,6 @@
 import type { SyncDatabase } from "../db/index.ts";
 import { deleteTokens, loadTokens, saveTokens } from "../db/tokens.ts";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { logger } from "../logger.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
@@ -14,8 +15,8 @@ type FetchFn = typeof globalThis.fetch;
  * Covers 17 OAuth providers (Strava, Fitbit, Wahoo, etc.) that previously
  * had near-identical `resolveTokens()` methods.
  *
- * Providers with custom token logic (Garmin internal tokens, Zwift athleteId,
- * Whoop userId, etc.) should NOT use this — keep their own implementation.
+ * Providers with custom token logic should keep their own implementation.
+ * WHOOP uses `resolveWhoopTokens()` in `src/providers/whoop/resolve-tokens.ts`.
  */
 export async function resolveOAuthTokens(options: {
   db: SyncDatabase;
@@ -23,8 +24,23 @@ export async function resolveOAuthTokens(options: {
   providerName: string;
   getOAuthConfig: () => OAuthConfig | null | undefined;
   fetchFn?: FetchFn;
+  forceRefresh?: boolean;
+  refreshBeforeExpiryMs?: number;
+  validateRefreshedTokens?: (
+    currentTokens: TokenSet,
+    refreshedTokens: TokenSet,
+  ) => void | Promise<void>;
 }): Promise<TokenSet> {
-  const { db, providerId, providerName, getOAuthConfig, fetchFn = globalThis.fetch } = options;
+  const {
+    db,
+    providerId,
+    providerName,
+    getOAuthConfig,
+    fetchFn = globalThis.fetch,
+    forceRefresh = false,
+    refreshBeforeExpiryMs = 0,
+    validateRefreshedTokens,
+  } = options;
 
   const tokens = await loadTokens(db, providerId);
   if (!tokens) {
@@ -33,30 +49,53 @@ export async function resolveOAuthTokens(options: {
     );
   }
 
-  if (tokens.expiresAt > new Date()) {
+  if (!forceRefresh && tokens.expiresAt.getTime() > Date.now() + refreshBeforeExpiryMs) {
     return tokens;
   }
 
-  logger.info(`[${providerId}] Access token expired, refreshing...`);
+  logger.info(`[${providerId}] Access token expired or near expiry, refreshing...`);
+
+  if (!tokens.refreshToken) {
+    logger.warn(
+      `[${providerId}] No refresh token is available, deleting stored tokens. ` +
+        `User must re-authorize ${providerName}.`,
+    );
+    await deleteTokens(db, providerId);
+    const revokedError = new RefreshTokenRevokedError(providerName);
+    revokedError.message = `No refresh token for ${providerName}. ${revokedError.message}`;
+    throw revokedError;
+  }
 
   const config = getOAuthConfig();
   if (!config) {
     throw new Error(`OAuth config required to refresh ${providerName} tokens`);
   }
-  if (!tokens.refreshToken) {
-    throw new Error(`No refresh token for ${providerName}`);
-  }
 
+  reportProviderAuthDiagnostic(providerId, "refresh_started", undefined, tokens);
   try {
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, fetchFn);
-    await saveTokens(db, providerId, refreshed);
-    return refreshed;
+    await validateRefreshedTokens?.(tokens, refreshed);
+    const resolvedTokens: TokenSet = {
+      ...refreshed,
+      providerAccountId: refreshed.providerAccountId ?? tokens.providerAccountId,
+    };
+    await saveTokens(db, providerId, resolvedTokens);
+    reportProviderAuthDiagnostic(providerId, "refresh_succeeded", undefined, resolvedTokens);
+    return resolvedTokens;
   } catch (error: unknown) {
+    reportProviderAuthDiagnostic(providerId, "refresh_failed", undefined, tokens);
     const message = error instanceof Error ? error.message : String(error);
     // When the authorization server returns invalid_grant, the refresh token
     // has been revoked or expired. Delete the stored tokens so the sync
     // scheduler stops retrying every cycle — the user must re-authorize.
-    if (message.includes("invalid_grant") || message.includes("Too many unrevoked")) {
+    // Strava returns {"resource":"RefreshToken","field":"refresh_token","code":"invalid"}
+    // instead of invalid_grant — require both markers to avoid matching
+    // unrelated "code":"invalid" errors from other providers.
+    if (
+      message.includes("invalid_grant") ||
+      message.includes("Too many unrevoked") ||
+      (message.includes("RefreshToken") && message.includes('"code":"invalid"'))
+    ) {
       logger.warn(
         `[${providerId}] Refresh token revoked, deleting stored tokens. ` +
           `User must re-authorize ${providerName}.`,

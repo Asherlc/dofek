@@ -1,33 +1,28 @@
+import {
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
 import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
+import { ActivityTypeIcon } from "./ActivityTypeIcon";
 
 interface ActivityCardProps {
-  name: string;
+  name: string | null;
   activityType: string;
+  primaryActivityType: string | null;
   startedAt: string;
   endedAt: string | null;
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
-  distanceKm?: number | null;
+  distanceKm: number | null;
+  distanceState: ActivityDataState;
   units: UnitConverter;
-}
-
-function activityIcon(type: string): string {
-  const lower = type.toLowerCase();
-  if (lower.includes("run")) return "\u{1F3C3}";
-  if (lower.includes("cycl") || lower.includes("bike")) return "\u{1F6B4}";
-  if (lower.includes("swim")) return "\u{1F3CA}";
-  if (lower.includes("walk") || lower.includes("hike")) return "\u{1F6B6}";
-  if (lower.includes("strength") || lower.includes("weight")) return "\u{1F3CB}";
-  if (lower.includes("yoga")) return "\u{1F9D8}";
-  if (lower.includes("hiit")) return "\u{1F4A5}";
-  if (lower.includes("elliptical")) return "\u{1F3C3}\u{200D}\u{2642}\u{FE0F}";
-  if (lower.includes("row")) return "\u{1F6A3}";
-  return "\u{26A1}";
 }
 
 function Stat({ value, label, unit }: { value: string | number; label: string; unit?: string }) {
@@ -42,24 +37,46 @@ function Stat({ value, label, unit }: { value: string | number; label: string; u
   );
 }
 
+function UnavailableStat({ metric }: { metric: ActivityMetric }) {
+  if (metric.status === "available") return null;
+  return (
+    <View
+      style={styles.unavailableStat}
+      accessible={true}
+      accessibilityLabel={`${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`}
+    >
+      <Text style={styles.statUnavailableTitle}>
+        {metric.label} {activityDataStateLabel(metric.status)}
+      </Text>
+      <Text style={styles.statUnavailableReason}>{metric.reason}</Text>
+    </View>
+  );
+}
+
 export function ActivityCard({
   name,
   activityType,
+  primaryActivityType,
   startedAt,
   endedAt,
   avgHr,
   maxHr,
   avgPower,
   distanceKm,
+  distanceState,
   units,
 }: ActivityCardProps) {
+  const distanceMetric = formatActivityMetric("Distance", distanceKm, distanceState, (value) =>
+    formatNumber(units.convertDistance(value), 2),
+  );
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.icon}>{activityIcon(activityType)}</Text>
+        <ActivityTypeIcon activityType={activityType} size={40} />
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={2}>
-            {name || formatActivityTypeLabel(activityType)}
+            {name ?? formatActivityTypeLabel(primaryActivityType ?? activityType)}
           </Text>
           <Text style={styles.time}>
             {formatTimeOnly(startedAt)} · {formatDurationRange(startedAt, endedAt)}
@@ -70,12 +87,10 @@ export function ActivityCard({
       <View style={styles.separator} />
 
       <View style={styles.stats}>
-        {distanceKm != null && distanceKm > 0 && (
-          <Stat
-            value={formatNumber(units.convertDistance(distanceKm), 2)}
-            label="Distance"
-            unit={units.distanceLabel}
-          />
+        {distanceMetric.status === "available" ? (
+          <Stat value={distanceMetric.value} label="Distance" unit={units.distanceLabel} />
+        ) : (
+          <UnavailableStat metric={distanceMetric} />
         )}
         {avgHr != null && <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />}
         {maxHr != null && <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />}
@@ -96,9 +111,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-  },
-  icon: {
-    fontSize: 28,
   },
   headerText: {
     flex: 1,
@@ -127,6 +139,10 @@ const styles = StyleSheet.create({
   stat: {
     minWidth: 60,
   },
+  unavailableStat: {
+    minWidth: 120,
+    maxWidth: 190,
+  },
   statValueRow: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -149,6 +165,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     fontWeight: "600",
     letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  statUnavailableTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  statUnavailableReason: {
+    fontSize: 11,
+    color: colors.textSecondary,
     marginTop: 2,
   },
 });

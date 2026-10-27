@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -110,9 +110,9 @@ describe("Predictions router (integration)", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`pred-ride-${i}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + ${durationMin}::int * INTERVAL '1 minute',
               'Training Ride'
@@ -157,36 +157,41 @@ describe("Predictions router (integration)", () => {
           RETURNING id`,
     );
     const exerciseId = exerciseResult[0]?.id;
+    if (!exerciseId) {
+      throw new Error("Failed to insert prediction exercise");
+    }
 
     for (let i = 60; i >= 1; i--) {
       if (i % 3 !== 0) continue;
 
       const workoutResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, started_at, ended_at, name, activity_type
+              provider_id, user_id, external_id, started_at, ended_at, name, canonical_type, provider_type
             ) VALUES (
-              'test_provider', ${TEST_USER_ID},
+              'test_provider', ${TEST_USER_ID}, ${`pred-workout-${i}`},
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + INTERVAL '45 minutes',
               'Upper Body',
+              'strength',
               'strength'
             ) RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
+      if (!workoutId) {
+        throw new Error("Failed to insert prediction strength workout activity");
+      }
 
-      if (workoutId && exerciseId) {
-        const weight = 70 + (60 - i) * 0.5;
-        for (let setIdx = 0; setIdx < 3; setIdx++) {
-          await testCtx.db.execute(
-            sql`INSERT INTO fitness.strength_set (
+      const weight = 70 + (60 - i) * 0.5;
+      for (let setIdx = 0; setIdx < 3; setIdx++) {
+        await testCtx.db.execute(
+          sql`INSERT INTO fitness.strength_set (
                   activity_id, exercise_id, exercise_index, set_index,
                   set_type, weight_kg, reps
                 ) VALUES (
                   ${workoutId}, ${exerciseId}, 0, ${setIdx},
                   'working', ${weight}, 8
                 )`,
-          );
-        }
+        );
       }
     }
 

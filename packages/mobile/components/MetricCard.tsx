@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip";
 import { SparkLine } from "./charts/SparkLine";
@@ -17,6 +17,8 @@ interface MetricCardProps {
   trendDirection?: "up" | "down" | "stable";
   /** Optional chart description for the sparkline tooltip */
   chartDescription?: string;
+  /** Opens the records or source evidence contributing to this value */
+  onViewData?: () => void;
 }
 
 function trendArrow(direction: "up" | "down" | "stable"): string {
@@ -34,17 +36,18 @@ export function MetricCard({
   subtitle,
   trendDirection,
   chartDescription,
+  onViewData,
 }: MetricCardProps) {
   const nonNullCount = trend ? trend.filter((v) => v != null).length : 0;
   const hasTrendChart = nonNullCount >= 2;
-  const description =
-    chartDescription ?? `This chart shows the recent trend for ${title.toLowerCase()}.`;
 
   return (
     <View style={styles.card}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>{title}</Text>
-        {hasTrendChart && <ChartDescriptionTooltip title={title} description={description} />}
+        {hasTrendChart && chartDescription ? (
+          <ChartDescriptionTooltip title={title} description={chartDescription} />
+        ) : null}
       </View>
       <View style={styles.row}>
         <View style={styles.valueContainer}>
@@ -63,6 +66,20 @@ export function MetricCard({
         )}
       </View>
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {onViewData ? (
+        <TouchableOpacity
+          accessibilityLabel={`View data for ${title}`}
+          accessibilityRole="button"
+          activeOpacity={0.7}
+          onPress={onViewData}
+          style={styles.dataAction}
+        >
+          <Text style={styles.dataActionText}>View data</Text>
+          <Text accessibilityElementsHidden style={styles.dataActionArrow}>
+            ›
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -120,5 +137,21 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     color: colors.textTertiary,
+  },
+  dataAction: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    minHeight: 44,
+  },
+  dataActionText: {
+    color: colors.blue,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  dataActionArrow: {
+    color: colors.blue,
+    fontSize: 18,
+    marginLeft: 4,
   },
 });

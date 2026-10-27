@@ -74,7 +74,6 @@ BEGIN
     ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING;
 
     range_start := range_start + interval '1 month';
-    COMMIT;
   END LOOP;
 END $$;
 --> statement-breakpoint

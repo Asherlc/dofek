@@ -1,12 +1,14 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { queryCache } from "dofek/lib/cache";
+import { runWithTokenUser } from "dofek/db/token-user-context";
+import { saveTokens } from "dofek/db/tokens";
+import { reportProviderAuthDiagnostic } from "dofek/lib/provider-diagnostics";
 import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
+import { completeCredentialReconnect } from "./credential-reconnect.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export const credentialAuthRouter = router({
@@ -38,10 +40,15 @@ export const credentialAuthRouter = router({
         });
       }
 
+      const automatedLogin = setup.automatedLogin.bind(setup);
       let tokens: TokenSet;
+      reportProviderAuthDiagnostic(provider.id, "sign_in_started", ctx.userId);
       try {
-        tokens = await setup.automatedLogin(input.username, input.password);
+        tokens = await runWithTokenUser(ctx.userId, () =>
+          automatedLogin(input.username, input.password),
+        );
       } catch (error) {
+        reportProviderAuthDiagnostic(provider.id, "sign_in_failed", ctx.userId);
         if (error instanceof ProviderRateLimitError) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
@@ -60,9 +67,14 @@ export const credentialAuthRouter = router({
 
         throw error;
       }
-      await ensureProvider(ctx.db, provider.id, provider.name, setup.apiBaseUrl, ctx.userId);
-      await saveTokens(ctx.db, provider.id, tokens, ctx.userId);
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      await completeCredentialReconnect(
+        ctx,
+        { id: provider.id, name: provider.name, apiBaseUrl: setup.apiBaseUrl },
+        async (transaction) => {
+          await saveTokens(transaction, provider.id, tokens, ctx.userId);
+          reportProviderAuthDiagnostic(provider.id, "sign_in_succeeded", ctx.userId);
+        },
+      );
 
       return { success: true };
     }),

@@ -17,6 +17,7 @@ dofek:
       user: "{{ env_var('DBT_CLICKHOUSE_USER', 'default') }}"
       password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_PASSWORD')) }}"
       secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"
+      send_receive_timeout: 300
     lint:
       type: clickhouse
       schema: "{{ env_var('DBT_CLICKHOUSE_SCHEMA', 'analytics') }}"

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Job, JobsOptions } from "bullmq";
 import {
   type ProviderRateLimitCooldown,
@@ -6,6 +7,42 @@ import {
   providerRateLimitDelayMs,
 } from "./provider-rate-limit-cooldown.ts";
 import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS, type SyncJobData } from "./queues.ts";
+import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
+
+export type EnqueueSyncJobOptions = {
+  /** Stable identity for one provider dispatch from a shared coordinator. */
+  coordinator?: { id: string; queueQualifiedName: string };
+  /** When active, skip enqueue instead of scheduling a duplicate delayed job. */
+  skipWhenRateLimited?: boolean;
+  /** Coalesce a user-triggered initial full sync until that job completes or fails. */
+  singleFlightFullSync?: boolean;
+};
+
+function withRelativeRequestAnchor(jobData: SyncJobData): SyncJobData {
+  if (
+    jobData.requestedAtIso !== undefined ||
+    (jobData.targetRefreshWindow?.type !== "days" &&
+      (jobData.targetRefreshWindow !== undefined || jobData.sinceDays === undefined))
+  ) {
+    return jobData;
+  }
+  return { ...jobData, requestedAtIso: new Date().toISOString() };
+}
+
+function initialFullSyncDeduplicationId(
+  providerId: string,
+  jobData: SyncJobData,
+  options?: EnqueueSyncJobOptions,
+): string | undefined {
+  if (
+    !options?.singleFlightFullSync ||
+    jobData.targetRefreshWindow?.type !== "full" ||
+    jobData.checkpoint !== undefined
+  ) {
+    return undefined;
+  }
+  return `sync:full:${providerId}:${jobData.userId}`;
+}
 
 export async function syncJobOptionsWithRateLimitCooldown(
   providerId: string,
@@ -23,9 +60,38 @@ export async function syncJobOptionsWithRateLimitCooldown(
 export async function enqueueSyncJob(
   providerId: string,
   jobData: SyncJobData,
+  options?: EnqueueSyncJobOptions,
+): Promise<EnqueuedSyncJob | null> {
+  const cooldown = await providerRateLimitCooldownStore.getActive(providerId, jobData.userId);
+  if (cooldown && options?.skipWhenRateLimited) {
+    return null;
+  }
+  const anchoredJobData = withRelativeRequestAnchor(jobData);
+  const jobOptions = { ...(await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId)) };
+  if (anchoredJobData.webhookEvent) jobOptions.jobId = `sync-webhook-${randomUUID()}`;
+  const deduplicationId = initialFullSyncDeduplicationId(providerId, anchoredJobData, options);
+  const queue = getProviderSyncQueue(providerId);
+  return enqueueSyncJobWithRequestDedup(
+    providerId,
+    anchoredJobData,
+    deduplicationId ? { ...jobOptions, deduplication: { id: deduplicationId } } : jobOptions,
+    (name, data, opts) => queue.add(name, data, opts),
+    (jobId) => queue.getJob(jobId),
+    options?.coordinator,
+  );
+}
+
+/** Reconnect must not reuse work that started with an older authorization. */
+export async function enqueueReconnectSyncJob(
+  providerId: string,
+  userId: string,
 ): Promise<Job<SyncJobData>> {
-  const options = await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId);
-  return getProviderSyncQueue(providerId).add("sync", jobData, options);
+  const options = await syncJobOptionsWithRateLimitCooldown(providerId, userId);
+  return getProviderSyncQueue(providerId).add(
+    "sync",
+    { providerId, userId, origin: "manual", targetRefreshWindow: { type: "full" } },
+    { ...options, jobId: `sync-reconnect-${randomUUID()}` },
+  );
 }
 
 export async function scheduleDelayedSyncJob(
@@ -33,14 +99,20 @@ export async function scheduleDelayedSyncJob(
   cooldown: ProviderRateLimitCooldown,
 ): Promise<string> {
   const providerId = jobData.providerId ?? cooldown.providerId;
-  const nextData: SyncJobData = {
-    ...jobData,
+  const anchoredJobData = withRelativeRequestAnchor({ ...jobData, providerId });
+  const queue = getProviderSyncQueue(providerId);
+  await enqueueSyncJobWithRequestDedup(
     providerId,
-  };
-  await getProviderSyncQueue(providerId).add("sync", nextData, {
-    ...SYNC_JOB_RETRY_OPTIONS,
-    delay: providerRateLimitDelayMs(cooldown),
-    jobId: providerRateLimitCooldownJobId(cooldown, jobData.userId),
-  });
+    anchoredJobData,
+    {
+      ...SYNC_JOB_RETRY_OPTIONS,
+      delay: providerRateLimitDelayMs(cooldown),
+      jobId: jobData.webhookEvent
+        ? `sync-webhook-${randomUUID()}`
+        : providerRateLimitCooldownJobId(cooldown, jobData.userId),
+    },
+    (name, data, opts) => queue.add(name, data, opts),
+    (jobId) => queue.getJob(jobId),
+  );
   return cooldown.expiresAt.toISOString();
 }

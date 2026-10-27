@@ -1,4 +1,8 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import {
+  clickHouseToIntervalDayLowerBound,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import type {
   ClickHouseQueryClient,
   NormalizedPowerSampleRow,
@@ -6,12 +10,17 @@ import type {
   Vo2MaxEstimateRow,
 } from "./clickhouse-activity-sensor-types.ts";
 
-function userWindowParams(days: number, userId: string, timezone: string) {
+function userWindowParams(
+  days: RangeDays,
+  userId: string,
+  timezone: string,
+  activityTypes: readonly string[],
+) {
   return {
-    days,
+    ...rangeDaysParams(days),
     userId,
     timezone,
-    enduranceActivityTypes: [...ENDURANCE_ACTIVITY_TYPES],
+    activityTypes: [...activityTypes],
   };
 }
 
@@ -26,15 +35,16 @@ function userDateWindowParams(endDate: string, days: number, userId: string, tim
 
 export async function getClickHousePowerCurveSamples(
   client: ClickHouseQueryClient,
-  days: number,
+  days: RangeDays,
   userId: string,
   timezone: string,
+  activityTypes: readonly string[],
 ): Promise<PowerCurveSampleRow[]> {
   const result = await client.query<PowerCurveSampleRow>({
     query: `
         WITH activity_info AS (
           SELECT
-            activity.id AS activity_id,
+            activity.activity_id AS activity_id,
             activity.user_id AS user_id,
             activity.started_at AS started_at,
             activity.ended_at AS ended_at,
@@ -42,21 +52,22 @@ export async function getClickHousePowerCurveSamples(
             greatest(
               toInt32(round(
                 dateDiff('second', min(deduped_samples.recorded_at), max(deduped_samples.recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
               )),
               1
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN analytics.v_activity AS activity
+          INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.user_id = deduped_samples.user_id
            AND deduped_samples.recorded_at >= activity.started_at
            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
             AND deduped_samples.is_deleted = 0
-            AND activity.started_at > now() - toIntervalDay({days:UInt32})
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
-          GROUP BY activity.id, activity.user_id, activity.started_at, activity.ended_at
+            ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
+            AND activity.is_deleted = 0
+            AND has({activityTypes:Array(String)}, activity.canonical_type)
+          GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at
           HAVING count() > 1
         )
         SELECT
@@ -74,22 +85,23 @@ export async function getClickHousePowerCurveSamples(
         ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
-    query_params: userWindowParams(days, userId, timezone),
+    query_params: userWindowParams(days, userId, timezone, activityTypes),
   });
   return result.json();
 }
 
 export async function getClickHouseNormalizedPowerSamples(
   client: ClickHouseQueryClient,
-  days: number,
+  days: RangeDays,
   userId: string,
   timezone: string,
+  activityTypes: readonly string[],
 ): Promise<NormalizedPowerSampleRow[]> {
   const result = await client.query<NormalizedPowerSampleRow>({
     query: `
         WITH activity_info AS (
           SELECT
-            activity.id AS activity_id,
+            activity.activity_id AS activity_id,
             activity.user_id AS user_id,
             activity.started_at AS started_at,
             activity.ended_at AS ended_at,
@@ -98,12 +110,12 @@ export async function getClickHouseNormalizedPowerSamples(
             greatest(
               toInt32(round(
                 dateDiff('second', min(deduped_samples.recorded_at), max(deduped_samples.recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
               )),
               1
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN analytics.v_activity AS activity
+          INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.user_id = deduped_samples.user_id
            AND deduped_samples.recorded_at >= activity.started_at
            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
@@ -111,9 +123,10 @@ export async function getClickHouseNormalizedPowerSamples(
             AND deduped_samples.channel = 'power'
             AND deduped_samples.scalar > 0
             AND deduped_samples.is_deleted = 0
-            AND activity.started_at > now() - toIntervalDay({days:UInt32})
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
-          GROUP BY activity.id, activity.user_id, activity.started_at, activity.ended_at, activity.name
+            ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
+            AND activity.is_deleted = 0
+            AND has({activityTypes:Array(String)}, activity.canonical_type)
+          GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at, activity.name
           HAVING count() >= 240
         )
         SELECT
@@ -133,7 +146,7 @@ export async function getClickHouseNormalizedPowerSamples(
         ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
-    query_params: userWindowParams(days, userId, timezone),
+    query_params: userWindowParams(days, userId, timezone, activityTypes),
   });
   return result.json();
 }

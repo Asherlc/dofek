@@ -1,14 +1,29 @@
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import * as Sentry from "@sentry/node";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
+import { rateLimit as createRateLimiter } from "express-rate-limit";
+import type { Provider } from "oidc-provider";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { validateMcpToken } from "./token-repository.ts";
+import { verifyMcpAccessToken } from "./access-token-verifier.ts";
+import { foodMutationTelemetryFromRequest, logFoodMutation } from "./mutation-telemetry.ts";
+import { getMcpResourceUrl } from "./oauth-config.ts";
+import type { McpAuthRateLimitOptions } from "./oauth-route.ts";
+import {
+  mcpClientCorrelationId,
+  mcpRequestTelemetry,
+  mcpRuntimeTelemetry,
+  mcpToolsListResponseTelemetry,
+  mcpTransportErrorCategory,
+} from "./request-telemetry.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
 export interface CreateMcpRouterOptions {
-  db: Pick<Database, "execute" | "select">;
+  provider: Pick<Provider, "AccessToken">;
+  db: Pick<Database, "execute" | "select" | "transaction">;
+  rateLimit?: McpAuthRateLimitOptions;
   sensorStore?: ActivitySensorStore;
 }
 
@@ -21,7 +36,11 @@ function bearerTokenFromHeader(value: string | undefined): string | null {
 }
 
 function sendUnauthorized(response: express.Response): void {
-  response.set("WWW-Authenticate", "Bearer");
+  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(getMcpResourceUrl());
+  response.set(
+    "WWW-Authenticate",
+    `Bearer realm="dofek", resource_metadata="${resourceMetadataUrl}"`,
+  );
   response.status(401).json({
     jsonrpc: "2.0",
     error: { code: -32001, message: "MCP bearer token is required." },
@@ -36,6 +55,14 @@ function requireBearerTokenHeader(
 ): void {
   const token = bearerTokenFromHeader(request.headers.authorization);
   if (!token) {
+    logger.info("mcp.authentication", {
+      auth_outcome: "missing_bearer",
+      http_status: 401,
+      ...mcpRuntimeTelemetry(),
+      protocol_version: getSingleHeaderValue(request.headers["mcp-protocol-version"])
+        ? "provided"
+        : "missing",
+    });
     sendUnauthorized(response);
     return;
   }
@@ -49,47 +76,176 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 
 export function createMcpRouter(options: CreateMcpRouterOptions): Router {
   const router = Router();
+  const mcpRateLimit = createRateLimiter({
+    limit: 300,
+    windowMs: 15 * 60 * 1000,
+    ...options.rateLimit,
+    skip: options.rateLimit === false ? () => true : options.rateLimit?.skip,
+  });
+  router.use(mcpRateLimit);
 
   router.post("/", requireBearerTokenHeader, express.json(), async (request, response) => {
+    const requestTelemetry = mcpRequestTelemetry(
+      request.body,
+      getSingleHeaderValue(request.headers["mcp-protocol-version"]),
+    );
+    const runtimeTelemetry = mcpRuntimeTelemetry();
+    const startedAt = performance.now();
+    let responseFinished = false;
+    let responseClosed = false;
+    let resourcesClosed = false;
+    let transport: NodeStreamableHTTPServerTransport | undefined;
+    let server: ReturnType<typeof createDofekMcpServer> | undefined;
+    const closeResources = () => {
+      if (resourcesClosed || !transport || !server) return;
+      resourcesClosed = true;
+      transport.close().catch((error: unknown) => {
+        captureException(new Error("MCP transport cleanup failed"));
+        logger.warn("mcp.request", {
+          ...requestTelemetry,
+          cleanup_target: "transport",
+          error_category: mcpTransportErrorCategory(error),
+          outcome: "cleanup_failed",
+        });
+      });
+      server.close().catch((error: unknown) => {
+        captureException(new Error("MCP server cleanup failed"));
+        logger.warn("mcp.request", {
+          ...requestTelemetry,
+          cleanup_target: "server",
+          error_category: mcpTransportErrorCategory(error),
+          outcome: "cleanup_failed",
+        });
+      });
+    };
+    response.on("finish", () => {
+      responseFinished = true;
+      logger.info("mcp.request", {
+        ...requestTelemetry,
+        ...runtimeTelemetry,
+        duration_ms: Math.round(performance.now() - startedAt),
+        http_status: response.statusCode,
+        outcome:
+          response.statusCode === 400
+            ? "transport_or_protocol_rejected"
+            : response.statusCode >= 401
+              ? "http_rejected"
+              : "completed",
+      });
+    });
+    response.on("close", () => {
+      responseClosed = true;
+      if (!responseFinished) {
+        logger.info("mcp.request", {
+          ...requestTelemetry,
+          ...runtimeTelemetry,
+          duration_ms: Math.round(performance.now() - startedAt),
+          http_status: response.statusCode,
+          outcome: "aborted",
+        });
+      }
+      closeResources();
+    });
+    const telemetry = foodMutationTelemetryFromRequest(request.body);
+    if (telemetry) {
+      logFoodMutation(telemetry, "started");
+      let responseFinished = false;
+      response.on("finish", () => {
+        responseFinished = true;
+        logFoodMutation(telemetry, "completed", { httpStatus: response.statusCode });
+      });
+      response.on("close", () => {
+        if (!responseFinished)
+          logFoodMutation(telemetry, "aborted", { httpStatus: response.statusCode });
+      });
+    }
     const token = response.locals.mcpBearerToken;
     if (typeof token !== "string") {
       sendUnauthorized(response);
       return;
     }
 
-    const validatedToken = await validateMcpToken(options.db, token);
-    if (!validatedToken) {
+    const verifiedPrincipal = await verifyMcpAccessToken(token, {
+      db: options.db,
+      provider: options.provider,
+      resourceUrl: getMcpResourceUrl().href,
+    });
+    if (!verifiedPrincipal) {
+      logger.info("mcp.authentication", {
+        auth_outcome: "invalid_token",
+        http_status: 401,
+        ...requestTelemetry,
+        ...runtimeTelemetry,
+      });
       sendUnauthorized(response);
       return;
     }
 
-    const server = createDofekMcpServer({
+    const clientId =
+      verifiedPrincipal.kind === "oauth"
+        ? `oauth:${verifiedPrincipal.clientId}`
+        : `token:${verifiedPrincipal.tokenId}`;
+    logger.info("mcp.authentication", {
+      auth_outcome: "accepted",
+      client_kind: verifiedPrincipal.kind,
+      client_id_hash: mcpClientCorrelationId(
+        verifiedPrincipal.kind === "oauth" ? verifiedPrincipal.clientId : verifiedPrincipal.tokenId,
+      ),
+      scope_set: [...verifiedPrincipal.scopes].sort().join(","),
+      ...requestTelemetry,
+      ...runtimeTelemetry,
+    });
+
+    const mcpServer = createDofekMcpServer({
       db: options.db,
-      userId: validatedToken.userId,
-      scopes: validatedToken.scopes,
+      userId: verifiedPrincipal.userId,
+      clientId,
+      scopes: verifiedPrincipal.scopes,
       timezone: getSingleHeaderValue(request.headers["x-timezone"]) ?? "UTC",
       sensorStore: options.sensorStore,
     });
-    const transport = new StreamableHTTPServerTransport({
+    server = mcpServer;
+    const mcpTransport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
+    if (requestTelemetry.mcp_method === "tools/list") {
+      const send = mcpTransport.send.bind(mcpTransport);
+      mcpTransport.send = async (message, sendOptions) => {
+        logger.info("mcp.tools_list", {
+          ...requestTelemetry,
+          ...runtimeTelemetry,
+          ...mcpToolsListResponseTelemetry(message),
+        });
+        return send(message, sendOptions);
+      };
+    }
+    mcpTransport.onerror = (error: Error) => {
+      logger.info("mcp.request", {
+        ...requestTelemetry,
+        ...runtimeTelemetry,
+        error_category: mcpTransportErrorCategory(error),
+        outcome: "transport_error",
+      });
+    };
+    transport = mcpTransport;
+    if (responseClosed) {
+      closeResources();
+      return;
+    }
 
     try {
-      await server.connect(transport);
-      await transport.handleRequest(request, response, request.body);
-      response.on("close", () => {
-        transport.close().catch((error: unknown) => {
-          Sentry.captureException(error);
-          logger.warn(`[mcp] Failed to close transport: ${error}`);
-        });
-        server.close().catch((error: unknown) => {
-          Sentry.captureException(error);
-          logger.warn(`[mcp] Failed to close server: ${error}`);
-        });
-      });
+      await mcpServer.connect(mcpTransport);
+      if (responseClosed) return;
+      await mcpTransport.handleRequest(request, response, request.body);
     } catch (error: unknown) {
-      Sentry.captureException(error);
-      logger.error(`[mcp] Request failed: ${error}`);
+      const errorCategory = mcpTransportErrorCategory(error);
+      captureException(new Error(`MCP request failed: ${errorCategory}`));
+      logger.error("mcp.request", {
+        ...requestTelemetry,
+        ...runtimeTelemetry,
+        error_category: errorCategory,
+        outcome: "exception",
+      });
       if (!response.headersSent) {
         response.status(500).json({
           jsonrpc: "2.0",
@@ -115,6 +271,28 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
       id: null,
     });
   });
+
+  router.use(
+    (
+      error: unknown,
+      request: express.Request,
+      _response: express.Response,
+      next: express.NextFunction,
+    ) => {
+      if (error instanceof SyntaxError) {
+        logger.info("mcp.request", {
+          ...mcpRequestTelemetry(
+            undefined,
+            getSingleHeaderValue(request.headers["mcp-protocol-version"]),
+          ),
+          ...mcpRuntimeTelemetry(),
+          http_status: 400,
+          outcome: "malformed_json",
+        });
+      }
+      next(error);
+    },
+  );
 
   return router;
 }

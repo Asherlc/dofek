@@ -1,0 +1,375 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { providerLabel } from "./providers.ts";
+
+export type ProcessingDisplayStatus =
+  | "ready"
+  | "waiting"
+  | "active"
+  | "partial"
+  | "delayed"
+  | "blocked"
+  | "failed"
+  | "cancelled";
+
+export type ProcessingDisplayStage =
+  | "ingest"
+  | "canonical_commit"
+  | "cdc"
+  | "analytics"
+  | "cache_refresh";
+
+export interface ProcessingTarget {
+  action: "import" | "recompute" | "sync" | "update" | "process";
+  label: string;
+}
+
+function activeHeading(target: ProcessingTarget): string {
+  switch (target.action) {
+    case "import":
+      return `Importing ${target.label}`;
+    case "recompute":
+      return `Recomputing ${target.label}`;
+    case "sync":
+      return `Syncing ${target.label}`;
+    case "update":
+      return `Updating ${target.label}`;
+    case "process":
+      return `Processing ${target.label} data`;
+  }
+}
+
+function capitalize(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+export function processingHeading(
+  status: ProcessingDisplayStatus,
+  target?: ProcessingTarget,
+): string {
+  if (target) {
+    switch (status) {
+      case "failed":
+        return target.action === "process"
+          ? `Couldn't process the latest ${target.label} update`
+          : `${capitalize(target.label)} ${target.action} didn’t finish`;
+      case "blocked":
+        return `${activeHeading(target)} is waiting to continue`;
+      case "delayed":
+        return `${activeHeading(target)} is taking longer than expected`;
+      case "active":
+      case "partial":
+        return activeHeading(target);
+      case "waiting":
+        return target.action === "process"
+          ? `Preparing to process ${target.label} data`
+          : `Preparing to ${target.action} ${target.label}`;
+      case "cancelled":
+        return target.action === "process"
+          ? `Processing ${target.label} data was cancelled`
+          : `${capitalize(target.label)} ${target.action} was cancelled`;
+      case "ready":
+        return target.action === "process"
+          ? `${capitalize(target.label)} update processed`
+          : `${capitalize(target.label)} ${target.action} complete`;
+    }
+  }
+  switch (status) {
+    case "failed":
+      return "Your data update didn’t finish";
+    case "blocked":
+      return "Your data update is waiting to continue";
+    case "delayed":
+      return "Processing is taking longer than expected";
+    case "active":
+      return "Updating your data";
+    case "partial":
+      return "Finishing your data update";
+    case "waiting":
+      return "Preparing to update your data";
+    case "cancelled":
+      return "Processing was cancelled";
+    case "ready":
+      return "Data is ready";
+  }
+}
+
+interface ProcessingTargetDataset {
+  key: string;
+  label: string;
+  status: ProcessingDisplayStatus;
+}
+
+function formatList(items: readonly string[]): string {
+  if (items.length === 0) return "your data";
+  if (items.length === 1) return items[0] ?? "your data";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+}
+
+function datasetTarget(dataset: ProcessingTargetDataset): string {
+  if (dataset.key === "providers") {
+    return "provider summaries";
+  }
+  return dataset.label.toLowerCase();
+}
+
+export function processingTarget(input: {
+  providerId: string | null;
+  datasets: readonly ProcessingTargetDataset[];
+  operationKind?: string | null;
+}): ProcessingTarget {
+  if (input.providerId) {
+    return {
+      action:
+        input.operationKind === "file_import"
+          ? "import"
+          : input.operationKind === "push_ingest"
+            ? "process"
+            : "sync",
+      label: providerLabel(input.providerId),
+    };
+  }
+
+  const unfinishedDatasets = input.datasets.filter((dataset) => dataset.status !== "ready");
+  const relevantDatasets = unfinishedDatasets.length > 0 ? unfinishedDatasets : input.datasets;
+  const targets = [...new Set(relevantDatasets.map(datasetTarget))];
+
+  return {
+    action:
+      input.operationKind === "provider_sync" || input.operationKind === "push_ingest"
+        ? "update"
+        : "recompute",
+    label: formatList(targets),
+  };
+}
+
+export interface ProcessingTargetOperationSummary {
+  providerId: string | null;
+  kind: string;
+  status: ProcessingDisplayStatus;
+}
+
+export interface ProcessingTargetScope {
+  providerId: string | null;
+  operationKind: string | null;
+}
+
+/**
+ * A dataset-scoped status query (no `providerId` in scope) aggregates every
+ * operation touching that dataset, including unrelated provider syncs that
+ * happen to still be in progress. When exactly one provider is responsible
+ * for every non-ready operation, attribute the target to that provider (e.g.
+ * "Syncing Peloton"). When several providers are active, describe their
+ * combined work as an update. Reserve "recompute" for analytics operations.
+ */
+export function resolveProcessingTargetScope(input: {
+  scopeProviderId: string | null;
+  operations: readonly ProcessingTargetOperationSummary[];
+}): ProcessingTargetScope {
+  if (input.scopeProviderId) {
+    return {
+      providerId: input.scopeProviderId,
+      operationKind: input.operations[0]?.kind ?? null,
+    };
+  }
+
+  const nonReadyOperations = input.operations.filter((operation) => operation.status !== "ready");
+  const distinctProviderIds = new Set(
+    nonReadyOperations
+      .map((operation) => operation.providerId)
+      .filter((providerId): providerId is string => providerId !== null),
+  );
+  if (
+    distinctProviderIds.size === 1 &&
+    nonReadyOperations.every((operation) => operation.providerId !== null)
+  ) {
+    const [providerId] = distinctProviderIds;
+    const operation = nonReadyOperations.find((candidate) => candidate.providerId === providerId);
+    return { providerId: providerId ?? null, operationKind: operation?.kind ?? null };
+  }
+
+  const allProviderUpdates =
+    nonReadyOperations.length > 0 &&
+    nonReadyOperations.every(
+      (operation) =>
+        operation.providerId !== null &&
+        (operation.kind === "provider_sync" ||
+          operation.kind === "file_import" ||
+          operation.kind === "push_ingest"),
+    );
+  return {
+    providerId: null,
+    operationKind: allProviderUpdates
+      ? "provider_sync"
+      : (nonReadyOperations.find((operation) => operation.providerId === null)?.kind ?? null),
+  };
+}
+
+export function processingStatusMessage(input: {
+  status: ProcessingDisplayStatus;
+  errorMessage: string | null;
+  operationKind?: string | null;
+}): string | null {
+  const failureGuidance =
+    input.operationKind === "push_ingest"
+      ? "Earlier updates remain available. Open Diagnostics for details."
+      : "Try the update again. If it still fails, reconnect the data source.";
+  if (input.status === "failed" && input.errorMessage) {
+    return userFacingErrorMessage(input.errorMessage, failureGuidance);
+  }
+  switch (input.status) {
+    case "delayed":
+    case "blocked":
+      return "Your existing data is still available.";
+    case "failed":
+      return failureGuidance;
+    case "partial":
+    case "active":
+    case "waiting":
+      return null;
+    case "cancelled":
+      return input.operationKind === "push_ingest"
+        ? "Earlier updates remain available."
+        : "Start the update again when you are ready.";
+    case "ready":
+      return null;
+  }
+}
+
+export function processingPollInterval(status: ProcessingDisplayStatus): number {
+  if (status === "active" || status === "partial" || status === "waiting") return 3_000;
+  return 15_000;
+}
+
+export function processingAggregateProgress(
+  datasets: readonly {
+    status: ProcessingDisplayStatus;
+    progressPercentage: number | null;
+  }[],
+): number | null {
+  const progressValues = datasets.flatMap((dataset) => {
+    if (dataset.status === "ready") return [100];
+    return dataset.progressPercentage === null ? [] : [dataset.progressPercentage];
+  });
+  if (progressValues.length === 0 || progressValues.length !== datasets.length) return null;
+  return Math.min(...progressValues);
+}
+
+interface ProcessingFailureDataset {
+  key: string;
+  label: string;
+  status: ProcessingDisplayStatus;
+  lastFailedAt: string | null;
+  lastReadyAt: string | null;
+}
+
+interface ProcessingFailureOperation {
+  id: string;
+  providerId: string | null;
+  kind?: string;
+  status: ProcessingDisplayStatus;
+  datasets: readonly string[];
+  dismissed: boolean;
+  errorMessage: string | null;
+  errorCode?: string | null;
+}
+
+export interface ProcessingFailureGroup {
+  operationId: string;
+  providerId: string | null;
+  operationKind: string | null;
+  providerLabel: string | null;
+  datasetLabels: string[];
+  status: "failed";
+  failedAt: string | null;
+  lastReadyAt: string | null;
+  errorMessage: string | null;
+  requiresReconnect: boolean;
+  dismissed: boolean;
+}
+
+function latestTimestamp(values: readonly (string | null)[]): string | null {
+  return (
+    values
+      .filter((value): value is string => value !== null)
+      .sort((left, right) => right.localeCompare(left))[0] ?? null
+  );
+}
+
+export function processingFailureGroups(input: {
+  needsReauth?: boolean;
+  datasets: readonly ProcessingFailureDataset[];
+  operations: readonly ProcessingFailureOperation[];
+}): ProcessingFailureGroup[] {
+  const currentOperationIdsByDataset = new Map<string, string>();
+  for (const operation of input.operations) {
+    for (const datasetKey of operation.datasets) {
+      if (!currentOperationIdsByDataset.has(datasetKey)) {
+        currentOperationIdsByDataset.set(datasetKey, operation.id);
+      }
+    }
+  }
+
+  const alertableDatasets = input.datasets.filter((dataset) => dataset.status === "failed");
+  return input.operations.flatMap((operation) => {
+    if (operation.dismissed || operation.status !== "failed") return [];
+    const operationDatasetKeys = new Set(operation.datasets);
+    const groupedDatasets = alertableDatasets.filter(
+      (dataset) =>
+        operationDatasetKeys.has(dataset.key) &&
+        currentOperationIdsByDataset.get(dataset.key) === operation.id,
+    );
+    if (groupedDatasets.length === 0) return [];
+    const resolvedPushAuthorization =
+      operation.kind === "push_ingest" &&
+      operation.errorCode === "provider_auth_failed" &&
+      input.needsReauth === false;
+
+    return [
+      {
+        operationId: operation.id,
+        providerId: operation.providerId,
+        operationKind: operation.kind ?? null,
+        providerLabel: operation.providerId ? providerLabel(operation.providerId) : null,
+        datasetLabels: groupedDatasets.map((dataset) => dataset.label),
+        status: operation.status,
+        failedAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastFailedAt)),
+        lastReadyAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastReadyAt)),
+        errorMessage: resolvedPushAuthorization
+          ? "Earlier updates remain available. Open Diagnostics for details."
+          : operation.errorMessage
+            ? userFacingErrorMessage(
+                operation.errorMessage,
+                operation.kind === "push_ingest"
+                  ? "Incoming data could not be processed. Open Diagnostics for details."
+                  : "The update failed. Please try again.",
+              )
+            : null,
+        requiresReconnect:
+          operation.errorCode === "provider_auth_failed" && !resolvedPushAuthorization,
+        dismissed: operation.dismissed,
+      },
+    ];
+  });
+}
+
+export function processingDatasetStatusLabel(status: ProcessingDisplayStatus): string {
+  switch (status) {
+    case "ready":
+      return "Ready";
+    case "waiting":
+      return "Waiting";
+    case "active":
+      return "Updating";
+    case "partial":
+      return "Finishing";
+    case "delayed":
+      return "Delayed";
+    case "blocked":
+      return "Waiting to continue";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+  }
+}

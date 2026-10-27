@@ -6,7 +6,10 @@ packages/mobile/certs/public-key.pem
 # Track .claude/skills (custom skills), ignore everything else
 .claude/*
 !.claude/skills/
+.codex/
+.antigravitycli/
 .context/
+.worktrees/
 .codegraph/
 .DS_Store
 *.swp
@@ -39,8 +42,11 @@ test-results/
 .swiftpm/
 # Muter mutation testing
 muter_logs/
+packages/mobile/modules/*_mutated/
+packages/mobile/targets/*_mutated/
 # Python
 .venv/
+.venv-analytics/
 __pycache__/
 *.pyc
 *.egg-info/
@@ -61,6 +67,14 @@ packages/ios/ios/Dofek.xcworkspace/
 packages/ios/ios/Pods
 packages/ios/ios/build
 
+# iOS xcarchive build artifacts
+ios-xcarchive/
+
 # Gemini CLI
 .gemini/
 .worktrees/
+coverage-integration/
+coverage-integration-*/
+
+# Local activity data-integrity repair audit artifacts (may contain user data)
+activity-data-integrity-artifacts/

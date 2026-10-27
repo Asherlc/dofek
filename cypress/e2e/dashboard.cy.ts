@@ -1,7 +1,7 @@
 import { z } from "zod";
+import { TEST_USER_ID } from "../support/test-user";
 import { formatLocalDate } from "./test-helpers";
 
-const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
 const E2E_PROVIDER_ID = "e2e-test-provider";
 const dailyMetricsRowSchema = z.object({ steps: z.number().nullable() });
 
@@ -15,10 +15,15 @@ describe("Dashboard", () => {
   });
 
   it("loads the dashboard when authenticated", () => {
+    cy.intercept("POST", "**/api/trpc/*processing.alerts*").as("processingAlerts");
     cy.visit("/dashboard");
+    cy.wait("@processingAlerts").then(({ response }) => {
+      expect(response?.statusCode).to.eq(200);
+      expect(JSON.stringify(response?.body)).not.to.include("Invalid UUID");
+    });
     cy.url().should("include", "/dashboard");
     // The dashboard should render without redirecting to login
-    cy.contains("Sign in to view your health data").should("not.exist");
+    cy.contains("Sign in to Dofek").should("not.exist");
   });
 
   it("shows the user identity via /api/auth/me", () => {

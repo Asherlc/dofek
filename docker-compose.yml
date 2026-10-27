@@ -27,14 +27,15 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U health -d health"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.3.3.20-alpine
+    image: clickhouse/clickhouse-server:26.9.19-alpine
     restart: unless-stopped
+    mem_limit: 1536m
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
@@ -44,7 +45,7 @@ services:
       - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-0}:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
+      - ./deploy/clickhouse/users.d/default-query-guardrails.xml:/etc/clickhouse-server/users.d/default-query-guardrails.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
       - ./deploy/clickhouse/config.d/memory-limits.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
@@ -58,7 +59,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:${REDIS_PORT:-0}:6379"
@@ -71,7 +72,7 @@ services:
       retries: 5
 
   redpanda:
-    image: redpandadata/redpanda:v26.1.9
+    image: redpandadata/redpanda:v26.2.5
     restart: unless-stopped
     command:
       - redpanda
@@ -101,7 +102,9 @@ services:
       start_period: 60s
 
   metric-stream-minio:
-    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # SeaweedFS S3 API stand-in; service hostname kept for R2_ENDPOINT wiring.
+    # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     profiles: ["metric-stream"]
     restart: unless-stopped
     environment:
@@ -112,48 +115,81 @@ services:
       - metric_stream_minio_data:/data
     ports:
       - "127.0.0.1:${METRIC_STREAM_MINIO_PORT:-0}:9000"
-    entrypoint: >
-      /bin/sh -euc "
-      minio server /data --console-address=:36987 &
-      attempts=0;
-      until mc alias set metric-stream-minio http://metric-stream-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
-        attempts=$$((attempts + 1));
-        if [ $$attempts -ge 30 ]; then
-          echo metric-stream-minio did not become ready in time >&2;
-          exit 1;
-        fi;
-        sleep 1;
-      done;
-      mc mb --ignore-existing metric-stream-minio/$$METRIC_STREAM_R2_BUCKET;
-      wait
-      "
+    entrypoint:
+      - /bin/sh
+      - -euc
+      - |
+        printf '%s\n' "{\"identities\":[{\"name\":\"$$MINIO_ROOT_USER\",\"credentials\":[{\"accessKey\":\"$$MINIO_ROOT_USER\",\"secretKey\":\"$$MINIO_ROOT_PASSWORD\"}],\"actions\":[\"Admin\",\"Read\",\"Write\",\"List\",\"Tagging\"]}]}" > /tmp/s3.json
+        weed server -ip=metric-stream-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
+        weed_pid=$$!
+        attempts=0
+        until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 90 ]; then
+            echo metric-stream-minio master/filer did not become ready in time >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          if ! kill -0 $$weed_pid 2>/dev/null; then
+            echo metric-stream-minio weed server exited before ready >&2
+            exit 1
+          fi
+          sleep 1
+        done
+        attempts=0
+        until printf 's3.bucket.create -name %s\n' "$$METRIC_STREAM_R2_BUCKET" | weed shell -master=localhost:9333; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 30 ]; then
+            echo metric-stream-minio bucket create failed >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        wait
 
-  metric-stream-clickhouse-sink:
+  metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     build:
       context: .
       target: server
     profiles: ["metric-stream"]
     restart: unless-stopped
     command: ["metric-stream-clickhouse-sink"]
-    environment:
+    environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD:-health}@clickhouse:8123
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-clickhouse-sink
     depends_on:
       clickhouse:
         condition: service_healthy
       redpanda:
         condition: service_healthy
 
-  metric-stream-r2-archive:
-    image: docker.redpanda.com/redpandadata/connect:4.94.1
+  metric-stream-live-clickhouse-sink:
+    <<: *metric-stream-clickhouse-sink
+    environment:
+      <<: *metric-stream-clickhouse-sink-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-live-clickhouse-sink
+
+  metric-stream-history-clickhouse-sink:
+    <<: *metric-stream-clickhouse-sink
+    environment:
+      <<: *metric-stream-clickhouse-sink-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-history-clickhouse-sink
+
+  metric-stream-r2-archive: &metric-stream-r2-archive
+    image: docker.redpanda.com/redpandadata/connect:4.99.0
     profiles: ["metric-stream"]
     restart: unless-stopped
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
-    environment:
+    environment: &metric-stream-r2-archive-environment
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-r2-archive
       METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:-dofek-metric-stream-archive}
       R2_ENDPOINT: http://metric-stream-minio:9000
       R2_ACCESS_KEY_ID: ${METRIC_STREAM_R2_ACCESS_KEY_ID:-metricstream}
@@ -166,8 +202,22 @@ services:
       metric-stream-minio:
         condition: service_started
 
+  metric-stream-live-r2-archive:
+    <<: *metric-stream-r2-archive
+    environment:
+      <<: *metric-stream-r2-archive-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-live-r2-archive
+
+  metric-stream-history-r2-archive:
+    <<: *metric-stream-r2-archive
+    environment:
+      <<: *metric-stream-r2-archive-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-history-r2-archive
+
   collector:
-    image: otel/opentelemetry-collector-contrib:0.149.0
+    image: otel/opentelemetry-collector-contrib:0.162.0-386
     restart: unless-stopped
     user: "0:0"
     environment:

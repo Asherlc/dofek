@@ -1,0 +1,17 @@
+{
+  "name": "garmin-fit-sdk",
+  "version": "21.205.0",
+  "description": "Garmin Flexible and Interoperable Data Transfer SDK for C++",
+  "homepage": "https://github.com/garmin/fit-cpp-sdk",
+  "license": null,
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}

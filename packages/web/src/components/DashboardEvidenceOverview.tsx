@@ -1,57 +1,38 @@
+import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { Link } from "@tanstack/react-router";
+import type { BaselineProgress } from "dofek-server/mobile-dashboard-contracts";
 import type { ReactNode } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartContainer } from "./ChartContainer.tsx";
 import type { Insight } from "./CorrelationCard.tsx";
+import { InsightEvidenceDetails } from "./InsightEvidenceDetails.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export interface DashboardTrendSnapshot {
   latestRestingHeartRate: number | null | undefined;
   averageRestingHeartRate: number | null | undefined;
+  restingHeartRateTrendLabel?: string | null;
+  restingHeartRateBaselineProgress?: BaselineProgress | null;
   restingHeartRatePoints?: RestingHeartRatePoint[] | null | undefined;
 }
 
 export interface RestingHeartRatePoint {
   date: string;
+  /** Server-computed trailing 7-day average. */
   value: number;
 }
-
-export interface TrainingSleepComparisonPoint {
-  date: string;
-  trainingLoad: number;
-  sleepConsistency: number;
-}
-
-const dashboardDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  timeZone: "UTC",
-});
 
 export function formatDashboardRange(endDate: string, days: number): string {
   const end = new Date(`${endDate}T12:00:00Z`);
   const start = new Date(end);
   start.setUTCDate(end.getUTCDate() - days + 1);
-  return `${dashboardDateFormatter.format(start)} - ${dashboardDateFormatter.format(end)}`;
-}
-
-export function correlationStrengthLabel(effectSize: number | null | undefined): string {
-  if (effectSize == null) return "Collecting signal";
-  const direction = effectSize >= 0 ? "positive" : "negative";
-  const magnitude = Math.abs(effectSize);
-  if (magnitude >= 0.6) return `Strong ${direction}`;
-  if (magnitude >= 0.35) return `Emerging ${direction}`;
-  return `Early ${direction}`;
+  const utc = { timeZone: "UTC" as const };
+  return `${formatDateShort(start, utc)} - ${formatDateShort(end, utc)}`;
 }
 
 export function trendPositionLabel(trend: DashboardTrendSnapshot): string {
-  const { latestRestingHeartRate, averageRestingHeartRate } = trend;
-  if (latestRestingHeartRate == null || averageRestingHeartRate == null) {
-    return "Waiting for baseline";
-  }
-  if (latestRestingHeartRate < averageRestingHeartRate) return "below average";
-  if (latestRestingHeartRate > averageRestingHeartRate) return "above average";
-  return "at average";
+  return trend.restingHeartRateTrendLabel ?? "Waiting for baseline";
 }
 
 interface ChartLabels {
@@ -74,7 +55,7 @@ interface RestingHeartRateTone {
 }
 
 function formatChartDate(date: string): string {
-  return dashboardDateFormatter.format(new Date(`${date}T12:00:00Z`));
+  return formatDateShort(date, { timeZone: "UTC" });
 }
 
 function formatChartNumber(value: number): string {
@@ -83,15 +64,15 @@ function formatChartNumber(value: number): string {
 }
 
 function restingHeartRateTone(trend: DashboardTrendSnapshot): RestingHeartRateTone {
-  const { latestRestingHeartRate, averageRestingHeartRate } = trend;
-  if (latestRestingHeartRate == null || averageRestingHeartRate == null) {
+  const trendLabel = trendPositionLabel(trend);
+  if (trendLabel === "Waiting for baseline") {
     return {
       className: "text-muted",
       colorVariable: "var(--color-muted)",
       fillOpacity: "0.08",
     };
   }
-  if (latestRestingHeartRate <= averageRestingHeartRate) {
+  if (trendLabel === "below average" || trendLabel === "at average") {
     return {
       className: "text-accent",
       colorVariable: "var(--color-accent)",
@@ -113,7 +94,6 @@ export function DashboardEvidenceOverview({
   trend,
   restingHeartRateLoading = false,
   restingHeartRateError = null,
-  trainingSleepPoints,
   healthMonitor,
 }: {
   days: number;
@@ -123,12 +103,32 @@ export function DashboardEvidenceOverview({
   trend: DashboardTrendSnapshot;
   restingHeartRateLoading?: boolean;
   restingHeartRateError?: unknown;
-  trainingSleepPoints?: TrainingSleepComparisonPoint[] | null | undefined;
   healthMonitor: ReactNode;
 }) {
   const units = useUnitConverter();
   const effectSize = topInsight?.effectSize;
-  const correlationValue = effectSize == null ? "--" : Math.abs(effectSize).toFixed(2);
+  const evidence = topInsight?.evidence;
+  const relationship =
+    evidence?.relationship ??
+    (topInsight?.type === "conditional"
+      ? "descriptive_association"
+      : topInsight?.type === "correlation"
+        ? "correlation"
+        : undefined);
+  const relationshipHeading =
+    relationship === "descriptive_association"
+      ? "Association"
+      : relationship === "correlation"
+        ? "Correlation"
+        : "Relationship";
+  const relationshipValue =
+    relationship === "descriptive_association"
+      ? evidence?.estimateLabel?.trim() || "--"
+      : relationship === "correlation" && effectSize != null
+        ? Number(effectSize.toFixed(2)) === 0
+          ? "0.00"
+          : effectSize.toFixed(2)
+        : "--";
   const trendLabel = trendPositionLabel(trend);
   const restingHeartRateToneValue = restingHeartRateTone(trend);
   const formatRestingHeartRate = (value: number) =>
@@ -139,34 +139,16 @@ export function DashboardEvidenceOverview({
       .map((point) => ({ date: point.date, xValue: point.x, yValue: point.y })) ?? [];
   const restingHeartRatePoints =
     trend.restingHeartRatePoints?.filter((point) => Number.isFinite(point.value)) ?? [];
-  const trainingSleepChartPoints =
-    trainingSleepPoints
-      ?.filter(
-        (point) => Number.isFinite(point.trainingLoad) && Number.isFinite(point.sleepConsistency),
-      )
-      .map((point) => ({
-        date: point.date,
-        xValue: point.trainingLoad,
-        yValue: point.sleepConsistency,
-      })) ?? [];
 
   return (
-    <section
-      aria-label="Dashboard overview"
-      className="dashboard-hero card p-5 sm:p-6 lg:min-h-[calc(100vh-4rem)]"
-    >
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">Overview</h2>
-          <p className="mt-1 text-sm text-muted">{formatDashboardRange(endDate, days)}</p>
-        </div>
-        <span className="w-fit rounded-md border border-border bg-surface-solid px-3 py-1.5 text-xs font-medium text-foreground">
-          {days} days
-        </span>
+    <section aria-label="Dashboard overview" className="dashboard-hero card space-y-5 p-5 sm:p-6">
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Overview</h2>
+        <p className="mt-1 text-sm text-muted">{formatDashboardRange(endDate, days)}</p>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-3">
-        <EvidenceCard eyebrow="Key correlation">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
           {insightError ? (
             insightError
           ) : (
@@ -176,16 +158,12 @@ export function DashboardEvidenceOverview({
               </h3>
               <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                    Correlation
-                  </p>
                   <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
-                    {correlationValue}
+                    {relationshipValue}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-accent">
-                    {correlationStrengthLabel(effectSize)}
+                    {evidence?.label?.trim() || "Descriptive relationship"}
                   </p>
-                  <p className="text-xs text-muted">{days}-day signal</p>
                 </div>
                 <MiniChartFrame data={topInsight ? insightChartPoints : []}>
                   {topInsight ? (
@@ -197,11 +175,11 @@ export function DashboardEvidenceOverview({
                         yAxis: topInsight.metric,
                         yMetric: topInsight.metric,
                       }}
-                      tone={effectSize != null && effectSize < 0 ? "danger" : "accent"}
                     />
                   ) : null}
                 </MiniChartFrame>
               </div>
+              {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
             </div>
           )}
         </EvidenceCard>
@@ -220,44 +198,51 @@ export function DashboardEvidenceOverview({
               <p className="text-xs text-muted">bpm</p>
               <p className="text-xs text-muted">{trendLabel}</p>
             </div>
-            <MiniChartFrame
-              data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
-              loading={restingHeartRateLoading}
-              error={restingHeartRateError}
-              height={112}
+            <div>
+              <p className="mb-1 text-xs text-muted">7-day average</p>
+              <MiniChartFrame
+                data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
+                loading={restingHeartRateLoading}
+                error={restingHeartRateError}
+                height={112}
+              >
+                <MiniTrend
+                  points={restingHeartRatePoints}
+                  averageRestingHeartRate={trend.averageRestingHeartRate}
+                  formatRestingHeartRate={formatRestingHeartRate}
+                  tone={restingHeartRateToneValue}
+                />
+              </MiniChartFrame>
+            </div>
+          </div>
+          <Link
+            aria-label="View resting heart rate data"
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+            to="/body/heart-rate"
+          >
+            View data <span aria-hidden>→</span>
+          </Link>
+          {trend.restingHeartRateBaselineProgress &&
+          trend.restingHeartRateBaselineProgress.blocker !== null ? (
+            <section
+              aria-label="Resting heart rate baseline progress"
+              className="mt-4 space-y-1 border-t border-border pt-3 text-xs"
             >
-              <MiniTrend
-                points={restingHeartRatePoints}
-                averageRestingHeartRate={trend.averageRestingHeartRate}
-                formatRestingHeartRate={formatRestingHeartRate}
-                tone={restingHeartRateToneValue}
-              />
-            </MiniChartFrame>
-          </div>
-        </EvidenceCard>
-
-        <EvidenceCard eyebrow="Training load compared with sleep consistency">
-          <h3 className="max-w-sm text-base font-medium leading-relaxed text-foreground">
-            Higher load weeks can be reviewed beside sleep and recovery.
-          </h3>
-          <div className="mt-5">
-            <MiniChartFrame data={trainingSleepChartPoints}>
-              <MiniScatter
-                points={trainingSleepChartPoints}
-                labels={{
-                  xAxis: "Load",
-                  xMetric: "Training load",
-                  yAxis: "Sleep",
-                  yMetric: "Sleep consistency",
-                }}
-                tone="danger"
-              />
-            </MiniChartFrame>
-          </div>
+              <p className="font-medium text-muted">
+                {trend.restingHeartRateBaselineProgress.requirement}
+              </p>
+              <p className="text-subtle">{trend.restingHeartRateBaselineProgress.summary}</p>
+              {trend.restingHeartRateBaselineProgress.blocker !== "syncing" ? (
+                <p className="font-medium text-foreground">
+                  {trend.restingHeartRateBaselineProgress.action}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
         </EvidenceCard>
       </div>
 
-      <div className="mt-3 rounded-lg border border-border bg-white/62 p-4">
+      <div className="border-t border-border pt-4">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-muted">
           Health monitor
         </p>
@@ -269,7 +254,7 @@ export function DashboardEvidenceOverview({
 
 function EvidenceCard({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
   return (
-    <div className="min-h-[15rem] rounded-lg border border-border bg-white/62 p-5">
+    <div className="min-h-[15rem] rounded-lg border border-border bg-surface p-5">
       <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-muted">{eyebrow}</p>
       {children}
     </div>
@@ -291,7 +276,12 @@ function MiniChartFrame({
 }) {
   if (error) return <QueryStatePanel error={error} height={height} />;
   return (
-    <ChartContainer loading={loading} data={data} height={height} emptyMessage="No chart data yet.">
+    <ChartContainer
+      loading={loading}
+      data={data}
+      height={height}
+      emptyMessage="No chart data to display."
+    >
       {children}
     </ChartContainer>
   );
@@ -305,36 +295,7 @@ function chartDomain(values: number[]): { min: number; max: number } {
   return { min: minValue - padding, max: maxValue + padding };
 }
 
-function trendLine(points: ScatterPoint[]): { start: ScatterPoint; end: ScatterPoint } | null {
-  if (points.length < 2) return null;
-  const xMean = points.reduce((sum, point) => sum + point.xValue, 0) / points.length;
-  const yMean = points.reduce((sum, point) => sum + point.yValue, 0) / points.length;
-  const numerator = points.reduce(
-    (sum, point) => sum + (point.xValue - xMean) * (point.yValue - yMean),
-    0,
-  );
-  const denominator = points.reduce((sum, point) => sum + (point.xValue - xMean) ** 2, 0);
-  if (denominator === 0) return null;
-  const slope = numerator / denominator;
-  const intercept = yMean - slope * xMean;
-  const xValues = points.map((point) => point.xValue);
-  const startX = Math.min(...xValues);
-  const endX = Math.max(...xValues);
-  return {
-    start: { date: points[0]?.date ?? "", xValue: startX, yValue: slope * startX + intercept },
-    end: { date: points.at(-1)?.date ?? "", xValue: endX, yValue: slope * endX + intercept },
-  };
-}
-
-function MiniScatter({
-  points,
-  labels,
-  tone,
-}: {
-  points: ScatterPoint[];
-  labels: ChartLabels;
-  tone: "accent" | "danger";
-}) {
+function MiniScatter({ points, labels }: { points: ScatterPoint[]; labels: ChartLabels }) {
   const chart = { left: 28, right: 142, top: 12, bottom: 62 };
   const xDomain = chartDomain(points.map((point) => point.xValue));
   const yDomain = chartDomain(points.map((point) => point.yValue));
@@ -344,8 +305,7 @@ function MiniScatter({
     chart.left + ((value - xDomain.min) / xRange) * (chart.right - chart.left);
   const toY = (value: number) =>
     chart.bottom - ((value - yDomain.min) / yRange) * (chart.bottom - chart.top);
-  const line = trendLine(points);
-  const color = tone === "danger" ? "var(--color-danger)" : "var(--color-accent)";
+  const color = "var(--color-muted)";
 
   return (
     <svg viewBox="0 0 156 86" className="h-24 w-full" role="img" aria-hidden="true">
@@ -359,16 +319,6 @@ function MiniScatter({
         stroke="var(--color-border-strong)"
         strokeWidth="1"
       />
-      {line && (
-        <path
-          d={`M${toX(line.start.xValue)} ${toY(line.start.yValue)}L${toX(
-            line.end.xValue,
-          )} ${toY(line.end.yValue)}`}
-          stroke={color}
-          strokeWidth="1.5"
-          strokeDasharray="3 2"
-        />
-      )}
       <path
         d={`M${chart.right} ${chart.bottom}V${chart.bottom + 3}`}
         stroke="var(--color-border-strong)"
@@ -464,19 +414,27 @@ function MiniTrend({
           opacity="0.5"
         />
       )}
-      <path d={pathData} fill="none" stroke={tone.colorVariable} strokeWidth="2" />
+      <path
+        d={pathData}
+        fill="none"
+        stroke={tone.colorVariable}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <path d={areaData} fill={tone.colorVariable} opacity={tone.fillOpacity} />
       {points.map((point, index) => (
         <circle
           key={`${point.date}-${point.value}`}
           cx={toX(index)}
           cy={toY(point.value)}
-          r="3"
+          r="5"
           className="cursor-help"
-          fill={tone.colorVariable}
+          fill="transparent"
         >
           <title>
-            {formatChartDate(point.date)}: Resting heart rate: {formatRestingHeartRate(point.value)}
+            {formatChartDate(point.date)}: 7-day average resting heart rate:{" "}
+            {formatRestingHeartRate(point.value)}
           </title>
         </circle>
       ))}

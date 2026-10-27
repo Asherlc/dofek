@@ -1,11 +1,68 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { admissionDelayMs, createInitialAdaptiveState } from "./adaptive-rate-limit.ts";
 import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
+  isProviderConnectFailure,
+  PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
   parseRetryAfterHeader,
 } from "./rate-limit.ts";
+import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+it("observes HTTP responses before classification without consuming their body", async () => {
+  const onResponse = vi.fn();
+  const response = new Response("limited", { status: 429 });
+  const fetchFn = createRateLimitAwareFetch(vi.fn().mockResolvedValue(response), {
+    providerId: "example",
+    onResponse,
+  });
+  await expect(fetchFn("https://api.example.com/data")).rejects.toBeInstanceOf(
+    ProviderRateLimitError,
+  );
+  expect(onResponse).toHaveBeenCalledWith(
+    response,
+    "https://api.example.com/data",
+    expect.any(Object),
+    expect.any(Number),
+  );
+});
+
+it("awaits an asynchronous response observer before returning the readable response", async () => {
+  let observationCompleted = false;
+  const original = Response.json({ error: "invalid_token" }, { status: 401 });
+  const fetchFn = createRateLimitAwareFetch(async () => original, {
+    providerId: "example",
+    async onResponse(response) {
+      expect(await response.clone().json()).toEqual({ error: "invalid_token" });
+      observationCompleted = true;
+    },
+  });
+  const result = await fetchFn("https://api.example.com/me");
+  expect(observationCompleted).toBe(true);
+  expect(await result.json()).toEqual({ error: "invalid_token" });
+});
+
+function createMockAdaptiveStore(): AdaptiveRateLimitStore & {
+  awaitAdmission: CallableVitestMock;
+  recordSuccess: CallableVitestMock;
+  recordRateLimit: CallableVitestMock;
+  getLearnedCooldownSeconds: CallableVitestMock;
+} {
+  return {
+    awaitAdmission: vi.fn().mockResolvedValue(undefined),
+    recordSuccess: vi.fn().mockResolvedValue(undefined),
+    recordRateLimit: vi.fn().mockResolvedValue(undefined),
+    getLearnedCooldownSeconds: vi.fn().mockResolvedValue(null),
+  };
+}
 
 class TestRateLimitError extends ProviderRateLimitError {
   constructor(response: Response, body: string) {
@@ -194,6 +251,72 @@ describe("fetchWithRateLimitHandling", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("aborts a provider request at the canonical deadline", async () => {
+    const timeoutController = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected provider request timeout signal"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-2",
+    });
+
+    const result = rateLimitFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+    const timeoutReason = new DOMException("Timed out", "TimeoutError");
+    timeoutController.abort(timeoutReason);
+    const error = await result;
+
+    expect(timeoutSpy).toHaveBeenCalledWith(PROVIDER_HTTP_REQUEST_TIMEOUT_MS);
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("cause", timeoutReason);
+    expect(error).toMatchObject({
+      code: "ETIMEDOUT",
+      providerId: "example",
+      scope: "user",
+      timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
+      userId: "user-2",
+    });
+  });
+
+  it("preserves caller cancellation instead of reporting a provider timeout", async () => {
+    const timeoutController = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected combined provider request signal"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+    });
+    const callerController = new AbortController();
+    const callerError = new DOMException("Caller cancelled", "AbortError");
+
+    const result = rateLimitFetch("https://api.example.com/data", {
+      signal: callerController.signal,
+    }).catch((caughtError: unknown) => caughtError);
+    callerController.abort(callerError);
+
+    await expect(result).resolves.toBe(callerError);
+  });
   it("treats 502, 503, and 504 as service-unavailable responses", async () => {
     for (const statusCode of [502, 503, 504]) {
       const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(statusCode));
@@ -208,6 +331,52 @@ describe("fetchWithRateLimitHandling", () => {
       expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
       expect(error).toHaveProperty("statusCode", statusCode);
     }
+  });
+
+  it("wraps undici connect timeouts as provider request timeouts (DOFEK-SERVER-4A)", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockRejectedValue(fetchError);
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "withings",
+    });
+
+    const error = await rateLimitFetch("https://wbsapi.withings.net/measure").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("providerId", "withings");
+    expect(isProviderConnectFailure(error)).toBe(true);
+  });
+
+  it("returns HTTP 500 by default and classifies opted-in HTTP 500 as unavailable", async () => {
+    const defaultFetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(response(500, "server error"));
+    const defaultFetch = createRateLimitAwareFetch(defaultFetchFn, {
+      providerId: "example",
+    });
+
+    const defaultResponse = await defaultFetch("https://api.example.com/data");
+
+    expect(defaultResponse.status).toBe(500);
+    expect(await defaultResponse.text()).toBe("server error");
+
+    const configuredFetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(response(500, "server error"));
+    const configuredFetch = createRateLimitAwareFetch(configuredFetchFn, {
+      providerId: "example",
+      additionalServiceUnavailableStatusCodes: [500],
+    });
+
+    const error = await configuredFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toHaveProperty("statusCode", 500);
   });
 
   it("uses provider scope and null user by default in wrapper errors", async () => {
@@ -357,6 +526,155 @@ describe("fetchWithRateLimitHandling", () => {
     expect(wrappedAgain).toBe(rateLimitFetch);
   });
 
+  it("prepares the request after adaptive admission and before its single deadline", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const stages: string[] = [];
+    const originalTimeout = AbortSignal.timeout;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      stages.push("deadline");
+      return originalTimeout(milliseconds);
+    });
+    try {
+      vi.setSystemTime(new Date("2026-10-16T13:00:00Z"));
+      const expiry = Date.now() + 180_000;
+      const state = {
+        ...createInitialAdaptiveState("example", "user", "user-9", Date.now() - 60_000),
+        inferredBudget: 10,
+        requestCount: 8,
+      };
+      const adaptiveStore = createMockAdaptiveStore();
+      adaptiveStore.awaitAdmission.mockImplementation(async () => {
+        stages.push("admission");
+        vi.setSystemTime(Date.now() + admissionDelayMs(state, Date.now()));
+      });
+      const fetchFn = createRateLimitAwareFetch(
+        async (_input, init) => {
+          stages.push("fetch");
+          return new Response(new Headers(init?.headers).get("Authorization"), { status: 200 });
+        },
+        {
+          providerId: "example",
+          adaptiveStore,
+          async prepareRequest(_input, init) {
+            stages.push("prepare");
+            const headers = new Headers(init?.headers);
+            headers.set("Authorization", Date.now() >= expiry ? "Bearer fresh" : "Bearer stale");
+            return { ...init, headers };
+          },
+        },
+      );
+
+      expect(await (await fetchFn("https://api.example.com/data")).text()).toBe("Bearer fresh");
+      expect(stages).toEqual(["admission", "prepare", "deadline", "fetch"]);
+      expect(timeout).toHaveBeenCalledTimes(1);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("derives isolated preparation without losing an existing wrapper's policy or observers", async () => {
+    const adaptiveStore = createMockAdaptiveStore();
+    const observations: Array<{ authorization: string | null; baseHeader: string | null }> = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const original = createRateLimitAwareFetch(async () => new Response("ok"), {
+        providerId: "original",
+        scope: "user",
+        userId: "user-9",
+        adaptiveStore,
+        async prepareRequest(_input, init) {
+          const headers = new Headers(init?.headers);
+          headers.set("X-Base", "preserved");
+          return { ...init, headers };
+        },
+        async onResponse(_response, _input, init) {
+          const headers = new Headers(init?.headers);
+          observations.push({
+            authorization: headers.get("Authorization"),
+            baseHeader: headers.get("X-Base"),
+          });
+        },
+      });
+      const clients = ["first", "second"].map((token) =>
+        createRateLimitAwareFetch(original, {
+          providerId: "ignored",
+          async prepareRequest(_input, init) {
+            const headers = new Headers(init?.headers);
+            headers.set("Authorization", `Bearer ${token}`);
+            return { ...init, headers };
+          },
+        }),
+      );
+      for (const client of [clients[0], clients[1], clients[0], original]) {
+        if (!client) throw new Error("Expected a prepared client");
+        await client("https://api.example.com/data");
+      }
+
+      expect(observations).toEqual([
+        { authorization: "Bearer first", baseHeader: "preserved" },
+        { authorization: "Bearer second", baseHeader: "preserved" },
+        { authorization: "Bearer first", baseHeader: "preserved" },
+        { authorization: null, baseHeader: "preserved" },
+      ]);
+      expect(adaptiveStore.awaitAdmission).toHaveBeenCalledTimes(4);
+      expect(adaptiveStore.awaitAdmission).toHaveBeenCalledWith("original", "user", "user-9");
+      expect(adaptiveStore.recordSuccess).toHaveBeenCalledTimes(4);
+      expect(timeout).toHaveBeenCalledTimes(4);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("preserves caller cancellation through prepared request headers", async () => {
+    const controller = new AbortController();
+    const fetchFn = createRateLimitAwareFetch(
+      async (_input, init) => {
+        expect(new Headers(init?.headers).get("X-Caller")).toBe("preserved");
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe("payload");
+        controller.abort(new DOMException("Cancelled", "AbortError"));
+        init?.signal?.throwIfAborted();
+        return new Response("must not complete");
+      },
+      {
+        providerId: "example",
+        async prepareRequest(_input, init) {
+          const headers = new Headers(init?.headers);
+          headers.set("Authorization", "Bearer current");
+          return { ...init, headers };
+        },
+      },
+    );
+
+    await expect(
+      fetchFn("https://api.example.com/data", {
+        signal: controller.signal,
+        method: "POST",
+        body: "payload",
+        headers: { "X-Caller": "preserved" },
+      }),
+    ).rejects.toMatchObject({ name: "AbortError", message: "Cancelled" });
+  });
+
+  it("propagates preparation failures before starting the request deadline", async () => {
+    const failure = Object.assign(new Error("Credential request failed"), { code: "ETIMEDOUT" });
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const fetchFn = createRateLimitAwareFetch(async () => new Response("must not send"), {
+        providerId: "example",
+        async prepareRequest() {
+          throw failure;
+        },
+      });
+
+      await expect(fetchFn("https://api.example.com/data")).rejects.toBe(failure);
+      expect(timeout).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("wraps the same source fetch independently per options (no cross-provider reuse)", async () => {
     // Many providers default to the shared globalThis.fetch; each must get its
     // own wrapper so a 429 reports the correct providerId, not the first caller's.
@@ -370,6 +688,108 @@ describe("fetchWithRateLimitHandling", () => {
     );
     expect(secondError).toHaveProperty("providerId", "second");
     expect(first).not.toBe(second);
+  });
+
+  it("awaits adaptive admission before calling fetch when a store is provided", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(200, "ok"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-9",
+      adaptiveStore,
+    });
+
+    await rateLimitFetch("https://api.example.com/data");
+
+    expect(adaptiveStore.awaitAdmission).toHaveBeenCalledOnce();
+    expect(adaptiveStore.awaitAdmission).toHaveBeenCalledWith("example", "user", "user-9");
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
+  it("records adaptive success with response headers on ok responses", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response("ok", {
+        status: 200,
+        headers: { "X-RateLimit-Limit": "100,1000" },
+      }),
+    );
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "provider",
+      adaptiveStore,
+    });
+
+    await rateLimitFetch("https://api.example.com/data");
+
+    expect(adaptiveStore.recordSuccess).toHaveBeenCalledOnce();
+    expect(adaptiveStore.recordSuccess).toHaveBeenCalledWith(
+      "example",
+      "provider",
+      null,
+      expect.any(Headers),
+    );
+  });
+
+  it("does not record adaptive success when the response is not ok", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(404, "missing"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      adaptiveStore,
+    });
+
+    const result = await rateLimitFetch("https://api.example.com/data");
+
+    expect(result.status).toBe(404);
+    expect(adaptiveStore.recordSuccess).not.toHaveBeenCalled();
+  });
+
+  it("records adaptive rate limits when a provider rate-limit error is thrown", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(429, "limited"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-9",
+      adaptiveStore,
+    });
+
+    const error = await rateLimitFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(adaptiveStore.recordRateLimit).toHaveBeenCalledOnce();
+    expect(adaptiveStore.recordRateLimit).toHaveBeenCalledWith(error);
+  });
+
+  it("does not record adaptive rate limits for service-unavailable responses", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(503, "down"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      adaptiveStore,
+    });
+
+    await rateLimitFetch("https://api.example.com/data").catch(() => undefined);
+
+    expect(adaptiveStore.recordRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("does not record adaptive rate limits for custom non-provider rate-limit errors", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(429, "limited"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      adaptiveStore,
+      createRateLimitError: (_response, body) => new Error(`custom ${body}`),
+    });
+
+    await rateLimitFetch("https://api.example.com/data").catch(() => undefined);
+
+    expect(adaptiveStore.recordRateLimit).not.toHaveBeenCalled();
   });
 });
 

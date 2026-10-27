@@ -1,0 +1,111 @@
+import { eq, sql } from "drizzle-orm";
+import type { SyncDatabase } from "../../db/index.ts";
+import { activityInterval } from "../../db/schema/activity.ts";
+import type { HangTenActivitySegment, HealthWorkout } from "./workouts.ts";
+
+export function hangTenIntervalLabel(segment: HangTenActivitySegment): string {
+  if (segment.kind === "rest") return `Step ${segment.stepNumber}: Rest`;
+  if (segment.target?.kind === "resolvedContacts") {
+    const requirement = segment.target.resolution.requirement;
+    const depth = requirement.depth;
+    const range = depth && "range" in depth ? depth.range : undefined;
+    const holdType = requirement.kind ?? "Work";
+    if (range && range.minimum === range.maximum) {
+      return `Step ${segment.stepNumber}: ${range.minimum} mm ${holdType}`;
+    }
+    return `Step ${segment.stepNumber}: ${holdType}`;
+  }
+  if (segment.sizeMillimeters !== undefined && segment.holdType) {
+    return `Step ${segment.stepNumber}: ${segment.sizeMillimeters} mm ${segment.holdType}`;
+  }
+  if (segment.holdType) return `Step ${segment.stepNumber}: ${segment.holdType}`;
+  return `Step ${segment.stepNumber}: Work`;
+}
+
+export function buildHangTenIntervals(
+  activityId: string,
+  workout: HealthWorkout,
+  sourceProvider = "apple_health",
+): (typeof activityInterval.$inferInsert)[] {
+  const segments = workout.hangTen?.activitySegments;
+  if (!segments || segments.length === 0) return [];
+
+  const rows: (typeof activityInterval.$inferInsert)[] = [];
+  let cursor = workout.startDate;
+  let offsetsAreUnambiguous = true;
+  for (const [index, segment] of segments.entries()) {
+    const startedAt = cursor;
+    const endedAt: Date | undefined =
+      offsetsAreUnambiguous && segment.durationSeconds !== undefined
+        ? new Date(cursor.getTime() + segment.durationSeconds * 1000)
+        : undefined;
+    rows.push({
+      activityId,
+      intervalIndex: index,
+      label: hangTenIntervalLabel(segment),
+      intervalType: segment.kind,
+      startedAt,
+      endedAt,
+      sourceKind: "provider_recorded",
+      sourceProvider,
+      sourceActivityId: activityId,
+      segmentType: segment.kind,
+      workRecoveryKind: segment.kind === "rest" ? "recovery" : "work",
+      raw: segment,
+    });
+    if (endedAt) {
+      cursor = endedAt;
+    } else {
+      offsetsAreUnambiguous = false;
+    }
+  }
+  return rows;
+}
+
+export async function replaceHangTenIntervals(
+  db: SyncDatabase,
+  activityId: string,
+  workout: HealthWorkout,
+  sourceProvider = "apple_health",
+): Promise<void> {
+  const segments = workout.hangTen?.activitySegments;
+  if (segments === undefined) return;
+
+  const intervals = buildHangTenIntervals(activityId, workout, sourceProvider);
+  if (intervals.length === 0) {
+    await db.delete(activityInterval).where(eq(activityInterval.activityId, activityId));
+    return;
+  }
+
+  const replacementValues = sql.join(
+    intervals.map(
+      (interval) => sql`(
+        ${interval.activityId}::uuid,
+        ${interval.intervalIndex},
+        ${interval.label ?? null},
+        ${interval.intervalType ?? null},
+        ${interval.startedAt},
+        ${interval.endedAt ?? null},
+        ${interval.sourceKind},
+        ${interval.sourceProvider},
+        ${interval.sourceActivityId},
+        ${interval.segmentType ?? null},
+        ${interval.workRecoveryKind ?? null},
+        ${JSON.stringify(interval.raw)}::jsonb
+      )`,
+    ),
+    sql`, `,
+  );
+
+  await db.execute(sql`
+    WITH deleted AS (
+      DELETE FROM ${activityInterval}
+      WHERE ${activityInterval.activityId} = ${activityId}
+    )
+    INSERT INTO ${activityInterval} (
+      activity_id, interval_index, label, interval_type, started_at, ended_at,
+      source_kind, source_provider, source_activity_id, segment_type, work_recovery_kind, raw
+    )
+    VALUES ${replacementValues}
+  `);
+}

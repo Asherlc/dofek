@@ -14,6 +14,11 @@ describe("NutritionDay", () => {
       fiberGrams: 30,
       waterMl: 2500,
       createdAt: "2024-03-15T12:00:00Z",
+      resolutionStatus: "available",
+      resolutionMessage: "Totals use the only available nutrition source.",
+      sourceProviders: ["cronometer"],
+      contributingProviders: ["cronometer"],
+      excludedProviders: [],
       ...overrides,
     };
   }
@@ -22,6 +27,18 @@ describe("NutritionDay", () => {
     const day = new NutritionDay(makeRow());
     expect(day.date).toBe("2024-03-15");
     expect(day.providerId).toBe("cronometer");
+  });
+
+  it("does not assign one provider to an unresolved multi-source day", () => {
+    const day = new NutritionDay(
+      makeRow({
+        providerId: null,
+        resolutionStatus: "source_conflict",
+        contributingProviders: [],
+        sourceProviders: ["cronometer", "fatsecret"],
+      }),
+    );
+    expect(day.providerId).toBeNull();
   });
 
   it("exposes calories with null handling", () => {
@@ -42,6 +59,11 @@ describe("NutritionDay", () => {
       fiber_g: 30,
       water_ml: 2500,
       created_at: "2024-03-15T12:00:00Z",
+      resolution_status: "available",
+      resolution_message: "Totals use the only available nutrition source.",
+      source_providers: ["cronometer"],
+      contributing_providers: ["cronometer"],
+      excluded_providers: [],
     });
   });
 
@@ -80,6 +102,11 @@ describe("NutritionRepository", () => {
         fiber_g: 30,
         water_ml: 2500,
         created_at: "2024-03-15T12:00:00Z",
+        resolution_status: "available",
+        resolution_message: "Totals use the only available nutrition source.",
+        source_providers: ["cronometer"],
+        contributing_providers: ["cronometer"],
+        excluded_providers: [],
       },
     ]);
     const result = await repo.getDailyNutrition("2024-02-14");

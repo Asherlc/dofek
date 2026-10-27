@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { createSession, deleteExpiredSessions, deleteSession, validateSession } from "./session.ts";
+import { createSession, deleteSession, validateSession } from "./session.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -89,38 +89,6 @@ describe("Auth session (integration)", () => {
 
     it("does not throw when deleting a non-existent session", async () => {
       await expect(deleteSession(ctx.db, "nonexistent-token")).resolves.not.toThrow();
-    });
-  });
-
-  describe("deleteExpiredSessions", () => {
-    it("removes expired sessions but keeps valid ones", async () => {
-      // Create a valid session
-      const validSession = await createSession(ctx.db, TEST_USER_ID);
-
-      // Insert an expired session
-      const expiredId = `expired-${Date.now().toString(16)}`;
-      await ctx.db.execute(
-        sql`INSERT INTO fitness.session (id, user_id, expires_at)
-            VALUES (${expiredId}, ${TEST_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
-      );
-
-      await deleteExpiredSessions(ctx.db);
-
-      // Valid session should still exist
-      const valid = await validateSession(ctx.db, validSession.sessionId);
-      expect(valid).not.toBeNull();
-
-      // Expired session should be gone
-      const rows = await ctx.db.execute(
-        sql`SELECT id FROM fitness.session WHERE id = ${expiredId}`,
-      );
-      expect(rows.length).toBe(0);
-    });
-
-    it("handles case with no expired sessions", async () => {
-      await createSession(ctx.db, TEST_USER_ID);
-
-      await expect(deleteExpiredSessions(ctx.db)).resolves.not.toThrow();
     });
   });
 });

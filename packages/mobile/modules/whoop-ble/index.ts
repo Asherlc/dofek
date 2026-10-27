@@ -1,5 +1,17 @@
 import type { EventSubscription } from "expo-modules-core";
+import { z } from "zod";
 import WhoopBleModule from "./src/WhoopBleModule";
+
+/** A timestamped accelerometer and gyroscope sample from a WHOOP strap. */
+export interface WhoopImuSample {
+  timestamp: string;
+  x: number;
+  y: number;
+  z: number;
+  gyroscopeX: number;
+  gyroscopeY: number;
+  gyroscopeZ: number;
+}
 
 /** A discovered WHOOP strap */
 export interface WhoopDevice {
@@ -7,28 +19,59 @@ export interface WhoopDevice {
   name: string | null;
 }
 
-/** A single realtime data sample from a 0x28 REALTIME_DATA packet */
-export interface WhoopRealtimeDataSample {
-  timestamp: string; // ISO 8601
-  /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
-  rrIntervalMs: number;
-  quaternionW: number; // float32
-  quaternionX: number;
-  quaternionY: number;
-  quaternionZ: number;
-  /** Raw optical/PPG bytes (offsets 23-40) as hex string, 36 chars = 18 bytes */
-  opticalRawHex: string;
-}
+/** A read-only snapshot of the current WHOOP connection and buffer state. */
+export const WhoopDeviceSummarySchema = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable(),
+  connectionState: z.string().min(1),
+  imuBufferedSamples: z.number().int().nonnegative(),
+  realtimeBufferedSamples: z.number().int().nonnegative(),
+});
 
-/** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */
-export interface WhoopImuSample {
-  timestamp: string; // ISO 8601
-  accelerometerX: number; // raw i16
-  accelerometerY: number;
-  accelerometerZ: number;
-  gyroscopeX: number; // raw i16
-  gyroscopeY: number;
-  gyroscopeZ: number;
+export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;
+
+/** A reported heart rate, beat interval, and orientation sample from the native buffer. */
+const WhoopRealtimeDataSampleSchema = z.object({
+  deviceId: z.string().optional(),
+  timestamp: z.string().min(1),
+  /** Heart rate reported by the strap in bpm. 0 when unavailable. */
+  heartRateBpm: z.number().int().min(0).max(255),
+  /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
+  rrIntervalMs: z.number().int().nonnegative(),
+  quaternionW: z.number(),
+  quaternionX: z.number(),
+  quaternionY: z.number(),
+  quaternionZ: z.number(),
+  /** Raw optical/PPG bytes (offsets 23-40) as hex string, 36 chars = 18 bytes */
+  opticalRawHex: z.string().regex(/^[0-9a-f]{36}$/),
+});
+
+export type WhoopRealtimeDataSample = z.infer<typeof WhoopRealtimeDataSampleSchema>;
+
+const NativeWhoopSampleSchema = z.object({
+  deviceId: z.string().min(1),
+  timestamp: z.string().min(1),
+  accelerometerX: z.number(),
+  accelerometerY: z.number(),
+  accelerometerZ: z.number(),
+  gyroscopeX: z.number(),
+  gyroscopeY: z.number(),
+  gyroscopeZ: z.number(),
+});
+
+type NativeWhoopSample = z.infer<typeof NativeWhoopSampleSchema>;
+
+function mapNativeSample(native: NativeWhoopSample): WhoopImuSample & { deviceId: string } {
+  return {
+    deviceId: native.deviceId,
+    timestamp: native.timestamp,
+    x: native.accelerometerX,
+    y: native.accelerometerY,
+    z: native.accelerometerZ,
+    gyroscopeX: native.gyroscopeX,
+    gyroscopeY: native.gyroscopeY,
+    gyroscopeZ: native.gyroscopeZ,
+  };
 }
 
 /** Check whether Bluetooth is powered on and available. */
@@ -66,7 +109,8 @@ export async function connect(peripheralId: string): Promise<boolean> {
  *
  * Sends the TOGGLE_IMU_MODE (0x6A) BLE command to the strap.
  * IMU samples (accelerometer + gyroscope) are buffered internally.
- * Call `getBufferedSamples()` to retrieve them.
+ * Use `peekBufferedSamples()` and call `confirmSamplesDrain()` only after a
+ * successful upload.
  *
  * @returns true on success.
  */
@@ -111,8 +155,13 @@ export async function startOpticalMode(): Promise<boolean> {
  * actually remove them. If the upload fails, the samples remain
  * buffered for retry — no data loss.
  */
-export async function peekBufferedSamples(maxCount?: number): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.peekBufferedSamples(maxCount);
+export async function peekBufferedSamples(
+  maxCount?: number,
+): Promise<Array<WhoopImuSample & { deviceId: string }>> {
+  const natives = NativeWhoopSampleSchema.array().parse(
+    await WhoopBleModule.peekBufferedSamples(maxCount),
+  );
+  return natives.map(mapNativeSample);
 }
 
 /**
@@ -124,14 +173,16 @@ export function confirmSamplesDrain(count: number): void {
 }
 
 /**
- * Peek at buffered realtime data (beat interval + quaternion) WITHOUT removing.
+ * Peek at buffered realtime data (heart rate + beat interval + quaternion) WITHOUT removing.
  *
  * Call `confirmRealtimeDataDrain(count)` after a successful upload.
  */
 export async function peekBufferedRealtimeData(
   maxCount?: number,
 ): Promise<WhoopRealtimeDataSample[]> {
-  return WhoopBleModule.peekBufferedRealtimeData(maxCount);
+  return WhoopRealtimeDataSampleSchema.array().parse(
+    await WhoopBleModule.peekBufferedRealtimeData(maxCount),
+  );
 }
 
 /**
@@ -147,15 +198,18 @@ export function confirmRealtimeDataDrain(count: number): void {
  * @deprecated Use peekBufferedRealtimeData + confirmRealtimeDataDrain instead.
  */
 export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
-  return WhoopBleModule.getBufferedRealtimeData();
+  return WhoopRealtimeDataSampleSchema.array().parse(
+    await WhoopBleModule.getBufferedRealtimeData(),
+  );
 }
 
 /**
  * Retrieve and clear the internal IMU sample buffer.
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
-export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.getBufferedSamples();
+export async function getBufferedSamples(): Promise<Array<WhoopImuSample & { deviceId: string }>> {
+  const natives = NativeWhoopSampleSchema.array().parse(await WhoopBleModule.getBufferedSamples());
+  return natives.map(mapNativeSample);
 }
 
 /** Get the current BLE connection state (idle, scanning, connecting, ready, streaming). */
@@ -173,26 +227,101 @@ export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
 }
 
-/** Get BLE data path statistics for debugging. */
-export function getDataPathStats(): {
-  dataNotificationCount: number;
-  cmdNotificationCount: number;
-  totalFramesParsed: number;
-  totalSamplesExtracted: number;
+/** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
+export function getDeviceSummary(): WhoopDeviceSummary {
+  return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
+}
 
-  emptyExtractions: number;
-  bufferOverflows: number;
-  packetTypes: string;
-  lastCommandResponse: string;
-  connectionState: string;
-  hasDataCharacteristic: boolean;
-  isNotifying: boolean;
-  hasCmdCharacteristic: boolean;
-  hasCmdResponseCharacteristic: boolean;
-  lastWriteError: string;
-  watchdogRetryCount: number;
-} {
-  return WhoopBleModule.getDataPathStats();
+const DiagnosticCountSchema = z.number().int().nonnegative();
+const DiagnosticTimestampSchema = z.iso.datetime({ offset: true });
+
+const WhoopBufferStreamDiagnosticsSchema = z.object({
+  count: DiagnosticCountSchema,
+  oldestTimestamp: DiagnosticTimestampSchema.nullable(),
+  newestTimestamp: DiagnosticTimestampSchema.nullable(),
+  receivedCount: DiagnosticCountSchema,
+  confirmedCount: DiagnosticCountSchema,
+  overflowDiscardedCount: DiagnosticCountSchema,
+  erasureDiscardedCount: DiagnosticCountSchema,
+  clearedCount: DiagnosticCountSchema,
+  legacyDrainedCount: DiagnosticCountSchema,
+  lastConfirmedAt: DiagnosticTimestampSchema.nullable(),
+});
+
+export type WhoopBufferStreamDiagnostics = z.infer<typeof WhoopBufferStreamDiagnosticsSchema>;
+
+const WhoopBufferCheckpointSchema = z.object({
+  bufferInstanceId: z.uuid(),
+  bufferCreatedAt: DiagnosticTimestampSchema,
+  checkpointAt: DiagnosticTimestampSchema,
+  imu: WhoopBufferStreamDiagnosticsSchema,
+  realtime: WhoopBufferStreamDiagnosticsSchema,
+});
+
+/** Metadata observed before a buffer was recreated; samples are never persisted. */
+export type WhoopBufferCheckpoint = z.infer<typeof WhoopBufferCheckpointSchema>;
+
+const WhoopConnectionEventSchema = z.object({
+  eventId: z.uuid(),
+  occurredAt: DiagnosticTimestampSchema,
+  nativeSessionId: z.uuid(),
+  processId: z.number().int().positive(),
+  event: z.string().min(1),
+  connectionState: z.string().min(1),
+  centralState: z.string().min(1),
+  reconnectIntent: z.boolean(),
+  peripheralId: z.string().optional(),
+  errorDomain: z.string().optional(),
+  errorCode: z.number().int().optional(),
+  errorDescription: z.string().optional(),
+  reason: z.string().optional(),
+  previousConnectionState: z.string().optional(),
+  restoredPeripheralCount: DiagnosticCountSchema.optional(),
+});
+
+const WhoopDataPathStatsSchema = z.object({
+  connectionDiagnostics: z.object({
+    events: z.array(WhoopConnectionEventSchema).max(64),
+    overflowCount: DiagnosticCountSchema,
+  }),
+  dataNotificationCount: DiagnosticCountSchema,
+  cmdNotificationCount: DiagnosticCountSchema,
+  totalFramesParsed: DiagnosticCountSchema,
+  totalSamplesExtracted: DiagnosticCountSchema,
+
+  emptyExtractions: DiagnosticCountSchema,
+  bufferOverflows: DiagnosticCountSchema,
+  packetTypes: z.string(),
+  lastCommandResponse: z.string(),
+  connectionState: z.string().min(1),
+  lastKnownDeviceId: z.string().nullable(),
+  hasDataCharacteristic: z.boolean(),
+  isNotifying: z.boolean(),
+  hasCmdCharacteristic: z.boolean(),
+  hasCmdResponseCharacteristic: z.boolean(),
+  lastWriteError: z.string(),
+  watchdogRetryCount: DiagnosticCountSchema,
+  malformedFrames: DiagnosticCountSchema,
+  malformedCmdFrames: DiagnosticCountSchema,
+  coalescedFrames: DiagnosticCountSchema,
+  coalescedCmdFrames: DiagnosticCountSchema,
+  realtimeBufferCount: DiagnosticCountSchema,
+  lastDataNotificationAt: DiagnosticTimestampSchema.nullable(),
+  lastParsedImuAt: DiagnosticTimestampSchema.nullable(),
+  lastParsedRealtimeAt: DiagnosticTimestampSchema.nullable(),
+  /** Latest device timestamp with a positive reported heart rate, not receipt time. */
+  lastValidHeartRateAt: DiagnosticTimestampSchema.nullable(),
+  buffers: WhoopBufferCheckpointSchema.extend({
+    /** Prior buffer identity has no account attribution; this is last-observed metadata. */
+    previousCheckpoint: WhoopBufferCheckpointSchema.nullable(),
+  }),
+});
+
+export type WhoopDataPathStats = z.infer<typeof WhoopDataPathStatsSchema>;
+
+/** Get BLE capture, queue, discard, and prior-checkpoint metadata. */
+export function getDataPathStats(): WhoopDataPathStats {
+  return WhoopDataPathStatsSchema.parse(WhoopBleModule.getDataPathStats());
 }
 
 /**
@@ -211,6 +340,11 @@ export async function retryConnection(): Promise<boolean> {
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();
+}
+
+/** Disconnect and clear every account-owned IMU/realtime buffer and parser state. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return WhoopBleModule.purgeAccountState(deviceErasureCutoff);
 }
 
 /** Connection state change event from the native BLE module. */
@@ -232,6 +366,15 @@ export function addConnectionStateListener(
   callback: (event: ConnectionStateEvent) => void,
 ): EventSubscription {
   return WhoopBleModule.addListener("onConnectionStateChanged", callback);
+}
+
+/** Subscribe to WHOOP identity, connection, streaming, and buffer snapshot changes. */
+export function addDeviceStateListener(
+  callback: (summary: WhoopDeviceSummary) => void,
+): EventSubscription {
+  return WhoopBleModule.addListener("onDeviceStateChanged", (event: unknown) =>
+    callback(WhoopDeviceSummarySchema.parse(event)),
+  );
 }
 
 /** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */

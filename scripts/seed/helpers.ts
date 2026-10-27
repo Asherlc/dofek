@@ -2,7 +2,7 @@ import type { TaggedQueryClient } from "../../src/db/tagged-query-client.ts";
 
 export type Sql = TaggedQueryClient;
 
-export const USER_ID = "00000000-0000-0000-0000-000000000001";
+export const USER_ID = "00000000-0000-4000-8000-000000000001";
 
 export const SEED_PROVIDER_IDS = [
   "whoop",

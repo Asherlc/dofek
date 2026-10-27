@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { defaultReadinessWeights, ReadinessScore } from "./readiness.ts";
+import { ReadinessScore, type ReadinessWeights } from "./readiness.ts";
 
 describe("ReadinessScore", () => {
-  const weights = defaultReadinessWeights();
+  const weights: ReadinessWeights = {
+    hrv: 0.5,
+    restingHr: 0.2,
+    sleep: 0.15,
+    respiratoryRate: 0.15,
+  };
 
   it("returns 62 for all-neutral components at sigmoid center", () => {
     const score = new ReadinessScore(

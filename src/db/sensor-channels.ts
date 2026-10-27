@@ -31,8 +31,6 @@ export const SPO2 = "spo2";
 export const RESPIRATORY_RATE = "respiratory_rate";
 /** Cumulative power in watts */
 export const ACCUMULATED_POWER = "accumulated_power";
-/** Stress score */
-export const STRESS = "stress";
 /** Left/right power balance in percent */
 export const LEFT_RIGHT_BALANCE = "left_right_balance";
 /** Vertical oscillation in mm (running) */
@@ -123,7 +121,6 @@ export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
   spo2: SPO2,
   respiratoryRate: RESPIRATORY_RATE,
   accumulatedPower: ACCUMULATED_POWER,
-  stress: STRESS,
   leftRightBalance: LEFT_RIGHT_BALANCE,
   verticalOscillation: VERTICAL_OSCILLATION,
   stanceTime: STANCE_TIME,

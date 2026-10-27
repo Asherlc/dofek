@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, oauthToken, sleepSession } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createProviderArtifactStorageTestContext } from "../test-helpers.ts";
 import { CorosProvider } from "./coros.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -140,13 +142,15 @@ function corosHandlers(
   ];
 }
 
-const server = setupServer();
+const archive = createProviderArtifactStorageTestContext("http://r2.coros-fit.test");
+const server = archive.server;
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("CorosProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    archive.stubEnvironment();
     process.env.COROS_CLIENT_ID = "test-client-id";
     process.env.COROS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
@@ -155,6 +159,8 @@ describe("CorosProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
+    archive.originals.clear();
+    archive.writes.length = 0;
     metricStreamCapture.publishedMetricStreamRows.length = 0;
     metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
@@ -165,6 +171,8 @@ describe("CorosProvider.sync() (integration)", () => {
 
   afterAll(async () => {
     server.close();
+    archive.client.destroy();
+    vi.unstubAllEnvs();
     if (ctx) await ctx.cleanup();
   });
 
@@ -201,11 +209,11 @@ describe("CorosProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "coros-w-1001");
     if (!run) throw new Error("expected workout coros-w-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     const ride = rows.find((r) => r.externalId === "coros-w-1002");
     if (!ride) throw new Error("expected workout coros-w-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
   });
 
   it("publishes FIT samples through scoped Redpanda replacement", async () => {
@@ -235,13 +243,17 @@ describe("CorosProvider.sync() (integration)", () => {
       }),
     );
 
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors).toEqual([]);
+    expect([...archive.originals.values()]).toEqual([fitFileBuffer]);
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "coros-w-fit"));
     expect(rows).toHaveLength(1);
     const activityId = rows[0]?.id;
     if (!activityId) throw new Error("expected activity id");
     expect(metricStreamCapture.publishedMetricStreamRows.length).toBeGreaterThan(0);
-    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({ activityId });
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      activityId,
+      userId: TEST_USER_ID,
+    });
   });
 
   it("syncs daily data into daily_metrics table", async () => {
@@ -323,6 +335,7 @@ describe("CorosProvider.sync() (integration)", () => {
     expect(sleepRow.lightMinutes).toBe(200);
     expect(sleepRow.remMinutes).toBe(110);
     expect(sleepRow.awakeMinutes).toBe(30);
+    expect(sleepRow.stagingAvailable).toBe(true);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

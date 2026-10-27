@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   type HeartRateSourceData,
@@ -40,6 +40,21 @@ describe("MultiSourceHeartRateChart", () => {
 
     const polylines = container.querySelectorAll("polyline");
     expect(polylines).toHaveLength(2);
+  });
+
+  it("provides a VoiceOver summary and exact source values", () => {
+    render(<MultiSourceHeartRateChart sources={twoSourceData} width={300} height={150} />);
+
+    expect(
+      screen.getByRole("image", {
+        name: "Heart rate by source. Heart rate samples compared across recorded sources.",
+      }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "View Heart rate by source data" }));
+    expect(screen.getAllByText("WHOOP BLE").length).toBeGreaterThan(0);
+    expect(screen.getByText(/72 beats per minute/)).toBeDefined();
+    expect(screen.getAllByText("Apple Health").length).toBeGreaterThan(0);
+    expect(screen.getByText(/70 beats per minute/)).toBeDefined();
   });
 
   it("uses different colors per source", () => {

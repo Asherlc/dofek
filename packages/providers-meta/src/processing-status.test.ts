@@ -1,0 +1,647 @@
+import { describe, expect, it } from "vitest";
+import {
+  processingAggregateProgress,
+  processingDatasetStatusLabel,
+  processingFailureGroups,
+  processingHeading,
+  processingPollInterval,
+  processingStatusMessage,
+  processingTarget,
+  resolveProcessingTargetScope,
+} from "./processing-status.ts";
+
+describe("push ingestion processing", () => {
+  it("keeps recovered push authorization errors historical without current reconnect guidance", () => {
+    const groups = processingFailureGroups({
+      needsReauth: false,
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-10-24T10:00:00Z",
+          lastReadyAt: null,
+        },
+      ],
+      operations: [
+        {
+          id: "failed-push",
+          providerId: "garmin",
+          kind: "push_ingest",
+          status: "failed",
+          datasets: ["activity"],
+          dismissed: false,
+          errorCode: "provider_auth_failed",
+          errorMessage: "Reconnect Garmin to resume incoming updates.",
+        },
+      ],
+    });
+    expect(groups[0]).toMatchObject({
+      requiresReconnect: false,
+      errorMessage: "Earlier updates remain available. Open Diagnostics for details.",
+    });
+  });
+
+  it.each([
+    ["active", "Processing Garmin data"],
+    ["failed", "Couldn't process the latest Garmin update"],
+    ["ready", "Garmin update processed"],
+  ] as const)("names push %s work by its processing stage", (status, heading) => {
+    const target = processingTarget({
+      providerId: "garmin",
+      operationKind: "push_ingest",
+      datasets: [],
+    });
+    expect(processingHeading(status, target)).toBe(heading);
+  });
+
+  it("keeps mixed incoming and polling work as a data update", () => {
+    const scope = resolveProcessingTargetScope({
+      scopeProviderId: null,
+      operations: [
+        { providerId: "garmin", kind: "push_ingest", status: "active" },
+        { providerId: "wahoo", kind: "provider_sync", status: "active" },
+      ],
+    });
+    expect(processingTarget({ ...scope, datasets: [] })).toEqual({
+      action: "update",
+      label: "your data",
+    });
+  });
+
+  it("provides processing guidance for a push failure without a safe error message", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: null,
+        operationKind: "push_ingest",
+      }),
+    ).toBe("Earlier updates remain available. Open Diagnostics for details.");
+  });
+
+  it("keeps a push failure's actionable server message", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: "An activity file could not be read.",
+        operationKind: "push_ingest",
+      }),
+    ).toBe("An activity file could not be read.");
+  });
+});
+
+describe("processing status presentation", () => {
+  const firstOperationId = "10000000-0000-4000-8000-000000000001";
+  const secondOperationId = "10000000-0000-4000-8000-000000000002";
+
+  it("gives failures and delays actionable copy", () => {
+    expect(processingHeading("failed")).toBe("Your data update didn’t finish");
+    expect(processingStatusMessage({ status: "failed", errorMessage: "Reconnect WHOOP." })).toBe(
+      "Reconnect WHOOP.",
+    );
+    expect(processingStatusMessage({ status: "delayed", errorMessage: null })).toContain(
+      "existing data",
+    );
+  });
+
+  it.each([
+    ["blocked", "Your data update is waiting to continue"],
+    ["delayed", "Processing is taking longer than expected"],
+    ["active", "Updating your data"],
+    ["partial", "Finishing your data update"],
+    ["waiting", "Preparing to update your data"],
+    ["cancelled", "Processing was cancelled"],
+    ["ready", "Data is ready"],
+  ] as const)("uses the expected heading for %s", (status, heading) => {
+    expect(processingHeading(status)).toBe(heading);
+  });
+
+  it.each([
+    ["blocked", "Your existing data is still available."],
+    ["partial", null],
+    ["active", null],
+    ["waiting", null],
+    ["cancelled", "Start the update again when you are ready."],
+    ["ready", null],
+  ] as const)("uses the expected fallback message for %s", (status, message) => {
+    expect(processingStatusMessage({ status, errorMessage: null })).toBe(message);
+  });
+
+  it("keeps blocked work neutral despite a stale server error", () => {
+    expect(processingStatusMessage({ status: "blocked", errorMessage: "Reconnect Garmin." })).toBe(
+      "Your existing data is still available.",
+    );
+  });
+
+  it("ignores stale errors while work is active", () => {
+    expect(processingStatusMessage({ status: "active", errorMessage: "Ignore this." })).toBeNull();
+  });
+
+  it("replaces technical processing failures with recovery guidance", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: "TypeError: Cannot read properties of undefined (reading 'status')",
+      }),
+    ).toBe("Try the update again. If it still fails, reconnect the data source.");
+  });
+
+  it("names the provider and area when one area is updating", () => {
+    const target = processingTarget({
+      providerId: "garmin",
+      datasets: [{ key: "activity", label: "Activities", status: "active" }],
+    });
+
+    expect(target).toEqual({ action: "sync", label: "Garmin" });
+    expect(processingHeading("active", target)).toBe("Syncing Garmin");
+    expect(processingHeading("partial", target)).toBe("Syncing Garmin");
+  });
+
+  it("names the provider when several areas are updating", () => {
+    expect(
+      processingTarget({
+        providerId: "whoop",
+        datasets: [
+          { key: "sleep", label: "Sleep", status: "active" },
+          { key: "recovery", label: "Recovery", status: "waiting" },
+        ],
+      }),
+    ).toEqual({ action: "sync", label: "WHOOP (Cloud)" });
+  });
+
+  it("uses import copy for provider file imports", () => {
+    const target = processingTarget({
+      providerId: "apple_health",
+      operationKind: "file_import",
+      datasets: [{ key: "sleep", label: "Sleep", status: "active" }],
+    });
+
+    expect(target).toEqual({ action: "import", label: "Apple Health" });
+    expect(processingHeading("active", target)).toBe("Importing Apple Health");
+  });
+
+  it.each([
+    ["blocked", "Recomputing sleep is waiting to continue"],
+    ["delayed", "Recomputing sleep is taking longer than expected"],
+    ["waiting", "Preparing to recompute sleep"],
+    ["cancelled", "Sleep recompute was cancelled"],
+    ["ready", "Sleep recompute complete"],
+  ] as const)("uses area-specific recomputation copy for %s", (status, heading) => {
+    expect(processingHeading(status, { action: "recompute", label: "sleep" })).toBe(heading);
+  });
+
+  it.each([
+    ["import", "Importing Apple Health is waiting to continue"],
+    ["sync", "Syncing Apple Health is waiting to continue"],
+    ["update", "Updating Apple Health is waiting to continue"],
+  ] as const)("keeps a blocked %s target waiting to continue", (action, heading) => {
+    expect(processingHeading("blocked", { action, label: "Apple Health" })).toBe(heading);
+  });
+
+  it("names every affected area when the update is not provider-scoped", () => {
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [
+          { key: "activity", label: "Activities", status: "ready" },
+          { key: "sleep", label: "Sleep", status: "active" },
+          { key: "training", label: "Training", status: "waiting" },
+        ],
+      }),
+    ).toEqual({ action: "recompute", label: "sleep and training" });
+  });
+
+  it("labels concurrent provider activity failures as an update", () => {
+    const scope = resolveProcessingTargetScope({
+      scopeProviderId: null,
+      operations: [
+        { providerId: null, kind: "analytics_recompute", status: "ready" },
+        { providerId: "strava", kind: "provider_sync", status: "failed" },
+        { providerId: "whoop", kind: "provider_sync", status: "active" },
+      ],
+    });
+    const target = processingTarget({
+      ...scope,
+      datasets: [{ key: "activity", label: "Activities", status: "failed" }],
+    });
+
+    expect(processingHeading("failed", target)).toBe("Activities update didn’t finish");
+  });
+
+  it("formats empty, single, and three-area recomputation targets", () => {
+    expect(processingTarget({ providerId: null, datasets: [] })).toEqual({
+      action: "recompute",
+      label: "your data",
+    });
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [{ key: "sleep", label: "Sleep", status: "ready" }],
+      }),
+    ).toEqual({ action: "recompute", label: "sleep" });
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [
+          { key: "sleep", label: "Sleep", status: "active" },
+          { key: "recovery", label: "Recovery", status: "waiting" },
+          { key: "training", label: "Training", status: "waiting" },
+        ],
+      }),
+    ).toEqual({ action: "recompute", label: "sleep, recovery, and training" });
+  });
+
+  it("uses customer-facing copy for provider summary recomputation", () => {
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [{ key: "providers", label: "Providers", status: "active" }],
+      }),
+    ).toEqual({ action: "recompute", label: "provider summaries" });
+  });
+
+  it("polls active work frequently and recoverable snapshots at a lower frequency", () => {
+    expect(processingPollInterval("active")).toBe(3_000);
+    expect(processingPollInterval("partial")).toBe(3_000);
+    expect(processingPollInterval("waiting")).toBe(3_000);
+    expect(processingPollInterval("delayed")).toBe(15_000);
+    expect(processingPollInterval("ready")).toBe(15_000);
+    expect(processingPollInterval("failed")).toBe(15_000);
+    expect(processingPollInterval("blocked")).toBe(15_000);
+    expect(processingPollInterval("cancelled")).toBe(15_000);
+  });
+
+  it("keeps aggregate progress unknown until every non-ready dataset reports progress", () => {
+    expect(processingAggregateProgress([])).toBeNull();
+    expect(
+      processingAggregateProgress([
+        { status: "active", progressPercentage: 80 },
+        { status: "waiting", progressPercentage: null },
+      ]),
+    ).toBeNull();
+    expect(
+      processingAggregateProgress([
+        { status: "active", progressPercentage: 80 },
+        { status: "ready", progressPercentage: null },
+      ]),
+    ).toBe(80);
+  });
+
+  it("groups only failed siblings by operation in server dataset order", () => {
+    const groups = processingFailureGroups({
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-07-22T14:00:00.000Z",
+          lastReadyAt: "2026-07-21T10:00:00.000Z",
+        },
+        {
+          key: "recovery",
+          label: "Recovery",
+          status: "blocked",
+          lastFailedAt: "2026-07-22T16:00:00.000Z",
+          lastReadyAt: "2026-07-21T12:00:00.000Z",
+        },
+        {
+          key: "sleep",
+          label: "Sleep",
+          status: "failed",
+          lastFailedAt: "2026-07-22T15:00:00.000Z",
+          lastReadyAt: "2026-07-21T11:00:00.000Z",
+        },
+      ],
+      operations: [
+        {
+          id: firstOperationId,
+          providerId: "whoop",
+          status: "failed",
+          datasets: ["sleep", "activity", "recovery"],
+          dismissed: false,
+          errorMessage: "Reconnect WHOOP.",
+          errorCode: "provider_auth_failed",
+        },
+      ],
+    });
+
+    expect(groups).toEqual([
+      {
+        operationId: firstOperationId,
+        operationKind: null,
+        providerId: "whoop",
+        providerLabel: "WHOOP (Cloud)",
+        datasetLabels: ["Activities", "Sleep"],
+        status: "failed",
+        failedAt: "2026-07-22T15:00:00.000Z",
+        lastReadyAt: "2026-07-21T11:00:00.000Z",
+        errorMessage: "Reconnect WHOOP.",
+        requiresReconnect: true,
+        dismissed: false,
+      },
+    ]);
+  });
+
+  it.each(["blocked", "delayed", "active", "partial", "waiting", "cancelled", "ready"] as const)(
+    "keeps a %s operation out of failure alerts even with a failed dataset",
+    (status) => {
+      expect(
+        processingFailureGroups({
+          datasets: [
+            {
+              key: "sleep",
+              label: "Sleep",
+              status: "failed",
+              lastFailedAt: "2026-07-22T15:00:00.000Z",
+              lastReadyAt: null,
+            },
+          ],
+          operations: [
+            {
+              id: firstOperationId,
+              providerId: "whoop",
+              status,
+              datasets: ["sleep"],
+              dismissed: false,
+              errorMessage: "Previous update failed.",
+            },
+          ],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(["blocked", "delayed", "active", "partial", "waiting", "cancelled", "ready"] as const)(
+    "keeps a %s dataset out of a failed operation alert",
+    (status) => {
+      expect(
+        processingFailureGroups({
+          datasets: [
+            {
+              key: "sleep",
+              label: "Sleep",
+              status,
+              lastFailedAt: "2026-07-22T15:00:00.000Z",
+              lastReadyAt: null,
+            },
+          ],
+          operations: [
+            {
+              id: firstOperationId,
+              providerId: "whoop",
+              status: "failed",
+              datasets: ["sleep"],
+              dismissed: false,
+              errorMessage: "Sleep failed.",
+            },
+          ],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it("does not require reconnecting for a retry-only provider failure", () => {
+    const groups = processingFailureGroups({
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-07-22T14:00:00.000Z",
+          lastReadyAt: null,
+        },
+      ],
+      operations: [
+        {
+          id: firstOperationId,
+          providerId: "zwift",
+          status: "failed",
+          datasets: ["activity"],
+          dismissed: false,
+          errorMessage: "Zwift could not be synced. Try the sync again later.",
+          errorCode: "provider_sync_failed",
+        },
+      ],
+    });
+
+    expect(groups).toEqual([
+      expect.objectContaining({
+        providerId: "zwift",
+        requiresReconnect: false,
+      }),
+    ]);
+  });
+
+  it("does not expose dismissed or later-ready operation groups", () => {
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            status: "failed",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: null,
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: "garmin",
+            status: "failed",
+            datasets: ["activity"],
+            dismissed: true,
+            errorMessage: "Reconnect Garmin.",
+          },
+        ],
+      }),
+    ).toEqual([]);
+
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            status: "ready",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: "2026-07-22T15:00:00.000Z",
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: "garmin",
+            status: "failed",
+            datasets: ["activity"],
+            dismissed: false,
+            errorMessage: "Old failure.",
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it("keeps separate failed operations separate", () => {
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            status: "failed",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: "2026-07-21T10:00:00.000Z",
+          },
+          {
+            key: "sleep",
+            label: "Sleep",
+            status: "failed",
+            lastFailedAt: "2026-07-22T15:00:00.000Z",
+            lastReadyAt: "2026-07-21T11:00:00.000Z",
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: "garmin",
+            status: "failed",
+            datasets: ["activity"],
+            dismissed: false,
+            errorMessage: "Activity failed.",
+          },
+          {
+            id: secondOperationId,
+            providerId: "whoop",
+            status: "failed",
+            datasets: ["sleep"],
+            dismissed: false,
+            errorMessage: "Sleep failed.",
+          },
+        ],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        operationId: firstOperationId,
+        datasetLabels: ["Activities"],
+        status: "failed",
+        errorMessage: "Activity failed.",
+      }),
+      expect.objectContaining({
+        operationId: secondOperationId,
+        datasetLabels: ["Sleep"],
+        status: "failed",
+        errorMessage: "Sleep failed.",
+      }),
+    ]);
+  });
+
+  it("preserves a recorded failure with missing failure and ready timestamps", () => {
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "providers",
+            label: "Providers",
+            status: "failed",
+            lastFailedAt: null,
+            lastReadyAt: null,
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: null,
+            status: "failed",
+            datasets: ["providers"],
+            dismissed: false,
+            errorMessage: null,
+          },
+        ],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        operationId: firstOperationId,
+        providerLabel: null,
+        failedAt: null,
+        lastReadyAt: null,
+      }),
+    ]);
+  });
+
+  it.each([
+    ["ready", "Ready"],
+    ["waiting", "Waiting"],
+    ["active", "Updating"],
+    ["partial", "Finishing"],
+    ["delayed", "Delayed"],
+    ["blocked", "Waiting to continue"],
+    ["failed", "Failed"],
+    ["cancelled", "Cancelled"],
+  ] as const)("labels a %s dataset for display", (status, label) => {
+    expect(processingDatasetStatusLabel(status)).toBe(label);
+  });
+});
+
+describe("resolveProcessingTargetScope", () => {
+  it("attributes an unscoped query to the single provider still in progress", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [
+          { providerId: "whoop", kind: "provider_sync", status: "ready" },
+          { providerId: "peloton", kind: "provider_sync", status: "active" },
+        ],
+      }),
+    ).toEqual({ providerId: "peloton", operationKind: "provider_sync" });
+  });
+
+  it("marks concurrent provider operations as one provider update", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [
+          { providerId: "whoop", kind: "provider_sync", status: "active" },
+          { providerId: "peloton", kind: "provider_sync", status: "waiting" },
+        ],
+      }),
+    ).toEqual({ providerId: null, operationKind: "provider_sync" });
+  });
+
+  it("keeps a concurrent analytics build distinct from provider syncs", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [
+          { providerId: "strava", kind: "provider_sync", status: "active" },
+          { providerId: null, kind: "analytics_build", status: "active" },
+        ],
+      }),
+    ).toEqual({ providerId: null, operationKind: "analytics_build" });
+  });
+
+  it("falls back to the generic recompute target when no operation has a provider", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [{ providerId: null, kind: "analytics_build", status: "active" }],
+      }),
+    ).toEqual({ providerId: null, operationKind: "analytics_build" });
+  });
+
+  it("preserves an explicit provider scope without inspecting operations", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: "garmin",
+        operations: [{ providerId: "whoop", kind: "provider_sync", status: "active" }],
+      }),
+    ).toEqual({ providerId: "garmin", operationKind: "provider_sync" });
+  });
+
+  it("returns a null target when there are no operations at all", () => {
+    expect(resolveProcessingTargetScope({ scopeProviderId: null, operations: [] })).toEqual({
+      providerId: null,
+      operationKind: null,
+    });
+  });
+});

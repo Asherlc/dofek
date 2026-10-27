@@ -8,8 +8,19 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
   seriesColor,
 } from "./chartTheme.ts";
+
+describe("escapeTooltipHtml", () => {
+  it("escapes markup, links, event handlers, ampersands, and quotes as text", () => {
+    expect(
+      escapeTooltipHtml(`<a href="javascript:alert(1)" onclick="alert('x')">A & "B"</a>`),
+    ).toBe(
+      "&lt;a href=&quot;javascript:alert(1)&quot; onclick=&quot;alert(&#39;x&#39;)&quot;&gt;A &amp; &quot;B&quot;&lt;/a&gt;",
+    );
+  });
+});
 
 describe("dofekTooltip", () => {
   it("returns axis trigger by default", () => {

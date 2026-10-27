@@ -1,7 +1,7 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -63,11 +63,11 @@ describe("healthspan zone time with variable-interval HR data", () => {
     // Last  300 seconds (60 samples): HR 175 (high intensity, above 162 threshold)
     const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'healthspan-apple-watch-hiit', 'cycling', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
-            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '600 seconds',
+            (CURRENT_TIMESTAMP - INTERVAL '2 days') + INTERVAL '600 seconds',
             'Apple Watch HIIT'
           ) RETURNING id`,
     );
@@ -298,11 +298,11 @@ describe("healthspan zone time with variable-interval HR data", () => {
   it("includes power zone high-intensity work when heart-rate samples are absent", async () => {
     const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'healthspan-power-zone-intervals', 'cycling', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
-            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '600 seconds',
+            (CURRENT_TIMESTAMP - INTERVAL '1 day') + INTERVAL '600 seconds',
             'Power Zone Intervals'
           ) RETURNING id`,
     );

@@ -10,6 +10,9 @@ import ExpoModulesCore
 public class BackgroundRefreshModule: Module {
 
     static let taskIdentifier = "com.dofek.accelerometer-refresh"
+    static let taskCoordinatorDiagnostics = BackgroundRefreshDiagnostics.shared
+    static let taskCoordinator = BackgroundRefreshTaskCoordinator(diagnostics: taskCoordinatorDiagnostics)
+    static let taskIdKey = "taskId"
 
     /// NotificationCenter name used by the app delegate subscriber to
     /// relay background refresh events to this module instance.
@@ -22,64 +25,80 @@ public class BackgroundRefreshModule: Module {
 
         Events("onBackgroundRefresh")
 
-        OnStartObserving {
-            self.notificationObserver = NotificationCenter.default.addObserver(
-                forName: Self.backgroundRefreshNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.sendEvent("onBackgroundRefresh", [:])
+        AsyncFunction("enableCollectionNotifications") { (requestPermission: Bool, promise: Promise) in
+            DispatchQueue.main.async {
+                CollectionNotificationService.shared.enable(requestPermission: requestPermission) { result in
+                    switch result {
+                    case .success(let granted):
+                        promise.resolve(granted)
+                    case .failure(let error):
+                        promise.reject("COLLECTION_NOTIFICATIONS_UNAVAILABLE", error.localizedDescription)
+                    }
+                }
             }
         }
 
-        OnStopObserving {
-            if let observer = self.notificationObserver {
-                NotificationCenter.default.removeObserver(observer)
-                self.notificationObserver = nil
-            }
+        Function("disableCollectionNotifications") {
+            DispatchQueue.main.async { CollectionNotificationService.shared.disable() }
         }
 
-        /// Schedule the next background refresh.
-        /// Call this after each foreground sync to keep the schedule rolling.
-        Function("scheduleRefresh") {
-            self.scheduleAppRefresh()
+        OnStartObserving("onBackgroundRefresh") {
+            self.startRefreshObserver()
+            Self.taskCoordinator.setHandlerAvailable(true)
         }
 
-        /// Check if background refresh is available (user may have disabled it).
+        OnStopObserving("onBackgroundRefresh") {
+            self.stopRefreshObserver()
+        }
+
+        Function("getDiagnostics") { Self.taskCoordinatorDiagnostics.payload }
+        Function("clearDiagnostics") { Self.taskCoordinatorDiagnostics.clear() }
+        Function("recordRefreshReceived") { (taskId: String) in
+            Self.taskCoordinatorDiagnostics.record("js_received", fields: .init(taskId: taskId))
+        }
+
+        Function("scheduleRefresh") { BackgroundRefreshScheduler.schedule() }
         Function("isAvailable") { () -> Bool in
-            return UIApplication.shared.backgroundRefreshStatus == .available
+            BackgroundRefreshScheduler.refreshStatus() == .available
+        }
+        Function("completeRefresh") { (taskId: String, success: Bool) in
+            Self.taskCoordinator.completeTask(id: taskId, success: success)
         }
     }
 
-    // MARK: - BGTaskScheduler
-
-    /// Called by BackgroundRefreshAppDelegateSubscriber during
-    /// application(_:didFinishLaunchingWithOptions:) — the only safe
-    /// time to call BGTaskScheduler.register.
-    static func registerBackgroundTask(handler: @escaping (BGAppRefreshTask) -> Void) {
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: taskIdentifier,
-            using: nil
-        ) { task in
-            guard let refreshTask = task as? BGAppRefreshTask else {
-                task.setTaskCompleted(success: false)
+    private func startRefreshObserver() {
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: Self.backgroundRefreshNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let taskId = notification.userInfo?[Self.taskIdKey] as? String else {
+                Self.taskCoordinatorDiagnostics.record("bridge_dispatched", fields: .init(success: false, reason: "missing_task_id"))
+                BackgroundRefreshScheduler.captureFailure("missing_task_id")
                 return
             }
-            handler(refreshTask)
+            guard let self else {
+                Self.taskCoordinatorDiagnostics.record("bridge_dispatched", fields: .init(
+                    taskId: taskId, success: false, reason: "module_unavailable"
+                ))
+                BackgroundRefreshScheduler.captureFailure("module_unavailable")
+                return
+            }
+            Self.taskCoordinatorDiagnostics.record("bridge_dispatched", fields: .init(taskId: taskId, success: true))
+            self.sendEvent("onBackgroundRefresh", [Self.taskIdKey: taskId])
         }
     }
 
-    private func scheduleAppRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
-        // Let the system decide when to wake us — typically every 15-30 minutes
-        // depending on usage patterns, battery state, and network conditions.
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 min minimum
-
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            // Submission can fail if called too early or too often — non-fatal
-            print("[BackgroundRefresh] Failed to schedule: \(error.localizedDescription)")
+    private func stopRefreshObserver() {
+        Self.taskCoordinator.setHandlerAvailable(false)
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            notificationObserver = nil
         }
+    }
+
+    /// Registration remains a launch-time app-delegate operation.
+    static func registerBackgroundTask(handler: @escaping (BGAppRefreshTask) -> Void) {
+        BackgroundRefreshScheduler.register(handler: handler)
     }
 }

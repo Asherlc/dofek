@@ -1,14 +1,21 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -54,7 +61,7 @@ const decathlonActivitiesResponseSchema = z.object({
 
 export interface ParsedDecathlonActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -66,7 +73,7 @@ export interface ParsedDecathlonActivity {
 // ============================================================
 
 // Decathlon sport IDs mapped to normalized activity types
-const DECATHLON_SPORT_MAP: Record<string, CanonicalActivityType> = {
+const DECATHLON_SPORT_MAP: Record<string, LegacyActivityType> = {
   "381": "running",
   "121": "cycling",
   "153": "mountain_biking",
@@ -89,10 +96,13 @@ const DECATHLON_SPORT_MAP: Record<string, CanonicalActivityType> = {
   "176": "strength_training",
 };
 
-export function mapDecathlonSport(sportUri: string): CanonicalActivityType {
+export function mapDecathlonSport(sportUri: string): ProviderActivityType {
   // Sport URI is like "/v2/sports/381" — extract the ID
-  const sportId = sportUri.split("/").pop() ?? "";
-  return DECATHLON_SPORT_MAP[sportId] ?? "other";
+  const sportId = sportUri.split("/").pop() ?? sportUri;
+  return resolveProviderActivityType(
+    sportUri.trim() || "other",
+    DECATHLON_SPORT_MAP[sportId] ?? "other",
+  );
 }
 
 export function parseDecathlonActivity(act: DecathlonActivity): ParsedDecathlonActivity {
@@ -114,7 +124,6 @@ export function parseDecathlonActivity(act: DecathlonActivity): ParsedDecathlonA
       sport: act.sport,
       duration: act.duration,
       distanceKm: summaries["5"],
-      calories: summaries["9"],
       avgHeartRate: summaries["1"],
       maxHeartRate: summaries["2"],
       dataSummaries: act.dataSummaries,
@@ -151,7 +160,7 @@ export class DecathlonProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "decathlon" });
+    this.#fetchFn = createProviderRateLimitFetch("decathlon", fetchFn);
   }
 
   validate(): string | null {
@@ -214,75 +223,79 @@ export class DecathlonProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let nextUrl: string | undefined =
-            `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
+          const initialUrl = `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
 
-          while (nextUrl) {
-            const response = await this.#fetchFn(nextUrl, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
-                ...(clientId ? { "x-api-key": clientId } : {}),
-              },
-            });
+          const pages = await fetchProviderPages<DecathlonActivity, string>({
+            providerId: this.id,
+            stepName: "activity",
+            initialCursor: initialUrl,
+            fetchPage: async (url) => {
+              if (!url) throw new Error("Decathlon pagination missing page URL");
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/json",
+                  ...(clientId ? { "x-api-key": clientId } : {}),
+                },
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Decathlon API error (${response.status}): ${text}`);
+              }
+              const data = decathlonActivitiesResponseSchema.parse(await response.json());
+              return {
+                items: data.data,
+                nextCursor: data.links?.next ?? null,
+              };
+            },
+          });
 
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Decathlon API error (${response.status}): ${text}`);
+          for (const raw of pages.items) {
+            const parsed = parseDecathlonActivity(raw);
+            if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+              continue;
             }
-
-            const data = decathlonActivitiesResponseSchema.parse(await response.json());
-            const activities = data.data;
-            nextUrl = data.links?.next;
-
-            for (const raw of activities) {
-              const parsed = parseDecathlonActivity(raw);
-              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-                continue;
-              }
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await db
-                  .insert(activity)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
+            presentActivityExternalIds.add(parsed.externalId);
+            try {
+              await upsertProviderActivity(
+                db,
+                {
+                  providerId: this.id,
                   externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (pages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );

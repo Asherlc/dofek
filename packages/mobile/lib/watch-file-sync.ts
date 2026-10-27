@@ -1,4 +1,5 @@
 import { deleteWatchFile, getPendingWatchFileNames, readWatchFile } from "../modules/watch-motion";
+import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
 
@@ -32,6 +33,8 @@ export async function syncWatchAccelerometerFiles(
     return { totalInserted: 0, filesProcessed: 0, filesFailed: 0 };
   }
 
+  const deviceErasureCutoff = await loadDeviceErasureCutoff();
+
   let totalInserted = 0;
   let filesProcessed = 0;
   let filesFailed = 0;
@@ -39,7 +42,13 @@ export async function syncWatchAccelerometerFiles(
   for (const fileName of fileNames) {
     try {
       logger.info(TAG, `Reading ${fileName}`);
-      const samples = await readWatchFile(fileName);
+      const parsedSamples = await readWatchFile(fileName);
+      const samples =
+        deviceErasureCutoff === null
+          ? parsedSamples
+          : parsedSamples.filter((sample) =>
+              isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
+            );
       logger.info(TAG, `${fileName}: ${samples.length} samples`);
 
       if (samples.length === 0) {

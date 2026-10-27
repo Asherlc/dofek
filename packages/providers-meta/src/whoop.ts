@@ -41,19 +41,6 @@ export const WHOOP_WEAR_LOCATIONS: ReadonlyArray<WhoopWearLocationInfo> = [
 const LOCATION_IDS: ReadonlySet<string> = new Set(
   WHOOP_WEAR_LOCATIONS.map((location) => location.id),
 );
-const LOCATION_MAP: ReadonlyMap<string, WhoopWearLocationInfo> = new Map(
-  WHOOP_WEAR_LOCATIONS.map((location) => [location.id, location]),
-);
-
-/** Human-readable label for a wear location, falls back to the raw id. */
-export function whoopWearLocationLabel(id: string): string {
-  return LOCATION_MAP.get(id)?.label ?? id;
-}
-
-/** Short description of what garments go with this wear location. */
-export function whoopWearLocationDescription(id: string): string | undefined {
-  return LOCATION_MAP.get(id)?.description;
-}
 
 function isWhoopWearLocation(value: unknown): value is WhoopWearLocation {
   return typeof value === "string" && LOCATION_IDS.has(value);

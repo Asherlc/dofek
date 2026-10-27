@@ -2,6 +2,9 @@ import type { FormattedMeasurement, FormattedMeasurementPart, NullableNumber } f
 
 export type UnitSystem = "metric" | "imperial";
 
+export const POWER_UNIT_LABEL = "W";
+export const WORK_UNIT_LABEL = "kJ";
+
 // --- Conversion constants ---
 const KG_TO_LBS = 2.20462;
 const KM_TO_MILES = 0.621371;
@@ -76,7 +79,10 @@ export function formatMeasurementText(measurement: FormattedMeasurement): string
 // --- UnitConverter class ---
 
 export class UnitConverter {
-  constructor(readonly system: UnitSystem) {}
+  readonly system: UnitSystem;
+  constructor(system: UnitSystem) {
+    this.system = system;
+  }
 
   // --- Conversions (metric input → selected system output) ---
 
@@ -130,6 +136,18 @@ export class UnitConverter {
     return this.system === "imperial" ? "°F" : "°C";
   }
 
+  get percentageLabel(): string {
+    return "%";
+  }
+
+  get calorieLabel(): string {
+    return "kcal";
+  }
+
+  get caloriesPerDayLabel(): string {
+    return `${this.calorieLabel}/day`;
+  }
+
   get speedLabel(): string {
     return this.system === "imperial" ? "mph" : "km/h";
   }
@@ -174,6 +192,19 @@ export class UnitConverter {
   formatTemperature(celsius: NullableNumber): FormattedMeasurement {
     return formatUnitMeasurement(
       celsius == null || !Number.isFinite(celsius) ? celsius : this.convertTemperature(celsius),
+      1,
+      this.system === "imperial" ? "fahrenheit" : "celsius",
+      this.temperatureLabel,
+    );
+  }
+
+  formatTemperatureDelta(celsius: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      celsius == null || !Number.isFinite(celsius)
+        ? celsius
+        : this.system === "imperial"
+          ? celsius * (9 / 5)
+          : celsius,
       1,
       this.system === "imperial" ? "fahrenheit" : "celsius",
       this.temperatureLabel,

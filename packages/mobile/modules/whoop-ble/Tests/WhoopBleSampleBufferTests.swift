@@ -1,13 +1,169 @@
 import XCTest
-@testable import WhoopBleLib
+@testable import WhoopBLE
 
 final class WhoopBleSampleBufferTests: XCTestCase {
 
     private var buffer: WhoopBleSampleBuffer!
+    private var diagnosticDefaults: UserDefaults!
+    private var diagnosticSuite: String!
 
     override func setUp() {
         super.setUp()
-        buffer = WhoopBleSampleBuffer()
+        diagnosticSuite = "WhoopBleSampleBufferTests.\(UUID().uuidString)"
+        diagnosticDefaults = UserDefaults(suiteName: diagnosticSuite)!
+        buffer = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+    }
+
+    override func tearDown() {
+        diagnosticDefaults.removePersistentDomain(forName: diagnosticSuite)
+        buffer = nil
+        super.tearDown()
+    }
+
+    func testDiagnosticsReportTrueTimestampRangeAndActualConfirmedCount() throws {
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_002),
+            makeRealtimeSample(timestampSeconds: 1_711_000_000),
+            makeRealtimeSample(timestampSeconds: 1_711_000_001),
+        ])
+        _ = buffer.peekRealtimeData(maxCount: 1)
+        buffer.confirmRealtimeDataDrain(count: 1)
+
+        let snapshot = buffer.diagnosticSnapshot()
+        let realtime = try XCTUnwrap(snapshot["realtime"] as? [String: Any])
+        XCTAssertEqual(realtime["count"] as? Int, 2)
+        XCTAssertEqual(realtime["receivedCount"] as? Int, 3)
+        XCTAssertEqual(realtime["confirmedCount"] as? Int, 1)
+        XCTAssertEqual(realtime["oldestTimestamp"] as? String, "2024-03-21T05:46:40.000Z")
+        XCTAssertEqual(realtime["newestTimestamp"] as? String, "2024-03-21T05:46:41.000Z")
+        XCTAssertNotNil(realtime["lastConfirmedAt"] as? String)
+        XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(snapshot["bufferInstanceId"] as? String)))
+    }
+
+    func testDiagnosticsDistinguishOverflowFromConfirmationAfterPeek() throws {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+        _ = buffer.peekRealtimeData(maxCount: 5)
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        buffer.confirmRealtimeDataDrain(count: 5)
+
+        let realtime = try XCTUnwrap(buffer.diagnosticSnapshot()["realtime"] as? [String: Any])
+        XCTAssertEqual(realtime["receivedCount"] as? Int, 86_403)
+        XCTAssertEqual(realtime["overflowDiscardedCount"] as? Int, 3)
+        XCTAssertEqual(realtime["confirmedCount"] as? Int, 2)
+        XCTAssertEqual(realtime["count"] as? Int, 86_398)
+    }
+
+    func testDiagnosticsDistinguishErasureClearAndLegacyDrain() throws {
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+            makeImuSample(timestampSeconds: 1_711_000_003),
+        ])
+        buffer.advanceErasureCutoff(to: Date(timeIntervalSince1970: 1_711_000_001))
+        buffer.appendImuSamples([makeImuSample(timestampSeconds: 1_711_000_001)])
+        _ = buffer.drainImuSamples(maxCount: 1)
+        buffer.clearAll()
+
+        let imu = try XCTUnwrap(buffer.diagnosticSnapshot()["imu"] as? [String: Any])
+        XCTAssertEqual(imu["receivedCount"] as? Int, 4)
+        XCTAssertEqual(imu["erasureDiscardedCount"] as? Int, 2)
+        XCTAssertEqual(imu["legacyDrainedCount"] as? Int, 1)
+        XCTAssertEqual(imu["clearedCount"] as? Int, 1)
+        XCTAssertEqual(imu["confirmedCount"] as? Int, 0)
+        XCTAssertTrue(imu["oldestTimestamp"] is NSNull)
+        XCTAssertTrue(imu["newestTimestamp"] is NSNull)
+    }
+
+    func testNewBufferReportsLastObservedCheckpointWithoutRestoringSamples() throws {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 3))
+        _ = buffer.peekRealtimeData(maxCount: 1)
+        buffer.confirmRealtimeDataDrain(count: 1)
+        let previousSnapshot = buffer.diagnosticSnapshot()
+
+        let recreated = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let snapshot = recreated.diagnosticSnapshot()
+        let previous = try XCTUnwrap(snapshot["previousCheckpoint"] as? [String: Any])
+        let previousRealtime = try XCTUnwrap(previous["realtime"] as? [String: Any])
+        XCTAssertEqual(previous["bufferInstanceId"] as? String, previousSnapshot["bufferInstanceId"] as? String)
+        XCTAssertNotEqual(snapshot["bufferInstanceId"] as? String, previous["bufferInstanceId"] as? String)
+        XCTAssertEqual(previousRealtime["count"] as? Int, 2)
+        XCTAssertEqual(previousRealtime["confirmedCount"] as? Int, 1)
+        XCTAssertEqual(recreated.realtimeSampleCount, 0)
+        XCTAssertNil(previous["previousCheckpoint"])
+    }
+
+    func testFinalRealtimeConfirmationCheckpointsEmptyQueueBeforeRestart() throws {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 3))
+        _ = buffer.peekRealtimeData(maxCount: 3)
+        buffer.confirmRealtimeDataDrain(count: 3)
+
+        let recreated = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let previous = try XCTUnwrap(recreated.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        let realtime = try XCTUnwrap(previous["realtime"] as? [String: Any])
+        XCTAssertEqual(realtime["count"] as? Int, 0)
+        XCTAssertEqual(realtime["confirmedCount"] as? Int, 3)
+        XCTAssertNotNil(realtime["lastConfirmedAt"] as? String)
+    }
+
+    func testFinalImuConfirmationCheckpointsEmptyQueueBeforeRestart() throws {
+        buffer.appendImuSamples(makeImuSamples(count: 3))
+        _ = buffer.peekImuSamples(maxCount: 3)
+        buffer.confirmImuDrain(count: 3)
+
+        let recreated = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let previous = try XCTUnwrap(recreated.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        let imu = try XCTUnwrap(previous["imu"] as? [String: Any])
+        XCTAssertEqual(imu["count"] as? Int, 0)
+        XCTAssertEqual(imu["confirmedCount"] as? Int, 3)
+        XCTAssertNotNil(imu["lastConfirmedAt"] as? String)
+    }
+
+    func testPartialConfirmationAndEmptyCursorReleaseDoNotForceCheckpoints() throws {
+        var observed = Date(timeIntervalSince1970: 1_800_000_000)
+        let capturing = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults, now: { observed })
+        let initial = capturing.diagnosticSnapshot()
+        observed = observed.addingTimeInterval(1)
+        _ = capturing.peekRealtimeData()
+        capturing.confirmRealtimeDataDrain(count: 0)
+        capturing.appendImuSamples(makeImuSamples(count: 3))
+        _ = capturing.peekImuSamples(maxCount: 1)
+        capturing.confirmImuDrain(count: 1)
+        let afterPartial = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let partial = try XCTUnwrap(afterPartial.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        XCTAssertEqual(partial["checkpointAt"] as? String, initial["checkpointAt"] as? String)
+    }
+
+    func testCaptureCheckpointsAreBoundedWhileJavaScriptIsSuspended() throws {
+        var currentDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let capturing = WhoopBleSampleBuffer(
+            diagnosticDefaults: diagnosticDefaults,
+            now: { currentDate }
+        )
+        capturing.appendRealtimeData(makeRealtimeSamples(count: 1))
+        currentDate = currentDate.addingTimeInterval(29)
+        capturing.appendRealtimeData(makeRealtimeSamples(count: 1))
+        let firstRestart = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let initialPrevious = try XCTUnwrap(firstRestart.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        XCTAssertEqual((initialPrevious["realtime"] as? [String: Any])?["count"] as? Int, 1)
+
+        currentDate = currentDate.addingTimeInterval(1)
+        capturing.appendRealtimeData(makeRealtimeSamples(count: 1))
+        let secondRestart = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let latestPrevious = try XCTUnwrap(secondRestart.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        XCTAssertEqual((latestPrevious["realtime"] as? [String: Any])?["count"] as? Int, 3)
+    }
+
+    func testAccountPurgeRemovesPreviousAndPersistedDiagnosticHistory() throws {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 2))
+        _ = buffer.diagnosticSnapshot()
+        let recreated = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        recreated.resetDiagnosticHistory()
+
+        XCTAssertTrue(recreated.diagnosticSnapshot()["previousCheckpoint"] is NSNull)
+        let next = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let previous = try XCTUnwrap(next.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        XCTAssertEqual((previous["realtime"] as? [String: Any])?["count"] as? Int, 0)
+        XCTAssertEqual((previous["realtime"] as? [String: Any])?["receivedCount"] as? Int, 0)
     }
 
     // MARK: - IMU samples
@@ -61,6 +217,11 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(gyroZ, Double(sample.gyroscopeZ), accuracy: 0.001)
     }
 
+    func testPeekImuSamplesSerializesCapturedDeviceId() {
+        buffer.appendImuSamples(makeImuSamples(count: 1), deviceId: "whoop-a")
+        XCTAssertEqual(buffer.peekImuSamples()[0]["deviceId"] as? String, "whoop-a")
+    }
+
     func testDrainEmptyBufferReturnsEmptyArray() {
         let drained = buffer.drainImuSamples()
         XCTAssertTrue(drained.isEmpty)
@@ -79,29 +240,9 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 2)
     }
 
-    func testDrainRealtimeDataSerializesCorrectFields() {
-        let sample = WhoopRealtimeDataSample(
-            timestampSeconds: 1711000000,
-            subSeconds: 0,
-            heartRate: 72,
-            rrIntervalMs: 833,
-            quaternionW: 1.0,
-            quaternionX: 0.0,
-            quaternionY: 0.0,
-            quaternionZ: 0.0,
-            opticalBytes: Data(count: 18)
-        )
-        buffer.appendRealtimeData([sample])
-
-        let drained = buffer.drainRealtimeData()
-        XCTAssertEqual(drained.count, 1)
-
-        let dict = drained[0]
-        XCTAssertNotNil(dict["timestamp"] as? String)
-        XCTAssertNil(dict["heartRate"])
-        XCTAssertEqual(dict["rrIntervalMs"] as? Int, 833)
-        XCTAssertEqual(dict["quaternionW"] as? Double, 1.0)
-        XCTAssertNotNil(dict["opticalRawHex"] as? String)
+    func testPeekRealtimeDataSerializesCapturedDeviceId() {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 1), deviceId: "whoop-a")
+        XCTAssertEqual(buffer.peekRealtimeData()[0]["deviceId"] as? String, "whoop-a")
     }
 
     // MARK: - Overflow
@@ -200,6 +341,19 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 
+    func testConfirmImuDrainAfterOverflowDoesNotRemoveUnpeekedSamples() {
+        buffer.appendImuSamples(makeImuSamplesForOverflow(count: 500_000, startingAt: 0))
+
+        let peeked = buffer.peekImuSamples(maxCount: 3)
+        XCTAssertEqual(peeked.map { $0["accelerometerX"] as? Double }, [0.0, 1.0, 2.0])
+
+        buffer.appendImuSamples(makeImuSamplesForOverflow(count: 3, startingAt: 500_000))
+        buffer.confirmImuDrain(count: 3)
+
+        let remaining = buffer.peekImuSamples(maxCount: 1)
+        XCTAssertEqual(remaining.first?["accelerometerX"] as? Double, 3.0)
+    }
+
     func testPeekRealtimeDataDoesNotRemove() {
         buffer.appendRealtimeData(makeRealtimeSamples(count: 4))
 
@@ -216,41 +370,51 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 2)
     }
 
+    func testConfirmRealtimeDataDrainAfterOverflowOnlyRemovesStillBufferedPeekedSamples() {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+
+        let peeked = buffer.peekRealtimeData(maxCount: 5)
+        XCTAssertEqual(peeked.map { $0["rrIntervalMs"] as? Int }, [900, 901, 902, 903, 904])
+
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        buffer.confirmRealtimeDataDrain(count: 5)
+
+        let remaining = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
+    }
+
+    func testSecondRealtimePeekDoesNotResetInflightDrainCursorAfterOverflow() {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+        let uploadPage = buffer.peekRealtimeData(maxCount: 5)
+        XCTAssertEqual(uploadPage.map { $0["rrIntervalMs"] as? Int }, [900, 901, 902, 903, 904])
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        let previewPage = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(previewPage.first?["rrIntervalMs"] as? Int, 903)
+        buffer.confirmRealtimeDataDrain(count: 5)
+        let remaining = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
+    }
+
     func testPeekThenConfirmFullCycle() {
         buffer.appendImuSamples(makeImuSamples(count: 10))
-
-        // Peek 5
         let batch1 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(batch1.count, 5)
         XCTAssertEqual(buffer.imuSampleCount, 10)
-
-        // Confirm 5
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Peek remaining
         let batch2 = buffer.peekImuSamples(maxCount: 10)
         XCTAssertEqual(batch2.count, 5)
-
-        // Confirm remaining
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 
     func testPeekWithoutConfirmRetainsSamplesForRetry() {
         buffer.appendImuSamples(makeImuSamples(count: 5))
-
-        // Simulate upload attempt: peek, then "fail" (don't confirm)
         let attempt1 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(attempt1.count, 5)
-        // No confirm — simulating upload failure
-
-        // Retry: peek again, same samples should be there
         let attempt2 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(attempt2.count, 5)
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Now "succeed" and confirm
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
@@ -260,12 +424,8 @@ final class WhoopBleSampleBufferTests: XCTestCase {
 
         let peeked = buffer.peekImuSamples(maxCount: 3)
         XCTAssertEqual(peeked.count, 3)
-
-        // New samples arrive while first batch is unconfirmed
         buffer.appendImuSamples(makeImuSamples(count: 2))
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Confirm the original 3
         buffer.confirmImuDrain(count: 3)
         XCTAssertEqual(buffer.imuSampleCount, 2)
     }
@@ -279,41 +439,46 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 0)
     }
 
-    // MARK: - Helpers
+    func testErasureCutoffDropsExistingAndFutureSamplesAtOrBeforeBoundary() {
+        let cutoff = Date(timeIntervalSince1970: 1_711_000_001)
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_001),
+        ])
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_001),
+        ])
 
-    private func makeImuSamples(count: Int) -> [WhoopImuSample] {
-        (0..<count).map { index in
-            WhoopImuSample(
-                timestampSeconds: 1711000000,
-                subSeconds: UInt16(index * 10),
-                sampleIndex: index,
-                samplesInFrame: count,
-                accelerometerX: Float(index) * 0.1,
-                accelerometerY: 0,
-                accelerometerZ: 1.0,
-                gyroscopeX: 0,
-                gyroscopeY: 0,
-                gyroscopeZ: 0
-            )
-        }
+        buffer.advanceErasureCutoff(to: cutoff)
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_001),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+        ])
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_000),
+            makeRealtimeSample(timestampSeconds: 1_711_000_002),
+        ])
+
+        XCTAssertEqual(buffer.imuSampleCount, 1)
+        XCTAssertEqual(buffer.realtimeSampleCount, 1)
+        XCTAssertTrue(
+            (buffer.peekImuSamples()[0]["timestamp"] as? String)?
+                .contains("2024-03-21T05:46:42") == true
+        )
     }
 
-    private func makeRealtimeSamples(count: Int) -> [WhoopRealtimeDataSample] {
-        var samples: [WhoopRealtimeDataSample] = []
-        for index in 0..<count {
-            let sample = WhoopRealtimeDataSample(
-                timestampSeconds: 1711000000 + UInt32(index),
-                subSeconds: 0,
-                heartRate: UInt8(60 + index),
-                rrIntervalMs: UInt16(900 + index * 10),
-                quaternionW: 1.0,
-                quaternionX: 0,
-                quaternionY: 0,
-                quaternionZ: 0,
-                opticalBytes: Data(count: 18)
-            )
-            samples.append(sample)
-        }
-        return samples
+    func testErasureCutoffAdvancesPeekCursorOnlyForRemovedHeadSamples() {
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_003),
+        ])
+        XCTAssertEqual(buffer.peekImuSamples(maxCount: 4).count, 4)
+
+        buffer.advanceErasureCutoff(to: Date(timeIntervalSince1970: 1_711_000_001))
+        buffer.confirmImuDrain(count: 4)
+
+        XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 }

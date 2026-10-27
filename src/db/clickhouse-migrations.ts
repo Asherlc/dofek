@@ -8,15 +8,10 @@ interface MigrationCountRow {
   migration_count: number | string;
 }
 
-export function buildClickHouseMigrationStatements(postgresConnectionString: string): string[] {
-  return clickHouseMigrations(postgresConnectionString).flatMap((migration) =>
-    "statements" in migration ? migration.statements : [],
-  );
-}
-
 export async function runClickHouseMigrations(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
+  options: { phase?: "pre-cdc" } = {},
 ): Promise<number> {
   if (!client.query) {
     throw new Error("ClickHouse migrations require a query-capable client");
@@ -36,6 +31,7 @@ ORDER BY id`,
   let appliedCount = 0;
   const initiallyAppliedMigrationIds = new Set<string>();
   for (const migration of clickHouseMigrations(postgresConnectionString)) {
+    if (options.phase && migration.phase !== options.phase) continue;
     const migrationId = clickHouseStringLiteral(migration.id);
     const result = await client.query<MigrationCountRow>({
       query: `SELECT count() AS migration_count FROM analytics.schema_migrations WHERE id = ${migrationId}`,

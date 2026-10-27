@@ -10,12 +10,15 @@
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH current_activity AS (
     SELECT
         activity_id,
         user_id,
-        activity_type,
+        canonical_type,
+        provider_type,
+        modality,
         name,
         started_at,
         ended_at,
@@ -32,6 +35,16 @@ activity_members AS (
     FROM {{ ref('deduped_activity_members') }} FINAL
     WHERE is_deleted = 0
 ),
+
+{% if activity_refresh_scoped %}
+activity_group_state AS (
+    SELECT
+        activity_id,
+        user_id,
+        member_activity_ids
+    FROM {{ ref('deduped_activities') }} FINAL
+),
+{% endif %}
 
 target_state AS (
     SELECT
@@ -55,7 +68,7 @@ initial_activity_dirty_keys AS (
 
 changed_raw_activity AS (
     SELECT
-        activity.id AS activity_id,
+        activity.group_id AS activity_id,
         activity.user_id,
         activity.started_at,
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
@@ -72,11 +85,7 @@ activity_source_dirty_keys AS (
     FROM changed_raw_activity
     INNER JOIN current_activity
         ON current_activity.user_id = changed_raw_activity.user_id
-        AND current_activity.started_at <= changed_raw_activity.ended_at
-        AND coalesce(
-            current_activity.ended_at,
-            current_activity.started_at + INTERVAL 12 HOUR
-        ) >= changed_raw_activity.started_at
+        AND current_activity.activity_id = changed_raw_activity.activity_id
 ),
 
 sensor_summary_dirty_keys AS (
@@ -123,6 +132,29 @@ existing_activity_keys AS (
         WHERE 1 = 0
     {% endif %}
 ),
+
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM activity_group_state
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_activity_keys
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
 
 stale_activity_dirty_keys AS (
     SELECT
@@ -187,6 +219,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -196,6 +234,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM stale_activity_dirty_keys
+        {% endif %}
     )
 ),
 
@@ -213,7 +252,9 @@ existing_activity_summary_for_dirty_keys AS (
         SELECT
             activity_id,
             user_id,
-            activity_type,
+            canonical_type,
+            provider_type,
+            modality,
             name,
             started_at,
             ended_at
@@ -233,7 +274,9 @@ existing_activity_summary_for_dirty_keys AS (
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
             CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(String)') AS activity_type,
+            CAST(null, 'Nullable(String)') AS canonical_type,
+            CAST(null, 'Nullable(String)') AS provider_type,
+            CAST(null, 'Nullable(String)') AS modality,
             CAST(null, 'Nullable(String)') AS name,
             CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
             CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at
@@ -245,7 +288,9 @@ activity_bounds AS (
     SELECT
         current_activity.activity_id AS activity_id,
         current_activity.user_id AS user_id,
-        current_activity.activity_type AS activity_type,
+        current_activity.canonical_type AS canonical_type,
+        current_activity.provider_type AS provider_type,
+        current_activity.modality AS modality,
         current_activity.name AS name,
         current_activity.started_at AS started_at,
         current_activity.ended_at AS ended_at
@@ -299,11 +344,23 @@ SELECT
     active_dirty_keys.activity_id AS activity_id,
     active_dirty_keys.user_id AS user_id,
     CAST(
-        coalesce(activity_bounds.activity_type, existing_activity_summary_for_dirty_keys.activity_type),
+        coalesce(activity_bounds.canonical_type, existing_activity_summary_for_dirty_keys.canonical_type),
         'Nullable(String)'
-    ) AS activity_type,
+    ) AS canonical_type,
     CAST(
-        coalesce(activity_bounds.name, existing_activity_summary_for_dirty_keys.name),
+        coalesce(activity_bounds.provider_type, existing_activity_summary_for_dirty_keys.provider_type),
+        'Nullable(String)'
+    ) AS provider_type,
+    CAST(
+        coalesce(activity_bounds.modality, existing_activity_summary_for_dirty_keys.modality),
+        'Nullable(String)'
+    ) AS modality,
+    CAST(
+        if(
+            activity_bounds.activity_id IS null,
+            existing_activity_summary_for_dirty_keys.name,
+            activity_bounds.name
+        ),
         'Nullable(String)'
     ) AS name,
     CAST(
@@ -311,7 +368,11 @@ SELECT
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS started_at,
     CAST(
-        coalesce(activity_bounds.ended_at, existing_activity_summary_for_dirty_keys.ended_at),
+        if(
+            activity_bounds.activity_id IS null,
+            existing_activity_summary_for_dirty_keys.ended_at,
+            activity_bounds.ended_at
+        ),
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS ended_at,
     sensor_summary.avg_hr AS avg_hr,
@@ -319,14 +380,14 @@ SELECT
     sensor_summary.min_hr AS min_hr,
     sensor_summary.avg_power AS avg_power,
     sensor_summary.max_power AS max_power,
-    if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'), null, sensor_summary.avg_speed) AS avg_speed,
-    if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'), null, sensor_summary.max_speed) AS max_speed,
+    if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.avg_speed) AS avg_speed,
+    if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.max_speed) AS max_speed,
     sensor_summary.avg_cadence AS avg_cadence,
     sensor_summary.elevation_gain_legacy AS elevation_gain_legacy,
     if(
-        activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'),
+        activity_bounds.modality IN ('indoor', 'virtual'),
         CAST(0, 'Nullable(Float64)'),
-        coalesce(location_summary.total_distance, CAST(0, 'Nullable(Float64)'))
+        location_summary.total_distance
     ) AS total_distance,
     location_summary.centroid_lat AS centroid_lat,
     location_summary.centroid_lng AS centroid_lng,
@@ -335,8 +396,8 @@ SELECT
     sensor_summary.avg_right_torque_eff AS avg_right_torque_eff,
     sensor_summary.avg_left_pedal_smooth AS avg_left_pedal_smooth,
     sensor_summary.avg_right_pedal_smooth AS avg_right_pedal_smooth,
-    coalesce(sensor_summary.elevation_gain_m, CAST(0, 'Nullable(Float64)')) AS elevation_gain_m,
-    coalesce(sensor_summary.elevation_loss_m, CAST(0, 'Nullable(Float64)')) AS elevation_loss_m,
+    sensor_summary.elevation_gain_m AS elevation_gain_m,
+    sensor_summary.elevation_loss_m AS elevation_loss_m,
     sensor_summary.avg_stance_time AS avg_stance_time,
     sensor_summary.avg_vertical_osc AS avg_vertical_osc,
     sensor_summary.avg_ground_contact_time AS avg_ground_contact_time,
@@ -346,6 +407,11 @@ SELECT
     sensor_summary.power_sample_count AS power_sample_count,
     sensor_summary.first_sample_at AS first_sample_at,
     sensor_summary.last_sample_at AS last_sample_at,
+    sensor_summary.best_twenty_minute_power AS best_twenty_minute_power,
+    sensor_summary.normalized_power AS normalized_power,
+    sensor_summary.smoothed_avg_power AS smoothed_avg_power,
+    sensor_summary.climbing_elevation_gain_m AS climbing_elevation_gain_m,
+    sensor_summary.climbing_seconds AS climbing_seconds,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(activity_bounds.activity_id IS null, 1, 0) AS is_deleted,
     now64(9) AS refreshed_at

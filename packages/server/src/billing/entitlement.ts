@@ -1,25 +1,71 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { type SQL, sql } from "drizzle-orm";
+import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "./app-store-subscription.ts";
 
 const ACCESS_GRANTING_STRIPE_STATUSES = new Set(["active", "trialing"]);
+const ACCESS_GRANTING_APP_STORE_STATUSES = new Set(["active", "grace_period"]);
+
+export interface AppStoreSubscriptionState {
+  productId: string;
+  status: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}
+
+export interface AppStoreSubscriptionColumns {
+  productId: string | null;
+  status: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export function toAppStoreSubscriptionState(
+  columns: AppStoreSubscriptionColumns,
+): AppStoreSubscriptionState | undefined {
+  if (columns.productId === null || columns.status === null || columns.expiresAt === null) {
+    return undefined;
+  }
+  return {
+    productId: columns.productId,
+    status: columns.status,
+    expiresAt: columns.expiresAt,
+    revokedAt: columns.revokedAt,
+  };
+}
 
 export type AccessWindow =
-  | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
+  | {
+      kind: "full";
+      paid: true;
+      reason: "paid_grant" | "stripe_subscription" | "app_store_subscription";
+    }
   | {
       kind: "limited";
       paid: false;
-      reason: "free_signup_week";
+      reason: "free_recent_week";
       startDate: string;
       endDateExclusive: string;
     };
 
 export interface ResolveAccessWindowInput {
   userCreatedAt: string;
+  timezone: string;
   paidGrantReason: string | null;
   stripeSubscriptionStatus: string | null;
+  appStoreSubscription?: AppStoreSubscriptionState;
+  now?: Date;
 }
 
 function toDateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function addCalendarDays(date: string, days: number): string {
+  const [yearText, monthText, dayText] = date.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  return toDateOnly(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
 /**
@@ -45,18 +91,31 @@ export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWind
     return { kind: "full", paid: true, reason: "stripe_subscription" };
   }
 
-  const start = new Date(input.userCreatedAt);
-  const startUtcMidnight = new Date(
-    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
-  );
-  const endExclusive = new Date(startUtcMidnight);
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 7);
+  const appStoreSubscription = input.appStoreSubscription;
+  if (
+    appStoreSubscription?.productId === APP_STORE_SUBSCRIPTION_PRODUCT_ID &&
+    ACCESS_GRANTING_APP_STORE_STATUSES.has(appStoreSubscription.status) &&
+    new Date(appStoreSubscription.expiresAt) > (input.now ?? new Date()) &&
+    appStoreSubscription.revokedAt === null
+  ) {
+    return { kind: "full", paid: true, reason: "app_store_subscription" };
+  }
+
+  // Free tier covers the most recent 7 calendar days (inclusive of today) in the
+  // user's timezone. userCreatedAt is retained on the input for signature
+  // compatibility but no longer anchors the window.
+  const today = formatDateYmdInTimeZone(input.now ?? new Date(), input.timezone);
+  // An unknown timezone throws RangeError from inside formatDateYmdInTimeZone,
+  // so "--" here means only an unparseable `now` value.
+  if (today === "--") {
+    throw new RangeError(`Invalid current timestamp for limited access`);
+  }
 
   return {
     kind: "limited",
     paid: false,
-    reason: "free_signup_week",
-    startDate: toDateOnly(startUtcMidnight),
-    endDateExclusive: toDateOnly(endExclusive),
+    reason: "free_recent_week",
+    startDate: addCalendarDays(today, -6),
+    endDateExclusive: addCalendarDays(today, 1),
   };
 }

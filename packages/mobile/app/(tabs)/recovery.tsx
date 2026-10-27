@@ -1,3 +1,4 @@
+import { formatBaselineContext } from "@dofek/format/baseline-context";
 import {
   formatBodyCompositionNumber,
   formatDateShort,
@@ -6,7 +7,9 @@ import {
   formatNumber,
   formatSpO2,
 } from "@dofek/format/format";
+import { formatHealthspanTrendContext } from "@dofek/format/healthspan-context";
 import { formatMeasurementText } from "@dofek/format/units";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
   trendDirection as computeTrend,
   SCORE_ZONES,
@@ -15,7 +18,7 @@ import {
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -27,13 +30,19 @@ import {
   UIManager,
   View,
 } from "react-native";
+import { BodyDecisionContext } from "../../components/BodyDecisionContext";
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
+import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
@@ -53,13 +62,6 @@ const RECOVERY_SCORE_BANDS = SCORE_ZONES.map((zone) => {
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function trendArrow(trend: string | null): string {
-  if (trend === "improving") return "\u2191";
-  if (trend === "declining") return "\u2193";
-  if (trend === "stable") return "\u2192";
-  return "";
 }
 
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
@@ -117,6 +119,25 @@ function RecoveryBreakdown({
   );
 }
 
+function TrendMetricGridItem({
+  label,
+  value,
+  subtle = false,
+}: {
+  label: string;
+  value: string | null;
+  subtle?: boolean;
+}) {
+  return (
+    <View style={styles.trendMetricGridItem}>
+      <Text style={styles.trendMetricGridLabel}>{label}</Text>
+      <Text style={[styles.trendMetricGridValue, subtle && styles.trendMetricGridValueSubtle]}>
+        {value ?? "—"}
+      </Text>
+    </View>
+  );
+}
+
 const breakdownStyles = StyleSheet.create({
   container: {
     gap: 10,
@@ -170,22 +191,41 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
-  const [days, setDays] = useState(30);
+  const { days, isHydrated, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
+  const hasCommittedHydratedRange = useRef(false);
+  const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
+  useEffect(() => {
+    hasCommittedHydratedRange.current = isHydrated;
+  }, [isHydrated]);
 
-  const recoveryQuery = trpc.mobileDashboard.recovery.useQuery({ days, endDate });
-  const recoveryData = recoveryQuery.data;
+  const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
+    { days, endDate },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
+  const recoveryData = isHydrated ? recoveryQuery.data : undefined;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
   const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
-  const latestHrv = hrvData[hrvData.length - 1];
-  const latestRestingHeartRate = hrvBaselineData[hrvBaselineData.length - 1];
-  const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
-  const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
-    d.resting_hr != null ? [d.resting_hr] : [],
+  const baselineRelative = recoveryData?.baselineRelative ?? [];
+  const hrvContext = baselineRelative.find((metric) => metric.metric === "hrv");
+  const restingHeartRateContext = baselineRelative.find(
+    (metric) => metric.metric === "resting_heart_rate",
   );
-  const hrvBaseline = latestHrv?.rollingMean;
-  const restingHeartRateBaseline = latestRestingHeartRate?.resting_hr_mean_7d;
+  const respiratoryRateContext = baselineRelative.find(
+    (metric) => metric.metric === "respiratory_rate",
+  );
+  const sleepEfficiencyContext = baselineRelative.find(
+    (metric) => metric.metric === "sleep_efficiency",
+  );
+  const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
+  const restingHeartRateTrend = hrvBaselineData.map((d) =>
+    d.resting_hr == null ? null : d.resting_hr_mean_7d,
+  );
 
   const readinessData = recoveryData?.readinessScore ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
@@ -210,7 +250,10 @@ export default function RecoveryScreen() {
 
   const weightData = recoveryData?.weight ?? [];
   const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
+  const bodyFatData = recoveryData?.bodyFatTrend ?? [];
+  const latestBodyFat = bodyFatData.at(-1) ?? null;
   const weightPrediction = recoveryData?.weightPrediction;
+  const bodyFatPrediction = recoveryData?.bodyFatPrediction;
 
   const healthspan = recoveryData?.healthspan;
 
@@ -225,11 +268,35 @@ export default function RecoveryScreen() {
       : null;
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);
+  const [bodyTrendMetric, setBodyTrendMetric] = useState<"weight" | "bodyFat">("weight");
+  const displayedBodyTrendMetric =
+    bodyTrendMetric === "weight"
+      ? latestWeight != null || latestBodyFat == null
+        ? "weight"
+        : "bodyFat"
+      : latestBodyFat != null || latestWeight == null
+        ? "bodyFat"
+        : "weight";
+  const displaysWeightTrend = displayedBodyTrendMetric === "weight";
+  const displayedPrediction = displaysWeightTrend ? weightPrediction : bodyFatPrediction;
+  const displayedTrendRate = displayedPrediction?.ratePerWeek ?? null;
 
-  const isLoading = recoveryQuery.isLoading;
-  const { refreshing, onRefresh } = useRefresh({
-    invalidate: () => utils.mobileDashboard.recovery.invalidate().then(() => undefined),
+  const isLoading = shouldShowBlockingLoading({
+    data: recoveryData,
+    isLoading: recoveryQuery.isLoading,
+    isFetching: recoveryQuery.isFetching,
   });
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        utils.mobileDashboard.recovery.invalidate(),
+        utils.processing.status.invalidate(),
+      ]).then(() => undefined),
+  });
+
+  if (!isHydrated) {
+    return <QueryStatePanel variant="loading" minHeight={200} />;
+  }
 
   return (
     <ScrollView
@@ -245,11 +312,68 @@ export default function RecoveryScreen() {
     >
       <DaySelector days={days} onChange={setDays} />
 
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+      />
+
+      {recoveryQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={
+            recoveryData == null
+              ? "Recovery data is unavailable"
+              : "Recovery data could not refresh"
+          }
+          message={getQueryErrorMessage(recoveryQuery.error)}
+          minHeight={96}
+          onRetry={() => {
+            void recoveryQuery.refetch();
+          }}
+          retryLabel="Retry recovery data"
+          retrying={recoveryQuery.isFetching}
+        />
+      ) : null}
+
+      {recoveryData != null && (
+        <HealthStatusCards
+          metrics={recoveryData.healthStatus}
+          formatValue={(metric) => {
+            if (metric.metric === "trend_weight") {
+              return formatMeasurementText(units.formatWeight(metric.value));
+            }
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperature(metric.value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(metric.value);
+            if (metric.metric === "respiratory_rate") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)} breaths/min`;
+            }
+            if (metric.metric === "sleep_efficiency") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)}%`;
+            }
+            if (metric.value == null) return "—";
+            if (metric.metric === "body_fat_percentage") {
+              return `${formatBodyCompositionNumber(metric.value)}%`;
+            }
+            return `${formatNumber(metric.value, 0)} bpm`;
+          }}
+          formatComparisonValue={(metric, value) => {
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperatureDelta(value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(value);
+            if (metric.metric === "hrv") return formatHRV(value);
+            if (metric.metric === "steps") return formatNumber(value, 0);
+            return formatNumber(value);
+          }}
+        />
+      )}
+
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading trends...</Text>
-        </View>
-      ) : (
+        <QueryStatePanel variant="loading" minHeight={200} />
+      ) : recoveryData != null ? (
         <>
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
@@ -259,6 +383,9 @@ export default function RecoveryScreen() {
                 LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setRecoveryExpanded((prev) => !prev);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`${recoveryExpanded ? "Collapse" : "Expand"} recovery score`}
+              accessibilityState={{ expanded: recoveryExpanded }}
             >
               <Card title="Recovery Score">
                 <View style={styles.chartRow}>
@@ -308,10 +435,11 @@ export default function RecoveryScreen() {
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
-            value={formatHRV(latestHrv?.hrv)}
+            value={formatHRV(hrvContext?.value)}
             trend={hrvValues.slice(-14)}
+            chartDescription="Recorded heart rate variability values, measured in milliseconds."
             color={colors.positive}
-            subtitle={hrvBaseline != null ? `7-day baseline: ${formatHRV(hrvBaseline)}` : undefined}
+            subtitle={hrvContext ? formatBaselineContext(hrvContext, { unit: "ms" }) : undefined}
             trendDirection={
               hrvValues.length >= 2
                 ? computeTrend(
@@ -325,27 +453,51 @@ export default function RecoveryScreen() {
           <MetricCard
             title="Resting Heart Rate"
             value={
-              latestRestingHeartRate?.resting_hr != null
-                ? formatNumber(latestRestingHeartRate.resting_hr, 0)
+              restingHeartRateContext?.value != null
+                ? formatNumber(restingHeartRateContext.value, 0)
                 : "--"
             }
             unit="bpm"
-            trend={restingHeartRateValues.slice(-14)}
+            trend={restingHeartRateTrend.slice(-14)}
+            chartDescription="7-day average resting heart rate, measured in beats per minute. Gaps indicate missing readings."
             color={colors.warning}
             subtitle={
-              restingHeartRateBaseline != null
-                ? `7-day baseline: ${formatNumber(restingHeartRateBaseline, 0)} bpm`
+              restingHeartRateContext
+                ? formatBaselineContext(restingHeartRateContext, { unit: "bpm" })
                 : undefined
             }
-            trendDirection={
-              restingHeartRateValues.length >= 2
-                ? computeTrend(
-                    restingHeartRateValues[restingHeartRateValues.length - 1] ?? 0,
-                    restingHeartRateValues[restingHeartRateValues.length - 2] ?? 0,
-                  )
-                : undefined
-            }
+            trendDirection={recoveryData?.restingHeartRateTrendDirection ?? undefined}
+            onViewData={() => router.push("/daily-heart-rate")}
           />
+
+          {respiratoryRateContext ? (
+            <MetricCard
+              title="Respiratory Rate"
+              value={
+                respiratoryRateContext.value != null
+                  ? formatNumber(respiratoryRateContext.value)
+                  : "--"
+              }
+              unit="breaths/min"
+              color={colors.blue}
+              subtitle={formatBaselineContext(respiratoryRateContext, { unit: "breaths/min" })}
+            />
+          ) : null}
+
+          {sleepEfficiencyContext ? (
+            <MetricCard
+              title="Sleep Efficiency"
+              value={
+                sleepEfficiencyContext.value != null
+                  ? formatNumber(sleepEfficiencyContext.value)
+                  : "--"
+              }
+              unit="%"
+              color={colors.teal}
+              subtitle={formatBaselineContext(sleepEfficiencyContext, { unit: "%" })}
+              onViewData={() => router.push("/sleep")}
+            />
+          ) : null}
 
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (
@@ -372,6 +524,7 @@ export default function RecoveryScreen() {
             value={latestStress != null ? formatNumber(latestStress) : "--"}
             unit="/ 3"
             trend={stressValues.slice(-14)}
+            chartDescription="Daily stress scores on a 0–3 scale."
             color={
               (latestStress ?? 0) >= 2
                 ? colors.danger
@@ -406,6 +559,7 @@ export default function RecoveryScreen() {
               title="Blood Oxygen"
               value={formatSpO2(trendsData.latest_spo2)}
               trend={spo2Trend}
+              chartDescription="Recorded blood oxygen values, shown as percentages."
               color={colors.blue}
               trendDirection={
                 spo2Trend.length >= 2
@@ -424,6 +578,7 @@ export default function RecoveryScreen() {
               title="Skin Temperature"
               value={formatMeasurementText(units.formatTemperature(trendsData.latest_skin_temp))}
               trend={skinTempTrend}
+              chartDescription="Recorded skin temperature values in your selected temperature unit."
               color={colors.orange}
               trendDirection={
                 skinTempTrend.length >= 2
@@ -437,68 +592,136 @@ export default function RecoveryScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null &&
+          {healthspan != null && healthspan.availability.status === "insufficient_data" ? (
+            <Card title="Healthspan Score">
+              <Text style={styles.healthspanAvailabilitySummary}>
+                {healthspan.availability.summary}
+              </Text>
+              {healthspan.availability.nextCondition != null ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  {healthspan.availability.nextCondition}
+                </Text>
+              ) : null}
+              {healthspan.availability.missingMetricLabels.length > 0 ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  Missing supported metrics:{" "}
+                  {healthspan.availability.missingMetricLabels.join(", ")}
+                </Text>
+              ) : null}
+            </Card>
+          ) : healthspan != null &&
             healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 && (
-              <Card title="Healthspan Score">
-                <View style={styles.healthspanRow}>
+            healthspan.metrics.length > 0 ? (
+            <Card title="Healthspan Score">
+              <View style={styles.healthspanRow}>
+                <Text
+                  style={[
+                    styles.healthspanScore,
+                    { color: scoreColor(healthspan.healthspanScore) },
+                  ]}
+                >
+                  {healthspan.healthspanScore}
+                </Text>
+                <View style={styles.healthspanMeta}>
                   <Text
                     style={[
-                      styles.healthspanScore,
+                      styles.healthspanStatus,
                       { color: scoreColor(healthspan.healthspanScore) },
                     ]}
                   >
-                    {healthspan.healthspanScore}
+                    {scoreLabel(healthspan.healthspanScore)}
                   </Text>
-                  <View style={styles.healthspanMeta}>
+                  {healthspan.trend != null && (
+                    <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
+                      {formatHealthspanTrendContext(healthspan.trend)}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </Card>
+          ) : null}
+
+          {(latestWeight != null || latestBodyFat != null) && (
+            <Card>
+              <View style={styles.trendHeader}>
+                <Text style={styles.trendTitle}>
+                  {displaysWeightTrend ? "TREND WEIGHT" : "TREND BODY FAT"}
+                </Text>
+                <View style={styles.trendMetricSelector} accessibilityRole="tablist">
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Weight"
+                    accessibilityState={{ selected: displaysWeightTrend }}
+                    onPress={() => setBodyTrendMetric("weight")}
+                    style={[
+                      styles.trendMetricSelectorButton,
+                      displaysWeightTrend && styles.trendMetricSelectorButtonSelected,
+                    ]}
+                  >
                     <Text
                       style={[
-                        styles.healthspanStatus,
-                        { color: scoreColor(healthspan.healthspanScore) },
+                        styles.trendMetricSelectorText,
+                        displaysWeightTrend && styles.trendMetricSelectorTextSelected,
                       ]}
                     >
-                      {scoreLabel(healthspan.healthspanScore)}
+                      Weight
                     </Text>
-                    {healthspan.trend != null && (
-                      <Text
-                        style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}
-                      >
-                        {trendArrow(healthspan.trend)} {healthspan.trend}
-                      </Text>
-                    )}
-                  </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Body Fat"
+                    accessibilityState={{ selected: !displaysWeightTrend }}
+                    onPress={() => setBodyTrendMetric("bodyFat")}
+                    style={[
+                      styles.trendMetricSelectorButton,
+                      !displaysWeightTrend && styles.trendMetricSelectorButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.trendMetricSelectorText,
+                        !displaysWeightTrend && styles.trendMetricSelectorTextSelected,
+                      ]}
+                    >
+                      Body Fat
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              </Card>
-            )}
-
-          {/* Body Weight */}
-          {latestWeight != null && (
-            <Card title="Body Weight">
+              </View>
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
+                    {displaysWeightTrend
+                      ? formatMeasurementText(units.formatWeight(latestWeight?.smoothedWeight ?? 0))
+                      : `${formatBodyCompositionNumber(latestBodyFat?.smoothedBodyFatPct ?? 0)}%`}
                   </Text>
-                  {weightPrediction?.ratePerWeek != null && (
-                    <Text
-                      style={[
-                        styles.weightRate,
-                        {
-                          color:
-                            Math.abs(weightPrediction.ratePerWeek) < 0.05
-                              ? colors.textSecondary
-                              : weightPrediction.ratePerWeek > 0
-                                ? colors.positive
-                                : colors.danger,
-                        },
-                      ]}
-                    >
-                      {weightPrediction.ratePerWeek > 0 ? "+" : ""}
-                      {formatMeasurementText(units.formatWeight(weightPrediction.ratePerWeek))}
-                      /wk
-                    </Text>
+                  {displaysWeightTrend ? (
+                    <>
+                      <Text style={styles.weightScale}>
+                        {latestWeight?.smoothedWeightStatus?.label}
+                      </Text>
+                      {latestWeight?.rawWeight != null && latestWeight.rawWeightStatus != null && (
+                        <Text style={styles.weightScale}>
+                          {latestWeight.rawWeightStatus.label}:{" "}
+                          {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                        </Text>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.weightScale}>
+                        {latestBodyFat?.smoothedBodyFatStatus?.label}
+                      </Text>
+                      {latestBodyFat?.rawBodyFatPct != null &&
+                        latestBodyFat.rawBodyFatStatus != null && (
+                          <Text style={styles.weightScale}>
+                            {latestBodyFat.rawBodyFatStatus.label}:{" "}
+                            {formatBodyCompositionNumber(latestBodyFat.rawBodyFatPct)}%
+                          </Text>
+                        )}
+                    </>
                   )}
-                  {weightPrediction?.goal?.estimatedDate != null && (
+                  {displaysWeightTrend && weightPrediction?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
                       Goal:{" "}
                       {formatMeasurementText(
@@ -508,20 +731,96 @@ export default function RecoveryScreen() {
                     </Text>
                   )}
                 </View>
-                {weightData.length >= 2 && (
-                  <View style={styles.sparkContainer}>
-                    <SparkLine
-                      data={weightData.map((d) => d.smoothedWeight)}
-                      height={50}
-                      color={colors.blue}
-                      showYAxis
-                      formatYLabel={(value) =>
-                        formatBodyCompositionNumber(units.convertWeight(value))
-                      }
-                    />
+                {(displaysWeightTrend ? weightData.length : bodyFatData.length) >= 2 && (
+                  <View
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={
+                      displaysWeightTrend
+                        ? `Weight trend: ${weightData
+                            .map(
+                              (row) =>
+                                `${row.date} ${formatMeasurementText(units.formatWeight(row.smoothedWeight))}`,
+                            )
+                            .join("; ")}.`
+                        : `Body fat trend: ${bodyFatData
+                            .map(
+                              (row) =>
+                                `${row.date} ${formatBodyCompositionNumber(row.smoothedBodyFatPct)}%`,
+                            )
+                            .join("; ")}.`
+                    }
+                    style={styles.sparkContainer}
+                  >
+                    <View
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      <SparkLine
+                        data={
+                          displaysWeightTrend
+                            ? weightData.map((row) => row.smoothedWeight)
+                            : bodyFatData.map((row) => row.smoothedBodyFatPct)
+                        }
+                        height={50}
+                        color={displaysWeightTrend ? colors.blue : colors.purple}
+                        showYAxis
+                        formatYLabel={(value) =>
+                          displaysWeightTrend
+                            ? formatBodyCompositionNumber(units.convertWeight(value))
+                            : `${formatBodyCompositionNumber(value)}%`
+                        }
+                      />
+                    </View>
                   </View>
                 )}
               </View>
+              <View style={styles.trendMetricGrid}>
+                <TrendMetricGridItem
+                  label="RATE"
+                  subtle
+                  value={
+                    displayedTrendRate == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedTrendRate > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedTrendRate))}/wk`
+                        : `${displayedTrendRate > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedTrendRate)}%/wk`
+                  }
+                />
+                <TrendMetricGridItem
+                  label="7D"
+                  value={
+                    displayedPrediction?.periodDeltas.days7 == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedPrediction.periodDeltas.days7 > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedPrediction.periodDeltas.days7))}`
+                        : `${displayedPrediction.periodDeltas.days7 > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedPrediction.periodDeltas.days7)}%`
+                  }
+                />
+                <TrendMetricGridItem
+                  label="14D"
+                  value={
+                    displayedPrediction?.periodDeltas.days14 == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedPrediction.periodDeltas.days14 > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedPrediction.periodDeltas.days14))}`
+                        : `${displayedPrediction.periodDeltas.days14 > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedPrediction.periodDeltas.days14)}%`
+                  }
+                />
+                <TrendMetricGridItem
+                  label="30D"
+                  value={
+                    displayedPrediction?.periodDeltas.days30 == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedPrediction.periodDeltas.days30 > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedPrediction.periodDeltas.days30))}`
+                        : `${displayedPrediction.periodDeltas.days30 > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedPrediction.periodDeltas.days30)}%`
+                  }
+                />
+              </View>
+              {displaysWeightTrend && (
+                <BodyDecisionContext context={recoveryData.decisionContext} />
+              )}
             </Card>
           )}
 
@@ -542,6 +841,8 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/sleep")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Sleep Detail"
           >
             <Text style={styles.navLinkText}>Sleep Detail</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
@@ -550,6 +851,8 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/correlation")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Correlation Explorer"
           >
             <Text style={styles.navLinkText}>Correlation Explorer</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
@@ -558,12 +861,14 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/daily-heart-rate")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Heart Rate by Source"
           >
             <Text style={styles.navLinkText}>Heart Rate by Source</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
         </>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
@@ -577,16 +882,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
     gap: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textTertiary,
   },
   chartRow: {
     flexDirection: "row",
@@ -657,12 +952,81 @@ const styles = StyleSheet.create({
   healthspanTrend: {
     fontSize: 13,
     fontWeight: "500",
-    textTransform: "capitalize",
+  },
+  healthspanAvailabilitySummary: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  healthspanAvailabilityDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   weightRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  trendHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  trendTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  trendMetricSelector: {
+    flexDirection: "row",
+    padding: 2,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+  },
+  trendMetricSelectorButton: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  trendMetricSelectorButtonSelected: {
+    backgroundColor: colors.accent,
+  },
+  trendMetricSelectorText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  trendMetricSelectorTextSelected: {
+    color: colors.background,
+  },
+  trendMetricGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSecondary,
+    paddingTop: 12,
+  },
+  trendMetricGridItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 3,
+  },
+  trendMetricGridLabel: {
+    fontSize: 10,
+    color: colors.textTertiary,
+  },
+  trendMetricGridValue: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  trendMetricGridValueSubtle: {
+    color: colors.textSecondary,
   },
   weightValue: {
     fontSize: 32,
@@ -677,6 +1041,11 @@ const styles = StyleSheet.create({
   weightRate: {
     fontSize: 13,
     fontWeight: "600",
+    marginTop: 2,
+  },
+  weightScale: {
+    fontSize: 12,
+    color: colors.textSecondary,
     marginTop: 2,
   },
   weightGoal: {

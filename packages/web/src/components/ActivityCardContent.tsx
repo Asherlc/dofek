@@ -1,0 +1,237 @@
+import {
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import { formatDurationMinutes } from "@dofek/format/format";
+import {
+  formatRecordLocalTime,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import type { ActivityOrigin } from "@dofek/providers/activity-origin";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import {
+  formatProviderAbsentTombstoneSummary,
+  formatProviderPartialAbsenceSummary,
+  type ProviderAbsentSource,
+} from "@dofek/providers/providers";
+import type { ActivityImage } from "@dofek/training/activity-images";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import { formatActivityTypeLabel } from "@dofek/training/training";
+import type { ReactNode } from "react";
+import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
+import { ActivityPhoto } from "./ActivityPhoto.tsx";
+import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
+import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
+
+export interface ActivityCardData {
+  id: string;
+  name: string | null;
+  activityType: string;
+  primaryActivityType: string | null;
+  modality: string | null;
+  startedAt: string;
+  localTimeContext: RecordLocalTimeContext;
+  durationMin: number;
+  source: {
+    origin: ActivityOrigin;
+    tree: ActivitySourceTree;
+    primarySourceLabel: string | null;
+    sourceCount: number;
+    overlapSummary: string | null;
+  };
+  lastProcessedAt: string | null;
+  distanceMeters: number | null;
+  distanceState: ActivityDataState;
+  elevationGainM: number | null;
+  elevationState: ActivityDataState;
+  isProviderAbsent?: boolean;
+  providerId?: string;
+  providerAbsentAt?: string | null;
+  partialAbsentSources?: ProviderAbsentSource[];
+  location: ActivityCardLocation | null;
+  stats: ActivityCardStat[];
+}
+
+export type ActivityCardLocation = ActivityMapLocation;
+
+export type ActivityCardStat = ActivityMetric;
+
+interface ActivityCardContentProps {
+  activity: ActivityCardData;
+  units: UnitConverter;
+  selectMode: boolean;
+  selected: boolean;
+  photo?: ActivityImage;
+  headingAction?: ReactNode;
+  onToggleSelected?: () => void;
+}
+
+export function ActivityCardContent({
+  activity,
+  units,
+  selectMode,
+  selected,
+  photo,
+  headingAction,
+  onToggleSelected,
+}: ActivityCardContentProps) {
+  const isHidden = activity.isProviderAbsent === true;
+  const previewPhoto = !activity.location && !isHidden ? photo : undefined;
+  const tombstoneSummary =
+    isHidden && activity.providerId && activity.providerAbsentAt
+      ? formatProviderAbsentTombstoneSummary(activity.providerId, activity.providerAbsentAt)
+      : null;
+  const partialAbsenceSummary = formatProviderPartialAbsenceSummary(
+    activity.partialAbsentSources ?? [],
+  );
+  const activityLabel = formatActivityTypeLabel(
+    activity.primaryActivityType ?? activity.activityType,
+  );
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+
+  return (
+    <div className="flex h-full flex-col">
+      <div
+        data-testid="activity-card-layout"
+        className={
+          activity.location || previewPhoto
+            ? "grid min-h-60 flex-1 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
+            : "grid flex-1"
+        }
+      >
+        <div className="flex min-w-0 flex-col p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {selectMode ? (
+              <input
+                type="checkbox"
+                aria-label={`Select ${activity.name ?? activityLabel}`}
+                checked={selected}
+                readOnly={!onToggleSelected}
+                onChange={onToggleSelected}
+                className="relative z-20 h-4 w-4 cursor-pointer accent-accent"
+              />
+            ) : null}
+            <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
+            <div className="min-w-0 flex-1">
+              <h4 className="truncate text-base font-semibold">
+                {headingAction ?? activity.name ?? activityLabel}
+              </h4>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                <span>
+                  {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
+                  {formatDurationMinutes(activity.durationMin)}
+                </span>
+              </div>
+            </div>
+          </div>
+          {isHidden ? (
+            <span className="mt-3 w-fit rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              Removed
+            </span>
+          ) : null}
+          {tombstoneSummary ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{tombstoneSummary}</p>
+          ) : null}
+          {partialAbsenceSummary ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              {partialAbsenceSummary}
+            </p>
+          ) : null}
+          <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
+            <ActivityMetricGrid activity={activity} units={units} />
+          </div>
+        </div>
+        {activity.location || previewPhoto ? (
+          <div
+            data-testid="activity-secondary-panel"
+            className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
+          >
+            <div
+              data-testid="activity-secondary-inset"
+              className="min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
+            >
+              {activity.location ? (
+                <ActivityMapTile location={activity.location} variant="panel" />
+              ) : previewPhoto ? (
+                <ActivityPhoto
+                  image={previewPhoto}
+                  className="h-full min-h-48"
+                  recoveryMessage="Open the activity to refresh photos and try again."
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <ActivitySourceDisclosure tree={activity.source.tree} />
+    </div>
+  );
+}
+
+function ActivityMetricGrid({
+  activity,
+  units,
+}: {
+  activity: Pick<
+    ActivityCardData,
+    | "activityType"
+    | "modality"
+    | "location"
+    | "stats"
+    | "distanceMeters"
+    | "distanceState"
+    | "elevationGainM"
+    | "elevationState"
+  >;
+  units: UnitConverter;
+}) {
+  const isIndoorCycling =
+    activity.activityType === "cycling" && isIndoorCyclingModality(activity.modality);
+  const hasRouteMetrics =
+    !isIndoorCycling &&
+    (activity.location?.kind === "recorded_gps" ||
+      activity.distanceState.status === "available" ||
+      activity.elevationState.status === "available");
+  const metrics: ActivityCardStat[] = hasRouteMetrics
+    ? [
+        formatActivityMetric("Distance", activity.distanceMeters, activity.distanceState, (value) =>
+          formatMeasurementText(units.formatDistance(value / 1000)),
+        ),
+        formatActivityMetric(
+          "Elevation",
+          activity.elevationGainM,
+          activity.elevationState,
+          (value) => formatMeasurementText(units.formatElevation(value)),
+        ),
+      ]
+    : activity.stats;
+
+  return (
+    <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+      {metrics.slice(0, 2).map((metric) =>
+        metric.status === "available" ? (
+          <div key={metric.label} className="min-w-0">
+            <div className="text-lg font-semibold tabular-nums">{metric.value}</div>
+            <div className="mt-1 text-[11px] leading-tight text-muted">{metric.label}</div>
+          </div>
+        ) : (
+          <div key={metric.label} className="col-span-2 min-w-0" data-state={metric.status}>
+            <div className="text-sm font-semibold">
+              {metric.label} {activityDataStateLabel(metric.status)}
+            </div>
+            <div className="mt-1 text-xs leading-relaxed text-muted">{metric.reason}</div>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}

@@ -3,8 +3,11 @@ import type { TokenSet } from "../../auth/oauth.ts";
 import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
-import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -159,9 +162,9 @@ export class PolarSyncService {
             const parsedExercise = parsePolarExercise(exercise);
             presentActivityExternalIds.add(parsedExercise.externalId);
             try {
-              const [activityRow] = await this.#db
-                .insert(activity)
-                .values({
+              const activityRow = await upsertProviderActivity(
+                this.#db,
+                {
                   providerId: this.#providerId,
                   externalId: parsedExercise.externalId,
                   activityType: parsedExercise.activityType,
@@ -169,31 +172,29 @@ export class PolarSyncService {
                   startedAt: parsedExercise.startedAt,
                   endedAt: parsedExercise.endedAt,
                   raw: {
+                    device: parsedExercise.device,
+                    device_id: parsedExercise.deviceId,
                     durationSeconds: parsedExercise.durationSeconds,
                     distanceMeters: parsedExercise.distanceMeters,
-                    calories: parsedExercise.calories,
                     avgHeartRate: parsedExercise.avgHeartRate,
                     maxHeartRate: parsedExercise.maxHeartRate,
                   },
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsedExercise.activityType,
-                    name: parsedExercise.name,
-                    startedAt: parsedExercise.startedAt,
-                    endedAt: parsedExercise.endedAt,
-                    raw: {
-                      durationSeconds: parsedExercise.durationSeconds,
-                      distanceMeters: parsedExercise.distanceMeters,
-                      calories: parsedExercise.calories,
-                      avgHeartRate: parsedExercise.avgHeartRate,
-                      maxHeartRate: parsedExercise.maxHeartRate,
-                    },
-                    providerAbsentAt: null,
+                },
+                {
+                  activityType: parsedExercise.activityType,
+                  name: parsedExercise.name,
+                  startedAt: parsedExercise.startedAt,
+                  endedAt: parsedExercise.endedAt,
+                  raw: {
+                    device: parsedExercise.device,
+                    device_id: parsedExercise.deviceId,
+                    durationSeconds: parsedExercise.durationSeconds,
+                    distanceMeters: parsedExercise.distanceMeters,
+                    avgHeartRate: parsedExercise.avgHeartRate,
+                    maxHeartRate: parsedExercise.maxHeartRate,
                   },
-                })
-                .returning({ id: activity.id });
+                },
+              );
 
               const activityId = activityRow?.id;
               if (activityId && exercise.has_route) {
@@ -210,7 +211,7 @@ export class PolarSyncService {
             }
           }
 
-          await reconcileProviderActivityAbsence(this.#db, {
+          await finishProviderActivityListSync(this.#db, {
             providerId: this.#providerId,
             userId: this.#userId,
             windowStart: since,
@@ -290,6 +291,7 @@ export class PolarSyncService {
                   deepMinutes: parsedSleep.deepMinutes,
                   remMinutes: parsedSleep.remMinutes,
                   awakeMinutes: parsedSleep.awakeMinutes,
+                  stagingAvailable: parsedSleep.stagingAvailable,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -301,6 +303,7 @@ export class PolarSyncService {
                     deepMinutes: parsedSleep.deepMinutes,
                     remMinutes: parsedSleep.remMinutes,
                     awakeMinutes: parsedSleep.awakeMinutes,
+                    stagingAvailable: parsedSleep.stagingAvailable,
                   },
                 })
                 .returning({ id: sleepSession.id });
@@ -383,7 +386,6 @@ export class PolarSyncService {
                   date: parsedDailyMetrics.date,
                   providerId: this.#providerId,
                   steps: parsedDailyMetrics.steps,
-                  activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
                   hrv: parsedDailyMetrics.hrv,
                   respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                 })
@@ -396,7 +398,6 @@ export class PolarSyncService {
                   ],
                   set: {
                     steps: parsedDailyMetrics.steps,
-                    activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
                     hrv: parsedDailyMetrics.hrv,
                     respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                   },

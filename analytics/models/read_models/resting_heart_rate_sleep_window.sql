@@ -10,20 +10,18 @@
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 
-WITH target_state AS (
+WITH
+{% if is_incremental() %}
+target_state AS (
     SELECT
-        {% if is_incremental() %}
-            coalesce(
-                max(refreshed_at),
-                toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-            ) AS last_refreshed_at,
-            count() = 0 AS is_empty
-        FROM {{ this }}
-        {% else %}
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS last_refreshed_at,
-            true AS is_empty
-        {% endif %}
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at,
+        count() = 0 AS is_empty
+    FROM {{ this }}
 ),
+{% endif %}
 
 sleep_source AS (
     SELECT
@@ -39,11 +37,11 @@ sleep_source AS (
             dateDiff('second', started_at, assumeNotNull(ended_at))
         ) AS duration_seconds,
         multiIf(
-            sleep_type IN ('nap', 'late_nap', 'rest'), true,
-            sleep_type IN ('sleep', 'long_sleep', 'main'), false,
-            sleep_type = 'not_main', coalesce(duration_minutes < 120, true),
+            sleep_type IN ('nap', 'late_nap', 'rest'), TRUE,
+            sleep_type IN ('sleep', 'long_sleep', 'main'), FALSE,
+            sleep_type = 'not_main', coalesce(duration_minutes < 120, TRUE),
             duration_minutes IS NOT NULL, duration_minutes < 120,
-            false
+            FALSE
         ) AS is_nap
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
 ),
@@ -104,9 +102,15 @@ dirty_keys AS (
         user_id,
         sleep_id
     FROM (
-        SELECT user_id, sleep_id FROM sleep_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM sleep_dirty_keys
         UNION ALL
-        SELECT user_id, sleep_id FROM sample_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM sample_dirty_keys
     )
 ),
 
@@ -121,7 +125,7 @@ sleep_windows AS (
     INNER JOIN dirty_keys
         ON dirty_keys.user_id = active_sleep.user_id
         AND dirty_keys.sleep_id = active_sleep.sleep_id
-    WHERE active_sleep.is_nap = false
+    WHERE active_sleep.is_nap = FALSE
 ),
 
 computed_windows AS (

@@ -129,7 +129,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -207,7 +206,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -216,7 +214,6 @@ describe("buildDailyContext", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -236,7 +233,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -254,7 +250,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -271,7 +266,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -314,7 +308,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -330,7 +323,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -346,7 +338,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -364,7 +355,6 @@ describe("buildDailyContext", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -373,7 +363,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -390,7 +379,6 @@ describe("buildDailyContext", () => {
         hrv: null,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -417,7 +405,6 @@ describe("buildDailyContext", () => {
         hrv: 52,
         spo2_avg: 98,
         steps: 12000,
-        active_energy_kcal: 600,
         skin_temp_c: 36.8,
       },
     ];
@@ -470,7 +457,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -544,7 +530,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -553,7 +538,6 @@ describe("buildDailyContext", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -822,7 +806,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -841,7 +824,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -850,7 +832,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -859,7 +840,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 40,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -884,7 +864,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -913,7 +892,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 40,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -922,7 +900,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -931,7 +908,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -979,7 +955,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1080,22 +1055,22 @@ describe("PredictionsRepository getTargets mapping", () => {
 });
 
 describe("PredictionsRepository predict dispatching to activity subtypes", () => {
-  it("predict for cardio_power fetches activity-specific query (2 PG + 5 CH calls)", async () => {
+  it("predict for cardio_power fetches activity-specific query (2 PG + 6 CH calls)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     await repo.predict("cardio_power", 365);
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(localSensorStore.query).toHaveBeenCalledTimes(5);
+    expect(localSensorStore.query).toHaveBeenCalledTimes(6);
   });
 
-  it("predict for strength_volume fetches strength-specific query (3 PG + 4 CH calls)", async () => {
+  it("predict for strength_volume fetches strength-specific query (3 PG + 5 CH calls)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     await repo.predict("strength_volume", 365);
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(localSensorStore.query).toHaveBeenCalledTimes(4);
+    expect(localSensorStore.query).toHaveBeenCalledTimes(5);
   });
 
   it("fetches resting heart rate using the repository timezone date", async () => {
@@ -1230,7 +1205,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1248,7 +1222,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 50,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -1257,7 +1230,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1296,7 +1268,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1313,7 +1284,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1411,7 +1381,8 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       return Promise.resolve(result);
     });
     let sensorCallIndex = 0;
-    const sensorQuery = vi.fn().mockImplementation(() => {
+    const sensorQuery = vi.fn().mockImplementation((_schema, query: string) => {
+      if (query.includes("spo2_sample_daily")) return Promise.resolve([]);
       const result = sensorCallResults[sensorCallIndex] ?? [];
       sensorCallIndex++;
       return Promise.resolve(result);
@@ -1426,7 +1397,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     // CH calls: resting HR, sleep, body comp, exercise minutes, cardio activity summary (5)
     const cardioRow = {
       activity_id: "act-1",
-      activity_type: "cycling",
+      canonical_type: "cycling",
       started_at: "2025-06-15T10:00:00Z",
       avg_hr: 150,
       avg_power: 200,
@@ -1442,14 +1413,14 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     );
     const result = await repo.predict("cardio_power", 90);
     expect(execute.mock.calls.length).toBe(3);
-    expect(sensorQuery.mock.calls.length).toBe(5);
+    expect(sensorQuery.mock.calls.length).toBe(6);
     expect(result).toBeNull();
   });
 
   it("cardio predict maps durationMin with ?? 0 fallback when duration_min is null", async () => {
     const cardioRow = {
       activity_id: "act-2",
-      activity_type: "running",
+      canonical_type: "running",
       started_at: "2025-06-15T08:00:00Z",
       avg_hr: 160,
       avg_power: 250,
@@ -1481,7 +1452,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     );
     const result = await repo.predict("strength_volume", 90);
     expect(execute.mock.calls.length).toBe(3);
-    expect(sensorQuery.mock.calls.length).toBe(4);
+    expect(sensorQuery.mock.calls.length).toBe(5);
     expect(result).toBeNull();
   });
 
@@ -1559,7 +1530,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
   it("cardio predict maps date from started_at using toISOString slice", async () => {
     const cardioRow = {
       activity_id: "act-date",
-      activity_type: "cycling",
+      canonical_type: "cycling",
       started_at: "2025-12-25T18:30:00Z",
       avg_hr: 140,
       avg_power: 180,

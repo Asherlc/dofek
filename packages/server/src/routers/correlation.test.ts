@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JoinedDay } from "../insights/data-join.ts";
+
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 import {
   computeCorrelation,
+  computeCorrelationV2,
   computeStats,
   downsample,
   emptyStats,
@@ -14,7 +18,6 @@ function makeDay(overrides: Partial<JoinedDay> & { date: string }): JoinedDay {
     hrv: null,
     spo2_avg: null,
     steps: null,
-    active_energy_kcal: null,
     skin_temp_c: null,
     sleep_duration_min: null,
     deep_min: null,
@@ -125,7 +128,7 @@ describe("computeCorrelation", () => {
     });
 
     expect(result.sampleCount).toBe(29); // one less due to lag
-    expect(result.insight).toMatch(/next.day|1.day later/i);
+    expect(result.insight).toContain("1 calendar day later");
   });
 
   it("downsamples data points when too many", () => {
@@ -205,7 +208,6 @@ describe("computeCorrelation", () => {
       fat_g: 70,
       fiber_g: 30,
       steps: 10000,
-      active_energy_kcal: 500,
       exercise_minutes: 60,
       cardio_minutes: 30,
       strength_minutes: 20,
@@ -232,7 +234,6 @@ describe("computeCorrelation", () => {
     expect(extractMetricValue(day, "fiber")).toBe(30);
     // Activity
     expect(extractMetricValue(day, "steps")).toBe(10000);
-    expect(extractMetricValue(day, "active_calories")).toBe(500);
     expect(extractMetricValue(day, "exercise_duration")).toBe(60);
     expect(extractMetricValue(day, "cardio_duration")).toBe(30);
     expect(extractMetricValue(day, "strength_duration")).toBe(20);
@@ -307,6 +308,162 @@ describe("computeCorrelation", () => {
     // Verify labels are used (not raw IDs)
     expect(result.insight).toContain("protein");
     expect(result.insight).not.toContain("protein_g");
+  });
+});
+
+describe("computeCorrelationV2", () => {
+  it("reports exact selected, observed, paired, and missing calendar-day coverage", () => {
+    const days = Array.from({ length: 10 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+        protein_g: index === 2 ? null : 100 + index * 2,
+        hrv: index === 4 ? null : 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 10,
+      lag: 1,
+      endDate: "2025-01-10",
+    });
+
+    expect(result.coverage).toEqual({
+      selectedDayCount: 10,
+      eligiblePairDayCount: 9,
+      observedXDayCount: 8,
+      observedYDayCount: 8,
+      pairedDayCount: 7,
+      missingPairDayCount: 2,
+    });
+    expect(result.sampleCount).toBe(7);
+  });
+
+  it("returns dependence-aware uncertainty and server-computed slope without iid claims", () => {
+    const days = Array.from({ length: 16 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+        protein_g: 100 + index * 2,
+        hrv: 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 16,
+      lag: 0,
+      endDate: "2025-01-16",
+    });
+
+    expect(result.availability).toBe("available");
+    if (result.availability === "available") {
+      expect(result.spearmanRho).toBeCloseTo(1, 12);
+      expect(result.regression.slope).toBeCloseTo(0.5, 12);
+      expect(result.uncertainty).toMatchObject({
+        availability: "available",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 2_000,
+        validReplicateCount: 2_000,
+      });
+      if (result.uncertainty.availability !== "available") {
+        throw new Error("Expected an available uncertainty interval");
+      }
+      expect(result.uncertainty.lower).toBeCloseTo(1);
+      expect(result.uncertainty.upper).toBeCloseTo(1);
+    }
+    expect(result.insight).not.toMatch(/\bp\s*[=<]/i);
+    expect(result).not.toHaveProperty("spearmanPValue");
+    expect(result).not.toHaveProperty("pearsonPValue");
+    expect(result).not.toHaveProperty("confidenceLevel");
+    expect(result).not.toHaveProperty("correlationColor");
+  });
+
+  it("keeps uncertainty explicitly unavailable when the effect is not estimable", () => {
+    const days = Array.from({ length: 10 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+        protein_g: 100,
+        hrv: 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 10,
+      lag: 0,
+      endDate: "2025-01-10",
+    });
+
+    expect(result.availability).toBe("available");
+    if (result.availability === "available") {
+      expect(result.spearmanRho).toBeNull();
+      expect(result.regression.slope).toBeNull();
+      expect(result.uncertainty).toMatchObject({
+        availability: "unavailable",
+        reason: "degenerate_input",
+        attemptedReplicateCount: 0,
+        validReplicateCount: 0,
+      });
+    }
+  });
+
+  it("does not bootstrap when fewer than five paired days are available", () => {
+    const result = computeCorrelationV2(
+      Array.from({ length: 4 }, (_, index) =>
+        makeDay({
+          date: `2024-01-0${index + 1}`,
+          protein_g: 100 + index,
+          hrv: 50 + index,
+        }),
+      ),
+      {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 4,
+        lag: 0,
+        endDate: "2024-01-04",
+      },
+    );
+
+    expect(result.availability).toBe("insufficient");
+    expect(result.uncertainty).toMatchObject({
+      availability: "unavailable",
+      reason: "insufficient_pairs",
+      attemptedReplicateCount: 0,
+      validReplicateCount: 0,
+    });
+  });
+
+  it("bounds an all-time selected spine from the earliest fetched date through endDate", () => {
+    const days = Array.from({ length: 3 }, (_, index) =>
+      makeDay({
+        date: `2025-01-${String(index + 4).padStart(2, "0")}`,
+        protein_g: 100 + index,
+        hrv: 50 + index,
+      }),
+    );
+
+    const result = computeCorrelationV2(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: null,
+      lag: 1,
+      endDate: "2025-01-10",
+    });
+
+    expect(result.coverage).toEqual({
+      selectedDayCount: 7,
+      eligiblePairDayCount: 6,
+      observedXDayCount: 3,
+      observedYDayCount: 2,
+      pairedDayCount: 2,
+      missingPairDayCount: 4,
+    });
   });
 });
 
@@ -415,7 +572,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -436,6 +596,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 
 // Must import router AFTER vi.mock declarations
 const { correlationRouter } = await import("./correlation.ts");
+const { CorrelationRepository } = await import("../repositories/correlation-repository.ts");
 const { createTestCallerFactory } = await import("./test-helpers.ts");
 
 const createCaller = createTestCallerFactory(correlationRouter);
@@ -447,7 +608,66 @@ function makeSensorStore() {
 }
 
 describe("correlationRouter", () => {
+  it("anchors analysis and observations to the user's local calendar day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T12:30:00.000Z"));
+    const compute = vi
+      .spyOn(CorrelationRepository.prototype, "compute")
+      .mockRejectedValue(new Error("captured compute call"));
+    const computeV2 = vi
+      .spyOn(CorrelationRepository.prototype, "computeV2")
+      .mockRejectedValue(new Error("captured computeV2 call"));
+    const observations = vi
+      .spyOn(CorrelationRepository.prototype, "listObservations")
+      .mockRejectedValue(new Error("captured observations call"));
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "Pacific/Auckland",
+      sensorStore: makeSensorStore(),
+    });
+
+    try {
+      await expect(
+        caller.compute({ metricX: "resting_hr", metricY: "hrv", days: 90 }),
+      ).rejects.toThrow("captured compute call");
+      await expect(
+        caller.computeV2({ metricX: "resting_hr", metricY: "hrv", days: 90 }),
+      ).rejects.toThrow("captured computeV2 call");
+      await expect(
+        caller.observations({ metricX: "resting_hr", metricY: "hrv", days: 90 }),
+      ).rejects.toThrow("captured observations call");
+
+      expect(compute.mock.calls[0]?.[4]).toBe("2026-07-30");
+      expect(computeV2.mock.calls[0]?.[4]).toBe("2026-07-30");
+      expect(observations.mock.calls[0]?.[4]).toBe("2026-07-30");
+    } finally {
+      compute.mockRestore();
+      computeV2.mockRestore();
+      observations.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   describe("metrics", () => {
+    it("versions the metric metadata cache contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "correlation.metrics:v2",
+      });
+    });
+
+    it("versions both correlation result cache contracts", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "correlation.compute:v2",
+      });
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "correlation.computeV2:v2",
+      });
+    });
+
     it("returns available correlation metrics", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -461,10 +681,72 @@ describe("correlationRouter", () => {
       expect(result.length).toBeGreaterThan(0);
       expect(result[0]).toHaveProperty("id");
       expect(result[0]).toHaveProperty("label");
+      expect(result[0]).toHaveProperty("availabilityDescription");
     });
   });
 
   describe("compute", () => {
+    it("rejects same-series comparisons before loading correlation data", async () => {
+      const compute = vi.spyOn(CorrelationRepository.prototype, "compute");
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.compute({
+          metricX: "hrv",
+          metricY: "hrv",
+          days: 90,
+          lag: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Choose two different metrics to compare.",
+      });
+      expect(compute).not.toHaveBeenCalled();
+      compute.mockRestore();
+    });
+
+    it("validates and strips unknown repository output fields", async () => {
+      const repositoryResult = {
+        availability: "insufficient",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        dataPoints: [],
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        insight: "Insufficient data",
+        confidenceLevel: "insufficient",
+        correlationColor: "#71717a",
+        unexpected: "not part of the API contract",
+      } as const;
+      const compute = vi
+        .spyOn(CorrelationRepository.prototype, "compute")
+        .mockResolvedValue(repositoryResult);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const result = await caller.compute({
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 90,
+        lag: 0,
+      });
+
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        additionalSamplesRequired: 5,
+      });
+      expect(result).not.toHaveProperty("unexpected");
+      compute.mockRestore();
+    });
+
     it("returns correlation result with insufficient data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -479,9 +761,13 @@ describe("correlationRouter", () => {
         lag: 0,
       });
 
-      expect(result).toHaveProperty("sampleCount");
-      expect(result).toHaveProperty("pearsonR");
-      expect(result.confidenceLevel).toBe("insufficient");
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        confidenceLevel: "insufficient",
+      });
+      expect(result).not.toHaveProperty("pearsonR");
     });
 
     it("uses default days (365) and lag (0) when not specified", async () => {
@@ -521,6 +807,249 @@ describe("correlationRouter", () => {
       await expect(
         caller.compute({ metricX: "resting_hr", metricY: "hrv", lag: 8 }),
       ).rejects.toThrow();
+    });
+  });
+
+  describe("computeV2", () => {
+    it("rejects same-series comparisons before loading correlation data", async () => {
+      const computeV2 = vi.spyOn(CorrelationRepository.prototype, "computeV2");
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.computeV2({
+          metricX: "hrv",
+          metricY: "hrv",
+          days: 90,
+          lag: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Choose two different metrics to compare.",
+      });
+      expect(computeV2).not.toHaveBeenCalled();
+      computeV2.mockRestore();
+    });
+
+    it("returns the versioned evidence contract without legacy iid fields", async () => {
+      const repositoryResult = {
+        analysisVersion: 2,
+        availability: "insufficient",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        dataPoints: [],
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        insight: "No paired observations are available.",
+        coverage: {
+          selectedDayCount: 90,
+          eligiblePairDayCount: 90,
+          observedXDayCount: 0,
+          observedYDayCount: 0,
+          pairedDayCount: 0,
+          missingPairDayCount: 90,
+        },
+        uncertainty: {
+          availability: "unavailable",
+          method: "circular_moving_block_bootstrap",
+          level: 0.95,
+          blockLength: 5,
+          requestedReplicateCount: 2_000,
+          attemptedReplicateCount: 0,
+          validReplicateCount: 0,
+          reason: "insufficient_pairs",
+        },
+        unexpected: "not part of the API contract",
+        interpretationWarning:
+          "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+      } as const;
+      const compute = vi
+        .spyOn(CorrelationRepository.prototype, "computeV2")
+        .mockResolvedValue(repositoryResult);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const result = await caller.computeV2({
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 90,
+        lag: 0,
+      });
+
+      expect(result).toMatchObject({
+        analysisVersion: 2,
+        availability: "insufficient",
+        interpretationWarning:
+          "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
+        coverage: {
+          selectedDayCount: 90,
+          pairedDayCount: 0,
+          missingPairDayCount: 90,
+        },
+        uncertainty: {
+          availability: "unavailable",
+          reason: "insufficient_pairs",
+        },
+      });
+      expect(result).not.toHaveProperty("unexpected");
+      expect(result).not.toHaveProperty("spearmanPValue");
+      expect(result).not.toHaveProperty("confidenceLevel");
+      expect(result).not.toHaveProperty("correlationColor");
+      compute.mockRestore();
+    });
+
+    it("rejects lags outside the supported range", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.computeV2({ metricX: "resting_hr", metricY: "hrv", lag: -1 }),
+      ).rejects.toThrow();
+      await expect(
+        caller.computeV2({ metricX: "resting_hr", metricY: "hrv", lag: 8 }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("observations", () => {
+    it("returns the bounded paired-observation contract and strips unknown fields", async () => {
+      const repositoryResult = {
+        items: [
+          {
+            x: {
+              metricId: "cardio_duration",
+              date: "2025-01-06",
+              value: 35,
+              contributors: [
+                {
+                  kind: "record",
+                  label: "Morning run",
+                  providerIds: [],
+                  target: {
+                    type: "activity",
+                    activityId: "00000000-0000-4000-8000-000000000106",
+                  },
+                },
+              ],
+            },
+            y: {
+              metricId: "weight_30d",
+              date: "2025-01-07",
+              value: 76,
+              contributors: [
+                {
+                  kind: "aggregate_inputs",
+                  label: "30-day body measurement inputs",
+                  providerIds: ["withings"],
+                  target: { type: "metric_family", family: "body" },
+                },
+              ],
+            },
+          },
+        ],
+        totalCount: 7,
+        nextCursor: "2025-01-06",
+        unexpected: "not part of the API contract",
+      } as const;
+      const observations = vi
+        .spyOn(CorrelationRepository.prototype, "listObservations")
+        .mockResolvedValue(repositoryResult);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const result = await caller.observations({
+        metricX: "cardio_duration",
+        metricY: "weight_30d",
+        days: null,
+        lag: 1,
+        cursor: "2025-01-07",
+        pageSize: 25,
+      });
+
+      expect(result).toMatchObject({
+        totalCount: 7,
+        nextCursor: "2025-01-06",
+        items: [
+          {
+            x: { date: "2025-01-06", value: 35 },
+            y: { date: "2025-01-07", value: 76 },
+          },
+        ],
+      });
+      expect(result).not.toHaveProperty("unexpected");
+      expect(observations).toHaveBeenCalledWith(
+        "cardio_duration",
+        "weight_30d",
+        null,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        { cursor: "2025-01-07", pageSize: 25 },
+      );
+      observations.mockRestore();
+    });
+
+    it("rejects malformed cursors and page sizes above the server bound", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.observations({
+          metricX: "cardio_duration",
+          metricY: "weight_30d",
+          days: null,
+          lag: 1,
+          cursor: "not-a-date",
+        }),
+      ).rejects.toThrow();
+      await expect(
+        caller.observations({
+          metricX: "cardio_duration",
+          metricY: "weight_30d",
+          days: null,
+          lag: 1,
+          pageSize: 101,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects a comparison of the same metric", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      await expect(
+        caller.observations({
+          metricX: "hrv",
+          metricY: "hrv",
+          days: 30,
+          lag: 0,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Choose two different metrics to compare.",
+      });
     });
   });
 });

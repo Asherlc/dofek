@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: Kaya observed application API
+  version: 1.0.0
+  description: Records responses observed from Kaya's authenticated web application.
+servers:
+  - url: https://kaya-beta.kayaclimb.com
+paths:
+  /api/user/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Authenticated Kaya user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  /api/user/refresh-token:
+    post:
+      operationId: refreshAccessToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Refreshed Kaya access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+  /graphql:
+    post:
+      operationId: graphQl
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, variables]
+              properties:
+                query: { type: string }
+                variables:
+                  type: object
+                  required: [user_id, offset, count]
+                  properties:
+                    user_id: { type: string }
+                    offset: { type: integer, minimum: 0 }
+                    count: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: GraphQL response for sessionsForUser or ascentsForUser
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      sessionsForUser:
+                        type: array
+                        items: { $ref: '#/components/schemas/KayaSession' }
+                      ascentsForUser:
+                        type: array
+                        items: { $ref: '#/components/schemas/KayaAscent' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  schemas:
+    LoginResponse:
+      type: object
+      required: [message, token, refresh_token, user]
+      properties:
+        message: { type: string, enum: [ok] }
+        token: { type: string }
+        refresh_token: { type: string }
+        user:
+          type: object
+          required: [id]
+          properties:
+            id: { oneOf: [{ type: string }, { type: integer }] }
+    RefreshTokenResponse:
+      type: object
+      required: [message, token]
+      properties:
+        message: { type: string, enum: [ok] }
+        token: { type: string }
+    KayaAscent:
+      type: object
+      required: [id, session_id, date, attempts, ascent_type, climb]
+      properties:
+        id: { type: string }
+        session_id: { type: [string, 'null'] }
+        date: { type: string, format: date-time }
+        attempts: { type: [integer, 'null'], minimum: 1 }
+        ascent_type:
+          type: object
+          properties: { id: { type: string }, name: { type: string } }
+        climb: { $ref: '#/components/schemas/KayaClimb' }
+    KayaSession:
+      type: object
+      required: [id, start_time, end_time, gym, attempted_climbs]
+      properties:
+        id: { type: string }
+        start_time: { type: string, format: date-time }
+        end_time: { type: [string, 'null'], format: date-time }
+        gym: { type: [object, 'null'] }
+        attempted_climbs:
+          type: array
+          description: Attempted climbs for the session, with composite session/climb IDs, explicit send status, and potentially unknown attempt counts. Observed in Kaya's authenticated application API on 2026-10-26.
+          items:
+            allOf:
+              - $ref: '#/components/schemas/KayaClimb'
+              - type: object
+                required: [attempts, sent]
+                properties:
+                  sent:
+                    type: boolean
+                    description: >-
+                      Explicit send status on the session's attempted climb.
+                      Verified against the authenticated API on 2026-10-26.
+                    externalDocs:
+                      description: Observed authenticated Kaya GraphQL API
+                      url: https://kaya-beta.kayaclimb.com/graphql
+                  attempts:
+                    type: [integer, 'null']
+                    minimum: 1
+                    description: >-
+                      Per-climb session count from Kaya's session_attempts field,
+                      selected with the GraphQL response alias attempts.
+                    externalDocs:
+                      description: Observed authenticated Kaya GraphQL API on 2026-10-13
+                      url: https://kaya-beta.kayaclimb.com/graphql
+    KayaClimb:
+      type: object
+      required: [id, name, lead, climb_type, grade, gym, destination, area, subarea, board, angle]
+      properties:
+        id: { type: string }
+        name: { type: [string, 'null'] }
+        lead:
+          type: boolean
+          description: Route-level lead flag; boulders also return false and must map to null.
+        climb_type:
+          type: object
+          properties: { id: { type: string }, name: { type: string } }
+        grade:
+          type: [object, 'null']
+          properties: { id: { type: string }, name: { type: string }, climb_type_group: { type: string } }
+        gym: { type: [object, 'null'] }
+        destination: { $ref: '#/components/schemas/KayaClimbLocation' }
+        area: { $ref: '#/components/schemas/KayaClimbLocation' }
+        subarea: { $ref: '#/components/schemas/KayaClimbLocation' }
+        board: { $ref: '#/components/schemas/KayaClimbLocation' }
+        angle:
+          type: [integer, 'null']
+          description: Reported signed value. Units and reference direction are unverified; do not assume degrees.
+    KayaClimbLocation:
+      type: [object, 'null']
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+      externalDocs:
+        description: Observed Kaya application field selections
+        url: https://kaya-app.kayaclimb.com/static/js/main.5bd87165.chunk.js

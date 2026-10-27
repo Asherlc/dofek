@@ -97,11 +97,10 @@ export function findCorrelationConfounders(
 
 // Variables that are subsets/supersets or mechanically related — not true confounders
 const relatedVars: Record<string, Set<string>> = {
-  exercise: new Set(["cardio", "strength", "active calories", "steps"]),
-  cardio: new Set(["exercise", "active calories", "steps"]),
+  exercise: new Set(["cardio", "strength", "steps"]),
+  cardio: new Set(["exercise", "steps"]),
   strength: new Set(["exercise"]),
-  steps: new Set(["exercise", "cardio", "active calories"]),
-  "active calories": new Set(["exercise", "cardio", "steps"]),
+  steps: new Set(["exercise", "cardio"]),
   calories: new Set([
     "protein",
     "carbs",
@@ -163,7 +162,6 @@ function isRelatedToAction(actionLabel: string, cvLabel: string): boolean {
     "exercise duration",
     "cardio duration",
     "strength training duration",
-    "active calories",
     "steps",
   ];
   if (
@@ -251,7 +249,7 @@ export function findConfounders(test: ConditionalTest, joined: JoinedDay[]): str
     },
     {
       parent: "exercise duration",
-      children: ["cardio duration", "strength training duration", "steps", "active calories"],
+      children: ["cardio duration", "strength training duration", "steps"],
     },
     { parent: "sleep duration", children: ["deep sleep", "sleep efficiency"] },
   ];

@@ -1,5 +1,11 @@
 import { formatDateShort, formatHRV, formatNumber } from "@dofek/format/format";
-import { chartColors, dofekAxis, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  chartColors,
+  dofekAxis,
+  dofekLegend,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface HrvBaselineRow {
@@ -53,7 +59,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         const firstParam = params[0];
         if (!firstParam) return "";
         const date = formatDateShort(firstParam.data[0]);
-        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(date)}</div>`;
         for (const p of params) {
           // Skip the lower band from tooltip
           if (p.seriesName === "_lowerBand") continue;
@@ -62,8 +68,8 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
             ? `${formatNumber(p.data[1], 0)} bpm`
             : formatHRV(p.data[1]);
           html += `<div style="display:flex;align-items:center;gap:6px">`;
-          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${label}: <b>${formattedValue}</b></span>`;
+          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escapeTooltipHtml(p.color)}"></span>`;
+          html += `<span>${escapeTooltipHtml(label)}: <b>${escapeTooltipHtml(formattedValue)}</b></span>`;
           html += `</div>`;
         }
         return html;

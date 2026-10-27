@@ -1,13 +1,17 @@
+{% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
+{% set sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', default_microbatch_begin) %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='id',
     event_time='_peerdb_synced_at',
-    begin='2026-01-01',
+    begin=sensor_scalar_sample_begin,
     batch_size='day',
-    lookback=3,
+    lookback=1,
     full_refresh=false,
     concurrent_batches=false,
+    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(_peerdb_version)',
     order_by='(user_id, channel, recorded_date, recorded_at, provider_id, id)',
     query_settings={
@@ -17,15 +21,18 @@
 
 WITH metric_stream_versions AS (
     SELECT *
-    FROM {{ source('postgres_fitness', 'metric_stream_freshness') }}
-    WHERE (scalar IS NOT null OR _peerdb_is_deleted = 1)
+    FROM {{ source('ingest', 'metric_stream_freshness') }}
+    WHERE (scalar IS NOT null OR is_deleted = 1 OR channel = 'rr_interval_ms')
         AND channel IN (
             'heart_rate',
+            'rr_interval_ms',
             'power',
             'speed',
             'cadence',
             'altitude',
             'grade',
+            'distance',
+            'temperature',
             'left_right_balance',
             'left_torque_effectiveness',
             'right_torque_effectiveness',
@@ -38,27 +45,79 @@ WITH metric_stream_versions AS (
         )
 ),
 
+metric_stream_latest AS (
+    SELECT
+        metric_stream_versions.id,
+        argMax(
+            tuple(
+                metric_stream_versions.activity_id,
+                metric_stream_versions.user_id,
+                metric_stream_versions.recorded_at,
+                metric_stream_versions.channel,
+                metric_stream_versions.provider_id,
+                metric_stream_versions.external_id,
+                metric_stream_versions.device_id,
+                metric_stream_versions.source_type,
+                metric_stream_versions.metadata,
+                metric_stream_versions.scalar,
+                metric_stream_versions.ingested_at,
+                metric_stream_versions.is_deleted,
+                metric_stream_versions.version
+            ),
+            metric_stream_versions.version
+        ) AS latest
+    FROM metric_stream_versions
+    GROUP BY metric_stream_versions.id
+),
+
+metric_stream_source_rows AS (
+    SELECT
+        metric_stream_latest.id AS id,
+        tupleElement(metric_stream_latest.latest, 1) AS activity_id,
+        tupleElement(metric_stream_latest.latest, 1) AS member_activity_id,
+        tupleElement(metric_stream_latest.latest, 2) AS user_id,
+        tupleElement(metric_stream_latest.latest, 3) AS recorded_at,
+        tupleElement(metric_stream_latest.latest, 4) AS channel,
+        tupleElement(metric_stream_latest.latest, 5) AS provider_id,
+        tupleElement(metric_stream_latest.latest, 6) AS source_external_id,
+        tupleElement(metric_stream_latest.latest, 7) AS device_id,
+        tupleElement(metric_stream_latest.latest, 8) AS source_type,
+        tupleElement(metric_stream_latest.latest, 9) AS metadata,
+        coalesce(tupleElement(metric_stream_latest.latest, 10), 0) AS scalar,
+        tupleElement(metric_stream_latest.latest, 11) AS ingested_at,
+        tupleElement(metric_stream_latest.latest, 12) AS is_deleted,
+        tupleElement(metric_stream_latest.latest, 13) AS source_version
+    FROM metric_stream_latest
+),
+
 metric_stream_rows AS (
     SELECT
-        id,
-        argMax(user_id, _peerdb_version) AS user_id,
-        argMax(recorded_at, _peerdb_version) AS recorded_at,
-        argMax(channel, _peerdb_version) AS channel,
-        argMax(provider_id, _peerdb_version) AS provider_id,
-        argMax(device_id, _peerdb_version) AS device_id,
-        coalesce(argMax(scalar, _peerdb_version), 0) AS scalar,
-        argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
-        argMax(_peerdb_is_deleted, _peerdb_version) AS _peerdb_is_deleted,
-        max(_peerdb_version) AS source_peerdb_version
-    FROM metric_stream_versions
-    GROUP BY id
+        source_rows.* EXCEPT (channel, scalar, is_deleted),
+        if(source_rows.channel = 'rr_interval_ms', 'heart_rate', source_rows.channel) AS channel,
+        if(
+            source_rows.channel = 'rr_interval_ms',
+            if(
+                source_rows.scalar > 0 AND isFinite(source_rows.scalar),
+                toFloat32(60000.0 / nullIf(source_rows.scalar, 0)),
+                0
+            ),
+            source_rows.scalar
+        ) AS scalar,
+        toInt8(if(
+            source_rows.channel = 'rr_interval_ms'
+            AND NOT (source_rows.scalar > 0 AND isFinite(source_rows.scalar)),
+            1,
+            source_rows.is_deleted
+        )) AS is_deleted,
+        source_rows.channel = 'rr_interval_ms' AS derived_heart_rate
+    FROM metric_stream_source_rows AS source_rows
 ),
 
 active_sensor_provider_priority AS (
     SELECT
         provider_id,
         channel,
-        priority
+        toNullable(priority) AS priority
     FROM {{ source('postgres_fitness', 'sensor_provider_priority') }} FINAL
     WHERE _peerdb_is_deleted = 0
 ),
@@ -68,7 +127,7 @@ active_sensor_device_priority AS (
         provider_id,
         source_name_pattern,
         channel,
-        priority
+        toNullable(priority) AS priority
     FROM {{ source('postgres_fitness', 'sensor_device_priority') }} FINAL
     WHERE _peerdb_is_deleted = 0
 ),
@@ -101,21 +160,31 @@ device_priority_match AS (
 
 SELECT
     metric_stream_rows.id AS id,
+    metric_stream_rows.activity_id AS activity_id,
+    metric_stream_rows.member_activity_id AS member_activity_id,
     metric_stream_rows.user_id AS user_id,
     metric_stream_rows.recorded_at AS recorded_at,
     toDate(metric_stream_rows.recorded_at) AS recorded_date,
     metric_stream_rows.channel AS channel,
     metric_stream_rows.provider_id AS provider_id,
+    metric_stream_rows.source_external_id AS source_external_id,
     metric_stream_rows.device_id AS device_id,
+    metric_stream_rows.source_type AS source_type,
+    multiIf(
+        metric_stream_rows.derived_heart_rate, 'estimated',
+        JSONExtractString(metadata, 'measurement_kind') = 'direct', 'direct',
+        JSONExtractString(metadata, 'measurement_kind') = 'estimated', 'estimated',
+        'unknown'
+    ) AS measurement_kind,
     assumeNotNull(metric_stream_rows.scalar) AS scalar,
     coalesce(
         device_priority_match.priority,
         active_sensor_provider_priority.priority,
         1000
     ) AS provider_priority,
-    metric_stream_rows._peerdb_synced_at AS _peerdb_synced_at,
-    metric_stream_rows._peerdb_is_deleted AS _peerdb_is_deleted,
-    metric_stream_rows.source_peerdb_version AS _peerdb_version
+    metric_stream_rows.ingested_at AS _peerdb_synced_at,
+    metric_stream_rows.is_deleted AS _peerdb_is_deleted,
+    metric_stream_rows.source_version AS _peerdb_version
 FROM metric_stream_rows
 LEFT JOIN active_sensor_provider_priority
     ON active_sensor_provider_priority.provider_id = metric_stream_rows.provider_id

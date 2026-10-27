@@ -71,6 +71,43 @@ describe("personalizedParamsSchema", () => {
     expect(result.trainingImpulseConstants).toBeNull();
   });
 
+  it("keeps legacy params without per-model successful-fit timestamps valid", () => {
+    const result = personalizedParamsSchema.parse(baseParams());
+
+    expect(result.successfulFitAt).toBeUndefined();
+  });
+
+  it("parses per-model successful-fit timestamps", () => {
+    const successfulFitAt = {
+      exponentialMovingAverage: "2026-03-18T12:00:00.000Z",
+      readinessWeights: null,
+      sleepTarget: "2026-03-17T11:00:00.000Z",
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    };
+
+    const result = personalizedParamsSchema.parse(baseParams({ version: 2, successfulFitAt }));
+
+    expect(result.successfulFitAt).toEqual(successfulFitAt);
+  });
+
+  it("rejects invalid per-model successful-fit timestamps", () => {
+    expect(() =>
+      personalizedParamsSchema.parse(
+        baseParams({
+          version: 2,
+          successfulFitAt: {
+            exponentialMovingAverage: "not-a-timestamp",
+            readinessWeights: null,
+            sleepTarget: null,
+            stressThresholds: null,
+            trainingImpulseConstants: null,
+          },
+        }),
+      ),
+    ).toThrow();
+  });
+
   describe("version field", () => {
     it("rejects version 0 (must be >= 1)", () => {
       expect(() => personalizedParamsSchema.parse(baseParams({ version: 0 }))).toThrow();

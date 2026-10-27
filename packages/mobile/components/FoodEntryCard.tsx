@@ -1,10 +1,11 @@
 import { formatCalories, formatGrams } from "@dofek/format/format";
 import {
   foodEntryNutrientDetailsFromLegacyColumns,
+  formatFoodEntryNutrientDetailsForAccessibility,
   groupFoodEntryNutrientDetails,
 } from "@dofek/nutrition/food-entry-nutrition";
 import { useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 
 export interface FoodEntry {
@@ -21,30 +22,44 @@ export interface FoodEntry {
 
 interface FoodEntryCardProps {
   entry: FoodEntry;
-  onDelete: (id: string) => void;
-  deleting: boolean;
 }
 
-export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps) {
+export function FoodEntryCard({ entry }: FoodEntryCardProps) {
   const [expanded, setExpanded] = useState(false);
   const displayName = entry.food_name ?? "Unnamed nutrition entry";
   const nutrientDetails = foodEntryNutrientDetailsFromLegacyColumns(entry);
   const nutrientGroups = groupFoodEntryNutrientDetails(nutrientDetails);
-
-  function handleLongPress() {
-    Alert.alert("Delete Entry", `Remove "${displayName}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => onDelete(entry.id) },
-    ]);
-  }
+  const macroAccessibilityLabels = [
+    entry.protein_g == null ? null : `Protein: ${formatGrams(entry.protein_g)}`,
+    entry.carbs_g == null ? null : `Carbs: ${formatGrams(entry.carbs_g)}`,
+    entry.fat_g == null ? null : `Fat: ${formatGrams(entry.fat_g)}`,
+  ];
+  const accessibilityLabel = [
+    `${expanded ? "Hide" : "Show"} details for ${displayName}`,
+    entry.food_description?.trim() ? entry.food_description : null,
+    ...macroAccessibilityLabels,
+    `Calories: ${formatCalories(entry.calories ?? 0)}`,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(". ");
+  const detailsAccessibilityLabel =
+    formatFoodEntryNutrientDetailsForAccessibility(nutrientDetails) ||
+    "No nutrient details recorded";
 
   return (
     <View style={styles.wrapper}>
       <TouchableOpacity
-        style={[styles.container, deleting && styles.deleting]}
+        style={styles.container}
         activeOpacity={0.7}
         onPress={() => setExpanded((current) => !current)}
-        onLongPress={handleLongPress}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={
+          expanded
+            ? "Detailed nutrient values are shown below."
+            : "Double tap to show detailed nutrient values."
+        }
+        accessibilityState={{ expanded }}
       >
         <View style={styles.leftSection}>
           <Text style={styles.name}>{displayName}</Text>
@@ -59,7 +74,7 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
         <Text style={styles.calories}>{formatCalories(entry.calories ?? 0)}</Text>
       </TouchableOpacity>
       {expanded ? (
-        <View style={styles.details}>
+        <View style={styles.details} accessible accessibilityLabel={detailsAccessibilityLabel}>
           {nutrientGroups.length > 0 ? (
             nutrientGroups.map((group) => (
               <View key={group.label} style={styles.detailGroup}>
@@ -94,9 +109,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     paddingHorizontal: 4,
-  },
-  deleting: {
-    opacity: 0.5,
   },
   leftSection: {
     flex: 1,

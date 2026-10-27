@@ -1,11 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, type SQLWrapper, sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import {
   decryptCredentialValue,
+  deriveCredentialIdentifier,
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
-import { oauthToken, provider } from "./schema.ts";
+import { oauthToken, providerConnection, webhookSubscription } from "./schema/reference.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 function resolveUserId(userId?: string): string {
@@ -21,7 +23,7 @@ function resolveUserId(userId?: string): string {
 function oauthTokenContext(
   scopedUserId: string,
   providerId: string,
-  columnName: "access_token" | "refresh_token",
+  columnName: "access_token" | "provider_account_id" | "refresh_token",
 ): {
   tableName: string;
   columnName: string;
@@ -34,23 +36,78 @@ function oauthTokenContext(
   };
 }
 
+function normalizeProviderAccountId(providerAccountId: string): string {
+  const normalizedProviderAccountId = providerAccountId.trim();
+  if (!normalizedProviderAccountId) {
+    throw new Error("OAuth provider account ID must not be empty");
+  }
+  return normalizedProviderAccountId;
+}
+
+function deriveProviderAccountLookupId(providerId: string, providerAccountId: string): string {
+  return deriveCredentialIdentifier(normalizeProviderAccountId(providerAccountId), {
+    tableName: "fitness.oauth_token",
+    columnName: "provider_account_lookup_id",
+    scopeId: providerId,
+  });
+}
+
+export function deriveProviderAccountKey(
+  providerId: string,
+  providerAccountId: string,
+  userId?: string,
+): string {
+  const scopedUserId = resolveUserId(userId);
+  return deriveCredentialIdentifier(
+    normalizeProviderAccountId(providerAccountId),
+    oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
+  );
+}
+
+interface ProviderEnsureDatabase {
+  execute(query: SQLWrapper): Promise<unknown>;
+}
+
+type ProviderConnectionTransaction = ProviderEnsureDatabase & Pick<SyncDatabase, "insert">;
+
+interface ProviderConnectionDatabase {
+  transaction<T>(callback: (transaction: ProviderConnectionTransaction) => Promise<T>): Promise<T>;
+}
+
+type ProviderAuthorizationTransaction = Pick<SyncDatabase, "delete">;
+
+interface ProviderAuthorizationDatabase {
+  transaction<T>(
+    callback: (transaction: ProviderAuthorizationTransaction) => Promise<T>,
+  ): Promise<T>;
+}
+
 /**
  * Ensure a provider row exists. Idempotent — does nothing if already present.
  */
 export async function ensureProvider(
-  db: SyncDatabase,
+  db: ProviderEnsureDatabase,
   id: string,
   name: string,
   apiBaseUrl?: string,
   userId?: string,
 ): Promise<string> {
   const resolvedUserId = resolveUserId(userId);
-  const values = { id, name, apiBaseUrl, userId: resolvedUserId };
   try {
-    await db.insert(provider).values(values).onConflictDoUpdate({
-      target: provider.id,
-      set: { name, apiBaseUrl },
-    });
+    await db.execute(
+      sql`WITH ensured_provider AS (
+            INSERT INTO fitness.provider (id, name, api_base_url, user_id)
+            VALUES (${id}, ${name}, ${apiBaseUrl ?? null}, NULL)
+            ON CONFLICT (id) DO UPDATE
+              SET name = EXCLUDED.name,
+                  api_base_url = EXCLUDED.api_base_url
+            RETURNING id
+          )
+          INSERT INTO fitness.provider_connection (user_id, provider_id)
+          SELECT ${resolvedUserId}, id
+          FROM ensured_provider
+          ON CONFLICT (user_id, provider_id) DO NOTHING`,
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`ensureProvider(${id}) failed for user ${resolvedUserId}: ${message}`, {
@@ -64,12 +121,16 @@ export async function ensureProvider(
  * Save (upsert) OAuth tokens for a provider scoped to a user.
  */
 export async function saveTokens(
-  db: SyncDatabase,
+  db: Pick<SyncDatabase, "insert">,
   providerId: string,
   tokens: TokenSet,
   userId?: string,
 ): Promise<void> {
   const scopedUserId = resolveUserId(userId);
+  const normalizedProviderAccountId =
+    tokens.providerAccountId === undefined
+      ? undefined
+      : normalizeProviderAccountId(tokens.providerAccountId);
   const encryptedAccessToken = await encryptCredentialValue(
     tokens.accessToken,
     oauthTokenContext(scopedUserId, providerId, "access_token"),
@@ -80,13 +141,26 @@ export async function saveTokens(
         oauthTokenContext(scopedUserId, providerId, "refresh_token"),
       )
     : null;
+  const encryptedProviderAccountId = normalizedProviderAccountId
+    ? await encryptCredentialValue(
+        normalizedProviderAccountId,
+        oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
+      )
+    : undefined;
+  const providerAccountLookupId =
+    normalizedProviderAccountId === undefined
+      ? undefined
+      : deriveProviderAccountLookupId(providerId, normalizedProviderAccountId);
   await db
     .insert(oauthToken)
     .values({
       userId: scopedUserId,
       providerId,
       accessToken: encryptedAccessToken,
+      authorizationId: tokens.authorizationId ?? null,
       refreshToken: encryptedRefreshToken,
+      providerAccountId: encryptedProviderAccountId ?? null,
+      providerAccountLookupId: providerAccountLookupId ?? null,
       expiresAt: tokens.expiresAt,
       scopes: tokens.scopes,
       updatedAt: new Date(),
@@ -95,12 +169,62 @@ export async function saveTokens(
       target: [oauthToken.userId, oauthToken.providerId],
       set: {
         accessToken: encryptedAccessToken,
+        authorizationId:
+          tokens.authorizationId === undefined
+            ? sql`${oauthToken.authorizationId}`
+            : tokens.authorizationId,
         refreshToken: encryptedRefreshToken,
+        providerAccountId:
+          encryptedProviderAccountId === undefined
+            ? sql`${oauthToken.providerAccountId}`
+            : encryptedProviderAccountId,
+        providerAccountLookupId:
+          providerAccountLookupId === undefined
+            ? sql`${oauthToken.providerAccountLookupId}`
+            : providerAccountLookupId,
         expiresAt: tokens.expiresAt,
         scopes: tokens.scopes,
         updatedAt: new Date(),
       },
     });
+  reportProviderAuthDiagnostic(providerId, "tokens_saved", scopedUserId, tokens);
+}
+
+/** Find authorization owners without decrypting or scanning stored account IDs. */
+export async function findTokenUsersByProviderAccountId(
+  db: Pick<SyncDatabase, "select">,
+  providerId: string,
+  providerAccountId: string,
+): Promise<string[]> {
+  const lookupId = deriveProviderAccountLookupId(providerId, providerAccountId);
+  const rows = await db
+    .select({ userId: oauthToken.userId })
+    .from(oauthToken)
+    .where(
+      and(eq(oauthToken.providerId, providerId), eq(oauthToken.providerAccountLookupId, lookupId)),
+    );
+  return rows.map((row) => row.userId);
+}
+
+/**
+ * Atomically establish a user's provider connection and persist its tokens.
+ * A token write failure rolls back the connection so clients never observe an
+ * authorized provider without usable credentials.
+ */
+export async function connectProviderWithTokens(
+  db: ProviderConnectionDatabase,
+  provider: {
+    id: string;
+    name: string;
+    apiBaseUrl: string;
+  },
+  tokens: TokenSet,
+  userId: string,
+): Promise<void> {
+  await db.transaction(async (transaction) => {
+    await ensureProvider(transaction, provider.id, provider.name, provider.apiBaseUrl, userId);
+    await saveTokens(transaction, provider.id, tokens, userId);
+  });
 }
 
 /**
@@ -118,13 +242,45 @@ export async function deleteTokens(
   await db
     .delete(oauthToken)
     .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
+  reportProviderAuthDiagnostic(providerId, "tokens_deleted", scopedUserId);
+}
+
+/**
+ * Remove a user's provider authorization while preserving previously imported data.
+ * Authorization state is deleted explicitly in one transaction so cleanup also
+ * works before the provider-connection foreign keys have been validated.
+ */
+export async function deleteProviderAuthorization(
+  db: ProviderAuthorizationDatabase,
+  providerId: string,
+  userId?: string,
+): Promise<void> {
+  const scopedUserId = resolveUserId(userId);
+  await db.transaction(async (transaction) => {
+    const authorizationOwner = and(
+      eq(providerConnection.providerId, providerId),
+      eq(providerConnection.userId, scopedUserId),
+    );
+    await transaction
+      .delete(webhookSubscription)
+      .where(
+        and(
+          eq(webhookSubscription.providerId, providerId),
+          eq(webhookSubscription.userId, scopedUserId),
+        ),
+      );
+    await transaction
+      .delete(oauthToken)
+      .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
+    await transaction.delete(providerConnection).where(authorizationOwner);
+  });
 }
 
 /**
  * Load stored tokens for a provider scoped to a user. Returns null if none exist.
  */
 export async function loadTokens(
-  db: SyncDatabase,
+  db: Pick<SyncDatabase, "select">,
   providerId: string,
   userId?: string,
 ): Promise<TokenSet | null> {
@@ -135,7 +291,10 @@ export async function loadTokens(
     .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)))
     .limit(1);
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    reportProviderAuthDiagnostic(providerId, "tokens_missing", scopedUserId);
+    return null;
+  }
 
   const row = rows[0];
   if (!row) return null;
@@ -149,10 +308,26 @@ export async function loadTokens(
         oauthTokenContext(scopedUserId, providerId, "refresh_token"),
       )
     : null;
+  const decryptedProviderAccountId = row.providerAccountId
+    ? await decryptCredentialValue(
+        row.providerAccountId,
+        oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
+      )
+    : undefined;
+  reportProviderAuthDiagnostic(providerId, "tokens_loaded", scopedUserId, {
+    expiresAt: row.expiresAt,
+    refreshToken: decryptedRefreshToken,
+  });
   return {
     accessToken: decryptedAccessToken,
+    ...(row.authorizationId ? { authorizationId: row.authorizationId } : {}),
     refreshToken: decryptedRefreshToken,
     expiresAt: row.expiresAt,
+    ...(decryptedProviderAccountId
+      ? {
+          providerAccountId: decryptedProviderAccountId,
+        }
+      : {}),
     scopes: row.scopes ?? null,
   };
 }

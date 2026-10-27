@@ -1,0 +1,300 @@
+import * as Sentry from "@sentry/node";
+import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { z } from "zod";
+import { accountErasureQueuedUserWorkLockName } from "../db/account-erasure-locks.ts";
+import { isAccountErasureActive } from "../db/account-erasure-processing.ts";
+import type { Database } from "../db/index.ts";
+import { providerExecutionLockName } from "../db/provider-execution-lock.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
+import { logger } from "../logger.ts";
+
+const ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE = 4;
+const advisoryUnlockRowSchema = z.object({ unlocked: z.boolean() });
+
+class AsyncPermitPool {
+  #available: number;
+  readonly #waiters: Array<() => void> = [];
+
+  constructor(size: number) {
+    this.#available = size;
+  }
+
+  tryAcquire(): (() => void) | undefined {
+    if (this.#available === 0) return undefined;
+    this.#available -= 1;
+    return () => this.#release();
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.#available > 0) {
+      this.#available -= 1;
+      return () => this.#release();
+    }
+    await new Promise<void>((resolve) => this.#waiters.push(resolve));
+    return () => this.#release();
+  }
+
+  #release(): void {
+    const next = this.#waiters.shift();
+    if (next) {
+      next();
+      return;
+    }
+    this.#available += 1;
+  }
+}
+
+type WorkOutcome<T> =
+  | {
+      status: "completed";
+      value: T;
+    }
+  | {
+      error: unknown;
+      status: "failed";
+    };
+
+export interface AccountErasureWorkLockPool {
+  close(): Promise<void>;
+  tryRunWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T | undefined>;
+  runWithSharedUserLock<T>(userId: string, work: () => Promise<T>, providerId?: string): Promise<T>;
+}
+
+class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
+  readonly #pool: Pool;
+  readonly #connectionPermits = new AsyncPermitPool(ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE);
+
+  constructor(pool: Pool) {
+    this.#pool = pool;
+  }
+
+  close(): Promise<void> {
+    return this.#pool.end();
+  }
+
+  tryRunWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T | undefined> {
+    return runWithUserLock(this.#pool, this.#connectionPermits, userId, work, undefined, true);
+  }
+
+  runWithSharedUserLock<T>(
+    userId: string,
+    work: () => Promise<T>,
+    providerId?: string,
+  ): Promise<T> {
+    return runWithUserLock(this.#pool, this.#connectionPermits, userId, work, providerId, false);
+  }
+}
+
+function runWithUserLock<T>(
+  pool: Pool,
+  connectionPermits: AsyncPermitPool,
+  userId: string,
+  work: () => Promise<T>,
+  providerId: string | undefined,
+  exclusive: false,
+): Promise<T>;
+function runWithUserLock<T>(
+  pool: Pool,
+  connectionPermits: AsyncPermitPool,
+  userId: string,
+  work: () => Promise<T>,
+  providerId: string | undefined,
+  exclusive: true,
+): Promise<T | undefined>;
+async function runWithUserLock<T>(
+  pool: Pool,
+  connectionPermits: AsyncPermitPool,
+  userId: string,
+  work: () => Promise<T>,
+  providerId: string | undefined,
+  exclusive: boolean,
+): Promise<T | undefined> {
+  const releaseConnectionPermit = exclusive
+    ? connectionPermits.tryAcquire()
+    : await connectionPermits.acquire();
+  if (!releaseConnectionPermit) return undefined;
+  try {
+    const client = await pool.connect();
+    const providerLockName =
+      providerId === undefined ? undefined : providerExecutionLockName(userId, providerId);
+    const onSessionError = (error: Error): never => {
+      try {
+        Sentry.captureException(error, {
+          tags:
+            providerLockName === undefined
+              ? {
+                  accountErasureWorkLockStep: "session",
+                  source: "account-erasure-work-lock",
+                }
+              : { source: "provider-sync-lock-session" },
+        });
+      } finally {
+        try {
+          logger.error(
+            providerLockName === undefined
+              ? "[account-erasure-work-lock] PostgreSQL session lost; stopping worker to prevent stale writes"
+              : "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes",
+          );
+        } finally {
+          process.exit(1);
+        }
+      }
+    };
+    client.on("error", onSessionError);
+    const releaseClient = (destroy = false): void => {
+      if (destroy) client.release(true);
+      client.removeListener("error", onSessionError);
+      if (!destroy) client.release();
+    };
+    const database = drizzle(client);
+    try {
+      if (providerLockName !== undefined) {
+        await executeWithSchema(
+          database,
+          z.object({}),
+          sql`SELECT pg_advisory_lock(hashtextextended(${providerLockName}::text, 0))`,
+        );
+      }
+      if (exclusive) {
+        const rows = await executeWithSchema(
+          database,
+          z.object({ acquired: z.boolean() }),
+          sql`SELECT pg_try_advisory_lock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS acquired`,
+        );
+        if (!rows[0]?.acquired) {
+          releaseClient();
+          return undefined;
+        }
+      } else {
+        await executeWithSchema(
+          database,
+          z.object({}),
+          sql`SELECT pg_advisory_lock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`,
+        );
+      }
+    } catch (error: unknown) {
+      releaseClient(true);
+      Sentry.captureException(error, {
+        tags: {
+          accountErasureWorkLockStep: "acquire",
+          source: "account-erasure-work-lock",
+        },
+      });
+      throw error;
+    }
+
+    const outcome: WorkOutcome<T> = await Promise.resolve()
+      .then(work)
+      .then(
+        (value): WorkOutcome<T> => ({ status: "completed", value }),
+        (error: unknown): WorkOutcome<T> => ({ error, status: "failed" }),
+      );
+
+    try {
+      const unlockRows = await executeWithSchema(
+        database,
+        advisoryUnlockRowSchema,
+        exclusive
+          ? sql`SELECT pg_advisory_unlock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS unlocked`
+          : sql`SELECT pg_advisory_unlock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS unlocked`,
+      );
+      const unlockRow = unlockRows[0];
+      if (!unlockRow?.unlocked) {
+        throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
+      }
+      if (providerLockName !== undefined) {
+        const providerUnlockRows = await executeWithSchema(
+          database,
+          advisoryUnlockRowSchema,
+          sql`SELECT pg_advisory_unlock(hashtextextended(${providerLockName}::text, 0)) AS unlocked`,
+        );
+        if (!providerUnlockRows[0]?.unlocked) {
+          throw new Error("Provider sync advisory lock was not held by its PostgreSQL session");
+        }
+      }
+    } catch (error: unknown) {
+      releaseClient(true);
+      Sentry.captureException(error, {
+        tags: {
+          accountErasureWorkLockStep: "release",
+          source: "account-erasure-work-lock",
+        },
+      });
+      if (outcome.status === "failed") {
+        throw outcome.error;
+      }
+      throw error;
+    }
+    releaseClient();
+
+    if (outcome.status === "failed") {
+      throw outcome.error;
+    }
+    return outcome.value;
+  } finally {
+    releaseConnectionPermit();
+  }
+}
+
+export function createAccountErasureWorkLockPool(
+  connectionString: string,
+): AccountErasureWorkLockPool {
+  const pool = new Pool({
+    application_name: "dofek-account-erasure-work-lock",
+    connectionString,
+    connectionTimeoutMillis: 10_000,
+    idleTimeoutMillis: 300_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 60_000,
+    max: ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE,
+  });
+  pool.on("error", (error) => {
+    Sentry.captureException(error, {
+      tags: { source: "account-erasure-work-lock-pool" },
+    });
+    logger.error(`[account-erasure-work-lock] PostgreSQL pool idle client error: ${error.message}`);
+  });
+  return new PostgresAccountErasureWorkLockPool(pool);
+}
+
+export function createAccountErasureWorkLockPoolFromEnv(): AccountErasureWorkLockPool {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL environment variable is required");
+  }
+  return createAccountErasureWorkLockPool(connectionString);
+}
+
+export async function accountErasureAllowsQueuedUserWork(
+  database: Pick<Database, "execute">,
+  userId: string,
+  workKind: string,
+): Promise<boolean> {
+  if (!(await isAccountErasureActive(database, userId))) {
+    return true;
+  }
+  logger.info(`[worker] Discarding ${workKind} because account erasure is active`);
+  return false;
+}
+
+export async function runQueuedUserWorkUnlessAccountErasing<T>(
+  workLockPool: AccountErasureWorkLockPool,
+  database: Pick<Database, "execute">,
+  userId: string,
+  workKind: string,
+  work: () => Promise<T>,
+  providerId?: string,
+): Promise<T | undefined> {
+  return workLockPool.runWithSharedUserLock(
+    userId,
+    async () => {
+      if (!(await accountErasureAllowsQueuedUserWork(database, userId, workKind))) {
+        return undefined;
+      }
+      return work();
+    },
+    providerId,
+  );
+}

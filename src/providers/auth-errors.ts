@@ -60,6 +60,12 @@ export class ProviderAuthenticationFailedError extends ProviderAuthError {
   }
 }
 
+export class ProviderTokenRejectedError extends ProviderAuthError {
+  constructor(providerName: string, instructions: string, options?: ErrorOptions) {
+    super("authentication_failed", `${providerName} rejected this token. ${instructions}`, options);
+  }
+}
+
 export class ProviderInvalidCredentialsError extends ProviderAuthError {
   constructor(providerName: string, options?: ErrorOptions) {
     super(
@@ -79,6 +85,39 @@ export class ProviderStoredIdentityMissingError extends ProviderAuthError {
 export class ProviderStoredIdentityInvalidError extends ProviderAuthError {
   constructor(message: string, options?: ErrorOptions) {
     super("authentication_failed", message, options);
+  }
+}
+
+export class ProviderAuthorizationAlreadyOwnedError extends Error {
+  constructor(providerName: string) {
+    super(
+      `${providerName} account is already connected to another Dofek account. Disconnect it from the other Dofek account before connecting here.`,
+    );
+    this.name = "ProviderAuthorizationAlreadyOwnedError";
+  }
+}
+
+export class ProviderAuthorizationAccountMismatchError extends Error {
+  constructor(providerName: string) {
+    super(
+      `Reconnect using the currently connected ${providerName} account. Disconnect ${providerName} first to connect a different account.`,
+    );
+    this.name = "ProviderAuthorizationAccountMismatchError";
+  }
+}
+
+/** A connection-stage failure whose message contains only trusted labels and an HTTP status. */
+export class ProviderConnectionError extends Error {
+  readonly stage: "identity" | "permissions";
+  readonly statusCode: number;
+
+  constructor(providerName: string, stage: "identity" | "permissions", statusCode: number) {
+    super(
+      `${providerName} connection failed while confirming your ${stage} (HTTP ${statusCode}). Please contact support if this continues.`,
+    );
+    this.name = "ProviderConnectionError";
+    this.stage = stage;
+    this.statusCode = statusCode;
   }
 }
 

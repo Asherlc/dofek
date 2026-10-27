@@ -38,6 +38,7 @@ describe("SECTION_LABELS", () => {
     for (const label of Object.values(SECTION_LABELS)) {
       expect(label.length).toBeGreaterThan(2);
     }
+    expect(SECTION_LABELS.spo2Temp).toBe("Blood Oxygen Saturation & Skin Temperature");
   });
 });
 

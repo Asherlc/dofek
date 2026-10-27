@@ -1,6 +1,7 @@
 import { Client, escapeIdentifier } from "pg";
 import { z } from "zod";
 import { logger } from "../../logger.ts";
+import { INGEST_DATABASE, METRIC_STREAM_TABLE } from "../../metric-stream/clickhouse-table.ts";
 import {
   buildClickHouseBootstrapStatements,
   type ClickHouseCommandClient,
@@ -190,10 +191,7 @@ export async function rebuildMetricStreamLocationPoint(
       client,
       "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
     );
-    await runClickHouseMigrationStatement(
-      client,
-      "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
-    );
+    await runClickHouseMigrationStatement(client, `DROP TABLE IF EXISTS ${METRIC_STREAM_TABLE}`);
   }
 
   for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
@@ -220,7 +218,7 @@ export async function replaceLegacyMetricStreamIfNeeded(
     "DROP TABLE IF EXISTS analytics.activity_summary",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
-    "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+    `DROP TABLE IF EXISTS ${METRIC_STREAM_TABLE}`,
   ];
 
   for (const statement of resetStatements) {
@@ -270,17 +268,22 @@ async function metricStreamMirrorHasColumns(
     throw new Error("ClickHouse migrations require a query-capable client");
   }
   const columnNames = columns.map(clickHouseStringLiteral).join(", ");
-  const result = await client.query<MigrationCountRow>({
-    query: `SELECT count() AS migration_count
+  for (const database of [INGEST_DATABASE, "postgres_fitness"]) {
+    const result = await client.query<MigrationCountRow>({
+      query: `SELECT count() AS migration_count
 FROM system.columns
-WHERE database = 'postgres_fitness'
+WHERE database = '${database}'
   AND table = 'metric_stream'
   AND name IN (${columnNames})`,
-    format: "JSONEachRow",
-  });
-  const rows = await result.json();
-  const parsedRows = z.array(migrationCountRowSchema).parse(rows);
-  return Number(parsedRows[0]?.migration_count ?? 0) === columns.length;
+      format: "JSONEachRow",
+    });
+    const rows = await result.json();
+    const parsedRows = z.array(migrationCountRowSchema).parse(rows);
+    if (Number(parsedRows[0]?.migration_count ?? 0) === columns.length) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function shouldReplacePostgresFitnessDatabase(
@@ -306,8 +309,7 @@ async function shouldReplaceMetricStreamTable(client: ClickHouseCommandClient): 
     throw new Error("ClickHouse migrations require a query-capable client");
   }
   const result = await client.query<ClickHouseDatabaseEngineRow>({
-    query:
-      "SELECT engine FROM system.tables WHERE database = 'postgres_fitness' AND name = 'metric_stream'",
+    query: `SELECT engine FROM system.tables WHERE database = '${INGEST_DATABASE}' AND name = 'metric_stream'`,
     format: "JSONEachRow",
   });
   const rows = await result.json();
@@ -341,8 +343,8 @@ async function backfillNativeMetricStream(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
 ): Promise<void> {
-  logger.info("[migrate] Waiting for ClickHouse postgres_fitness.metric_stream table");
-  await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+  logger.info(`[migrate] Waiting for ClickHouse ${METRIC_STREAM_TABLE} table`);
+  await waitForClickHouseTable(client, INGEST_DATABASE, "metric_stream");
   const timescaleChunks = await fetchMetricStreamBackfillChunks(postgresConnectionString);
   const backfillRanges = timescaleChunks.flatMap(splitMetricStreamBackfillChunk);
   logger.info(
@@ -526,7 +528,7 @@ function buildMetricStreamBackfillStatement(
 ): string {
   const lowerBound = clickHouseDateTimeLiteral(chunkStart);
   const upperBound = clickHouseDateTimeLiteral(chunkEnd);
-  return `INSERT INTO postgres_fitness.metric_stream (
+  return `INSERT INTO ${METRIC_STREAM_TABLE} (
   recorded_at,
   user_id,
   provider_id,
@@ -582,7 +584,7 @@ SELECT
 FROM ${postgresMetricStreamSource} AS metric_stream
 LEFT JOIN (
   SELECT CAST(id, 'Nullable(UUID)') AS id
-  FROM postgres_fitness.metric_stream
+  FROM ${METRIC_STREAM_TABLE}
   WHERE recorded_at >= ${lowerBound}
     AND recorded_at < ${upperBound}
 ) AS existing_metric_stream

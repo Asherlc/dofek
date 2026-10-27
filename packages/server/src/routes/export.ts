@@ -1,30 +1,20 @@
-import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { Queue } from "bullmq";
-import type { ExportJobData } from "dofek/jobs/queues";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
+import { type DataExportQueue, enqueueDataExport } from "dofek/jobs/queues";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-
-/**
- * Shared directory for export files that the worker container can access.
- * In production, both web and worker containers mount the `job_files` volume
- * at /app/job-files. Falls back to OS temp dir for local development.
- */
-const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
-mkdirSync(JOB_FILES_DIR, { recursive: true });
+import { logger } from "../logger.ts";
 
 const EXPORT_FILENAME = "dofek-export.zip";
 const EXPORT_TTL_DAYS = 7;
 
-const insertExportRowSchema = z.object({ id: z.string().uuid() });
+const insertExportRowSchema = z.object({ id: z.guid() });
 const exportListRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   status: z.string(),
   filename: z.string(),
   size_bytes: z
@@ -38,7 +28,7 @@ const exportListRowSchema = z.object({
   error_message: z.string().nullable(),
 });
 const exportDownloadRowSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   status: z.string(),
   object_key: z.string().nullable(),
   expires_at: timestampStringSchema,
@@ -67,16 +57,16 @@ function toExportResponse(row: z.infer<typeof exportListRowSchema>) {
 
 interface ExportRouterDeps {
   db: import("dofek/db").Database;
-  exportQueue: Pick<Queue<ExportJobData>, "add">;
+  exportQueue: DataExportQueue;
   createSignedDownloadUrl?: SignedDownloadUrlFactory;
-  startExportWorker?: () => void;
 }
+
+type ExportCreationResult = { status: "created"; exportId: string } | { status: "insert-failed" };
 
 export function createExportRouter({
   createSignedDownloadUrl = defaultCreateSignedDownloadUrl,
   db,
   exportQueue,
-  startExportWorker = startWorker,
 }: ExportRouterDeps): Router {
   const router = Router();
 
@@ -120,34 +110,52 @@ export function createExportRouter({
       return;
     }
 
-    const queue = exportQueue;
-    const expiresAt = new Date(Date.now() + EXPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
-    const outputPath = join(
-      JOB_FILES_DIR,
-      `dofek-export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.zip`,
-    );
-    const rows = await executeWithSchema(
+    const result = await withAccountErasureUserWriteFence(
       db,
-      insertExportRowSchema,
-      sql`INSERT INTO fitness.data_export (user_id, status, filename, expires_at)
-          VALUES (${session.userId}, 'queued', ${EXPORT_FILENAME}, ${expiresAt.toISOString()})
-          RETURNING id`,
+      session.userId,
+      async (transaction): Promise<ExportCreationResult> => {
+        const expiresAt = new Date(Date.now() + EXPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
+        const rows = await executeWithSchema(
+          transaction,
+          insertExportRowSchema,
+          sql`INSERT INTO fitness.data_export (user_id, status, filename, expires_at)
+              VALUES (${session.userId}, 'queued', ${EXPORT_FILENAME}, ${expiresAt.toISOString()})
+              RETURNING id`,
+        );
+        const exportId = rows[0]?.id;
+        if (!exportId) {
+          return { status: "insert-failed" };
+        }
+
+        return { status: "created", exportId };
+      },
     );
-    const exportId = rows[0]?.id;
-    if (!exportId) {
+
+    if (result.status === "insert-failed") {
       res.status(500).json({ error: "Failed to create export" });
       return;
     }
 
-    await queue.add("export", {
-      exportId,
-      userId: session.userId,
-      outputPath,
-    });
+    try {
+      await enqueueDataExport({ exportId: result.exportId, userId: session.userId }, exportQueue);
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { source: "data-export-enqueue" },
+        extra: { exportId: result.exportId, userId: session.userId },
+      });
+      logger.error(
+        `[export] Failed to enqueue durable export ${result.exportId}: ${String(error)}`,
+      );
+      res.status(503).json({
+        error:
+          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+        exportId: result.exportId,
+        retryable: true,
+      });
+      return;
+    }
 
-    startExportWorker();
-
-    res.json({ status: "queued", exportId });
+    res.json({ status: "queued", exportId: result.exportId });
   });
 
   router.get("/status/:jobId", async (req, res) => {

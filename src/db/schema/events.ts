@@ -1,0 +1,375 @@
+import { sql } from "drizzle-orm";
+import {
+  bigint,
+  boolean,
+  check,
+  date,
+  index,
+  integer,
+  jsonb,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { fitness, resolveImplicitUserId } from "./core.ts";
+import { provider, userProfile } from "./reference.ts";
+
+// ============================================================
+// Provider data deletion — generation fence + transactional outbox
+// ============================================================
+
+export const providerDataGeneration = fitness.table(
+  "provider_data_generation",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    currentGeneration: bigint("current_generation", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.providerId] }),
+    check("provider_data_generation_nonnegative", sql`${table.currentGeneration} >= 0`),
+  ],
+);
+
+export const providerDataDeletionOutbox = fitness.table(
+  "provider_data_deletion_outbox",
+  {
+    eventId: uuid("event_id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    generation: bigint("generation", { mode: "number" }).notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("provider_data_deletion_outbox_dispatch_idx").on(table.status, table.createdAt),
+    check("provider_data_deletion_outbox_generation_positive", sql`${table.generation} > 0`),
+    check(
+      "provider_data_deletion_outbox_status_valid",
+      sql`${table.status} IN ('pending', 'dispatched', 'completed', 'failed')`,
+    ),
+  ],
+);
+
+// ============================================================
+// File upload — durable R2 upload lifecycle + transactional outbox
+// ============================================================
+
+export const fileUpload = fitness.table(
+  "file_upload",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    importType: text("import_type").notNull(),
+    objectKey: text("object_key").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    contentType: text("content_type").notNull(),
+    expectedSizeBytes: bigint("expected_size_bytes", { mode: "number" }).notNull(),
+    expectedSha256: text("expected_sha256").notNull(),
+    verifiedSha256: text("verified_sha256"),
+    r2MultipartUploadId: text("r2_multipart_upload_id"),
+    state: text("state").notNull().default("initiated"),
+    version: bigint("version", { mode: "number" }).notNull().default(0),
+    partSizeBytes: bigint("part_size_bytes", { mode: "number" }).notNull(),
+    completionParts: jsonb("completion_parts"),
+    importJobId: text("import_job_id"),
+    importSince: timestamp("import_since", { withTimezone: true }).notNull(),
+    weightUnit: text("weight_unit"),
+    timezone: text("timezone"),
+    progressPercent: bigint("progress_percent", { mode: "number" }).notNull().default(0),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    objectDeletedAt: timestamp("object_deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("file_upload_object_key_key").on(table.objectKey),
+    unique("file_upload_import_job_id_key").on(table.importJobId),
+    index("file_upload_owner_updated_idx").on(table.userId, table.updatedAt.desc()),
+    index("file_upload_reconcile_idx").on(table.state, table.expiresAt, table.updatedAt),
+    check("file_upload_expected_size_positive", sql`${table.expectedSizeBytes} > 0`),
+    check("file_upload_part_size_valid", sql`${table.partSizeBytes} >= 5242880`),
+    check("file_upload_progress_valid", sql`${table.progressPercent} BETWEEN 0 AND 100`),
+    check(
+      "file_upload_import_type_valid",
+      sql`${table.importType} IN ('apple-health', 'strong-csv', 'cronometer-csv', 'kaya-export', 'zos-app', 'garmin-dump', 'fit-file')`,
+    ),
+    check(
+      "file_upload_state_valid",
+      sql`${table.state} IN ('initiated', 'uploading', 'uploaded', 'queued', 'processing', 'completed', 'failed', 'aborted', 'expired')`,
+    ),
+    check("file_upload_expected_sha256_valid", sql`${table.expectedSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "file_upload_verified_sha256_valid",
+      sql`${table.verifiedSha256} IS NULL OR ${table.verifiedSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "file_upload_weight_unit_valid",
+      sql`${table.weightUnit} IS NULL OR ${table.weightUnit} IN ('kg', 'lbs')`,
+    ),
+  ],
+);
+
+export const fileUploadOutbox = fitness.table(
+  "file_upload_outbox",
+  {
+    eventId: uuid("event_id").primaryKey().defaultRandom(),
+    uploadId: uuid("upload_id")
+      .notNull()
+      .references(() => fileUpload.id, { onDelete: "cascade" }),
+    importJobId: text("import_job_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("file_upload_outbox_upload_id_key").on(table.uploadId),
+    unique("file_upload_outbox_import_job_id_key").on(table.importJobId),
+    index("file_upload_outbox_dispatch_idx").on(table.status, table.createdAt),
+    check(
+      "file_upload_outbox_status_valid",
+      sql`${table.status} IN ('pending', 'dispatched', 'completed', 'failed')`,
+    ),
+  ],
+);
+
+// ============================================================
+// Sync log — tracks reliability per provider per data type
+// ============================================================
+
+export const syncLogOrigins = ["manual", "scheduled", "unknown"] as const;
+export type SyncLogOrigin = (typeof syncLogOrigins)[number];
+
+export const syncLog = fitness.table(
+  "sync_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    dataType: text("data_type").notNull(),
+    status: text("status").notNull(),
+    origin: text("origin").notNull().default("unknown"),
+    recordCount: integer("record_count").default(0),
+    errorMessage: text("error_message"),
+    authFailureReason: text("auth_failure_reason"),
+    degradationKind: text("degradation_kind"),
+    durationMs: integer("duration_ms"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("sync_log_user_provider_synced_at_idx").on(
+      table.userId,
+      table.providerId,
+      table.syncedAt.desc().nullsFirst(),
+      table.id.desc().nullsFirst(),
+    ),
+    index("sync_log_user_origin_status_provider_synced_at_idx").on(
+      table.userId,
+      table.origin,
+      table.status,
+      table.providerId,
+      table.syncedAt.desc(),
+    ),
+    index("sync_log_provider_type_idx").on(table.providerId, table.dataType, table.syncedAt),
+    index("sync_log_synced_at_idx").on(table.syncedAt),
+    check("sync_log_origin_valid", sql`${table.origin} IN ('manual', 'scheduled', 'unknown')`),
+  ],
+);
+
+// ============================================================
+// Breathwork sessions
+// ============================================================
+
+export const breathworkSession = fitness.table(
+  "breathwork_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    techniqueId: text("technique_id").notNull(),
+    rounds: integer("rounds").notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    stressBefore: bigint("stress_before", { mode: "number" }),
+    stressAfter: bigint("stress_after", { mode: "number" }),
+    dizzinessAfter: boolean("dizziness_after"),
+    perceivedEffect: text("perceived_effect"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("breathwork_session_user_idx").on(table.userId),
+    index("breathwork_session_started_at_idx").on(table.startedAt.desc()),
+    check(
+      "breathwork_session_stress_before_range",
+      sql`${table.stressBefore} IS NULL OR ${table.stressBefore} BETWEEN 0 AND 10`,
+    ),
+    check(
+      "breathwork_session_stress_after_range",
+      sql`${table.stressAfter} IS NULL OR ${table.stressAfter} BETWEEN 0 AND 10`,
+    ),
+    check(
+      "breathwork_session_perceived_effect_valid",
+      sql`${table.perceivedEffect} IS NULL OR ${table.perceivedEffect} IN ('better', 'same', 'worse')`,
+    ),
+  ],
+);
+
+// ============================================================
+// Menstrual cycle tracking
+// ============================================================
+
+export const menstrualPeriod = fitness.table(
+  "menstrual_period",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("menstrual_period_user_start_idx").on(table.userId, table.startDate),
+    index("menstrual_period_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// DEXA scans (BodySpec, etc.)
+// ============================================================
+
+export const dexaScan = fitness.table(
+  "dexa_scan",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    externalId: text("external_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    scannerModel: text("scanner_model"),
+    // Total body composition
+    totalFatMassKg: real("total_fat_mass_kg"),
+    totalLeanMassKg: real("total_lean_mass_kg"),
+    totalBoneMassKg: real("total_bone_mass_kg"),
+    totalMassKg: real("total_mass_kg"),
+    bodyFatPct: real("body_fat_pct"),
+    androidGynoidRatio: real("android_gynoid_ratio"),
+    // Visceral fat
+    visceralFatMassKg: real("visceral_fat_mass_kg"),
+    visceralFatVolumeCm3: real("visceral_fat_volume_cm3"),
+    // Total bone density
+    totalBoneMineralDensity: real("total_bone_mineral_density"), // g/cm2
+    boneDensityTPercentile: real("bone_density_t_percentile"), // vs peak (30yo), 1-99
+    boneDensityZPercentile: real("bone_density_z_percentile"), // vs age/sex matched, 1-99
+    // Legacy provider-estimated fields retained temporarily for deployment compatibility.
+    restingMetabolicRateKcal: real("resting_metabolic_rate_kcal"),
+    restingMetabolicRateRaw: jsonb("resting_metabolic_rate_raw"),
+    // Percentiles (proprietary reference populations)
+    percentiles: jsonb("percentiles"),
+    // Patient intake
+    heightInches: real("height_inches"),
+    weightPounds: real("weight_pounds"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("dexa_scan_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
+    index("dexa_scan_user_provider_idx").on(table.userId, table.providerId),
+    index("dexa_scan_recorded_at_idx").on(table.recordedAt.desc()),
+  ],
+);
+
+export const dexaScanRegion = fitness.table(
+  "dexa_scan_region",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scanId: uuid("scan_id")
+      .notNull()
+      .references(() => dexaScan.id, { onDelete: "cascade" }),
+    region: text("region").notNull(), // android, gynoid, left_arm, right_arm, left_leg, right_leg, trunk
+    // Body composition
+    fatMassKg: real("fat_mass_kg"),
+    leanMassKg: real("lean_mass_kg"),
+    boneMassKg: real("bone_mass_kg"),
+    totalMassKg: real("total_mass_kg"),
+    tissueFatPct: real("tissue_fat_pct"), // fat % of soft tissue in region
+    regionFatPct: real("region_fat_pct"), // this region's fat as % of total body fat
+    // Bone density
+    boneMineralDensity: real("bone_mineral_density"), // g/cm2
+    boneAreaCm2: real("bone_area_cm2"),
+    boneMineralContentG: real("bone_mineral_content_g"),
+    zScorePercentile: real("z_score_percentile"), // age/sex matched, 1-99
+    tScorePercentile: real("t_score_percentile"), // vs peak (30yo), 1-99
+  },
+  (table) => [
+    uniqueIndex("dexa_scan_region_scan_region_idx").on(table.scanId, table.region),
+    index("dexa_scan_region_scan_idx").on(table.scanId),
+  ],
+);
+
+export const imuSession = fitness.table(
+  "imu_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    providerId: text("provider_id").notNull(),
+    externalId: text("external_id").notNull(),
+    sessionStartAt: timestamp("session_start_at", { withTimezone: true }).notNull(),
+    sampleCount: bigint("sample_count", { mode: "number" }).notNull(),
+    observedHz: real("observed_hz"),
+    hasGyro: boolean("has_gyro").notNull().default(false),
+    accelFreqMode: bigint("accel_freq_mode", { mode: "number" }).notNull().default(1),
+    gyroFreqMode: bigint("gyro_freq_mode", { mode: "number" }),
+    rawData: text("raw_data"), // base64-encoded binary
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("imu_session_user_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
+    index("imu_session_user_provider_idx").on(table.userId, table.providerId),
+    index("imu_session_start_at_idx").on(table.sessionStartAt.desc()),
+  ],
+);

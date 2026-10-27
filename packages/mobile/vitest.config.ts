@@ -1,9 +1,6 @@
 import { defineProject } from "vitest/config";
 
 export default defineProject({
-  define: {
-    __DEV__: "true",
-  },
   esbuild: {
     jsx: "automatic",
     jsxImportSource: "react",
@@ -15,6 +12,11 @@ export default defineProject({
     teardownTimeout: 60_000,
     fileParallelism: true,
     pool: "forks",
+    poolOptions: {
+      forks: {
+        execArgv: ["--no-experimental-webstorage"],
+      },
+    },
     retry: 2,
     name: "mobile",
     include: ["**/*.test.{ts,tsx}"],

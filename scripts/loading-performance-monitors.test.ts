@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import { loadingPerformanceMonitors } from "./loading-performance-monitors.ts";
+
+describe("loadingPerformanceMonitors", () => {
+  it("defines the slow tRPC procedure monitor with percentile and max duration evidence", () => {
+    const monitor = loadingPerformanceMonitors.find(
+      (candidate) => candidate.id === "loading-slow-trpc-procedure",
+    );
+
+    expect(monitor).toBeDefined();
+    expect(monitor?.name).toBe("Loading perf: slow tRPC procedure");
+    expect(monitor?.type).toBe("Threshold");
+    expect(monitor?.operator).toBe("Above");
+    expect(monitor?.threshold).toBe(5000);
+    expect(monitor?.rangeMinutes).toBe(10);
+    expect(monitor?.intervalMinutes).toBe(5);
+    expect(monitor?.aplQuery).toContain("db_duration_ms");
+    expect(monitor?.aplQuery).toContain("percentile(db_duration_ms, 95)");
+    expect(monitor?.aplQuery).toContain("max(total_duration_ms)");
+    expect(monitor?.aplQuery).toContain("procedure");
+  });
+
+  it("defines the dashboard ClickHouse queue wait monitor grouped by queue", () => {
+    const monitor = loadingPerformanceMonitors.find(
+      (candidate) => candidate.id === "loading-clickhouse-queue-wait",
+    );
+
+    expect(monitor).toBeDefined();
+    expect(monitor?.name).toBe("Loading perf: ClickHouse queue wait");
+    expect(monitor?.threshold).toBe(1000);
+    expect(monitor?.notifyByGroup).toBe(true);
+    expect(monitor?.aplQuery).toContain("clickhouse.queue_wait");
+    expect(monitor?.aplQuery).toContain("clickhouse.queue.name");
+    expect(monitor?.aplQuery).toContain("percentile(wait_ms, 95)");
+  });
+
+  it("defines the ClickHouse infrastructure error monitor for connection failures", () => {
+    const monitor = loadingPerformanceMonitors.find(
+      (candidate) => candidate.id === "loading-clickhouse-infrastructure-errors",
+    );
+
+    expect(monitor).toBeDefined();
+    expect(monitor?.name).toBe("Loading perf: ClickHouse infrastructure errors");
+    expect(monitor?.type).toBe("MatchEvent");
+    expect(monitor?.aplQuery).toContain("ClickHouse");
+    expect(monitor?.aplQuery).toContain("DNS");
+    expect(monitor?.aplQuery).toContain("connection refused");
+    expect(monitor?.aplQuery).toContain("timeout");
+    expect(monitor?.aplQuery).toContain("memory");
+  });
+
+  it.each([
+    ["metric-stream-absolute-lag", "consumer_lag", 100_000],
+    ["metric-stream-lag-growth", "consumer_lag_growth_per_second", 100],
+    ["metric-stream-sink-latency", "average_batch_event_cost_ms", 100],
+    ["metric-stream-deletion-rate", "deletion_events_per_second", 50],
+  ] satisfies readonly (readonly [string, string, number])[])(
+    "defines the %s monitor from sink batch telemetry",
+    (id, field, threshold) => {
+      const monitor = loadingPerformanceMonitors.find((candidate) => candidate.id === id);
+
+      expect(monitor).toBeDefined();
+      expect(monitor?.type).toBe("Threshold");
+      expect(monitor?.threshold).toBe(threshold);
+      expect(monitor?.aplQuery).toContain("metric_stream.consumer_batch");
+      expect(monitor?.aplQuery).toContain(field);
+      expect(monitor?.triggerAfterNPositiveResults).toBe(2);
+      expect(monitor?.triggerFromNRuns).toBe(3);
+    },
+  );
+
+  it("requires multiple sink-cost samples before alerting", () => {
+    const monitor = loadingPerformanceMonitors.find(
+      (candidate) => candidate.id === "metric-stream-sink-latency",
+    );
+    expect(monitor?.aplQuery).toContain("sample_count = count()");
+    expect(monitor?.aplQuery).toContain("sample_count >= 3");
+  });
+});

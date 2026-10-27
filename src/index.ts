@@ -1,91 +1,18 @@
 import { execFile } from "node:child_process";
-import { QueueEvents, Worker } from "bullmq";
-import { sql } from "drizzle-orm";
-import { z } from "zod";
 import { waitForAuthCode } from "./auth/callback-server.ts";
 import { buildAuthorizationUrl } from "./auth/oauth.ts";
-import { parseSinceDays } from "./cli.ts";
+import { parseSinceDays, resolveCliUserId } from "./cli.ts";
+import { handleSyncCommand } from "./cli-sync.ts";
+
+export { handleSyncCommand };
+
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
-import { processSyncJob } from "./jobs/process-sync-job.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
-import {
-  createSyncQueue,
-  getRedisConnection,
-  SYNC_QUEUE,
-  type SyncJobData,
-} from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
-import { runMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
-import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
-
-async function resolveCliUserId(db: ReturnType<typeof createDatabaseFromEnv>): Promise<string> {
-  const envUserId = process.env.DOFEK_USER_ID;
-  if (envUserId) return envUserId;
-
-  const rows = await db.execute(
-    sql`SELECT id::text AS id FROM fitness.user_profile ORDER BY created_at ASC LIMIT 1`,
-  );
-  const parsed = z.object({ id: z.string() }).safeParse(rows[0]);
-  if (parsed.success) return parsed.data.id;
-
-  throw new Error("No user found. Set DOFEK_USER_ID or create a user first.");
-}
-
-export async function handleSyncCommand(args: string[]): Promise<number> {
-  const fullSync = args.includes("--full-sync");
-  const days = parseSinceDays(args);
-
-  // Register all providers so processSyncJob can use them
-  await ensureProvidersRegistered();
-
-  const enabled = getEnabledSyncProviders();
-  if (enabled.length === 0) {
-    logger.info("[sync] No syncable providers enabled. Set API keys in .env to enable providers.");
-    return 0;
-  }
-
-  const db = createDatabaseFromEnv();
-  const connection = getRedisConnection();
-  const queue = createSyncQueue(connection);
-  const userId = await resolveCliUserId(db);
-
-  const jobs = await Promise.all(
-    enabled.map((provider) =>
-      queue.add("sync", {
-        providerId: provider.id,
-        sinceDays: fullSync ? undefined : days,
-        userId,
-      } satisfies SyncJobData),
-    ),
-  );
-  const label = fullSync ? "all time" : `last ${days} days`;
-  logger.info(`[sync] Enqueued ${jobs.length} sync job(s), one per provider — ${label}`);
-
-  // Process the job inline with a temporary worker
-  const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
-    connection,
-  });
-  const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
-
-  try {
-    const results = await Promise.allSettled(jobs.map((job) => job.waitUntilFinished(queueEvents)));
-    const failed = results.find((result) => result.status === "rejected");
-    if (failed) {
-      throw failed.reason;
-    }
-    logger.info("[sync] Done.");
-    return 0;
-  } catch (err) {
-    logger.error(`[sync] Failed: ${err}`);
-    return 1;
-  } finally {
-    await worker.close();
-    await queueEvents.close();
-    await queue.close();
-  }
-}
+import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
+import { getAllProviders } from "./providers/index.ts";
 
 export async function handleAuthCommand(args: string[]): Promise<number> {
   await ensureProvidersRegistered();
@@ -97,7 +24,7 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
   const oauthProviders = allProviders.filter((p) => p.authSetup);
   const provider = oauthProviders.find((p) => p.id === providerArg);
 
-  if (!providerArg || !provider || !provider.authSetup) {
+  if (!providerArg || !provider?.authSetup) {
     const supported = oauthProviders.map((p) => p.id).join("|");
     logger.error(`Usage: health-data auth <${supported}>`);
     return 1;
@@ -262,7 +189,7 @@ export async function main() {
   }
 
   if (command === "metric-stream-clickhouse-sink") {
-    await runMetricStreamClickHouseSinkFromEnv();
+    await startMetricStreamClickHouseSinkFromEnv();
     return;
   }
 

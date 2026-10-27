@@ -1,5 +1,7 @@
 # WHOOP BLE Protocol
 
+<!-- cspell:words todatetime -->
+
 Reverse-engineered BLE protocol for WHOOP fitness straps (Gen 4 Harvard, Maverick/Goose, Puffin generations). Findings from APK decompilation (v5.439.0), PacketLogger captures, and live device probing (March 2026).
 
 ## GATT Services
@@ -200,14 +202,20 @@ The strap continuously streams compact 0x28 packets at ~1 Hz, even outside sync 
 | 2-5 | 4 | Timestamp (u32 LE) | Unix epoch seconds. **Different offset from other packet types** (which use offset 7). |
 | 6-7 | 2 | Sub-sequence / flags | Varies per session |
 | **8** | **1** | **Heart Rate (bpm)** | Confirmed 60-62 bpm in resting capture. 0 when strap has no reading. |
-| **9** | **1** | **Valid flag** | `0x01` = valid HR + R-R reading, `0x00` = no valid reading |
-| **10-11** | **2** | **R-R interval (u16 LE, ms)** | Beat-to-beat timing. ~900-1050 ms at resting HR. 0 when flag=0. |
+| **9** | **1** | **R-R interval count** | Zero intervals does not invalidate the independently reported BPM. |
+| **10-11** | **2** | **R-R interval (u16 LE, ms)** | Beat-to-beat timing. ~900-1050 ms at resting HR. 0 when count=0. |
 | 12-17 | 6 | Reserved (zeros) | |
 | 18 | 1 | Constant `0x01` | |
 | 19 | 1 | Constant `0x00` | |
 | 20-23 | 4 | CRC32 / checksum | Changes every packet |
 
-**Key finding**: These packets stream continuously — they are the live HR feed that the WHOOP app displays on its home screen. Our iOS app receives them by piggybacking on the WHOOP app's BLE connection.
+The retained [PacketLogger capture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv)
+contains 52 compact packets, including 38 with positive BPM and zero intervals.
+WHOOP's [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4)
+explains that its heart-rate estimate can remain available without an R-R
+estimate, particularly during movement. The native buffer therefore exports
+`heartRateBpm` independently of `rrIntervalMs`; see the
+[capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift).
 
 ## Full REALTIME_DATA (0x28, 116-byte payload)
 
@@ -232,15 +240,14 @@ Historical data replayed during sync. Contains the same sensor data as the compa
 |---|---|---|---|
 | 0 | 1 | Packet type (`0x2F`) | |
 | 1 | 1 | Record type (`0x12` = 18) | |
-| 2-3 | 2 | Sequence (u16 LE) | |
-| 4-5 | 2 | Constant (`0x1850`) | |
-| 6-7 | 2 | Sub-sequence (u16 LE) | |
-| 8-13 | 6 | Session/device ID (constant per session) | |
+| 2 | 1 | Record marker | |
+| 3-6 | 4 | Record index (u32 LE) | |
+| 7-10 | 4 | Unix seconds (u32 LE) | |
+| 11-12 | 2 | Fractional clock ticks (u16 LE) | 1/32768 second per tick in the retained capture. |
+| 13 | 1 | Header padding | |
 | **14** | **1** | **Heart Rate (bpm)** | Confirmed from capture (values 60-73) |
-| **15** | **1** | **Flag** | 1=valid HR+RR, 2=valid HR+RR+extra, 0=no reading |
-| **16-17** | **2** | **R-R interval (u16 LE, ms)** | ~900-1060 ms at resting HR |
-| 18-19 | 2 | Extra data | Non-zero when flag=2 |
-| 20-23 | 4 | Reserved | |
+| **15** | **1** | **R-R interval count** | Zero intervals can accompany positive BPM. |
+| **16-23** | **8** | **Up to four R-R words (u16 LE)** | The current parser retains the first interval. |
 | 24-25 | 2 | Metadata flags | |
 | 26-27 | 2 | Changing data | |
 | 28 | 1 | Session marker | |
@@ -251,6 +258,17 @@ Historical data replayed during sync. Contains the same sensor data as the compa
 | **41-44** | **4** | **Quaternion Y (float32 LE)** | |
 | **45-48** | **4** | **Quaternion Z (float32 LE)** | |
 | 49-115 | 67 | Config/metadata | Partially decoded |
+
+For captured R18 and R21 records, combine the timestamp as
+`unix_seconds + fractional_ticks / 32768`, before adding any IMU sample offset.
+In the [capture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv),
+the fractional word `14090` means approximately `0.43` seconds. Treating it as
+milliseconds incorrectly adds `14.09` seconds. The
+[buffer regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift)
+verify matching captured live/history readings and use the same conversion for
+serialization and account-erasure cutoffs. The independently maintained
+[R21 protocol reference](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_SENSORS.md#inertial-record-timestamps)
+documents the same fractional clock scale.
 
 ## Persistent Config Keys (from firmware console logs)
 
@@ -293,12 +311,341 @@ All commands are sent automatically when the iOS app connects to the strap and a
 
 | Data | Packet | Rate | Status |
 |---|---|---|---|
-| Heart Rate (bpm) | 0x28 compact, byte 8 | 1 Hz | Parsed by native code only; **not uploaded or stored** because it is device-derived |
+| Heart Rate (bpm) | 0x28 compact, byte 8; 0x2F R18, byte 14 | 1 Hz | **Stored** as the strap-reported `heart_rate`, independently of interval availability |
 | R-R Interval (ms) | 0x28 compact, bytes 10-11 | 1 Hz | **Stored** in metric stream `rr_interval_ms` channel |
 | Accelerometer (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
 | Gyroscope (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
 | Orientation quaternion | 0x2F R18, bytes 33-48 | During sync | **Stored** in metric stream `orientation` channel when present |
-| Historical R-R | 0x2F R18, bytes 16-17 | During sync | **Stored** in metric stream `rr_interval_ms` channel; historical heart rate is not stored |
+| Historical R-R | 0x2F R18, bytes 16-17 | During sync | **Stored** in metric stream `rr_interval_ms` channel alongside reported heart rate |
+
+Activity charts prefer reported BPM at the same provider priority and timestamp.
+The [upload repository](../packages/server/src/repositories/whoop-ble-sync-repository.ts)
+retains positive `heartRateBpm` values even when the packet has no beat intervals;
+zero or omitted BPM remains an unavailable measurement. This follows WHOOP's
+[documented distinction between heart-rate estimation and beat-interval availability](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+
+For interval-only observations, activity charts derive instantaneous heart rate from retained positive, finite
+beat intervals as `60000 / rr_interval_ms`; this is the reciprocal method
+described by [PhysioNet](https://archive.physionet.org/tutorials/hrv/), rather than
+the strap's smoothed BPM field. The [sensor projection](../analytics/models/staging/sensor_scalar_sample.sql)
+emits `heart_rate` samples with `measurement_kind = 'estimated'`, retaining the
+original timestamps, source-record IDs, provider, device, and nullable activity
+links. Raw intervals remain canonical. Web and mobile source controls, charts,
+and zones consume that shared server projection without filling recording gaps.
+Reported BPM wins over an interval-derived reading at the same timestamp when
+their provider and configured priority are equal; see the [deduplication model](../analytics/models/read_models/deduped_sensor.sql).
+Invalid intervals and deletion tombstones retract their derived readings.
+For history outside the normal ingestion-time microbatch lookback, use the
+[bounded sensor replay procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills).
+
+### Independent upload streams and retention
+
+The [mobile uploader](../packages/mobile/lib/background-whoop-ble-sync.ts)
+drains IMU and realtime samples independently, with one active worker per
+stream and sequential batches of at most 500 samples within each worker.
+Foreground, periodic, and native background-refresh callers share existing
+workers within the current sync lifetime. Teardown retires that lifetime, so a
+new login can upload without waiting for an old HTTP request. Cursor handoff
+waits for any pending native peek and releases it with a zero-count confirmation;
+retired requests cannot remove samples or change replacement-worker state.
+A periodic tick can start a new realtime drain while an earlier IMU
+drain is still catching up. Each worker confirms only its own successfully
+uploaded samples; upload failures leave unconfirmed samples in the native
+buffer. The sync waits for both workers to settle before propagating unexpected
+errors. These scheduling and confirmation boundaries are exercised by the
+[uploader regressions](../packages/mobile/lib/background-whoop-ble-sync.test.ts).
+
+Foreground drains check app state before each upload. A native background
+refresh grants upload permission for its lifetime, including when it joins a
+worker started in the foreground. This preserves the existing distinction
+between foreground work and an explicit native background wake; see the
+[uploader](../packages/mobile/lib/background-whoop-ble-sync.ts) and
+[React Native AppState](https://reactnative.dev/docs/appstate).
+
+In the [mobile transport](../packages/mobile/lib/trpc-links.ts), the two upload
+mutations, `inertialMeasurementUnitSync.pushSamples` and
+`whoopBleSync.pushRealtimeData`, use separate HTTP requests so either response
+can settle independently. Other mobile operations retain their existing
+transport routing.
+tRPC's [`httpLink`](https://trpc.io/docs/client/links/httpLink) sends individual
+operations, whereas
+[`httpBatchLink`](https://trpc.io/docs/client/links/httpBatchLink) combines
+concurrent operations into one HTTP request. Parallel workers therefore also
+need independent transport to avoid coupling their response completion.
+
+The [native sample buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
+stores samples in memory, with a 500,000-sample IMU limit and an 86,400-sample
+realtime limit. At the observed 100 Hz and 1 Hz rates, those limits correspond
+to approximately 83 minutes and 24 hours respectively. Overflow evicts the
+oldest samples. Creating a new
+[native module instance](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+creates empty buffers; there is no disk-backed sample queue. Connection and
+streaming changes preserve the existing buffer, while account erasure applies
+its recorded cutoff. Consequently, a current connection or nonzero buffer
+count does not establish that samples from an earlier workout were captured
+or remain recoverable. Check the sample timestamps and account-scoped server
+arrival before making that claim.
+
+### Diagnosing capture, upload, and visibility
+
+Use a bounded UTC incident window and the authenticated account ID. The
+[mobile telemetry boundary](../packages/mobile/lib/telemetry.ts) adds canonical
+`userId`, `appVersion`, native `appBuild`, `assetsVersion`, `runtimeVersion`,
+and JavaScript-lifetime `runtimeId` to logs/errors. Authentication changes clear
+or replace that identity immediately through the
+[auth context](../packages/mobile/lib/auth-context.tsx); caller attributes cannot
+override it. Buffer and batch IDs connect the stages below. This is operational
+correlation metadata, following
+[OpenTelemetry's context model](https://opentelemetry.io/docs/concepts/context-propagation/),
+without logging sensor values.
+
+| Evidence | Fields and events | Interpretation |
+| --- | --- | --- |
+| Native connection history | `native_connection_event`: `eventId`, `nativeEvent`, `nativeOccurredAt`, `nativeSessionId`, `processId`, `connectionState`, `centralState`, `reconnectIntent`, `errorDomain`, `errorCode`, `errorDescription`, `connectionHistoryOverflowCount` | Native occurrence time can precede log emission when JavaScript was unavailable. Stable event IDs identify replay after a restart; unknown account provenance must not be treated as proven ownership. An application handshake failure is separate from a CoreBluetooth disconnect error. |
+| Capture | `capture_snapshot`: `lastKnownDeviceId`, `connectionState`, `isNotifying`, `dataNotificationCount`, `totalFramesParsed`, `malformedFrames`, `lastDataNotificationAt`, `lastParsedImuAt`, `lastParsedRealtimeAt`, `lastValidHeartRateAt` | Compare successive observations within one buffer/runtime. Notification and parsed timestamps are phone observation times; `lastValidHeartRateAt` is a device sample timestamp. A connected state alone does not prove usable capture; last-known identity does not prove a current connection. |
+| Retained queue | `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`; stream-prefixed `imuCount`/`realtimeCount`, `OldestTimestamp`, `NewestTimestamp`, `ReceivedCount`, `ConfirmedCount`, `OverflowDiscardedCount`, `ErasureDiscardedCount`, `ClearedCount`, `LegacyDrainedCount`, `LastConfirmedAt` | Counts and true minimum/maximum sample times distinguish retained backlog from explicit removals, including out-of-order samples. Native confirmation counters describe actual removals. |
+| Scheduling | `worker_started`, `worker_joined`, `worker_finished`, `upload_skipped`; snapshot fields such as `realtimeWorkerActive`, `realtimeWorkerAgeMs`, `realtimeRequestPending`, `realtimePendingRequestAgeMs`, `realtimePendingBatchId` | Growing queue with no upload attempt points to scheduling/permission decisions; an aging pending request points farther along the upload path. Inspect `trigger`, `appState`, and skipped `reason`. |
+| Request and confirmation | `upload_started`, `upload_http_response`, `upload_acknowledged`, `upload_failed`, `buffer_confirmed`; `stream`, `deviceId`, `batchId`, `sampleCount`, `firstTimestamp`, `lastTimestamp`, `elapsedMs` | Follow the same batch from attempt through acknowledgment and native confirmation. HTTP diagnostics report actual `httpStatus`; a response alone is not successful tRPC completion. |
+| Server receipt/publication | `upload_received`, `upload_published`, `upload_failed`; `inputSampleCount`, `acceptedSampleCount`, `filteredSampleCount`, `publishedRowCount`, timestamp bounds, `boundary` | `boundary=redpanda` means the awaited broker publication completed. `boundary=no_metric_rows` means no metric rows were published, even if the request succeeded. Neither proves ClickHouse or chart visibility. |
+
+`buffer_confirmed.requestedConfirmationCount` and
+`requestedErasureDiscardCount` describe what JavaScript requested, not the
+number actually removed. Concurrent overflow can reduce a subsequent native
+confirmation; use snapshot `imuConfirmedCount`/`realtimeConfirmedCount` and
+discard-counter deltas for actual removals.
+
+The [diagnostics model](../packages/mobile/lib/whoop-ble-diagnostics.ts),
+[native contract](../packages/mobile/modules/whoop-ble/index.ts),
+[HTTP boundary](../packages/mobile/lib/trpc-fetch.ts), and
+[server helper](../packages/server/src/lib/sensor-upload-telemetry.ts) define the
+exact fields. Each grouped request carries `telemetry.batchId` and optional
+`telemetry.bufferInstanceId`; the
+[transport](../packages/mobile/lib/trpc-links.ts) copies the same batch UUID to
+`x-dofek-upload-id`. Server receipt/publication uses the authenticated account,
+device and request metadata, with true accepted-sample timestamp bounds.
+Published row counts can differ from sample counts because one realtime sample
+can produce multiple channels, as defined by the
+[upload repository](../packages/server/src/repositories/whoop-ble-sync-repository.ts).
+Broker acknowledgment follows the producer's configured KafkaJS
+[`send` acknowledgment boundary](https://kafka.js.org/docs/producing#producing-messages),
+not downstream consumer completion.
+
+In the log explorer, discover the live service/attribute names first, then use
+these exact attribute filters with the incident's UTC start/end:
+
+| Search | Filters |
+| --- | --- |
+| Disconnect and recovery | Service `dofek-mobile`, `event=native_connection_event`; correlate `nativeSessionId`, sort by `nativeOccurredAt`, and deduplicate by `eventId`. Inspect disconnect error metadata, reconnect intent and subsequent handshake/restoration events. `connectionAccountProvenance=unknown` marks retained native history without account attribution. |
+| Capture and queue progression | Service `dofek-mobile`, `userId=<account>`, `event=capture_snapshot`; group observations by `runtimeId` and `bufferInstanceId`. |
+| One upload's mobile lifecycle | Service `dofek-mobile`, `userId=<account>`, `batchId=<UUID>`; inspect `upload_started`, `upload_http_response`, `upload_acknowledged`, and `upload_failed`. `buffer_confirmed` carries the correlated UUIDs in `batchIds`. |
+| Server receipt and publication | Service `dofek-web`, `userId=<account>`, `deviceId=<device>`, `batchId=<UUID>`; inspect `upload_received`, `upload_published`, and `upload_failed`. |
+| Restart evidence | Service `dofek-mobile`, `event=previous_buffer_checkpoint`; compare current/previous buffer IDs and checkpoint time. `checkpointAccountProvenance=unknown` prohibits treating previous data as proven history of the currently logged-in account. |
+
+Capture snapshots use `lastKnownDeviceId`; upload events use `deviceId` for the
+actual grouped request. A previous checkpoint
+is reported once per observed new buffer instance. The
+[native buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
+retains one metadata checkpoint, updated during capture at most once per 30
+seconds and at explicit diagnostic/discard boundaries. Positive confirmations
+that empty a stream also checkpoint the resulting queue state. It does not persist
+sensor samples. A changed buffer ID with an earlier nonempty checkpoint is
+evidence of a reset since that observation, not an exact loss count, prior
+account identity, or termination cause. Apple does not guarantee a final
+[`applicationWillTerminate` callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
+Missing logs therefore do not prove capture stopped.
+
+### Native background refresh evidence
+
+When the retained queue grows without an upload attempt, inspect the separate
+`background-refresh` log category before changing uploader behavior. The
+[native journal](../packages/mobile/modules/background-refresh/README.md#native-refresh-diagnostics)
+retains 64 metadata events plus overflow, replayed through authenticated mobile
+telemetry on setup, foreground, and handler receipt/settlement. It records
+registration, schedule submission, launch, listener changes, bridge dispatch,
+JavaScript receipt, completion, and expiration. Scheduling failures include
+`errorDomain`, `errorCode`, and `errorDescription`; schedule events include
+`backgroundRefreshStatus`, `lowPowerModeEnabled`, and `earliestBeginAt`.
+
+Use native `eventId` to deduplicate replay across JavaScript lifetimes, and
+`nativeSessionId`, `processId`, and `taskId` to follow a launch. Sort by
+`nativeOccurredAt`, because `_time` is telemetry emission time after replay.
+`diagnosticAccountProvenance=unknown` means `userId` identifies the authenticated
+replaying session, not proven ownership when a native event occurred. Account
+erasure clears the native history through the existing cleanup lease. These
+metadata writes use asynchronous [UserDefaults persistence](https://developer.apple.com/documentation/foundation/userdefaults);
+missing events and overflow cannot establish that iOS never ran a task.
+
+In Axiom, first confirm the live dataset and service fields using the
+[observability runbook](axiom-observability-runbook.md). The examples below use
+`dofek-logs`, `service.name`, and the current `attributes.custom` object emitted
+by the [Axiom exporter](../packages/telemetry/src/axiom-log-exporter.ts).
+Set a bounded UTC incident window in the explorer; widen the emission window
+if native history was replayed after the incident. Replace `ACCOUNT_ID` with the
+account whose app is replaying the journal. Native occurrence filtering remains
+independent of replay time:
+
+```apl
+['dofek-logs']
+| where ['service.name'] == 'dofek-mobile'
+| extend d = ['attributes.custom']
+| where tostring(d['event']) == 'native_background_refresh_event'
+| where tostring(d['userId']) == 'ACCOUNT_ID'
+| extend eventId = tostring(d['eventId'])
+| summarize arg_max(_time, d) by eventId
+| extend nativeAt = todatetime(d['nativeOccurredAt'])
+| where nativeAt >= datetime(2026-10-24T08:00:00Z) and nativeAt < datetime(2026-10-25T08:00:00Z)
+| project nativeAt, emittedAt=_time, nativeEvent=d['nativeEvent'], taskId=d['taskId'],
+    nativeSessionId=d['nativeSessionId'], processId=d['processId'], success=d['success'],
+    reason=d['reason'], backgroundRefreshStatus=d['backgroundRefreshStatus'],
+    lowPowerModeEnabled=d['lowPowerModeEnabled'], earliestBeginAt=d['earliestBeginAt'],
+    errorDomain=d['errorDomain'], errorCode=d['errorCode'], errorDescription=d['errorDescription'],
+    historyOverflowCount=d['historyOverflowCount'], diagnosticAccountProvenance=d['diagnosticAccountProvenance']
+| sort by nativeAt asc
+```
+
+To count boundaries or isolate scheduler failures, keep the query through the
+native-time filter, then replace the final `project`/`sort` with:
+
+```apl
+| summarize events=count() by nativeEvent=tostring(d['nativeEvent']), reason=tostring(d['reason'])
+```
+
+Or use `| where tostring(d['nativeEvent']) == 'schedule_failed'` before the original
+projection. Axiom documents [extend](https://axiom.co/docs/apl/tabular-operators/extend-operator)
+and [summarize](https://axiom.co/docs/apl/tabular-operators/summarize-operator),
+including [explicit arg_max fields](https://axiom.co/docs/apl/aggregation-function/arg-max),
+for these projections and grouped event counts.
+
+Interpret the last observed boundary conservatively:
+
+- `schedule_succeeded` confirms submission; it does not guarantee execution.
+  Apple's [`earliestBeginDate`](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate)
+  is a lower bound, and Dofek keeps its existing 15-minute request.
+- `task_launched` followed by `task_completed` with `reason=missing_listener`
+  exposes the existing cold-start listener policy. A native launch with
+  `bridge_dispatched` but no `js_received` narrows the missing boundary to the
+  event bridge/JavaScript lifetime, subject to retained-history gaps.
+- `completion_requested` records the JavaScript result. `task_completed` records
+  the coordinator's winning completion decision. `task_expired` and
+  `no_pending_task` distinguish expiry from a later ignored completion;
+  expiration does not cancel existing JavaScript work.
+- `nativeOccurredAt` timestamps the diagnostic call. The
+  [coordinator](../packages/mobile/modules/background-refresh/ios/BackgroundRefreshTaskCoordinator.swift)
+  records after releasing its state lock, so simultaneous transitions can appear
+  out of decision order. Use task IDs and completion reasons together; timestamp
+  order alone does not establish causality between concurrent records.
+- A complete refresh followed by no `upload_started` requires looking at the
+  existing WHOOP connection, worker, and queue events; refresh completion alone
+  does not establish sample publication or chart visibility.
+
+The additive bridge requires a new native build. Keep the existing Expo
+fingerprint runtime policy so updates target compatible binaries
+([Expo runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
+SwiftPM validates the journal/coordinator; an iOS build validates the Expo-bound
+scheduler/bridge. Verify real OS scheduling, expiration, and BLE recovery on a
+physical iPhone; simulator evidence does not establish those hardware paths
+([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)).
+
+For a disconnection alert, first correlate the native disconnect with the
+[notification coordinator's](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+five-minute grace period, then check for a native reconnect or handshake failure.
+If the background outcome has not reached the log service, open Dofek briefly
+to allow the [reporter](../packages/mobile/lib/whoop-ble-diagnostics.ts) to export
+retained native history. Correlate `nativeSessionId`, sort by `nativeOccurredAt`,
+and deduplicate by `eventId`; ingestion time describes the later export.
+Then verify a newer `lastDataNotificationAt`, `lastParsedRealtimeAt`, and
+`lastValidHeartRateAt` to establish resumed heart-rate capture. A foreground
+recovery does not establish sustained background recovery or historical
+completeness, as illustrated by the
+[October 24 evidence](incidents/2026-10-24-whoop-connection-evidence.md#foreground-replay-confirms-the-recovery-failure).
+
+Automatic recovery leaves a pending Bluetooth connection intact instead of
+expiring it after ten seconds. The
+[handshake lifecycle](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+Handshake.swift)
+keeps explicit connection requests bounded and times out service discovery and
+notification subscription after a passive connection succeeds. Discovery/retry
+preserves pending peripheral ownership. Apple documents that
+[connection requests do not time out](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:))
+and that [restored peripherals can be connected or pending](https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerrestoredstateperipheralskey).
+The existing delayed alert still reports loss of collection while a reconnect
+remains pending; a native rebuild and physical background test are required to
+validate this behavior on a strap.
+
+The [connection journal](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionDiagnostics.swift)
+persists the latest 64 metadata events at native lifecycle boundaries, including
+while JavaScript is suspended. UserDefaults writes update memory immediately and
+persist asynchronously, so the final write is not guaranteed after abrupt
+termination: [Apple UserDefaults](https://developer.apple.com/documentation/foundation/userdefaults).
+Its reads are nondestructive. The [reporter](../packages/mobile/lib/whoop-ble-diagnostics.ts)
+logs each retained event once per JavaScript diagnostics lifetime, retaining
+stable IDs across later replays. `connectionHistoryOverflowCount` identifies
+history truncation; a gap does not establish why the app stopped or prove a
+successful reconnection. Account erasure clears this history through the
+[native bridge](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift).
+
+Use the [Axiom map-field paths](axiom-observability-runbook.md) for updated mobile
+logs. Bound the query by ingestion time wide enough to include the next app
+startup, then filter `nativeOccurredAt` to the actual incident window; native
+background events may be reported later. A Bluetooth disconnect alone is not a
+cloud authorization failure. The [CoreBluetooth delegate callback](https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerdelegate/centralmanager(_:diddisconnectperipheral:error:))
+and the journal's application handshake events describe different boundaries.
+These native diagnostics require a [new native build](https://docs.expo.dev/workflow/customizing/);
+an existing installation cannot gain them from a JavaScript-only update.
+
+After `upload_published` with `boundary=redpanda`, follow the existing
+[consumer-lag and freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks).
+Then compare account/device/time coverage in raw and serving storage. Replace
+the example account, device, and UTC bounds below with the incident scope:
+
+```sql
+SELECT
+    channel,
+    count() AS row_count,
+    min(recorded_at) AS first_sample_at,
+    max(recorded_at) AS last_sample_at
+FROM ingest.metric_stream FINAL
+WHERE user_id = toUUID('00000000-0000-0000-0000-000000000000')
+    AND provider_id = 'whoop_ble'
+    AND device_id = 'REPLACE_WITH_DEVICE_ID'
+    AND recorded_at >= toDateTime64('2026-10-22 14:53:00', 6, 'UTC')
+    AND recorded_at < toDateTime64('2026-10-22 15:51:00', 6, 'UTC')
+    AND channel IN ('heart_rate', 'rr_interval_ms')
+    AND is_deleted = 0
+GROUP BY channel;
+```
+
+Repeat the same bounded query against `analytics.sensor_scalar_sample FINAL`,
+using `_peerdb_is_deleted = 0` in place of `is_deleted = 0`. The
+[scalar projection](../analytics/models/staging/sensor_scalar_sample.sql)
+derives heart rate from intervals, so compare timestamp coverage and source
+identity rather than expecting identical channel counts. Published data missing
+from raw storage requires sink/consumer investigation; raw data present but
+absent from the scalar projection requires analytics freshness investigation.
+If both contain the samples, inspect the activity source selection and response.
+These checks do not provide an exact batch receipt in the sink: the upload UUID
+is log correlation metadata, not a stored sensor-row key.
+
+The expanded native bridge requires a new native build; an OTA update cannot add
+native code. The app uses the fingerprint runtime policy in
+[app.json](../packages/mobile/app.json).
+Follow Expo's [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/)
+and verify a real device's version/build before interpreting absent new fields.
+The telemetry does not establish what happened before that build was installed.
+
+### Investigating Bluetooth/cloud differences
+
+Compare readings from the same activity window at nearby timestamps before
+comparing whole-window summaries. Missing intervals can concentrate in moving
+or higher-heart-rate periods, so different coverage changes the summary even
+when overlapping readings agree. WHOOP documents that interval estimates can
+be unavailable during sport in its [research FAQ](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+
+Check the reported-BPM and interval channels independently, retain the provider
+and device identities, and compare live/history copies for timestamp shifts.
+Use captured packets to distinguish an absent interval from an absent BPM;
+the [native capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift)
+exercise both cases. The [server chart regression](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts)
+executes the reported-BPM path through an interval gap against ClickHouse.
 
 ## Next Steps: SpO2 and Skin Temperature
 
@@ -313,8 +660,6 @@ To get R22 optical data:
 ## Tools
 
 - `packages/ble-probe/` — macOS CLI for interactive BLE probing (Swift, CoreBluetooth)
-- `packages/mobile/modules/ble-probe/` — iOS Expo native module for in-app BLE debugging
-- `packages/mobile/app/ble-probe.tsx` — React Native debug screen with REPL-like UI
 - `scripts/parse-whoop-ble-capture.ts` — PacketLogger `.pklg` capture parser
 
 ## References

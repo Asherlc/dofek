@@ -1,7 +1,14 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  admissionDelayMs,
+  createInitialAdaptiveState,
+} from "@dofek/provider-http/adaptive-rate-limit";
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import {
   mapFitnessDiscipline,
+  PelotonAuthenticationError,
   PelotonClient,
   type PelotonPerformanceGraph,
   PelotonProvider,
@@ -14,6 +21,13 @@ import {
 } from "./peloton.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
@@ -147,15 +161,15 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
   is_class_plan_shown: true,
   segment_list: [],
   average_summaries: [
-    { display_name: "Avg Output", value: "200", slug: "avg_output" },
-    { display_name: "Avg Cadence", value: "85", slug: "avg_cadence" },
-    { display_name: "Avg Resistance", value: "45", slug: "avg_resistance" },
-    { display_name: "Avg Speed", value: "18.5", slug: "avg_speed" },
+    { display_name: "Avg Output", value: 200, slug: "avg_output" },
+    { display_name: "Avg Cadence", value: 85, slug: "avg_cadence" },
+    { display_name: "Avg Resistance", value: 45, slug: "avg_resistance" },
+    { display_name: "Avg Speed", value: 18.5, slug: "avg_speed" },
   ],
   summaries: [
-    { display_name: "Total Output", value: "360", slug: "total_output" },
-    { display_name: "Distance", value: "9.25", slug: "distance" },
-    { display_name: "Calories", value: "450", slug: "calories" },
+    { display_name: "Total Output", value: 360, slug: "total_output" },
+    { display_name: "Distance", value: 9.25, slug: "distance" },
+    { display_name: "Calories", value: 450, slug: "calories" },
   ],
   metrics: [
     {
@@ -203,59 +217,59 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
 describe("Peloton Provider", () => {
   describe("mapFitnessDiscipline", () => {
     it("maps cycling", () => {
-      expect(mapFitnessDiscipline("cycling")).toBe("indoor_cycling");
+      expect(mapFitnessDiscipline("cycling").canonicalType).toBe("cycling");
     });
 
     it("maps running", () => {
-      expect(mapFitnessDiscipline("running")).toBe("running");
+      expect(mapFitnessDiscipline("running").canonicalType).toBe("running");
     });
 
     it("maps walking", () => {
-      expect(mapFitnessDiscipline("walking")).toBe("walking");
+      expect(mapFitnessDiscipline("walking").canonicalType).toBe("walking");
     });
 
     it("maps rowing", () => {
-      expect(mapFitnessDiscipline("rowing")).toBe("rowing");
+      expect(mapFitnessDiscipline("rowing").canonicalType).toBe("rowing");
     });
 
     it("maps strength", () => {
-      expect(mapFitnessDiscipline("strength")).toBe("strength");
+      expect(mapFitnessDiscipline("strength").canonicalType).toBe("strength");
     });
 
     it("maps yoga", () => {
-      expect(mapFitnessDiscipline("yoga")).toBe("yoga");
+      expect(mapFitnessDiscipline("yoga").canonicalType).toBe("yoga");
     });
 
     it("maps meditation", () => {
-      expect(mapFitnessDiscipline("meditation")).toBe("meditation");
+      expect(mapFitnessDiscipline("meditation").canonicalType).toBe("meditation");
     });
 
     it("maps stretching", () => {
-      expect(mapFitnessDiscipline("stretching")).toBe("stretching");
+      expect(mapFitnessDiscipline("stretching").canonicalType).toBe("stretching");
     });
 
     it("maps bike_bootcamp to bootcamp", () => {
-      expect(mapFitnessDiscipline("bike_bootcamp")).toBe("bootcamp");
+      expect(mapFitnessDiscipline("bike_bootcamp").canonicalType).toBe("bootcamp");
     });
 
     it("maps tread_bootcamp to bootcamp", () => {
-      expect(mapFitnessDiscipline("tread_bootcamp")).toBe("bootcamp");
+      expect(mapFitnessDiscipline("tread_bootcamp").canonicalType).toBe("bootcamp");
     });
 
     it("maps caesar (rowing) to rowing", () => {
-      expect(mapFitnessDiscipline("caesar")).toBe("rowing");
+      expect(mapFitnessDiscipline("caesar").canonicalType).toBe("rowing");
     });
 
     it("maps cardio", () => {
-      expect(mapFitnessDiscipline("cardio")).toBe("cardio");
+      expect(mapFitnessDiscipline("cardio").canonicalType).toBe("cardio");
     });
 
     it("maps outdoor to running", () => {
-      expect(mapFitnessDiscipline("outdoor")).toBe("running");
+      expect(mapFitnessDiscipline("outdoor").canonicalType).toBe("running");
     });
 
     it("maps unknown disciplines to other", () => {
-      expect(mapFitnessDiscipline("some_future_class")).toBe("other");
+      expect(mapFitnessDiscipline("some_future_class").canonicalType).toBe("other");
     });
   });
 
@@ -264,7 +278,7 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleCyclingWorkout);
 
       expect(result.externalId).toBe("abc123def456");
-      expect(result.activityType).toBe("indoor_cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.startedAt).toEqual(new Date(1709280000 * 1000));
       expect(result.endedAt).toEqual(new Date(1709281800 * 1000));
       expect(result.name).toBe("30 min Power Zone Ride");
@@ -317,14 +331,14 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleStrengthWorkout);
 
       expect(result.externalId).toBe("str-789");
-      expect(result.activityType).toBe("strength");
+      expect(result.activityType.canonicalType).toBe("strength");
     });
 
     it("parses a running workout", () => {
       const result = parseWorkout(sampleRunningWorkout);
 
       expect(result.externalId).toBe("run-456");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.raw?.instructor).toBe("Becs Gentry");
     });
 
@@ -338,6 +352,17 @@ describe("Peloton Provider", () => {
       expect(result.endedAt).toBeUndefined();
       // Duration falls back to ride duration
       expect(result.name).toBe("30 min Power Zone Ride");
+    });
+
+    it("preserves zero-duration source timestamps", () => {
+      const zeroDuration: PelotonWorkout = {
+        ...sampleWorkout,
+        end_time: sampleWorkout.start_time,
+      };
+
+      const result = parseWorkout(zeroDuration);
+      expect(result.startedAt).toEqual(new Date(sampleWorkout.start_time * 1000));
+      expect(result.endedAt).toEqual(new Date(sampleWorkout.start_time * 1000));
     });
 
     it("computes duration from start/end when both present", () => {
@@ -431,7 +456,7 @@ describe("Peloton Provider", () => {
       };
       const parsed = parseWorkout(workout);
       expect(parsed.raw.fitnessDiscipline).toBe("yoga");
-      expect(parsed.activityType).toBe("yoga");
+      expect(parsed.activityType.canonicalType).toBe("yoga");
     });
 
     it("stores peloton ride ID in raw", () => {
@@ -665,13 +690,13 @@ describe("PelotonProvider — provider info", () => {
 });
 
 describe("PelotonClient — error handling", () => {
-  it("throws on non-OK response", async () => {
+  it("throws an auth error for unauthorized responses", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
     };
 
     const client = new PelotonClient("bad-token", mockFetch);
-    await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
+    await expect(client.getUserId()).rejects.toThrow(PelotonAuthenticationError);
   });
 
   it("caches userId after first call", async () => {
@@ -811,8 +836,9 @@ describe("PelotonClient — headers", () => {
     await client.getUserId();
 
     const options = mockFetch.mock.calls[0]?.[1];
-    expect(options?.headers?.Authorization).toBe("Bearer my-secret-token");
-    expect(options?.headers?.["peloton-platform"]).toBe("web");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer my-secret-token");
+    expect(headers.get("peloton-platform")).toBe("web");
   });
 });
 
@@ -889,7 +915,12 @@ function makeSyncPerformanceGraph(slugs: string[] = ["heart_rate"]): object {
     metrics: slugs.map((slug) => ({
       display_name: slug,
       slug,
-      values: [130, 145, 160],
+      values:
+        slug === "heart_rate"
+          ? [130, 145, 160]
+          : slug === "output"
+            ? [180, 200, 220]
+            : [80, 85, 90],
       average_value: 145,
       max_value: 160,
     })),
@@ -897,7 +928,7 @@ function makeSyncPerformanceGraph(slugs: string[] = ["heart_rate"]): object {
 }
 
 function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -917,7 +948,7 @@ function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
     }),
     delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 }
 
 // ============================================================
@@ -950,9 +981,190 @@ describe("PelotonProvider.sync — happy path", () => {
   });
 });
 
+describe("PelotonProvider.sync — authentication failures", () => {
+  const refreshedTokenResponse = {
+    access_token: "refreshed-access-token",
+    refresh_token: "refreshed-refresh-token",
+    expires_in: 3600,
+    token_type: "Bearer",
+    scope: "offline_access",
+  };
+
+  function isRefreshRequest(input: RequestInfo | URL): boolean {
+    return String(input).includes("/oauth/token");
+  }
+
+  function authorizationHeader(init: RequestInit | undefined): string | null {
+    return new Headers(init?.headers).get("Authorization");
+  }
+
+  it("refreshes the token and retries once when the workouts request is rejected", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      if (authorizationHeader(init) !== "Bearer refreshed-access-token") {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const url = String(input);
+      if (url.includes("/api/me")) return Response.json({ id: "user-123" });
+      if (url.includes("/workouts")) return Response.json(makeWorkoutListResponse([workout]));
+      return Response.json(makeSyncPerformanceGraph());
+    });
+    const provider = new PelotonProvider(mockFetch);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({
+          since: new Date((workout.start_time - 1000) * 1000),
+        }),
+      }),
+    );
+
+    const refreshCalls = mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input));
+    expect(refreshCalls).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+  });
+
+  it("classifies a rejected workouts request as an expired access token after one refresh", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) =>
+      isRefreshRequest(input)
+        ? Response.json(refreshedTokenResponse)
+        : new Response("Unauthorized", { status: 401 }),
+    );
+    const provider = new PelotonProvider(mockFetch);
+
+    const error = await provider
+      .sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      )
+      .catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(AccessTokenExpiredError);
+    if (!(error instanceof AccessTokenExpiredError)) {
+      throw new Error("Expected an expired access token error");
+    }
+    expect(error.cause).toBeInstanceOf(PelotonAuthenticationError);
+    const refreshCalls = mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input));
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it("preserves non-authentication failures without refreshing tokens", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      if (String(input).includes("/api/me")) return Response.json({ id: "user-123" });
+      return new Response("Invalid workout request", { status: 400 });
+    });
+
+    await expect(
+      new PelotonProvider(mockFetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2024-01-01") }),
+        }),
+      ),
+    ).rejects.toThrow("Peloton API error (400): Invalid workout request");
+
+    expect(mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input))).toHaveLength(0);
+  });
+
+  it("does not refresh again when a later page rejects the refreshed token", async () => {
+    const workout = makeSyncWorkout({ status: "IN_PROGRESS" });
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      const url = new URL(String(input));
+      if (url.pathname === "/api/me") return Response.json({ id: "user-123" });
+      if (
+        authorizationHeader(init) !== "Bearer refreshed-access-token" ||
+        url.searchParams.get("page") === "1"
+      ) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return Response.json(makeWorkoutListResponse([workout], true));
+    });
+
+    await expect(
+      new PelotonProvider(mockFetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2024-01-01") }),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AccessTokenExpiredError);
+
+    expect(mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input))).toHaveLength(1);
+  });
+
+  it("retries the rejected nonzero page and keeps using the refreshed token", async () => {
+    const incompleteWorkout = makeSyncWorkout({ status: "IN_PROGRESS" });
+    const completedWorkout = makeSyncWorkout({ id: "page-one-workout" });
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      const url = new URL(String(input));
+      if (url.pathname === "/api/me") return Response.json({ id: "user-123" });
+      if (url.pathname.endsWith("/workouts") && url.searchParams.get("page") === "0") {
+        return Response.json(makeWorkoutListResponse([incompleteWorkout], true));
+      }
+      if (authorizationHeader(init) !== "Bearer refreshed-access-token") {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (url.pathname.endsWith("/workouts")) {
+        return Response.json({ ...makeWorkoutListResponse([completedWorkout]), page: 1 });
+      }
+      return Response.json(makeSyncPerformanceGraph());
+    });
+
+    const result = await new PelotonProvider(mockFetch).sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01") }),
+      }),
+    );
+
+    const workoutPages = mockFetch.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .filter((url) => url.pathname.endsWith("/workouts"))
+      .map((url) => url.searchParams.get("page"));
+    expect(workoutPages).toEqual(["0", "1", "1"]);
+    expect(mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input))).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(4);
+  });
+
+  it("classifies a rejected performance graph request as an expired access token", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+    const provider = new PelotonProvider(mockFetch);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({
+          since: new Date((workout.start_time - 1000) * 1000),
+        }),
+      }),
+    );
+
+    const performanceError = result.errors[0]?.cause;
+    expect(performanceError).toBeInstanceOf(AccessTokenExpiredError);
+    if (!(performanceError instanceof AccessTokenExpiredError)) {
+      throw new Error("Expected an expired access token error");
+    }
+    expect(performanceError.cause).toBeInstanceOf(PelotonAuthenticationError);
+  });
+});
+
 describe("PelotonProvider.sync — no tokens", () => {
   it("returns token error when no tokens stored", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -963,7 +1175,7 @@ describe("PelotonProvider.sync — no tokens", () => {
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new PelotonProvider();
     const result = await provider.sync(
@@ -1018,6 +1230,58 @@ describe("PelotonProvider.sync — workout filtering", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("includes workouts exactly at the since boundary", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date(workout.start_time * 1000) }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBeGreaterThan(0);
+  });
+
+  it("continues pagination when an older workout is not COMPLETE", async () => {
+    const since = new Date("2024-03-10T00:00:00.000Z");
+    const incompleteOlderWorkout = makeSyncWorkout({
+      id: "peloton-in-progress-older",
+      status: "IN_PROGRESS",
+      start_time: Math.floor(new Date("2024-03-01T08:00:00.000Z").getTime() / 1000),
+      end_time: Math.floor(new Date("2024-03-01T08:30:00.000Z").getTime() / 1000),
+    });
+    const completeNewerWorkout = makeSyncWorkout({
+      id: "peloton-complete-newer",
+      start_time: Math.floor(new Date("2024-03-12T08:00:00.000Z").getTime() / 1000),
+      end_time: Math.floor(new Date("2024-03-12T08:30:00.000Z").getTime() / 1000),
+    });
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([incompleteOlderWorkout], true)))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([completeNewerWorkout])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(4);
   });
 
   it("syncs workouts at the window end and skips workouts after it", async () => {
@@ -1210,11 +1474,48 @@ describe("PelotonProvider.sync — performance graph error handling", () => {
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Performance graph for workout-123");
+    expect(result.errors[0]?.cause).not.toBeInstanceOf(AccessTokenExpiredError);
     expect(mockDb.delete).not.toHaveBeenCalled();
   });
 });
 
 describe("PelotonProvider.sync — metric stream deletion and insertion", () => {
+  it("maps heart rate, power, cadence, and sample timestamps by slug", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(
+        Response.json(makeSyncPerformanceGraph(["output", "cadence", "heart_rate"])),
+      );
+    const provider = new PelotonProvider(mockFetch);
+    await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1) * 1000) }),
+      }),
+    );
+
+    expect(
+      publishedMetricStreamBatches[0]?.map(({ channel, scalar, recordedAt }) => ({
+        channel,
+        scalar,
+        recordedAt,
+      })),
+    ).toEqual([
+      { channel: "heart_rate", scalar: 130, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "power", scalar: 180, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "cadence", scalar: 80, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "heart_rate", scalar: 145, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "power", scalar: 200, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "cadence", scalar: 85, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "heart_rate", scalar: 160, recordedAt: "2024-03-01T08:00:10.000Z" },
+      { channel: "power", scalar: 220, recordedAt: "2024-03-01T08:00:10.000Z" },
+      { channel: "cadence", scalar: 90, recordedAt: "2024-03-01T08:00:10.000Z" },
+    ]);
+  });
+
   it("deletes existing metric_stream rows and inserts new ones in batches", async () => {
     const workout = makeSyncWorkout();
 
@@ -1339,9 +1640,285 @@ describe("PelotonProvider.sync — pagination", () => {
     expect(workoutFetchUrls[0]).toContain("page=0");
     expect(workoutFetchUrls[1]).toContain("page=1");
   });
+
+  it("keeps fetched workouts and skips reconciliation when an empty page claims a next page", async () => {
+    const workout = makeSyncWorkout({ id: "w-degraded", start_time: 1709290000 });
+    const page0Response = {
+      data: [workout],
+      total: 2,
+      count: 1,
+      page: 0,
+      limit: 20,
+      page_count: 2,
+      sort_by: "-created_at",
+      show_next: true,
+      show_previous: false,
+    };
+    const emptyPageResponse = {
+      data: [],
+      total: 2,
+      count: 0,
+      page: 1,
+      limit: 20,
+      page_count: 3,
+      sort_by: "-created_at",
+      show_next: true,
+      show_previous: true,
+    };
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(page0Response))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph()))
+      .mockResolvedValueOnce(Response.json(emptyPageResponse))
+      .mockRejectedValueOnce(new Error("peloton pagination should stop after degraded page"));
+
+    const mockDb = createMockDb();
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const workoutFetchUrls = mockFetch.mock.calls
+      .map((args) => String(args[0]))
+      .filter((url) => url.includes("/workouts"));
+    expect(workoutFetchUrls).toHaveLength(2);
+    expect(mockDb.delete).not.toHaveBeenCalled();
+  });
 });
 
 describe("PelotonProvider.sync — token refresh", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refreshes after adaptive admission expires the token before actual dispatch", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-14T19:30:00Z"));
+    const expiry = new Date("2026-10-14T19:33:00Z");
+    const state = {
+      ...createInitialAdaptiveState("peloton", "provider", null, Date.now() - 60_000),
+      inferredBudget: 10,
+      requestCount: 8,
+    };
+    const requests: string[] = [];
+    const fetchFn = createRateLimitAwareFetch(
+      async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        requests.push(path);
+        if (path === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-peloton-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 172800,
+          });
+        }
+        if (new Headers(init?.headers).get("Authorization") !== "Bearer fresh-peloton-token") {
+          return new Response("Expired access token", { status: 401 });
+        }
+        return Response.json(path === "/api/me" ? { id: "user-123" } : makeWorkoutListResponse([]));
+      },
+      {
+        providerId: "peloton",
+        adaptiveStore: {
+          async awaitAdmission() {
+            vi.setSystemTime(Date.now() + admissionDelayMs(state, Date.now()));
+          },
+          async recordSuccess() {},
+          async recordRateLimit() {},
+          async getLearnedCooldownSeconds() {
+            return null;
+          },
+        },
+      },
+    );
+
+    const result = await new PelotonProvider(fetchFn).sync(
+      new SyncRun({
+        db: createMockDb([{ ...VALID_TOKEN, expiresAt: expiry }]),
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(requests).toEqual(["/oauth/token", "/api/me", "/api/user/user-123/workouts"]);
+  });
+
+  it("refreshes again after a rejected token when later admission exhausts its replacement", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-14T19:30:00Z"));
+    const expiry = new Date("2026-10-14T19:33:00Z");
+    const workout = makeSyncWorkout();
+    const requests: Array<{ path: string; authorization: string | null }> = [];
+    let refreshCount = 0;
+    let waitBeforeNextRequest = false;
+    const fetchFn = createRateLimitAwareFetch(
+      async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        const authorization = new Headers(init?.headers).get("Authorization");
+        requests.push({ path, authorization });
+        if (path === "/oauth/token") {
+          refreshCount += 1;
+          return Response.json({
+            access_token: refreshCount === 1 ? "refreshed-token" : "preemptively-refreshed-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: refreshCount === 1 ? 180 : 172800,
+          });
+        }
+        if (path === "/api/me") return Response.json({ id: "user-123" });
+        if (path.endsWith("/workouts")) {
+          if (authorization !== "Bearer refreshed-token") {
+            return new Response("Unauthorized", { status: 401 });
+          }
+          waitBeforeNextRequest = true;
+          return Response.json(makeWorkoutListResponse([workout]));
+        }
+        if (authorization !== "Bearer preemptively-refreshed-token") {
+          return new Response("Expired replacement token", { status: 401 });
+        }
+        return Response.json(makeSyncPerformanceGraph());
+      },
+      {
+        providerId: "peloton",
+        adaptiveStore: {
+          async awaitAdmission() {
+            if (waitBeforeNextRequest) {
+              waitBeforeNextRequest = false;
+              vi.setSystemTime(Date.now() + 240_000);
+            }
+          },
+          async recordSuccess() {},
+          async recordRateLimit() {},
+          async getLearnedCooldownSeconds() {
+            return null;
+          },
+        },
+      },
+    );
+
+    const result = await new PelotonProvider(fetchFn).sync(
+      new SyncRun({
+        db: createMockDb([{ ...VALID_TOKEN, expiresAt: expiry }]),
+        window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1000) * 1000) }),
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(4);
+    expect(refreshCount).toBe(2);
+    expect(requests.map(({ path }) => path)).toEqual([
+      "/api/me",
+      "/api/user/user-123/workouts",
+      "/oauth/token",
+      "/api/user/user-123/workouts",
+      "/oauth/token",
+      `/api/workout/${workout.id}/performance_graph`,
+    ]);
+    expect(requests.at(-1)?.authorization).toBe("Bearer preemptively-refreshed-token");
+  });
+
+  it.each([200, 120_000])(
+    "refreshes a token with %i ms remaining before starting an API request",
+    async (remainingMs) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-14T19:30:01.000Z"));
+      const expiry = new Date(Date.now() + remainingMs);
+      const requests: string[] = [];
+      const provider = new PelotonProvider(async (input, init) => {
+        const url = new URL(String(input));
+        requests.push(url.pathname);
+        if (url.pathname === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-peloton-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 172800,
+          });
+        }
+        if (new Headers(init?.headers).get("Authorization") !== "Bearer fresh-peloton-token") {
+          return new Response("Expired access token", { status: 401 });
+        }
+        return Response.json(
+          url.pathname === "/api/me" ? { id: "user-123" } : makeWorkoutListResponse([]),
+        );
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb([{ ...VALID_TOKEN, expiresAt: expiry }]),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(requests).toEqual(["/oauth/token", "/api/me", "/api/user/user-123/workouts"]);
+    },
+  );
+
+  it.each([
+    ["current user", 60_000],
+    ["current user", 180_000],
+    ["workouts", 60_000],
+    ["workouts", 180_000],
+  ])(
+    "refreshes again when the token approaches expiry after fetching %s with %i ms elapsed",
+    async (advanceAfter, elapsedMs) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-14T19:30:00.000Z"));
+      const initialExpiry = new Date(Date.now() + 180_000);
+      const workout = makeSyncWorkout();
+      const requests: Array<{ path: string; authorization: string | null }> = [];
+      const provider = new PelotonProvider(async (input, init) => {
+        const url = new URL(String(input));
+        const authorization = new Headers(init?.headers).get("Authorization");
+        requests.push({ path: url.pathname, authorization });
+        if (url.pathname === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-peloton-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 172800,
+          });
+        }
+        const needsRefresh = Date.now() + 120_000 >= initialExpiry.getTime();
+        if (needsRefresh && authorization !== "Bearer fresh-peloton-token") {
+          return new Response("Expired access token", { status: 401 });
+        }
+        if (url.pathname === "/api/me") {
+          if (advanceAfter === "current user") {
+            vi.setSystemTime(new Date(Date.now() + elapsedMs));
+          }
+          return Response.json({ id: "user-123" });
+        }
+        if (url.pathname.endsWith("/workouts")) {
+          if (advanceAfter === "workouts") {
+            vi.setSystemTime(new Date(Date.now() + elapsedMs));
+          }
+          return Response.json(makeWorkoutListResponse([workout]));
+        }
+        return Response.json(makeSyncPerformanceGraph());
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb([{ ...VALID_TOKEN, expiresAt: initialExpiry }]),
+          window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1000) * 1000) }),
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(result.recordsSynced).toBeGreaterThan(0);
+      expect(requests.filter(({ path }) => path === "/oauth/token")).toHaveLength(1);
+      expect(requests.at(-1)).toEqual({
+        path: `/api/workout/${workout.id}/performance_graph`,
+        authorization: "Bearer fresh-peloton-token",
+      });
+    },
+  );
+
   it("refreshes an expired token before syncing", async () => {
     const workout = makeSyncWorkout();
 
@@ -1420,7 +1997,10 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
     new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
 
   it("PelotonClient surfaces a 429 as a ProviderRateLimitError tagged 'peloton'", async () => {
-    const client = new PelotonClient("token", rateLimited429);
+    const client = new PelotonClient(
+      "token",
+      createProviderRateLimitFetch("peloton", rateLimited429),
+    );
     const err = await client.getUserId().catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
@@ -1440,13 +2020,78 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
   });
 
   it("pelotonAutomatedLogin surfaces a 429 tagged 'peloton'", async () => {
-    const err = await pelotonAutomatedLogin("user@test.com", "pass", rateLimited429).catch(
-      (caught: unknown) => caught,
-    );
+    const err = await pelotonAutomatedLogin(
+      "user@test.com",
+      "pass",
+      createProviderRateLimitFetch("peloton", rateLimited429),
+    ).catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("peloton");
       expect(err.statusCode).toBe(429);
     }
   });
+});
+
+vi.mock("../db/activity-images.ts", () => ({
+  recordActivityImageDiscovery: vi.fn(async () => undefined),
+}));
+
+describe("Peloton media discovery", () => {
+  it("fetches workout details with a current bearer token", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        ...sampleWorkout,
+        ride: { ...sampleRide, image_url: "https://cdn.test/art.jpg" },
+      }),
+    );
+    const result = await new PelotonProvider(fetchFn).discoverActivityImages(
+      new SyncRun({
+        db: createMockDb(),
+        userId: "00000000-0000-0000-0000-000000000001",
+        window: SyncWindow.fromSince({ since: new Date(0) }),
+      }),
+      sampleWorkout.id,
+    );
+    expect(result.images[0]?.variants[0]?.url).toBe("https://cdn.test/art.jpg");
+    expect(new Headers(fetchFn.mock.calls[0]?.[1]?.headers).get("Authorization")).toBe(
+      `Bearer ${VALID_TOKEN.accessToken}`,
+    );
+  });
+  it.each([false, true])(
+    "persists workout media and reports storage failures (%s)",
+    async (fail) => {
+      const { recordActivityImageDiscovery } = await import("../db/activity-images.ts");
+      vi.mocked(recordActivityImageDiscovery).mockClear();
+      if (fail)
+        vi.mocked(recordActivityImageDiscovery).mockRejectedValueOnce(
+          Error("database unavailable"),
+        );
+      const workout = makeSyncWorkout();
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+        .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+        .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+      const result = await new PelotonProvider(fetchFn).sync(
+        new SyncRun({
+          db: createMockDb(),
+          userId: "00000000-0000-0000-0000-000000000001",
+          window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1000) * 1000) }),
+        }),
+      );
+      expect(recordActivityImageDiscovery).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "peloton",
+          activityId: "10000000-0000-4000-8000-000000000001",
+          discovery: expect.objectContaining({ images: expect.any(Array) }),
+        }),
+      );
+      expect(
+        result.errors.some((e) => e.message === "Peloton image discovery persistence failed"),
+      ).toBe(fail);
+    },
+  );
 });

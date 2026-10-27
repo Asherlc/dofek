@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "./db/index.ts";
@@ -75,12 +75,21 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "breathwork-sessions.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.breathwork_session WHERE user_id = ${userId} ORDER BY started_at`,
+      ),
+  },
+  {
     name: "nutrition-daily.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.v_nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
+        sql`SELECT * FROM fitness.v_nutrition_provider_daily WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
@@ -89,7 +98,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.v_nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
+        sql`SELECT * FROM fitness.food_entry WHERE user_id = ${userId} ORDER BY date, created_at`,
       ),
   },
   {
@@ -129,39 +138,21 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "lab-panels.csv",
+    name: "clinical-records.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.lab_panel WHERE user_id = ${userId} ORDER BY recorded_at`,
+        sql`SELECT * FROM fitness.clinical_record WHERE user_id = ${userId} ORDER BY downloaded_at`,
       ),
   },
   {
-    name: "lab-results.csv",
+    name: "menstrual-periods.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.lab_result WHERE user_id = ${userId} ORDER BY recorded_at`,
-      ),
-  },
-  {
-    name: "journal-entries.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.journal_entry WHERE user_id = ${userId} ORDER BY date`,
-      ),
-  },
-  {
-    name: "life-events.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.life_events WHERE user_id = ${userId} ORDER BY started_at`,
+        sql`SELECT * FROM fitness.menstrual_period WHERE user_id = ${userId} ORDER BY start_date`,
       ),
   },
   {
@@ -180,6 +171,78 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         db,
         exportRowSchema,
         sql`SELECT * FROM fitness.sport_settings WHERE user_id = ${userId} ORDER BY sport, effective_from`,
+      ),
+  },
+  {
+    name: "areas.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT id,user_id,provider_id,external_id,name,parent_area_id,coordinates::text AS coordinates FROM fitness.area WHERE user_id=${userId} ORDER BY id`,
+      ),
+  },
+  {
+    name: "climbs.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT id,user_id,provider_id,external_id,name,kind,area_id,setting,route_protection,coordinates::text AS coordinates FROM fitness.climb WHERE user_id=${userId} ORDER BY id`,
+      ),
+  },
+  {
+    name: "pitches.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT p.* FROM fitness.pitch p JOIN fitness.climb c ON c.id=p.climb_id WHERE c.user_id=${userId} ORDER BY p.climb_id,p.number,p.id`,
+      ),
+  },
+  {
+    name: "climb-grades.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT g.* FROM fitness.climb_grade g JOIN fitness.climb c ON c.id=g.climb_id WHERE c.user_id=${userId} ORDER BY g.climb_id,g.position`,
+      ),
+  },
+  {
+    name: "pitch-grades.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT g.* FROM fitness.pitch_grade g JOIN fitness.pitch p ON p.id=g.pitch_id JOIN fitness.climb c ON c.id=p.climb_id WHERE c.user_id=${userId} ORDER BY g.pitch_id,g.position`,
+      ),
+  },
+  {
+    name: "climbing-log-entry-grades.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT g.* FROM fitness.climbing_log_entry_grade g JOIN fitness.climbing_log_entry e ON e.id=g.climbing_log_entry_id WHERE e.user_id=${userId} ORDER BY g.climbing_log_entry_id,g.position`,
+      ),
+  },
+  {
+    name: "climbing-log-entries.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.climbing_log_entry WHERE user_id=${userId} ORDER BY climbed_on NULLS LAST,id`,
+      ),
+  },
+  {
+    name: "climbing-attempts.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT a.* FROM fitness.climbing_attempt a JOIN fitness.climbing_log_entry e ON e.id=a.climbing_log_entry_id WHERE e.user_id=${userId} ORDER BY a.climbing_log_entry_id,a.attempt_index NULLS LAST,a.id`,
       ),
   },
 ];
@@ -231,7 +294,7 @@ export async function generateExport(
   outputPath: string,
   onProgress: (info: ExportProgress) => void,
 ): Promise<ExportResult> {
-  const archive = archiver("zip", { zlib: { level: 6 } });
+  const archive = new ZipArchive({ zlib: { level: 6 } });
   const output = createWriteStream(outputPath);
 
   const finished = new Promise<void>((resolve, reject) => {

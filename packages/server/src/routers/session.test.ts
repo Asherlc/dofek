@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createSession,
-  deleteExpiredSessions,
-  deleteSession,
-  validateSession,
-} from "../auth/session.ts";
+import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 
 function createMockDb(rows: Record<string, unknown>[] = []) {
   return {
@@ -47,13 +42,12 @@ describe("session", () => {
 
   describe("validateSession", () => {
     it("returns userId when session is valid", async () => {
-      const db = createMockDb([
-        { user_id: "user-123", expires_at: new Date(Date.now() + 86400000) },
-      ]);
+      const createdAt = new Date("2026-07-27T12:34:56.000Z");
+      const db = createMockDb([{ created_at: createdAt, user_id: "user-123" }]);
 
       const result = await validateSession(db, "valid-session-id");
 
-      expect(result).toEqual({ userId: "user-123" });
+      expect(result).toEqual({ authenticatedAt: createdAt, userId: "user-123" });
     });
 
     it("returns null when session not found", async () => {
@@ -79,17 +73,6 @@ describe("session", () => {
       const db = { execute: mockExecute };
 
       await deleteSession(db, "session-to-delete");
-
-      expect(mockExecute).toHaveBeenCalledOnce();
-    });
-  });
-
-  describe("deleteExpiredSessions", () => {
-    it("calls db.execute to delete expired sessions", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const db = { execute: mockExecute };
-
-      await deleteExpiredSessions(db);
 
       expect(mockExecute).toHaveBeenCalledOnce();
     });

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { SleepChart } from "./SleepChart";
 
-const sampleData = [
+const sampleDataWithoutLocalTimeContext = [
   {
     started_at: "2026-03-27T12:00:00",
     duration_minutes: 488,
@@ -10,6 +10,7 @@ const sampleData = [
     light_minutes: 250,
     awake_minutes: 38,
     efficiency_pct: 92,
+    staging_available: true,
   },
   {
     started_at: "2026-03-28T12:00:00",
@@ -19,6 +20,7 @@ const sampleData = [
     light_minutes: 270,
     awake_minutes: 40,
     efficiency_pct: 91,
+    staging_available: true,
   },
   {
     started_at: "2026-03-29T12:00:00",
@@ -28,6 +30,7 @@ const sampleData = [
     light_minutes: 245,
     awake_minutes: 38,
     efficiency_pct: 90,
+    staging_available: true,
   },
   {
     started_at: "2026-03-30T12:00:00",
@@ -37,6 +40,7 @@ const sampleData = [
     light_minutes: 260,
     awake_minutes: 34,
     efficiency_pct: 88,
+    staging_available: true,
   },
   {
     started_at: "2026-03-31T12:00:00",
@@ -46,6 +50,7 @@ const sampleData = [
     light_minutes: 250,
     awake_minutes: 36,
     efficiency_pct: 93,
+    staging_available: true,
   },
   {
     started_at: "2026-04-01T12:00:00",
@@ -55,6 +60,7 @@ const sampleData = [
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: null,
+    staging_available: false,
   },
   {
     started_at: "2026-04-02T12:00:00",
@@ -64,8 +70,23 @@ const sampleData = [
     light_minutes: 255,
     awake_minutes: 35,
     efficiency_pct: 94,
+    staging_available: true,
   },
 ];
+
+const sampleData = sampleDataWithoutLocalTimeContext.map((row) => ({
+  ...row,
+  ended_at:
+    row.duration_minutes == null
+      ? null
+      : new Date(
+          new Date(`${row.started_at}Z`).getTime() + row.duration_minutes * 60_000,
+        ).toISOString(),
+  timezone: "America/Los_Angeles",
+  start_utc_offset_minutes: -420,
+  end_utc_offset_minutes: -420,
+  local_time_source: "provider_timezone" as const,
+}));
 
 const meta = {
   title: "Sleep/SleepChart",

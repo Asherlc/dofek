@@ -1,108 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-// ── Mock setup ──
-
-const mockLoggerInfo = vi.fn();
-const mockLoggerError = vi.fn();
-const mockLoggerWarn = vi.fn();
-
-vi.mock("./logger.ts", () => ({
-  logger: {
-    info: (...args: unknown[]) => mockLoggerInfo(...args),
-    error: (...args: unknown[]) => mockLoggerError(...args),
-    warn: (...args: unknown[]) => mockLoggerWarn(...args),
-    debug: vi.fn(),
-  },
-}));
-
-const mockWaitUntilFinished = vi.fn<() => Promise<void>>(() => Promise.resolve());
-const mockAdd = vi.fn(() => Promise.resolve({ waitUntilFinished: mockWaitUntilFinished }));
-const mockQueueClose = vi.fn(() => Promise.resolve());
-const mockWorkerClose = vi.fn(() => Promise.resolve());
-const mockQueueEventsClose = vi.fn(() => Promise.resolve());
-const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => []);
-const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
-const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
-const mockProcessSyncJob = vi.fn();
-const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
-const mockCreateDatabaseFromEnv = vi.fn(() => ({
-  execute: mockDbExecute,
-}));
-const mockRedisConnection = { host: "localhost" };
-const mockCreateSyncQueue = vi.fn(() => ({
-  add: mockAdd,
-  close: mockQueueClose,
-}));
-let capturedWorkerCallback: ((j: unknown) => Promise<unknown>) | undefined;
-const MockWorker = vi.fn((_name: string, callback: (j: unknown) => Promise<unknown>) => {
-  capturedWorkerCallback = callback;
-  return { close: mockWorkerClose };
-});
-const MockQueueEvents = vi.fn(() => ({ close: mockQueueEventsClose }));
-
-vi.mock("bullmq", () => ({
-  Worker: MockWorker,
-  QueueEvents: MockQueueEvents,
-}));
-
-vi.mock("./jobs/queues.ts", () => ({
-  getRedisConnection: vi.fn(() => mockRedisConnection),
-  createSyncQueue: mockCreateSyncQueue,
-  SYNC_QUEUE: "sync",
-}));
-
-vi.mock("./jobs/provider-registration.ts", () => ({
-  ensureProvidersRegistered: mockEnsureProvidersRegistered,
-}));
-
-vi.mock("./jobs/process-sync-job.ts", () => ({
-  processSyncJob: mockProcessSyncJob,
-}));
-
-vi.mock("./providers/index.ts", () => ({
-  getEnabledSyncProviders: mockGetEnabledSyncProviders,
-  getAllProviders: mockGetAllProviders,
-  registerProvider: vi.fn(),
-}));
-
-vi.mock("./db/index.ts", () => ({
-  createDatabaseFromEnv: mockCreateDatabaseFromEnv,
-}));
-
-vi.mock("./db/schema.ts", () => ({
-  TEST_USER_ID: "test-user",
-}));
-
-// Mock modules used by auth/import paths
-const mockExecFile = vi.fn();
-vi.mock("node:child_process", () => ({ execFile: mockExecFile }));
-
-const mockWaitForAuthCode = vi.fn();
-vi.mock("./auth/callback-server.ts", () => ({
-  waitForAuthCode: mockWaitForAuthCode,
-}));
-
-const mockBuildAuthorizationUrl = vi.fn(() => "https://auth.example.com/authorize");
-vi.mock("./auth/oauth.ts", () => ({
-  buildAuthorizationUrl: mockBuildAuthorizationUrl,
-}));
-
-const mockEnsureProvider = vi.fn(() => Promise.resolve());
-const mockSaveTokens = vi.fn(() => Promise.resolve());
-vi.mock("./db/tokens.ts", () => ({
-  ensureProvider: mockEnsureProvider,
-  saveTokens: mockSaveTokens,
-}));
-
-const mockImportAppleHealthFile = vi.fn();
-vi.mock("./providers/apple-health/import.ts", () => ({
-  importAppleHealthFile: mockImportAppleHealthFile,
-}));
-
-const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
-vi.mock("./metric-stream/clickhouse-sink.ts", () => ({
-  runMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
-}));
+import {
+  mockBuildAuthorizationUrl,
+  mockDbExecute,
+  mockEnsureProvider,
+  mockEnsureProvidersRegistered,
+  mockExecFile,
+  mockGetAllProviders,
+  mockImportAppleHealthFile,
+  mockLoggerError,
+  mockLoggerInfo,
+  mockRunMetricStreamClickHouseSinkFromEnv,
+  mockSaveTokens,
+  mockWaitForAuthCode,
+} from "./cli-test/test-helpers.ts";
 
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
 function noOpExit(): never {
@@ -117,9 +27,7 @@ process.argv = ["node", "test", "__test_noop__"];
 
 const suppressRejection = () => {};
 process.on("unhandledRejection", suppressRejection);
-const { handleSyncCommand, handleAuthCommand, handleImportCommand, main } = await import(
-  "./index.ts"
-);
+const { handleAuthCommand, handleImportCommand, main } = await import("./index.ts");
 await new Promise((resolve) => setTimeout(resolve, 0));
 process.off("unhandledRejection", suppressRejection);
 
@@ -128,192 +36,6 @@ process.argv = savedArgv;
 beforeEach(() => {
   mockDbExecute.mockReset();
   mockDbExecute.mockResolvedValue([{ id: "test-user" }]);
-});
-
-describe("handleSyncCommand", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockAdd.mockResolvedValue({ waitUntilFinished: mockWaitUntilFinished });
-    mockWaitUntilFinished.mockResolvedValue(undefined);
-  });
-
-  it("returns 0 when no providers are enabled", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
-    const code = await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(code).toBe(0);
-    expect(mockAdd).not.toHaveBeenCalled();
-  });
-
-  it("logs message when no providers enabled", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[sync] No syncable providers enabled. Set API keys in .env to enable providers.",
-    );
-  });
-
-  it("registers providers before checking enabled list", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
-  });
-
-  it("enqueues sync job with providerId and default sinceDays", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    const code = await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(code).toBe(0);
-    expect(mockAdd).toHaveBeenCalledWith("sync", {
-      providerId: "strava",
-      sinceDays: 7,
-      userId: "test-user",
-    });
-  });
-
-  it("enqueues one sync job per enabled provider", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-
-    expect(mockAdd).toHaveBeenCalledTimes(2);
-    expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
-      providerId: "strava",
-      sinceDays: 7,
-      userId: "test-user",
-    });
-    expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
-      providerId: "wahoo",
-      sinceDays: 7,
-      userId: "test-user",
-    });
-  });
-
-  it("logs enqueue message with provider count and day range", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("[sync] Enqueued 2 sync job(s), one per provider"),
-    );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("last 7 days"));
-  });
-
-  it("logs 'all time' label for full sync", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("all time"));
-  });
-
-  it("creates Worker with processSyncJob callback and connection", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-
-    expect(MockWorker).toHaveBeenCalledWith("sync", expect.any(Function), {
-      connection: mockRedisConnection,
-    });
-    // Verify the callback calls processSyncJob by invoking the captured callback
-    expect(capturedWorkerCallback).toBeDefined();
-    const fakeJob = { id: "123" };
-    await capturedWorkerCallback?.(fakeJob);
-    expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
-  });
-
-  it("creates QueueEvents with connection", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-
-    expect(MockQueueEvents).toHaveBeenCalledWith("sync", {
-      connection: mockRedisConnection,
-    });
-  });
-
-  it("logs done message on success", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerInfo).toHaveBeenCalledWith("[sync] Done.");
-  });
-
-  it("returns 1 when job fails", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
-    const code = await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(code).toBe(1);
-  });
-
-  it("logs error message on failure", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("[sync] Failed:"));
-  });
-
-  it("passes undefined sinceDays for --full-sync", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
-    expect(mockAdd).toHaveBeenCalledWith("sync", {
-      providerId: "strava",
-      sinceDays: undefined,
-      userId: "test-user",
-    });
-  });
-
-  it("passes custom --since-days value", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync", "--since-days=30"]);
-    expect(mockAdd).toHaveBeenCalledWith("sync", {
-      providerId: "strava",
-      sinceDays: 30,
-      userId: "test-user",
-    });
-  });
-
-  it("uses DOFEK_USER_ID when provided and skips DB user lookup", async () => {
-    const priorUserId = process.env.DOFEK_USER_ID;
-    process.env.DOFEK_USER_ID = "env-user-123";
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockDbExecute.mockRejectedValue(new Error("should not query DB"));
-
-    try {
-      const code = await handleSyncCommand(["node", "index.ts", "sync"]);
-      expect(code).toBe(0);
-      expect(mockAdd).toHaveBeenCalledWith("sync", {
-        providerId: "strava",
-        sinceDays: 7,
-        userId: "env-user-123",
-      });
-      expect(mockDbExecute).not.toHaveBeenCalled();
-    } finally {
-      if (priorUserId === undefined) {
-        delete process.env.DOFEK_USER_ID;
-      } else {
-        process.env.DOFEK_USER_ID = priorUserId;
-      }
-    }
-  });
-
-  it("throws a clear error when no user row can be resolved", async () => {
-    delete process.env.DOFEK_USER_ID;
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockDbExecute.mockResolvedValue([]);
-
-    await expect(handleSyncCommand(["node", "index.ts", "sync"])).rejects.toThrow(
-      "No user found. Set DOFEK_USER_ID or create a user first.",
-    );
-  });
-
-  it("cleans up BullMQ resources on success", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
-    expect(mockQueueEventsClose).toHaveBeenCalledOnce();
-    expect(mockQueueClose).toHaveBeenCalledOnce();
-  });
-
-  it("cleans up BullMQ resources on failure", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
-    mockWaitUntilFinished.mockRejectedValue(new Error("boom"));
-    await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
-    expect(mockQueueEventsClose).toHaveBeenCalledOnce();
-    expect(mockQueueClose).toHaveBeenCalledOnce();
-  });
 });
 
 describe("handleAuthCommand", () => {
@@ -978,9 +700,10 @@ describe("handleImportCommand", () => {
     ]);
 
     // Verify the since date is approximately 30 days ago
-    const sinceArg: Date = mockImportAppleHealthFile.mock.calls[0]?.[2];
+    const sinceArg = mockImportAppleHealthFile.mock.calls[0]?.[2];
     const expectedSince = before - 30 * 24 * 60 * 60 * 1000;
-    expect(Math.abs(sinceArg.getTime() - expectedSince)).toBeLessThan(1000);
+    expect(sinceArg?.getTime()).toBeGreaterThan(expectedSince - 1000);
+    expect(sinceArg?.getTime()).toBeLessThan(expectedSince + 1000);
   });
 
   it("does not iterate and log error items when errors.length is zero", async () => {

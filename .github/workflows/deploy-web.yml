@@ -27,13 +27,36 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-web-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'main' }}
-  cancel-in-progress: true
+  group: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && 'deploy-web-production' || format('deploy-web-ineligible-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 jobs:
+  resolve:
+    name: Select Production Release
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      image_tag: ${{ steps.select.outputs.image_tag }}
+      commit_sha: ${{ steps.select.outputs.commit_sha }}
+      ci_run_id: ${{ steps.select.outputs.ci_run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Select latest successful release or cancel an ineligible request
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm tsx scripts/select-web-deploy.ts
+
   production:
     name: Deploy Web Production
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    needs: resolve
     permissions:
       contents: read
       actions: read
@@ -44,7 +67,9 @@ jobs:
       environment_name: production
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
-      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
-      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
-      ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+      image_tag: ${{ needs.resolve.outputs.image_tag }}
+      automatic_commit_sha: ${{ needs.resolve.outputs.commit_sha }}
+      ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}
+      public_url: https://dofek.fit
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets: inherit

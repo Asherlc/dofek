@@ -17,10 +17,19 @@ async function generateTestKeyPem(): Promise<{ pem: string; keyId: string }> {
 }
 
 /** Create a fake Apple ID token (unsigned — just needs to be decodable by arctic's decodeIdToken). */
-function createFakeIdToken(sub: string, email: string): string {
+function createFakeIdToken(
+  sub: string,
+  email: string,
+  emailVerified: boolean | "true" | "false" = true,
+): string {
   const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(
-    JSON.stringify({ sub, email, iss: "https://appleid.apple.com" }),
+    JSON.stringify({
+      sub,
+      email,
+      email_verified: emailVerified,
+      iss: "https://appleid.apple.com",
+    }),
   ).toString("base64url");
   const fakeSignature = Buffer.from("fake-signature").toString("base64url");
   return `${header}.${payload}.${fakeSignature}`;
@@ -68,6 +77,7 @@ describe("validateNativeAppleCallback (integration)", () => {
 
         return HttpResponse.json({
           access_token: "mock-access-token",
+          refresh_token: "mock-refresh-token",
           token_type: "Bearer",
           expires_in: 3600,
           id_token: fakeIdToken,
@@ -79,8 +89,14 @@ describe("validateNativeAppleCallback (integration)", () => {
 
     expect(result.user.sub).toBe("apple-user-001");
     expect(result.user.email).toBe("alice@icloud.com");
+    expect(result.user.emailVerified).toBe(true);
     expect(result.user.name).toBeNull();
     expect(result.user.groups).toBeNull();
+    expect(result.revocationCredential).toEqual({
+      accessToken: "mock-access-token",
+      clientId: "com.dofek.app",
+      refreshToken: "mock-refresh-token",
+    });
   });
 
   it("sends a valid ES256 JWT as client_secret", async () => {
@@ -122,6 +138,25 @@ describe("validateNativeAppleCallback (integration)", () => {
     expect(payload.aud).toBe("https://appleid.apple.com");
     expect(payload.iat).toBeTypeOf("number");
     expect(payload.exp).toBe(payload.iat + 300);
+  });
+
+  it("normalizes a string email verification claim", async () => {
+    const fakeIdToken = createFakeIdToken("apple-user-003", "carol@icloud.com", "false");
+
+    mswServer.use(
+      http.post("https://appleid.apple.com/auth/token", () =>
+        HttpResponse.json({
+          access_token: "mock-access-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+          id_token: fakeIdToken,
+        }),
+      ),
+    );
+
+    const result = await validateNativeAppleCallback("test-code");
+
+    expect(result.user.emailVerified).toBe(false);
   });
 
   it("throws when Apple returns an error response", async () => {

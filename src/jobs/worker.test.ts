@@ -1,372 +1,178 @@
-import { beforeAll, describe, expect, it, type MockInstance, vi } from "vitest";
+import "./worker-test/test-helpers.ts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  EXPECTED_WORKER_COUNT,
+  hoisted,
+  invokeProcessor,
+  mockClickHouseClient,
+  mockDatabase,
+  mockObserveFitJob,
+  mockOn,
+  mockReadinessClose,
+  mockReadinessListen,
+  mockReconcileGarminProgress,
+  mockRun,
+  reconcileGarminProgressError,
+} from "./worker-test/test-helpers.ts";
+import "./worker.ts";
 
-// Mock dependencies before importing worker module
-const mockOn = vi.fn();
-const mockClose = vi.fn(() => Promise.resolve());
-
-vi.mock("bullmq", () => ({
-  Worker: vi.fn(() => ({
-    on: mockOn,
-    close: mockClose,
-  })),
-}));
-
-vi.mock("../db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
-}));
-
-vi.mock("../db/clickhouse.ts", () => ({
-  createClickHouseClientFromEnv: vi.fn(() => ({})),
-}));
-
-vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
-  refreshBodyMeasurementReadModel: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock("../db/refit-sensor-store.ts", () => ({
-  createRefitSensorStore: vi.fn(() => ({})),
-}));
-
-vi.mock("./process-import-job.ts", () => ({
-  processImportJob: vi.fn(),
-}));
-
-vi.mock("./process-sync-job.ts", () => ({
-  processSyncJob: vi.fn(),
-}));
-
-vi.mock("./process-export-job.ts", () => ({
-  processExportJob: vi.fn(),
-}));
-
-vi.mock("./process-scheduled-sync-job.ts", () => ({
-  processScheduledSyncJob: vi.fn(),
-}));
-
-vi.mock("./process-post-sync-job.ts", () => ({
-  processPostSyncJob: vi.fn(),
-}));
-
-vi.mock("./process-activity-delete-analytics-job.ts", () => ({
-  processActivityDeleteAnalyticsJob: vi.fn(),
-}));
-
-vi.mock("./scheduled-sync.ts", () => ({
-  setupScheduledSync: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock("./provider-queue-config.ts", () => ({
-  getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
-  getProviderQueueConfig: vi.fn(() => ({
-    concurrency: 3,
-    syncTier: "frequent",
-    limiter: { max: 10, duration: 1000 },
-  })),
-}));
-
-vi.mock("./queues.ts", () => ({
-  getRedisConnection: vi.fn(() => ({})),
-  providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
-  IMPORT_QUEUE: "import-queue",
-  SYNC_QUEUE: "sync-queue",
-  EXPORT_QUEUE: "export-queue",
-  SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
-  POST_SYNC_QUEUE: "post-sync-queue",
-  ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
-}));
-
-vi.mock("@sentry/node", () => ({
-  init: vi.fn(),
-  captureException: vi.fn(),
-}));
-
-vi.mock("../logger.ts", () => ({
-  jobContext: { run: vi.fn((_store: unknown, fn: () => unknown) => fn()) },
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
-// Prevent process.exit from actually exiting — must return `never` to match the real signature.
-// The throw is unreachable because no test triggers SIGTERM/SIGINT.
-function noOpExit(): never {
-  throw new Error("process.exit called unexpectedly in test");
-}
-const exitSpy = vi.spyOn(process, "exit").mockImplementation(noOpExit);
-
-describe("worker module", () => {
-  let setTimeoutSpy: MockInstance;
-  let clearTimeoutSpy: MockInstance;
-
-  beforeAll(async () => {
-    process.env.SENTRY_DSN = "https://test@sentry.io/123";
-    setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
-    clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
-    // Import the module to trigger its side effects
-    await import("./worker.ts");
-  });
-
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync + 1 activity-delete-analytics = 8
-  // Training export is handled by the standalone Python BullMQ worker (packages/ml).
-  const EXPECTED_WORKER_COUNT = 8;
-
-  it("creates per-provider workers plus standard workers", async () => {
+describe("worker startup", () => {
+  it("reconciles external deletion intents before creating any queue worker", async () => {
     const { Worker } = await import("bullmq");
-    expect(Worker).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
-    // Per-provider workers
-    expect(Worker).toHaveBeenCalledWith("sync-strava", expect.any(Function), expect.any(Object));
-    expect(Worker).toHaveBeenCalledWith("sync-garmin", expect.any(Function), expect.any(Object));
-    // Legacy sync worker
-    expect(Worker).toHaveBeenCalledWith("sync-queue", expect.any(Function), expect.any(Object));
-    // Standard workers
-    expect(Worker).toHaveBeenCalledWith("import-queue", expect.any(Function), expect.any(Object));
-    expect(Worker).toHaveBeenCalledWith("export-queue", expect.any(Function), expect.any(Object));
-    expect(Worker).toHaveBeenCalledWith(
-      "scheduled-sync-queue",
-      expect.any(Function),
-      expect.any(Object),
+    expect(hoisted.mockValidateAccountErasureLedgerKeyring).toHaveBeenCalledOnce();
+    expect(hoisted.mockReconcileAccountErasureRestoreIntents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        database: mockDatabase,
+        ledger: hoisted.mockAccountErasureRestoreLedger,
+      }),
     );
-    expect(Worker).toHaveBeenCalledWith(
-      "post-sync-queue",
-      expect.any(Function),
-      expect.any(Object),
-    );
-    expect(Worker).toHaveBeenCalledWith(
-      "activity-delete-analytics-queue",
-      expect.any(Function),
-      expect.objectContaining({ concurrency: 1 }),
-    );
+    const reconciliationOrder =
+      hoisted.mockReconcileAccountErasureRestoreIntents.mock.invocationCallOrder[0];
+    const firstWorkerOrder = vi.mocked(Worker).mock.invocationCallOrder[0];
+    expect(reconciliationOrder).toBeDefined();
+    expect(firstWorkerOrder).toBeDefined();
+    if (reconciliationOrder === undefined || firstWorkerOrder === undefined) {
+      throw new Error("Startup invocation order was not recorded");
+    }
+    expect(reconciliationOrder).toBeLessThan(firstWorkerOrder);
   });
 
-  it("passes limiter config to per-provider workers", async () => {
+  it("initializes the durable erasure runtime before creating queue workers", async () => {
     const { Worker } = await import("bullmq");
-    expect(Worker).toHaveBeenCalledWith(
-      "sync-strava",
-      expect.any(Function),
-      expect.objectContaining({ limiter: { max: 10, duration: 1000 } }),
+    const { createAccountErasureRuntime } = await import("./account-erasure-runtime.ts");
+
+    expect(createAccountErasureRuntime).toHaveBeenCalledWith(
+      mockDatabase,
+      mockClickHouseClient,
+      hoisted.mockAccountErasureWorkPurger,
     );
+    const runtimeOrder = hoisted.mockCreateAccountErasureRuntime.mock.invocationCallOrder[0];
+    const firstWorkerOrder = vi.mocked(Worker).mock.invocationCallOrder[0];
+    expect(runtimeOrder).toBeDefined();
+    expect(firstWorkerOrder).toBeDefined();
+    if (runtimeOrder === undefined || firstWorkerOrder === undefined) {
+      throw new Error("Runtime startup invocation order was not recorded");
+    }
+    expect(runtimeOrder).toBeLessThan(firstWorkerOrder);
   });
 
-  it("initializes Sentry when DSN is set", async () => {
+  it("attaches worker handlers before workers start processing jobs", async () => {
+    const { Worker } = await import("bullmq");
+    const workerOptions = vi.mocked(Worker).mock.calls.map((workerCall) => workerCall[2]);
+    expect(workerOptions).toHaveLength(EXPECTED_WORKER_COUNT);
+    for (const options of workerOptions) {
+      expect(options).toEqual(expect.objectContaining({ autorun: false }));
+    }
+
+    expect(mockRun).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
+    const lastHandlerRegistration =
+      mockOn.mock.invocationCallOrder[mockOn.mock.invocationCallOrder.length - 1];
+    const firstWorkerRun = mockRun.mock.invocationCallOrder[0];
+    expect(lastHandlerRegistration).toBeDefined();
+    expect(firstWorkerRun).toBeDefined();
+    if (lastHandlerRegistration === undefined || firstWorkerRun === undefined) {
+      throw new Error("Worker startup order was not recorded");
+    }
+    expect(lastHandlerRegistration).toBeLessThan(firstWorkerRun);
+  });
+
+  it("serves readiness from the worker process after starting every queue worker", async () => {
+    const { Worker } = await import("bullmq");
+    const { createWorkerReadinessServer } = await import("./worker-readiness.ts");
+    const workerInstances = vi.mocked(Worker).mock.results.map((result) => result.value);
+
+    expect(createWorkerReadinessServer).toHaveBeenCalledWith(workerInstances);
+    expect(mockReadinessListen).toHaveBeenCalledWith(3001, "127.0.0.1");
+    const lastWorkerRun =
+      mockRun.mock.invocationCallOrder[mockRun.mock.invocationCallOrder.length - 1];
+    const readinessListen = mockReadinessListen.mock.invocationCallOrder[0];
+    expect(lastWorkerRun).toBeDefined();
+    expect(readinessListen).toBeDefined();
+    if (lastWorkerRun === undefined || readinessListen === undefined) {
+      throw new Error("Worker readiness startup order was not recorded");
+    }
+    expect(lastWorkerRun).toBeLessThan(readinessListen);
+  });
+
+  it("initializes Sentry and PostHog when DSN is set", async () => {
     const Sentry = await import("@sentry/node");
+    const { initProductionPostHog } = await import("../lib/posthog.ts");
     expect(Sentry.init).toHaveBeenCalledWith({
+      beforeSend: expect.any(Function),
+      beforeSendSpan: expect.any(Function),
+      beforeSendTransaction: expect.any(Function),
       dsn: "https://test@sentry.io/123",
+      environment: "production",
       skipOpenTelemetrySetup: true,
     });
+    expect(initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
   });
 
-  it("registers event handlers on each worker", () => {
-    // Each worker registers active, completed, failed, error = 4 events x N workers
-    expect(mockOn).toHaveBeenCalledTimes(4 * EXPECTED_WORKER_COUNT);
+  it("registers standard handlers plus FIT progress observers", () => {
+    expect(mockOn).toHaveBeenCalledTimes(4 * EXPECTED_WORKER_COUNT + 3);
     const events = mockOn.mock.calls.map((call) => String(call[0]));
-    expect(events.filter((e: string) => e === "active")).toHaveLength(EXPECTED_WORKER_COUNT);
-    expect(events.filter((e: string) => e === "completed")).toHaveLength(EXPECTED_WORKER_COUNT);
-    expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT);
+    expect(events.filter((e: string) => e === "completed")).toHaveLength(1);
+    expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT + 2);
+    expect(events.filter((e: string) => e === "stalled")).toHaveLength(EXPECTED_WORKER_COUNT);
+    expect(events.filter((e: string) => e === "lockRenewalFailed")).toHaveLength(
+      EXPECTED_WORKER_COUNT,
+    );
     expect(events.filter((e: string) => e === "error")).toHaveLength(EXPECTED_WORKER_COUNT);
   });
 
-  it("registers SIGTERM and SIGINT handlers", () => {
-    const signalListeners = process.listeners("SIGTERM");
-    expect(signalListeners.length).toBeGreaterThan(0);
-  });
-
-  it("does not actually exit", () => {
-    expect(exitSpy).not.toHaveBeenCalled();
-  });
-
-  it("starts idle timer at init (setTimeout called)", () => {
-    // Module init calls startIdleTimer() which calls setTimeout
-    expect(setTimeoutSpy).toHaveBeenCalled();
-  });
-
-  function getWorkerHandler(eventName: string): (...args: unknown[]) => unknown {
-    const call = mockOn.mock.calls.find((mockCall) => mockCall[0] === eventName);
-    expect(call).toBeDefined();
-    const handler = call?.[1];
-    if (typeof handler !== "function") {
-      throw new Error(`No ${eventName} handler registered`);
-    }
-    return handler;
-  }
-
-  it("active event handler resets idle timer without starting a new one", () => {
-    const clearBefore = clearTimeoutSpy.mock.calls.length;
-    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
-
-    getWorkerHandler("active")();
-
-    expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(clearBefore);
-    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
-    getWorkerHandler("completed")();
-  });
-
-  it("completed event handler restarts idle timer when no active jobs", () => {
-    getWorkerHandler("active")();
-    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
-
-    getWorkerHandler("completed")();
-
-    expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
-  });
-
-  it("completed event handler does not restart idle timer while another job is active", () => {
-    getWorkerHandler("active")();
-    getWorkerHandler("active")();
-    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
-
-    getWorkerHandler("completed")();
-
-    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
-    getWorkerHandler("completed")();
-  });
-
-  it("failed event handler reports to Sentry and logs the error", async () => {
+  it("reports a durable Garmin progress reconciliation failure when the worker starts", async () => {
     const Sentry = await import("@sentry/node");
     const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
-    vi.mocked(logger.error).mockClear();
 
-    getWorkerHandler("active")();
-    const error = new Error("test failure");
-    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
-    getWorkerHandler("failed")(undefined, error);
-
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
-    expect(logger.error).toHaveBeenCalledWith("[worker] Job failed: test failure");
-    expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
-  });
-
-  it("failed event handler does not restart idle timer while another job is active", async () => {
-    const Sentry = await import("@sentry/node");
-    vi.mocked(Sentry.captureException).mockClear();
-    getWorkerHandler("active")();
-    getWorkerHandler("active")();
-    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
-
-    getWorkerHandler("failed")(undefined, new Error("one of two jobs failed"));
-
-    expect(Sentry.captureException).toHaveBeenCalledOnce();
-    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
-    getWorkerHandler("completed")();
-  });
-
-  it("error event handler reports to Sentry and logs the error", async () => {
-    const Sentry = await import("@sentry/node");
-    const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
-    vi.mocked(logger.error).mockClear();
-
-    const errorCall = mockOn.mock.calls.find((call) => call[0] === "error");
-    expect(errorCall).toBeDefined();
-    const error = new Error("test worker error");
-    errorCall?.[1](error);
-
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
-    expect(logger.error).toHaveBeenCalledWith("[worker] Worker error: test worker error");
-  });
-
-  it("unhandledRejection handler reports to Sentry and logs", async () => {
-    const Sentry = await import("@sentry/node");
-    const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
-    vi.mocked(logger.error).mockClear();
-
-    const handlers = process.listeners("unhandledRejection");
-    const handler = handlers[handlers.length - 1];
-    expect(handler).toBeDefined();
-    const error = new Error("test unhandled");
-    handler?.(error, Promise.resolve());
-
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
-    expect(logger.error).toHaveBeenCalled();
-  });
-
-  // ── Processor callback tests ──
-  // Invoke each worker's processor to verify it delegates to the correct job handler.
-
-  /**
-   * Invoke the processor function registered for a given queue name with mock job data.
-   * Uses Reflect.apply to call the BullMQ Processor without needing a full Job instance.
-   * Optionally pass a token (second argument to BullMQ processor).
-   */
-  async function invokeProcessor(
-    queueName: string,
-    jobData: Record<string, unknown>,
-    token?: string,
-    jobOverrides?: Record<string, unknown>,
-  ): Promise<void> {
-    const { Worker } = await import("bullmq");
-    const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
-    const processor = call?.[1];
-    if (typeof processor !== "function") {
-      throw new Error(`No processor function found for queue "${queueName}"`);
-    }
-    const mockJob = { data: jobData, id: "test-job-1", ...jobOverrides };
-    await Reflect.apply(processor, undefined, [mockJob, token]);
-  }
-
-  it("per-provider sync processor delegates to processSyncJob", async () => {
-    const { processSyncJob } = await import("./process-sync-job.ts");
-    vi.mocked(processSyncJob).mockClear();
-
-    await invokeProcessor("sync-strava", { providerId: "strava", userId: "user-1" });
-
-    expect(processSyncJob).toHaveBeenCalled();
-  });
-
-  it("legacy sync processor delegates to processSyncJob and logs warning", async () => {
-    const { processSyncJob } = await import("./process-sync-job.ts");
-    const { logger } = await import("../logger.ts");
-    vi.mocked(processSyncJob).mockClear();
-    vi.mocked(logger.warn).mockClear();
-
-    await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
-
-    expect(processSyncJob).toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalled();
-  });
-
-  it("import processor delegates to processImportJob", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
-
-    await invokeProcessor("import-queue", {
-      filePath: "/tmp/f",
-      since: "2026-01-01",
-      userId: "u",
-      importType: "apple-health",
+    expect(mockReconcileGarminProgress).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(Sentry.captureException).toHaveBeenCalledWith(reconcileGarminProgressError, {
+        tags: { garminDumpStep: "progress-reconcile" },
+      });
     });
-
-    expect(processImportJob).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Failed to reconcile Garmin import progress: Error: progress Redis unavailable",
+    );
   });
 
-  it("export processor delegates to processExportJob", async () => {
-    const { processExportJob } = await import("./process-export-job.ts");
-    vi.mocked(processExportJob).mockClear();
+  it("starts export outbox recovery with the durable database row and export queue", async () => {
+    const { startDataExportOutboxDispatcher } = await import("./data-export-outbox.ts");
+    const { getDataExportQueue } = await import("./queues.ts");
 
-    await invokeProcessor("export-queue", { userId: "u", outputPath: "/tmp/out.zip" });
-
-    expect(processExportJob).toHaveBeenCalled();
+    expect(startDataExportOutboxDispatcher).toHaveBeenCalledWith(
+      mockDatabase,
+      vi.mocked(getDataExportQueue).mock.results[0]?.value,
+    );
   });
 
-  it("scheduled-sync processor delegates to processScheduledSyncJob", async () => {
-    const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.ts");
-    vi.mocked(processScheduledSyncJob).mockClear();
+  it("starts account erasure outbox recovery with the durable request row", async () => {
+    const { startAccountErasureOutboxDispatcher } = await import("./account-erasure-outbox.ts");
+    const { getAccountErasureQueue } = await import("./queues.ts");
 
-    await invokeProcessor("scheduled-sync-queue", { type: "scheduled-sync-all" });
-
-    expect(processScheduledSyncJob).toHaveBeenCalled();
+    expect(startAccountErasureOutboxDispatcher).toHaveBeenCalledWith(
+      mockDatabase,
+      vi.mocked(getAccountErasureQueue).mock.results[0]?.value,
+    );
   });
 
-  it("post-sync processor delegates to processPostSyncJob", async () => {
-    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
-    vi.mocked(processPostSyncJob).mockClear();
+  it("observes completed and failed FIT jobs for durable parent progress", () => {
+    mockObserveFitJob.mockClear();
+    const completedHandlers = mockOn.mock.calls.filter((mockCall) => mockCall[0] === "completed");
+    const failedHandlers = mockOn.mock.calls.filter((mockCall) => mockCall[0] === "failed");
+    const completedHandler = completedHandlers.at(-1)?.[1];
+    const failedHandler = failedHandlers.at(-1)?.[1];
+    if (typeof completedHandler !== "function" || typeof failedHandler !== "function") {
+      throw new Error("FIT progress handlers were not registered");
+    }
+    const fitJob = { id: "fit-1", parent: { id: "batch-1", queueKey: "bull:fit-batch" } };
 
-    await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" });
+    completedHandler(fitJob);
+    failedHandler(fitJob, new Error("invalid FIT"));
+    failedHandler(undefined, new Error("missing FIT job"));
 
-    expect(processPostSyncJob).toHaveBeenCalled();
+    expect(mockObserveFitJob).toHaveBeenNthCalledWith(1, fitJob);
+    expect(mockObserveFitJob).toHaveBeenNthCalledWith(2, fitJob);
+    expect(mockObserveFitJob).toHaveBeenCalledTimes(2);
   });
 
   it("post-sync processor passes cached ClickHouse helpers to processPostSyncJob", async () => {
@@ -376,7 +182,6 @@ describe("worker module", () => {
       "../db/clickhouse-read-model-refresh.ts"
     );
     const { processPostSyncJob } = await import("./process-post-sync-job.ts");
-    vi.mocked(createClickHouseClientFromEnv).mockClear();
     vi.mocked(createRefitSensorStore).mockClear();
     vi.mocked(refreshBodyMeasurementReadModel).mockClear();
     vi.mocked(processPostSyncJob).mockClear();
@@ -401,18 +206,106 @@ describe("worker module", () => {
     expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
   });
 
-  it("activity-delete-analytics processor delegates to processActivityDeleteAnalyticsJob", async () => {
-    const { processActivityDeleteAnalyticsJob } = await import(
-      "./process-activity-delete-analytics-job.ts"
-    );
-    vi.mocked(processActivityDeleteAnalyticsJob).mockClear();
+  it("fails startup before registering sync when the interval is invalid", async () => {
+    const previousSyncInterval = process.env.SYNC_INTERVAL_MINUTES;
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    process.env.SYNC_INTERVAL_MINUTES = "not-a-number";
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
 
-    await invokeProcessor("activity-delete-analytics-queue", {
-      type: "activity-delete-analytics-refresh",
-      userId: "user-1",
-      activityIds: ["00000000-0000-0000-0000-000000000001"],
+    try {
+      await expect(import("./worker.ts")).rejects.toThrow(
+        'SYNC_INTERVAL_MINUTES must be a finite positive number, received "not-a-number"',
+      );
+    } finally {
+      if (previousSyncInterval === undefined) {
+        delete process.env.SYNC_INTERVAL_MINUTES;
+      } else {
+        process.env.SYNC_INTERVAL_MINUTES = previousSyncInterval;
+      }
+    }
+
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
+  });
+
+  it("fails startup before running workers or exposing readiness when scheduler registration fails", async () => {
+    const registrationError = new Error("scheduler Redis command failed");
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    hoisted.scheduledSyncState.error = registrationError;
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
+
+    await expect(import("./worker.ts")).rejects.toBe(registrationError);
+
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    expect(Sentry.captureException).toHaveBeenCalledWith(registrationError, {
+      tags: { workerStartupStep: "scheduledSyncRegistration" },
     });
+    expect(logger.error).toHaveBeenCalledWith("[worker] Failed to set up scheduled sync", {
+      error: registrationError,
+      errorStack: registrationError.stack,
+    });
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
+  });
 
-    expect(processActivityDeleteAnalyticsJob).toHaveBeenCalled();
+  it("keeps readiness available and processes new jobs after an extended idle period", async () => {
+    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+    const closeImplementation = mockReadinessClose.getMockImplementation();
+    let readinessAvailable = true;
+    mockReadinessClose.mockImplementation((callback) => {
+      readinessAvailable = false;
+      callback();
+    });
+    hoisted.scheduledSyncState.error = null;
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.resetModules();
+
+    try {
+      await import("./worker.ts");
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+
+      expect(readinessAvailable).toBe(true);
+      vi.mocked(processPostSyncJob).mockClear();
+      await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "idle-user" });
+      expect(processPostSyncJob).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { type: "user-refit", userId: "idle-user" } }),
+        mockDatabase,
+        expect.any(Function),
+        expect.any(Function),
+      );
+    } finally {
+      vi.useRealTimers();
+      if (closeImplementation) mockReadinessClose.mockImplementation(closeImplementation);
+    }
   });
 });
+
+it("wires historical media dispatch into the image outbox startup callback", async () => {
+  hoisted.scheduledSyncState.error = null;
+  mockReconcileGarminProgress.mockResolvedValue(undefined);
+  vi.resetModules();
+  await import("./worker.ts");
+  const { startActivityImageOutboxDispatcher } = await import("./activity-image-outbox.ts");
+  const { dispatchActivityImageBackfills } = await import(
+    "./process-activity-image-backfill-job.ts"
+  );
+  const { getActivityImageQueue } = await import("./queues.ts");
+  vi.mocked(dispatchActivityImageBackfills).mockClear();
+  const call = vi.mocked(startActivityImageOutboxDispatcher).mock.calls.at(-1);
+  if (!call) throw Error("Image outbox was not started");
+  await call[3]();
+  expect(dispatchActivityImageBackfills).toHaveBeenCalledExactlyOnceWith(
+    mockDatabase,
+    vi.mocked(getActivityImageQueue).mock.results.at(-1)?.value,
+  );
+});
+vi.mock("./process-activity-image-backfill-job.ts", async (original) => ({
+  ...(await original<typeof import("./process-activity-image-backfill-job.ts")>()),
+  dispatchActivityImageBackfills: vi.fn(async () => undefined),
+}));

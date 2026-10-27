@@ -1,13 +1,50 @@
+import { sql } from "drizzle-orm";
+import { index, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   buildPlantUml,
   extractTables,
+  generateSchemaDbml,
+  normalizeGeneratedDbml,
   parseColumnLine,
   parseColumns,
   parseRefs,
   parseTables,
   type Table,
 } from "./generate-schema-diagram.ts";
+
+describe("generateSchemaDbml", () => {
+  it("preserves constant and composite SQL index expressions from schema metadata", () => {
+    const category = pgEnum("category", ["food", "activity"]);
+    const owner = pgTable("owner", { id: uuid().primaryKey() });
+    const example = pgTable(
+      "example",
+      {
+        id: uuid(),
+        name: text(),
+        ownerId: uuid("owner_id").references(() => owner.id),
+        category: category(),
+      },
+      (table) => [
+        uniqueIndex("single_row_idx").on(sql`(true)`),
+        index("name_expression_idx").on(table.id, sql`lower(${table.name})`),
+        index("name_idx").on(table.name),
+      ],
+    );
+    const dbml = generateSchemaDbml({ category, owner, example });
+    expect(dbml).toContain("(`(true)`) [name: 'single_row_idx', unique]");
+    expect(dbml).toContain('("id", `lower("example"."name")`) [name: \'name_expression_idx\']');
+    expect(dbml).toContain("name [name: 'name_idx']");
+    expect(dbml).toContain("example.owner_id > owner.id");
+    expect(dbml).toContain("    (`(true)`) [name: 'single_row_idx', unique]\n");
+  });
+});
+
+describe("normalizeGeneratedDbml", () => {
+  it("removes generator whitespace while preserving one final newline", () => {
+    expect(normalizeGeneratedDbml("table x {  \n    \n}\n\n")).toBe("table x {\n\n}\n");
+  });
+});
 
 const SINGLE_TABLE_DBML = `table fitness.activity {
   id uuid [pk, not null, default: \`gen_random_uuid()\`]
@@ -34,6 +71,20 @@ table fitness.activity {
 }
 
 ref activity_provider_id_fk: fitness.activity.provider_id > fitness.provider.id [delete: no action, update: no action]`;
+
+const COMPOSITE_REF_DBML = `table fitness.human_record_target {
+  id uuid [not null]
+  identity_id uuid [not null]
+  user_id uuid [not null]
+}
+
+table fitness.human_food_nutrient_decision {
+  target_id uuid [not null]
+  identity_id uuid [not null]
+  user_id uuid [not null]
+}
+
+ref human_food_nutrient_decision_target_fk: fitness.human_food_nutrient_decision.(target_id, identity_id, user_id) > fitness.human_record_target.(id, identity_id, user_id) [delete: no action, update: no action]`;
 
 describe("extractTables", () => {
   it("extracts a single table", () => {
@@ -119,6 +170,17 @@ describe("parseColumnLine", () => {
 });
 
 describe("parseColumns", () => {
+  it("keeps a named index called pk separate from a primary-key setting", () => {
+    expect(
+      parseColumns(`
+  value text
+  indexes {
+    (value) [name: 'pk']
+  }
+`),
+    ).toEqual([{ name: "value", type: "text", pk: false, fk: false }]);
+  });
+
   it("parses columns and strips indexes block", () => {
     const body = `
   id uuid [pk, not null]
@@ -151,6 +213,39 @@ describe("parseColumns", () => {
 });
 
 describe("parseTables", () => {
+  it.each(["pk", "pk, name: 'connection_pk'", "name: 'connection_pk', pk"])(
+    "preserves composite primary-key settings [%s] when rendering connection cardinality",
+    (settings) => {
+      const dbml = `table fitness.provider_connection {
+  user_id uuid [not null]
+  provider_id text [not null]
+  indexes {
+    (user_id, provider_id) [pk]
+  }
+}
+table fitness.provider_issue_email {
+  user_id uuid [not null]
+  provider_id text [not null]
+  sent_at timestamp [not null]
+  indexes {
+    (sent_at) [name: 'sent_at_idx']
+    (user_id, provider_id) [${settings}]
+  }
+}
+ref connection_fk: fitness.provider_issue_email.(user_id, provider_id) > fitness.provider_connection.(user_id, provider_id)`;
+      const tables = parseTables(dbml);
+      const refs = parseRefs(dbml, tables);
+
+      expect(tables[1].columns.filter((column) => column.pk).map((column) => column.name)).toEqual([
+        "user_id",
+        "provider_id",
+      ]);
+      expect(buildPlantUml(tables, refs)).toContain(
+        "provider_connection ||--o| provider_issue_email",
+      );
+    },
+  );
+
   it("parses tables from DBML", () => {
     const tables = parseTables(SINGLE_TABLE_DBML);
     expect(tables).toHaveLength(1);
@@ -174,9 +269,9 @@ describe("parseRefs", () => {
     expect(refs).toHaveLength(1);
     expect(refs[0]).toEqual({
       fromTable: "activity",
-      fromCol: "provider_id",
+      fromCols: ["provider_id"],
       toTable: "provider",
-      toCol: "id",
+      toCols: ["id"],
     });
 
     const activityTable = tables.find((t) => t.name === "activity");
@@ -196,9 +291,80 @@ describe("parseRefs", () => {
     const refs = parseRefs(dbml, []);
     expect(refs).toHaveLength(1);
   });
+
+  it("parses composite refs and marks every source column as an FK", () => {
+    const tables = parseTables(COMPOSITE_REF_DBML);
+    const refs = parseRefs(COMPOSITE_REF_DBML, tables);
+
+    expect(refs).toEqual([
+      {
+        fromTable: "human_food_nutrient_decision",
+        fromCols: ["target_id", "identity_id", "user_id"],
+        toTable: "human_record_target",
+        toCols: ["id", "identity_id", "user_id"],
+      },
+    ]);
+    expect(
+      tables
+        .find((table) => table.name === "human_food_nutrient_decision")
+        ?.columns.filter((column) => column.fk)
+        .map((column) => column.name),
+    ).toEqual(["target_id", "identity_id", "user_id"]);
+    expect(buildPlantUml(tables, refs)).toContain(
+      "human_record_target ||--o{ human_food_nutrient_decision",
+    );
+  });
 });
 
 describe("buildPlantUml", () => {
+  it.each([
+    { primaryKeys: ["owner_id"], foreignKeys: ["owner_id"], cardinality: "o|" },
+    { primaryKeys: ["owner_id"], foreignKeys: ["owner_id", "scope"], cardinality: "o|" },
+    { primaryKeys: ["owner_id", "scope"], foreignKeys: ["owner_id"], cardinality: "o{" },
+    { primaryKeys: [], foreignKeys: ["owner_id"], cardinality: "o{" },
+  ])(
+    "renders $cardinality for PK $primaryKeys and FK $foreignKeys",
+    ({ primaryKeys, foreignKeys, cardinality }) => {
+      const tables: Table[] = [
+        {
+          name: "child",
+          columns: ["owner_id", "scope"].map((name) => ({
+            name,
+            type: "text",
+            pk: primaryKeys.includes(name),
+            fk: foreignKeys.includes(name),
+          })),
+        },
+      ];
+      expect(
+        buildPlantUml(tables, [
+          {
+            fromTable: "child",
+            fromCols: foreignKeys,
+            toTable: "parent",
+            toCols: foreignKeys,
+          },
+        ]),
+      ).toContain(`parent ||--${cardinality} child`);
+    },
+  );
+
+  it("renders a many relationship when the source table is unknown", () => {
+    expect(
+      buildPlantUml(
+        [],
+        [
+          {
+            fromTable: "child",
+            fromCols: ["owner_id"],
+            toTable: "parent",
+            toCols: ["id"],
+          },
+        ],
+      ),
+    ).toContain("parent ||--o{ child");
+  });
+
   it("generates valid PlantUML with PK/FK markers", () => {
     const tables: Table[] = [
       {
@@ -215,7 +381,7 @@ describe("buildPlantUml", () => {
       },
     ];
     const refs = [
-      { fromTable: "activity", fromCol: "provider_id", toTable: "provider", toCol: "id" },
+      { fromTable: "activity", fromCols: ["provider_id"], toTable: "provider", toCols: ["id"] },
     ];
 
     const puml = buildPlantUml(tables, refs);

@@ -1,7 +1,12 @@
-import { formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
+import { formatDateMedium } from "@dofek/format/format";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import {
+  strengthExerciseDisplayLabels,
+  strengthExerciseIdentityKey,
+} from "@dofek/training/training";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ProgressiveOverloadCardsProps {
@@ -9,9 +14,7 @@ interface ProgressiveOverloadCardsProps {
   loading?: boolean;
 }
 
-function SparklineChart({ values, isProgressing }: { values: number[]; isProgressing: boolean }) {
-  const color = isProgressing ? chartColors.emerald : statusColors.danger;
-
+function SparklineChart({ values }: { values: number[] }) {
   const option = {
     grid: dofekGrid("single", { top: 2, right: 2, bottom: 2, left: 2 }),
     xAxis: dofekAxis.category({
@@ -21,9 +24,9 @@ function SparklineChart({ values, isProgressing }: { values: number[]; isProgres
     yAxis: { type: "value" as const, show: false },
     series: [
       dofekSeries.line("Volume", values, {
-        color,
+        color: chartColors.blue,
         smooth: 0.3,
-        areaStyle: { opacity: 0.1, color },
+        areaStyle: { opacity: 0.1, color: chartColors.blue },
       }),
     ],
   };
@@ -32,6 +35,9 @@ function SparklineChart({ values, isProgressing }: { values: number[]; isProgres
 }
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
+  const units = useUnitConverter();
+  const exerciseLabels = strengthExerciseDisplayLabels(exercises);
+
   if (loading || exercises.length === 0) {
     return (
       <DofekChart
@@ -39,35 +45,60 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
         loading={loading}
         empty={exercises.length === 0}
         height={200}
-        emptyMessage="No progressive overload data"
+        emptyMessage="No exercise volume trends"
       />
     );
   }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {exercises.map((exercise) => (
-        <div key={exercise.exerciseName} className="card p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-foreground truncate">
-              {exercise.exerciseName}
-            </span>
-            <span className={`text-lg ${exercise.isProgressing ? "text-accent" : "text-red-400"}`}>
-              {exercise.isProgressing ? "\u2191" : "\u2193"}
-            </span>
+      {exercises.map((exercise, exerciseIndex) => {
+        const presentation = exerciseLabels[exerciseIndex];
+        return (
+          <div key={strengthExerciseIdentityKey(exercise)} className="card p-4">
+            <div className="mb-2">
+              <div className="text-sm font-medium text-foreground truncate">
+                {presentation?.baseLabel ?? exercise.exerciseName}
+              </div>
+              {presentation?.discriminator ? (
+                <div className="mt-0.5 text-xs text-muted whitespace-normal break-words">
+                  {presentation.discriminator}
+                </div>
+              ) : null}
+            </div>
+            <div className="text-xs text-muted mb-2">
+              {trendLabel(exercise.trend)}{" "}
+              {formatMeasurementText(units.formatWeight(Math.abs(exercise.slopeKgPerWeek)))}/week
+            </div>
+            <div className="text-xs text-muted mb-1">
+              {formatDateMedium(exercise.period.startWeek)} –{" "}
+              {formatDateMedium(exercise.period.endWeek)}
+            </div>
+            {exercise.uncertainty.availability === "available" ? (
+              <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
+            ) : null}
+            {exercise.observations.length >= 2 && (
+              <SparklineChart
+                values={exercise.observations.map((observation) => observation.totalVolumeKg)}
+              />
+            )}
           </div>
-          <div className="text-xs text-muted mb-2">
-            {exercise.isProgressing ? "+" : ""}
-            {formatNumber(exercise.slopeKgPerWeek)} kg/week
-          </div>
-          {exercise.weeklyVolumes.length >= 2 && (
-            <SparklineChart
-              values={exercise.weeklyVolumes}
-              isProgressing={exercise.isProgressing}
-            />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+function uncertaintyLabel(exercise: ProgressiveOverloadRow, units: UnitConverter): string | null {
+  if (exercise.uncertainty.availability === "unavailable") return null;
+  const lower = units.convertWeight(exercise.uncertainty.lowerKgPerWeek).toFixed(1);
+  const upper = units.convertWeight(exercise.uncertainty.upperKgPerWeek).toFixed(1);
+  const unit = units.formatWeight(0).parts.find((part) => part.type === "unit")?.value;
+  return `${exercise.uncertainty.methodLabel}: ${lower} to ${upper} ${unit ?? units.weightLabel}/week`;
+}
+
+function trendLabel(trend: ProgressiveOverloadRow["trend"]): string {
+  if (trend === "increasing") return "Increasing";
+  if (trend === "decreasing") return "Decreasing";
+  return "Stable";
 }

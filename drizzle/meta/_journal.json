@@ -10,45 +10,1179 @@
       "breakpoints": true
     },
     {
+      "idx": 7,
+      "version": "7",
+      "when": 1777304671000,
+      "tag": "0001_activity_rollups",
+      "breakpoints": true
+    },
+    {
       "idx": 1,
       "version": "7",
-      "when": 1773118577701,
+      "when": 1777304671001,
       "tag": "0001_seed_journal_questions",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1775582000000,
+      "when": 1777304671002,
       "tag": "0002_add_user_billing",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1775582000000,
+      "when": 1777304671003,
       "tag": "0002_drop_user_id_defaults",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1775582000001,
-      "tag": "0004_merge_strength_workout",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1775582000002,
+      "when": 1777304671004,
       "tag": "0003_data_exports",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1775582000003,
+      "when": 1777304671005,
       "tag": "0004_add_user_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777304671006,
+      "tag": "0004_merge_strength_workout",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777399511000,
+      "tag": "0005_normalize_nutrition_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777405177000,
+      "tag": "0006_row_based_nutrients",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777563198000,
+      "tag": "0007_metric_stream_primary_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777683458000,
+      "tag": "0007_remove_resting_hr_vo2max",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1777683458001,
+      "tag": "0008_clickhouse_activity_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777683458002,
+      "tag": "0009_metric_stream_id_not_null_primary_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1777683458003,
+      "tag": "0010_oauth_token_primary_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1777756104000,
+      "tag": "0011_metric_stream_storage_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1777993370000,
+      "tag": "0013_convert_remaining_matviews_to_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778031150000,
+      "tag": "0014_drop_postgres_dedup_matviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778031150001,
+      "tag": "0015_clickhouse_proxy_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778031150002,
+      "tag": "0016_drop_postgres_activity_rollups",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1778213345000,
+      "tag": "0017_drop_derived_resting_heart_rate",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778380789000,
+      "tag": "0018_metric_stream_location_point",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1778380789001,
+      "tag": "0018_migrate_body_measurements_to_metric_stream",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778380789002,
+      "tag": "0019_clickhouse_proxy_views_after_body_measurement_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778380789003,
+      "tag": "0020_location_sample_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778517672000,
+      "tag": "0021_convert_v_activity_to_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1779215310000,
+      "tag": "0022_drop_dead_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1779215310001,
+      "tag": "0022_drop_metric_stream_coordinate_projections",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1779215310002,
+      "tag": "0023_activity_member_alias_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1779302548000,
+      "tag": "0024_mcp_access_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1779375407000,
+      "tag": "0025_drop_v_sleep",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1779472461000,
+      "tag": "0026_seed_provider_priorities",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1780513875000,
+      "tag": "0027_sync_log_auth_failure_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781029140000,
+      "tag": "0028_drop_v_metric_stream",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781751614000,
+      "tag": "0029_drop_metric_stream",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781751614001,
+      "tag": "0030_activity_provider_absence",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781751614002,
+      "tag": "0031_activity_user_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781751614003,
+      "tag": "0031_v_activity_absent_source_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781751614004,
+      "tag": "0032_v_activity_tombstoned_group_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781751614005,
+      "tag": "0033_v_activity_hide_tombstoned_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782173764000,
+      "tag": "0034_user_password_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782173764001,
+      "tag": "0034_v_activity_apple_health_duplicate_chains",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782224119000,
+      "tag": "0035_password_reset_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1782414393000,
+      "tag": "0036_imu_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1782627013000,
+      "tag": "0037_companion_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1782881744000,
+      "tag": "0038_add_sleep_session_is_nap",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1782932027000,
+      "tag": "0039_sync_log_degradation_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1782932027001,
+      "tag": "0040_v_activity_source_subsources",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1782932027002,
+      "tag": "0041_v_activity_contained_provider_overlap",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1783529969000,
+      "tag": "0042_strength_set_activity_id_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783529969001,
+      "tag": "0043_tighten_activity_strength_set_invariants",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783529969002,
+      "tag": "0044_tighten_fk_delete_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1783529969003,
+      "tag": "0045_check_constraints_and_activity_active_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1783545433000,
+      "tag": "0046_drop_daily_metrics_cycling_distance",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1783645257000,
+      "tag": "0047_allow_zero_duration_activities",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1783645257001,
+      "tag": "0047_climbing_entry",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1783645257002,
+      "tag": "0047_sync_log_user_provider_synced_at_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784155659000,
+      "tag": "0048_mcp_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784155659001,
+      "tag": "0049_v_activity_member_bounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784417654000,
+      "tag": "0050_provider_data_deletion_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784433661000,
+      "tag": "0051_provider_data_deletion_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1784440702000,
+      "tag": "0052_mcp_oauth_refresh_token_family",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784479890000,
+      "tag": "0052_metric_stream_operation_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1784578372000,
+      "tag": "0053_file_upload_state_machine",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784656907000,
+      "tag": "0054_stripe_webhook_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784734909000,
+      "tag": "0055_climbing_attempt_count",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784735000000,
+      "tag": "0056_processing_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0057_provider_connection",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1785100000000,
+      "tag": "0058_personal_experiment",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785180698000,
+      "tag": "0059_v_activity_positive_overlap",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1785181000000,
+      "tag": "0060_canonical_nutrition_contribution_set",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1785182000000,
+      "tag": "0061_supplement_dose_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785209400000,
+      "tag": "0062_companion_connection_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785333000000,
+      "tag": "0063_structured_finger_loading",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785337200000,
+      "tag": "0064_record_local_time_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1785353502000,
+      "tag": "0065_breathwork_outcome_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1785360600000,
+      "tag": "0065_nutrition_resolution_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785360700000,
+      "tag": "0066_sleep_staging_available",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785360800000,
+      "tag": "0067_personal_experiment_learning_loop",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785725168000,
+      "tag": "0068_canonical_activity_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785725169000,
+      "tag": "0069_subjective_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1785770819000,
+      "tag": "0062_account_erasure",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1785770820000,
+      "tag": "0070_repair_subjective_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1786162800000,
+      "tag": "0071_add_hangboard_activity_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1786230300000,
+      "tag": "0072_processing_alert_dismissal",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1786380000000,
+      "tag": "0073_processing_stage_event_latest_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1786466044000,
+      "tag": "0074_climbing_grade_systems",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1786467000000,
+      "tag": "0075_hang_ten_activity_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1786487760586,
+      "tag": "0086_climbing-entry-lead",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1786569600000,
+      "tag": "0087_sync_log_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1786570000000,
+      "tag": "0088_remove_slack_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1786716655000,
+      "tag": "0089_remove_cycle_tracking_and_breathwork",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1786726296000,
+      "tag": "0090_remove_nutrition_write_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1786741200000,
+      "tag": "0091_health_event_source_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1786805000000,
+      "tag": "0092_restore_retained_health_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1786812000000,
+      "tag": "0093_health_event_source_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1786812000001,
+      "tag": "0094_external_write_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1786812000002,
+      "tag": "0095_external_client_erasure_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1787612400000,
+      "tag": "0096_self_service_developer_clients",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1787754612000,
+      "tag": "0097_restore_hang_ten_activity_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1787858000000,
+      "tag": "0098_remove_mcp_oauth_nutrition_write_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1787982000000,
+      "tag": "0099_canonical_clinical_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788278400000,
+      "tag": "0100_clinical_record_listing_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1788301853000,
+      "tag": "0101_user_home_timezone_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1788301853001,
+      "tag": "0102_validate_user_home_timezone_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1788301853002,
+      "tag": "0103_strong_rest_set_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1788301853003,
+      "tag": "0104_file_upload_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1788325153000,
+      "tag": "0105_app_store_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1788325153001,
+      "tag": "0106_activity_integrity_repair_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1788463000000,
+      "tag": "0107_activity_rejected_local_time_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1788463000001,
+      "tag": "0108_validate_activity_rejected_local_time_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1788492000000,
+      "tag": "0109_v_activity_atomic_local_time_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1788768000000,
+      "tag": "0110_human_record_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1788768000001,
+      "tag": "0111_human_record_projections",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1788768000002,
+      "tag": "0112_human_food_nutrient_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1788768000003,
+      "tag": "0113_effective_food_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1788825600000,
+      "tag": "0114_provider_threshold_observation",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1788912000000,
+      "tag": "0115_strength_set_raw",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1788912000001,
+      "tag": "0116_stable_activity_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1788912000002,
+      "tag": "0117_v_activity_stable_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1788998400000,
+      "tag": "0118_drop_provider_threshold_observation",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1789078737000,
+      "tag": "0119_effort_equivalence_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1789084784878,
+      "tag": "0122_provider_neutral_activity_intervals",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1789308687000,
+      "tag": "0123_remove_provider_derived_metrics",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1789941600000,
+      "tag": "0124_meal_aggregate_nutrition_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1790300000000,
+      "tag": "0125_mcp_oidc_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1790300100000,
+      "tag": "0126_mcp_oidc_adapter_user_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1790450000000,
+      "tag": "0127_mcp_oidc_adapter_last_used",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1790471239328,
+      "tag": "0128_unattached_mountain_project_ticks",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1790471239329,
+      "tag": "0129_validate_unattached_mountain_project_ticks",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1790640000000,
+      "tag": "0130_openbeta_climbing_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1790640000001,
+      "tag": "0131_activity_group_manual_merge",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1790640000002,
+      "tag": "0132_remove_legacy_mcp_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1790727480000,
+      "tag": "0133_independent_climbing_outcome_count",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1790779386669,
+      "tag": "0134_apple_health_workout_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1790779386670,
+      "tag": "0135_climbing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1791046800000,
+      "tag": "0136_provider_issue_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791236065251,
+      "tag": "0137_remove_personal_experiments",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791236389231,
+      "tag": "0138_remove_life_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1791236720525,
+      "tag": "0139_remove_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1791236720526,
+      "tag": "0140_remove_tracking_mcp_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1791236720527,
+      "tag": "0141_remove_supplements",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1791257237018,
+      "tag": "0142_climbing_route_protection",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1791263613909,
+      "tag": "0143_remove_shared_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1791500000000,
+      "tag": "0144_activity_field_source_priorities",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1791747000000,
+      "tag": "0145_thecrag_climbing_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1791943149739,
+      "tag": "0146_climbing_log_model_prepare",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1791943919655,
+      "tag": "0147_climbing_log_model_finalize",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1792076031350,
+      "tag": "0148_compute_climbing_attempt_outcome",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1792287781982,
+      "tag": "0149_zepp_activity_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1792360800000,
+      "tag": "0150_require_climbing_route_methods",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1792497600000,
+      "tag": "0151_strong_strength_title_precedence",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1792533600000,
+      "tag": "0152_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792535016715,
+      "tag": "0153_lowly_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1792536568180,
+      "tag": "0154_organic_molten_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792544514755,
+      "tag": "0155_activity_image_reference_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1792605600000,
+      "tag": "0156_garmin_official_authorization",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1792686183056,
+      "tag": "0157_sync_log_recent_history_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1792746852421,
+      "tag": "0158_activity_copy_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1792792800000,
+      "tag": "0159_recording_app_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1792812600000,
+      "tag": "0160_scoped_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792819617330,
+      "tag": "0161_bound_activity_origin_input",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792884000000,
+      "tag": "0162_apple_watch_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0163_activity_device_observation",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1793053745114,
+      "tag": "0164_climbing_catalogue_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1793054593792,
+      "tag": "0165_mountain_project_top_rope_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1793055512990,
+      "tag": "0166_openbeta_tick_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1793055600000,
+      "tag": "0167_climbing_image_owners",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1793077854638,
+      "tag": "0168_v_activity_primary_title",
       "breakpoints": true
     }
   ]

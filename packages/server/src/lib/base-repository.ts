@@ -53,9 +53,12 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
                AND ${column} < ${this.accessWindow.endDateExclusive}::date`;
   }
 
-  protected timestampAccessPredicate(column: SQL): SQL {
-    if (this.accessWindow.kind === "full") return sql``;
-    return sql`AND ${column} >= ${this.accessWindow.startDate}::date
-               AND ${column} < ${this.accessWindow.endDateExclusive}::date`;
+  protected timestampAccessPredicate(
+    column: SQL,
+    accessWindow: AccessWindow = this.accessWindow,
+  ): SQL {
+    if (accessWindow.kind === "full") return sql``;
+    return sql`AND ${column} >= (CAST(${accessWindow.startDate}::date AS timestamp without time zone) AT TIME ZONE ${this.timezone})
+               AND ${column} < (CAST(${accessWindow.endDateExclusive}::date AS timestamp without time zone) AT TIME ZONE ${this.timezone})`;
   }
 }

@@ -33,6 +33,7 @@ describe("CORRELATION_METRICS", () => {
       expect(m.label.length).toBeGreaterThan(0);
       expect(m.unit.length).toBeGreaterThan(0);
       expect(m.description.length).toBeGreaterThan(0);
+      expect(m.availabilityDescription.length).toBeGreaterThan(0);
     }
   });
 });
@@ -158,7 +159,16 @@ describe("CorrelationResult.generateInsight", () => {
       yLabel: "heart rate variability",
       lag: 1,
     });
-    expect(result).toMatch(/next.day|1.day later/i);
+    expect(result).toContain("1 calendar day later");
+  });
+
+  it("describes a negative lag in calendar days", () => {
+    const result = new CorrelationResult(0.5, 0.001, 100).generateInsight({
+      xLabel: "exercise duration",
+      yLabel: "heart rate variability",
+      lag: -1,
+    });
+    expect(result).toContain("1 calendar day earlier");
   });
 
   it("uses 'lower' for negative correlation", () => {
@@ -176,8 +186,9 @@ describe("CorrelationResult.generateInsight", () => {
       yLabel: "recovery score",
       lag: 0,
     });
-    expect(result).not.toContain("day later");
-    expect(result).not.toContain("next day");
+    expect(result).toBe(
+      "Higher protein intake is moderately associated with higher recovery score (rho = 0.45, p = 0.001, n = 100).",
+    );
   });
 
   it("uses 'strongly' for high correlation", () => {

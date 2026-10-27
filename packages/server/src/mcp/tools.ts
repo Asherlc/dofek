@@ -1,42 +1,190 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Database } from "dofek/db";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import { McpServer } from "@modelcontextprotocol/server";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
-import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
-import { ProviderModel } from "dofek/providers/provider-model";
+import { syncJobDataFromTriggerInput } from "dofek/jobs/sync-window";
+import { providerRequiresStoredTokens } from "dofek/lib/custom-auth-providers";
+import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
-import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
-import { startWorker } from "../lib/start-worker.ts";
-import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { BodyRepository } from "../repositories/body-repository.ts";
+import { readFingerLoadingRange } from "../repositories/climbing-training-log-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
+import { DataCoverageRepository } from "../repositories/data-coverage-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { localDateString } from "../repositories/resting-heart-rate-query.ts";
+import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
+import { ensureProvidersRegistered, toJobId } from "../routers/sync-helpers.ts";
+import { registerActivityDetailsTool } from "./activity-details-tool.ts";
+import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
+import { registerActivityTimeseriesTool } from "./activity-timeseries-tool.ts";
+import { registerDofekAppResources } from "./app-resource.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
+import { registerClimbingProgressionTool } from "./climbing-progression-tool.ts";
+import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
+import type { DofekMcpContext } from "./context.ts";
+import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
+import { registerCyclingPowerCurveTool } from "./cycling-power-curve-tool.ts";
+import { registerCyclingThresholdEstimateTool } from "./cycling-threshold-estimate-tool.ts";
+import { registerCyclingTrainingMetricsTool } from "./cycling-training-metrics-tool.ts";
+import { registerEffortTrendTool } from "./effort-trend-tool.ts";
+import { registerFingerLoadingProgressionTool } from "./finger-loading-progression-tool.ts";
+import { registerFoodRecordTools } from "./food-record-tools.ts";
+import { registerHealthTrendTools } from "./health-trend-tools.ts";
 import {
-  CUSTOM_AUTH_PROVIDERS,
-  ensureProvidersRegistered,
-  toJobId,
-} from "../routers/sync-helpers.ts";
-import { type McpScope, requireMcpScope } from "./token-repository.ts";
+  assertNutritionSummaryDateRange,
+  toNutritionSummaryOutput,
+} from "./nutrition-summary-output.ts";
+import { registerPerformanceComparisonTool } from "./performance-comparison-tool.ts";
+import { listProviderStatuses } from "./provider-status.ts";
+import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
+import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
+import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
+import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
+import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
+import { requireMcpScope } from "./token-repository.ts";
+import { aggregateNumbers, isoWeek } from "./tool-aggregation.ts";
+import { mcpOutputSchemas } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
+import { assertDateRange } from "./tool-utils.ts";
+import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
-export interface DofekMcpContext {
-  db: Pick<Database, "execute" | "select">;
-  userId: string;
-  scopes: McpScope[];
-  timezone: string;
-  sensorStore?: ActivitySensorStore;
+export type { DofekMcpContext } from "./context.ts";
+
+const activityMcpRowSchema = z.object({
+  canonical_type: z.string(),
+  provider_type: z.string().optional().default(""),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  avg_hr: z.coerce.number().nullable().optional(),
+  max_hr: z.coerce.number().nullable().optional(),
+  avg_power: z.coerce.number().nullable().optional(),
+  max_power: z.coerce.number().nullable().optional(),
+  elevation_gain_m: z.coerce.number().nullable().optional(),
+  modality: z.string().nullable().optional(),
+});
+type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
+function dateDaysBefore(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - days);
+  return value.toISOString().slice(0, 10);
 }
 
-function jsonContent(value: unknown) {
+function average(values: Array<number | null | undefined>): number | null {
+  return aggregateNumbers(values)?.avg ?? null;
+}
+const powerModalities = ["indoor", "outdoor", "unknown"] as const;
+function summarizePower(rows: ActivityMcpRow[]) {
+  const poweredRows = rows.filter((row) => row.avg_power != null);
+  const coverage = {
+    activities_with_power: poweredRows.length,
+    activities_total: rows.length,
+    pct: rows.length === 0 ? 0 : (poweredRows.length / rows.length) * 100,
+  };
+  if (poweredRows.length < 3) {
+    return { avg_power: null, max_power_peak: null, ...coverage };
+  }
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+    avg_power: average(poweredRows.map((row) => row.avg_power)),
+    max_power_peak: aggregateNumbers(poweredRows.map((row) => row.max_power))?.max ?? null,
+    ...coverage,
   };
 }
 
-function dateFromOptionalDateTime(value: string | undefined, timezone: string): string {
-  return localDateString(value ? new Date(value) : new Date(), timezone);
+function powerByModality(rows: ActivityMcpRow[]) {
+  const rowsFor = (modality: (typeof powerModalities)[number]) =>
+    rows.filter((row) =>
+      modality === "unknown"
+        ? row.modality !== "indoor" && row.modality !== "outdoor"
+        : row.modality === modality,
+    );
+  return {
+    indoor: summarizePower(rowsFor("indoor")),
+    outdoor: summarizePower(rowsFor("outdoor")),
+    unknown: summarizePower(rowsFor("unknown")),
+  };
+}
+
+function activityPurpose(row: ActivityMcpRow): "commute" | "training" | null {
+  if (row.canonical_type !== "cycling") return null;
+  const rawType = row.provider_type.trim().toLowerCase();
+  return rawType === "89" || rawType === "commute" || rawType === "commuting"
+    ? "commute"
+    : "training";
+}
+
+function activitySummaries(
+  rows: ActivityMcpRow[],
+  groupBy:
+    | "canonical_type"
+    | "week"
+    | "canonical_type_and_week"
+    | "canonical_type_and_modality"
+    | "canonical_type_and_purpose",
+  timezone: string,
+) {
+  const groups = new Map<string, ActivityMcpRow[]>();
+  for (const row of rows) {
+    const week = isoWeek(localDateString(new Date(row.started_at), timezone));
+    const key =
+      groupBy === "canonical_type"
+        ? row.canonical_type
+        : groupBy === "week"
+          ? week
+          : groupBy === "canonical_type_and_week"
+            ? `${row.canonical_type}|${week}`
+            : groupBy === "canonical_type_and_modality"
+              ? `${row.canonical_type}|${row.modality ?? ""}`
+              : `${row.canonical_type}|${activityPurpose(row) ?? ""}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  return [...groups.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([key, groupRows]) => {
+      const [activityType, week] =
+        groupBy === "canonical_type_and_week" ? key.split("|") : [undefined, undefined];
+      const [modalityActivityType, modality] =
+        groupBy === "canonical_type_and_modality" ? key.split("|") : [undefined, undefined];
+      const [purposeActivityType, purpose] =
+        groupBy === "canonical_type_and_purpose" ? key.split("|") : [undefined, undefined];
+      const durations = groupRows.map((row) => {
+        if (!row.ended_at) return null;
+        return (new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 60_000;
+      });
+      const totalDuration = durations.reduce<number>(
+        (total, duration) => total + (duration ?? 0),
+        0,
+      );
+      const elevations = groupRows.map((row) => row.elevation_gain_m);
+      const observedElevations = elevations.filter((value): value is number => value != null);
+      const totalElevationGain =
+        observedElevations.length === 0
+          ? null
+          : observedElevations.reduce((total, elevation) => total + elevation, 0);
+      return {
+        ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
+        ...(groupBy === "week" ? { week: key } : {}),
+        ...(groupBy === "canonical_type_and_week" ? { canonical_type: activityType, week } : {}),
+        ...(groupBy === "canonical_type_and_modality"
+          ? { canonical_type: modalityActivityType, modality: modality || null }
+          : {}),
+        ...(groupBy === "canonical_type_and_purpose"
+          ? { canonical_type: purposeActivityType, purpose: purpose || null }
+          : {}),
+        count: groupRows.length,
+        total_duration_minutes: totalDuration,
+        avg_duration_minutes: average(durations),
+        avg_hr: average(groupRows.map((row) => row.avg_hr)),
+        max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
+        power_by_modality: powerByModality(groupRows),
+        total_elevation_gain_m: totalElevationGain,
+        avg_elevation_gain_m: average(elevations),
+      };
+    });
 }
 
 function validateSyncWindowTriggerInput(input: {
@@ -59,56 +207,197 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     name: "dofek",
     version: "0.1.0",
   });
-
-  server.registerTool(
+  registerDofekAppResources(server);
+  registerHealthTrendTools(server, context);
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_daily_health_summary",
     {
       title: "Get Daily Health Summary",
       description: "Return server-computed health metrics for one day.",
-      inputSchema: {
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        date: dateSchema,
         timezone: z.string().optional(),
-      },
+      }),
+      outputSchema: mcpOutputSchemas.dailyHealthSummary,
     },
     async ({ date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
+      if (!context.sensorStore) {
+        throw new Error("get_daily_health_summary requires the ClickHouse analytics store");
+      }
       const repository = new DailyMetricsRepository(
         context.db,
         context.userId,
         timezone ?? context.timezone,
+        context.sensorStore,
       );
       const rows = await repository.list(1, date);
-      return jsonContent(rows[0] ?? null);
+      return jsonToolResult(rows[0] ?? null);
     },
   );
-
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
+    "get_data_coverage",
+    {
+      title: "Get Data Coverage",
+      description:
+        "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({}),
+      outputSchema: mcpOutputSchemas.dataCoverage,
+    },
+    async () => {
+      requireMcpScope(context.scopes, "health:read");
+      if (!context.sensorStore) {
+        throw new Error("get_data_coverage requires the ClickHouse analytics store");
+      }
+      return jsonToolResult(
+        await new DataCoverageRepository(
+          context.sensorStore,
+          context.userId,
+          context.timezone,
+        ).list(),
+      );
+    },
+  );
+  registerTrainingLoadTool(server, context);
+  registerRecoveryTrainingSeriesTool(server, context);
+  registerRepeatedEffortsTool(server, context);
+  registerPerformanceComparisonTool(server, context);
+  registerEffortTrendTool(server, context);
+  registerCyclingPerformanceTool(server, context);
+  registerCyclingPowerCurveTool(server, context);
+  registerCyclingTrainingMetricsTool(server, context);
+  registerCyclingThresholdEstimateTool(server, context);
+  registerThresholdHistoryTool(server, context);
+  registerActivityStreamsTool(server, context);
+  registerActivityTimeseriesTool(server, context);
+  registerActivityDetailsTool(server, context);
+  registerClimbingProgressionTool(server, context);
+  registerFingerLoadingProgressionTool(server, context);
+  registerStrengthProgressionTool(server, context);
+  registerClimbingSessionsTool(server, context);
+  registerStrengthSessionsTool(server, context);
+  registerFoodRecordTools(server, context);
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
+    "get_sleep_summary",
+    {
+      title: "Get Sleep Summary",
+      description:
+        "Summarize sleep by night, including duration, efficiency, stages, and timing, for an exact date range.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+        timezone: z.string().optional(),
+      }),
+      outputSchema: mcpOutputSchemas.sleepSummary,
+    },
+    async ({ start_date, end_date, timezone }) => {
+      requireMcpScope(context.scopes, "health:read");
+      assertDateRange(start_date, end_date);
+      const requestedTimezone = timezone ?? context.timezone;
+      if (!context.sensorStore) {
+        throw new Error("get_sleep_summary requires the ClickHouse analytics store");
+      }
+      const repository = new SleepRepository(
+        context.db,
+        context.userId,
+        requestedTimezone,
+        { kind: "full", paid: true, reason: "paid_grant" },
+        context.sensorStore,
+      );
+      const metricsRepository = new DailyMetricsRepository(
+        context.db,
+        context.userId,
+        requestedTimezone,
+        context.sensorStore,
+      );
+      const [rows, dailyMetrics] = await Promise.all([
+        repository.listRange(start_date, end_date),
+        metricsRepository.listRange(start_date, end_date),
+      ]);
+      const respiratoryRateByDate = new Map(
+        dailyMetrics.map((row) => [row.date, row.respiratory_rate_avg]),
+      );
+      return jsonToolResult(
+        rows.map((row) => {
+          const localTimeContext = {
+            timezone: row.timezone,
+            startUtcOffsetMinutes: row.start_utc_offset_minutes,
+            endUtcOffsetMinutes: row.end_utc_offset_minutes,
+            source: row.local_time_source,
+          };
+          const onsetTime = formatRecordLocalTime(
+            row.started_at,
+            localTimeContext,
+            "start",
+            undefined,
+            requestedTimezone,
+          );
+          const wakeTime =
+            row.ended_at == null
+              ? "--"
+              : formatRecordLocalTime(
+                  row.ended_at,
+                  localTimeContext,
+                  "end",
+                  undefined,
+                  requestedTimezone,
+                );
+          return {
+            date: row.date,
+            staging_available: row.staging_available,
+            total_duration_minutes: row.duration_minutes,
+            sleep_efficiency_pct: row.efficiency_pct,
+            time_in_bed_minutes:
+              row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
+            onset_time: onsetTime === "--" ? null : onsetTime,
+            wake_time: wakeTime === "--" ? null : wakeTime,
+            local_time_context: localTimeContext,
+            stages: {
+              rem_minutes: row.rem_minutes,
+              sws_minutes: row.deep_minutes,
+              light_minutes: row.light_minutes,
+              awake_minutes: row.awake_minutes,
+            },
+            sleep_consistency_pct: null,
+            respiratory_rate_avg: respiratoryRateByDate.get(row.date) ?? null,
+            source_provider: row.provider_id,
+          };
+        }),
+      );
+    },
+  );
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "search_activities",
     {
       title: "Search Activities",
-      description: "Search authenticated user activity summaries.",
-      inputSchema: {
-        from: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional(),
-        to: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional(),
+      description:
+        "Show authenticated user activities in an optional date range (defaulting to the last 30 days), optionally filtered by text.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        from: dateSchema.optional(),
+        to: dateSchema.optional(),
         query: z.string().max(200).optional(),
+        include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
-      },
+      }),
+      outputSchema: mcpOutputSchemas.searchActivities,
     },
-    async ({ from, to, query, limit }) => {
+    async ({ from, to, query, include, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
       const endDate = to ?? localDateString(new Date(), context.timezone);
-      const days = from
-        ? Math.max(
-            1,
-            Math.ceil((new Date(endDate).getTime() - new Date(from).getTime()) / 86_400_000),
-          )
-        : 30;
+      const startDate = from ?? dateDaysBefore(endDate, 29);
+      assertDateRange(startDate, endDate);
       const repository = new ActivityRepository(
         context.db,
         context.userId,
@@ -116,113 +405,242 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         { kind: "full", paid: true, reason: "paid_grant" },
         context.sensorStore,
       );
-      const result = await repository.list({
-        days,
-        endDate,
-        limit: limit ?? 10,
-        offset: 0,
+      const resultLimit = limit ?? 10;
+      let result: Awaited<ReturnType<ActivityRepository["search"]>>;
+      try {
+        result = await repository.search({
+          startDate,
+          endDate,
+          query,
+          limit: resultLimit,
+        });
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { mcp_tool: "search_activities" },
+          extra: { startDate, endDate, hasQuery: query !== undefined, limit: resultLimit },
+        });
+        throw error;
+      }
+      if (include?.includes("mapPreview")) return jsonToolResult(result);
+      return jsonToolResult({
+        ...result,
+        items: result.items.map((item) => {
+          const location = item.location;
+          if (typeof location !== "object" || location === null || !("mapPreview" in location)) {
+            return item;
+          }
+          const { mapPreview: _mapPreview, ...locationWithoutPreview } = location;
+          return { ...item, location: locationWithoutPreview };
+        }),
       });
-      const loweredQuery = query?.toLowerCase();
-      const items = loweredQuery
-        ? result.items.filter((item) => {
-            const searchable = `${String(item.name ?? "")} ${String(item.activity_type ?? "")}`;
-            return searchable.toLowerCase().includes(loweredQuery);
-          })
-        : result.items;
-      return jsonContent({ items, totalCount: result.totalCount });
     },
   );
-
-  server.registerTool(
-    "log_food",
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
+    "get_activity_summary",
     {
-      title: "Log Food",
-      description: "Create a Dofek food entry from a natural-language food description.",
-      inputSchema: {
-        text: z.string().min(1).max(500),
-        occurredAt: z.string().datetime().optional(),
-        mealType: z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).optional(),
-      },
+      title: "Get Activity Summary",
+      description: "Aggregate activity volume and effort over an exact date range.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+        group_by: z
+          .enum([
+            "canonical_type",
+            "week",
+            "canonical_type_and_week",
+            "canonical_type_and_modality",
+            "canonical_type_and_purpose",
+          ])
+          .optional(),
+        canonical_types: z.array(z.string()).optional(),
+      }),
+      outputSchema: mcpOutputSchemas.activitySummary,
     },
-    async ({ text, occurredAt, mealType }) => {
-      requireMcpScope(context.scopes, "nutrition:write");
-      const repository = new FoodRepository(context.db, context.userId, context.timezone);
-      const entry = await repository.create({
-        date: dateFromOptionalDateTime(occurredAt, context.timezone),
-        meal: mealType ?? "other",
-        foodName: text,
-        nutrients: {},
+    async ({ start_date, end_date, group_by, canonical_types }) => {
+      requireMcpScope(context.scopes, "activity:read");
+      assertDateRange(start_date, end_date);
+      const repository = new ActivityRepository(
+        context.db,
+        context.userId,
+        context.timezone,
+        { kind: "full", paid: true, reason: "paid_grant" },
+        context.sensorStore,
+      );
+      const rows = await repository.listRange(start_date, end_date, canonical_types);
+      const parsedRows = rows.map((row) => activityMcpRowSchema.parse(row));
+      const unclassifiedCount = parsedRows.filter((row) => row.canonical_type === "other").length;
+      return jsonToolResult({
+        unclassified_pct:
+          parsedRows.length === 0 ? 0 : (unclassifiedCount / parsedRows.length) * 100,
+        summaries: activitySummaries(parsedRows, group_by ?? "canonical_type", context.timezone),
       });
-      return jsonContent(entry ?? null);
     },
   );
-
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
+    "get_finger_loading",
+    {
+      title: "Get Finger Loading",
+      description:
+        "Return structured finger-loading protocols and server-computed effective load for an exact date range.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+        timezone: z.string().optional(),
+      }),
+      outputSchema: mcpOutputSchemas.fingerLoading,
+    },
+    async ({ start_date, end_date, timezone }) => {
+      requireMcpScope(context.scopes, "activity:read");
+      assertDateRange(start_date, end_date);
+      const rows = await readFingerLoadingRange({
+        database: context.db,
+        endDate: end_date,
+        startDate: start_date,
+        timezone: timezone ?? context.timezone,
+        userId: context.userId,
+      });
+      return jsonToolResult(
+        rows.map((row) => ({
+          activity_id: row.activityId,
+          bodyweight_kg: row.bodyweightKg,
+          edge_size_mm: row.edgeSizeMm,
+          effective_load_kg: row.effectiveLoadKg,
+          effective_load_formula: "bodyweight_kg + external_load_kg",
+          exercise: row.exercise,
+          external_load_kg: row.externalLoadKg,
+          grip_position: row.gripPosition,
+          hold_duration_seconds: row.holdDurationSeconds,
+          laterality: row.laterality,
+          notes: row.notes,
+          rest_interval_seconds: row.restIntervalSeconds,
+          rpe: row.rpe,
+          set_count: row.setCount,
+          started_at: row.startedAt,
+          total_time_under_tension_seconds: null,
+          total_time_under_tension_status: "unavailable" as const,
+          total_time_under_tension_reason:
+            "Exact time under tension requires repetitions per set, which the canonical source schema does not record.",
+        })),
+      );
+    },
+  );
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
+    "get_nutrition_summary",
+    {
+      title: "Get Nutrition Summary",
+      description:
+        "Return a complete daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and conservative logging-completeness status. Missing nutrition stays null.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+        timezone: z.string().optional(),
+      }),
+      outputSchema: mcpOutputSchemas.nutritionSummary,
+    },
+    async ({ start_date, end_date, timezone }) => {
+      requireMcpScope(context.scopes, "nutrition:read");
+      assertDateRange(start_date, end_date);
+      assertNutritionSummaryDateRange(start_date, end_date);
+      const repository = new FoodRepository(
+        context.db,
+        context.userId,
+        timezone ?? context.timezone,
+      );
+      const rows = await repository.dailyTotalsRange(start_date, end_date);
+      return jsonToolResult(rows.map(toNutritionSummaryOutput));
+    },
+  );
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
+    "get_body_metrics",
+    {
+      title: "Get Body Metrics",
+      description:
+        "Return reconciled weight and body-composition measurements, explicit value kinds, source provenance, and 7/28-day rolling weight statistics for an exact date range.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+      }),
+      outputSchema: mcpOutputSchemas.bodyMetrics,
+    },
+    async ({ start_date, end_date }) => {
+      requireMcpScope(context.scopes, "health:read");
+      assertDateRange(start_date, end_date);
+      if (!context.sensorStore) {
+        throw new Error("get_body_metrics requires the ClickHouse analytics store");
+      }
+      const repository = new BodyRepository(context.sensorStore, context.userId, context.timezone);
+      const rows = await repository.listReconciledRange(start_date, end_date);
+      return jsonToolResult(
+        rows.map((row) => ({
+          date: row.date,
+          weight_kg: row.weightKg,
+          weight_measurement_kind: row.weightMeasurementKind,
+          body_fat_pct: row.bodyFatPct,
+          body_fat_measurement_kind: row.bodyFatMeasurementKind,
+          lean_mass_kg: row.leanMassKg,
+          lean_mass_measurement_kind: row.leanMassMeasurementKind,
+          bmi: row.bmi,
+          weight_rolling: {
+            average_7d_kg: row.weightRolling.average7dKg,
+            average_28d_kg: row.weightRolling.average28dKg,
+            observed_days_7d: row.weightRolling.observedDays7d,
+            observed_days_28d: row.weightRolling.observedDays28d,
+          },
+          source_provider_by_metric: {
+            weight_kg: row.sourceProviderByMetric.weightKg,
+            body_fat_pct: row.sourceProviderByMetric.bodyFatPct,
+            bmi: row.sourceProviderByMetric.bmi,
+          },
+          sources: row.sources.map((source) => ({
+            source_provider: source.sourceProvider,
+            recorded_at: source.recordedAt,
+            weight_kg: source.weightKg,
+            body_fat_pct: source.bodyFatPct,
+            bmi: source.bmi,
+          })),
+          coverage: { source_count: row.coverage.sourceCount },
+        })),
+      );
+    },
+  );
+  registerAuthorizedTool(
+    server,
+    ["providers:read"],
     "list_providers",
     {
       title: "List Providers",
-      description: "List configured user-facing providers and connection status.",
-      inputSchema: {},
+      description:
+        "List configured Dofek providers with connection status and last-sync timestamps.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({}),
+      outputSchema: mcpOutputSchemas.providers,
     },
     async () => {
       requireMcpScope(context.scopes, "providers:read");
-      await ensureProvidersRegistered();
-      const repository = new SyncRepository(context.db, context.userId);
-      const [connectedProviders, lastSyncs, latestErrors] = await Promise.all([
-        repository.getConnectedProviderIds(),
-        repository.getLastSyncTimes(),
-        repository.getLatestErrors(),
-      ]);
-      const connectedProviderIds = new Set(
-        connectedProviders.map((provider) => provider.providerId),
-      );
-      const tokenUpdatedAtMap = new Map(
-        connectedProviders.map((provider) => [provider.providerId, provider.updatedAt]),
-      );
-      const lastSyncMap = new Map(
-        lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
-      );
-      const authErrorProviderIds = new Set(
-        latestErrors
-          .filter((provider) =>
-            hasCurrentProviderAuthFailure(
-              provider.authFailureReason,
-              provider.syncedAt,
-              tokenUpdatedAtMap.get(provider.providerId),
-            ),
-          )
-          .map((provider) => provider.providerId),
-      );
-
-      const providers = getAllProviders()
-        .filter((provider) => provider.validate() === null)
-        .map((provider) => {
-          const model = new ProviderModel(
-            provider,
-            connectedProviderIds,
-            lastSyncMap,
-            CUSTOM_AUTH_PROVIDERS,
-          );
-          return {
-            id: model.id,
-            name: model.name,
-            authType: model.authType,
-            authorized: model.isConnected,
-            lastSyncedAt: model.lastSyncedAt,
-            importOnly: model.importOnly,
-            needsReauth: model.isConnected && authErrorProviderIds.has(model.id),
-          };
-        });
-      return jsonContent(providers);
+      return jsonToolResult(await listProviderStatuses(context));
     },
   );
-
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["sync:write"],
     "start_provider_sync",
     {
       title: "Start Provider Sync",
       description: "Enqueue a user-scoped provider sync job.",
-      inputSchema: {
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({
         providerId: z.string().min(1),
         sinceDays: z.number().int().positive().optional(),
         sinceDate: z
@@ -233,7 +651,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
-      },
+      }),
+      outputSchema: mcpOutputSchemas.providerSync,
     },
     async ({ providerId, sinceDays, sinceDate, untilDate }) => {
       requireMcpScope(context.scopes, "sync:write");
@@ -246,19 +665,40 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       if (validationMessage) {
         throw new Error(`Provider not configured: ${validationMessage}`);
       }
+      if (providerRequiresStoredTokens(provider)) {
+        const connections = await new SyncRepository(
+          context.db,
+          context.userId,
+        ).getConnectedProviderIds();
+        const hasTokens = connections.some(
+          (connection) => connection.providerId === providerId && connection.hasTokens,
+        );
+        if (!hasTokens) {
+          throw new Error(`Provider not connected: ${providerId}`);
+        }
+      }
       validateSyncWindowTriggerInput({ sinceDays, sinceDate, untilDate });
-      const syncWindow = syncWindowFromTriggerInput({
+      const syncJobWindow = syncJobDataFromTriggerInput({
         sinceDays,
         sinceDate,
         untilDate,
       });
-      const job = await enqueueSyncJob(providerId, {
-        providerId,
-        userId: context.userId,
-        ...syncWindowToJobData(syncWindow, sinceDays),
-      });
-      startWorker();
-      return jsonContent({
+      const job = await withAccountErasureUserWriteFence(context.db, context.userId, async () =>
+        enqueueSyncJob(
+          providerId,
+          {
+            providerId,
+            userId: context.userId,
+            origin: "manual",
+            ...syncJobWindow,
+          },
+          { skipWhenRateLimited: true },
+        ),
+      );
+      if (!job) {
+        throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);
+      }
+      return jsonToolResult({
         providerId,
         jobId: toJobId(job.id, providerId),
         queueName: providerSyncQueueName(providerId),
@@ -266,6 +706,5 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-
   return server;
 }

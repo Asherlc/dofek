@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getProviderAuthTypeFromSetup, type Provider } from "../providers/types.ts";
 
 // Mock registerProvider before importing the module under test
-const mockRegisterProvider = vi.fn();
+const mockRegisterProvider = vi.fn<(provider: Provider) => void>();
 vi.mock("../providers/index.ts", () => ({
-  registerProvider: (...args: unknown[]) => mockRegisterProvider(...args),
+  registerProvider: (provider: Provider) => mockRegisterProvider(provider),
 }));
 
 // Mock all provider modules to return simple objects
@@ -12,12 +13,15 @@ const mockProviders = {
   withings: { id: "withings" },
   peloton: { id: "peloton" },
   fatsecret: { id: "fatsecret" },
+  ziva: { id: "ziva" },
   whoop: { id: "whoop" },
+  kaya: { id: "kaya" },
   "ride-with-gps": { id: "ride-with-gps" },
   "strong-csv": { id: "strong-csv" },
   polar: { id: "polar" },
-  fitbit: { id: "fitbit" },
   garmin: { id: "garmin" },
+  "garmin-dump": { id: "garmin-dump" },
+  "fit-file": { id: "fit-file" },
   strava: { id: "strava" },
   "cronometer-csv": { id: "cronometer-csv" },
   oura: { id: "oura" },
@@ -26,112 +30,116 @@ const mockProviders = {
   zwift: { id: "zwift" },
   trainerroad: { id: "trainerroad" },
   ultrahuman: { id: "ultrahuman" },
-  mapmyfitness: { id: "mapmyfitness" },
-  suunto: { id: "suunto" },
-  coros: { id: "coros" },
   concept2: { id: "concept2" },
-  komoot: { id: "komoot" },
   xert: { id: "xert" },
   "cycling-analytics": { id: "cycling-analytics" },
   wger: { id: "wger" },
-  decathlon: { id: "decathlon" },
-  velohero: { id: "velohero" },
-  "auto-supplements": { id: "auto-supplements" },
+  "mountain-project": { id: "mountain-project" },
+  openbeta: { id: "openbeta" },
   "amazfit-zepp": { id: "amazfit-zepp" },
+  "kaya-export": { id: "kaya-export" },
+  "zos-app": { id: "zos-app" },
 };
 
+function mockProviderConstructor(provider: { id: string }) {
+  return vi.fn(function vitestConstructor() {
+    return provider;
+  });
+}
+
 vi.mock("../providers/wahoo/provider.ts", () => ({
-  WahooProvider: vi.fn(() => mockProviders.wahoo),
+  WahooProvider: mockProviderConstructor(mockProviders.wahoo),
 }));
 vi.mock("../providers/withings.ts", () => ({
-  WithingsProvider: vi.fn(() => mockProviders.withings),
+  WithingsProvider: mockProviderConstructor(mockProviders.withings),
 }));
 vi.mock("../providers/peloton.ts", () => ({
-  PelotonProvider: vi.fn(() => mockProviders.peloton),
+  PelotonProvider: mockProviderConstructor(mockProviders.peloton),
 }));
 vi.mock("../providers/fatsecret/provider.ts", () => ({
-  FatSecretProvider: vi.fn(() => mockProviders.fatsecret),
+  FatSecretProvider: mockProviderConstructor(mockProviders.fatsecret),
+}));
+vi.mock("../providers/ziva/provider.ts", () => ({
+  ZivaProvider: mockProviderConstructor(mockProviders.ziva),
 }));
 vi.mock("../providers/whoop/provider.ts", () => ({
-  WhoopProvider: vi.fn(() => mockProviders.whoop),
+  WhoopProvider: mockProviderConstructor(mockProviders.whoop),
+}));
+vi.mock("../providers/kaya-sync.ts", () => ({
+  KayaSyncProvider: mockProviderConstructor(mockProviders.kaya),
 }));
 vi.mock("../providers/ride-with-gps.ts", () => ({
-  RideWithGpsProvider: vi.fn(() => mockProviders["ride-with-gps"]),
+  RideWithGpsProvider: mockProviderConstructor(mockProviders["ride-with-gps"]),
 }));
 vi.mock("../providers/strong-csv.ts", () => ({
-  StrongCsvProvider: vi.fn(() => mockProviders["strong-csv"]),
+  StrongCsvProvider: mockProviderConstructor(mockProviders["strong-csv"]),
 }));
 vi.mock("../providers/polar/provider.ts", () => ({
-  PolarProvider: vi.fn(() => mockProviders.polar),
+  PolarProvider: mockProviderConstructor(mockProviders.polar),
 }));
-vi.mock("../providers/fitbit/provider.ts", () => ({
-  FitbitProvider: vi.fn(() => mockProviders.fitbit),
+vi.mock("../providers/garmin/provider.ts", () => ({
+  GarminProvider: mockProviderConstructor(mockProviders.garmin),
 }));
-vi.mock("../providers/garmin.ts", () => ({
-  GarminProvider: vi.fn(() => mockProviders.garmin),
+vi.mock("../providers/garmin-dump.ts", () => ({
+  GarminDumpProvider: mockProviderConstructor(mockProviders["garmin-dump"]),
 }));
-vi.mock("../providers/strava.ts", () => ({
-  StravaProvider: vi.fn(() => mockProviders.strava),
+vi.mock("../providers/fit-file.ts", () => ({
+  FitFileProvider: mockProviderConstructor(mockProviders["fit-file"]),
+}));
+vi.mock("../providers/strava/provider.ts", () => ({
+  StravaProvider: mockProviderConstructor(mockProviders.strava),
 }));
 vi.mock("../providers/cronometer-csv.ts", () => ({
-  CronometerCsvProvider: vi.fn(() => mockProviders["cronometer-csv"]),
+  CronometerCsvProvider: mockProviderConstructor(mockProviders["cronometer-csv"]),
 }));
 vi.mock("../providers/oura/provider.ts", () => ({
-  OuraProvider: vi.fn(() => mockProviders.oura),
+  OuraProvider: mockProviderConstructor(mockProviders.oura),
 }));
 vi.mock("../providers/bodyspec.ts", () => ({
-  BodySpecProvider: vi.fn(() => mockProviders.bodyspec),
+  BodySpecProvider: mockProviderConstructor(mockProviders.bodyspec),
 }));
 vi.mock("../providers/eight-sleep.ts", () => ({
-  EightSleepProvider: vi.fn(() => mockProviders["eight-sleep"]),
+  EightSleepProvider: mockProviderConstructor(mockProviders["eight-sleep"]),
 }));
 vi.mock("../providers/zwift.ts", () => ({
-  ZwiftProvider: vi.fn(() => mockProviders.zwift),
+  ZwiftProvider: mockProviderConstructor(mockProviders.zwift),
 }));
 vi.mock("../providers/trainerroad.ts", () => ({
-  TrainerRoadProvider: vi.fn(() => mockProviders.trainerroad),
+  TrainerRoadProvider: mockProviderConstructor(mockProviders.trainerroad),
 }));
 vi.mock("../providers/ultrahuman.ts", () => ({
-  UltrahumanProvider: vi.fn(() => mockProviders.ultrahuman),
-}));
-vi.mock("../providers/mapmyfitness.ts", () => ({
-  MapMyFitnessProvider: vi.fn(() => mockProviders.mapmyfitness),
-}));
-vi.mock("../providers/suunto.ts", () => ({
-  SuuntoProvider: vi.fn(() => mockProviders.suunto),
-}));
-vi.mock("../providers/coros.ts", () => ({
-  CorosProvider: vi.fn(() => mockProviders.coros),
+  UltrahumanProvider: mockProviderConstructor(mockProviders.ultrahuman),
 }));
 vi.mock("../providers/concept2.ts", () => ({
-  Concept2Provider: vi.fn(() => mockProviders.concept2),
-}));
-vi.mock("../providers/komoot.ts", () => ({
-  KomootProvider: vi.fn(() => mockProviders.komoot),
+  Concept2Provider: mockProviderConstructor(mockProviders.concept2),
 }));
 vi.mock("../providers/xert.ts", () => ({
-  XertProvider: vi.fn(() => mockProviders.xert),
+  XertProvider: mockProviderConstructor(mockProviders.xert),
 }));
 vi.mock("../providers/cycling-analytics.ts", () => ({
-  CyclingAnalyticsProvider: vi.fn(() => mockProviders["cycling-analytics"]),
+  CyclingAnalyticsProvider: mockProviderConstructor(mockProviders["cycling-analytics"]),
 }));
 vi.mock("../providers/wger.ts", () => ({
-  WgerProvider: vi.fn(() => mockProviders.wger),
+  WgerProvider: mockProviderConstructor(mockProviders.wger),
 }));
-vi.mock("../providers/decathlon.ts", () => ({
-  DecathlonProvider: vi.fn(() => mockProviders.decathlon),
+vi.mock("../providers/mountain-project.ts", () => ({
+  MountainProjectProvider: mockProviderConstructor(mockProviders["mountain-project"]),
 }));
-vi.mock("../providers/velohero.ts", () => ({
-  VeloHeroProvider: vi.fn(() => mockProviders.velohero),
-}));
-vi.mock("../providers/auto-supplements.ts", () => ({
-  AutoSupplementsProvider: vi.fn(() => mockProviders["auto-supplements"]),
+vi.mock("../providers/openbeta.ts", () => ({
+  OpenBetaProvider: mockProviderConstructor(mockProviders.openbeta),
 }));
 vi.mock("../providers/amazfit-zepp.ts", () => ({
-  AmazfitZeppProvider: vi.fn(() => mockProviders["amazfit-zepp"]),
+  AmazfitZeppProvider: mockProviderConstructor(mockProviders["amazfit-zepp"]),
+}));
+vi.mock("../providers/kaya/provider.ts", () => ({
+  KayaProvider: mockProviderConstructor(mockProviders["kaya-export"]),
+}));
+vi.mock("../providers/zos-app/provider.ts", () => ({
+  ZosAppProvider: mockProviderConstructor(mockProviders["zos-app"]),
 }));
 
-const PROVIDER_COUNT = Object.keys(mockProviders).length;
+// The real constructor verifies theCrag exposes its per-user auth contract.
+const PROVIDER_COUNT = Object.keys(mockProviders).length + 1;
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -144,11 +152,29 @@ describe("provider-registration", () => {
     vi.restoreAllMocks();
   });
 
-  it("registers all providers", async () => {
+  it("registers all production providers", async () => {
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
     await ensureProvidersRegistered();
 
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
+    expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
+  });
+
+  it("registers theCrag with a usable per-user API-key connection", async () => {
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+
+    const provider = mockRegisterProvider.mock.calls.find(([registered]) => {
+      return registered.id === "thecrag";
+    })?.[0];
+
+    expect(provider?.validate()).toBeNull();
+    const setup = provider?.authSetup?.();
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
+    expect(setup?.manualToken).toMatchObject({
+      label: "Personal API key (active supporter required)",
+      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
+    });
   });
 
   it("only registers once (memoization)", async () => {

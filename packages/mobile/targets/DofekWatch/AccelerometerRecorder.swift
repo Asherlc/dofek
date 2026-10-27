@@ -16,12 +16,12 @@ final class AccelerometerRecorder: ObservableObject {
 
     private let sensorRecorder = CMSensorRecorder()
     private let defaults = UserDefaults.standard
+    private let transferCursor = AccelerometerTransferCursor()
+    private let accountStateStore = WatchAccountStateStore()
 
-    private let recordingActiveKey = "com.dofek.watch.accelerometer.recordingActive"
-    private let lastQueryCursorKey = "com.dofek.watch.accelerometer.lastQueryCursor"
     private let lastTransferKey = "com.dofek.watch.accelerometer.lastTransfer"
 
-    static let maxDurationSeconds: TimeInterval = 12 * 3600 // 12 hours
+    static let maxDurationSeconds = WatchAccountStateStore.maximumRecordingDuration
 
     /// Batch size for streaming JSON writes. Keeps peak memory to ~500 KB per flush.
     static let streamingBatchSize = 5000
@@ -34,7 +34,7 @@ final class AccelerometerRecorder: ObservableObject {
     }
 
     init() {
-        isRecording = defaults.bool(forKey: recordingActiveKey)
+        isRecording = accountStateStore.isRecordingActive()
     }
 
     /// Check if accelerometer recording is supported on this Watch.
@@ -47,9 +47,21 @@ final class AccelerometerRecorder: ObservableObject {
     /// Safe to call from any thread — @Published updates are dispatched to main.
     func startRecording() {
         guard Self.isAvailable else { return }
+        guard accountStateStore.isSyncEnabled else { return }
 
         sensorRecorder.recordAccelerometer(forDuration: Self.maxDurationSeconds)
-        defaults.set(true, forKey: recordingActiveKey)
+        guard CMSensorRecorder.authorizationStatus() == .authorized else {
+            accountStateStore.clearRecording()
+            if Thread.isMainThread {
+                isRecording = false
+            } else {
+                DispatchQueue.main.async { self.isRecording = false }
+            }
+            WatchSessionDelegate.shared.publishRecordingActivity()
+            return
+        }
+        accountStateStore.recordRecording(until: Date().addingTimeInterval(Self.maxDurationSeconds))
+        WatchSessionDelegate.shared.publishRecordingActivity()
 
         if Thread.isMainThread {
             isRecording = true
@@ -69,8 +81,9 @@ final class AccelerometerRecorder: ObservableObject {
     /// The caller is responsible for updating `samplesSinceLastTransfer` on the
     /// main thread after the call returns.
     ///
-    /// - Returns: The file URL and sample count, or `nil` if no samples are available.
-    func streamSamplesToFile() -> (url: URL, count: Int)? {
+    /// - Returns: The file URL, sample count, and query boundary, or `nil` if
+    ///   no samples are available.
+    func streamSamplesToFile() -> (url: URL, count: Int, through: Date)? {
         guard Self.isAvailable else { return nil }
 
         let now = Date()
@@ -78,11 +91,10 @@ final class AccelerometerRecorder: ObservableObject {
         // Use 2.9 days to leave margin and avoid edge-case NSExceptions.
         let maxLookback = now.addingTimeInterval(-2.9 * 24 * 3600)
         let fromDate: Date
-        if let cursor = defaults.object(forKey: lastQueryCursorKey) as? Date {
-            fromDate = max(cursor, maxLookback)
-        } else {
-            fromDate = maxLookback
-        }
+        let retainedCutoff = WatchAccountStateStore().deviceErasureCutoff
+        fromDate = [transferCursor.confirmedBoundary, retainedCutoff]
+            .compactMap { $0 }
+            .reduce(maxLookback, max)
 
         // Don't query if fromDate is in the future or too close to now
         guard fromDate < now.addingTimeInterval(-1) else { return nil }
@@ -148,15 +160,34 @@ final class AccelerometerRecorder: ObservableObject {
             return nil
         }
 
-        // Advance the query cursor (UserDefaults is thread-safe)
-        defaults.set(now, forKey: lastQueryCursorKey)
+        return (url: tempFile, count: count, through: now)
+    }
 
-        return (url: tempFile, count: count)
+    func transferMetadata(through boundary: Date) -> [String: Any] {
+        transferCursor.metadata(through: boundary)
+    }
+
+    func completeTransfer(
+        metadata: [String: Any]?,
+        error: Error?
+    ) -> AccelerometerTransferCompletion {
+        transferCursor.completeTransfer(metadata: metadata, error: error)
     }
 
     /// Mark a successful transfer by updating the transfer timestamp.
     func markTransferComplete() {
         defaults.set(Date(), forKey: lastTransferKey)
         samplesSinceLastTransfer = 0
+    }
+
+    func purgeAccountState() {
+        accountStateStore.clearRecording()
+        WatchSessionDelegate.shared.publishRecordingActivity()
+        defaults.removeObject(forKey: lastTransferKey)
+        transferCursor.purge()
+        DispatchQueue.main.async {
+            self.isRecording = false
+            self.samplesSinceLastTransfer = 0
+        }
     }
 }

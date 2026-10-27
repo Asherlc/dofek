@@ -27,29 +27,29 @@ const sampleActivity = {
 describe("TrainerRoad Provider", () => {
   describe("mapTrainerRoadActivityType", () => {
     it("maps indoor rides to virtual_cycling", () => {
-      expect(mapTrainerRoadActivityType("Ride", false)).toBe("virtual_cycling");
-      expect(mapTrainerRoadActivityType("VirtualRide", false)).toBe("virtual_cycling");
+      expect(mapTrainerRoadActivityType("Ride", false).canonicalType).toBe("cycling");
+      expect(mapTrainerRoadActivityType("VirtualRide", false).canonicalType).toBe("cycling");
     });
 
     it("maps outdoor rides to cycling", () => {
-      expect(mapTrainerRoadActivityType("Ride", true)).toBe("cycling");
+      expect(mapTrainerRoadActivityType("Ride", true).canonicalType).toBe("cycling");
     });
 
     it("maps indoor runs to running", () => {
-      expect(mapTrainerRoadActivityType("Run", false)).toBe("running");
+      expect(mapTrainerRoadActivityType("Run", false).canonicalType).toBe("running");
     });
 
     it("maps outdoor runs to running", () => {
-      expect(mapTrainerRoadActivityType("Run", true)).toBe("running");
+      expect(mapTrainerRoadActivityType("Run", true).canonicalType).toBe("running");
     });
 
     it("maps swimming", () => {
-      expect(mapTrainerRoadActivityType("Swim", false)).toBe("swimming");
-      expect(mapTrainerRoadActivityType("Swim", true)).toBe("swimming");
+      expect(mapTrainerRoadActivityType("Swim", false).canonicalType).toBe("swimming");
+      expect(mapTrainerRoadActivityType("Swim", true).canonicalType).toBe("swimming");
     });
 
     it("maps unknown to other", () => {
-      expect(mapTrainerRoadActivityType("Yoga", false)).toBe("other");
+      expect(mapTrainerRoadActivityType("Yoga", false).canonicalType).toBe("other");
     });
   });
 
@@ -58,7 +58,7 @@ describe("TrainerRoad Provider", () => {
       const result = parseTrainerRoadActivity(sampleActivity);
 
       expect(result.externalId).toBe("987654");
-      expect(result.activityType).toBe("virtual_cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.name).toBe("Pettit");
       expect(result.endedAt).toEqual(new Date("2026-03-01T19:00:00.000Z"));
     });
@@ -92,7 +92,7 @@ describe("TrainerRoad Provider", () => {
       };
       const result = parseTrainerRoadActivity(outdoor);
 
-      expect(result.activityType).toBe("cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.raw.distanceMeters).toBe(50000);
       expect(result.raw.elevationGain).toBe(800);
       expect(result.raw.isOutside).toBe(true);

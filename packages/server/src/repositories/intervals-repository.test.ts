@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { average, IntervalsRepository, maxVal, summarizeSegment } from "./intervals-repository.ts";
+import { makeMockSensorStore } from "../lib/test-helpers.ts";
+import {
+  average,
+  type ComparableInterval,
+  IntervalsRepository,
+  maxVal,
+  mergeComparableIntervals,
+  summarizeSegment,
+} from "./intervals-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Utility function tests
@@ -150,27 +158,169 @@ describe("summarizeSegment", () => {
   });
 });
 
+describe("mergeComparableIntervals", () => {
+  function interval(overrides: Partial<ComparableInterval> = {}): ComparableInterval {
+    return {
+      intervalIndex: 0,
+      source: "provider_recorded",
+      startOffsetSeconds: 0,
+      endOffsetSeconds: 60,
+      label: null,
+      intervalType: null,
+      segmentType: null,
+      workRecoveryKind: null,
+      sourceProvider: null,
+      sourceActivityId: null,
+      sourceMemberActivityIds: [],
+      targetIntensity: null,
+      targetZone: null,
+      targetCadenceRpm: null,
+      targetPowerWatts: null,
+      targetResistance: null,
+      raw: null,
+      ...overrides,
+    };
+  }
+
+  it("prefers unknown source evidence over inferred evidence", () => {
+    const result = mergeComparableIntervals([
+      interval({ source: "inferred", targetPowerWatts: 180 }),
+      interval({ source: "unknown", targetPowerWatts: 220 }),
+    ]);
+
+    expect(result).toEqual([expect.objectContaining({ source: "unknown", targetPowerWatts: 220 })]);
+  });
+
+  it("rejects an interval whose flattened source evidence is empty", () => {
+    expect(() => mergeComparableIntervals([interval({ sourceEvidence: [] })])).toThrow(
+      "Interval evidence group is empty",
+    );
+  });
+
+  it("extracts conflicts only from the preferred source and ignores null peer fields", () => {
+    const result = mergeComparableIntervals([
+      interval({
+        sourceProvider: "a",
+        intervalType: "lap",
+        segmentType: "work",
+        workRecoveryKind: "work",
+        targetZone: 4,
+        targetPowerWatts: 250,
+        completionPct: 95,
+      }),
+      interval({
+        sourceProvider: "b",
+        intervalType: null,
+        segmentType: "recovery",
+        workRecoveryKind: null,
+        targetZone: null,
+        targetPowerWatts: 300,
+        completionPct: 95,
+      }),
+      interval({
+        source: "inferred",
+        intervalType: "inferred-lap",
+        workRecoveryKind: "recovery",
+        targetZone: 2,
+        targetPowerWatts: 100,
+      }),
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        source: "provider_recorded",
+        intervalType: "lap",
+        segmentType: null,
+        workRecoveryKind: "work",
+        targetZone: 4,
+        targetPowerWatts: null,
+        completionPct: null,
+        conflicts: ["targetPowerWatts", "segmentType", "completionPct"],
+      }),
+    ]);
+  });
+
+  it("preserves completion when only unrelated interval classification conflicts", () => {
+    const result = mergeComparableIntervals([
+      interval({ segmentType: "work", completionPct: 95 }),
+      interval({ segmentType: "recovery", completionPct: 95 }),
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        segmentType: null,
+        completionPct: 95,
+        conflicts: ["segmentType"],
+      }),
+    ]);
+  });
+
+  it("sorts intervals deterministically by start, then end, then index", () => {
+    const indexTwoEvidence = interval({
+      intervalIndex: 2,
+      startOffsetSeconds: 300,
+      endOffsetSeconds: 360,
+    });
+    const indexOneEvidence = interval({
+      intervalIndex: 1,
+      startOffsetSeconds: 300,
+      endOffsetSeconds: 360,
+    });
+
+    const result = mergeComparableIntervals([
+      interval({ startOffsetSeconds: 30, endOffsetSeconds: 40 }),
+      interval({ startOffsetSeconds: 0, endOffsetSeconds: 200 }),
+      interval({ startOffsetSeconds: 0, endOffsetSeconds: 100 }),
+      interval({
+        startOffsetSeconds: 1,
+        endOffsetSeconds: 2,
+        sourceEvidence: [indexTwoEvidence],
+      }),
+      interval({
+        startOffsetSeconds: 2,
+        endOffsetSeconds: 3,
+        sourceEvidence: [indexOneEvidence],
+      }),
+    ]);
+
+    expect(
+      result.map(({ startOffsetSeconds, endOffsetSeconds, intervalIndex }) => [
+        startOffsetSeconds,
+        endOffsetSeconds,
+        intervalIndex,
+      ]),
+    ).toEqual([
+      [0, 100, 0],
+      [0, 200, 0],
+      [30, 40, 0],
+      [300, 360, 1],
+      [300, 360, 2],
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Repository tests
 // ---------------------------------------------------------------------------
 
 function makeDb(rows: Record<string, unknown>[] = []) {
-  return { execute: vi.fn().mockResolvedValueOnce(rows) };
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(rows: unknown[] = []): any {
   return {
-    query: vi.fn().mockResolvedValue(rows),
-    getActivitySummaries: vi.fn().mockResolvedValue([]),
-    getStream: vi.fn().mockResolvedValue([]),
-    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    execute: vi.fn().mockResolvedValueOnce(
+      rows.map((row) => ({
+        source_kind: null,
+        source_provider: null,
+        source_activity_id: null,
+        segment_type: null,
+        target_intensity: null,
+        target_zone: null,
+        target_cadence_rpm: null,
+        target_power_watts: null,
+        target_resistance: null,
+        work_recovery_kind: null,
+        raw: null,
+        ...row,
+      })),
+    ),
   };
 }
 
@@ -211,7 +361,7 @@ describe("IntervalsRepository", () => {
         },
       ];
       const db = makeDb(intervalRows);
-      const sensorStore = makeSensorStore(sensorRows);
+      const sensorStore = makeMockSensorStore(sensorRows);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -288,7 +438,7 @@ describe("IntervalsRepository", () => {
         },
       ];
       const db = makeDb(intervalRows);
-      const sensorStore = makeSensorStore(sensorRows);
+      const sensorStore = makeMockSensorStore(sensorRows);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -311,7 +461,7 @@ describe("IntervalsRepository", () => {
 
     it("returns empty array when no intervals exist", async () => {
       const db = makeDb([]);
-      const sensorStore = makeSensorStore([]);
+      const sensorStore = makeMockSensorStore([]);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -323,7 +473,7 @@ describe("IntervalsRepository", () => {
   describe("detect", () => {
     function makeRepo(rows: Record<string, unknown>[] = []) {
       const db = { execute: vi.fn() };
-      const sensorStore = makeSensorStore(rows);
+      const sensorStore = makeMockSensorStore(rows);
       return new IntervalsRepository(db, "user-1", sensorStore);
     }
 

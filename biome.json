@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "plugins": [
     "./plugins/no-double-cast.grit",
     "./plugins/no-as-type-assertion.grit",
@@ -19,6 +19,12 @@
     "includes": [
       "src/**",
       "packages/*/src/**",
+      "packages/zepp/src/**",
+      "packages/zepp/page/**",
+      "packages/zepp/app-side/**",
+      "packages/zepp/setting/**",
+      "packages/zepp/app-service/**",
+      "packages/zepp/*.ts",
       "packages/mobile/**",
       "scripts/**",
       "cypress/**",
@@ -33,7 +39,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "error",
         "noTsIgnore": "error",
@@ -43,9 +49,7 @@
         "noBarrelFile": "error"
       },
       "style": {
-        "noNonNullAssertion": "error"
-      },
-      "nursery": {
+        "noNonNullAssertion": "error",
         "noExcessiveLinesPerFile": {
           "level": "error",
           "options": {
@@ -71,6 +75,7 @@
     {
       "includes": [
         "scripts/**",
+        "packages/mobile/scripts/**",
         "packages/mobile/lib/telemetry.ts",
         "packages/mobile/test-setup.ts",
         "packages/server/src/lib/start-worker.ts",
@@ -91,7 +96,7 @@
       "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],
       "linter": {
         "rules": {
-          "nursery": {
+          "style": {
             "noExcessiveLinesPerFile": "off"
           }
         }
@@ -101,7 +106,7 @@
       "includes": ["src/db/schema.ts"],
       "linter": {
         "rules": {
-          "nursery": {
+          "style": {
             "noExcessiveLinesPerFile": "off"
           }
         }

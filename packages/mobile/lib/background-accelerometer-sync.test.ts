@@ -25,6 +25,9 @@ const mockIsRecordingActive = vi.fn(() => true);
 const mockQueryRecordedData = vi.fn(() => Promise.resolve([]));
 const mockGetLastSyncTimestamp = vi.fn((): string | null => null);
 const mockSetLastSyncTimestamp = vi.fn();
+const mockLoadDeviceErasureCutoff = vi.fn(() =>
+  Promise.resolve<string | null>("2026-07-26T12:00:00.000Z"),
+);
 
 vi.mock("../modules/core-motion", () => ({
   isAccelerometerRecordingAvailable: (...args: unknown[]) =>
@@ -38,6 +41,10 @@ vi.mock("../modules/core-motion", () => ({
   setLastSyncTimestamp: (...args: unknown[]) => mockSetLastSyncTimestamp(...args),
 }));
 
+vi.mock("./device-erasure-cutoff", () => ({
+  loadDeviceErasureCutoff: (...args: unknown[]) => mockLoadDeviceErasureCutoff(...args),
+}));
+
 const mockSyncInertialMeasurementUnitToServer = vi.fn(() =>
   Promise.resolve({ inserted: 0, recording: true }),
 );
@@ -48,9 +55,11 @@ vi.mock("./inertial-measurement-unit-sync", () => ({
 }));
 
 const mockCaptureException = vi.fn();
+const mockLoggerInfo = vi.fn();
 
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
+  logger: { info: (...args: unknown[]) => mockLoggerInfo(...args) },
 }));
 
 const { initBackgroundAccelerometerSync, teardownBackgroundAccelerometerSync } = await import(
@@ -75,10 +84,13 @@ describe("background-accelerometer-sync", () => {
     appStateCallback = null;
     mockRemove.mockClear();
     mockCaptureException.mockClear();
+    mockLoggerInfo.mockClear();
     mockSyncInertialMeasurementUnitToServer.mockReset();
     mockSyncInertialMeasurementUnitToServer.mockResolvedValue({ inserted: 0, recording: true });
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
     mockGetMotionAuthorizationStatus.mockReturnValue("authorized");
+    mockLoadDeviceErasureCutoff.mockResolvedValue("2026-07-26T12:00:00.000Z");
+    mockStartRecording.mockClear();
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundAccelerometerSync();
   });
@@ -90,7 +102,34 @@ describe("background-accelerometer-sync", () => {
   it("registers an AppState listener on init", async () => {
     await initBackgroundAccelerometerSync(trpcClient);
 
+    expect(mockLoggerInfo).not.toHaveBeenCalled();
     expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+  });
+
+  it("reports rejected recording while preserving foreground uploads", async () => {
+    mockStartRecording.mockResolvedValueOnce(false);
+
+    await initBackgroundAccelerometerSync(trpcClient);
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-accel-sync",
+      expect.stringContaining("iOS Settings"),
+    );
+    expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+    appStateCallback?.("active");
+    await vi.waitFor(() => expect(mockSyncInertialMeasurementUnitToServer).toHaveBeenCalledOnce());
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("replaces the foreground listener even when a new recording request is rejected", async () => {
+    await initBackgroundAccelerometerSync(trpcClient);
+    mockStartRecording.mockResolvedValueOnce(false);
+
+    await initBackgroundAccelerometerSync(trpcClient);
+
+    expect(mockLoggerInfo).toHaveBeenCalledOnce();
+    expect(mockRemove).toHaveBeenCalledOnce();
+    expect(AppState.addEventListener).toHaveBeenCalledTimes(2);
   });
 
   it("skips init when accelerometer recording is not available", async () => {
@@ -122,6 +161,48 @@ describe("background-accelerometer-sync", () => {
         source: "bg-accel-sync",
       });
     });
+  });
+
+  it("reports a resolved inactive foreground recording state without losing uploaded samples", async () => {
+    await initBackgroundAccelerometerSync(trpcClient);
+    mockSyncInertialMeasurementUnitToServer.mockResolvedValueOnce({
+      inserted: 5,
+      recording: false,
+    });
+
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-accel-sync",
+        expect.stringContaining("iOS Settings"),
+      );
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("passes the retained device cutoff to every foreground sync", async () => {
+    await initBackgroundAccelerometerSync(trpcClient);
+
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(mockSyncInertialMeasurementUnitToServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          minimumSampleDate: "2026-07-26T12:00:00.000Z",
+        }),
+      );
+    });
+  });
+
+  it("fails closed before recording when the retained cutoff cannot be read", async () => {
+    mockLoadDeviceErasureCutoff.mockRejectedValue(new Error("SecureStore unavailable"));
+
+    await expect(initBackgroundAccelerometerSync(trpcClient)).rejects.toThrow(
+      "SecureStore unavailable",
+    );
+    expect(mockStartRecording).not.toHaveBeenCalled();
+    expect(AppState.addEventListener).not.toHaveBeenCalled();
   });
 
   it("resets syncing flag after error so next foreground event can sync", async () => {

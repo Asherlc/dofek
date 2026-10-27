@@ -24,12 +24,7 @@ const RUNNING_SPEED_THRESHOLD_METERS_PER_MINUTE = 134;
 const MIN_HEART_RATE_RESERVE_FRACTION = 0.6;
 const MAX_HEART_RATE_RESERVE_FRACTION = 1;
 
-const SUPPORTED_OUTDOOR_VO2_MAX_ACTIVITY_TYPES = [
-  "running",
-  "trail_running",
-  "walking",
-  "hiking",
-] as const;
+const SUPPORTED_OUTDOOR_VO2_MAX_ACTIVITY_TYPES = ["running", "walking", "hiking"] as const;
 
 export function estimateCyclingVo2Max(input: CyclingVo2MaxInput): number | null {
   if (!Number.isFinite(input.fiveMinutePowerWatts)) {

@@ -1,5 +1,73 @@
 import { describe, expect, it } from "vitest";
-import { workoutActivityTypeMap } from "./health-kit-sync-schemas.ts";
+import {
+  getDailyMetricAccumulatorKey,
+  healthKitSampleSchema,
+  workoutActivityTypeMap,
+  workoutSampleSchema,
+} from "./health-kit-sync-schemas.ts";
+
+it("retains optional reported workout hardware through validation", () => {
+  const device = {
+    name: "Watch",
+    model: "Watch7,12",
+    manufacturer: "Apple",
+    hardwareVersion: "2",
+    firmwareVersion: "3",
+    softwareVersion: "11",
+    localIdentifier: "local",
+    udiDeviceIdentifier: "udi",
+  };
+  expect(
+    workoutSampleSchema.parse({
+      uuid: "workout",
+      workoutType: "37",
+      startDate: "2026-10-01T00:00:00Z",
+      endDate: "2026-10-01T01:00:00Z",
+      duration: 3600,
+      sourceName: "Fitness",
+      sourceBundle: "com.apple.fitness",
+      sourceProductType: "Watch7,12",
+      device,
+    }),
+  ).toMatchObject({ device, sourceProductType: "Watch7,12" });
+});
+
+describe("healthKitSampleSchema", () => {
+  const sample = {
+    type: "HKCategoryTypeIdentifierMenstrualFlow",
+    value: 2,
+    unit: "category",
+    startDate: "2026-08-01T08:00:00-07:00",
+    endDate: "2026-08-01T08:05:00-07:00",
+    sourceName: "Cycle Source",
+    sourceBundle: "com.example.cycle-source",
+    uuid: "91C7A825-3DA3-4F24-9085-15A9E2D1D2A1",
+  };
+
+  it("accepts flat string, number, and boolean metadata", () => {
+    expect(
+      healthKitSampleSchema.parse({
+        ...sample,
+        metadata: {
+          HKMetadataKeyMenstrualCycleStart: true,
+          upstreamVersion: 3,
+          upstreamLabel: "confirmed",
+        },
+      }).metadata,
+    ).toEqual({
+      HKMetadataKeyMenstrualCycleStart: true,
+      upstreamVersion: 3,
+      upstreamLabel: "confirmed",
+    });
+  });
+
+  it.each([{ nested: { value: true } }, { nested: ["value"] }])(
+    "rejects non-scalar metadata values",
+    (metadata) => {
+      expect(() => healthKitSampleSchema.parse({ ...sample, metadata })).toThrow();
+    },
+  );
+});
 
 describe("workoutActivityTypeMap", () => {
   // HKWorkoutActivityType rawValues from Apple documentation.
@@ -64,5 +132,17 @@ describe("workoutActivityTypeMap", () => {
         `rawValue ${rawValue} has camelCase value "${activityType}"`,
       ).not.toMatch(/[a-z][A-Z]/);
     }
+  });
+});
+
+describe("getDailyMetricAccumulatorKey", () => {
+  it("returns the accumulator key for a mapped daily metric column", () => {
+    expect(getDailyMetricAccumulatorKey("walking_speed")).toBe("walkingSpeed");
+  });
+
+  it("throws when a daily metric column is missing an accumulator mapping", () => {
+    expect(() => getDailyMetricAccumulatorKey("missing_daily_metric_column")).toThrow(
+      "Missing daily metric accumulator mapping for column: missing_daily_metric_column",
+    );
   });
 });

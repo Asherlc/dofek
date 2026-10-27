@@ -1,25 +1,38 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
-import { Pressable, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { AlertsBell } from "../../components/AlertsBell";
+import { TabBarButton } from "../../components/TabBarButton";
 import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
+import { useProcessingAlerts } from "../../lib/useProcessingAlerts";
 import { colors } from "../../theme";
 
 export default function TabsLayout() {
   const router = useRouter();
+  const alerts = useProcessingAlerts();
+  const activeAlertCount = alerts.data?.alerts.length ?? 0;
+  const headerActions = () => (
+    <View style={styles.headerActions}>
+      <AlertsBell activeCount={activeAlertCount} onPress={() => router.push("/alerts")} />
+      <Pressable
+        onPress={() => router.push("/settings")}
+        style={styles.headerButton}
+        accessibilityRole="button"
+        accessibilityLabel="Settings"
+      >
+        <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+      </Pressable>
+    </View>
+  );
 
   return (
-    <Tabs screenOptions={tabsScreenOptions}>
+    <Tabs screenOptions={{ ...tabsScreenOptions, headerRight: headerActions }}>
       <Tabs.Screen
         name="index"
         options={{
           title: "Today",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("index", focused)} size={size} color={color} />
-          ),
-          headerRight: () => (
-            <Pressable onPress={() => router.push("/settings")} style={styles.headerButton}>
-              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-            </Pressable>
+            <Ionicons name={getTabIconName("index", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -28,7 +41,7 @@ export default function TabsLayout() {
         options={{
           title: "Recovery",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("recovery", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("recovery", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -37,7 +50,7 @@ export default function TabsLayout() {
         options={{
           title: "Training",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("strain", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("strain", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -46,7 +59,7 @@ export default function TabsLayout() {
         options={{
           title: "Activities",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("activities", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("activities", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -55,7 +68,7 @@ export default function TabsLayout() {
         options={{
           title: "Nutrition",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("food", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("food", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -68,13 +81,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopColor: colors.surface,
     borderTopWidth: 0.5,
-    paddingTop: 4,
+    elevation: 8,
+    position: "relative",
+    zIndex: 1,
   },
   tabBarItem: {
-    borderRadius: 12,
     marginHorizontal: 6,
-    marginTop: 4,
-    marginBottom: 2,
   },
   tabBarLabel: {
     fontWeight: "600",
@@ -89,16 +101,22 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   headerButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    paddingRight: 4,
   },
 });
 
 export const tabsScreenOptions = {
   tabBarActiveTintColor: colors.accent,
-  tabBarInactiveTintColor: colors.textTertiary,
+  tabBarInactiveTintColor: colors.textSecondary,
   tabBarStyle: styles.tabBar,
   tabBarItemStyle: styles.tabBarItem,
+  tabBarButton: TabBarButton,
   tabBarLabelStyle: styles.tabBarLabel,
   tabBarActiveBackgroundColor: selectedTabBackgroundColor,
   headerStyle: styles.header,

@@ -1,4 +1,6 @@
+import { closeProviderOperationFencePool } from "dofek/db/provider-operation-fence";
 import { queryCache } from "dofek/lib/cache";
+import { savePersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -24,17 +26,25 @@ describe("Router transformation logic", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
+  const originalDatabaseUrl = process.env.DATABASE_URL;
 
   beforeAll(async () => {
+    await closeProviderOperationFencePool();
     testCtx = await setupTestDatabase();
+    process.env.DATABASE_URL = testCtx.connectionString;
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     // Insert a test provider (needed for FK constraints)
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test-provider', 'Test Provider', ${TEST_USER_ID})
+      sql`INSERT INTO fitness.provider (id, name)
+          VALUES ('test-provider', 'Test Provider')
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+          VALUES (${TEST_USER_ID}, 'test-provider')
           ON CONFLICT DO NOTHING`,
     );
 
@@ -51,20 +61,26 @@ describe("Router transformation logic", () => {
   }, 120_000);
 
   afterAll(async () => {
-    if (server) {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      });
+    try {
+      if (server) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+      }
+      await closeProviderOperationFencePool();
+      await testCtx?.cleanup();
+    } finally {
+      if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = originalDatabaseUrl;
     }
-    await testCtx?.cleanup();
   });
 
   /** POST a tRPC query and return parsed response */
-  async function query(path: string, input: Record<string, unknown> = {}) {
+  async function query(path: string, input: Record<string, unknown> = {}, cookie = sessionCookie) {
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+      headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({ "0": input }),
     });
     const data = await res.json();
@@ -72,105 +88,15 @@ describe("Router transformation logic", () => {
   }
 
   /** POST a tRPC mutation and return parsed response */
-  async function mutate(path: string, input: Record<string, unknown> = {}) {
+  async function mutate(path: string, input: Record<string, unknown> = {}, cookie = sessionCookie) {
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+      headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({ "0": input }),
     });
     const data = await res.json();
     return { status: res.status, result: data[0] };
   }
-
-  // ══════════════════════════════════════════════════════════════
-  // Life Events — CRUD operations
-  // ══════════════════════════════════════════════════════════════
-  describe("lifeEvents CRUD", () => {
-    let createdEventId: string;
-
-    it("create inserts a life event and returns it", async () => {
-      const { status, result } = await mutate("lifeEvents.create", {
-        label: "Started new job",
-        startedAt: "2025-06-01",
-        category: "career",
-        ongoing: true,
-        notes: "Remote position",
-      });
-      expect(status).toBe(200);
-      expect(result.result.data).toBeDefined();
-      const event = result.result.data;
-      expect(event.label).toBe("Started new job");
-      expect(event.category).toBe("career");
-      expect(event.ongoing).toBe(true);
-      expect(event.notes).toBe("Remote position");
-      expect(event.id).toBeDefined();
-      createdEventId = event.id;
-    });
-
-    it("list returns the created event", async () => {
-      const { status, result } = await query("lifeEvents.list");
-      expect(status).toBe(200);
-      const events = result.result.data;
-      expect(events.length).toBeGreaterThanOrEqual(1);
-      const found = events.find((e: { id: string }) => e.id === createdEventId);
-      expect(found).toBeDefined();
-      expect(found.label).toBe("Started new job");
-    });
-
-    it("update modifies specific fields", async () => {
-      const { status, result } = await mutate("lifeEvents.update", {
-        id: createdEventId,
-        label: "Left job",
-        ongoing: false,
-        endedAt: "2025-12-31",
-      });
-      expect(status).toBe(200);
-      const updated = result.result.data;
-      expect(updated.label).toBe("Left job");
-      expect(updated.ongoing).toBe(false);
-    });
-
-    it("update all fields including null-clearing", async () => {
-      // Covers: startedAt, category→null, notes→null, endedAt→null branches
-      const { status, result } = await mutate("lifeEvents.update", {
-        id: createdEventId,
-        startedAt: "2025-07-01",
-        endedAt: null,
-        category: null,
-        notes: null,
-      });
-      expect(status).toBe(200);
-      const updated = result.result.data;
-      expect(updated.ended_at).toBeNull();
-      expect(updated.category).toBeNull();
-      expect(updated.notes).toBeNull();
-    });
-
-    it("update with no fields returns null", async () => {
-      const { status, result } = await mutate("lifeEvents.update", {
-        id: createdEventId,
-      });
-      expect(status).toBe(200);
-      expect(result.result.data).toBeNull();
-    });
-
-    it("delete removes the event", async () => {
-      const { status, result } = await mutate("lifeEvents.delete", {
-        id: createdEventId,
-      });
-      expect(status).toBe(200);
-      expect(result.result.data.success).toBe(true);
-
-      // Invalidate cache so the list query hits the DB again
-      await queryCache.invalidateAll();
-
-      // Verify it's gone
-      const { result: listResult } = await query("lifeEvents.list");
-      const events = listResult.result.data;
-      const found = events.find((e: { id: string }) => e.id === createdEventId);
-      expect(found).toBeUndefined();
-    });
-  });
 
   // ══════════════════════════════════════════════════════════════
   // Sport Settings — CRUD + history
@@ -179,6 +105,7 @@ describe("Router transformation logic", () => {
     let settingsId: string;
 
     it("upsert creates sport settings", async () => {
+      await query("sportSettings.list");
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
         ftp: 250,
@@ -192,6 +119,11 @@ describe("Router transformation logic", () => {
       expect(settings.ftp).toBe(250);
       expect(settings.thresholdHr).toBe(165);
       settingsId = settings.id;
+
+      const { result: listResult } = await query("sportSettings.list");
+      expect(
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
+      ).toBe(250);
     });
 
     it("upsert with same sport+date updates existing entry", async () => {
@@ -207,6 +139,11 @@ describe("Router transformation logic", () => {
       expect(settings.ftp).toBe(260);
       // Should be same id since ON CONFLICT updates
       expect(settings.id).toBe(settingsId);
+
+      const { result: listResult } = await query("sportSettings.list");
+      expect(
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
+      ).toBe(260);
     });
 
     it("upsert with different date creates new entry", async () => {
@@ -221,6 +158,11 @@ describe("Router transformation logic", () => {
       const settings = result.result.data;
       expect(settings.ftp).toBe(270);
       expect(settings.id).not.toBe(settingsId);
+
+      const { result: listResult } = await query("sportSettings.list");
+      expect(
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
+      ).toBe(270);
     });
 
     it("list returns most recent per sport", async () => {
@@ -272,13 +214,129 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       expect(result.result.data.success).toBe(true);
 
-      // Invalidate cache so history query hits the DB again
-      await queryCache.invalidateAll();
-
       const { result: histResult } = await query("sportSettings.history", {
         sport: "cycling",
       });
       expect(histResult.result.data).toHaveLength(1);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // Query cache invalidation after domain mutations
+  // ══════════════════════════════════════════════════════════════
+  describe("query cache invalidation", () => {
+    it("refreshes personalization status after reset", async () => {
+      await queryCache.invalidateAll();
+      await savePersonalizedParams(testCtx.db, TEST_USER_ID, {
+        version: 1,
+        fittedAt: new Date().toISOString(),
+        exponentialMovingAverage: null,
+        readinessWeights: null,
+        sleepTarget: { minutes: 500, sampleCount: 10 },
+        stressThresholds: null,
+        trainingImpulseConstants: null,
+      });
+
+      const { result: statusBefore } = await query("personalization.status");
+      expect(statusBefore.result.data.isPersonalized).toBe(true);
+
+      const { status } = await mutate("personalization.reset");
+      expect(status).toBe(200);
+
+      const { result: statusAfter } = await query("personalization.status");
+      expect(statusAfter.result.data.isPersonalized).toBe(false);
+    });
+
+    it("disconnects the provider while retaining downstream sync logs", async () => {
+      const providerId = "cache-invalidation-provider";
+      await queryCache.invalidateAll();
+      await testCtx.db.execute(sql`DELETE FROM fitness.sync_log WHERE provider_id = ${providerId}`);
+      await testCtx.db.execute(sql`DELETE FROM fitness.provider WHERE id = ${providerId}`);
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name)
+            VALUES (${providerId}, 'Cache invalidation provider')`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+            VALUES (${TEST_USER_ID}, ${providerId})`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
+            VALUES (${providerId}, ${TEST_USER_ID}, 'activities', 'success')`,
+      );
+
+      const logsInput = { providerId, limit: 50, offset: 0, filters: {} };
+      const { result: logsBefore } = await query("providerDetail.logs", logsInput);
+      expect(logsBefore.result.data).toHaveLength(1);
+
+      const { status } = await mutate("providerDetail.disconnect", { providerId });
+      expect(status).toBe(200);
+
+      const connectionsAfter = await testCtx.db.execute(
+        sql`SELECT provider_id
+            FROM fitness.provider_connection
+            WHERE user_id = ${TEST_USER_ID} AND provider_id = ${providerId}`,
+      );
+      expect(connectionsAfter).toHaveLength(0);
+
+      const { result: logsAfter } = await query("providerDetail.logs", logsInput);
+      expect(logsAfter.result.data).toHaveLength(1);
+    });
+
+    it("refreshes provider and downstream queries after queuing data deletion", async () => {
+      const providerId = "cache-invalidation-delete-provider";
+      const providerDeleteUserId = "00000000-0000-4000-8000-000000000018";
+      await queryCache.invalidateAll();
+      await testCtx.db.execute(sql`DELETE FROM fitness.sync_log WHERE provider_id = ${providerId}`);
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.provider_data_deletion_outbox
+            WHERE user_id = ${providerDeleteUserId} AND provider_id = ${providerId}`,
+      );
+      await testCtx.db.execute(sql`DELETE FROM fitness.provider WHERE id = ${providerId}`);
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name)
+            VALUES (${providerDeleteUserId}, 'Provider deletion cache user')
+            ON CONFLICT (id) DO NOTHING`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name)
+            VALUES (${providerId}, 'Cache invalidation delete provider')`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+            VALUES (${providerDeleteUserId}, ${providerId})`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
+            VALUES (${providerId}, ${providerDeleteUserId}, 'activities', 'success')`,
+      );
+      const providerDeleteSession = await createSession(testCtx.db, providerDeleteUserId);
+      const providerDeleteCookie = `session=${providerDeleteSession.sessionId}`;
+
+      const logsInput = { providerId, limit: 50, offset: 0, filters: {} };
+      const { result: logsBefore } = await query(
+        "providerDetail.logs",
+        logsInput,
+        providerDeleteCookie,
+      );
+      expect(logsBefore.result.data).toHaveLength(1);
+
+      const { status } = await mutate(
+        "providerDetail.deleteAllData",
+        {
+          providerId,
+          confirmation: "DELETE",
+        },
+        providerDeleteCookie,
+      );
+      expect(status).toBe(200);
+
+      const { result: logsAfter } = await query(
+        "providerDetail.logs",
+        logsInput,
+        providerDeleteCookie,
+      );
+      expect(logsAfter.result.data).toHaveLength(0);
     });
   });
 
@@ -346,6 +404,8 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const data = result.result.data;
 
+      expect(data).not.toBeNull();
+
       // With 30 nights of data and varied HRV, we should get a calculated baseline
       expect(data.baselineMinutes).toBeGreaterThan(0);
       expect(data.totalNeedMinutes).toBeGreaterThan(0);
@@ -374,23 +434,32 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const data = result.result.data;
 
+      expect(data).not.toBeNull();
+
       // If baseline > some nights' durations, there should be accumulated debt
       // (our test data varies 400-500 min, so if baseline is ~450, some nights are below)
-      expect(data.accumulatedDebtMinutes).toBeGreaterThanOrEqual(0);
+      expect(data.accumulatedDebtMinutes).toBeGreaterThan(0);
       expect(typeof data.strainDebtMinutes).toBe("number");
+      const nightsWithData = data.recentNights.filter((night) => night.actualMinutes != null);
+      expect(nightsWithData.length).toBeGreaterThan(0);
+      expect(nightsWithData.every((night) => night.providerId === "test-provider")).toBe(true);
+      expect(nightsWithData.every((night) => night.sourceProviders.includes("test-provider"))).toBe(
+        true,
+      );
     });
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Weekly Report — strain zones and sleep performance
+  // Hiking — grade-adjusted pace cost factor model
   // ══════════════════════════════════════════════════════════════
-  describe("weeklyReport", () => {
+  describe("hiking walkingBiomechanics", () => {
+    // Shared cycling fixtures for hiking, running, and trend analytics.
     beforeAll(async () => {
-      // Insert activities with HR data for weekly report calculations
+      // Insert activities with HR data for cycling analytics
       // Need activities in the activity table + metric_stream for activity_summary
       const now = new Date();
 
-      const weeklyReportMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
+      const cyclingMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
 
       for (let week = 0; week < 8; week++) {
         for (let day = 0; day < 3; day++) {
@@ -401,12 +470,12 @@ describe("Router transformation logic", () => {
           startedAt.setHours(8, 0, 0, 0);
           const endedAt = new Date(startedAt.getTime() + 60 * 60 * 1000); // 1 hour
 
-          const externalId = `weekly-act-${week}-${day}`;
+          const externalId = `cycling-act-${week}-${day}`;
 
           await testCtx.db.execute(
             sql`INSERT INTO fitness.activity
-                (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-                VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Ride ${externalId}`})
+                (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+                VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'cycling', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Ride ${externalId}`})
                 ON CONFLICT DO NOTHING`,
           );
 
@@ -422,7 +491,7 @@ describe("Router transformation logic", () => {
               const power = 180 + Math.round(Math.random() * 40);
               const speed = 6.5 + Math.random();
               const recordedAt = sampleTime.toISOString();
-              weeklyReportMetricStreamRows.push(
+              cyclingMetricStreamRows.push(
                 {
                   userId: TEST_USER_ID,
                   recordedAt,
@@ -461,60 +530,9 @@ describe("Router transformation logic", () => {
       );
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, weeklyReportMetricStreamRows);
+      await seedClickHouseMetricStreamRows(testCtx, cyclingMetricStreamRows);
     }, 120_000);
 
-    it("returns weekly summaries with strain zones", async () => {
-      const { status, result } = await query("weeklyReport.report", {
-        weeks: 8,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(data.current).toBeDefined();
-      expect(data.history).toBeDefined();
-      expect(Array.isArray(data.history)).toBe(true);
-
-      if (data.current) {
-        expect(data.current.weekStart).toBeTruthy();
-        expect(typeof data.current.trainingHours).toBe("number");
-        expect(typeof data.current.activityCount).toBe("number");
-        expect(["restoring", "optimal", "overreaching"]).toContain(data.current.strainZone);
-        expect(typeof data.current.avgDailyLoad).toBe("number");
-        expect(typeof data.current.sleepPerformancePct).toBe("number");
-      }
-
-      // With 8 weeks of data, history should have entries
-      if (data.history.length > 0) {
-        for (const week of data.history) {
-          expect(week.weekStart).toBeTruthy();
-          expect(["restoring", "optimal", "overreaching"]).toContain(week.strainZone);
-        }
-      }
-    });
-
-    it("sleep performance is relative to previous weeks", async () => {
-      const { status, result } = await query("weeklyReport.report", {
-        weeks: 8,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      // All weeks should have sleepPerformancePct as a number
-      const allWeeks = [...data.history, ...(data.current ? [data.current] : [])];
-      for (const week of allWeeks) {
-        expect(typeof week.sleepPerformancePct).toBe("number");
-        // Should be a reasonable percentage (0-200%ish)
-        expect(week.sleepPerformancePct).toBeGreaterThanOrEqual(0);
-        expect(week.sleepPerformancePct).toBeLessThanOrEqual(500);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Hiking — grade-adjusted pace cost factor model
-  // ══════════════════════════════════════════════════════════════
-  describe("hiking walkingBiomechanics", () => {
     beforeAll(async () => {
       // Update existing daily_metrics rows (already inserted by sleepNeed) to add walking data
       // Also insert additional rows for dates not covered by sleepNeed
@@ -580,7 +598,7 @@ describe("Router transformation logic", () => {
   // ══════════════════════════════════════════════════════════════
   describe("calendar", () => {
     it("returns calendar data with activity counts and types", async () => {
-      // Activities were already inserted in the weeklyReport beforeAll
+      // Activities were already inserted in the shared cycling fixture setup
       const { status, result } = await query("calendar.calendarData", {
         days: 90,
       });
@@ -638,8 +656,8 @@ describe("Router transformation logic", () => {
       workoutDate.setDate(workoutDate.getDate() - 3);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, started_at, name, activity_type)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout', 'strength')
+            (provider_id, user_id, external_id, started_at, name, canonical_type, provider_type)
+            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout', 'strength', 'strength')
             ON CONFLICT DO NOTHING`,
       );
 
@@ -707,61 +725,11 @@ describe("Router transformation logic", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Life Events — analyze compares metrics before/after
-  // ══════════════════════════════════════════════════════════════
-  describe("lifeEvents analyze", () => {
-    let analyzeEventId: string;
-
-    beforeAll(async () => {
-      // Create a life event dated ~15 days ago
-      const eventDate = new Date();
-      eventDate.setDate(eventDate.getDate() - 15);
-      const dateStr = eventDate.toISOString().slice(0, 10);
-
-      const { result } = await mutate("lifeEvents.create", {
-        label: "Started meditation",
-        startedAt: dateStr,
-        category: "wellness",
-      });
-      analyzeEventId = result.result.data.id;
-    });
-
-    it("returns before/after comparison with metrics", async () => {
-      const { status, result } = await query("lifeEvents.analyze", {
-        id: analyzeEventId,
-        windowDays: 14,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(data).toBeDefined();
-      expect(data.event).toBeDefined();
-      expect(data.metrics).toBeDefined();
-      expect(data.sleep).toBeDefined();
-      expect(data.bodyComp).toBeDefined();
-
-      // Metrics should have 'before' and/or 'after' periods
-      if (data.metrics.length > 0) {
-        for (const period of data.metrics) {
-          expect(["before", "after"]).toContain(period.period);
-          expect(Number(period.days)).toBeGreaterThan(0);
-        }
-      }
-    });
-
-    afterAll(async () => {
-      if (analyzeEventId) {
-        await mutate("lifeEvents.delete", { id: analyzeEventId });
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — ramp rate EWMA + recommendation
+  // Cycling Advanced — ramp rate EWMA + load-change observation
   // ══════════════════════════════════════════════════════════════
   describe("cyclingAdvanced rampRate", () => {
-    it("computes ramp rate with EWMA and provides recommendation", async () => {
-      // Data was already inserted in weeklyReport beforeAll (cycling activities with HR + power)
+    it("computes ramp rate with EWMA and describes the load change", async () => {
+      // Data was already inserted in shared cycling fixture setup (cycling activities with HR + power)
       const { status, result } = await query("cyclingAdvanced.rampRate", {
         days: 90,
       });
@@ -773,21 +741,19 @@ describe("Router transformation logic", () => {
       expect(data.recommendation.length).toBeGreaterThan(0);
       expect(Array.isArray(data.weeks)).toBe(true);
 
-      // Recommendation should be one of the three categories
-      expect(
-        data.recommendation.startsWith("Safe") ||
-          data.recommendation.startsWith("Aggressive") ||
-          data.recommendation.startsWith("Danger") ||
-          data.recommendation === "No data",
-      ).toBe(true);
-
       if (data.weeks.length > 0) {
+        expect(data.recommendation).toMatch(
+          /^Weekly training-load change: [+-]?\d+(?:\.\d+)? points$/,
+        );
+        expect(data.currentRampRate).toBe(data.weeks.at(-1).rampRate);
         for (const week of data.weeks) {
           expect(week.week).toBeTruthy();
           expect(typeof week.ctlStart).toBe("number");
           expect(typeof week.ctlEnd).toBe("number");
           expect(typeof week.rampRate).toBe("number");
         }
+      } else {
+        expect(data.recommendation).toBe("No data");
       }
     });
   });
@@ -834,8 +800,8 @@ describe("Router transformation logic", () => {
         const externalId = `hike-gap-${i}`;
         await testCtx.db.execute(
           sql`INSERT INTO fitness.activity
-              (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Mountain Hike ${i}`})
+              (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${`Mountain Hike ${i}`})
               ON CONFLICT DO NOTHING`,
         );
 
@@ -980,8 +946,8 @@ describe("Router transformation logic", () => {
         const externalId = `repeated-trail-${i}`;
         await testCtx.db.execute(
           sql`INSERT INTO fitness.activity
-              (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Repeated Trail')
+              (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+              VALUES ('test-provider', ${TEST_USER_ID}, ${externalId}, 'hiking', 'hiking', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Repeated Trail')
               ON CONFLICT DO NOTHING`,
         );
 
@@ -1093,6 +1059,7 @@ describe("Router transformation logic", () => {
   // ══════════════════════════════════════════════════════════════
   describe("intervals detect", () => {
     let intervalActivityId: string;
+    let intervalActivityGroupId: string;
 
     beforeAll(async () => {
       // Create an activity with distinct intensity changes for interval detection
@@ -1104,16 +1071,17 @@ describe("Router transformation logic", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, activity_type, started_at, ended_at, name)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'interval-detect-1', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Interval Workout')
+            (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+            VALUES ('test-provider', ${TEST_USER_ID}, 'interval-detect-1', 'cycling', 'cycling', ${startedAt.toISOString()}, ${endedAt.toISOString()}, 'Interval Workout')
             ON CONFLICT DO NOTHING`,
       );
 
-      const activityRows = await testCtx.db.execute(
-        sql`SELECT id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
+      const activityRows = await testCtx.db.execute<{ id: string; group_id: string }>(
+        sql`SELECT id, group_id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
       );
-      const firstRow: { id: string } = activityRows[0];
+      const firstRow = activityRows[0];
       intervalActivityId = firstRow.id;
+      intervalActivityGroupId = firstRow.group_id;
 
       const intervalMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
       for (let minute = 0; minute < 40; minute++) {
@@ -1165,7 +1133,7 @@ describe("Router transformation logic", () => {
 
     it("detects intervals from intensity changes", async () => {
       const { status, result } = await query("intervals.detect", {
-        activityId: intervalActivityId,
+        activityId: intervalActivityGroupId,
       });
       expect(status).toBe(200);
       const intervals = result.result.data;

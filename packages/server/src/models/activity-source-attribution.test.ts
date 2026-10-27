@@ -34,12 +34,16 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "garmin",
+        externalId: "123",
+        subsource: null,
         label: "Garmin",
         url: "https://connect.garmin.com/modern/activity/123",
         providerAbsentAt: null,
       },
       {
         providerId: "strava",
+        externalId: "99999",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/99999",
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -48,7 +52,7 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
-  it("keeps an active source link when the same provider also has an absent entry", () => {
+  it("retains distinct active and absent records from the same provider", () => {
     const attribution = ActivitySourceAttribution.fromEntries(
       [{ providerId: "strava", externalId: "active-123" }],
       [
@@ -64,9 +68,110 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "strava",
+        externalId: "active-123",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/active-123",
         providerAbsentAt: null,
+      },
+      {
+        providerId: "strava",
+        externalId: "removed-999",
+        subsource: null,
+        label: "Strava",
+        url: "https://www.strava.com/activities/removed-999",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        memberActivityId: "member-strava",
+      },
+    ]);
+  });
+
+  it("keeps removed source apps when the same provider has a different active source app", () => {
+    const attribution = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "apple_health", externalId: "active-whoop", subsource: "WHOOP" }],
+      [
+        {
+          providerId: "apple_health",
+          externalId: "removed-strong",
+          memberActivityId: "member-strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          subsource: "Strong",
+        },
+      ],
+    );
+
+    expect(attribution.toSourceLinks(mockLookup)).toEqual([
+      {
+        providerId: "apple_health",
+        externalId: "removed-strong",
+        subsource: "Strong",
+        label: "Strong (via Apple Health)",
+        url: null,
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        memberActivityId: "member-strong",
+      },
+      {
+        providerId: "apple_health",
+        externalId: "active-whoop",
+        subsource: "WHOOP",
+        label: "WHOOP (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
+  it("distinguishes source apps sharing a provider external id without member ids", () => {
+    const attribution = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "apple_health", externalId: "shared-record", subsource: "WHOOP" }],
+      [
+        {
+          providerId: "apple_health",
+          externalId: "shared-record",
+          subsource: "Strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        },
+      ],
+    );
+
+    expect(attribution.toSourceLinks(mockLookup)).toEqual([
+      {
+        providerId: "apple_health",
+        externalId: "shared-record",
+        subsource: "Strong",
+        label: "Strong (via Apple Health)",
+        url: null,
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+      {
+        providerId: "apple_health",
+        externalId: "shared-record",
+        subsource: "WHOOP",
+        label: "WHOOP (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
+  it("exposes partial absent sources for client-side formatting", () => {
+    const partial = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "garmin", externalId: "123" }],
+      [
+        {
+          providerId: "strava",
+          externalId: "99999",
+          subsource: "Strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        },
+      ],
+    );
+
+    expect(partial.partialAbsentSources()).toEqual([
+      {
+        providerId: "strava",
+        subsource: "Strong",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
       },
     ]);
   });
@@ -97,6 +202,24 @@ describe("ActivitySourceAttribution", () => {
     expect(partial.partialAbsenceSummary(mockLookup)).toMatch(/Strava removed · Mar 5,/);
     expect(full.hasPartialAbsence).toBe(false);
     expect(full.partialAbsenceSummary(mockLookup)).toBeNull();
+  });
+
+  it("uses source app labels in partial absence summaries", () => {
+    const partial = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "apple_health", externalId: "active-whoop", subsource: "WHOOP" }],
+      [
+        {
+          providerId: "apple_health",
+          externalId: "removed-strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          subsource: "Strong",
+        },
+      ],
+    );
+
+    expect(partial.partialAbsenceSummary(mockLookup)).toMatch(
+      /Strong \(via Apple Health\) removed · Mar 5,/,
+    );
   });
 
   it("parses ClickHouse absent source maps", () => {
@@ -160,6 +283,17 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.partialAbsenceSummary(mockLookup)).toBeNull();
   });
 
+  it("handles null absentMaps in fromClickHouseRow", () => {
+    const attribution = ActivitySourceAttribution.fromClickHouseRow(
+      [{ providerId: "garmin", externalId: "123" }],
+      null,
+    );
+
+    expect(attribution.providerIds()).toEqual(["garmin"]);
+    expect(attribution.hasPartialAbsence).toBe(false);
+    expect(attribution.hasFullAbsence).toBe(false);
+  });
+
   it("ignores ClickHouse source maps without provider ids or external ids", () => {
     const attribution = ActivitySourceAttribution.fromClickHouseRow(
       [
@@ -204,15 +338,22 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.partialAbsenceSummary(mockLookup)).toMatch(
       /unknown_provider removed · Mar 5,/,
     );
+    expect(
+      attribution.tombstoneSummary(null, "unknown_provider", "2026-03-05T14:30:00.000Z"),
+    ).toMatch(/Removed from unknown_provider · Mar 5,/);
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "garmin",
+        externalId: "123",
+        subsource: null,
         label: "Garmin",
         url: "https://connect.garmin.com/modern/activity/123",
         providerAbsentAt: null,
       },
       {
         providerId: "unknown_provider",
+        externalId: "99999",
+        subsource: null,
         label: "unknown_provider",
         url: null,
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -229,7 +370,9 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "apple_health",
-        label: "apple_health",
+        externalId: "ah:workout:1",
+        subsource: null,
+        label: "Apple Health",
         url: null,
         providerAbsentAt: null,
       },

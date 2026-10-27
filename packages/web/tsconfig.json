@@ -12,6 +12,6 @@
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"],
+  "include": ["src", "../../src/vitest-mock-types.d.ts"],
   "exclude": ["node_modules"]
 }

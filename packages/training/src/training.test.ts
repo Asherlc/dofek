@@ -1,23 +1,201 @@
 import { describe, expect, it } from "vitest";
+import { CANONICAL_ACTIVITY_TYPES, classifyLegacyActivityType } from "./activity-types";
 import { ENDURANCE_ACTIVITY_TYPES } from "./endurance-types";
 import {
-  CANONICAL_ACTIVITY_TYPES,
   CYCLING_ACTIVITY_TYPES,
   cadenceAxisLabel,
   cadenceUnit,
   collapseWeeklyVolumeActivityTypes,
   createActivityTypeMapper,
   formatActivityTypeLabel,
+  formatVerticalAscentActivityTypeGroupLabel,
   GARMIN_ACTIVITY_TYPE_MAP,
+  getVerticalAscentActivityTypeGroup,
   isCyclingActivity,
+  isSameStrengthExercise,
   OTHER_ACTIVITY_TYPE,
   OURA_ACTIVITY_TYPE_MAP,
   POLAR_SPORT_MAP,
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
   STRAVA_ACTIVITY_TYPE_MAP,
   selectRecentDailyLoad,
+  strengthExerciseDisplayLabels,
+  strengthExerciseIdentityKey,
   WAHOO_WORKOUT_TYPE_MAP,
 } from "./training";
+
+describe("strength exercise display labels", () => {
+  const separatorVariants = [
+    { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+    { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+    { exerciseName: "Chest Press", equipment: "FREE WEIGHT" },
+  ];
+
+  function labelsFor(
+    identities: readonly { exerciseName: string; equipment: string | null }[],
+  ): readonly string[] {
+    return strengthExerciseDisplayLabels(identities).map(({ label }) => label);
+  }
+
+  function permutations<T>(values: readonly T[]): readonly T[][] {
+    if (values.length === 0) return [[]];
+    return values.flatMap((value, index) =>
+      permutations([...values.slice(0, index), ...values.slice(index + 1)]).map((rest) => [
+        value,
+        ...rest,
+      ]),
+    );
+  }
+
+  it("compares both fields of a structured exercise identity", () => {
+    const identity = { exerciseName: "Chest Press", equipment: "BARBELL" };
+
+    expect(isSameStrengthExercise(identity, { ...identity })).toBe(true);
+    expect(isSameStrengthExercise(identity, { ...identity, exerciseName: "Back Squat" })).toBe(
+      false,
+    );
+    expect(isSameStrengthExercise(identity, { ...identity, equipment: "DUMBBELL" })).toBe(false);
+  });
+
+  it("builds lossless keys from both structured identity fields", () => {
+    expect(strengthExerciseIdentityKey({ exerciseName: "A|B", equipment: null })).toBe(
+      '["A|B",null]',
+    );
+    expect(strengthExerciseIdentityKey({ exerciseName: "A", equipment: "B|null" })).toBe(
+      '["A","B|null"]',
+    );
+  });
+
+  it("keeps separator-distinct equipment identities readable and unique", () => {
+    const labels = labelsFor(separatorVariants);
+
+    expect(labels).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+    ]);
+    expect(new Set(labels)).toHaveLength(separatorVariants.length);
+  });
+
+  it("allocates the same identity labels after an input permutation", () => {
+    expect(labelsFor([...separatorVariants].reverse())).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+    ]);
+  });
+
+  it("keeps lossless discriminators from colliding with another readable label", () => {
+    const labels = labelsFor([
+      { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+      { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+        equipment: "CABLE",
+      },
+    ]);
+
+    expect(labels).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” — variant 2",
+    ]);
+    expect(new Set(labels)).toHaveLength(3);
+  });
+
+  it("audibly distinguishes absent equipment from an equivalent recorded label", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: null },
+        { exerciseName: "Chest Press", equipment: "UNSPECIFIED_EQUIPMENT" },
+      ]),
+    ).toEqual([
+      "Chest Press (Unspecified Equipment) — recorded without equipment",
+      "Chest Press (Unspecified Equipment) — recorded as “UNSPECIFIED_EQUIPMENT”",
+    ]);
+  });
+
+  it("normalizes repeated separators and blank equipment without empty label words", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "FREE__--  WEIGHT" },
+        { exerciseName: "Chest Press", equipment: "FREE WEIGHT" },
+        { exerciseName: "Seated Row", equipment: "   " },
+        { exerciseName: "Seated Row", equipment: null },
+      ]),
+    ).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE__--  WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+      "Seated Row (Unspecified Equipment) — recorded as “   ”",
+      "Seated Row (Unspecified Equipment) — recorded without equipment",
+    ]);
+  });
+
+  it("allocates second-order collisions deterministically across every input permutation", () => {
+    const identities = [
+      { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+      { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+        equipment: "CABLE",
+      },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+        equipment: "CABLE",
+      },
+    ];
+    const expectedByIdentity = new Map([
+      [
+        strengthExerciseIdentityKey(identities[0]),
+        "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 2",
+      ],
+      [
+        strengthExerciseIdentityKey(identities[1]),
+        "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      ],
+      [
+        strengthExerciseIdentityKey(identities[2]),
+        "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” — variant 3",
+      ],
+      [
+        strengthExerciseIdentityKey(identities[3]),
+        "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+      ],
+    ]);
+
+    for (const permutation of permutations(identities)) {
+      const actualByIdentity = new Map(
+        strengthExerciseDisplayLabels(permutation).map(({ label }, index) => [
+          strengthExerciseIdentityKey(permutation[index]),
+          label,
+        ]),
+      );
+      expect(actualByIdentity).toEqual(expectedByIdentity);
+    }
+  });
+
+  it("assigns stable variants to repeated identical identities", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+      ]),
+    ).toEqual([
+      "Chest Press (Barbell) — recorded as “BARBELL” · variant 1",
+      "Chest Press (Barbell) — recorded as “BARBELL” · variant 2",
+    ]);
+  });
+
+  it("keeps ordinary noncolliding labels concise", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+        { exerciseName: "Chest Press", equipment: "DUMBBELL" },
+        { exerciseName: "Back Squat", equipment: "BARBELL" },
+      ]),
+    ).toEqual(["Chest Press (Barbell)", "Chest Press (Dumbbell)", "Back Squat"]);
+  });
+});
 
 // ============================================================
 // Canonical activity types
@@ -93,18 +271,8 @@ describe("ENDURANCE_ACTIVITY_TYPES", () => {
 // ============================================================
 
 describe("CYCLING_ACTIVITY_TYPES", () => {
-  it("includes generic cycling and all subtypes", () => {
-    expect(CYCLING_ACTIVITY_TYPES).toContain("cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("road_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("mountain_biking");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("gravel_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("indoor_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("virtual_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("e_bike_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("cyclocross");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("track_cycling");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("bmx");
-    expect(CYCLING_ACTIVITY_TYPES).toContain("hand_cycling");
+  it("contains the canonical cycling type", () => {
+    expect(CYCLING_ACTIVITY_TYPES).toEqual(["cycling"]);
   });
 });
 
@@ -126,8 +294,6 @@ describe("isCyclingActivity", () => {
 describe("cadenceUnit", () => {
   it("returns rpm for cycling activity types", () => {
     expect(cadenceUnit("cycling")).toBe("rpm");
-    expect(cadenceUnit("indoor_cycling")).toBe("rpm");
-    expect(cadenceUnit("hand_cycling")).toBe("rpm");
   });
 
   it("returns steps/min for running, walking, and hiking", () => {
@@ -151,19 +317,31 @@ describe("cadenceAxisLabel", () => {
 describe("createActivityTypeMapper", () => {
   it("maps known types using the provided mapping", () => {
     const mapper = createActivityTypeMapper({ foo: "cycling", bar: "running" });
-    expect(mapper("foo")).toBe("cycling");
-    expect(mapper("bar")).toBe("running");
+    expect(mapper("foo")).toEqual({
+      canonicalType: "cycling",
+      modality: null,
+      providerType: "foo",
+    });
+    expect(mapper("bar")).toEqual({
+      canonicalType: "running",
+      modality: null,
+      providerType: "bar",
+    });
   });
 
   it("returns 'other' for unknown types", () => {
-    const mapper = createActivityTypeMapper({ foo: "cycling" });
-    expect(mapper("unknown_type")).toBe("other");
+    const mapper = createActivityTypeMapper<string>({ foo: "cycling" });
+    expect(mapper("unknown_type")).toEqual({
+      canonicalType: "other",
+      modality: null,
+      providerType: "unknown_type",
+    });
   });
 
   it("is case-sensitive (mapping keys are used as-is)", () => {
-    const mapper = createActivityTypeMapper({ Ride: "cycling" });
-    expect(mapper("Ride")).toBe("cycling");
-    expect(mapper("ride")).toBe("other");
+    const mapper = createActivityTypeMapper<string>({ Ride: "cycling" });
+    expect(mapper("Ride").canonicalType).toBe("cycling");
+    expect(mapper("ride").canonicalType).toBe("other");
   });
 });
 
@@ -202,7 +380,7 @@ describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const [, value] of Object.entries(STRAVA_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -218,7 +396,7 @@ describe("WAHOO_WORKOUT_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(WAHOO_WORKOUT_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -238,7 +416,7 @@ describe("POLAR_SPORT_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(POLAR_SPORT_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -258,7 +436,7 @@ describe("GARMIN_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(GARMIN_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -274,7 +452,7 @@ describe("OURA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(OURA_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
@@ -288,16 +466,26 @@ describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
     expect(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP.trail_running).toBe("running");
   });
 
+  it("maps RideWithGPS hiking-prefixed walks to hiking", () => {
+    expect(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP["walking:hiking"]).toBe("hiking");
+  });
+
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP)) {
-      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);
     }
   });
 });
 
 describe("formatActivityTypeLabel", () => {
+  it("labels hangboard activity types as Hangboarding", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
+    expect(formatActivityTypeLabel("hangboard")).toBe("Hangboarding");
+  });
+
   it("maps known activity types to human-readable names", () => {
     expect(formatActivityTypeLabel("functional_strength")).toBe("Functional Strength");
+    expect(formatActivityTypeLabel("hangboard")).toBe("Hangboarding");
     expect(formatActivityTypeLabel("strength_training")).toBe("Strength Training");
   });
 
@@ -351,43 +539,66 @@ describe("formatActivityTypeLabel", () => {
   });
 });
 
+describe("getVerticalAscentActivityTypeGroup", () => {
+  it("keeps road, mountain, and gravel cycling in dedicated vertical ascent groups", () => {
+    expect(getVerticalAscentActivityTypeGroup("road")).toBe("road_cycling");
+    expect(getVerticalAscentActivityTypeGroup("mountain")).toBe("mountain_biking");
+    expect(getVerticalAscentActivityTypeGroup("gravel")).toBe("gravel_cycling");
+  });
+
+  it("groups other cycling variants into other cycling", () => {
+    expect(getVerticalAscentActivityTypeGroup("indoor")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup("virtual")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup(null)).toBe("other_cycling");
+  });
+});
+
+describe("formatVerticalAscentActivityTypeGroupLabel", () => {
+  it("formats vertical ascent activity type group labels", () => {
+    expect(formatVerticalAscentActivityTypeGroupLabel("road_cycling")).toBe("Road Cycling");
+    expect(formatVerticalAscentActivityTypeGroupLabel("mountain_biking")).toBe("Mountain Biking");
+    expect(formatVerticalAscentActivityTypeGroupLabel("gravel_cycling")).toBe("Gravel Cycling");
+    expect(formatVerticalAscentActivityTypeGroupLabel("other_cycling")).toBe("Other Cycling");
+  });
+});
+
 describe("collapseWeeklyVolumeActivityTypes", () => {
   it("keeps the largest activity types and groups the rest as Other", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 7 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 4 },
-      { week: "2026-03-01", activity_type: "functional_strength", count: 1, hours: 3 },
-      { week: "2026-03-01", activity_type: "hiking", count: 1, hours: 2 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 7 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "yoga", count: 1, hours: 4 },
+      { week: "2026-03-01", canonical_type: "functional_strength", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "hiking", count: 1, hours: 2 },
     ];
 
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    const types = new Set(result.map((row) => row.activity_type));
+    const types = new Set(result.map((row) => row.canonical_type));
 
     expect(types).toEqual(
       new Set(["cycling", "running", "swimming", "walking", "yoga", OTHER_ACTIVITY_TYPE]),
     );
 
-    const otherRow = result.find((row) => row.activity_type === OTHER_ACTIVITY_TYPE);
+    const otherRow = result.find((row) => row.canonical_type === OTHER_ACTIVITY_TYPE);
     expect(otherRow?.hours).toBe(5);
     expect(otherRow?.count).toBe(2);
   });
 
   it("merges explicit other rows into the grouped Other bucket", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 9 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 7 },
-      { week: "2026-03-01", activity_type: "other", count: 1, hours: 6 },
-      { week: "2026-03-01", activity_type: "hiking", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 4 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 9 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 7 },
+      { week: "2026-03-01", canonical_type: "other", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "hiking", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "yoga", count: 1, hours: 4 },
     ];
 
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    const otherRows = result.filter((row) => row.activity_type === OTHER_ACTIVITY_TYPE);
+    const otherRows = result.filter((row) => row.canonical_type === OTHER_ACTIVITY_TYPE);
 
     expect(otherRows).toHaveLength(1);
     expect(otherRows[0]?.hours).toBe(15);
@@ -395,15 +606,15 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
   });
 
   it("returns the same array reference for empty input (kills early-return guard removal)", () => {
-    const input: { week: string; activity_type: string; count: number; hours: number }[] = [];
+    const input: { week: string; canonical_type: string; count: number; hours: number }[] = [];
     const result = collapseWeeklyVolumeActivityTypes(input);
     expect(result).toBe(input);
   });
 
   it("accumulates hours for duplicate types (kills ?? vs && mutant)", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 3 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
     expect(result).toHaveLength(1);
@@ -412,12 +623,12 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("does not collapse when types count equals maxLegendItems (boundary)", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 6 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 3);
-    const types = result.map((r) => r.activity_type);
+    const types = result.map((r) => r.canonical_type);
     expect(types).not.toContain(OTHER_ACTIVITY_TYPE);
     expect(types).toContain("cycling");
     expect(types).toContain("running");
@@ -426,13 +637,13 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("collapses when types count exceeds maxLegendItems by one", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 2 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 2 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 3);
-    const types = result.map((r) => r.activity_type);
+    const types = result.map((r) => r.canonical_type);
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
     // Smallest type (walking) collapsed into Other
     expect(types).not.toContain("walking");
@@ -441,13 +652,13 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("sorts results by week ascending then activity_type ascending", () => {
     const rows = [
-      { week: "2026-03-08", activity_type: "running", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
-      { week: "2026-03-08", activity_type: "cycling", count: 1, hours: 3 },
+      { week: "2026-03-08", canonical_type: "running", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-08", canonical_type: "cycling", count: 1, hours: 3 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    expect(result.map((r) => `${r.week}:${r.activity_type}`)).toEqual([
+    expect(result.map((r) => `${r.week}:${r.canonical_type}`)).toEqual([
       "2026-03-01:cycling",
       "2026-03-01:running",
       "2026-03-08:cycling",
@@ -457,48 +668,28 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
 
   it("sorts activity_types alphabetically within the same week", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 3 },
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 4 },
+      { week: "2026-03-01", canonical_type: "yoga", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 4 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    expect(result.map((r) => r.activity_type)).toEqual(["cycling", "running", "yoga"]);
+    expect(result.map((r) => r.canonical_type)).toEqual(["cycling", "running", "yoga"]);
   });
 
   it("keeps largest types by total hours across weeks (kills sort removal)", () => {
     const rows = [
-      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 1 },
-      { week: "2026-03-08", activity_type: "cycling", count: 1, hours: 1 },
-      { week: "2026-03-01", activity_type: "running", count: 1, hours: 10 },
-      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 5 },
-      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 3 },
+      { week: "2026-03-01", canonical_type: "cycling", count: 1, hours: 1 },
+      { week: "2026-03-08", canonical_type: "cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", canonical_type: "running", count: 1, hours: 10 },
+      { week: "2026-03-01", canonical_type: "swimming", count: 1, hours: 5 },
+      { week: "2026-03-01", canonical_type: "walking", count: 1, hours: 3 },
     ];
     const result = collapseWeeklyVolumeActivityTypes(rows, 3);
-    const types = new Set(result.map((r) => r.activity_type));
+    const types = new Set(result.map((r) => r.canonical_type));
     // running (10) and swimming (5) are largest; cycling (2) and walking (3) collapse
     expect(types).toContain("running");
     expect(types).toContain("swimming");
     expect(types).toContain(OTHER_ACTIVITY_TYPE);
-  });
-
-  it("consolidates cycling subtypes into generic cycling", () => {
-    const rows = [
-      { week: "2026-03-01", activity_type: "road_cycling", count: 2, hours: 3 },
-      { week: "2026-03-01", activity_type: "mountain_biking", count: 1, hours: 2 },
-      { week: "2026-03-01", activity_type: "gravel_cycling", count: 1, hours: 1 },
-      { week: "2026-03-01", activity_type: "indoor_cycling", count: 1, hours: 1 },
-      { week: "2026-03-01", activity_type: "running", count: 3, hours: 4 },
-    ];
-    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
-    const types = result.map((r) => r.activity_type);
-    expect(types).toContain("cycling");
-    expect(types).not.toContain("road_cycling");
-    expect(types).not.toContain("mountain_biking");
-    expect(types).not.toContain("gravel_cycling");
-    expect(types).not.toContain("indoor_cycling");
-    const cyclingRow = result.find((r) => r.activity_type === "cycling");
-    expect(cyclingRow?.hours).toBe(7);
-    expect(cyclingRow?.count).toBe(5);
   });
 });
 
@@ -572,4 +763,77 @@ describe("selectRecentDailyLoad", () => {
     ];
     expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
+});
+
+describe("Garmin activity mapping coverage", () => {
+  it.each([
+    ["ULTRA_RUNNING", "running", null],
+    ["VIRTUAL_RUN", "running", null],
+    ["BMX", "cycling", "bmx"],
+    ["CYCLOCROSS", "cycling", "cyclocross"],
+    ["RECUMBENT_CYCLING", "cycling", null],
+    ["E_BIKE_MOUNTAIN", "cycling", "electric"],
+    ["E_BIKE_FITNESS", "cycling", "electric"],
+    ["CASUAL_WALKING", "walking", null],
+    ["SPEED_WALKING", "walking", null],
+    ["FITNESS_EQUIPMENT", "cardio", null],
+    ["STAIR_CLIMBING", "cardio", null],
+    ["BREATHWORK", "breathwork", null],
+    ["INDOOR_ROWING", "rowing", null],
+    ["KAYAKING", "kayaking", null],
+    ["STAND_UP_PADDLEBOARDING", "paddling", "paddleboard"],
+    ["SURFING", "surfing", null],
+    ["WHITEWATER_RAFTING", "rowing", null],
+    ["RESORT_SKIING_SNOWBOARDING_WS", "skiing", null],
+    ["CROSS_COUNTRY_SKIING_WS", "skiing", null],
+    ["BACKCOUNTRY_SKIING_SNOWBOARDING_WS", "skiing", null],
+    ["SKATE_SKIING_WS", "skiing", null],
+    ["SNOWSHOEING_WS", "snowshoeing", null],
+    ["ICE_SKATING", "skating", null],
+    ["TENNIS", "tennis", null],
+    ["TABLE_TENNIS", "tennis", null],
+    ["BADMINTON", "badminton", null],
+    ["PICKLEBALL", "pickleball", null],
+    ["RACQUETBALL", "racquetball", null],
+    ["SQUASH", "squash", null],
+    ["PADEL", "padel", null],
+    ["SOCCER", "soccer", null],
+    ["BASKETBALL", "basketball", null],
+    ["VOLLEYBALL", "volleyball", null],
+    ["AMERICAN_FOOTBALL", "american_football", null],
+    ["RUGBY", "rugby", null],
+    ["CRICKET", "cricket", null],
+    ["HOCKEY", "hockey", null],
+    ["LACROSSE", "lacrosse", null],
+    ["SOFTBALL", "softball", null],
+    ["BASEBALL", "baseball", null],
+    ["BOULDERING", "climbing", null],
+    ["INDOOR_CLIMBING", "climbing", null],
+    ["TRIATHLON", "triathlon", null],
+    ["MULTI_SPORT", "multisport", null],
+    ["TRANSITION", "transition", null],
+    ["GOLF", "golf", null],
+    ["HORSEBACK_RIDING", "equestrian", null],
+    ["HUNTING", "hunting", null],
+    ["FISHING", "fishing", null],
+    ["SKATING", "skating", null],
+    ["INLINE_SKATING", "skating", null],
+    ["DISC_GOLF", "disc_golf", null],
+    ["JUMPMASTER", "skydiving", null],
+    ["SKY_DIVING", "skydiving", null],
+    ["WINGSUIT_FLYING", "skydiving", null],
+    ["PARAGLIDING", "paragliding", null],
+    ["HANG_GLIDING", "paragliding", null],
+    ["DIVING", "diving", null],
+    ["SNORKELING", "snorkeling", null],
+    ["NAVIGATE", "navigation", null],
+    ["GEOCACHING", "geocaching", null],
+    ["OTHER", "other", null],
+  ] as const)(
+    "classifies %s while preserving its source value",
+    (providerType, canonicalType, modality) => {
+      const map = createActivityTypeMapper(GARMIN_ACTIVITY_TYPE_MAP);
+      expect(map(providerType)).toEqual({ providerType, canonicalType, modality });
+    },
+  );
 });

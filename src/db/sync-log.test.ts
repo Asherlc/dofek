@@ -1,13 +1,204 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
+import { AccountErasureUserFencedError } from "./account-erasure.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
-import { logSync, withSyncLog } from "./sync-log.ts";
+import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
+
+const { captureException, notifyProviderSyncIssue } = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  notifyProviderSyncIssue: vi.fn(),
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
+vi.mock("./provider-issue-notification.ts", () => ({ notifyProviderSyncIssue }));
 
 describe("logSync", () => {
   let db: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
+    captureException.mockReset();
+    notifyProviderSyncIssue.mockReset();
     db = createMockDatabase();
+  });
+
+  it("checks user notification eligibility after recording an overall auth failure", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      userId: "user-123",
+      dataType: "sync",
+      status: "error",
+      origin: "manual",
+      authFailureReason: "session_expired",
+    });
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({ authFailureReason: "session_expired", status: "error" }),
+    );
+    expect(notifyProviderSyncIssue).toHaveBeenCalledWith(db.db, "user-123", "whoop");
+    expect(db.spies.values).toHaveBeenCalledBefore(notifyProviderSyncIssue);
+    expect(db.spies.execute).not.toHaveBeenCalled();
+  });
+
+  it("records a successful overall recovery without sending a failure notification", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      userId: "user-123",
+      dataType: "sync",
+      status: "success",
+      origin: "manual",
+      recordCount: 12,
+    });
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "success",
+        origin: "manual",
+        recordCount: 12,
+      }),
+    );
+    expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
+  });
+
+  it("propagates a recovery-state write failure instead of reporting successful recovery", async () => {
+    const writeError = new Error("Could not clear the provider issue email marker");
+    db.spies.execute.mockResolvedValueOnce([]).mockRejectedValueOnce(writeError);
+
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "success",
+        origin: "manual",
+      }),
+    ).rejects.toBe(writeError);
+    expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
+  });
+
+  it("stops notification delivery when account deletion fences the user", async () => {
+    notifyProviderSyncIssue.mockRejectedValueOnce(new AccountErasureUserFencedError());
+
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "error",
+        origin: "manual",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports email delivery errors to Sentry while preserving the recorded sync outcome", async () => {
+    const deliveryError = new Error("Brevo rejected the email");
+    notifyProviderSyncIssue.mockRejectedValueOnce(deliveryError);
+
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "error",
+        authFailureReason: "session_expired",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(db.spies.values).toHaveBeenCalledWith(expect.objectContaining({ status: "error" }));
+    expect(captureException).toHaveBeenCalledWith(deliveryError, {
+      tags: { provider: "whoop", operation: "provider-issue-email" },
+    });
+  });
+
+  it("alerts when a scheduled provider reaches two consecutive top-level failures", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "amazfit-zepp",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "access token expired",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(db.spies.execute).toHaveBeenCalledTimes(3);
+    const fenceQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[0]?.[0]);
+    expect(fenceQuery.sql).toContain("lock_and_reject_account_erasure_write");
+    const lockQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[1]?.[0]);
+    expect(lockQuery.sql).toContain("pg_advisory_xact_lock");
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      extra: {
+        error_message: "access token expired",
+        user_id: "user-123",
+      },
+      level: "warning",
+      tags: {
+        consecutive_failures: "2",
+        operation: "scheduled-provider-sync",
+        provider: "amazfit-zepp",
+      },
+    });
+  });
+
+  it.each([1, 3])("does not alert at consecutive-failure count %i", async (consecutiveFailures) => {
+    db = createMockDatabase({
+      executeResult: [{ consecutive_failures: String(consecutiveFailures) }],
+    });
+
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { origin: "manual" as const, dataType: "sync", status: "error" as const },
+    { origin: "scheduled" as const, dataType: "activities", status: "error" as const },
+    { origin: "scheduled" as const, dataType: "sync", status: "success" as const },
+  ])("does not query failure history for $origin $dataType $status logs", async (entry) => {
+    await logSync(db.db, { providerId: "whoop", userId: "user-123", ...entry });
+    const statements = db.spies.execute.mock.calls.map(
+      ([query]) => new PgDialect().sqlToQuery(query).sql,
+    );
+    expect(statements).not.toContainEqual(expect.stringContaining("WITH ordered_attempts"));
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("does not report an alert when the failure-history query returns no row", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+    expect(db.spies.execute).toHaveBeenCalledTimes(3);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed failure-history rows", async () => {
+    db = createMockDatabase({ executeResult: [{}] });
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        dataType: "sync",
+        status: "error",
+        userId: "user-123",
+        origin: "scheduled",
+      }),
+    ).rejects.toThrow("consecutive_failures");
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("inserts a success log entry with all fields", async () => {
@@ -18,6 +209,7 @@ describe("logSync", () => {
       recordCount: 42,
       durationMs: 1500,
       userId: "user-123",
+      origin: "manual",
     };
 
     await logSync(db.db, entry);
@@ -30,8 +222,10 @@ describe("logSync", () => {
       recordCount: 42,
       errorMessage: undefined,
       authFailureReason: undefined,
+      degradationKind: undefined,
       durationMs: 1500,
       userId: "user-123",
+      origin: "manual",
     });
   });
 
@@ -54,8 +248,10 @@ describe("logSync", () => {
       recordCount: 0,
       errorMessage: "API timeout",
       authFailureReason: undefined,
+      degradationKind: undefined,
       durationMs: 5000,
       userId: "user-456",
+      origin: "unknown",
     });
   });
 
@@ -76,6 +272,33 @@ describe("logSync", () => {
         authFailureReason: "access_token_expired",
       }),
     );
+  });
+
+  it("inserts a degraded log entry with degradation kind", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "whoop",
+      dataType: "developer_workouts",
+      status: "degraded",
+      recordCount: 25,
+      degradationKind: "pagination_stalled",
+      errorMessage: "WHOOP returned a repeated workout cursor",
+      userId: "user-123",
+    };
+
+    await logSync(db.db, entry);
+
+    expect(db.spies.values).toHaveBeenCalledWith({
+      providerId: "whoop",
+      dataType: "developer_workouts",
+      status: "degraded",
+      recordCount: 25,
+      errorMessage: "WHOOP returned a repeated workout cursor",
+      authFailureReason: undefined,
+      degradationKind: "pagination_stalled",
+      durationMs: undefined,
+      userId: "user-123",
+      origin: "unknown",
+    });
   });
 
   it("defaults recordCount to 0 when not provided", async () => {
@@ -135,6 +358,35 @@ describe("withSyncLog", () => {
     );
   });
 
+  it("logs degraded when the operation returns a degradation", async () => {
+    const fn = vi.fn().mockResolvedValue({
+      recordCount: 10,
+      result: "data",
+      degradations: [
+        {
+          kind: "pagination_stalled",
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          message: "WHOOP returned a repeated workout cursor",
+        },
+      ],
+    });
+
+    const result = await withSyncLog(db.db, "whoop", "developer_workouts", fn, "user-123");
+
+    expect(result).toBe("data");
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "whoop",
+        dataType: "developer_workouts",
+        status: "degraded",
+        recordCount: 10,
+        errorMessage: "WHOOP returned a repeated workout cursor",
+        degradationKind: "pagination_stalled",
+      }),
+    );
+  });
+
   it("logs error and re-throws on failure", async () => {
     const fn = vi.fn().mockRejectedValue(new Error("sync failed"));
 
@@ -149,6 +401,25 @@ describe("withSyncLog", () => {
         status: "error",
         errorMessage: "sync failed",
         authFailureReason: undefined,
+      }),
+    );
+  });
+
+  it("logs partial record counts on partial sync failure", async () => {
+    const cause = new Error("page failed");
+    const fn = vi.fn().mockRejectedValue(new PartialSyncError("activity: page failed", 3, cause));
+
+    await expect(withSyncLog(db.db, "komoot", "activity", fn, "user-123")).rejects.toThrow(
+      "activity: page failed",
+    );
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "komoot",
+        dataType: "activity",
+        status: "error",
+        recordCount: 3,
+        errorMessage: "activity: page failed",
       }),
     );
   });

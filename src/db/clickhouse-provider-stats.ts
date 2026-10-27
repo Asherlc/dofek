@@ -10,9 +10,7 @@ export function buildProviderStatsTableSql(): string {
   health_events UInt64,
   metric_stream UInt64,
   nutrition_daily UInt64,
-  lab_panels UInt64,
-  lab_results UInt64,
-  journal_entries UInt64,
+  clinical_records UInt64,
   is_deleted UInt8,
   refresh_version UInt64,
   refreshed_at DateTime64(9, 'UTC')

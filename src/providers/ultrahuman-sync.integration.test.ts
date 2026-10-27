@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -109,6 +109,14 @@ function ultrahumanHandlers(opts: UltrahumanMockOptions = {}) {
 
 const server = setupServer();
 
+function testUserId(): string {
+  const userId = process.env.TEST_TOKEN_USER_ID;
+  if (!userId) {
+    throw new Error("TEST_TOKEN_USER_ID is required for Ultrahuman integration tests");
+  }
+  return userId;
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -162,7 +170,11 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     // Sync from March 14 to today (March 15)
     const since = new Date("2026-03-14T00:00:00Z");
     const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        userId: testUserId(),
+      }),
     );
 
     expect(result.provider).toBe("ultrahuman");
@@ -197,6 +209,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     if (!sleepRecord) throw new Error("expected sleep session");
     expect(sleepRecord.externalId).toBe("ultrahuman-sleep-2026-03-14");
     expect(sleepRecord.durationMinutes).toBe(450); // 27000 / 60
+    expect(sleepRecord.stagingAvailable).toBe(false);
 
     // recordsSynced = 2 daily + 1 sleep = 3
     expect(result.recordsSynced).toBe(3);
@@ -230,6 +243,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
           since: new Date("2026-03-14T00:00:00.000Z"),
           until: new Date("2026-03-15T00:00:00.000Z"),
         }),
+        userId: testUserId(),
       }),
     );
 
@@ -262,10 +276,18 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     const since = new Date("2026-03-14T00:00:00Z");
     await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        userId: testUserId(),
+      }),
     );
     await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        userId: testUserId(),
+      }),
     );
 
     // Should not duplicate
@@ -307,6 +329,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
         new SyncRun({
           db: ctx.db,
           window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+          userId: testUserId(),
         }),
       );
 
@@ -317,7 +340,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     }
   });
 
-  it("returns error when no token or email is available", async () => {
+  it("returns an actionable error when no personal token is stored", async () => {
     const savedToken = process.env.ULTRAHUMAN_API_TOKEN;
     const savedEmail = process.env.ULTRAHUMAN_EMAIL;
     delete process.env.ULTRAHUMAN_API_TOKEN;
@@ -325,7 +348,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     try {
       // Delete stored tokens
-      const { oauthToken } = await import("../db/schema.ts");
+      const { oauthToken } = await import("../db/schema/reference.ts");
       await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ultrahuman"));
 
       const provider = new UltrahumanProvider();
@@ -333,11 +356,14 @@ describe("UltrahumanProvider.sync() (integration)", () => {
         new SyncRun({
           db: ctx.db,
           window: SyncWindow.fromSince({ since: new Date("2026-03-14T00:00:00Z") }),
+          userId: testUserId(),
         }),
       );
 
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]?.message).toContain("token and email required");
+      expect(result.errors[0]?.message).toBe(
+        "No Ultrahuman personal API token found. Connect Ultrahuman in Data Sources.",
+      );
       expect(result.recordsSynced).toBe(0);
     } finally {
       process.env.ULTRAHUMAN_API_TOKEN = savedToken;
@@ -370,6 +396,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
         new SyncRun({
           db: ctx.db,
           window: SyncWindow.fromSince({ since: new Date("2026-03-10T00:00:00Z") }),
+          userId: testUserId(),
         }),
       )
       .catch((caughtError: unknown) => caughtError);
@@ -407,7 +434,11 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     const since = new Date("2026-03-14T00:00:00Z");
     const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        userId: testUserId(),
+      }),
     );
 
     // March 14 should still sync successfully
@@ -449,7 +480,11 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     const since = new Date("2026-03-15T00:00:00Z");
     const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        userId: testUserId(),
+      }),
     );
 
     // Should only have sleep, no daily metrics

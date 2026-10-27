@@ -2,11 +2,16 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UnitContext } from "../lib/unitContext.ts";
 import { LandingPage, LandingPageView } from "./LandingPage.tsx";
 
+interface MockUsableProvidersQuery {
+  data: Array<{ id: string; name: string; authType: string; importOnly: boolean }>;
+  isLoading: boolean;
+  error: Error | null;
+}
+
 const mockUsableProvidersQuery = vi.hoisted(() =>
-  vi.fn(() => ({
+  vi.fn<() => MockUsableProvidersQuery>(() => ({
     data: [
       { id: "apple_health", name: "Apple Health", authType: "file-import", importOnly: true },
       { id: "strava", name: "Strava", authType: "oauth", importOnly: false },
@@ -14,6 +19,7 @@ const mockUsableProvidersQuery = vi.hoisted(() =>
       { id: "strong-csv", name: "Strong CSV", authType: "file-import", importOnly: true },
     ],
     isLoading: false,
+    error: null,
   })),
 );
 
@@ -48,6 +54,32 @@ vi.mock("../lib/trpc.ts", () => ({
 afterEach(cleanup);
 
 describe("LandingPage", () => {
+  it("shows a provider availability error instead of an empty supported-source state", () => {
+    mockUsableProvidersQuery.mockReturnValueOnce({
+      data: [],
+      isLoading: false,
+      error: new Error("Supported sources are temporarily unavailable"),
+    });
+
+    render(<LandingPage />);
+
+    expect(screen.getByText("Supported sources are temporarily unavailable")).toBeTruthy();
+    expect(screen.queryByText(/No supported sources are currently available/i)).toBeNull();
+  });
+
+  it("keeps cached supported sources visible when their background refresh fails", () => {
+    mockUsableProvidersQuery.mockReturnValueOnce({
+      data: [{ id: "strava", name: "Strava", authType: "oauth", importOnly: false }],
+      isLoading: false,
+      error: new Error("Supported sources refresh failed"),
+    });
+
+    render(<LandingPage />);
+
+    expect(screen.getByAltText("Strava")).toBeTruthy();
+    expect(screen.getByText("Supported sources refresh failed")).toBeTruthy();
+  });
+
   it("does not render the self-hosted privacy section", () => {
     render(<LandingPage />);
     expect(screen.queryByText("Your data. Your server. Period.")).toBeNull();
@@ -112,50 +144,43 @@ describe("LandingPage", () => {
     ).toBe(true);
   });
 
-  it("shows concrete analysis examples in the product preview", () => {
+  it("links to the public account deletion status and disclosure page", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("Daily summary")).toBeTruthy();
-    expect(screen.getByText("Today's recovery picture")).toBeTruthy();
-    expect(screen.getByText("Health monitor")).toBeTruthy();
-    expect(screen.getByText("Key correlation")).toBeTruthy();
-    expect(screen.getByText("Recent trend")).toBeTruthy();
-    expect(screen.queryByText("Compare sources")).toBeNull();
-    expect(screen.queryByText("Connected source coverage")).toBeNull();
+    expect(screen.getByRole("link", { name: "Account deletion" })).toHaveAttribute(
+      "href",
+      "/account-deletion",
+    );
+  });
+
+  it("keeps the sign-in path visible in the mobile header", () => {
+    render(<LandingPage />);
+
+    const signInLink = screen.getByRole("link", { name: "Sign in" });
+
+    expect(signInLink).toHaveAttribute("href", "/login");
+    expect(signInLink).not.toHaveClass("hidden");
+  });
+
+  it("shows a neural data-flow hero with brand-first copy", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByRole("heading", { name: /your health data, in one place/i })).toBeTruthy();
+    expect(screen.getAllByText("Dofek").length).toBeGreaterThan(0);
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    expect(screen.getByText("Trends")).toBeTruthy();
+    expect(screen.getByText("Connect sources")).toBeTruthy();
+  });
+
+  it("shows concrete analysis examples in the inspection section", () => {
+    render(<LandingPage />);
+
     expect(screen.getByText(/late dinners show up next to less consistent sleep/i)).toBeTruthy();
     expect(screen.getAllByText(/training load vs sleep/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/resting heart rate is up/i)).toBeTruthy();
-    expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
-
-    const dailySummary = screen.getByText("Daily summary");
-    const overviewRange = screen.getByText("Apr 28 - May 27");
-    expect(
-      dailySummary.compareDocumentPosition(overviewRange) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("formats preview units through the unit system", () => {
-    render(<LandingPage />);
-
-    expect(screen.getByText("bpm average")).toBeTruthy();
-    expect(screen.getByText("407 kcal")).toBeTruthy();
-    expect(screen.getByText("36.2°C")).toBeTruthy();
-    expect(screen.queryByText("beats/min average")).toBeNull();
-    expect(screen.queryByText("407 calories")).toBeNull();
-    expect(screen.queryByText("36.2 Celsius")).toBeNull();
-  });
-
-  it("uses imperial preview temperature when the unit context is imperial", () => {
-    render(
-      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
-        <LandingPageView usableProviders={[]} />
-      </UnitContext.Provider>,
-    );
-
-    expect(screen.getByText("97.2°F")).toBeTruthy();
-    expect(screen.queryByText("36.2°C")).toBeNull();
+    expect(screen.queryByText("No data")).toBeNull();
   });
 
   it("shows the iPhone app with direct WHOOP strap capture", () => {
@@ -181,13 +206,12 @@ describe("LandingPage", () => {
     expect(screen.queryByText("Credential sync")).toBeNull();
   });
 
-  it("includes inspection, mobile, trust, and pricing sections", () => {
+  it("includes inspection, mobile, and trust sections", () => {
     render(<LandingPage />);
 
     expect(screen.getByText("What you can check")).toBeTruthy();
     expect(screen.getByText("iPhone app included")).toBeTruthy();
     expect(screen.getByText("Your data stays yours")).toBeTruthy();
-    expect(screen.getByText("One managed plan")).toBeTruthy();
   });
 
   it("renders the empty usable provider state without claiming integrations are available", () => {
@@ -196,9 +220,9 @@ describe("LandingPage", () => {
     expect(screen.getByText(/No supported sources are currently available/i)).toBeTruthy();
   });
 
-  it("shows public FatSecret attribution without requiring login", () => {
+  it("shows public fatsecret attribution without requiring login", () => {
     render(<LandingPageView usableProviders={[]} />);
 
-    expect(screen.getByText("Powered by FatSecret")).toBeTruthy();
+    expect(screen.getByText("Powered by fatsecret Platform API")).toBeTruthy();
   });
 });

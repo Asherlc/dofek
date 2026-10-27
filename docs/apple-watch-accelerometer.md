@@ -10,23 +10,23 @@
 [iPhone]
   WatchMotionModule (Expo native module)
     → receives transferred files, stores in pending directory
-    → WatchCoreMotionAdapter (implements CoreMotionAdapter)
-      → syncAccelerometerToServer() (existing pipeline, unchanged)
-        → tRPC pushAccelerometerSamples
-          → TimescaleDB (device_type="apple_watch")
+    → syncWatchAccelerometerFiles() / syncWatchAltitudeFiles()
+      → parse and upload one file at a time
+        → tRPC inertialMeasurementUnitSync / watchAltitudeSync
+          → metric stream (device_type="apple_watch")
 ```
 
 ## Data Flow
 
 1. **Watch records continuously**: `CMSensorRecorder.recordAccelerometer(forDuration: 43200)` runs 12-hour sessions. Called on every foreground + background transition.
 
-2. **Watch transfers on foreground**: When the Watch app becomes active, it queries new samples since the last transfer, serializes as JSON, gzip-compresses, and calls `WCSession.transferFile()`.
+2. **Watch transfers on foreground**: When the Watch app becomes active, it queries new samples since the last transfer, serializes them as JSON, gzip-compresses each payload, and queues it with [`WCSession.transferFile(_:metadata:)`](https://developer.apple.com/documentation/watchconnectivity/wcsession/transferfile(_:metadata:)).
 
 3. **iPhone receives files**: `WatchMotionModule.swift` receives files via `session(_:didReceive:)`, moves them to `Application Support/watch-motion-pending/`, emits `onWatchFileReceived` event.
 
-4. **iPhone syncs on foreground**: `background-watch-accelerometer-sync.ts` triggers sync when the iPhone app comes to foreground. The `WatchCoreMotionAdapter` reads pending files, the existing `syncAccelerometerToServer()` batches and uploads.
+4. **iPhone syncs pending snapshots**: Foreground background sync and activity save both call the canonical accelerometer and altitude helpers. Each helper snapshots only its filename prefix, then parses and uploads each file independently.
 
-5. **Files acknowledged**: After successful server upload, `acknowledgeWatchSamples()` deletes the processed files.
+5. **Files confirmed individually**: A helper deletes the exact file only after every upload batch for that file succeeds. Parse failures and partial-upload failures remain pending, and files arriving after the snapshot wait for the next sync.
 
 ## File Transfer Format
 
@@ -75,15 +75,24 @@ The WatchKit app source lives in `packages/mobile/ios/DofekWatch/`. To add it to
 ## Supported Devices
 
 - **CMSensorRecorder**: Available on all Apple Watch models (Series 1+)
+- **CMAltimeter**: Available on Apple Watch Series 4+ for this app (watchOS 10+). See [Apple's watchOS 10 compatibility](https://www.apple.com/watchos/watchos-10/).
 - **watchOS 10+**: Required for standalone app lifecycle (`@main App`)
 - **50 Hz sampling**: Same rate as iPhone CMSensorRecorder
 - **3-day retention**: Same as iPhone
 
+## Barometric Altitude
+
+The Watch app also records barometric altitude via `CMAltimeter` while in the foreground (~1 Hz). Samples are transferred as separate gzip JSON files with metadata `type: "altitude_samples"` and synced to `metric_stream` on the `altitude` channel via `watchAltitudeSync.pushSamples`.
+
+Relative elevation is derived from raw pressure readings rather than `CMAltitudeData.relativeAltitude`, which can spike when a workout session is paused.
+
 ## Testing
 
 ### Unit tests (no device needed)
-- `watch-accelerometer-adapter.test.ts` — mocks watch-motion module
-- `background-watch-accelerometer-sync.test.ts` — mocks adapter
+- `watch-file-sync.test.ts` — accelerometer per-file upload and confirmation behavior
+- `watch-altitude-file-sync.test.ts` — altitude per-file upload and confirmation behavior
+- `modules/watch-motion/index.test.ts` — mixed pending-file classification
+- `background-watch-inertial-measurement-unit-sync.test.ts` — foreground sync orchestration
 
 ### On-device testing
 1. Build and install DofekWatch on a paired Apple Watch

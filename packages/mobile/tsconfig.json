@@ -1,5 +1,5 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "expo/tsconfig.base.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "strict": true,
@@ -16,7 +16,9 @@
     "modules/**/*.tsx",
     "types/**/*.ts",
     "types/**/*.tsx",
-    "theme.ts"
+    "theme.ts",
+    "theme.ios.ts",
+    "theme-palette.ts"
   ],
   "exclude": [
     ".rnstorybook",

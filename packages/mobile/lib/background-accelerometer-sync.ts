@@ -9,14 +9,17 @@ import {
   setLastSyncTimestamp,
   startRecording,
 } from "../modules/core-motion";
+import { loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   type InertialMeasurementUnitSyncTrpcClient,
   syncInertialMeasurementUnitToServer,
 } from "./inertial-measurement-unit-sync";
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-accel-sync";
 const TWELVE_HOURS_SECONDS = 12 * 3600;
+const RECORDING_NOT_STARTED_MESSAGE =
+  "Accelerometer recording did not start. Enable Motion & Fitness access for Dofek in iOS Settings.";
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 let syncing = false;
@@ -32,6 +35,7 @@ export async function initBackgroundAccelerometerSync(
   trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<void> {
   if (!isAccelerometerRecordingAvailable()) return;
+  const minimumSampleDate = await loadDeviceErasureCutoff();
 
   let status = getMotionAuthorizationStatus();
   if (status === "notDetermined") {
@@ -40,7 +44,8 @@ export async function initBackgroundAccelerometerSync(
   if (status !== "authorized") return;
 
   // Start recording immediately
-  await startRecording(TWELVE_HOURS_SECONDS);
+  const recording = await startRecording(TWELVE_HOURS_SECONDS);
+  if (!recording) logger.info(TAG, RECORDING_NOT_STARTED_MESSAGE);
 
   // Clean up existing listener
   if (appStateSubscription) {
@@ -68,7 +73,11 @@ export async function initBackgroundAccelerometerSync(
       },
       deviceId,
       deviceType: "iphone",
+      minimumSampleDate,
     })
+      .then((result) => {
+        if (!result.recording) logger.info(TAG, RECORDING_NOT_STARTED_MESSAGE);
+      })
       .catch((error: unknown) => {
         captureException(error, { source: TAG });
       })

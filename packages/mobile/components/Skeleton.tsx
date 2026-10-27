@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { type DimensionValue, StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { colors, duration, radius } from "../theme";
+import { colors, duration } from "../theme";
 
 /**
  * Skeleton loading primitives with shimmer animation.
@@ -45,74 +45,8 @@ export function SkeletonCircle({ size }: { size: number }) {
   );
 }
 
-/** Rectangular skeleton placeholder (for text lines, bars) */
-export function SkeletonRect({
-  width,
-  height,
-  borderRadiusOverride,
-}: {
-  width: DimensionValue;
-  height: number;
-  borderRadiusOverride?: number;
-}) {
-  const shimmerStyle = useShimmer();
-
-  return (
-    <Animated.View
-      testID="skeleton-rect"
-      style={[
-        styles.base,
-        {
-          width,
-          height,
-          borderRadius: borderRadiusOverride ?? radius.sm,
-        },
-        shimmerStyle,
-      ]}
-    />
-  );
-}
-
-/** Full card skeleton matching the Card component dimensions */
-export function SkeletonCard() {
-  const shimmerStyle = useShimmer();
-
-  return (
-    <View testID="skeleton-card" style={styles.card}>
-      <Animated.View style={[styles.cardLine1, shimmerStyle]} />
-      <Animated.View style={[styles.cardLine2, shimmerStyle]} />
-      <Animated.View style={[styles.cardLine3, shimmerStyle]} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   base: {
-    backgroundColor: colors.surfaceSecondary,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: 16,
-    gap: 12,
-    height: 120,
-  },
-  cardLine1: {
-    width: "40%",
-    height: 12,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceSecondary,
-  },
-  cardLine2: {
-    width: "70%",
-    height: 24,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceSecondary,
-  },
-  cardLine3: {
-    width: "50%",
-    height: 12,
-    borderRadius: radius.sm,
     backgroundColor: colors.surfaceSecondary,
   },
 });

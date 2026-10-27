@@ -1,44 +1,50 @@
 import { ProviderHttpClient } from "../http-client.ts";
 import {
   type OuraDailyActivity,
-  type OuraDailyCardiovascularAge,
-  type OuraDailyReadiness,
-  type OuraDailyResilience,
   type OuraDailySpO2,
-  type OuraDailyStress,
   type OuraEnhancedTag,
   type OuraHeartRate,
   type OuraListResponse,
   type OuraRestModePeriod,
   type OuraSession,
   type OuraSleepDocument,
-  type OuraSleepTime,
   type OuraTag,
-  type OuraVO2Max,
   type OuraWorkout,
   ouraDailyActivitySchema,
-  ouraDailyCardiovascularAgeSchema,
-  ouraDailyReadinessSchema,
-  ouraDailyResilienceSchema,
   ouraDailySpO2Schema,
-  ouraDailyStressSchema,
   ouraEnhancedTagSchema,
   ouraHeartRateSchema,
   ouraListResponseSchema,
   ouraRestModePeriodSchema,
   ouraSessionSchema,
   ouraSleepDocumentSchema,
-  ouraSleepTimeSchema,
   ouraTagSchema,
-  ouraVO2MaxSchema,
   ouraWorkoutSchema,
 } from "./schemas.ts";
 
 export const OURA_API_BASE = "https://api.ouraring.com";
 
+export class OuraApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+
+  constructor(status: number, path: string, detail: string) {
+    super(`API error ${status} on ${path}: ${detail}`);
+    this.name = "OuraApiError";
+    this.status = status;
+    this.path = path;
+  }
+}
+
 export class OuraClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     super(accessToken, OURA_API_BASE, fetchFn, "oura");
+  }
+
+  protected async handleErrorResponse(response: Response, path: string): Promise<never> {
+    const text = await response.text();
+    const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    throw new OuraApiError(response.status, path, truncated);
   }
 
   #dateQuery(startDate: string, endDate: string, nextToken?: string): string {
@@ -55,17 +61,6 @@ export class OuraClient extends ProviderHttpClient {
     return this.get(
       `/v2/usercollection/sleep?${this.#dateQuery(startDate, endDate, nextToken)}`,
       ouraListResponseSchema(ouraSleepDocumentSchema),
-    );
-  }
-
-  async getDailyReadiness(
-    startDate: string,
-    endDate: string,
-    nextToken?: string,
-  ): Promise<OuraListResponse<OuraDailyReadiness>> {
-    return this.get(
-      `/v2/usercollection/daily_readiness?${this.#dateQuery(startDate, endDate, nextToken)}`,
-      ouraListResponseSchema(ouraDailyReadinessSchema),
     );
   }
 
@@ -88,17 +83,6 @@ export class OuraClient extends ProviderHttpClient {
     return this.get(
       `/v2/usercollection/daily_spo2?${this.#dateQuery(startDate, endDate, nextToken)}`,
       ouraListResponseSchema(ouraDailySpO2Schema),
-    );
-  }
-
-  async getVO2Max(
-    startDate: string,
-    endDate: string,
-    nextToken?: string,
-  ): Promise<OuraListResponse<OuraVO2Max>> {
-    return this.get(
-      `/v2/usercollection/vO2_max?${this.#dateQuery(startDate, endDate, nextToken)}`,
-      ouraListResponseSchema(ouraVO2MaxSchema),
     );
   }
 
@@ -137,39 +121,6 @@ export class OuraClient extends ProviderHttpClient {
     );
   }
 
-  async getDailyStress(
-    startDate: string,
-    endDate: string,
-    nextToken?: string,
-  ): Promise<OuraListResponse<OuraDailyStress>> {
-    return this.get(
-      `/v2/usercollection/daily_stress?${this.#dateQuery(startDate, endDate, nextToken)}`,
-      ouraListResponseSchema(ouraDailyStressSchema),
-    );
-  }
-
-  async getDailyResilience(
-    startDate: string,
-    endDate: string,
-    nextToken?: string,
-  ): Promise<OuraListResponse<OuraDailyResilience>> {
-    return this.get(
-      `/v2/usercollection/daily_resilience?${this.#dateQuery(startDate, endDate, nextToken)}`,
-      ouraListResponseSchema(ouraDailyResilienceSchema),
-    );
-  }
-
-  async getDailyCardiovascularAge(
-    startDate: string,
-    endDate: string,
-    nextToken?: string,
-  ): Promise<OuraListResponse<OuraDailyCardiovascularAge>> {
-    return this.get(
-      `/v2/usercollection/daily_cardiovascular_age?${this.#dateQuery(startDate, endDate, nextToken)}`,
-      ouraListResponseSchema(ouraDailyCardiovascularAgeSchema),
-    );
-  }
-
   async getTags(
     startDate: string,
     endDate: string,
@@ -200,17 +151,6 @@ export class OuraClient extends ProviderHttpClient {
     return this.get(
       `/v2/usercollection/rest_mode_period?${this.#dateQuery(startDate, endDate, nextToken)}`,
       ouraListResponseSchema(ouraRestModePeriodSchema),
-    );
-  }
-
-  async getSleepTime(
-    startDate: string,
-    endDate: string,
-    nextToken?: string,
-  ): Promise<OuraListResponse<OuraSleepTime>> {
-    return this.get(
-      `/v2/usercollection/sleep_time?${this.#dateQuery(startDate, endDate, nextToken)}`,
-      ouraListResponseSchema(ouraSleepTimeSchema),
     );
   }
 }

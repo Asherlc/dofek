@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { peerDbMirrorContracts } from "./peerdb/mirror-contracts.ts";
 
 export interface PostgresQueryClient {
   query(queryText: string): Promise<unknown>;
@@ -9,6 +10,7 @@ export interface CdcHealthClickHouseClient {
 }
 
 export interface CdcHealthIssue {
+  kind?: "normalization_stall";
   severity: "warning" | "failure";
   message: string;
 }
@@ -40,17 +42,10 @@ interface CheckClickHouseCdcHealthOptions {
   mirrorFreshnessChecks?: readonly MirrorFreshnessCheck[];
 }
 
-const expectedSlotNames = [
-  "peerflow_slot_dofek_fitness_raw_analytics",
-  "peerflow_slot_dofek_provider_inventory_raw_analytics",
-  "peerflow_slot_dofek_sensor_priority_raw_analytics",
-] as const;
-
-const expectedPeerDbMirrorNames = [
-  "dofek_fitness_raw_analytics",
-  "dofek_provider_inventory_raw_analytics",
-  "dofek_sensor_priority_raw_analytics",
-] as const;
+const expectedPeerDbMirrorNames = peerDbMirrorContracts.map(({ name }) => name);
+export const EXPECTED_PEERDB_REPLICATION_SLOT_NAMES = expectedPeerDbMirrorNames.map(
+  (name) => `peerflow_slot_${name}`,
+);
 
 const defaultThresholds: CdcHealthThresholds = {
   retainedWalWarningBytes: 16 * 1024 * 1024 * 1024,
@@ -76,7 +71,7 @@ const postgresReplicationSlotRowsSchema = z.object({
       active: z.boolean(),
       restart_lsn: z.string().nullable(),
       retained_wal_bytes: nullableIntegerLikeSchema,
-      slot_name: z.enum(expectedSlotNames),
+      slot_name: z.enum(EXPECTED_PEERDB_REPLICATION_SLOT_NAMES),
       wal_status: z.string().nullable(),
     }),
   ),
@@ -118,6 +113,58 @@ export interface CdcHealthPeerDbMirrorEvidence {
 export interface CdcHealthEvidence {
   peerDbMirrors: CdcHealthPeerDbMirrorEvidence[];
   replicationSlots: CdcHealthReplicationSlotEvidence[];
+}
+
+function buildPeerDbNormalizationQuery(): string {
+  return `
+    WITH batch_progress AS (
+      SELECT
+        flow_name,
+        max(batch_id) FILTER (WHERE sync_time IS NOT NULL) AS latest_synced_batch_id,
+        max(batch_id) FILTER (WHERE end_time IS NOT NULL) AS latest_normalized_batch_id,
+        min(batch_id) FILTER (WHERE sync_time IS NOT NULL AND end_time IS NULL) AS oldest_pending_batch_id
+      FROM peerdb_stats.cdc_batches
+      WHERE flow_name IN (${expectedPeerDbMirrorNames.map((name) => `'${name}'`).join(", ")})
+      GROUP BY flow_name
+    )
+    SELECT
+      progress.flow_name,
+      progress.latest_synced_batch_id,
+      progress.latest_normalized_batch_id,
+      progress.oldest_pending_batch_id,
+      string_agg(DISTINCT aggregate_counts.destination_table_name, ',')
+        AS pending_destination_tables
+    FROM batch_progress AS progress
+    LEFT JOIN peerdb_stats.cdc_table_aggregate_counts AS aggregate_counts
+      ON aggregate_counts.flow_name = progress.flow_name
+      AND aggregate_counts.latest_batch_id >= progress.oldest_pending_batch_id
+      AND aggregate_counts.latest_batch_id <= progress.latest_synced_batch_id
+    GROUP BY
+      progress.flow_name,
+      progress.latest_synced_batch_id,
+      progress.latest_normalized_batch_id,
+      progress.oldest_pending_batch_id
+    ORDER BY progress.flow_name
+  `;
+}
+
+function parsePeerDbNormalizationRows(result: unknown) {
+  return z
+    .object({
+      rows: z.array(
+        z.object({
+          flow_name: z.enum(expectedPeerDbMirrorNames),
+          latest_normalized_batch_id: nullableIntegerLikeSchema,
+          latest_synced_batch_id: nullableIntegerLikeSchema,
+          oldest_pending_batch_id: nullableIntegerLikeSchema,
+          pending_destination_tables: z
+            .union([z.string(), z.null()])
+            .transform((value) => (value === null ? [] : value.split(",")))
+            .pipe(z.array(z.string().regex(/^[a-z][a-z0-9_]*$/))),
+        }),
+      ),
+    })
+    .parse(result).rows;
 }
 
 function integerLikeToNumber(value: z.infer<typeof integerLikeSchema>): number {
@@ -214,6 +261,36 @@ function addPeerDbMirrorIssues(
   }
 }
 
+function addPeerDbNormalizationIssues(
+  issues: CdcHealthIssue[],
+  rows: ReturnType<typeof parsePeerDbNormalizationRows>,
+): void {
+  for (const row of rows) {
+    const latestSyncedBatchId =
+      nullableIntegerLikeToNumber(row.latest_synced_batch_id) ?? Number.NEGATIVE_INFINITY;
+    const latestNormalizedBatchId = nullableIntegerLikeToNumber(row.latest_normalized_batch_id);
+    const normalizedCursor = latestNormalizedBatchId ?? Number.NEGATIVE_INFINITY;
+    const oldestPendingBatchId = nullableIntegerLikeToNumber(row.oldest_pending_batch_id);
+    if (
+      oldestPendingBatchId === null ||
+      latestSyncedBatchId <= oldestPendingBatchId ||
+      normalizedCursor >= oldestPendingBatchId
+    ) {
+      continue;
+    }
+    const pendingTables = [...row.pending_destination_tables].sort().join(",");
+    issues.push({
+      kind: "normalization_stall",
+      severity: "failure",
+      message:
+        `PeerDB normalization stalled for ${row.flow_name} tables=[${pendingTables}] ` +
+        "classification=NORMALIZATION_CURSOR_STALLED " +
+        `normalized_batch=${latestNormalizedBatchId ?? 0} synced_batch=${latestSyncedBatchId} ` +
+        `oldest_pending_batch=${oldestPendingBatchId}`,
+    });
+  }
+}
+
 function addSlotIssues(
   issues: CdcHealthIssue[],
   slotRows: z.infer<typeof postgresReplicationSlotRowsSchema>["rows"],
@@ -221,7 +298,7 @@ function addSlotIssues(
 ): void {
   const slotRowsByName = new Map(slotRows.map((slotRow) => [slotRow.slot_name, slotRow]));
 
-  for (const expectedSlotName of expectedSlotNames) {
+  for (const expectedSlotName of EXPECTED_PEERDB_REPLICATION_SLOT_NAMES) {
     const slotRow = slotRowsByName.get(expectedSlotName);
     if (!slotRow) {
       issues.push({
@@ -383,6 +460,9 @@ export async function checkClickHouseCdcHealth(
   const peerDbMirrorRows = !shouldCheckPeerDbMirrors
     ? []
     : peerDbMirrorRowsSchema.parse(await peerDbClient.query(buildPeerDbMirrorQuery())).rows;
+  const peerDbNormalizationRows = !shouldCheckPeerDbMirrors
+    ? []
+    : parsePeerDbNormalizationRows(await peerDbClient.query(buildPeerDbNormalizationQuery()));
 
   const slotQueryResult = await options.postgresClient.query(`
     SELECT
@@ -395,7 +475,7 @@ export async function checkClickHouseCdcHealth(
         ELSE pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)
       END AS retained_wal_bytes
     FROM pg_replication_slots
-    WHERE slot_name = ANY (ARRAY[${expectedSlotNames.map((slotName) => `'${slotName}'`).join(", ")}])
+    WHERE slot_name = ANY (ARRAY[${EXPECTED_PEERDB_REPLICATION_SLOT_NAMES.map((slotName) => `'${slotName}'`).join(", ")}])
     ORDER BY slot_name
   `);
   const parsedSlotRows = postgresReplicationSlotRowsSchema.parse(slotQueryResult).rows;
@@ -410,6 +490,7 @@ export async function checkClickHouseCdcHealth(
   if (shouldCheckPeerDbMirrors) {
     addPeerDbMirrorIssues(issues, peerDbMirrorRows);
   }
+  addPeerDbNormalizationIssues(issues, peerDbNormalizationRows);
   addSlotIssues(issues, parsedSlotRows, thresholds);
   addMirrorFreshnessIssues(issues, freshnessRows, mirrorFreshnessChecks, now);
 

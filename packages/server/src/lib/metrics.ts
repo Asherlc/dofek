@@ -56,3 +56,39 @@ export const trpcSlowQueriesTotal = new Counter({
   labelNames: ["procedure", "type"] as const,
   registers: [registry],
 });
+
+export const providerDataDeletesTotal = new Counter({
+  name: "provider_data_deletes_total",
+  help: "Total number of completed provider data deletions",
+  labelNames: ["provider_id"] as const,
+  registers: [registry],
+});
+
+export const predictorLinearFitFallbacksTotal = new Counter({
+  name: "predictor_linear_fit_fallbacks_total",
+  help: "Total number of linear predictor fit failures that fell back to tree predictions",
+  labelNames: ["prediction_target"] as const,
+  registers: [registry],
+});
+
+export const companionConnectionOperationsTotal = new Counter({
+  name: "companion_connection_operations_total",
+  help: "Total number of companion connection verification and revocation outcomes",
+  labelNames: ["operation", "outcome"] as const,
+  registers: [registry],
+});
+
+export const supportTicketOperationsTotal = new Counter({
+  name: "support_ticket_operations_total",
+  help: "Total number of PostHog support ticket submission outcomes",
+  labelNames: ["outcome", "status_class"] as const,
+  registers: [registry],
+});
+
+export const supportTicketDuration = new Histogram({
+  name: "support_ticket_duration_seconds",
+  help: "Duration of PostHog support ticket submissions in seconds",
+  labelNames: ["outcome"] as const,
+  buckets: [0.1, 0.5, 1, 2.5, 5, 10, 15, 30],
+  registers: [registry],
+});

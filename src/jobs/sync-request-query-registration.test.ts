@@ -1,0 +1,55 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const registerSpy = vi.fn();
+
+vi.mock("../lib/sync-request-query.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/sync-request-query.ts")>()),
+  registerSyncRequestQueryResolver: registerSpy,
+}));
+
+const mockWhoopResolver = vi.fn();
+const mockZivaResolver = vi.fn();
+
+vi.mock("../providers/whoop/sync-request-query.ts", () => ({
+  resolveWhoopSyncRequestQuery: mockWhoopResolver,
+}));
+
+vi.mock("../providers/ziva/sync-request-query.ts", () => ({
+  resolveZivaSyncRequestQuery: mockZivaResolver,
+}));
+
+describe("registerProviderSyncRequestResolver", () => {
+  beforeEach(() => {
+    registerSpy.mockClear();
+  });
+
+  it("registers the whoop resolver for the whoop provider", async () => {
+    const { registerProviderSyncRequestResolver } = await import(
+      "./sync-request-query-registration.ts"
+    );
+
+    await registerProviderSyncRequestResolver({ id: "whoop" });
+
+    expect(registerSpy).toHaveBeenCalledWith("whoop", mockWhoopResolver);
+  });
+
+  it("registers the Ziva resolver for the Ziva provider", async () => {
+    const { registerProviderSyncRequestResolver } = await import(
+      "./sync-request-query-registration.ts"
+    );
+
+    await registerProviderSyncRequestResolver({ id: "ziva" });
+
+    expect(registerSpy).toHaveBeenCalledWith("ziva", mockZivaResolver);
+  });
+
+  it("does nothing for providers without a custom resolver", async () => {
+    const { registerProviderSyncRequestResolver } = await import(
+      "./sync-request-query-registration.ts"
+    );
+
+    await registerProviderSyncRequestResolver({ id: "strava" });
+
+    expect(registerSpy).not.toHaveBeenCalled();
+  });
+});

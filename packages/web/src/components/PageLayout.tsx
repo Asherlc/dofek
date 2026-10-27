@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useActiveProcessingAlertCount } from "../lib/processing-alerts-context.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 
 interface Tab {
@@ -21,31 +22,33 @@ export function PageLayout({
   subtitle?: string;
   children: ReactNode;
 }) {
+  const activeAlertCount = useActiveProcessingAlertCount();
   return (
     <div className="min-h-screen bg-page text-foreground overflow-x-hidden lg:flex">
-      <AppHeader />
+      <AppHeader activeAlertCount={activeAlertCount} />
       <div className="lg:min-w-0 lg:flex-1">
         {tabs && (
           <nav
             aria-label="Section navigation"
             className="border-b border-border px-3 sm:px-6 bg-surface/45 backdrop-blur-xl"
           >
-            <div className="mx-auto max-w-6xl flex gap-1 overflow-x-auto scrollbar-hide">
+            <ul aria-label="Section links" className="mx-auto flex max-w-6xl flex-wrap gap-1">
               {tabs.map((tab) => (
-                <Link
-                  key={tab.to}
-                  to={tab.to}
-                  activeOptions={{ exact: tab.exact }}
-                  className="px-3 py-2.5 text-xs font-medium transition-colors text-subtle hover:text-foreground whitespace-nowrap"
-                  activeProps={{
-                    className:
-                      "px-3 py-2.5 text-xs font-semibold transition-colors text-foreground border-b-2 border-accent whitespace-nowrap",
-                  }}
-                >
-                  {tab.label}
-                </Link>
+                <li key={tab.to} className="flex">
+                  <Link
+                    to={tab.to}
+                    activeOptions={{ exact: tab.exact }}
+                    className="px-3 py-2.5 text-xs font-medium transition-colors text-subtle hover:text-foreground whitespace-nowrap"
+                    activeProps={{
+                      className:
+                        "px-3 py-2.5 text-xs font-semibold transition-colors text-foreground border-b-2 border-accent whitespace-nowrap",
+                    }}
+                  >
+                    {tab.label}
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </nav>
         )}
         <main className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:py-8 space-y-6 sm:space-y-7">
@@ -53,7 +56,7 @@ export function PageLayout({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               {title ? (
                 <div>
-                  <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+                  <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
                   {subtitle && <p className="text-sm text-muted mt-1">{subtitle}</p>}
                 </div>
               ) : (

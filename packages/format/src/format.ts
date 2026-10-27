@@ -1,7 +1,32 @@
 /** Format a Date as YYYY-MM-DD for API queries. */
 export function formatDateYmd(date?: Date): string {
   const resolvedDate = date ?? new Date();
-  return `${resolvedDate.getFullYear()}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
+  return `${String(resolvedDate.getFullYear()).padStart(4, "0")}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
+}
+
+/** Shift a YYYY-MM-DD value by calendar days in the device's local timezone. */
+export function shiftDateYmd(value: string, dayOffset: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match || !Number.isInteger(dayOffset)) {
+    throw new Error("Expected a valid YYYY-MM-DD date and an integer day offset");
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    throw new Error("Expected a valid YYYY-MM-DD date");
+  }
+
+  const shiftedTimestamp = date.setDate(date.getDate() + dayOffset);
+  if (!Number.isFinite(shiftedTimestamp) || date.getFullYear() < 0 || date.getFullYear() > 9999) {
+    throw new Error("Expected a valid YYYY-MM-DD date and an integer day offset");
+  }
+
+  return formatDateYmd(date);
 }
 
 /** Format a date as YYYY-MM-DD in a specific timezone. */
@@ -11,6 +36,7 @@ export function formatDateYmdInTimeZone(value: DateInput, timeZone: string): str
   const parts = dateTimeFormatter(
     { year: "numeric", month: "2-digit", day: "2-digit" },
     timeZone,
+    "en-US",
   ).formatToParts(date);
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;
@@ -96,6 +122,7 @@ export function formatSleepDebtInline(minutes: number): string {
 type DateInput = Date | number | string;
 
 type DateFormatOptions = {
+  locale?: string;
   timeZone?: string;
 };
 
@@ -118,26 +145,21 @@ export function formatDateLong(value: DateInput, options: DateFormatOptions = {}
   );
 }
 
-/** Format a month label: "January 2024" */
-export function formatMonthYear(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(value, { month: "long", year: "numeric" }, options);
-}
-
 /** Format a weekday label: "Mon" */
 export function formatWeekdayShort(value: DateInput, options: DateFormatOptions = {}): string {
   return formatDateInput(value, { weekday: "short" }, options);
 }
 
-/** Format a date and time for human display: "Jan 1, 2:30 PM" */
+/** Format a date and time for human display: "Jan 1, 2024, 2:30 PM" */
 export function formatDateTime(value: DateInput, options: DateFormatOptions = {}): string {
   return formatDateInput(
     value,
     {
       month: "short",
       day: "numeric",
+      year: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      hour12: true,
     },
     options,
   );
@@ -145,16 +167,7 @@ export function formatDateTime(value: DateInput, options: DateFormatOptions = {}
 
 /** Format a time-only label: "2:30 PM" */
 export function formatTimeOnly(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(value, { hour: "numeric", minute: "2-digit", hour12: true }, options);
-}
-
-/** Format a weekday and time label: "Monday, 2:30 PM" */
-export function formatWeekdayTime(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(
-    value,
-    { weekday: "long", hour: "numeric", minute: "2-digit", hour12: true },
-    options,
-  );
+  return formatDateInput(value, { hour: "numeric", minute: "2-digit" }, options);
 }
 
 /** Format a Date for user-facing display: "Mon, Jan 1, 2024" */
@@ -215,16 +228,28 @@ export function formatTime(iso: string): string {
   return formatDateTime(iso);
 }
 
+const dateOnlyValuePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const dateTimeValuePattern = /^(\d{4})-(\d{2})-(\d{2})[ T]/;
+
+/** Format a database/API value for display in table cells and detail modals. */
+export function formatTableCellValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
+  const str = String(value);
+  if (dateOnlyValuePattern.test(str)) {
+    return formatDateMedium(str);
+  }
+  if (dateTimeValuePattern.test(str) && parseValidDate(str)) {
+    return formatDateTime(str);
+  }
+  return str;
+}
+
 /** Format a number with a fixed number of decimal places. Returns "--" for non-finite values. */
 export function formatNumber(value: number, decimals = 1): string {
   if (!Number.isFinite(value)) return "--";
   return fixedDecimalFormatter(decimals).format(value);
-}
-
-/** Format a ratio (0–1) as a percentage string. Returns "--" for non-finite values. */
-export function formatPercent(value: number, decimals = 0): string {
-  if (!Number.isFinite(value)) return "--";
-  return `${fixedDecimalFormatter(decimals).format(value * 100)}%`;
 }
 
 /** Format a number with explicit +/- sign prefix. Zero has no sign. Returns "--" for non-finite values. */
@@ -252,6 +277,10 @@ export type FormattedMeasurementFormatter = (value: NullableNumber) => Formatted
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 const unitFormatters = new Map<string, Intl.NumberFormat>();
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const standardDeviationFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SUPPORTED_INTL_UNITS = new Set(["gram", "percent", "millisecond"]);
 
@@ -351,7 +380,7 @@ function formatDateInput(
 ): string {
   const date = parseDateInput(value);
   if (!date) return "--";
-  return dateTimeFormatter(dateTimeOptions, options.timeZone)
+  return dateTimeFormatter(dateTimeOptions, options.timeZone, options.locale)
     .format(date)
     .replace(/\u202f/g, " ");
 }
@@ -359,11 +388,12 @@ function formatDateInput(
 function dateTimeFormatter(
   options: Intl.DateTimeFormatOptions,
   timeZone: string | undefined,
+  locale?: string,
 ): Intl.DateTimeFormat {
-  const key = `${JSON.stringify(options)}:${timeZone ?? ""}`;
+  const key = `${JSON.stringify(options)}:${timeZone ?? ""}:${locale ?? ""}`;
   const existing = dateTimeFormatters.get(key);
   if (existing) return existing;
-  const formatter = new Intl.DateTimeFormat("en-US", { ...options, timeZone });
+  const formatter = new Intl.DateTimeFormat(locale, { ...options, timeZone });
   dateTimeFormatters.set(key, formatter);
   return formatter;
 }
@@ -434,11 +464,6 @@ export function formatBodyCompositionNumber(value: NullableNumber): string {
   return formatMetricValue(value, 1);
 }
 
-/** Format body composition percentage display values such as body fat with 1 decimal. */
-export function formatBodyCompositionPercent(value: NullableNumber): string {
-  return formatMetricUnitValue(value, 1, "percent");
-}
-
 /** Format oxygen saturation display values with 0 decimals. */
 export function formatSpO2(value: NullableNumber): string {
   return joinFormattedMeasurement(formatSpO2Measurement(value));
@@ -456,6 +481,17 @@ export function formatHRV(value: NullableNumber): string {
 /** Format heart rate variability display values with value and unit separated for UI styling. */
 export const formatHRVMeasurement: FormattedMeasurementFormatter = (value) =>
   formatMetricMeasurement(value, 0, "ms");
+
+/** Format step counts as grouped integers. */
+export function formatSteps(value: NullableNumber): string {
+  return formatMetricValue(value, 0, true);
+}
+
+/** Format a z-score as standard deviations from baseline, preserving its meaningful precision. */
+export function formatStandardDeviation(value: NullableNumber): string {
+  if (value == null || !Number.isFinite(value)) return "--";
+  return standardDeviationFormatter.format(value);
+}
 
 /** Format intensity display values with 0 decimals. */
 export function formatIntensity(value: NullableNumber): string {

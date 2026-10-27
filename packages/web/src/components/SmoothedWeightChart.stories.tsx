@@ -22,7 +22,9 @@ function generateWeightData(
     rows.push({
       date,
       rawWeight: Math.round(raw * 100) / 100,
+      rawWeightStatus: { kind: "observed", label: "Observed" },
       smoothedWeight: Math.round(smoothed * 100) / 100,
+      smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
       weeklyChange: index >= 7 ? Math.round(trendPerDay * 7 * 100) / 100 : null,
       interpolated: false,
     });

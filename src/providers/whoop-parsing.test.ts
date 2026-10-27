@@ -1,33 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient } from "@dofek/whoop/client";
 import type {
   WhoopCycle,
-  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
-import { parseJournalResponse } from "./whoop/journal-parsing.ts";
+} from "@dofek/whoop/types";
+import { describe, expect, it } from "vitest";
 import {
   buildV2ActivityTypeLookup,
   type InlineSleepRecord,
-  parseDailyStepValues,
   parseHeartRateValues,
   parseInlineSleep,
   parseRecovery,
-  parseSleep,
   parseSleepStages,
   parseStrainDeepDiveSteps,
   parseWeightliftingWorkout,
   parseWorkout,
   resolveActivityType,
+  resolveInlineSleepExternalId,
 } from "./whoop/parsing.ts";
 
 // ============================================================
 // Coverage tests for WHOOP pure parsing functions:
 // - parseRecovery with non-SCORED state
-// - parseSleep without score (no stage_summary)
 // - parseWorkout without score (no distance, calories, etc.)
 // - parseHeartRateValues with empty/large arrays
 // - WhoopClient.authenticate MFA required path
@@ -187,119 +183,6 @@ describe("parseRecovery — edge cases", () => {
   });
 });
 
-describe("parseSleep — invalid timestamps", () => {
-  function sleepRecord(overrides: Partial<WhoopSleepRecord> = {}): WhoopSleepRecord {
-    return {
-      id: 400,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T07:00:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "PENDING",
-      ...overrides,
-    };
-  }
-
-  it("returns null for empty start timestamp", () => {
-    expect(parseSleep(sleepRecord({ start: "" }))).toBeNull();
-  });
-
-  it("returns null for non-date start timestamp", () => {
-    expect(parseSleep(sleepRecord({ start: "not-a-date" }))).toBeNull();
-  });
-
-  it("returns null for empty end timestamp", () => {
-    expect(parseSleep(sleepRecord({ end: "" }))).toBeNull();
-  });
-
-  it("returns null for garbage start timestamp", () => {
-    expect(parseSleep(sleepRecord({ start: "garbage" }))).toBeNull();
-  });
-
-  it("returns null when start/end are missing and no during is provided", () => {
-    expect(parseSleep(sleepRecord({ start: undefined, end: undefined }))).toBeNull();
-  });
-
-  it("succeeds with valid timestamps", () => {
-    const parsed = parseSleep(sleepRecord());
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
-  });
-
-  it("parses 'during' Postgres range when start/end are missing", () => {
-    const parsed = parseSleep(
-      sleepRecord({
-        start: undefined,
-        end: undefined,
-        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
-      }),
-    );
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
-  });
-
-  it("prefers 'during' over start/end when both are present", () => {
-    const parsed = parseSleep(
-      sleepRecord({
-        start: "2026-01-01T00:00:00Z",
-        end: "2026-01-01T08:00:00Z",
-        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
-      }),
-    );
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
-  });
-
-  it("falls back to `during` field when start/end are missing", () => {
-    const record: WhoopSleepRecord = {
-      id: 500,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "SCORED",
-      during: "['2026-03-24T05:30:00.000Z','2026-03-24T13:15:00.000Z')",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 27900000,
-          total_awake_time_milli: 1800000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 10800000,
-          total_slow_wave_sleep_time_milli: 7200000,
-          total_rem_sleep_time_milli: 8100000,
-          sleep_cycle_count: 4,
-          disturbance_count: 2,
-        },
-        sleep_needed: {
-          baseline_milli: 27000000,
-          need_from_sleep_debt_milli: 0,
-          need_from_recent_strain_milli: 1800000,
-          need_from_recent_nap_milli: 0,
-        },
-        respiratory_rate: 15.5,
-        sleep_performance_percentage: 96,
-        sleep_consistency_percentage: 85,
-        sleep_efficiency_percentage: 93.5,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-03-24T05:30:00.000Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-24T13:15:00.000Z"));
-    expect(parsed?.deepMinutes).toBe(120);
-    expect(parsed?.remMinutes).toBe(135);
-    expect(parsed?.lightMinutes).toBe(180);
-  });
-});
-
 describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
   function inlineSleep(overrides: Partial<InlineSleepRecord> = {}): InlineSleepRecord {
     return {
@@ -311,11 +194,6 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
       slow_wave_sleep_duration: 5298540,
       rem_sleep_duration: 4852630,
       in_sleep_efficiency: 89.4,
-      sleep_need: 29424206,
-      habitual_sleep_need: 27145502,
-      debt_post: 2330785,
-      need_from_strain: 2278704,
-      credit_from_naps: 0,
       significant: true,
       ...overrides,
     };
@@ -331,13 +209,10 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed?.remMinutes).toBe(81); // 4852630 / 60000
     expect(parsed?.lightMinutes).toBe(261); // 15647370 / 60000
     expect(parsed?.awakeMinutes).toBe(51); // 3063020 / 60000
+    expect(parsed?.stagingAvailable).toBe(true);
     expect(parsed?.efficiencyPct).toBe(89.4);
     expect(parsed?.sleepType).toBe("sleep");
     expect(parsed?.isNap).toBe(false);
-    expect(parsed?.sleepNeedBaselineMinutes).toBe(452); // 27145502 / 60000
-    expect(parsed?.sleepNeedFromDebtMinutes).toBe(39); // 2330785 / 60000
-    expect(parsed?.sleepNeedFromStrainMinutes).toBe(38); // 2278704 / 60000
-    expect(parsed?.sleepNeedFromNapMinutes).toBe(0);
   });
 
   it("returns null for invalid during range", () => {
@@ -358,23 +233,31 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed0?.externalId).toContain("inline-");
   });
 
+  it("resolveInlineSleepExternalId prefers WHOOP sleep ids for main sleeps", () => {
+    const cycle = {
+      sleep: { id: 12345 },
+      recovery: {
+        sleep_id: 12345,
+        user_id: 10129,
+        created_at: "2026-03-01T00:00:00Z",
+        updated_at: "2026-03-01T00:00:00Z",
+      },
+    };
+    expect(resolveInlineSleepExternalId(cycle, inlineSleep(), 0)).toBe("12345");
+    expect(resolveInlineSleepExternalId(cycle, inlineSleep({ significant: false }), 1)).toContain(
+      "inline-",
+    );
+  });
+
   it("handles missing optional fields", () => {
     const parsed = parseInlineSleep(
       inlineSleep({
         in_sleep_efficiency: undefined,
-        habitual_sleep_need: undefined,
-        debt_post: undefined,
-        need_from_strain: undefined,
-        credit_from_naps: undefined,
       }),
       0,
     );
     expect(parsed).not.toBeNull();
     expect(parsed?.efficiencyPct).toBeUndefined();
-    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 
   it("normalizes fractional in_sleep_efficiency to percentage", () => {
@@ -385,117 +268,6 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
   it("keeps percentage-scale in_sleep_efficiency as-is", () => {
     const parsed = parseInlineSleep(inlineSleep({ in_sleep_efficiency: 89.4 }), 0);
     expect(parsed?.efficiencyPct).toBe(89.4);
-  });
-});
-
-describe("parseSleep — edge cases", () => {
-  it("handles sleep record without score", () => {
-    const record: WhoopSleepRecord = {
-      id: 300,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T07:00:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "PENDING",
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.externalId).toBe("300");
-    expect(parsed?.deepMinutes).toBe(0);
-    expect(parsed?.remMinutes).toBe(0);
-    expect(parsed?.lightMinutes).toBe(0);
-    expect(parsed?.awakeMinutes).toBe(0);
-    expect(parsed?.durationMinutes).toBe(0);
-    expect(parsed?.efficiencyPct).toBeUndefined();
-    expect(parsed?.isNap).toBe(false);
-  });
-
-  it("parses nap correctly", () => {
-    const record: WhoopSleepRecord = {
-      id: 301,
-      user_id: 10129,
-      created_at: "2026-03-01T14:00:00Z",
-      updated_at: "2026-03-01T14:30:00Z",
-      start: "2026-03-01T13:00:00Z",
-      end: "2026-03-01T13:30:00Z",
-      timezone_offset: "-05:00",
-      nap: true,
-      score_state: "SCORED",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 1800000,
-          total_awake_time_milli: 300000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 900000,
-          total_slow_wave_sleep_time_milli: 300000,
-          total_rem_sleep_time_milli: 300000,
-          sleep_cycle_count: 1,
-          disturbance_count: 0,
-        },
-        sleep_needed: {
-          baseline_milli: 28800000,
-          need_from_sleep_debt_milli: 0,
-          need_from_recent_strain_milli: 0,
-          need_from_recent_nap_milli: 0,
-        },
-        respiratory_rate: 15.0,
-        sleep_performance_percentage: 50,
-        sleep_consistency_percentage: 70,
-        sleep_efficiency_percentage: 83.3,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.isNap).toBe(true);
-    expect(parsed?.deepMinutes).toBe(5);
-    expect(parsed?.lightMinutes).toBe(15);
-    expect(parsed?.remMinutes).toBe(5);
-    expect(parsed?.awakeMinutes).toBe(5);
-    expect(parsed?.efficiencyPct).toBeCloseTo(83.3);
-  });
-
-  it("normalizes fractional sleep_efficiency_percentage to percentage", () => {
-    const record: WhoopSleepRecord = {
-      id: 302,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T07:00:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "SCORED",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 27000000,
-          total_awake_time_milli: 1800000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 10800000,
-          total_slow_wave_sleep_time_milli: 7200000,
-          total_rem_sleep_time_milli: 5400000,
-          sleep_cycle_count: 4,
-          disturbance_count: 2,
-        },
-        sleep_needed: {
-          baseline_milli: 28800000,
-          need_from_sleep_debt_milli: 0,
-          need_from_recent_strain_milli: 0,
-          need_from_recent_nap_milli: 0,
-        },
-        respiratory_rate: 16.1,
-        sleep_performance_percentage: 92,
-        sleep_consistency_percentage: 88,
-        sleep_efficiency_percentage: 0.917,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed?.efficiencyPct).toBeCloseTo(91.7, 1);
   });
 });
 
@@ -511,10 +283,9 @@ describe("parseWorkout — edge cases", () => {
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("uuid-400");
-    expect(parsed?.activityType).toBe("running");
+    expect(parsed?.activityType.canonicalType).toBe("running");
     expect(parsed?.durationSeconds).toBe(3600);
     expect(parsed?.distanceMeters).toBeUndefined();
-    expect(parsed?.calories).toBeUndefined();
     expect(parsed?.avgHeartRate).toBeUndefined();
     expect(parsed?.maxHeartRate).toBeUndefined();
     expect(parsed?.totalElevationGain).toBeUndefined();
@@ -534,25 +305,7 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.activityType).toBe("other");
-  });
-
-  it("converts kilojoules to calories", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-402",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 44, // yoga
-      score: 3,
-      average_heart_rate: 100,
-      max_heart_rate: 120,
-      kilojoules: 418.4,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBe(100); // 418.4 / 4.184 = ~100
-    expect(parsed?.activityType).toBe("yoga");
+    expect(parsed?.activityType.canonicalType).toBe("other");
   });
 
   it("handles score with zero kilojoule", () => {
@@ -569,8 +322,7 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBeUndefined(); // 0 is falsy
-    expect(parsed?.activityType).toBe("meditation");
+    expect(parsed?.activityType.canonicalType).toBe("meditation");
   });
 
   it("maps various sport IDs correctly", () => {
@@ -585,14 +337,14 @@ describe("parseWorkout — edge cases", () => {
       kilojoules: 1000,
     });
 
-    expect(parseWorkout(makeRecord(1))?.activityType).toBe("cycling");
-    expect(parseWorkout(makeRecord(33))?.activityType).toBe("swimming");
-    expect(parseWorkout(makeRecord(52))?.activityType).toBe("hiking");
-    expect(parseWorkout(makeRecord(63))?.activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45))?.activityType).toBe("strength");
-    expect(parseWorkout(makeRecord(18))?.activityType).toBe("rowing");
-    expect(parseWorkout(makeRecord(65))?.activityType).toBe("elliptical");
-    expect(parseWorkout(makeRecord(29))?.activityType).toBe("skiing");
+    expect(parseWorkout(makeRecord(1))?.activityType.canonicalType).toBe("cycling");
+    expect(parseWorkout(makeRecord(33))?.activityType.canonicalType).toBe("swimming");
+    expect(parseWorkout(makeRecord(52))?.activityType.canonicalType).toBe("hiking");
+    expect(parseWorkout(makeRecord(63))?.activityType.canonicalType).toBe("walking");
+    expect(parseWorkout(makeRecord(45))?.activityType.canonicalType).toBe("strength");
+    expect(parseWorkout(makeRecord(18))?.activityType.canonicalType).toBe("rowing");
+    expect(parseWorkout(makeRecord(65))?.activityType.canonicalType).toBe("elliptical");
+    expect(parseWorkout(makeRecord(29))?.activityType.canonicalType).toBe("skiing");
   });
 
   it("falls back to v2_activity type name when sport_id maps to other", () => {
@@ -608,10 +360,10 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // Without v2 type name → "other"
-    expect(parseWorkout(record)?.activityType).toBe("other");
+    expect(parseWorkout(record)?.activityType.canonicalType).toBe("other");
 
     // With v2 type name "walk" → "walking"
-    expect(parseWorkout(record, "walk")?.activityType).toBe("walking");
+    expect(parseWorkout(record, "walk")?.activityType.canonicalType).toBe("walking");
   });
 
   it("prefers sport_id mapping over v2_activity type when sport_id is known", () => {
@@ -627,33 +379,52 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // sport_id 63 → "walking" even if v2 type says something else
-    expect(parseWorkout(record, "run")?.activityType).toBe("walking");
+    expect(parseWorkout(record, "run")?.activityType.canonicalType).toBe("walking");
+  });
+
+  it("prefers an official developer sport name over a stale BFF sport ID", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-developer-sport-name-wins",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      score: 3,
+      average_heart_rate: 100,
+      max_heart_rate: 120,
+      kilojoules: 500,
+    };
+
+    expect(parseWorkout(record, undefined, "Commuting")?.activityType).toMatchObject({
+      canonicalType: "cycling",
+      providerType: "Commuting",
+    });
   });
 });
 
 describe("resolveActivityType", () => {
   it("returns sport_id mapping when it is not other", () => {
-    expect(resolveActivityType(63)).toBe("walking");
-    expect(resolveActivityType(0)).toBe("running");
-    expect(resolveActivityType(1)).toBe("cycling");
+    expect(resolveActivityType(63).canonicalType).toBe("walking");
+    expect(resolveActivityType(0).canonicalType).toBe("running");
+    expect(resolveActivityType(1).canonicalType).toBe("cycling");
   });
 
   it("falls back to v2 type name when sport_id maps to other", () => {
-    expect(resolveActivityType(9999, "walk")).toBe("walking");
-    expect(resolveActivityType(9999, "dog-walk")).toBe("walking");
-    expect(resolveActivityType(9999, "spin")).toBe("indoor_cycling");
-    expect(resolveActivityType(9999, "functional-fitness")).toBe("functional_fitness");
+    expect(resolveActivityType(9999, "walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "dog-walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "spin").canonicalType).toBe("cycling");
+    expect(resolveActivityType(9999, "functional-fitness").canonicalType).toBe("strength");
+    expect(resolveActivityType(9999, "functional-fitness").modality).toBe("functional");
   });
 
   it("returns other when both sport_id and v2 type are unknown", () => {
-    expect(resolveActivityType(9999)).toBe("other");
-    expect(resolveActivityType(9999, "unknown-activity")).toBe("other");
+    expect(resolveActivityType(9999).canonicalType).toBe("other");
+    expect(resolveActivityType(9999, "unknown-activity").canonicalType).toBe("other");
   });
 
   it("is case-insensitive for v2 type names", () => {
-    expect(resolveActivityType(9999, "Walk")).toBe("walking");
-    expect(resolveActivityType(9999, "WALK")).toBe("walking");
-    expect(resolveActivityType(9999, "Dog-Walk")).toBe("walking");
+    expect(resolveActivityType(9999, "Walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "WALK").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "Dog-Walk").canonicalType).toBe("walking");
   });
 });
 
@@ -839,31 +610,6 @@ describe("parseStrainDeepDiveSteps", () => {
   });
 });
 
-describe("parseDailyStepValues", () => {
-  it("uses the max value per day when multiple samples exist", () => {
-    const values: WhoopMetricValue[] = [
-      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: 1200 },
-      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 7421 },
-      { time: new Date("2026-03-01T22:00:00Z").getTime(), data: 7000 },
-      { time: new Date("2026-03-02T21:00:00Z").getTime(), data: 9100 },
-    ];
-
-    expect(parseDailyStepValues(values)).toEqual([
-      { date: "2026-03-01", steps: 7421 },
-      { date: "2026-03-02", steps: 9100 },
-    ]);
-  });
-
-  it("rounds step values and ignores negatives", () => {
-    const values: WhoopMetricValue[] = [
-      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: -5 },
-      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 9000.6 },
-    ];
-
-    expect(parseDailyStepValues(values)).toEqual([{ date: "2026-03-01", steps: 9001 }]);
-  });
-});
-
 describe("WhoopClient.authenticate — MFA required path", () => {
   it("throws when MFA is required", async () => {
     const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
@@ -890,7 +636,11 @@ describe("WhoopClient.authenticate — MFA required path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "my-tok", RefreshToken: "my-ref" },
+            AuthenticationResult: {
+              AccessToken: "my-tok",
+              RefreshToken: "my-ref",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }
@@ -912,7 +662,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -989,7 +739,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-access" },
+            AuthenticationResult: { AccessToken: "new-access", ExpiresIn: 3600 },
           }),
         );
       }
@@ -1012,7 +762,11 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-access", RefreshToken: "new-refresh" },
+            AuthenticationResult: {
+              AccessToken: "new-access",
+              RefreshToken: "new-refresh",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }
@@ -1089,388 +843,6 @@ describe("parseWorkout — legacy fallback without during", () => {
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("67890");
-  });
-});
-
-// ============================================================
-// parseJournalResponse — all branches
-// ============================================================
-
-describe("parseJournalResponse", () => {
-  it("returns empty array for null input", () => {
-    expect(parseJournalResponse(null)).toEqual([]);
-  });
-
-  it("returns empty array for non-object input", () => {
-    expect(parseJournalResponse("string")).toEqual([]);
-    expect(parseJournalResponse(42)).toEqual([]);
-    expect(parseJournalResponse(undefined)).toEqual([]);
-  });
-
-  it("handles plain array of entries with nested answers", () => {
-    const raw = [
-      {
-        date: "2026-03-01T00:00:00Z",
-        answers: [
-          { name: "caffeine", value: 1, impact: 0.5 },
-          { name: "alcohol", value: 0, impact: -0.2 },
-        ],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(2);
-    expect(entries[0]?.question).toBe("caffeine");
-    expect(entries[0]?.answerNumeric).toBe(1);
-    expect(entries[0]?.impactScore).toBe(0.5);
-    expect(entries[1]?.question).toBe("alcohol");
-  });
-
-  it("unwraps entries from 'impacts' wrapper key", () => {
-    const raw = {
-      impacts: [{ date: "2026-03-01", answers: [{ name: "sleep_aid", value: 0 }] }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("sleep_aid");
-  });
-
-  it("unwraps entries from 'entries' wrapper key", () => {
-    const raw = {
-      entries: [{ date: "2026-03-01", answers: [{ name: "melatonin", value: 1 }] }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-  });
-
-  it("unwraps entries from 'data' wrapper key", () => {
-    const raw = {
-      data: [{ date: "2026-03-01", answers: [{ name: "stretch", value: 1 }] }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-  });
-
-  it("unwraps entries from 'results' wrapper key", () => {
-    const raw = {
-      results: [{ date: "2026-03-01", answers: [{ name: "hydration", score: 3 }] }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.answerNumeric).toBe(3);
-  });
-
-  it("unwraps entries from 'journal' wrapper key", () => {
-    const raw = {
-      journal: [{ date: "2026-03-01", answers: [{ name: "mood", value: 4 }] }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-  });
-
-  it("unwraps entries from 'records' wrapper key", () => {
-    const raw = {
-      records: [{ date: "2026-03-01", answers: [{ name: "recovery", value: 2 }] }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-  });
-
-  it("wraps single object when wrapped value is not an array", () => {
-    const raw = {
-      impacts: "not-an-array",
-      date: "2026-03-01",
-      name: "single_entry",
-      value: 5,
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("single_entry");
-    expect(entries[0]?.answerNumeric).toBe(5);
-  });
-
-  it("skips null and non-object items in array", () => {
-    const raw = [
-      null,
-      "string-item",
-      42,
-      { date: "2026-03-01", answers: [{ name: "valid", value: 1 }] },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("valid");
-  });
-
-  it("extracts date from cycle_start field", () => {
-    const raw = [{ cycle_start: "2026-03-01T00:00:00Z", answers: [{ name: "test", value: 1 }] }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.date).toEqual(new Date("2026-03-01T00:00:00Z"));
-  });
-
-  it("extracts date from start field", () => {
-    const raw = [{ start: "2026-03-01T00:00:00Z", answers: [{ name: "test", value: 1 }] }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-  });
-
-  it("extracts date from day field", () => {
-    const raw = [{ day: "2026-03-01", answers: [{ name: "test", value: 1 }] }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-  });
-
-  it("skips entries with invalid dates", () => {
-    const raw = [
-      { date: "not-a-date", answers: [{ name: "test", value: 1 }] },
-      { answers: [{ name: "no_date", value: 1 }] },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(0);
-  });
-
-  it("skips null/non-object answers in nested array", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [null, "string", { name: "valid_answer", value: 3 }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("valid_answer");
-  });
-
-  it("extracts answerText from answer field", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "note", answer: "felt great" }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("felt great");
-  });
-
-  it("extracts answerText from response field when answer is not a string", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "note", answer: 42, response: "pretty good" }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("pretty good");
-  });
-
-  it("extracts answerText from value field when answer and response are not strings", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "note", answer: 1, response: 2, value: "string value" }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("string value");
-    // value is a string so answerNumeric should be null
-    expect(entries[0]?.answerNumeric).toBeNull();
-  });
-
-  it("extracts impactScore from impact_score field", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "test", impact_score: 0.8 }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.impactScore).toBe(0.8);
-  });
-
-  it("uses behavior/question/type as question name fallbacks", () => {
-    const raw = [{ date: "2026-03-01", answers: [{ behavior: "my_behavior", value: 1 }] }];
-    expect(parseJournalResponse(raw)[0]?.question).toBe("my_behavior");
-
-    const raw2 = [{ date: "2026-03-01", answers: [{ question: "my_question", value: 1 }] }];
-    expect(parseJournalResponse(raw2)[0]?.question).toBe("my_question");
-
-    const raw3 = [{ date: "2026-03-01", answers: [{ type: "my_type", value: 1 }] }];
-    expect(parseJournalResponse(raw3)[0]?.question).toBe("my_type");
-  });
-
-  it("defaults to 'unknown' when no question name fields exist in answer", () => {
-    const raw = [{ date: "2026-03-01", answers: [{ value: 1 }] }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("unknown");
-  });
-
-  it("handles flat entries without nested answers", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        name: "caffeine",
-        value: 2,
-        impact: 0.3,
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("caffeine");
-    expect(entries[0]?.answerNumeric).toBe(2);
-    expect(entries[0]?.answerText).toBeNull();
-    expect(entries[0]?.impactScore).toBe(0.3);
-  });
-
-  it("handles flat entries with behavior as question name", () => {
-    const raw = [{ date: "2026-03-01", behavior: "meditation", score: 4 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("meditation");
-    expect(entries[0]?.answerNumeric).toBe(4);
-  });
-
-  it("handles flat entries with type as question name", () => {
-    const raw = [{ date: "2026-03-01", type: "sleep_quality", score: 3 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("sleep_quality");
-  });
-
-  it("handles flat entries with answer/response string fields", () => {
-    const raw = [{ date: "2026-03-01", name: "note", answer: "good day" }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("good day");
-
-    const raw2 = [{ date: "2026-03-01", name: "note", response: "okay day" }];
-    expect(parseJournalResponse(raw2)[0]?.answerText).toBe("okay day");
-  });
-
-  it("handles flat entries with impact_score", () => {
-    const raw = [{ date: "2026-03-01", name: "test", impact_score: 0.7 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.impactScore).toBe(0.7);
-  });
-
-  it("defaults flat entry question to 'journal' when no name fields exist", () => {
-    const raw = [{ date: "2026-03-01", value: 1 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("journal");
-  });
-
-  it("normalizes question names to lowercase with underscores", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "Morning  Stretch", value: 1 }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("morning_stretch");
-  });
-
-  it("extracts answerNumeric from score field in nested answers", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "energy", score: 7 }],
-      },
-    ];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerNumeric).toBe(7);
-  });
-});
-
-// ============================================================
-// parseSleep — sleep need breakdown
-// ============================================================
-
-describe("parseSleep — sleep need breakdown", () => {
-  it("extracts sleep need components when scored", () => {
-    const record: WhoopSleepRecord = {
-      id: 400,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T06:30:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "SCORED",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 27000000,
-          total_awake_time_milli: 1800000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 10800000,
-          total_slow_wave_sleep_time_milli: 7200000,
-          total_rem_sleep_time_milli: 5400000,
-          sleep_cycle_count: 4,
-          disturbance_count: 2,
-        },
-        sleep_needed: {
-          baseline_milli: 28800000, // 480 min
-          need_from_sleep_debt_milli: 1800000, // 30 min
-          need_from_recent_strain_milli: 900000, // 15 min
-          need_from_recent_nap_milli: -600000, // -10 min
-        },
-        respiratory_rate: 16.1,
-        sleep_performance_percentage: 92,
-        sleep_consistency_percentage: 88,
-        sleep_efficiency_percentage: 91.7,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.sleepNeedBaselineMinutes).toBe(480);
-    expect(parsed?.sleepNeedFromDebtMinutes).toBe(30);
-    expect(parsed?.sleepNeedFromStrainMinutes).toBe(15);
-    expect(parsed?.sleepNeedFromNapMinutes).toBe(-10);
-  });
-
-  it("returns undefined sleep need when score is missing", () => {
-    const record: WhoopSleepRecord = {
-      id: 401,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T06:30:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "PENDING",
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 });
 

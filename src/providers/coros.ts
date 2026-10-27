@@ -1,18 +1,22 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
-import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import { parseFitFile } from "../fit/parser.ts";
-import { fitRecordsToSensorSamples } from "../fit/records.ts";
+import { enqueueFitFileImportAndWait } from "../jobs/enqueue-fit-file-import.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -90,7 +94,7 @@ const corosDailyResponseSchema = z.object({
 
 export interface ParsedCorosWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -101,7 +105,7 @@ export interface ParsedCorosWorkout {
 // Activity type mapping
 // ============================================================
 
-const COROS_SPORT_MAP: Record<number, CanonicalActivityType> = {
+const COROS_SPORT_MAP: Record<number, LegacyActivityType> = {
   8: "running",
   9: "cycling",
   10: "swimming",
@@ -116,15 +120,15 @@ const COROS_SPORT_MAP: Record<number, CanonicalActivityType> = {
   100: "other",
 };
 
-export function mapCorosSportType(mode: number): CanonicalActivityType {
-  return COROS_SPORT_MAP[mode] ?? "other";
+export function mapCorosSportType(mode: number): ProviderActivityType {
+  return resolveProviderActivityType(mode, COROS_SPORT_MAP[mode] ?? "other");
 }
 
 export function parseCorosWorkout(workout: CorosWorkout): ParsedCorosWorkout {
   return {
     externalId: workout.labelId,
     activityType: mapCorosSportType(workout.mode),
-    name: `COROS ${mapCorosSportType(workout.mode)}`,
+    name: `COROS ${mapCorosSportType(workout.mode).canonicalType}`,
     startedAt: new Date(workout.startTime * 1000),
     endedAt: new Date(workout.endTime * 1000),
     raw: {
@@ -134,7 +138,6 @@ export function parseCorosWorkout(workout: CorosWorkout): ParsedCorosWorkout {
       maxHeartRate: workout.maxHeartRate,
       avgSpeed: workout.avgSpeed,
       maxSpeed: workout.maxSpeed,
-      calories: workout.totalCalories,
       avgCadence: workout.avgCadence,
       avgPower: workout.avgPower,
       maxPower: workout.maxPower,
@@ -228,7 +231,7 @@ export class CorosProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "coros" });
+    this.#fetchFn = createProviderRateLimitFetch("coros", fetchFn);
   }
 
   validate(): string | null {
@@ -277,7 +280,7 @@ export class CorosProvider implements WebhookProvider {
       return listParsed.data.sportDataList
         .map((item) => sportDataItemSchema.safeParse(item))
         .filter(
-          (result): result is z.SafeParseSuccess<z.infer<typeof sportDataItemSchema>> =>
+          (result): result is z.ZodSafeParseSuccess<z.infer<typeof sportDataItemSchema>> =>
             result.success,
         )
         .map((result) => ({
@@ -359,9 +362,9 @@ export class CorosProvider implements WebhookProvider {
             const parsed = parseCorosWorkout(raw);
             presentActivityExternalIds.add(parsed.externalId);
             try {
-              const [row] = await db
-                .insert(activity)
-                .values({
+              const row = await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -369,19 +372,15 @@ export class CorosProvider implements WebhookProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                    providerAbsentAt: null,
-                  },
-                })
-                .returning({ id: activity.id });
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
 
               const activityId = row?.id;
 
@@ -389,26 +388,24 @@ export class CorosProvider implements WebhookProvider {
               if (activityId && raw.fitUrl) {
                 try {
                   const fitBuffer = await client.downloadFitFile(raw.fitUrl);
-                  const fitData = await parseFitFile(fitBuffer);
-                  const metricRows = fitRecordsToSensorSamples(
-                    fitData.records,
-                    this.id,
-                    activityId,
-                    parsed.activityType,
-                  );
-
-                  if (metricRows.length > 0) {
-                    await replaceMetricStreamBatch(
-                      db,
-                      { activityId },
-                      metricRows,
-                      SOURCE_TYPE_FILE,
-                      options.metricStreamPublisher,
-                    );
-                    logger.info(
-                      `[coros] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,
-                    );
-                  }
+                  await enqueueFitFileImportAndWait({
+                    fitBuffer,
+                    providerId: this.id,
+                    sourceName: this.name,
+                    userId: options.userId,
+                    ...(options.metricStreamPublisher
+                      ? { db, metricStreamPublisher: options.metricStreamPublisher }
+                      : {}),
+                    activitySummary: {
+                      externalId: parsed.externalId,
+                      activityType: parsed.activityType,
+                      startedAtIso: parsed.startedAt.toISOString(),
+                      endedAtIso: parsed.endedAt.toISOString(),
+                      name: parsed.name,
+                      raw: parsed.raw,
+                    },
+                  });
+                  logger.info(`[coros] Imported FIT file for workout ${parsed.externalId}`);
                 } catch (fitError) {
                   errors.push({
                     message: `FIT file for ${parsed.externalId}: ${fitError instanceof Error ? fitError.message : String(fitError)}`,
@@ -428,7 +425,7 @@ export class CorosProvider implements WebhookProvider {
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,
@@ -465,7 +462,6 @@ export class CorosProvider implements WebhookProvider {
                 raw.steps !== undefined ||
                 raw.hrv !== undefined ||
                 raw.spo2Avg !== undefined ||
-                raw.calories !== undefined ||
                 raw.distance !== undefined;
 
               if (hasDailyMetrics) {
@@ -477,7 +473,6 @@ export class CorosProvider implements WebhookProvider {
                     steps: raw.steps,
                     hrv: raw.hrv,
                     spo2Avg: raw.spo2Avg,
-                    activeEnergyKcal: raw.calories,
                     distanceKm: raw.distance !== undefined ? raw.distance / 1000 : undefined,
                   })
                   .onConflictDoUpdate({
@@ -491,7 +486,6 @@ export class CorosProvider implements WebhookProvider {
                       steps: raw.steps,
                       hrv: raw.hrv,
                       spo2Avg: raw.spo2Avg,
-                      activeEnergyKcal: raw.calories,
                       distanceKm: raw.distance !== undefined ? raw.distance / 1000 : undefined,
                     },
                   });
@@ -501,6 +495,11 @@ export class CorosProvider implements WebhookProvider {
               // Sleep
               if (raw.sleepDuration) {
                 const externalId = `coros-sleep-${raw.date}`;
+                const stagingAvailable =
+                  raw.deepSleep != null &&
+                  raw.lightSleep != null &&
+                  raw.remSleep != null &&
+                  raw.awakeDuration != null;
                 await db
                   .insert(sleepSession)
                   .values({
@@ -513,6 +512,7 @@ export class CorosProvider implements WebhookProvider {
                     lightMinutes: raw.lightSleep,
                     remMinutes: raw.remSleep,
                     awakeMinutes: raw.awakeDuration,
+                    stagingAvailable,
                   })
                   .onConflictDoUpdate({
                     target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -522,6 +522,7 @@ export class CorosProvider implements WebhookProvider {
                       lightMinutes: raw.lightSleep,
                       remMinutes: raw.remSleep,
                       awakeMinutes: raw.awakeDuration,
+                      stagingAvailable,
                     },
                   });
                 count++;

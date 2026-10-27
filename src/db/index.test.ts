@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterCommit } from "./transaction-effects.ts";
 
 const mockCaptureException = vi.fn();
 const mockLoggerError = vi.fn();
 const mockDrizzleReturn = {
   query: {},
   execute: vi.fn(),
+  transaction: vi.fn(),
   $client: { end: vi.fn() },
 };
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
 const mockPoolInstance = {
   on: vi.fn(),
+  totalCount: 0,
+  idleCount: 0,
+  waitingCount: 0,
 };
-const mockPool = vi.fn(() => mockPoolInstance);
+const mockPool = vi.fn(function vitestConstructor() {
+  return mockPoolInstance;
+});
+const mockRegisterPostgresPoolMetrics = vi.fn();
 
 vi.mock("@sentry/node", () => ({
   captureException: mockCaptureException,
@@ -27,6 +35,10 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
+vi.mock("./pool-metrics.ts", () => ({
+  registerPostgresPoolMetrics: mockRegisterPostgresPoolMetrics,
+}));
+
 vi.mock("pg", () => ({
   Pool: mockPool,
 }));
@@ -35,18 +47,69 @@ describe("db/index", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDrizzleReturn.execute = vi.fn();
+    mockDrizzleReturn.transaction = vi.fn();
     mockDrizzleReturn.$client = { end: vi.fn() };
     delete process.env.DATABASE_URL;
   });
 
   describe("createDatabase", () => {
+    it("publishes root and nested observations only after the raw transaction commits", async () => {
+      const { createDatabase } = await import("./index.ts");
+      const transaction = {
+        delete: vi.fn(),
+        execute: vi.fn().mockResolvedValue({ rows: [{ value: 7 }] }),
+        insert: vi.fn(),
+        query: {},
+        select: vi.fn(),
+        transaction: vi.fn(),
+        update: vi.fn(),
+      };
+      const effect = vi.fn();
+      const rolledBack = vi.fn();
+      transaction.transaction.mockImplementation(
+        (operation: (nested: typeof transaction) => Promise<number>) => operation(transaction),
+      );
+      const rawTransaction = mockDrizzleReturn.transaction;
+      rawTransaction.mockImplementation(
+        async (operation: (tx: typeof transaction) => Promise<number>) => {
+          const result = await operation(transaction);
+          expect(effect).not.toHaveBeenCalled();
+          return result;
+        },
+      );
+      const db = createDatabase("postgres://localhost:5432/test");
+      const result = await db.transaction(
+        async (tx) => {
+          afterCommit(effect);
+          await expect(
+            tx.transaction(async () => {
+              afterCommit(rolledBack);
+              throw new Error("rollback savepoint");
+            }),
+          ).rejects.toThrow("rollback savepoint");
+          return tx.transaction(async (nested) => {
+            afterCommit(effect);
+            expect(await nested.execute("SELECT 7 AS value")).toEqual([{ value: 7 }]);
+            return 42;
+          });
+        },
+        { isolationLevel: "serializable" },
+      );
+      expect(result).toBe(42);
+      expect(effect).toHaveBeenCalledTimes(2);
+      expect(rolledBack).not.toHaveBeenCalled();
+      expect(rawTransaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: "serializable",
+      });
+    });
+
     it("creates a pool with the given connection string", async () => {
       const { createDatabase } = await import("./index.ts");
       createDatabase("postgres://localhost:5432/test");
 
       expect(mockPool).toHaveBeenCalledWith({
         connectionString: "postgres://localhost:5432/test",
-        max: 5,
+        max: 10,
         idleTimeoutMillis: 300_000,
         connectionTimeoutMillis: 10_000,
         maxLifetimeSeconds: 600,
@@ -57,10 +120,18 @@ describe("db/index", () => {
 
     it("creates a drizzle instance with the pool and schema", async () => {
       const { createDatabase } = await import("./index.ts");
-      const schema = await import("./schema.ts");
+      const { drizzleSchema } = await import("./drizzle-schema.ts");
       createDatabase("postgres://localhost:5432/test");
 
-      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema });
+      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema: drizzleSchema });
+    });
+
+    it("registers observable pool state metrics", async () => {
+      const { createDatabase } = await import("./index.ts");
+
+      createDatabase("postgres://localhost:5432/test");
+
+      expect(mockRegisterPostgresPoolMetrics).toHaveBeenCalledWith(mockPoolInstance);
     });
 
     it("reports idle pool client errors", async () => {
@@ -110,7 +181,7 @@ describe("db/index", () => {
       expect(mockPool).toHaveBeenCalledWith(
         expect.objectContaining({
           connectionString: "postgres://envhost:5432/envdb",
-          max: 5,
+          max: 10,
         }),
       );
       expect(db).toBe(mockDrizzleReturn);

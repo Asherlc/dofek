@@ -14,19 +14,21 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        CollectionNotificationService.shared.start()
         BackgroundRefreshModule.registerBackgroundTask { refreshTask in
             // Schedule the next refresh before doing work
-            Self.scheduleRefresh()
+            BackgroundRefreshScheduler.schedule()
 
-            var isCompleted = false
-            let complete = { (success: Bool) in
-                guard !isCompleted else { return }
-                isCompleted = true
-                refreshTask.setTaskCompleted(success: success)
+            guard let taskId = BackgroundRefreshModule.taskCoordinator.beginTask(completion: { success in
+                DispatchQueue.main.async {
+                    refreshTask.setTaskCompleted(success: success)
+                }
+            }) else {
+                return
             }
 
             refreshTask.expirationHandler = {
-                complete(false)
+                BackgroundRefreshModule.taskCoordinator.expireTask(id: taskId)
             }
 
             // Emit event to JS via NotificationCenter so the module can
@@ -34,26 +36,20 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
             // to this notification when it has active listeners.
             NotificationCenter.default.post(
                 name: BackgroundRefreshModule.backgroundRefreshNotification,
-                object: nil
+                object: nil,
+                userInfo: [BackgroundRefreshModule.taskIdKey: taskId]
             )
-
-            // Give JS ~10 seconds to do its work, then mark complete.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                complete(true)
-            }
         }
 
-        Self.scheduleRefresh()
+        BackgroundRefreshScheduler.schedule()
         return true
     }
 
-    private static func scheduleRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshModule.taskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            print("[BackgroundRefresh] Failed to schedule: \(error.localizedDescription)")
-        }
+    public func applicationDidBecomeActive(_ application: UIApplication) {
+        CollectionNotificationService.shared.appBecameActive()
+    }
+
+    public func applicationWillTerminate(_ application: UIApplication) {
+        CollectionNotificationService.shared.appWillTerminate()
     }
 }

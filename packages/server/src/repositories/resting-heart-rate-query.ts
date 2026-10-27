@@ -8,15 +8,15 @@ import {
   restingHeartRateValuesCte,
 } from "../../../../src/db/resting-heart-rate-query.ts";
 
-export { representativeRestingHeartRate, restingHeartRateClickHouseCte, restingHeartRateValuesCte };
 export type { RestingHeartRateRow };
+export { representativeRestingHeartRate, restingHeartRateClickHouseCte, restingHeartRateValuesCte };
 
 interface FetchRestingHeartRateRowsInput {
   sensorStore: RestingHeartRateQueryStore;
   userId: string;
   timezone: string;
   endDate: string;
-  days: number;
+  days: number | null;
 }
 
 export async function fetchRestingHeartRateRows({

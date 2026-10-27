@@ -69,12 +69,25 @@ processors:
         value: docker
         action: upsert
 
+  # OTLP scalar log attributes become separate Axiom fields. Keep metadata in
+  # one map, including logs already mapped by application exporters.
+  transform/log-attributes:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(log.cache["attributes"], log.attributes)
+          - delete_key(log.cache["attributes"], "custom") where IsMap(log.attributes["custom"])
+          - merge_maps(log.cache["attributes"], log.attributes["custom"], "upsert") where IsMap(log.attributes["custom"])
+          - delete_matching_keys(log.attributes, ".*")
+          - set(log.attributes["custom"], log.cache["attributes"])
+
 exporters:
   otlphttp/traces:
     endpoint: https://api.axiom.co
     headers:
       authorization: "Bearer ${env:AXIOM_API_TOKEN}"
-      x-axiom-dataset: dofek-logs
+      x-axiom-dataset: dofek-traces
     retry_on_failure:
       enabled: true
       max_elapsed_time: 300s
@@ -104,9 +117,9 @@ service:
       exporters: [otlphttp/traces]
     logs/app:
       receivers: [otlp]
-      processors: [filter/drop-debug-logs, batch]
+      processors: [filter/drop-debug-logs, transform/log-attributes, batch]
       exporters: [otlphttp/logs]
     logs/docker:
       receivers: [filelog]
-      processors: [filter/drop-app-console-logs, resource/docker, probabilistic_sampler/docker-logs, batch]
+      processors: [filter/drop-app-console-logs, resource/docker, probabilistic_sampler/docker-logs, transform/log-attributes, batch]
       exporters: [otlphttp/logs]

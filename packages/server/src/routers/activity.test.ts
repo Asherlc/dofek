@@ -6,11 +6,15 @@ import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
-import { mapStreamPoint } from "./activity.ts";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { ExerciseWithSets, StrengthRepository } from "../repositories/strength-repository.ts";
+import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
+
+const { mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -18,12 +22,20 @@ vi.mock("dofek/lib/cache", () => ({
 
 const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueActivityRecomputeAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockWithUserWriteFence = vi.fn();
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockWithUserWriteFence(...args),
+}));
 
 vi.mock("dofek/jobs/queues", () => ({
   enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityDeleteAnalyticsRefresh(...args),
   enqueueActivityRestoreAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityRestoreAnalyticsRefresh(...args),
+  enqueueActivityRecomputeAnalyticsRefresh: (...args: unknown[]) =>
+    mockEnqueueActivityRecomputeAnalyticsRefresh(...args),
 }));
 
 // Mock tRPC infrastructure
@@ -101,6 +113,16 @@ vi.mock("dofek/providers/registry", () => ({
   }),
 }));
 
+beforeEach(() => {
+  mockWithUserWriteFence.mockImplementation(
+    async (
+      database: unknown,
+      _userId: string,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  );
+});
+
 import { activityRouter } from "./activity.ts";
 
 const createCaller = createTestCallerFactory(activityRouter);
@@ -109,25 +131,46 @@ function makeCaller(
   rows: Record<string, unknown>[] = [],
   sensorStore: unknown = makeSensorStoreStub(),
 ) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+  return makeTestCaller(createCaller, [rows], (db) => ({
+    db,
     sensorStore,
     userId: "user-1",
     timezone: "UTC",
-  });
+  })).caller;
+}
+
+function makeResolvedCaller(
+  rows: Record<string, unknown>[],
+  sensorStore: unknown = makeSensorStoreStub(),
+  requestedId = "00000000-0000-0000-0000-000000000001",
+) {
+  const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : requestedId;
+  return makeTestCaller(
+    createCaller,
+    [
+      rows.length > 0
+        ? [
+            {
+              requested_id: requestedId,
+              resolved_group_id: resolvedGroupId,
+              resolution_kind: requestedId === resolvedGroupId ? "group" : "member",
+            },
+          ]
+        : [],
+      rows,
+    ],
+    (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
+  ).caller;
 }
 
 function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
-    userId: "user-1",
-    timezone: "UTC",
-  });
+  return makeTestCaller(createCaller, [rows], (db) => ({ db, userId: "user-1", timezone: "UTC" }))
+    .caller;
 }
 
 function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2026-04-01", resting_hr: 55 }]),
+    query: vi.fn().mockResolvedValue([]),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -142,13 +185,21 @@ function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
 function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
   return {
     id: "00000000-0000-0000-0000-000000000001",
-    activity_type: "cycling",
+    canonical_type: "cycling",
+    primary_canonical_type: null,
+    displayed_date: "2026-04-01",
     started_at: "2026-04-01T10:00:00Z",
     ended_at: "2026-04-01T11:00:00Z",
     name: "Ride",
     notes: null,
+    perceived_exertion: null,
+    primary_activity_id: "00000000-0000-4000-8000-000000000001",
+    primary_provider_id: "wahoo",
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo"],
+    origin_evidence: [],
     source_external_ids: null,
     avg_hr: null,
     max_hr: null,
@@ -166,6 +217,99 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("hardware", () => {
+    it("returns the normalized hardware contract through owned activity resolution", async () => {
+      const id = "734b5d3e-df2b-4ee0-888e-55ea539d913a";
+      const { caller } = makeTestCaller(
+        createCaller,
+        [
+          [{ requested_id: id, resolved_group_id: id, resolution_kind: "member" }],
+          [
+            {
+              id,
+              user_id: "user-1",
+              started_at: "2026-10-20T12:00:00.000Z",
+              ended_at: "2026-10-20T13:00:00.000Z",
+              member_activity_ids: [id],
+            },
+          ],
+          [
+            {
+              activityId: id,
+              providerId: "strava",
+              sourceName: null,
+              raw: { device_name: "Edge 530", device_watts: false },
+              observations: [],
+            },
+          ],
+        ],
+        (db) => ({ db, sensorStore: makeSensorStoreStub(), userId: "user-1", timezone: "UTC" }),
+      );
+      const result = await caller.hardware({ id });
+      expect(result.items[0]).toMatchObject({
+        activityId: id,
+        providerId: "strava",
+        role: "recorder",
+        label: "Edge 530",
+      });
+      expect(result.power[0]).toMatchObject({ kind: "estimated" });
+    });
+    it("rejects unresolved activity IDs with the existing actionable error", async () => {
+      await expect(
+        makeCaller([]).hardware({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+    });
+  });
+  describe("hangboardDetails", () => {
+    it("returns the Hangboarding detail contract", async () => {
+      const caller = makeCaller([
+        {
+          activity_id: "activity-1",
+          canonical_type: "hangboard",
+          plan_name: "7/3 Repeaters",
+          session_id: "session-1",
+          board_id: "board-1",
+          board_name: "Tension Board",
+          segments_error: null,
+          activity_duration_seconds: 300,
+          interval_id: "interval-1",
+          interval_index: 0,
+          label: "Step 1: 19 mm edge",
+          interval_type: "work",
+          interval_started_at: "2026-08-07T14:00:00.000Z",
+          interval_ended_at: "2026-08-07T14:00:07.000Z",
+          duration_seconds: 7,
+        },
+      ]);
+
+      await expect(
+        caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).resolves.toEqual({
+        planName: "7/3 Repeaters",
+        boardName: "Tension Board",
+        segmentsError: null,
+        summary: {
+          durationSeconds: 300,
+          workIntervalCount: 1,
+          totalWorkDurationSeconds: 7,
+          totalRestDurationSeconds: null,
+          exercises: [{ label: "19 mm edge", workIntervalCount: 1, workDurationSeconds: 7 }],
+        },
+      });
+    });
+
+    it("returns an actionable not-found error for a non-Hangboarding activity", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "NOT_FOUND",
+        message: "Hangboarding details not found",
+      });
+    });
+  });
+
   describe("list", () => {
     it("returns paginated items with totalCount", async () => {
       const rows = [
@@ -173,10 +317,15 @@ describe("activityRouter", () => {
           id: "a1",
           started_at: "2024-01-01 10:00:00+00",
           ended_at: "2024-01-01 11:00:00+00",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
+          primary_activity_id: "00000000-0000-4000-8000-000000000001",
+          primary_provider_id: "wahoo",
+          primary_source_name: null,
+          origin_candidate_member_ids: [],
           provider_id: "wahoo",
           source_providers: ["wahoo"],
+          member_activity_ids: ["a1"],
           avg_hr: 150,
           max_hr: 180,
           avg_power: 200,
@@ -194,7 +343,7 @@ describe("activityRouter", () => {
       expect(item).toMatchObject({
         id: "a1",
         started_at: "2024-01-01 10:00:00+00",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         avg_hr: 150,
         max_hr: 180,
         avg_power: 200,
@@ -208,10 +357,11 @@ describe("activityRouter", () => {
           id: "a1",
           started_at: "2024-01-15 14:30:00+00",
           ended_at: "2024-01-15 15:15:00+00",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Easy Run",
           provider_id: "apple_health",
           source_providers: ["apple_health"],
+          member_activity_ids: ["a1"],
           avg_hr: 142,
           max_hr: 165,
           avg_power: null,
@@ -317,14 +467,20 @@ describe("activityRouter", () => {
     it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         started_at: "2024-01-01T10:00:00Z",
         ended_at: "2024-01-01T11:00:00Z",
         name: "Morning Ride",
         notes: null,
+        primary_activity_id: "00000000-0000-4000-8000-000000000001",
+        primary_provider_id: "wahoo",
+        primary_source_name: null,
+        origin_candidate_member_ids: [],
         provider_id: "wahoo",
         subsource: null,
         source_providers: ["strava", "wahoo"],
+        member_activity_ids: ["abc-123"],
+        origin_evidence: [],
         source_external_ids: [
           { providerId: "strava", externalId: "99999" },
           { providerId: "wahoo", externalId: "42" },
@@ -341,7 +497,7 @@ describe("activityRouter", () => {
         elevation_loss_m: 280,
         sample_count: 3600,
       };
-      const caller = makeCaller([row]);
+      const caller = makeResolvedCaller([row]);
       const result = await caller.byId({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result.id).toBe("abc-123");
@@ -353,12 +509,16 @@ describe("activityRouter", () => {
       expect(result.sourceLinks).toEqual([
         {
           providerId: "strava",
+          externalId: "99999",
+          subsource: null,
           label: "Strava",
           url: "https://www.strava.com/activities/99999",
           providerAbsentAt: null,
         },
         {
           providerId: "wahoo",
+          externalId: "42",
+          subsource: null,
           label: "Wahoo",
           url: "https://systm.wahoofitness.com/history/activity-details/42",
           providerAbsentAt: null,
@@ -376,14 +536,20 @@ describe("activityRouter", () => {
     it("handles null optional fields", async () => {
       const row = {
         id: "abc-123",
-        activity_type: "running",
+        canonical_type: "running",
         started_at: "2024-01-01",
         ended_at: null,
         name: null,
         notes: null,
+        primary_activity_id: null,
+        primary_provider_id: null,
+        primary_source_name: null,
+        origin_candidate_member_ids: [],
         provider_id: "manual",
         subsource: null,
         source_providers: null,
+        member_activity_ids: ["abc-123"],
+        origin_evidence: [],
         source_external_ids: null,
         avg_hr: null,
         max_hr: null,
@@ -397,7 +563,7 @@ describe("activityRouter", () => {
         elevation_loss_m: null,
         sample_count: null,
       };
-      const caller = makeCaller([row]);
+      const caller = makeResolvedCaller([row]);
       const result = await caller.byId({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result.endedAt).toBeNull();
@@ -439,15 +605,23 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: postgresExecute.mockResolvedValueOnce([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: postgresExecute
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -459,7 +633,7 @@ describe("activityRouter", () => {
       });
 
       expect(result).toHaveLength(1);
-      expect(postgresExecute).toHaveBeenCalledTimes(1);
+      expect(postgresExecute).toHaveBeenCalledTimes(2);
       expect(sensorStore.getStream).toHaveBeenCalledTimes(1);
     });
 
@@ -484,15 +658,24 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValue([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -528,15 +711,24 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValue([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -549,11 +741,96 @@ describe("activityRouter", () => {
       expect(result[0]?.heartRate).toBeNull();
       expect(result[0]?.power).toBeNull();
     });
+
+    it.each([
+      ["missing", "00000000-0000-4000-8000-000000000091"],
+      ["owned by another user", "00000000-0000-4000-8000-000000000092"],
+    ])("returns the same NOT_FOUND error for an activity that is %s", async (_case, id) => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore: makeSensorStoreStub(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.stream({ id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+    });
+  });
+
+  describe("route", () => {
+    it("requires the activity analytics store", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.route({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "ClickHouse activity analytics store is required for activity routes. Set CLICKHOUSE_URL and retry.",
+      });
+    });
+
+    it("does not expose a route for an activity outside the user's visible activities", async () => {
+      const query = vi.fn();
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore: makeSensorStoreStub({ query }),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.route({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it("keeps partial GPS coordinates out of an activity route response", async () => {
+      const activityId = "00000000-0000-0000-0000-000000000001";
+      const sensorStore = makeSensorStoreStub({
+        query: vi.fn().mockResolvedValue([{ is_processing: 1, gps_count: 1 }]),
+      });
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: activityId,
+                resolved_group_id: activityId,
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: activityId,
+                user_id: "user-1",
+                started_at: "2026-07-01T12:00:00Z",
+                ended_at: "2026-07-01T13:00:00Z",
+                member_activity_ids: [activityId],
+              },
+            ]),
+        },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.route({ id: activityId })).resolves.toEqual({ status: "processing" });
+    });
   });
 
   describe("delete", () => {
     beforeEach(() => {
       mockEnqueueActivityDeleteAnalyticsRefresh.mockClear();
+      vi.mocked(queryCache.invalidateByPrefix).mockClear();
     });
 
     it("calls DELETE with correct activity id and user_id", async () => {
@@ -570,10 +847,10 @@ describe("activityRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
-    it("invalidates activity and calendar caches after delete", async () => {
+    it("invalidates activity, calendar, and climbing map caches after delete", async () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ member_activity_id: "00000000-0000-0000-0000-000000000001" }])
@@ -590,6 +867,7 @@ describe("activityRouter", () => {
 
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.locationMap:");
     });
 
     it("enqueues an activity analytics refresh after delete", async () => {
@@ -689,14 +967,77 @@ describe("activityRouter", () => {
       });
 
       expect(result).toEqual({ success: true, deletedCount: 2 });
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(mockEnqueueActivityDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
         "00000000-0000-0000-0000-000000000001",
         "00000000-0000-0000-0000-000000000002",
       ]);
     });
 
-    it("invalidates activity and calendar caches after bulkDelete", async () => {
+    it("merge schedules refreshes for source members and group IDs and invalidates activity caches", async () => {
+      mockEnqueueActivityRecomputeAnalyticsRefresh.mockClear();
+      vi.mocked(queryCache.invalidateByPrefix).mockClear();
+      const groupIds = [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ];
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(
+          groupIds.map((id) => ({
+            id,
+            canonical_type: "cycling",
+            started_at: "2026-09-20T08:00:00Z",
+          })),
+        )
+        .mockResolvedValueOnce([{ id: "member-a" }, { id: "member-b" }])
+        .mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.merge({ ids: groupIds })).resolves.toEqual({
+        success: true,
+        groupId: groupIds[0],
+      });
+
+      expect(mockEnqueueActivityRecomputeAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "member-a",
+        "member-b",
+        ...groupIds,
+      ]);
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("merge rejects duplicate activity IDs before querying the database", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const id = "00000000-0000-0000-0000-000000000001";
+
+      await expect(caller.merge({ ids: [id, id] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("merge reports an actionable error when the activity view is missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+      await expect(
+        caller.merge({
+          ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
+
+    it("invalidates activity, calendar, and climbing map caches after bulkDelete", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
@@ -710,6 +1051,7 @@ describe("activityRouter", () => {
 
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.locationMap:");
     });
 
     it("reports analytics enqueue failures to Sentry without failing bulkDelete", async () => {
@@ -777,6 +1119,81 @@ describe("activityRouter", () => {
         caller.bulkDelete({
           ids: ["00000000-0000-0000-0000-000000000001"],
         }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
+  });
+
+  describe("recompute", () => {
+    beforeEach(() => {
+      mockEnqueueActivityRecomputeAnalyticsRefresh.mockClear();
+    });
+
+    it("enqueues recompute for all grouped member activities and invalidates caches", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            requested_id: "00000000-0000-0000-0000-000000000001",
+            resolved_group_id: "00000000-0000-0000-0000-000000000001",
+            resolution_kind: "group",
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            user_id: "user-1",
+            started_at: "2026-04-01T10:00:00Z",
+            ended_at: "2026-04-01T11:00:00Z",
+            member_activity_ids: [
+              "00000000-0000-0000-0000-000000000001",
+              "00000000-0000-0000-0000-000000000002",
+            ],
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).resolves.toEqual({ success: true });
+
+      expect(mockEnqueueActivityRecomputeAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ]);
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("throws NOT_FOUND when recomputing a missing activity", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+    });
+
+    it("throws PRECONDITION_FAILED when activity views are missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
       ).rejects.toMatchObject({
         code: "PRECONDITION_FAILED",
         message:
@@ -909,21 +1326,47 @@ describe("activityRouter", () => {
   });
 
   describe("strengthExercises", () => {
-    it("uses the configured sensor store when resolving the activity", async () => {
+    it("hydrates non-representative Strong member requests from the resolved stable group", async () => {
       const getExercisesForActivitySpy = vi
         .spyOn(StrengthRepository.prototype, "getExercisesForActivity")
-        .mockResolvedValue([]);
-      const activityId = "00000000-0000-0000-0000-000000000001";
+        .mockResolvedValue([
+          new ExerciseWithSets(0, "Deadlift", "BARBELL", ["BACK"], "STRENGTH", [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: 8,
+              setIndex: 0,
+              setType: "working",
+              weightKg: 100,
+            },
+          ]),
+        ]);
+      const requestedStrongMemberId = "00000000-0000-0000-0000-000000000001";
+      const stableGroupId = "00000000-0000-0000-0000-000000000002";
 
-      const caller = makeCaller([
-        makeActivityRow({
-          id: activityId,
+      const caller = makeResolvedCaller(
+        [
+          {
+            ...makeActivityRow({
+              id: stableGroupId,
+              resolved_from: requestedStrongMemberId,
+            }),
+            member_activity_ids: [requestedStrongMemberId],
+          },
+        ],
+        undefined,
+        requestedStrongMemberId,
+      );
+      const result = await caller.strengthExercises({ id: requestedStrongMemberId });
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          exerciseName: "Deadlift",
+          sets: [expect.objectContaining({ reps: 5, weightKg: 100 })],
         }),
       ]);
-      const result = await caller.strengthExercises({ id: activityId });
-
-      expect(result).toEqual([]);
-      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(activityId);
+      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(stableGroupId);
       getExercisesForActivitySpy.mockRestore();
     });
   });
@@ -939,7 +1382,7 @@ describe("activityRouter", () => {
         accessWindow: {
           kind: "limited",
           paid: false,
-          reason: "free_signup_week",
+          reason: "free_recent_week",
           startDate: "2026-04-10",
           endDateExclusive: "2026-04-17",
         },
@@ -958,7 +1401,7 @@ describe("activityRouter", () => {
         accessWindow: {
           kind: "limited",
           paid: false,
-          reason: "free_signup_week",
+          reason: "free_recent_week",
           startDate: "2026-04-10",
           endDateExclusive: "2026-04-17",
         },
@@ -968,7 +1411,7 @@ describe("activityRouter", () => {
       );
     });
 
-    it("stream returns empty when activity is outside limited access window", async () => {
+    it("stream returns NOT_FOUND when activity is outside limited access window", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
@@ -978,13 +1421,14 @@ describe("activityRouter", () => {
         accessWindow: {
           kind: "limited",
           paid: false,
-          reason: "free_signup_week",
+          reason: "free_recent_week",
           startDate: "2026-04-10",
           endDateExclusive: "2026-04-17",
         },
       });
-      const result = await caller.stream({ id: "00000000-0000-0000-0000-000000000001" });
-      expect(result).toEqual([]);
+      await expect(
+        caller.stream({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
     });
   });
 
@@ -1018,14 +1462,20 @@ describe("activityRouter", () => {
             .fn()
             .mockResolvedValueOnce([
               {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
                 id: "00000000-0000-0000-0000-000000000001",
                 user_id: "user-1",
                 started_at: "2024-01-01T10:00:00Z",
                 ended_at: "2024-01-01T11:00:00Z",
                 member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
               },
-            ])
-            .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]),
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -1053,6 +1503,13 @@ describe("activityRouter", () => {
         percent: 17.9,
       });
       expect(result[5]).toMatchObject({ zone: 5, label: "VO2max" });
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith({
+        activityId: "00000000-0000-0000-0000-000000000001",
+        userId: "user-1",
+        startedAt: "2024-01-01T10:00:00Z",
+        endedAt: "2024-01-01T11:00:00Z",
+        memberActivityIds: ["00000000-0000-0000-0000-000000000001"],
+      });
     });
 
     it("defaults missing zones to 0 seconds", async () => {
@@ -1069,14 +1526,20 @@ describe("activityRouter", () => {
             .fn()
             .mockResolvedValueOnce([
               {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
                 id: "00000000-0000-0000-0000-000000000001",
                 user_id: "user-1",
                 started_at: "2024-01-01T10:00:00Z",
                 ended_at: "2024-01-01T11:00:00Z",
                 member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
               },
-            ])
-            .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]),
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -1090,6 +1553,13 @@ describe("activityRouter", () => {
       expect(result[1]?.seconds).toBe(0);
       expect(result[2]?.seconds).toBe(500);
       expect(result[3]?.seconds).toBe(0);
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith({
+        activityId: "00000000-0000-0000-0000-000000000001",
+        userId: "user-1",
+        startedAt: "2024-01-01T10:00:00Z",
+        endedAt: "2024-01-01T11:00:00Z",
+        memberActivityIds: ["00000000-0000-0000-0000-000000000001"],
+      });
     });
   });
 
@@ -1098,7 +1568,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "running", avg_power: null, max_power: null }),
+          makeActivityRow({ canonical_type: "running", avg_power: null, max_power: null }),
         );
       const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
@@ -1138,7 +1608,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 340 }),
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 340 }),
         );
       const caller = makeCallerWithoutSensorStore();
 
@@ -1149,41 +1619,52 @@ describe("activityRouter", () => {
       findByIdSpy.mockRestore();
     });
 
-    it("returns zones and ftp for cycling activities with power data", async () => {
-      const zones = [
-        { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
-        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
-      ];
-      const findByIdSpy = vi
-        .spyOn(ActivityRepository.prototype, "findById")
-        .mockResolvedValue(
-          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 360 }),
-        );
-      const getEftpTrendSpy = vi
-        .spyOn(PowerRepository.prototype, "getEftpTrend")
-        .mockResolvedValue({
-          trend: [],
-          currentEftp: 265,
-          model: null,
+    it.each([undefined, "wahoo"])(
+      "returns zones and ftp for cycling activities using power source %s",
+      async (powerSourceId) => {
+        const zones = [
+          { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
+        ];
+        const findByIdSpy = vi
+          .spyOn(ActivityRepository.prototype, "findById")
+          .mockResolvedValue(
+            makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
+          );
+        const getEftpTrendSpy = vi
+          .spyOn(PowerRepository.prototype, "getEftpTrend")
+          .mockResolvedValue({
+            trend: [],
+            currentEftp: 265,
+            model: null,
+          });
+        const getPowerZonesSpy = vi
+          .spyOn(ActivityRepository.prototype, "getPowerZones")
+          .mockResolvedValue(zones);
+
+        const caller = makeCaller([], {
+          getPowerCurveSamples: vi.fn(),
+          getNormalizedPowerSamples: vi.fn(),
         });
-      const getPowerZonesSpy = vi
-        .spyOn(ActivityRepository.prototype, "getPowerZones")
-        .mockResolvedValue(zones);
+        const result = await caller.powerZones({
+          id: "00000000-0000-0000-0000-000000000001",
+          powerSourceId,
+        });
 
-      const caller = makeCaller([], {
-        getPowerCurveSamples: vi.fn(),
-        getNormalizedPowerSamples: vi.fn(),
-      });
-      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+        const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
+        expect(range?.days).toBe(90);
+        expect(getPowerZonesSpy).toHaveBeenCalledWith(
+          "00000000-0000-0000-0000-000000000001",
+          265,
+          powerSourceId,
+        );
+        expect(result).toEqual({ zones, ftp: 265 });
 
-      expect(getEftpTrendSpy).toHaveBeenCalledWith(90);
-      expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
-      expect(result).toEqual({ zones, ftp: 265 });
-
-      findByIdSpy.mockRestore();
-      getEftpTrendSpy.mockRestore();
-      getPowerZonesSpy.mockRestore();
-    });
+        findByIdSpy.mockRestore();
+        getEftpTrendSpy.mockRestore();
+        getPowerZonesSpy.mockRestore();
+      },
+    );
 
     it("throws NOT_FOUND when activity does not exist", async () => {
       const findByIdSpy = vi
@@ -1219,13 +1700,18 @@ describe("Activity model (via router integration)", () => {
 
   const fullRow = {
     id: "abc-123",
-    activity_type: "cycling",
+    canonical_type: "cycling",
     started_at: "2026-03-01T10:00:00+00:00",
     ended_at: "2026-03-01T11:30:00+00:00",
     name: "Morning Ride",
     notes: "Felt good",
+    primary_activity_id: "00000000-0000-4000-8000-000000000001",
+    primary_provider_id: "wahoo",
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo", "strava"],
+    origin_evidence: [],
     source_external_ids: [
       { providerId: "strava", externalId: "99999" },
       { providerId: "wahoo", externalId: "42" },
@@ -1256,6 +1742,18 @@ describe("Activity model (via router integration)", () => {
     expect(detail.sourceProviders).toEqual(["strava", "wahoo"]);
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
+    expect(detail.sourceDecision).toEqual({
+      origin: {
+        status: "resolved",
+        memberActivityId: fullRow.primary_activity_id,
+        providerId: "wahoo",
+        sourceName: null,
+      },
+      sourceCount: 2,
+      primarySourceLabel: "Wahoo",
+      explanation:
+        "Wahoo is the closest available record to the original recording. Individual details may come from other matched sources.",
+    });
     expect(detail.avgHr).toBe(145);
     expect(detail.maxHr).toBe(175);
     expect(detail.avgPower).toBe(220);
@@ -1310,49 +1808,6 @@ describe("Activity model (via router integration)", () => {
   });
 });
 
-describe("mapStreamPoint", () => {
-  it("maps all populated fields", () => {
-    const mapped = mapStreamPoint({
-      recorded_at: "2026-03-01T10:00:00Z",
-      heart_rate: 145,
-      power: 220,
-      speed: 8.5,
-      cadence: 85,
-      altitude: 350.5,
-      lat: 40.7128,
-      lng: -74.006,
-    });
-    expect(mapped.recordedAt).toBe("2026-03-01T10:00:00Z");
-    expect(mapped.heartRate).toBe(145);
-    expect(mapped.power).toBe(220);
-    expect(mapped.speed).toBe(8.5);
-    expect(mapped.cadence).toBe(85);
-    expect(mapped.altitude).toBe(350.5);
-    expect(mapped.lat).toBe(40.7128);
-    expect(mapped.lng).toBe(-74.006);
-  });
-
-  it("returns null for all nullable fields when null", () => {
-    const mapped = mapStreamPoint({
-      recorded_at: "2026-03-01T10:00:00Z",
-      heart_rate: null,
-      power: null,
-      speed: null,
-      cadence: null,
-      altitude: null,
-      lat: null,
-      lng: null,
-    });
-    expect(mapped.heartRate).toBeNull();
-    expect(mapped.power).toBeNull();
-    expect(mapped.speed).toBeNull();
-    expect(mapped.cadence).toBeNull();
-    expect(mapped.altitude).toBeNull();
-    expect(mapped.lat).toBeNull();
-    expect(mapped.lng).toBeNull();
-  });
-});
-
 describe("mapHrZones", () => {
   it("maps zone 0 plus all 5 training zones with correct labels and ranges", () => {
     const rows = [
@@ -1392,4 +1847,47 @@ describe("mapHrZones", () => {
       expect(zone.seconds).toBe(0);
     }
   });
+});
+
+vi.mock("dofek/activity-images/storage", () => ({
+  createActivityImageUrl: vi.fn(async () => "https://private.test/signed"),
+  readActivityImageObject: vi.fn(async () => new Uint8Array()),
+}));
+vi.mock("../repositories/activity-images-repository.ts", async (original) => ({
+  ...(await original<typeof import("../repositories/activity-images-repository.ts")>()),
+  listActivityImages: vi.fn(),
+}));
+
+it("serves signed images only for the caller's resolved activity members", async () => {
+  const { listActivityImages } = await import("../repositories/activity-images-repository.ts");
+  const { createActivityImageUrl } = await import("dofek/activity-images/storage");
+  const id = "10000000-0000-4000-8000-000000000001";
+  const members = vi
+    .spyOn(ActivityRepository.prototype, "getActivityMemberIds")
+    .mockResolvedValue([id]);
+  vi.mocked(listActivityImages).mockResolvedValue({
+    images: [
+      {
+        id: "object",
+        objectKey: "images/owner/hash",
+        width: 10,
+        height: 20,
+        mimeType: "image/png",
+        sizeBytes: 50,
+        sources: [],
+      },
+    ],
+    coverage: [],
+    acquisition: [],
+  });
+  const result = await makeCaller().images({ id });
+  expect(members).toHaveBeenCalledWith(id);
+  expect(listActivityImages).toHaveBeenCalledWith(expect.anything(), {
+    userId: "user-1",
+    memberActivityIds: [id],
+  });
+  expect(createActivityImageUrl).toHaveBeenCalledWith("images/owner/hash");
+  expect(result.images[0]?.url).toBe("https://private.test/signed");
+  expect(result.images[0]).not.toHaveProperty("objectKey");
+  members.mockRestore();
 });

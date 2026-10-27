@@ -1,3 +1,4 @@
+import { hkdfSync } from "node:crypto";
 import {
   buildClient,
   CommitmentPolicy,
@@ -7,6 +8,7 @@ import {
 
 const encryptedValuePrefix = "enc:v1:";
 const credentialPurpose = "provider-credentials";
+const credentialIdentifierPurpose = "dofek/provider-credential-identifier/v1";
 const encryptionKeyEnvName = "CREDENTIAL_ENCRYPTION_KEY_BASE64";
 
 const { encrypt, decrypt } = buildClient(CommitmentPolicy.REQUIRE_ENCRYPT_REQUIRE_DECRYPT);
@@ -94,6 +96,16 @@ function verifyEncryptionContext(
 }
 
 function buildProviderFromEnvironment(): CredentialEncryptionProvider {
+  const unencryptedMasterKey = credentialMasterKeyFromEnvironment();
+
+  return new AwsEncryptionSdkCredentialEncryptionProvider({
+    keyName: process.env.CREDENTIAL_ENCRYPTION_KEY_NAME ?? "provider-credentials",
+    keyNamespace: process.env.CREDENTIAL_ENCRYPTION_KEY_NAMESPACE ?? "dofek",
+    unencryptedMasterKey,
+  });
+}
+
+function credentialMasterKeyFromEnvironment(): Uint8Array {
   const encodedKey = process.env[encryptionKeyEnvName];
   if (!encodedKey) {
     throw new Error(`${encryptionKeyEnvName} is required for credential encryption`);
@@ -105,15 +117,44 @@ function buildProviderFromEnvironment(): CredentialEncryptionProvider {
     throw new Error(`${encryptionKeyEnvName} must decode to exactly 32 bytes`);
   }
 
-  return new AwsEncryptionSdkCredentialEncryptionProvider({
-    keyName: process.env.CREDENTIAL_ENCRYPTION_KEY_NAME ?? "provider-credentials",
-    keyNamespace: process.env.CREDENTIAL_ENCRYPTION_KEY_NAMESPACE ?? "dofek",
-    unencryptedMasterKey,
-  });
+  return unencryptedMasterKey;
 }
 
 export function isEncryptedCredentialValue(value: string): boolean {
   return value.startsWith(encryptedValuePrefix);
+}
+
+/**
+ * Produces a stable opaque identifier for a credential value without exposing
+ * it or treating it as a password. HKDF domain-separates identifier derivation
+ * from the master key's encryption use.
+ */
+export function deriveCredentialIdentifier(
+  value: string,
+  context: CredentialEncryptionContext,
+): string {
+  const masterKey = credentialMasterKeyFromEnvironment();
+  const contextValues = buildEncryptionContext(context);
+  const identifierSalt = Buffer.from(
+    JSON.stringify([
+      credentialIdentifierPurpose,
+      contextValues.table_name,
+      contextValues.column_name,
+      contextValues.scope_id,
+      value,
+    ]),
+    "utf8",
+  );
+
+  return Buffer.from(
+    hkdfSync(
+      "sha256",
+      masterKey,
+      identifierSalt,
+      Buffer.from(credentialIdentifierPurpose, "utf8"),
+      32,
+    ),
+  ).toString("hex");
 }
 
 export async function encryptCredentialValue(

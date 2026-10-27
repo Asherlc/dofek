@@ -4,15 +4,17 @@ import {
   formatIntensity,
   formatTrainingLoad,
 } from "@dofek/format/format";
+import {
+  formatSummaryDateContext,
+  type SummaryDateContext,
+} from "@dofek/format/summary-date-context";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
   scoreColor,
-  scoreDescription,
   scoreLabel,
   sleepTierColor,
   sleepTierDescription,
-  WorkloadRatio,
 } from "@dofek/scoring/scoring";
 import { duration, easing } from "@dofek/scoring/tokens";
 import type {
@@ -21,20 +23,26 @@ import type {
   StrainTargetResult,
   WorkloadRatioResult,
 } from "dofek-server/types";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface DailyOverviewProps {
   endDate?: string;
+  summaryDateContext?: SummaryDateContext;
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
   sleepPerformance: SleepPerformanceInfo | null | undefined;
-  strainTarget?: StrainTargetResult | undefined;
+  strainTarget?: StrainTargetResult | null;
   readinessLoading?: boolean;
   workloadLoading?: boolean;
   strainTargetLoading?: boolean;
   sleepLoading?: boolean;
+  readinessError?: unknown;
+  workloadError?: unknown;
+  strainTargetError?: unknown;
+  sleepError?: unknown;
   embedded?: boolean;
 }
 
@@ -48,6 +56,7 @@ function ScoreRing({
   children,
   onClick,
   expanded,
+  controlsId,
   targetFraction,
 }: {
   value: number;
@@ -60,6 +69,7 @@ function ScoreRing({
   children: React.ReactNode;
   onClick?: () => void;
   expanded?: boolean;
+  controlsId: string;
   /** Optional target marker as fraction 0-1 of the ring */
   targetFraction?: number;
 }) {
@@ -84,6 +94,7 @@ function ScoreRing({
       style={{ width: size, height: size }}
       onClick={onClick}
       aria-expanded={onClick ? (expanded ?? false) : undefined}
+      aria-controls={onClick ? controlsId : undefined}
       aria-label={onClick && label ? `${label} score breakdown` : undefined}
     >
       <svg width={size} height={size} aria-hidden="true">
@@ -210,9 +221,11 @@ function RecoveryBreakdown({ readiness }: { readiness: ReadinessRow }) {
 function StrainBreakdown({
   workloadRatio,
   strainTarget,
+  strain,
 }: {
   workloadRatio: WorkloadRatioResult;
-  strainTarget?: StrainTargetResult;
+  strainTarget?: StrainTargetResult | null;
+  strain: number;
 }) {
   const today = workloadRatio.timeSeries[workloadRatio.timeSeries.length - 1];
   const acuteLoad = today?.acuteLoad ?? 0;
@@ -221,6 +234,7 @@ function StrainBreakdown({
 
   return (
     <div className="space-y-3">
+      <p className="text-[11px] text-subtle">{new StrainScore(strain).description}</p>
       {/* Strain target */}
       {strainTarget && (
         <div>
@@ -263,47 +277,31 @@ function StrainBreakdown({
       )}
 
       {/* Load stats */}
-      {strainTarget && (
-        <div className="grid grid-cols-2 gap-2 text-center">
-          <div>
-            <p className="text-sm font-bold text-foreground tabular-nums">
-              {strainTarget.currentStrain.toFixed(1)}
-            </p>
-            <p className="text-[10px] text-subtle">Today</p>
-          </div>
-          <div>
-            <p className="text-sm font-bold text-foreground tabular-nums">
-              {strainTarget.workloadRatio != null ? strainTarget.workloadRatio.toFixed(2) : "--"}
-            </p>
-            <p className="text-[10px] text-subtle">Training Load Ratio</p>
-          </div>
-        </div>
-      )}
-
-      {/* Load stats */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">
             {formatTrainingLoad(acuteLoad)}
           </p>
-          <p className="text-[10px] text-subtle">Acute (7d)</p>
+          <p className="text-[10px] text-subtle">
+            Recent {workloadRatio.context.recentDays}-day load
+          </p>
         </div>
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">
             {formatTrainingLoad(chronicLoad)}
           </p>
-          <p className="text-[10px] text-subtle">Chronic (28d)</p>
+          <p className="text-[10px] text-subtle">
+            {workloadRatio.context.baselineDays}-day baseline load
+          </p>
         </div>
         <div>
-          <p
-            className="text-sm font-bold tabular-nums"
-            style={{ color: new WorkloadRatio(ratio ?? null).color }}
-          >
+          <p className="text-sm font-bold text-foreground tabular-nums">
             {ratio != null ? ratio.toFixed(2) : "--"}
           </p>
-          <p className="text-[10px] text-subtle">Workload Ratio</p>
+          <p className="text-[10px] text-subtle">{workloadRatio.context.label}</p>
         </div>
       </div>
+      <p className="text-[11px] text-dim">{workloadRatio.context.description}</p>
     </div>
   );
 }
@@ -314,6 +312,7 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
 
   return (
     <div className="space-y-2">
+      <p className="text-[11px] text-subtle">{sleepTierDescription(performance.tier)}</p>
       <div className="flex items-center gap-3">
         <span className="text-muted text-xs w-[7.5rem] shrink-0">
           Sufficiency <span className="text-dim">(70%)</span>
@@ -340,8 +339,17 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
         </span>
       </div>
       <p className="text-dim text-[11px]">
-        Need: {formatDurationMinutes(neededMinutes)} &middot; Bedtime:{" "}
-        {performance.recommendedBedtime}
+        <span className="block">
+          Night of{" "}
+          {formatSummaryDateContext({
+            ...performance.summaryDateContext,
+            effectiveDate: performance.sleepDate,
+          })}
+        </span>
+        <span>
+          Need: {formatDurationMinutes(neededMinutes)} &middot; Bedtime:{" "}
+          {performance.recommendedBedtime}
+        </span>
       </p>
     </div>
   );
@@ -356,19 +364,14 @@ function EmptyBreakdown({ message }: { message: string }) {
 function ExpandableBreakdown({
   expanded,
   children,
+  id,
 }: {
   expanded: boolean;
   children: React.ReactNode;
+  id: string;
 }) {
   return (
-    <div
-      className="overflow-hidden transition-all duration-300 ease-out"
-      style={{
-        maxHeight: expanded ? 300 : 0,
-        opacity: expanded ? 1 : 0,
-        marginTop: expanded ? 16 : 0,
-      }}
-    >
+    <div id={id} hidden={!expanded} className="mt-4">
       <div className="border-t border-border pt-3 px-1">{children}</div>
     </div>
   );
@@ -380,10 +383,12 @@ function ReadinessRing({
   score,
   onClick,
   expanded,
+  controlsId,
 }: {
   score: number;
   onClick: () => void;
   expanded: boolean;
+  controlsId: string;
 }) {
   const color = scoreColor(score);
   const ringLabel = scoreLabel(score);
@@ -397,6 +402,7 @@ function ReadinessRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        controlsId={controlsId}
         label="Recovery"
       >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
@@ -412,7 +418,6 @@ function ReadinessRing({
       >
         {ringLabel}
       </span>
-      <p className="text-[11px] text-subtle text-center leading-tight">{scoreDescription(score)}</p>
     </div>
   );
 }
@@ -422,11 +427,13 @@ function StrainRing({
   targetFraction,
   onClick,
   expanded,
+  controlsId,
 }: {
   strain: number;
   targetFraction?: number;
   onClick: () => void;
   expanded: boolean;
+  controlsId: string;
 }) {
   const strainScore = new StrainScore(strain);
   const color = strainScore.color;
@@ -441,6 +448,7 @@ function StrainRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        controlsId={controlsId}
         targetFraction={targetFraction}
         label="Strain"
       >
@@ -457,7 +465,6 @@ function StrainRing({
       >
         {ringLabel}
       </span>
-      <p className="text-[11px] text-subtle text-center leading-tight">{strainScore.description}</p>
     </div>
   );
 }
@@ -466,10 +473,12 @@ function SleepRing({
   performance,
   onClick,
   expanded,
+  controlsId,
 }: {
   performance: SleepPerformanceInfo;
   onClick: () => void;
   expanded: boolean;
+  controlsId: string;
 }) {
   const { score, tier, actualMinutes } = performance;
   const clampedScore = Math.min(score, 100);
@@ -486,6 +495,7 @@ function SleepRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        controlsId={controlsId}
         label="Sleep"
       >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
@@ -502,9 +512,6 @@ function SleepRing({
       >
         {tier} &middot; {formatDurationMinutes(actualMinutes)}
       </span>
-      <p className="text-[11px] text-subtle text-center leading-tight">
-        {sleepTierDescription(tier)}
-      </p>
     </div>
   );
 }
@@ -514,6 +521,14 @@ function RingSkeleton() {
     <div className="flex flex-col items-center gap-2">
       <div className="w-[140px] h-[140px] rounded-full shimmer" />
       <div className="w-16 h-5 rounded-full shimmer" />
+    </div>
+  );
+}
+
+function RingQueryError({ label, error }: { label: string; error: unknown }) {
+  return (
+    <div className="max-w-[180px] text-center text-xs">
+      <QueryStatePanel contextLabel={label} error={error} height={72} />
     </div>
   );
 }
@@ -531,6 +546,7 @@ function isRecentForAnchor(dateString: string, anchorDateString: string): boolea
 
 export function DailyOverview({
   endDate = formatDateYmd(),
+  summaryDateContext,
   readiness,
   workloadRatio,
   sleepPerformance,
@@ -539,9 +555,19 @@ export function DailyOverview({
   workloadLoading = false,
   strainTargetLoading = false,
   sleepLoading = false,
+  readinessError,
+  workloadError,
+  strainTargetError,
+  sleepError,
   embedded = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
+  const disclosureId = useId();
+  const panelIds = {
+    recovery: `${disclosureId}-recovery`,
+    strain: `${disclosureId}-strain`,
+    sleep: `${disclosureId}-sleep`,
+  };
 
   const toggle = (ring: ExpandedRing) => setExpandedRing((prev) => (prev === ring ? null : ring));
 
@@ -568,9 +594,14 @@ export function DailyOverview({
     recoveryScore != null ||
     (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
     freshSleepPerformance != null;
+  const hasAnyError =
+    readinessError != null ||
+    workloadError != null ||
+    strainTargetError != null ||
+    sleepError != null;
 
   // Hide the entire section only once all queries have resolved and none have data
-  if (allLoaded && !hasAnyData) {
+  if (allLoaded && !hasAnyData && !hasAnyError) {
     return null;
   }
 
@@ -581,124 +612,142 @@ export function DailyOverview({
       aria-label="Daily health summary"
       className={
         embedded
-          ? "rounded-lg border border-border bg-white/62 p-4 sm:p-5"
+          ? "rounded-lg border border-border bg-surface p-4 sm:p-5"
           : "dashboard-hero card p-5 sm:p-6"
       }
     >
       <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            Daily summary
-          </p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
-            Today&apos;s recovery picture
-          </h2>
-        </div>
-        <p className="text-xs text-subtle">{endDate}</p>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Daily summary</h2>
+        <p className="text-xs text-subtle">
+          {summaryDateContext ? formatSummaryDateContext(summaryDateContext) : endDate}
+        </p>
       </div>
 
       <div className="flex items-center justify-center gap-6 sm:gap-10 lg:gap-14 flex-wrap">
-        {readinessLoading ? (
-          <RingSkeleton />
-        ) : recoveryScore != null ? (
-          <ReadinessRing
-            score={recoveryScore}
-            onClick={() => toggle("recovery")}
-            expanded={expandedRing === "recovery"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={100}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {readinessLoading ? (
+            <RingSkeleton />
+          ) : recoveryScore != null ? (
+            <ReadinessRing
+              score={recoveryScore}
               onClick={() => toggle("recovery")}
               expanded={expandedRing === "recovery"}
-              label="Recovery"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Recovery
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+              controlsId={panelIds.recovery}
+            />
+          ) : readinessError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={100}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("recovery")}
+                expanded={expandedRing === "recovery"}
+                controlsId={panelIds.recovery}
+                label="Recovery"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Recovery
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {readinessError != null ? (
+            <RingQueryError label="Recovery" error={readinessError} />
+          ) : null}
+        </div>
 
-        {strainLoading ? (
-          <RingSkeleton />
-        ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
-          <StrainRing
-            strain={strain}
-            targetFraction={targetFraction}
-            onClick={() => toggle("strain")}
-            expanded={expandedRing === "strain"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={21}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {strainLoading ? (
+            <RingSkeleton />
+          ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
+            <StrainRing
+              strain={strain}
+              targetFraction={targetFraction}
               onClick={() => toggle("strain")}
               expanded={expandedRing === "strain"}
-              label="Strain"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Strain
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+              controlsId={panelIds.strain}
+            />
+          ) : workloadError == null && strainTargetError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={21}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("strain")}
+                expanded={expandedRing === "strain"}
+                controlsId={panelIds.strain}
+                label="Strain"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Strain
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {workloadError != null ? <RingQueryError label="Strain" error={workloadError} /> : null}
+          {strainTargetError != null ? (
+            <RingQueryError label="Strain target" error={strainTargetError} />
+          ) : null}
+        </div>
 
-        {sleepLoading ? (
-          <RingSkeleton />
-        ) : freshSleepPerformance != null ? (
-          <SleepRing
-            performance={freshSleepPerformance}
-            onClick={() => toggle("sleep")}
-            expanded={expandedRing === "sleep"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={100}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {sleepLoading ? (
+            <RingSkeleton />
+          ) : freshSleepPerformance != null ? (
+            <SleepRing
+              performance={freshSleepPerformance}
               onClick={() => toggle("sleep")}
               expanded={expandedRing === "sleep"}
-              label="Sleep"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Sleep
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+              controlsId={panelIds.sleep}
+            />
+          ) : sleepError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={100}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("sleep")}
+                expanded={expandedRing === "sleep"}
+                controlsId={panelIds.sleep}
+                label="Sleep"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Sleep
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {sleepError != null ? <RingQueryError label="Sleep" error={sleepError} /> : null}
+        </div>
       </div>
 
-      {/* Expandable breakdown panels — kept mounted for open/close animation */}
-      <ExpandableBreakdown expanded={expandedRing === "recovery"}>
+      <ExpandableBreakdown id={panelIds.recovery} expanded={expandedRing === "recovery"}>
         {latestReadiness && readinessIsFresh ? (
           <RecoveryBreakdown readiness={latestReadiness} />
         ) : (
-          <EmptyBreakdown message="Recovery score needs HRV, resting heart rate, and sleep data from a connected wearable." />
+          <EmptyBreakdown message="Recovery score needs heart rate variability, resting heart rate, and sleep data from a connected wearable." />
         )}
       </ExpandableBreakdown>
 
-      <ExpandableBreakdown expanded={expandedRing === "strain"}>
+      <ExpandableBreakdown id={panelIds.strain} expanded={expandedRing === "strain"}>
         {workloadRatio && workloadRatio.timeSeries.length > 0 ? (
-          <StrainBreakdown workloadRatio={workloadRatio} strainTarget={strainTarget} />
+          <StrainBreakdown
+            workloadRatio={workloadRatio}
+            strainTarget={strainTarget}
+            strain={strain}
+          />
         ) : (
           <EmptyBreakdown message="Strain is calculated from workout duration and heart rate. Log an activity with a heart rate monitor to see your strain." />
         )}
       </ExpandableBreakdown>
 
-      <ExpandableBreakdown expanded={expandedRing === "sleep"}>
+      <ExpandableBreakdown id={panelIds.sleep} expanded={expandedRing === "sleep"}>
         {freshSleepPerformance ? (
           <SleepBreakdown performance={freshSleepPerformance} />
         ) : (

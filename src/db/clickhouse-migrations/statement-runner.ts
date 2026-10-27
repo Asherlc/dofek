@@ -9,11 +9,11 @@ export async function runClickHouseMigrationStatement(
   statement: string,
 ): Promise<void> {
   if (statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor")) {
-    await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+    await waitForClickHouseTable(client, "ingest", "metric_stream");
     await waitForClickHouseTable(client, "analytics", "v_activity_members");
   }
   if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.deduped_location")) {
-    await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+    await waitForClickHouseTable(client, "ingest", "metric_stream");
     await waitForClickHouseTable(client, "analytics", "v_activity_members");
   }
   if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.activity_summary")) {

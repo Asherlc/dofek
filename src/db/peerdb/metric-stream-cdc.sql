@@ -21,38 +21,7 @@ CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics
 FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
 WITH TABLE MAPPING
 (
-  {
-    from: fitness.activity,
-    to: activity
-  },
-  {
-    from: fitness.sleep_session,
-    to: sleep_session
-  },
-  {
-    from: fitness.sleep_stage,
-    to: sleep_stage
-  },
-  {
-    from: fitness.daily_metrics,
-    to: daily_metrics
-  },
-  {
-    from: fitness.provider,
-    to: provider
-  },
-  {
-    from: fitness.provider_priority,
-    to: provider_priority
-  },
-  {
-    from: fitness.device_priority,
-    to: device_priority
-  },
-  {
-    from: fitness.user_profile,
-    to: user_profile
-  }
+{{FITNESS_RAW_ANALYTICS_TABLE_MAPPINGS}}
 )
 WITH (
   do_initial_copy = {{FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY}},
@@ -69,26 +38,7 @@ CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics
 FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
 WITH TABLE MAPPING
 (
-  {
-    from: fitness.food_entry,
-    to: food_entry
-  },
-  {
-    from: fitness.health_event,
-    to: health_event
-  },
-  {
-    from: fitness.lab_panel,
-    to: lab_panel
-  },
-  {
-    from: fitness.lab_result,
-    to: lab_result
-  },
-  {
-    from: fitness.journal_entry,
-    to: journal_entry
-  }
+{{PROVIDER_INVENTORY_RAW_ANALYTICS_TABLE_MAPPINGS}}
 )
 WITH (
   do_initial_copy = {{PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY}},
@@ -105,14 +55,7 @@ CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics
 FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
 WITH TABLE MAPPING
 (
-  {
-    from: fitness.sensor_provider_priority,
-    to: sensor_provider_priority
-  },
-  {
-    from: fitness.sensor_device_priority,
-    to: sensor_device_priority
-  }
+{{SENSOR_PRIORITY_RAW_ANALYTICS_TABLE_MAPPINGS}}
 )
 WITH (
   do_initial_copy = {{SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY}},

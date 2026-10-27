@@ -1,11 +1,14 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration test: sleep data consistency across all dashboard endpoints.
@@ -17,7 +20,6 @@ import { createClickHouseTestActivitySensorStore } from "./clickhouse-integratio
  * differently:
  *   - sleep.list returns all rows (duplicate bars in the chart)
  *   - sleepNeed.calculate uses Map overwrite (latest start time wins)
- *   - weeklyReport.report has JOIN fan-out (corrupts averages)
  *   - recovery.sleepAnalytics returns duplicate rows per date
  *
  * This test inserts multi-source non-overlapping-enough sleep data and
@@ -108,22 +110,60 @@ describe("sleep data consistency across endpoints", () => {
       testDates.push(date.toISOString().slice(0, 10));
     }
 
-    // Also insert daily metrics so sleepNeed and weeklyReport work
+    // Also insert daily metrics so sleepNeed works
     for (let daysAgo = 90; daysAgo >= 0; daysAgo--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps,
-              active_energy_kcal, basal_energy_kcal
+              date, provider_id, user_id, hrv, steps
             ) VALUES (
               CURRENT_DATE - ${daysAgo}::int,
-              'whoop', ${TEST_USER_ID}, 60, 8000, 500, 1800
+              'whoop', ${TEST_USER_ID}, 60, 8000
             ) ON CONFLICT DO NOTHING`,
       );
     }
 
-    // Refresh sleep materialized view
+    // Seed a real activity load on the date sleepNeed.calculate treats as
+    // yesterday (one day before its endDate), so this test exercises the
+    // ClickHouse daily_strain-backed availability path.
+    const loadActivityRows = await testCtx.db.execute<{ id: string; started_at: Date | string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
+          ) VALUES (
+            'whoop', ${TEST_USER_ID}, 'sleep-consistency-load-activity',
+            'cycling', 'cycling', NULL,
+            (CURRENT_DATE - 2) + TIME '10:00:00',
+            (CURRENT_DATE - 2) + TIME '10:30:00',
+            'Sleep consistency load activity'
+          )
+          RETURNING id, started_at`,
+    );
+    const loadActivity = loadActivityRows[0];
+    if (!loadActivity) {
+      throw new Error("Expected the sleep consistency load activity to be inserted");
+    }
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const loadStartedAt = new Date(loadActivity.started_at);
+    await seedClickHouseMetricStreamRows(testCtx, [
+      {
+        activityId: loadActivity.id,
+        userId: TEST_USER_ID,
+        recordedAt: loadStartedAt.toISOString(),
+        channel: "heart_rate",
+        providerId: "whoop",
+        sourceType: "api",
+        scalar: 120,
+      },
+      {
+        activityId: loadActivity.id,
+        userId: TEST_USER_ID,
+        recordedAt: new Date(loadStartedAt.getTime() + 5 * 60 * 1000).toISOString(),
+        channel: "heart_rate",
+        providerId: "whoop",
+        sourceType: "api",
+        scalar: 140,
+      },
+    ]);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -209,6 +249,7 @@ describe("sleep data consistency across endpoints", () => {
     const result = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
     }>("sleepNeed.calculate", { endDate });
+    expect(result).toBeDefined();
 
     for (const night of result.recentNights) {
       if (night.actualMinutes !== null) {
@@ -218,36 +259,6 @@ describe("sleep data consistency across endpoints", () => {
           `sleepNeed picked ${night.actualMinutes}min for ${night.date}, expected ~480 (WHOOP), not ~330 (Apple Health)`,
         ).toBeGreaterThanOrEqual(450);
       }
-    }
-  });
-
-  it("weeklyReport sleep average matches sleep.list durations (no JOIN fan-out)", async () => {
-    await queryCache.invalidateAll();
-
-    // Get the weekly report — use enough weeks to include all test data
-    const weeklyReport = await query<{
-      current: { avgSleepMinutes: number } | null;
-      history: { weekStart: string; avgSleepMinutes: number }[];
-    }>("weeklyReport.report", { weeks: 4, endDate });
-
-    // Find any week with sleep data — the current partial week may have 0
-    // if no test dates fall in it (depends on day-of-week when CI runs).
-    // Check all weeks (current + history) for at least one with valid sleep.
-    const allWeeks = [
-      ...(weeklyReport.current ? [weeklyReport.current] : []),
-      ...weeklyReport.history,
-    ];
-    const weeksWithSleep = allWeeks.filter((week) => week.avgSleepMinutes > 0);
-
-    expect(weeksWithSleep.length, "Expected at least one week with sleep data").toBeGreaterThan(0);
-
-    // Every week that HAS sleep data should reflect the WHOOP duration (~480),
-    // not an average of WHOOP+Apple Health (480+330)/2=405 from JOIN fan-out
-    for (const week of weeksWithSleep) {
-      expect(
-        week.avgSleepMinutes,
-        `Weekly report avg sleep is ${week.avgSleepMinutes}min — if <450, JOIN fan-out is averaging duplicates`,
-      ).toBeGreaterThanOrEqual(450);
     }
   });
 
@@ -272,6 +283,7 @@ describe("sleep data consistency across endpoints", () => {
     const sleepNeed = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
     }>("sleepNeed.calculate", { endDate });
+    expect(sleepNeed).not.toBeNull();
     const needByDate = new Map<string, number>();
     for (const night of sleepNeed.recentNights) {
       if (night.actualMinutes !== null) {

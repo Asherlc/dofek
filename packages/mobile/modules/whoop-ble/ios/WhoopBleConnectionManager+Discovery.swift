@@ -23,6 +23,14 @@ extension WhoopBleConnectionManager {
         manager: CBCentralManager,
         completion: @escaping ([String: Any?]?) -> Void
     ) {
+        if let peripheral = connectedPeripheral {
+            completion([
+                "id": peripheral.identifier.uuidString,
+                "name": peripheral.name,
+            ])
+            return
+        }
+
         NSLog("[WhoopBLE] performFind: checking already-connected peripherals")
         for serviceUUID in WhoopBleConstants.allServiceUUIDs {
             let connected = manager.retrieveConnectedPeripherals(withServices: [serviceUUID])

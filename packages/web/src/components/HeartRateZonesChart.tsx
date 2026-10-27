@@ -5,6 +5,7 @@ import {
   formatNumber,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ActivityHrZone, ActivityPowerZone, ZoneDistributionDatum } from "@dofek/zones/zones";
 import {
   createZoneDistributionRows,
@@ -21,9 +22,9 @@ import {
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -90,7 +91,12 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   if (errorMessage) {
     return (
       <div className="flex items-center justify-center text-center px-4" style={{ height }}>
-        <span className="text-red-400 text-sm">{errorMessage}</span>
+        <span className="text-red-400 text-sm">
+          {userFacingErrorMessage(
+            errorMessage,
+            "Heart rate zones could not be loaded. Please try again.",
+          )}
+        </span>
       </div>
     );
   }
@@ -115,7 +121,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         if (!firstParam) return "";
         const zoneItem = rows[firstParam.dataIndex]?.zone;
         if (!zoneItem) return "";
-        return `<b>${zoneItem.label}</b> (${tooltipDetails(zoneItem)})<br/>
+        return `<b>${escapeTooltipHtml(zoneItem.label)}</b> (${escapeTooltipHtml(tooltipDetails(zoneItem))})<br/>
           ${formatZoneChartTime(zoneItem.seconds)} (${formatNumber(zoneItem.percent)}%)`;
       },
     }),
@@ -298,9 +304,9 @@ export function WeeklyHrZonesChart({
           .map((param) => {
             const zoneDefinition = zoneBySeriesName.get(param.seriesName);
             const seconds = zoneDefinition ? getHeartRateZoneSeconds(week, zoneDefinition.zone) : 0;
-            return `<span style="color:${param.color}">\u25CF</span> ${param.seriesName}: ${formatIntensity(param.value[1])} (${formatDurationSeconds(seconds)})`;
+            return `<span style="color:${escapeTooltipHtml(param.color)}">\u25CF</span> ${escapeTooltipHtml(param.seriesName)}: ${formatIntensity(param.value[1])} (${formatDurationSeconds(seconds)})`;
           });
-        return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
+        return `<strong>${escapeTooltipHtml(dateLabel)}</strong><br/>${lines.join("<br/>")}`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -318,7 +324,6 @@ export function WeeklyHrZonesChart({
             <span className="text-dim">(max heart rate: {maxHeartRateLabel})</span>
           )}
         </h3>
-        <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
       </div>
       <DofekChart option={option} height={220} />
     </div>

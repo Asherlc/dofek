@@ -1,45 +1,94 @@
+import type { ActivityDataState } from "@dofek/format/activity-data-state";
+import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
+import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
+import type { ActivitySource } from "./activity-source.ts";
 import {
   ActivitySourceAttribution,
   type ProviderLookup,
   type SourceExternalIdEntry,
   type SourceLink,
 } from "./activity-source-attribution.ts";
+import {
+  type ActivitySourceDecisionDetail,
+  buildActivitySourceDecision,
+} from "./activity-source-decision.ts";
+import { buildActivitySourceTree } from "./activity-source-tree.ts";
 
-export type { ProviderLookup, SourceExternalIdEntry, SourceLink };
+export type {
+  ActivitySource,
+  ActivitySourceDecisionDetail,
+  ProviderLookup,
+  SourceExternalIdEntry,
+  SourceLink,
+};
 
 export interface ActivityDetail {
   id: string;
+  displayedDate: string;
+  resolvedFrom?: string;
   activityType: string;
+  primaryActivityType: string | null;
+  rawType: string | null;
+  modality: string | null;
   startedAt: string;
   endedAt: string | null;
   name: string | null;
   notes: string | null;
+  perceivedExertion: number | null;
   providerId: string;
+  localTimeContext: RecordLocalTimeContext;
   subsource: string | null;
   sourceProviders: string[];
   sourceLinks: SourceLink[];
+  sourceTree: ActivitySourceTree;
+  sourceDecision: ActivitySourceDecisionDetail | null;
   avgHr: number | null;
+  avgHrState: ActivityDataState;
   maxHr: number | null;
+  maxHrState: ActivityDataState;
   avgPower: number | null;
+  avgPowerState: ActivityDataState;
   maxPower: number | null;
+  maxPowerState: ActivityDataState;
   avgSpeed: number | null;
+  avgSpeedState: ActivityDataState;
   maxSpeed: number | null;
+  maxSpeedState: ActivityDataState;
   avgCadence: number | null;
+  avgCadenceState: ActivityDataState;
   totalDistance: number | null;
+  totalDistanceState: ActivityDataState;
   elevationGain: number | null;
+  elevationGainState: ActivityDataState;
   elevationLoss: number | null;
+  elevationLossState: ActivityDataState;
   sampleCount: number | null;
+  sampleCountState: ActivityDataState;
   providerAbsentAt: string | null;
 }
 
-export interface ActivityRow {
+export interface ActivityRow extends ActivityOriginColumns {
+  origin_evidence: ActivityOriginEvidence[];
   id: string;
-  activity_type: string;
+  displayed_date: string;
+  resolved_from?: string | null;
+  canonical_type: string;
+  primary_canonical_type: string | null;
+  raw_type?: string;
+  modality: string | null;
   started_at: string;
   ended_at: string | null;
   name: string | null;
   notes: string | null;
+  perceived_exertion: number | null;
   provider_id: string;
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source: RecordLocalTimeContext["source"];
   subsource: string | null;
   source_providers: string[] | null;
   source_external_ids: Array<SourceExternalIdEntry> | null;
@@ -77,12 +126,28 @@ export class Activity {
     return String(this.#row.id);
   }
 
+  get resolvedFrom(): string | null {
+    return this.#row.resolved_from ?? null;
+  }
+
   get activityType(): string {
-    return String(this.#row.activity_type);
+    return String(this.#row.canonical_type);
+  }
+
+  get rawType(): string | null {
+    return this.#row.raw_type ?? null;
+  }
+
+  get modality(): string | null {
+    return this.#row.modality;
   }
 
   get startedAt(): string {
     return String(this.#row.started_at);
+  }
+
+  get displayedDate(): string {
+    return this.#row.displayed_date;
   }
 
   get endedAt(): string | null {
@@ -97,8 +162,21 @@ export class Activity {
     return this.#row.notes ? String(this.#row.notes) : null;
   }
 
+  get perceivedExertion(): number | null {
+    return this.#row.perceived_exertion != null ? Number(this.#row.perceived_exertion) : null;
+  }
+
   get providerId(): string {
     return String(this.#row.provider_id);
+  }
+
+  get localTimeContext(): RecordLocalTimeContext {
+    return {
+      timezone: this.#row.timezone,
+      startUtcOffsetMinutes: this.#row.start_utc_offset_minutes,
+      endUtcOffsetMinutes: this.#row.end_utc_offset_minutes,
+      source: this.#row.local_time_source,
+    };
   }
 
   get subsource(): string | null {
@@ -167,28 +245,50 @@ export class Activity {
 
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(): ActivityDetail {
+    const sourceLinks = this.sourceLinks;
+    const origin = activityOriginFromColumns(this.#row);
     return {
       id: this.id,
+      displayedDate: this.displayedDate,
+      ...(this.resolvedFrom ? { resolvedFrom: this.resolvedFrom } : {}),
       activityType: this.activityType,
+      primaryActivityType: this.#row.primary_canonical_type,
+      rawType: this.rawType,
+      modality: this.modality,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
       name: this.name,
       notes: this.notes,
+      perceivedExertion: this.perceivedExertion,
       providerId: this.providerId,
+      localTimeContext: this.localTimeContext,
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
-      sourceLinks: this.sourceLinks,
+      sourceLinks,
+      sourceTree: buildActivitySourceTree(origin, sourceLinks, this.#row.origin_evidence),
+      sourceDecision: buildActivitySourceDecision(origin, sourceLinks, this.#lookupProvider),
       avgHr: this.avgHr,
+      avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,
+      maxHrState: activityMeasurementState("Maximum heart rate", this.maxHr),
       avgPower: this.avgPower,
+      avgPowerState: activityMeasurementState("Average power", this.avgPower),
       maxPower: this.maxPower,
+      maxPowerState: activityMeasurementState("Maximum power", this.maxPower),
       avgSpeed: this.avgSpeed,
+      avgSpeedState: activityMeasurementState("Average speed", this.avgSpeed),
       maxSpeed: this.maxSpeed,
+      maxSpeedState: activityMeasurementState("Maximum speed", this.maxSpeed),
       avgCadence: this.avgCadence,
+      avgCadenceState: activityMeasurementState("Average cadence", this.avgCadence),
       totalDistance: this.totalDistance,
+      totalDistanceState: activityMeasurementState("Distance", this.totalDistance),
       elevationGain: this.elevationGain,
+      elevationGainState: activityMeasurementState("Elevation gain", this.elevationGain),
       elevationLoss: this.elevationLoss,
+      elevationLossState: activityMeasurementState("Elevation loss", this.elevationLoss),
       sampleCount: this.sampleCount,
+      sampleCountState: activityMeasurementState("Sample count", this.sampleCount),
       providerAbsentAt: this.providerAbsentAt,
     };
   }

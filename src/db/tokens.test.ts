@@ -1,17 +1,47 @@
+import { SQL } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import {
+  decryptCredentialValue,
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
-import { TEST_USER_ID } from "./schema.ts";
-import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
+import { TEST_USER_ID } from "./schema/core.ts";
+import { oauthToken, providerConnection, webhookSubscription } from "./schema/reference.ts";
+import {
+  connectProviderWithTokens,
+  deleteProviderAuthorization,
+  deleteTokens,
+  deriveProviderAccountKey,
+  ensureProvider,
+  findTokenUsersByProviderAccountId,
+  loadTokens,
+  saveTokens,
+} from "./tokens.ts";
 
-// Mock drizzle's query builder helpers
-vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((col, val) => ({ column: col, value: val })),
-  and: vi.fn((...conditions) => ({ conditions })),
-}));
+vi.mock("../lib/provider-diagnostics.ts", () => ({ reportProviderAuthDiagnostic: vi.fn() }));
+
+describe("deriveProviderAccountKey", () => {
+  it("creates a stable opaque namespace scoped to user, provider, and account", () => {
+    const first = deriveProviderAccountKey("ziva", "account-a", TEST_USER_ID);
+
+    expect(deriveProviderAccountKey("ziva", "account-a", TEST_USER_ID)).toBe(first);
+    expect(deriveProviderAccountKey("ziva", "account-b", TEST_USER_ID)).not.toBe(first);
+    expect(
+      deriveProviderAccountKey("ziva", "account-a", "11111111-1111-4111-8111-111111111111"),
+    ).not.toBe(first);
+    expect(deriveProviderAccountKey("other", "account-a", TEST_USER_ID)).not.toBe(first);
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+    expect(first).not.toContain("account-a");
+  });
+
+  it("rejects a blank provider account identity", () => {
+    expect(() => deriveProviderAccountKey("ziva", "   ", TEST_USER_ID)).toThrow(
+      "OAuth provider account ID must not be empty",
+    );
+  });
+});
 
 describe("ensureProvider", () => {
   let mock: ReturnType<typeof createMockDatabase>;
@@ -20,7 +50,7 @@ describe("ensureProvider", () => {
     mock = createMockDatabase();
   });
 
-  it("inserts a provider with id, name, and apiBaseUrl", async () => {
+  it("atomically ensures the provider catalog row and user connection", async () => {
     const result = await ensureProvider(
       mock.db,
       "wahoo",
@@ -30,25 +60,24 @@ describe("ensureProvider", () => {
     );
 
     expect(result).toBe("wahoo");
-    expect(mock.spies.insert).toHaveBeenCalled();
-    expect(mock.spies.values).toHaveBeenCalledWith({
-      id: "wahoo",
-      name: "Wahoo",
-      apiBaseUrl: "https://api.wahoo.com",
-      userId: TEST_USER_ID,
-    });
-    expect(mock.spies.onConflictDoUpdate).toHaveBeenCalled();
+    expect(mock.spies.execute).toHaveBeenCalledOnce();
+    const query = mock.spies.execute.mock.calls[0]?.[0];
+    const serializedQuery = JSON.stringify(query);
+    expect(serializedQuery).toContain("INSERT INTO fitness.provider");
+    expect(serializedQuery).toContain("INSERT INTO fitness.provider_connection");
+    expect(serializedQuery).toContain("ON CONFLICT (user_id, provider_id) DO NOTHING");
+    expect(serializedQuery).toContain("https://api.wahoo.com");
+    expect(serializedQuery).toContain(TEST_USER_ID);
   });
 
-  it("includes userId when provided", async () => {
+  it("never writes the connection owner into the legacy provider owner column", async () => {
     await ensureProvider(mock.db, "whoop", "WHOOP", undefined, "user-123");
 
-    expect(mock.spies.values).toHaveBeenCalledWith({
-      id: "whoop",
-      name: "WHOOP",
-      apiBaseUrl: undefined,
-      userId: "user-123",
-    });
+    const query = mock.spies.execute.mock.calls[0]?.[0];
+    const serializedQuery = JSON.stringify(query);
+    expect(serializedQuery).toContain("VALUES");
+    expect(serializedQuery).toContain("NULL");
+    expect(serializedQuery).toContain("user-123");
   });
 
   it("throws when userId is not provided and context is absent", async () => {
@@ -70,6 +99,16 @@ describe("ensureProvider", () => {
   it("returns the provider id", async () => {
     const result = await ensureProvider(mock.db, "test-id", "Test", undefined, TEST_USER_ID);
     expect(result).toBe("test-id");
+  });
+
+  it("includes provider and user context when the atomic write fails", async () => {
+    mock.spies.execute.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(
+      ensureProvider(mock.db, "wahoo", "Wahoo", undefined, TEST_USER_ID),
+    ).rejects.toThrow(
+      `ensureProvider(wahoo) failed for user ${TEST_USER_ID}: database unavailable`,
+    );
   });
 });
 
@@ -107,10 +146,12 @@ describe("saveTokens", () => {
       accessToken: "access-plain",
       refreshToken: "refresh-plain",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
+      providerAccountId: "polar-user-123",
+      authorizationId: "63000000-0000-4000-8000-000000000001",
       scopes: "read write",
     };
 
-    await saveTokens(mock.db, "wahoo", tokens, TEST_USER_ID);
+    await saveTokens(mock.db, "polar", tokens, TEST_USER_ID);
 
     const firstCall = mock.spies.values.mock.calls[0];
     const firstInsert = firstCall?.[0];
@@ -120,8 +161,43 @@ describe("saveTokens", () => {
 
     expect(firstInsert.accessToken).not.toBe("access-plain");
     expect(firstInsert.refreshToken).not.toBe("refresh-plain");
+    expect(firstInsert.providerAccountId).not.toBe("polar-user-123");
     expect(isEncryptedCredentialValue(firstInsert.accessToken)).toBe(true);
     expect(isEncryptedCredentialValue(firstInsert.refreshToken)).toBe(true);
+    expect(isEncryptedCredentialValue(firstInsert.providerAccountId)).toBe(true);
+    expect(firstInsert.authorizationId).toBe("63000000-0000-4000-8000-000000000001");
+    expect(mock.spies.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          authorizationId: tokens.authorizationId,
+          providerAccountLookupId: firstInsert.providerAccountLookupId,
+        }),
+      }),
+    );
+  });
+
+  it("keeps grant and account metadata as existing-column expressions during a token-only refresh", async () => {
+    await saveTokens(
+      mock.db,
+      "garmin",
+      {
+        accessToken: "rotated-access",
+        refreshToken: "rotated-refresh",
+        expiresAt: new Date("2026-12-01T00:00:00Z"),
+        scopes: "ACTIVITY_EXPORT",
+      },
+      TEST_USER_ID,
+    );
+
+    expect(mock.spies.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          authorizationId: expect.any(SQL),
+          providerAccountId: expect.any(SQL),
+          providerAccountLookupId: expect.any(SQL),
+        }),
+      }),
+    );
   });
 
   it("handles null refreshToken and scopes", async () => {
@@ -142,6 +218,107 @@ describe("saveTokens", () => {
       }),
     );
   });
+
+  it("stores a normalized encrypted identity with a stable provider-scoped lookup", async () => {
+    const tokens = {
+      accessToken: "official-access",
+      refreshToken: "official-refresh",
+      expiresAt: new Date("2026-12-01T00:00:00Z"),
+      providerAccountId: "  official-account  ",
+      scopes: "ACTIVITY_EXPORT",
+    };
+    const secondUserId = "11111111-1111-4111-8111-111111111111";
+
+    await saveTokens(mock.db, "garmin", tokens, TEST_USER_ID);
+    await saveTokens(mock.db, "garmin", tokens, secondUserId);
+    await saveTokens(mock.db, "other-provider", tokens, TEST_USER_ID);
+
+    const first = mock.spies.values.mock.calls[0]?.[0];
+    const second = mock.spies.values.mock.calls[1]?.[0];
+    const otherProvider = mock.spies.values.mock.calls[2]?.[0];
+    expect(first?.providerAccountLookupId).toMatch(/^[a-f0-9]{64}$/);
+    expect(second?.providerAccountLookupId).toBe(first?.providerAccountLookupId);
+    expect(otherProvider?.providerAccountLookupId).not.toBe(first?.providerAccountLookupId);
+    await expect(
+      decryptCredentialValue(first?.providerAccountId, {
+        tableName: "fitness.oauth_token",
+        columnName: "provider_account_id",
+        scopeId: `${TEST_USER_ID}:garmin`,
+      }),
+    ).resolves.toBe("official-account");
+  });
+});
+
+describe("findTokenUsersByProviderAccountId", () => {
+  it("returns only the selected owner IDs in database order", async () => {
+    const mock = createMockDatabase();
+    const otherUserId = "11111111-1111-4111-8111-111111111111";
+    mock.spies.where.mockResolvedValue([{ userId: TEST_USER_ID }, { userId: otherUserId }]);
+
+    await expect(
+      findTokenUsersByProviderAccountId(mock.db, "shared-provider", "official-account"),
+    ).resolves.toEqual([TEST_USER_ID, otherUserId]);
+    expect(mock.spies.select).toHaveBeenCalledWith({ userId: oauthToken.userId });
+  });
+
+  it("returns an empty owner list when no authorization matches", async () => {
+    const mock = createMockDatabase();
+    mock.spies.where.mockResolvedValue([]);
+
+    await expect(
+      findTokenUsersByProviderAccountId(mock.db, "garmin", "unknown-account"),
+    ).resolves.toEqual([]);
+  });
+
+  it("rejects a blank account before querying authorization owners", async () => {
+    const mock = createMockDatabase();
+    await expect(findTokenUsersByProviderAccountId(mock.db, "garmin", " \t ")).rejects.toThrow(
+      "OAuth provider account ID must not be empty",
+    );
+    expect(mock.spies.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("connectProviderWithTokens", () => {
+  it("runs connection creation and encrypted token persistence in one transaction", async () => {
+    const mock = createMockDatabase();
+    let transactionCalls = 0;
+    async function transaction<T>(
+      callback: (transactionDatabase: typeof mock.db) => Promise<T>,
+    ): Promise<T> {
+      transactionCalls++;
+      return callback(mock.db);
+    }
+    const tokens = {
+      accessToken: "atomic-access",
+      refreshToken: "atomic-refresh",
+      expiresAt: new Date("2026-09-01T00:00:00Z"),
+      scopes: "read",
+    };
+
+    await connectProviderWithTokens(
+      { transaction },
+      {
+        id: "atomic-provider",
+        name: "Atomic Provider",
+        apiBaseUrl: "https://example.com/api",
+      },
+      tokens,
+      TEST_USER_ID,
+    );
+
+    expect(transactionCalls).toBe(1);
+    expect(mock.spies.execute).toHaveBeenCalledOnce();
+    expect(mock.spies.values).toHaveBeenCalledOnce();
+    expect(mock.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: TEST_USER_ID,
+        providerId: "atomic-provider",
+        expiresAt: tokens.expiresAt,
+        scopes: "read",
+      }),
+    );
+  });
 });
 
 describe("deleteTokens", () => {
@@ -159,6 +336,34 @@ describe("deleteTokens", () => {
   });
 });
 
+describe("deleteProviderAuthorization", () => {
+  let mock: ReturnType<typeof createMockDatabase>;
+
+  beforeEach(() => {
+    mock = createMockDatabase();
+  });
+
+  it("atomically deletes dependent authorization state before the provider connection", async () => {
+    let transactionCalls = 0;
+    async function transaction<T>(
+      callback: (transactionDatabase: typeof mock.db) => Promise<T>,
+    ): Promise<T> {
+      transactionCalls++;
+      return callback(mock.db);
+    }
+
+    await deleteProviderAuthorization({ transaction }, "wahoo", TEST_USER_ID);
+
+    expect(transactionCalls).toBe(1);
+    expect(mock.spies.deleteFn.mock.calls).toEqual([
+      [webhookSubscription],
+      [oauthToken],
+      [providerConnection],
+    ]);
+    expect(mock.spies.deleteWhere).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("loadTokens", () => {
   let mock: ReturnType<typeof createMockDatabase>;
 
@@ -170,6 +375,7 @@ describe("loadTokens", () => {
     mock.spies.limit.mockResolvedValue([
       {
         accessToken: "access-123",
+        authorizationId: "63000000-0000-4000-8000-000000000001",
         refreshToken: "refresh-456",
         expiresAt: new Date("2026-04-01T00:00:00Z"),
         scopes: "read",
@@ -178,8 +384,16 @@ describe("loadTokens", () => {
 
     const result = await loadTokens(mock.db, "wahoo", TEST_USER_ID);
 
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "wahoo",
+      "tokens_loaded",
+      TEST_USER_ID,
+      { expiresAt: new Date("2026-04-01T00:00:00Z"), refreshToken: "refresh-456" },
+    );
+
     expect(result).toEqual({
       accessToken: "access-123",
+      authorizationId: "63000000-0000-4000-8000-000000000001",
       refreshToken: "refresh-456",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
       scopes: "read",
@@ -197,11 +411,17 @@ describe("loadTokens", () => {
       columnName: "refresh_token",
       scopeId: `${TEST_USER_ID}:wahoo`,
     });
+    const encryptedProviderAccountId = await encryptCredentialValue("provider-account-789", {
+      tableName: "fitness.oauth_token",
+      columnName: "provider_account_id",
+      scopeId: `${TEST_USER_ID}:wahoo`,
+    });
     mock.spies.limit.mockResolvedValue([
       {
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
         expiresAt: new Date("2026-04-01T00:00:00Z"),
+        providerAccountId: encryptedProviderAccountId,
         scopes: "read",
       },
     ]);
@@ -212,16 +432,23 @@ describe("loadTokens", () => {
       accessToken: "access-123",
       refreshToken: "refresh-456",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
+      providerAccountId: "provider-account-789",
       scopes: "read",
     });
   });
 
   it("returns null when no tokens exist", async () => {
+    vi.mocked(reportProviderAuthDiagnostic).mockClear();
     mock.spies.limit.mockResolvedValue([]);
 
     const result = await loadTokens(mock.db, "nonexistent", TEST_USER_ID);
 
     expect(result).toBeNull();
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledExactlyOnceWith(
+      "nonexistent",
+      "tokens_missing",
+      TEST_USER_ID,
+    );
   });
 
   it("returns null when row is undefined", async () => {

@@ -45,12 +45,25 @@ describe("PROVIDER_GUIDE_CATEGORIES", () => {
     }
   });
 
-  it("all provider IDs use hyphens, not underscores (match registry convention)", () => {
-    for (const category of PROVIDER_GUIDE_CATEGORIES) {
-      for (const providerId of category.providerIds) {
-        expect(providerId).not.toMatch(/_/);
-      }
-    }
+  it("categorizes the canonical Cycling Analytics provider ID", () => {
+    const activityTracking = PROVIDER_GUIDE_CATEGORIES.find(
+      (category) => category.title === "Activity Tracking",
+    );
+    expect(activityTracking?.providerIds).toContain("cycling_analytics");
+    expect(activityTracking?.providerIds).not.toContain("cycling-analytics");
+  });
+
+  it("categorizes BodySpec as a body composition provider", () => {
+    const bodyComposition = PROVIDER_GUIDE_CATEGORIES.find(
+      (category) => category.title === "Body Composition",
+    );
+    expect(bodyComposition?.providerIds).toContain("bodyspec");
+  });
+
+  it("offers every supported nutrition source, including Ziva", () => {
+    const nutrition = PROVIDER_GUIDE_CATEGORIES.find((category) => category.title === "Nutrition");
+
+    expect(nutrition?.providerIds).toEqual(["cronometer-csv", "fatsecret", "ziva"]);
   });
 
   it("has no duplicate category titles", () => {

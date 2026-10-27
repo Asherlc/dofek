@@ -293,12 +293,12 @@ describe("averageVo2MaxEstimates", () => {
 describe("isSupportedOutdoorVo2MaxActivityType", () => {
   it("returns true for supported outdoor activity types", () => {
     expect(isSupportedOutdoorVo2MaxActivityType("running")).toBe(true);
-    expect(isSupportedOutdoorVo2MaxActivityType("trail_running")).toBe(true);
     expect(isSupportedOutdoorVo2MaxActivityType("walking")).toBe(true);
     expect(isSupportedOutdoorVo2MaxActivityType("hiking")).toBe(true);
   });
 
   it("returns false for unsupported activity types", () => {
+    expect(isSupportedOutdoorVo2MaxActivityType("trail_running")).toBe(false);
     expect(isSupportedOutdoorVo2MaxActivityType("indoor_running")).toBe(false);
     expect(isSupportedOutdoorVo2MaxActivityType("strength")).toBe(false);
   });

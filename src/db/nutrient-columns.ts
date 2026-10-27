@@ -345,19 +345,6 @@ export const NUTRIENT_FIELDS: readonly NutrientFieldDefinition[] = [
   },
 ] as const;
 
-/** camelCase nutrient keys (e.g., 'calories', 'proteinG', 'vitaminAMcg') */
-export const NUTRIENT_KEYS = NUTRIENT_FIELDS.map((f) => f.key);
-
-/** Map of camelCase key → snake_case SQL column name */
-export const NUTRIENT_COLUMN_MAP: Record<string, string> = Object.fromEntries(
-  NUTRIENT_FIELDS.map((f) => [f.key, f.column]),
-);
-
-/** Map of snake_case SQL column name → camelCase key */
-export const NUTRIENT_KEY_MAP: Record<string, string> = Object.fromEntries(
-  NUTRIENT_FIELDS.map((f) => [f.column, f.key]),
-);
-
 /** Map of legacy camelCase key → canonical fitness.nutrient.id */
 export const NUTRIENT_ID_MAP: Record<string, string> = {
   calories: "calories",
@@ -501,24 +488,6 @@ export const nutrientRowSchema = z.object({
   water_ml: nullableNumberFromRow,
 });
 
-/** Type for nutrient values in camelCase */
-export type NutrientValues = z.infer<typeof nutrientFieldsSchema>;
-
-/**
- * Extract nutrient values from an object with camelCase keys.
- * Returns a record with only the nutrient keys, defaulting missing values to null.
- */
-export function extractNutrientValues(
-  source: Record<string, unknown>,
-): Record<string, number | null> {
-  const result: Record<string, number | null> = {};
-  for (const field of NUTRIENT_FIELDS) {
-    const value = source[field.key];
-    result[field.key] = typeof value === "number" ? value : null;
-  }
-  return result;
-}
-
 export interface NutrientAmountEntry {
   readonly nutrientId: string;
   readonly amount: number;
@@ -555,32 +524,4 @@ export function nullableNutrientAmountEntriesFromLegacyFields(
     }
   }
   return entries;
-}
-
-/**
- * Convert camelCase nutrient values to snake_case column names for SQL.
- */
-export function nutrientValuesToColumns(
-  source: Record<string, unknown>,
-): Record<string, number | null> {
-  const result: Record<string, number | null> = {};
-  for (const field of NUTRIENT_FIELDS) {
-    const value = source[field.key];
-    result[field.column] = typeof value === "number" ? value : null;
-  }
-  return result;
-}
-
-/**
- * Convert snake_case DB row nutrient values to camelCase keys.
- */
-export function nutrientColumnsToValues(
-  row: Record<string, unknown>,
-): Record<string, number | null> {
-  const result: Record<string, number | null> = {};
-  for (const field of NUTRIENT_FIELDS) {
-    const value = row[field.column];
-    result[field.key] = typeof value === "number" ? value : null;
-  }
-  return result;
 }

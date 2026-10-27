@@ -1,0 +1,162 @@
+# OpenBeta provider
+
+The OpenBeta integration imports a connected user's public climbing ticks into
+the canonical `fitness.climbing_log_entry` graph. It is read-only and does not
+create synthetic activities.
+
+## Connection and API
+
+The connection form accepts either a public profile URL such as
+`https://openbeta.io/u/{username}/ticks` or the username itself. Dofek sends
+the username to OpenBeta's public GraphQL `userPage` query, stores the returned
+stable profile UUID in the per-user provider token record, and uses that UUID
+with the paginated `userTicks` query.
+
+OpenBeta documents `https://api.openbeta.io` as the production GraphQL
+endpoint ([official API repository](https://github.com/OpenBeta/openbeta-graphql)).
+The public website presents profile tick history at routes such as
+[`/u/{username}/ticks`](https://openbeta.io/u/thickles/ticks).
+
+Malformed profile identifiers and responses with no public profile produce
+profile-specific connection instructions. Network, API, and response-schema
+failures retain their original errors so the server can classify and report
+them, rather than treating them as rejected tokens. See the
+[provider implementation](../src/providers/openbeta.ts) and
+[connection error handling](../packages/server/src/routers/token-auth.ts).
+The web and mobile inputs display public profile identifiers as visible text;
+secret-token connections stay masked according to the shared
+[provider catalog](../packages/providers-meta/src/provider-catalog.ts).
+
+## Stored records
+
+Each supported tick becomes one standalone `fitness.climbing_log_entry` row:
+
+- `external_id` is `openbeta:{tick-id}`.
+- `climbed_on` is the UTC calendar date of the tick's `dateClimbed`
+  integer Unix-millisecond timestamp. The original numeric value remains in `raw`.
+  Date parsing accepts years 0001–9999 for the application calendar-date
+  format; invalid, expanded-year, and year-zero values use the existing
+  invalid-date skip path. PostgreSQL date input uses Gregorian years without
+  year zero ([date input rules](https://www.postgresql.org/docs/18/datetime-input-rules.html));
+  the [provider parser](../src/providers/openbeta.ts) enforces this range.
+  OpenBeta declares this field as its custom `Date` scalar and serializes it
+  with `Date.getTime()` ([tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql),
+  [scalar implementation](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)).
+- Climb and Pitch grade fields become their ordered published-grade
+  collections; `tick.grade` becomes the log's separately reported collection.
+  Supported selections include V-scale, Font, YDS, French, UIAA, Ewbank,
+  Brazilian Crux and water ice. Uncertain syntax retains a null system.
+- Method, solo, aid and supplied attempt qualifiers become independent
+  nullable Attempt facts. Explicit `Attempt` labels are retained as unsuccessful
+  results. Fell/Hung records a fall-or-hang fact without inferring completion;
+  unfamiliar labels remain unknown and are retained verbatim as source results
+  and in raw provenance. See the [adapter](../src/providers/openbeta.ts).
+- Dofek interprets a tick with no attempt label as successful completion,
+  defaulting missing aid/fall facts and boulder dab facts to false. Explicit
+  aid/fall/dab facts still prevent a clean free send; no Onsight or Flash is inferred. The
+  [read-view migration](../drizzle/0166_openbeta_tick_completion.sql) also covers
+  existing records and recovers recognized results from retained `raw.attemptType`
+  when older adapters discarded their canonical source label. Raw storage stays
+  unchanged; [PostgreSQL views](https://www.postgresql.org/docs/current/sql-createview.html)
+  evaluate the interpretation when queried.
+- A missing total produces one whole-Climb occurrence. Catalogue Pitch
+  definitions establish targets, not attempted pitches or additional tries.
+- Names and verified identities belong to shared Climb/Pitch/Area objects;
+  current Area ancestry supplies the displayed path. Source name stays on
+  the log. The importer retains a missing setting as null. The
+  [canonical read view](../drizzle/0164_climbing_catalogue_setting.sql) assumes
+  missing OpenBeta/Mountain Project rock catalogue settings are outdoor; an
+  explicit source setting takes precedence. This is a display/filter assumption,
+  not a claim that the source supplied the fact.
+- `raw` retains the selected OpenBeta GraphQL response object for provenance.
+
+The upstream [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
+supplies method and attempt type as separate fields. See the shared
+[interpretation contract](climbing-context.md) and the
+[current adapter](../src/providers/openbeta.ts).
+
+The [snapshot writer](../src/db/climbing-log-snapshot.ts) uses the canonical
+writer's provider-scoped identities for idempotent upserts. A complete
+pagination run, including a valid empty list, soft-tombstones missing rows and
+restores rows that reappear. Failed, malformed, or partially unsupported
+responses do not reconcile absence; see the
+[integration tests](../src/providers/openbeta-sync.integration.test.ts).
+
+## Temporary upstream failures
+
+OpenBeta HTTP 502/503/504 responses and typed request timeouts propagate to
+the sync worker. They use the existing sync queue's bounded retry policy:
+288 total attempts with a five-minute backoff. While retries remain, the sync
+stays running and failures are retained in structured logs and BullMQ job
+logs without per-attempt Sentry capture. Exhaustion records a failed processing
+stage, shows an actionable sync error to both clients, and reports the terminal
+failure to Sentry. Schema and other unexpected errors remain reportable.
+The policy is implemented in [sync processing](../src/jobs/process-sync-job.ts),
+[queue defaults](../src/jobs/queues.ts), and [worker events](../src/jobs/worker.ts);
+BullMQ documents [attempts and backoff](https://docs.bullmq.io/guide/retrying-failing-jobs).
+
+## Activity association
+
+OpenBeta ticks use the same explicit activity-association flow as Mountain
+Project ticks. Activity detail pages suggest active, unattached climbing
+log entries whose `climbed_on` matches the activity's displayed calendar day
+in the user's timezone. The user attaches each log individually to a climbing
+or hiking Activity; attachment preserves the independent source date.
+
+The climbing page also offers **Attach to activity** for an unattached log in
+the selected location's climb list. Its picker lists the user's active climbing
+and hiking activity groups on that same displayed calendar day, with local
+start times and source labels. If there are no eligible activities, the picker
+explains that none were recorded on that date; it does not offer a different
+day. Successful attachment refreshes the activity link and affected climbing
+and activity-list queries. See the [association query](../packages/server/src/repositories/climbing-log-entry-associator.ts)
+and [attachment API](../packages/server/src/routers/climbing.ts).
+
+The integration currently does not access private ticks, use account session
+cookies, write to OpenBeta, enrich routes outside the tick response, or create
+activities for tick dates.
+
+## Location, angle, and board coverage
+
+The tick query selects `climb.pathTokens`, `climb.ancestors`, and
+`climb.parent { uuid area_name }`. Names and IDs are paired in order only when
+the supplied arrays align and the nearest ancestor agrees with the supplied
+parent UUID. Inconsistent paths reject the sync before writes or absence
+reconciliation. Missing ancestor IDs stay null; a missing full path uses the
+known parent. The query now requests Climb and parent Area coordinates and
+catalogue Pitches. Valid latitude/longitude pairs, including zero, become
+native PostgreSQL points; missing pairs remain unknown. Area classification
+flags are not stored. See the [adapter](../src/providers/openbeta.ts).
+OpenBeta's
+[tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
+permits a null `climb` when a tick has no catalogue match; those ticks cannot
+provide climb-linked location metadata.
+
+Targeted schema introspection and public `climb`/`area` queries against
+[the production GraphQL endpoint](https://api.openbeta.io) on 2026-09-29
+confirmed additional fields defined in the official
+[climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Climb.gql)
+and [area schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Area.gql):
+
+| Available field | Meaning and observed value |
+| --- | --- |
+| `climb.pathTokens` | Full hierarchy of area names; the checked responses run from the broadest area to the nearest parent. |
+| `climb.ancestors` | Area UUIDs corresponding to that hierarchy. |
+| `climb.parent.uuid`, `area_name` | Nearest area ID/name; Cragmont Crack's parent is `7120fcf9-ae19-5adc-ab0d-d04f749c2e91`, `Northeast Face`. |
+| `Area.metadata.isDestination`, `leaf` | Area classification flags; Northeast Face returned `false` and `true`, respectively. These do not define a universal three-level hierarchy. |
+| `climb.metadata.lat`, `lng` | Climb coordinates; Cragmont Crack returned `37.89205`, `-122.26333`. |
+| `climb.metadata.mp_id` | Mountain Project route reference when supplied; Cragmont Crack returned `"105734660"`. |
+
+The public
+[Cragmont Crack record](https://openbeta.io/climb/6cc9b5d5-02d5-555a-948b-e2fffc9bd82c/cragmont-crack)
+returned:
+
+```text
+USA > California > San Francisco Bay Area > Berkeley > Cragmont Park > Northeast Face
+```
+
+For matched ticks, these fields can be selected within `userTicks.climb`,
+rather than requiring a separate route request. The checked climb/area schemas
+define no dedicated numeric wall-angle or board field. Compare
+[Kaya's explicit metadata](kaya.md#observed-location-and-angle-values) and
+[Mountain Project's exported location path](mountain-project.md#location-angle-and-board-coverage).

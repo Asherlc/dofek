@@ -5,6 +5,25 @@ import XCTest
 
 final class HealthKitTypesTests: XCTestCase {
 
+    func testClinicalRecordIdentifiersMapEverySupportedType() {
+        let expectedTypes = [
+            "HKClinicalTypeIdentifierAllergyRecord": "allergy",
+            "HKClinicalTypeIdentifierConditionRecord": "condition",
+            "HKClinicalTypeIdentifierCoverageRecord": "coverage",
+            "HKClinicalTypeIdentifierImmunizationRecord": "immunization",
+            "HKClinicalTypeIdentifierLabResultRecord": "labResult",
+            "HKClinicalTypeIdentifierMedicationRecord": "medication",
+            "HKClinicalTypeIdentifierProcedureRecord": "procedure",
+            "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
+            "HKClinicalTypeIdentifierClinicalNoteRecord": "clinicalNote",
+        ]
+
+        XCTAssertEqual(Set(clinicalRecordTypeIdentifiers), Set(expectedTypes.keys))
+        for (identifier, expectedType) in expectedTypes {
+            XCTAssertEqual(clinicalRecordType(for: identifier), expectedType)
+        }
+    }
+
     // MARK: - readTypes
 
     func testReadTypesContainsQuantityTypes() {
@@ -21,9 +40,6 @@ final class HealthKitTypesTests: XCTestCase {
             .height,
             .stepCount,
             .distanceWalkingRunning,
-            .distanceCycling,
-            .activeEnergyBurned,
-            .basalEnergyBurned,
             .flightsClimbed,
             .appleExerciseTime,
             .appleStandTime,
@@ -32,6 +48,7 @@ final class HealthKitTypesTests: XCTestCase {
             .walkingStepLength,
             .walkingDoubleSupportPercentage,
             .walkingAsymmetryPercentage,
+            .appleWalkingSteadiness,
             .dietaryEnergyConsumed,
             .dietaryProtein,
             .dietaryCarbohydrates,
@@ -73,6 +90,11 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(sleepType))
     }
 
+    func testReadTypesContainsMenstrualFlow() {
+        let menstrualFlowType = HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
+        XCTAssertTrue(readTypes.contains(menstrualFlowType))
+    }
+
     func testReadTypesContainsWorkoutType() {
         XCTAssertTrue(readTypes.contains(HKWorkoutType.workoutType()))
     }
@@ -108,14 +130,54 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testReadTypesTotalCount() {
-        // 51 quantity types + 5 category types + 1 workout type + 1 workout route = 58
-        var expectedCount = 58
+        // 49 quantity types + 5 category types + 1 workout type + 1 workout route = 56
+        var expectedCount = 56
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
         if #available(iOS 15.0, *) { expectedCount += 1 } // coverage
         #endif
         XCTAssertEqual(readTypes.count, expectedCount)
+    }
+
+    // MARK: - backgroundDeliveryTypes
+
+    func testBackgroundDeliveryTypesContainsSyncedTypes() {
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .stepCount)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .heartRate)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKWorkoutType.workoutType()))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKSeriesType.workoutRoute()))
+    }
+
+    func testBackgroundDeliveryTypesExcludeSamplesTheSyncPipelineDoesNotConsume() {
+        XCTAssertFalse(
+            backgroundDeliveryTypes.contains(
+                HKQuantityType.quantityType(forIdentifier: .dietaryProtein)!
+            )
+        )
+        XCTAssertFalse(
+            backgroundDeliveryTypes.contains(
+                HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
+            )
+        )
+    }
+
+    func testBackgroundDeliveryTypesExcludeAllClinicalRecords() {
+        let backgroundIdentifiers = Set(backgroundDeliveryTypes.map(\.identifier))
+
+        for identifier in clinicalRecordTypeIdentifiers {
+            XCTAssertFalse(
+                backgroundIdentifiers.contains(identifier),
+                "Clinical type \(identifier) must remain explicit-sync only"
+            )
+        }
+    }
+
+    func testBackgroundDeliveryTypesTotalCount() {
+        // 18 quantity types + sleep + menstrual flow + workout + workout route.
+        XCTAssertEqual(backgroundDeliveryTypes.count, 22)
     }
 
     // MARK: - writeTypes
@@ -144,7 +206,6 @@ final class HealthKitTypesTests: XCTestCase {
             .restingHeartRate,
             .bodyMass,
             .stepCount,
-            .activeEnergyBurned,
             .vo2Max,
         ]
 
@@ -152,16 +213,9 @@ final class HealthKitTypesTests: XCTestCase {
             let type = HKQuantityType.quantityType(forIdentifier: identifier)!
             XCTAssertFalse(writeTypes.contains(type), "writeTypes should not contain \(identifier.rawValue)")
         }
-    }
 
-    func testDietaryWriteQuantityTypeAllowsOnlyWritableDietaryIdentifiers() {
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryProtein.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryFatTotal.rawValue))
-
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.stepCount.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.heartRate.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: "not-a-healthkit-type"))
+        XCTAssertFalse(
+            writeTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!)
+        )
     }
 }

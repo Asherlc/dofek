@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
@@ -33,7 +34,12 @@ export default function PreviewScreen() {
       ) : state === "error" ? (
         <>
           <Text style={styles.title}>Update Failed</Text>
-          <Text style={styles.error}>{errorMessage}</Text>
+          <Text style={styles.error}>
+            {userFacingErrorMessage(
+              errorMessage,
+              "The preview update could not be loaded. Please try again.",
+            )}
+          </Text>
           <Text style={styles.subtitle}>
             Make sure the preview channel is mapped to this PR branch.
           </Text>

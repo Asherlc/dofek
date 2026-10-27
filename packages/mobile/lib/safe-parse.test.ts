@@ -6,7 +6,7 @@ vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
-import { safeParseRows } from "./safe-parse";
+import { safeParseData, safeParseRows } from "./safe-parse";
 
 const testSchema = z.object({
   id: z.string(),
@@ -39,15 +39,34 @@ describe("safeParseRows", () => {
     expect(mockCaptureException.mock.calls[0][1]).toHaveProperty("context", "myContext");
   });
 
-  it("handles null/undefined input", () => {
+  it("reports null input as a parse failure", () => {
     const result = safeParseRows(testSchema, null, "test");
     expect(result.data).toEqual([]);
-    expect(result.error).toBeNull();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error?.message).toContain("test: Zod parse failed");
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 
   it("handles empty array input", () => {
     const result = safeParseRows(testSchema, [], "test");
     expect(result.data).toEqual([]);
     expect(result.error).toBeNull();
+  });
+});
+
+describe("safeParseData", () => {
+  it("returns one parsed object on success", () => {
+    const result = safeParseData(testSchema, { id: "a", value: 1 }, "test");
+
+    expect(result.data).toEqual({ id: "a", value: 1 });
+    expect(result.error).toBeNull();
+  });
+
+  it("reports an invalid object and returns no data", () => {
+    const result = safeParseData(testSchema, { id: 123, value: "bad" }, "test");
+
+    expect(result.data).toBeUndefined();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,10 +1,11 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 
 export interface PolarExercise {
   id: string;
   upload_time: string;
   polar_user: string;
   device: string;
+  device_id?: string;
   start_time: string;
   duration: string;
   calories: number;
@@ -62,15 +63,16 @@ export interface PolarNightlyRecharge {
 
 export interface ParsedPolarActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;
   distanceMeters?: number;
-  calories: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
+  device: string;
+  deviceId?: string;
 }
 
 export interface ParsedPolarSleep {
@@ -82,6 +84,7 @@ export interface ParsedPolarSleep {
   deepMinutes: number;
   remMinutes: number;
   awakeMinutes: number;
+  stagingAvailable: true;
 }
 
 export interface ParsedPolarSleepStage {
@@ -93,7 +96,6 @@ export interface ParsedPolarSleepStage {
 export interface ParsedPolarDailyMetrics {
   date: string;
   steps: number;
-  activeEnergyKcal: number;
   restingHr?: number;
   hrv?: number;
   respiratoryRateAvg?: number;

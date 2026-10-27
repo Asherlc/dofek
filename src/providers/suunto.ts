@@ -1,19 +1,22 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
-import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import { parseFitFile } from "../fit/parser.ts";
-import { fitRecordsToSensorSamples } from "../fit/records.ts";
+import { enqueueFitFileImportAndWait } from "../jobs/enqueue-fit-file-import.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -88,7 +91,7 @@ const suuntoWorkoutSchema = z.object({
 
 export interface ParsedSuuntoWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -99,7 +102,7 @@ export interface ParsedSuuntoWorkout {
 // Activity type mapping
 // ============================================================
 
-const SUUNTO_ACTIVITY_MAP: Record<number, CanonicalActivityType> = {
+const SUUNTO_ACTIVITY_MAP: Record<number, LegacyActivityType> = {
   1: "other",
   2: "running",
   3: "cycling",
@@ -116,15 +119,16 @@ const SUUNTO_ACTIVITY_MAP: Record<number, CanonicalActivityType> = {
   83: "running",
 };
 
-export function mapSuuntoActivityType(activityId: number): CanonicalActivityType {
-  return SUUNTO_ACTIVITY_MAP[activityId] ?? "other";
+export function mapSuuntoActivityType(activityId: number): ProviderActivityType {
+  return resolveProviderActivityType(activityId, SUUNTO_ACTIVITY_MAP[activityId] ?? "other");
 }
 
 export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout {
   return {
     externalId: workout.workoutKey,
     activityType: mapSuuntoActivityType(workout.activityId),
-    name: workout.workoutName ?? `Suunto ${mapSuuntoActivityType(workout.activityId)}`,
+    name:
+      workout.workoutName ?? `Suunto ${mapSuuntoActivityType(workout.activityId).canonicalType}`,
     startedAt: new Date(workout.startTime),
     endedAt: new Date(workout.stopTime),
     raw: {
@@ -134,7 +138,6 @@ export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout 
       totalDescent: workout.totalDescent,
       avgSpeed: workout.avgSpeed,
       maxSpeed: workout.maxSpeed,
-      calories: workout.energyConsumption,
       steps: workout.stepCount,
       avgHeartRate: workout.hrdata?.workoutAvgHR,
       maxHeartRate: workout.hrdata?.workoutMaxHR,
@@ -173,7 +176,7 @@ export class SuuntoProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "suunto" });
+    this.#fetchFn = createProviderRateLimitFetch("suunto", fetchFn);
   }
 
   validate(): string | null {
@@ -276,9 +279,9 @@ export class SuuntoProvider implements WebhookProvider {
         this.id,
         "activity",
         async () => {
-          await db
-            .insert(activity)
-            .values({
+          await upsertProviderActivity(
+            db,
+            {
               providerId: this.id,
               externalId: parsed.externalId,
               activityType: parsed.activityType,
@@ -286,18 +289,15 @@ export class SuuntoProvider implements WebhookProvider {
               startedAt: parsed.startedAt,
               endedAt: parsed.endedAt,
               raw: parsed.raw,
-            })
-            .onConflictDoUpdate({
-              target: [activity.userId, activity.providerId, activity.externalId],
-              set: {
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-                providerAbsentAt: null,
-              },
-            });
+            },
+            {
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            },
+          );
           return { recordCount: 1, result: 1 };
         },
         options?.userId,
@@ -318,9 +318,25 @@ export class SuuntoProvider implements WebhookProvider {
     const config = suuntoOAuthConfig(options?.host);
     if (!config) throw new Error("SUUNTO_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
+    const revokeAuthorization = async (tokens: TokenSet): Promise<void> => {
+      const url = new URL("https://cloudapi-oauth.suunto.com/oauth/deauthorize");
+      url.searchParams.set("client_id", config.clientId);
+      const response = await fetchFn(url, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${tokens.accessToken}`,
+        },
+        method: "GET",
+      });
+      if (response.status !== 200) {
+        throw new Error(`Suunto authorization revocation failed (${response.status})`);
+      }
+    };
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      revokeExistingTokens: revokeAuthorization,
+      revokeTokensForAccountErasure: revokeAuthorization,
       apiBaseUrl: SUUNTO_API_BASE,
     };
   }
@@ -385,9 +401,9 @@ export class SuuntoProvider implements WebhookProvider {
             const parsed = parseSuuntoWorkout(raw);
             presentActivityExternalIds.add(parsed.externalId);
             try {
-              const [row] = await db
-                .insert(activity)
-                .values({
+              const row = await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -395,19 +411,15 @@ export class SuuntoProvider implements WebhookProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                    providerAbsentAt: null,
-                  },
-                })
-                .returning({ id: activity.id });
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
 
               const activityId = row?.id;
 
@@ -424,26 +436,24 @@ export class SuuntoProvider implements WebhookProvider {
 
                   if (fitResponse.ok) {
                     const fitBuffer = Buffer.from(await fitResponse.arrayBuffer());
-                    const fitData = await parseFitFile(fitBuffer);
-                    const metricRows = fitRecordsToSensorSamples(
-                      fitData.records,
-                      this.id,
-                      activityId,
-                      parsed.activityType,
-                    );
-
-                    if (metricRows.length > 0) {
-                      await replaceMetricStreamBatch(
-                        db,
-                        { activityId },
-                        metricRows,
-                        SOURCE_TYPE_FILE,
-                        options.metricStreamPublisher,
-                      );
-                      logger.info(
-                        `[suunto] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,
-                      );
-                    }
+                    await enqueueFitFileImportAndWait({
+                      fitBuffer,
+                      providerId: this.id,
+                      sourceName: this.name,
+                      userId: options.userId,
+                      ...(options.metricStreamPublisher
+                        ? { db, metricStreamPublisher: options.metricStreamPublisher }
+                        : {}),
+                      activitySummary: {
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        startedAtIso: parsed.startedAt.toISOString(),
+                        endedAtIso: parsed.endedAt.toISOString(),
+                        name: parsed.name,
+                        raw: parsed.raw,
+                      },
+                    });
+                    logger.info(`[suunto] Imported FIT file for workout ${parsed.externalId}`);
                   }
                 } catch (fitError) {
                   errors.push({
@@ -464,7 +474,7 @@ export class SuuntoProvider implements WebhookProvider {
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

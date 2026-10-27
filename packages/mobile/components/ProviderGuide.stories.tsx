@@ -4,7 +4,7 @@ import { ProviderGuide } from "./ProviderGuide";
 
 const providerCatalog = [
   { id: "strava", name: "Strava", authorized: false, importOnly: false, authType: "oauth" },
-  { id: "garmin", name: "Garmin", authorized: false, importOnly: false, authType: "custom:garmin" },
+  { id: "garmin", name: "Garmin", authorized: false, importOnly: false, authType: "oauth" },
   { id: "wahoo", name: "Wahoo", authorized: false, importOnly: false, authType: "oauth" },
   { id: "polar", name: "Polar", authorized: false, importOnly: false, authType: "oauth" },
   { id: "fitbit", name: "Fitbit", authorized: false, importOnly: false, authType: "oauth" },
@@ -26,7 +26,7 @@ const providerCatalog = [
     importOnly: true,
     authType: "file-import",
   },
-  { id: "fatsecret", name: "FatSecret", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "fatsecret", name: "fatsecret", authorized: false, importOnly: false, authType: "oauth" },
   { id: "withings", name: "Withings", authorized: false, importOnly: false, authType: "oauth" },
   {
     id: "ultrahuman",

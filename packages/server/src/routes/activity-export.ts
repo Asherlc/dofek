@@ -6,10 +6,11 @@ import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { getAccessWindowForUser } from "../billing/access-window-repository.ts";
 import { exportActivityFile } from "../lib/activity-export-service.ts";
+import { requestTimezoneSchema } from "../lib/request-timezone.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
 const exportFormatSchema = z.enum(["gpx", "tcx", "csv", "fit"]);
-const activityIdSchema = z.string().uuid();
+const activityIdSchema = z.guid();
 
 interface ActivityExportRouterDeps {
   db: Database;
@@ -44,8 +45,13 @@ export function createActivityExportRouter({ db, sensorStore }: ActivityExportRo
       return;
     }
 
-    const timezone = req.get("x-timezone") ?? "UTC";
-    const accessWindow = await getAccessWindowForUser(db, session.userId);
+    const timezoneResult = requestTimezoneSchema.safeParse(req.get("x-timezone"));
+    if (!timezoneResult.success) {
+      res.status(400).json({ error: "Invalid x-timezone header" });
+      return;
+    }
+    const timezone = timezoneResult.data;
+    const accessWindow = await getAccessWindowForUser(db, session.userId, timezone);
 
     try {
       const exported = await exportActivityFile(

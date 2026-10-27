@@ -1,19 +1,35 @@
 import {
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
-  formatTime,
   isToday,
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
-import { formatMeasurementText } from "@dofek/format/units";
-import { formatActivityTypeLabel } from "@dofek/training/training";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
 import {
+  formatRecordLocalTime,
+  type RecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
+import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
+import { providerSourceLabel } from "@dofek/providers/providers";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import { formatActivityTypeLabel } from "@dofek/training/training";
+import type { ActivityLocation } from "dofek-server/types";
+import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AccessibilityInfo,
   Alert,
-  Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -21,15 +37,24 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Polyline } from "react-native-svg";
+import { ActivityHeatmap } from "../../components/ActivityHeatmap";
+import { ActivityMapTile } from "../../components/ActivityMapTile";
+import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
+import { ActivityOverview } from "../../components/ActivityOverview";
+import { ActivityPhotoPreview } from "../../components/ActivityPhotoPreview";
+import { ActivitySourceDisclosure } from "../../components/ActivitySourceDisclosure";
+import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
+import { PaginationControls } from "../../components/PaginationControls";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors, radius, spacing } from "../../theme";
 
-const TILE_SIZE = 96;
 const DEFAULT_WEEKS = 4;
+const ACTIVITY_PAGE_SIZE = 20;
 const ALL_ACTIVITY_TYPES = "all";
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
@@ -37,25 +62,106 @@ const DATE_RANGE_OPTIONS = [
   { value: 12, label: "12 weeks" },
 ] as const;
 
-type RoutePathPoint = { x: number; y: number };
-type ActivityMapPreviewTile = {
-  url: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+function sourceLocationLabel(location: ClimbingMapLocation): string {
+  return `${location.scope === "area" ? "Area location" : "Climb location"}${location.name ? `: ${location.name}` : ""} · ${providerSourceLabel(location.providerId)}`;
+}
 
-type ActivityMapPreview = {
-  width: number;
-  height: number;
-  tiles: ActivityMapPreviewTile[];
-  routePath: RoutePathPoint[] | null;
-};
+function displayRecordLocalTime(
+  startedAt: string,
+  localTimeContext: RecordLocalTimeContext,
+): string {
+  const localTime = formatRecordLocalTime(
+    startedAt,
+    localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+  return localTime === "--" ? "Local time unavailable" : localTime;
+}
 
-function formatRouteCoordinate(value: number): string {
-  const rounded = Math.round(value * 1000) / 1000;
-  return Object.is(rounded, -0) ? "0" : String(rounded);
+function formatActivityAccessibilityLabel(
+  action: "Open" | "Select" | "Deselect",
+  activity: {
+    activityType: string;
+    primaryActivityType: string | null;
+    modality: string | null;
+    durationMin: number;
+    localTimeContext: RecordLocalTimeContext;
+    name: string | null;
+    startedAt: string;
+    distanceMeters: number | null;
+    distanceState: ActivityDataState;
+    elevationGainM: number | null;
+    elevationState: ActivityDataState;
+    location: ActivityLocation | null;
+    stats: ActivityMetric[];
+  },
+  units: UnitConverter,
+): string {
+  const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
+  const labelParts = [
+    activity.name ?? formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType),
+    displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
+    formatDurationMinutes(activity.durationMin),
+  ];
+
+  if (activity.name !== null && activity.name !== activityTypeLabel) {
+    labelParts.push(activityTypeLabel);
+  }
+
+  const isIndoorCycling =
+    activity.activityType === "cycling" && isIndoorCyclingModality(activity.modality);
+  const hasRouteMetrics =
+    !isIndoorCycling &&
+    (activity.location?.kind === "recorded_gps" ||
+      activity.distanceState.status !== "missing" ||
+      activity.elevationState.status !== "missing");
+  if (hasRouteMetrics) {
+    const routeMetrics = [
+      formatActivityMetric(
+        "Distance",
+        activity.distanceMeters,
+        activity.distanceState,
+        (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
+      ),
+      formatActivityMetric(
+        "Elevation",
+        activity.elevationGainM,
+        activity.elevationState,
+        (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
+      ),
+    ];
+    for (const metric of routeMetrics) {
+      if (metric.status === "available") {
+        labelParts.push(`${metric.label} ${metric.value}`);
+      } else {
+        labelParts.push(
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
+        );
+      }
+    }
+  } else {
+    for (const metric of activity.stats) {
+      if (metric.status === "available") {
+        labelParts.push(`${metric.label} ${metric.value}`);
+      } else {
+        labelParts.push(
+          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
+        );
+      }
+    }
+  }
+
+  if (activity.location?.kind === "climbing_source") {
+    labelParts.push(
+      `Climbing source locations: ${activity.location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`,
+    );
+  } else if (activity.location?.kind === "processing") {
+    labelParts.push("Processing map");
+  }
+
+  return `${action} ${labelParts.join(", ")}`;
 }
 
 export default function ActivitiesScreen() {
@@ -66,6 +172,7 @@ export default function ActivitiesScreen() {
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const [activityPage, setActivityPage] = useState(0);
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
   const queryInput = {
     weeks,
@@ -73,24 +180,95 @@ export default function ActivitiesScreen() {
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
   };
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput);
+  const query = trpc.calendar.weekList.useQuery(queryInput, {
+    placeholderData: (previousData) => previousData,
+    refetchInterval: (query) =>
+      query.state.data?.some((day) =>
+        day.activities.some((activity) => activity.location?.kind === "processing"),
+      )
+        ? processingPollInterval("active")
+        : false,
+  });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const calendarQuery = trpc.calendar.calendarData.useQuery(
+    { days: weeks * 7 },
+    {
+      placeholderData: (previousData) =>
+        previousData && previousData.length > 0 ? previousData : undefined,
+    },
+  );
+  const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekList.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
       setSelectedActivityIds(new Set());
       setSelectMode(false);
     },
   });
-  const { refreshing, onRefresh } = useRefresh();
+  const mergeActivities = trpc.activity.merge.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.calendar.calendarData.invalidate();
+      await trpcUtils.activity.list.invalidate();
+      setSelectedActivityIds(new Set());
+      setSelectMode(false);
+    },
+    onError: (error) => Alert.alert("Unable to merge activities", error.message),
+  });
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.processing.status.invalidate(),
+      ]).then(() => undefined),
+  });
 
   const dayGroups = query.data;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  const activityCount = dayGroups?.reduce((total, day) => total + day.activities.length, 0) ?? 0;
+  const totalActivityPages = Math.ceil(activityCount / ACTIVITY_PAGE_SIZE);
+  const currentActivityPage = Math.min(activityPage, Math.max(totalActivityPages - 1, 0));
+  const visibleDayGroups = useMemo(() => {
+    if (!dayGroups) return undefined;
+    const visibleActivities = dayGroups
+      .flatMap((day) =>
+        day.activities.map((activity) => ({
+          date: day.date,
+          activity,
+        })),
+      )
+      .slice(
+        currentActivityPage * ACTIVITY_PAGE_SIZE,
+        (currentActivityPage + 1) * ACTIVITY_PAGE_SIZE,
+      );
+    const grouped = new Map<string, typeof visibleActivities>();
+    for (const entry of visibleActivities) {
+      const existing = grouped.get(entry.date) ?? [];
+      existing.push(entry);
+      grouped.set(entry.date, existing);
+    }
+    return [...grouped.entries()].map(([date, entries]) => ({
+      date,
+      activities: entries.map((entry) => entry.activity),
+    }));
+  }, [currentActivityPage, dayGroups]);
   const selectedCount = selectedActivityIds.size;
+  const selectedTypes = new Set(
+    (dayGroups ?? [])
+      .flatMap((day) => day.activities)
+      .filter((activity) => selectedActivityIds.has(activity.id))
+      .map((activity) => activity.activityType),
+  );
+  const mergeEligible = selectedCount >= 2 && selectedTypes.size === 1;
   const toggleSelectedActivity = (activityId: string) => {
     setSelectedActivityIds((current) => {
       const next = new Set(current);
@@ -108,10 +286,12 @@ export default function ActivitiesScreen() {
   };
   const updateActivityType = (nextActivityType: string) => {
     setActivityType(nextActivityType);
+    setActivityPage(0);
     cancelSelection();
   };
   const updateWeeks = (nextWeeks: number) => {
     setWeeks(nextWeeks);
+    setActivityPage(0);
     cancelSelection();
   };
   const confirmBulkDelete = () => {
@@ -131,6 +311,17 @@ export default function ActivitiesScreen() {
       ],
     );
   };
+  const confirmMerge = () => {
+    if (!mergeEligible) return;
+    Alert.alert(
+      "Merge Activities",
+      "Combine the selected activities into one activity spanning their times? Original provider records remain.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Merge", onPress: () => mergeActivities.mutate({ ids: [...selectedActivityIds] }) },
+      ],
+    );
+  };
 
   return (
     <ScrollView
@@ -144,13 +335,11 @@ export default function ActivitiesScreen() {
         />
       }
     >
-      <TouchableOpacity
-        style={styles.recordButton}
-        onPress={() => router.push("/record")}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.recordButtonText}>Record Activity</Text>
-      </TouchableOpacity>
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+      />
 
       <ActivityControls
         activityTypes={overviewQuery.data?.activityTypes ?? []}
@@ -160,88 +349,199 @@ export default function ActivitiesScreen() {
         selectMode={selectMode}
         selectedCount={selectedCount}
         deletePending={bulkDelete.isPending}
+        mergePending={mergeActivities.isPending}
+        mergeEligible={mergeEligible}
+        mixedTypes={selectedTypes.size > 1}
         onActivityTypeChange={updateActivityType}
         onWeeksChange={updateWeeks}
         onSelect={() => setSelectMode(true)}
         onCancelSelection={cancelSelection}
         onDeleteSelected={confirmBulkDelete}
+        onMergeSelected={confirmMerge}
       />
 
       {bulkDelete.error ? (
-        <QueryStatePanel variant="error" message={bulkDelete.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(bulkDelete.error)} />
       ) : null}
 
-      {overviewQuery.isLoading ? (
+      {overviewQuery.isLoading && !overviewQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={100} />
-      ) : overviewQuery.isError ? (
-        <QueryStatePanel variant="error" message={overviewQuery.error.message} />
+      ) : overviewQuery.isError && !overviewQuery.data ? (
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(overviewQuery.error)} />
       ) : (
-        <ActivityOverview overview={overviewQuery.data} units={units} />
+        <>
+          {overviewQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={userFacingErrorMessage(overviewQuery.error)}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          <ActivityOverview overview={overviewQuery.data} units={units} />
+        </>
       )}
 
-      {query.isLoading ? (
+      {calendarQuery.isLoading && !calendarQuery.data ? (
+        <QueryStatePanel variant="loading" minHeight={180} />
+      ) : calendarQuery.isError && !calendarQuery.data ? (
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(calendarQuery.error)} />
+      ) : (
+        <>
+          {calendarQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={userFacingErrorMessage(calendarQuery.error)}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          <ActivityHeatmap data={calendarQuery.data ?? []} />
+        </>
+      )}
+
+      {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : query.isError ? (
-        <QueryStatePanel variant="error" message={query.error.message} />
+      ) : query.isError && !query.data ? (
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(query.error)} />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />
       ) : (
-        dayGroups.map((day) => (
-          <View key={day.date} style={styles.daySection}>
-            <View style={styles.dayHeaderRow}>
-              <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
-              <View style={styles.dayHeaderRule} />
-            </View>
-            {day.activities.map((activity) => (
-              <TouchableOpacity
-                key={activity.id}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (selectMode) {
-                    toggleSelectedActivity(activity.id);
-                    return;
-                  }
-                  router.push(`/activity/${activity.id}`);
-                }}
-                style={[
-                  styles.card,
-                  selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
-                ]}
-              >
-                <View style={styles.cardContent}>
-                  <View style={styles.cardMain}>
-                    <View style={styles.titleRow}>
-                      <Text style={styles.activityName} numberOfLines={1}>
-                        {activity.name ?? formatActivityTypeLabel(activity.activityType)}
-                      </Text>
-                      {selectMode ? (
-                        <Text
-                          style={[
-                            styles.selectionPill,
-                            selectedActivityIds.has(activity.id)
-                              ? styles.selectionPillSelected
-                              : null,
-                          ]}
-                        >
-                          {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
-                        </Text>
-                      ) : null}
-                      <Text style={styles.typePill}>
-                        {formatActivityTypeLabel(activity.activityType)}
-                      </Text>
+        <>
+          {query.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={userFacingErrorMessage(query.error)}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          {visibleDayGroups?.map((day) => (
+            <View key={day.date} style={styles.daySection}>
+              <View style={styles.dayHeaderRow}>
+                <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
+                <View style={styles.dayHeaderRule} />
+              </View>
+              {day.activities.map((activity) => (
+                <View
+                  key={activity.id}
+                  style={[
+                    styles.card,
+                    selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
+                  ]}
+                >
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (selectMode) {
+                        toggleSelectedActivity(activity.id);
+                        return;
+                      }
+                      router.push(`/activity/${activity.id}`);
+                    }}
+                    style={styles.cardAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={formatActivityAccessibilityLabel(
+                      selectMode
+                        ? selectedActivityIds.has(activity.id)
+                          ? "Deselect"
+                          : "Select"
+                        : "Open",
+                      activity,
+                      units,
+                    )}
+                    accessibilityState={{
+                      selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
+                    }}
+                  />
+                  <View style={styles.cardContent} pointerEvents="box-none">
+                    <View
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      <ActivityTypeIcon activityType={activity.activityType} size={40} />
                     </View>
-                    <Text style={styles.activityMeta}>
-                      {formatTime(activity.startedAt)} ·{" "}
-                      {formatDurationMinutes(activity.durationMin)}
-                    </Text>
-                    <ActivityMetricStrip activity={activity} units={units} />
+                    <View style={styles.cardMain} pointerEvents="box-none">
+                      <View
+                        style={styles.titleRow}
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <Text style={styles.activityName} numberOfLines={1}>
+                          {activity.name ??
+                            formatActivityTypeLabel(
+                              activity.primaryActivityType ?? activity.activityType,
+                            )}
+                        </Text>
+                        {selectMode ? (
+                          <Text
+                            style={[
+                              styles.selectionPill,
+                              selectedActivityIds.has(activity.id)
+                                ? styles.selectionPillSelected
+                                : null,
+                            ]}
+                          >
+                            {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
+                          </Text>
+                        ) : null}
+                        {activity.name !== null &&
+                        activity.name !== formatActivityTypeLabel(activity.activityType) ? (
+                          <Text style={styles.typePill}>
+                            {formatActivityTypeLabel(activity.activityType)}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.metaRow} pointerEvents="box-none">
+                        <View
+                          pointerEvents="none"
+                          accessibilityElementsHidden
+                          importantForAccessibility="no-hide-descendants"
+                        >
+                          <Text style={styles.activityMeta}>
+                            {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)}{" "}
+                            · {formatDurationMinutes(activity.durationMin)}
+                          </Text>
+                        </View>
+                      </View>
+                      <View
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <ActivityMetricStrip activity={activity} units={units} />
+                      </View>
+                    </View>
                   </View>
-                  {activity.location ? <ActivityMapTile location={activity.location} /> : null}
+                  {activity.location ? (
+                    <View
+                      style={styles.mapPanel}
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      <ActivityMapTile location={activity.location} />
+                    </View>
+                  ) : !activity.isProviderAbsent ? (
+                    <View pointerEvents="none">
+                      <ActivityPhotoPreview activityId={activity.id} />
+                    </View>
+                  ) : null}
+                  <ActivitySourceDisclosure tree={activity.source.tree} />
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ))
+              ))}
+            </View>
+          ))}
+          <PaginationControls
+            page={currentActivityPage}
+            pageSize={ACTIVITY_PAGE_SIZE}
+            totalItems={activityCount}
+            itemLabel="activities"
+            onPageChange={setActivityPage}
+          />
+        </>
       )}
     </ScrollView>
   );
@@ -255,11 +555,15 @@ interface ActivityControlsProps {
   selectMode: boolean;
   selectedCount: number;
   deletePending: boolean;
+  mergePending: boolean;
+  mergeEligible: boolean;
+  mixedTypes: boolean;
   onActivityTypeChange: (activityType: string) => void;
   onWeeksChange: (weeks: number) => void;
   onSelect: () => void;
   onCancelSelection: () => void;
   onDeleteSelected: () => void;
+  onMergeSelected: () => void;
 }
 
 function ActivityControls({
@@ -270,25 +574,69 @@ function ActivityControls({
   selectMode,
   selectedCount,
   deletePending,
+  mergePending,
+  mergeEligible,
+  mixedTypes,
   onActivityTypeChange,
   onWeeksChange,
   onSelect,
   onCancelSelection,
   onDeleteSelected,
+  onMergeSelected,
 }: ActivityControlsProps) {
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
+
+  useEffect(() => {
+    if (selectMode && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(selectedCountLabel);
+    }
+  }, [selectMode, selectedCountLabel]);
+
   return (
     <View style={styles.controlsPanel}>
-      <View style={styles.controlsHeader}>
-        <Text style={styles.controlsTitle}>Activity log</Text>
-        {canSelect && !selectMode ? (
-          <TouchableOpacity style={styles.selectButton} onPress={onSelect} activeOpacity={0.7}>
-            <Text style={styles.selectButtonText}>Select</Text>
+      {canSelect && !selectMode ? (
+        <View style={styles.controlsHeader}>
+          <TouchableOpacity
+            style={styles.selectButton}
+            onPress={onSelect}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Select activities"
+            accessibilityHint="Choose activities to merge or delete"
+          >
+            <Text style={styles.selectButtonText}>Select activities</Text>
           </TouchableOpacity>
-        ) : null}
-      </View>
+        </View>
+      ) : null}
+      {canSelect && selectMode ? (
+        <Text style={styles.selectionGuidance}>Choose activities to merge or delete.</Text>
+      ) : null}
       {selectMode ? (
         <View style={styles.bulkActionRow}>
-          <Text style={styles.selectedCount}>{selectedCount} selected</Text>
+          <Text style={styles.selectedCount} accessibilityLiveRegion="polite">
+            {selectedCountLabel}
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.deleteSelectionButton,
+              !mergeEligible || mergePending ? styles.disabledAction : null,
+            ]}
+            onPress={onMergeSelected}
+            disabled={!mergeEligible || mergePending}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Merge selected activities"
+            accessibilityState={{ busy: mergePending, disabled: !mergeEligible || mergePending }}
+          >
+            <Text style={styles.deleteSelectionButtonText}>
+              {mergePending ? "Merging..." : "Merge"}
+            </Text>
+          </TouchableOpacity>
+          {mixedTypes ? (
+            <Text style={styles.selectionGuidance}>Select activities of one type to merge.</Text>
+          ) : null}
           <TouchableOpacity
             style={[
               styles.deleteSelectionButton,
@@ -297,6 +645,12 @@ function ActivityControls({
             onPress={onDeleteSelected}
             disabled={selectedCount === 0 || deletePending}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Delete selected activities"
+            accessibilityState={{
+              busy: deletePending,
+              disabled: selectedCount === 0 || deletePending,
+            }}
           >
             <Text style={styles.deleteSelectionButtonText}>
               {deletePending ? "Deleting..." : "Delete"}
@@ -305,8 +659,14 @@ function ActivityControls({
           <TouchableOpacity
             style={styles.cancelSelectionButton}
             onPress={onCancelSelection}
-            disabled={deletePending}
+            disabled={deletePending || mergePending}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel activity selection"
+            accessibilityState={{
+              busy: deletePending || mergePending,
+              disabled: deletePending || mergePending,
+            }}
           >
             <Text style={styles.cancelSelectionButtonText}>Cancel</Text>
           </TouchableOpacity>
@@ -319,6 +679,9 @@ function ActivityControls({
             style={[styles.filterChip, weeks === option.value ? styles.filterChipSelected : null]}
             onPress={() => onWeeksChange(option.value)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected: weeks === option.value }}
           >
             <Text
               style={[
@@ -339,6 +702,9 @@ function ActivityControls({
           ]}
           onPress={() => onActivityTypeChange(ALL_ACTIVITY_TYPES)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="All activities"
+          accessibilityState={{ selected: activityType === ALL_ACTIVITY_TYPES }}
         >
           <Text
             style={[
@@ -355,6 +721,9 @@ function ActivityControls({
             style={[styles.filterChip, activityType === type ? styles.filterChipSelected : null]}
             onPress={() => onActivityTypeChange(type)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={formatActivityTypeLabel(type)}
+            accessibilityState={{ selected: activityType === type }}
           >
             <Text
               style={[
@@ -367,212 +736,6 @@ function ActivityControls({
           </TouchableOpacity>
         ))}
       </View>
-    </View>
-  );
-}
-
-interface ActivityOverviewData {
-  activityCount: number;
-  totalMinutes: number;
-  totalDistanceMeters: number;
-  totalElevationGainM: number;
-}
-
-function ActivityOverview({
-  overview,
-  units,
-}: {
-  overview: ActivityOverviewData | undefined;
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const items = [
-    { label: "Activities", value: overview ? String(overview.activityCount) : "—" },
-    {
-      label: "Time",
-      value: overview ? formatDurationMinutes(overview.totalMinutes) : "—",
-    },
-    {
-      label: "Distance",
-      value: overview
-        ? formatMeasurementText(units.formatDistance(overview.totalDistanceMeters / 1000))
-        : "—",
-    },
-    {
-      label: "Elevation",
-      value: overview
-        ? formatMeasurementText(units.formatElevation(overview.totalElevationGainM))
-        : "—",
-    },
-  ];
-
-  return (
-    <View style={styles.overviewGrid}>
-      {items.map((item) => (
-        <View key={item.label} style={styles.overviewItem}>
-          <Text style={styles.overviewValue}>{item.value}</Text>
-          <Text style={styles.overviewLabel}>{item.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-interface ActivityMapTileProps {
-  location: {
-    mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
-  };
-}
-
-function ActivityMapTile({ location }: ActivityMapTileProps) {
-  const [loadFailed, setLoadFailed] = useState(false);
-  const previewScale = Math.min(
-    TILE_SIZE / location.mapPreview.width,
-    TILE_SIZE / location.mapPreview.height,
-  );
-  const previewWidth = location.mapPreview.width * previewScale;
-  const previewHeight = location.mapPreview.height * previewScale;
-  const previewLeft = (TILE_SIZE - previewWidth) / 2;
-  const previewTop = (TILE_SIZE - previewHeight) / 2;
-
-  return (
-    <View style={styles.tileContainer}>
-      {loadFailed ? (
-        <View
-          style={styles.tileFallback}
-          accessibilityLabel="Activity location unavailable"
-          accessible={true}
-        >
-          <Text style={styles.tileFallbackText}>Map unavailable</Text>
-        </View>
-      ) : (
-        <View
-          testID="activity-route-viewport"
-          style={styles.routeViewport}
-          accessibilityLabel="Activity location map"
-          accessible={true}
-        >
-          {location.mapPreview.tiles.map((tile) => (
-            <Image
-              key={`${tile.url}-${tile.x}-${tile.y}`}
-              testID="activity-map-preview-tile"
-              source={{ uri: tile.url }}
-              style={{
-                ...styles.previewTile,
-                left: previewLeft + tile.x * previewScale,
-                top: previewTop + tile.y * previewScale,
-                width: tile.width * previewScale,
-                height: tile.height * previewScale,
-              }}
-              resizeMode="cover"
-              onError={() => setLoadFailed(true)}
-            />
-          ))}
-          <ActivityRouteOverlay
-            mapPreview={location.mapPreview}
-            width={previewWidth}
-            height={previewHeight}
-            left={previewLeft}
-            top={previewTop}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
-function ActivityRouteOverlay({
-  mapPreview,
-  width,
-  height,
-  left,
-  top,
-}: {
-  mapPreview: ActivityMapPreview;
-  width: number;
-  height: number;
-  left: number;
-  top: number;
-}) {
-  const { routePath } = mapPreview;
-  if (routePath == null || routePath.length < 2) return null;
-
-  const points = routePath
-    .map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
-    .join(" ");
-  return (
-    <Svg
-      testID="activity-route-overlay"
-      pointerEvents="none"
-      style={{ ...styles.routeOverlay, left, top, width, height }}
-      viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
-      preserveAspectRatio="none"
-    >
-      <Polyline
-        points={points}
-        fill="none"
-        stroke="#fff"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={60}
-      />
-      <Polyline
-        testID="activity-route-path"
-        points={points}
-        fill="none"
-        stroke={colors.positive}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={30}
-      />
-    </Svg>
-  );
-}
-
-function ActivityMetricStrip({
-  activity,
-  units,
-}: {
-  activity: {
-    location: {
-      distanceMeters: number | null;
-      elevationGainM: number | null;
-    } | null;
-    stats: { label: string; value: string }[];
-  };
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const stats =
-    activity.location != null
-      ? [
-          {
-            label: "Distance",
-            value:
-              activity.location.distanceMeters != null
-                ? formatMeasurementText(
-                    units.formatDistance(activity.location.distanceMeters / 1000),
-                  )
-                : "—",
-          },
-          {
-            label: "Elevation",
-            value:
-              activity.location.elevationGainM != null
-                ? formatMeasurementText(units.formatElevation(activity.location.elevationGainM))
-                : "—",
-          },
-        ]
-      : activity.stats;
-
-  return (
-    <View style={styles.statsRow}>
-      {stats.slice(0, 2).map((stat) => (
-        <View key={stat.label} style={styles.statBadge}>
-          <Text style={styles.statValue}>{stat.value}</Text>
-          <Text style={styles.statLabel}>{stat.label}</Text>
-        </View>
-      ))}
     </View>
   );
 }
@@ -594,16 +757,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
-  recordButton: {
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    alignItems: "center",
-  },
-  recordButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  backgroundErrorPanel: {
+    marginBottom: spacing.md,
   },
   controlsPanel: {
     backgroundColor: colors.surface,
@@ -614,13 +769,8 @@ const styles = StyleSheet.create({
   controlsHeader: {
     alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     gap: spacing.sm,
-  },
-  controlsTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
   },
   selectButton: {
     borderColor: colors.surfaceSecondary,
@@ -633,6 +783,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
+  },
+  selectionGuidance: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   bulkActionRow: {
     alignItems: "center",
@@ -694,32 +848,6 @@ const styles = StyleSheet.create({
   filterChipTextSelected: {
     color: "#fff",
   },
-  overviewGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  overviewItem: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    flexBasis: "47%",
-    flexGrow: 1,
-    padding: spacing.md,
-  },
-  overviewValue: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  overviewLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginTop: 2,
-    textTransform: "uppercase",
-  },
   daySection: {
     gap: spacing.sm,
   },
@@ -748,6 +876,13 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: colors.accent,
     borderWidth: 1,
+  },
+  cardAction: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   cardContent: {
     flexDirection: "row",
@@ -801,59 +936,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  tileContainer: {
-    borderRadius: radius.md,
-    height: TILE_SIZE,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-    position: "relative",
-    width: TILE_SIZE,
-  },
-  routeViewport: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  previewTile: {
-    position: "absolute",
-  },
-  routeOverlay: {
-    position: "absolute",
-  },
-  tileFallback: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tileFallbackText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  statsRow: {
+  metaRow: {
     flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  statBadge: {
-    flex: 1,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
     alignItems: "center",
+    gap: spacing.xs,
+    flexWrap: "wrap",
   },
-  statValue: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  statLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
+  mapPanel: {
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
   },
 });

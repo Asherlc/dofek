@@ -1,3 +1,4 @@
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import type { ReactNode } from "react";
 import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -27,7 +28,7 @@ export function ChartContainer({
 }: ChartContainerProps) {
   const fetchingCount = useFetchingCount();
 
-  if (loading) {
+  if (shouldShowBlockingLoading({ data, isLoading: loading })) {
     return <ChartLoadingSkeleton height={height} />;
   }
 

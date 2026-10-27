@@ -1,5 +1,41 @@
 import HealthKit
 
+private let clinicalNoteRecordIdentifier = "HKClinicalTypeIdentifierClinicalNoteRecord"
+
+private let clinicalRecordTypesByIdentifier: [String: String] = [
+    "HKClinicalTypeIdentifierAllergyRecord": "allergy",
+    "HKClinicalTypeIdentifierConditionRecord": "condition",
+    "HKClinicalTypeIdentifierCoverageRecord": "coverage",
+    "HKClinicalTypeIdentifierImmunizationRecord": "immunization",
+    "HKClinicalTypeIdentifierLabResultRecord": "labResult",
+    "HKClinicalTypeIdentifierMedicationRecord": "medication",
+    "HKClinicalTypeIdentifierProcedureRecord": "procedure",
+    "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
+    clinicalNoteRecordIdentifier: "clinicalNote",
+]
+
+let clinicalRecordTypeIdentifiers = Array(clinicalRecordTypesByIdentifier.keys)
+
+func clinicalRecordType(for identifier: String) -> String? {
+    return clinicalRecordTypesByIdentifier[identifier]
+}
+
+#if os(iOS)
+func healthKitClinicalType(for identifier: String) -> HKClinicalType? {
+    guard clinicalRecordType(for: identifier) != nil else {
+        return nil
+    }
+    if identifier == clinicalNoteRecordIdentifier {
+        guard #available(iOS 16.4, *) else {
+            return nil
+        }
+    }
+    return HKClinicalType.clinicalType(
+        forIdentifier: HKClinicalTypeIdentifier(rawValue: identifier)
+    )
+}
+#endif
+
 /// All HealthKit types we want to read
 let readTypes: Set<HKObjectType> = {
     var types = Set<HKObjectType>()
@@ -17,9 +53,6 @@ let readTypes: Set<HKObjectType> = {
         .height,
         .stepCount,
         .distanceWalkingRunning,
-        .distanceCycling,
-        .activeEnergyBurned,
-        .basalEnergyBurned,
         .flightsClimbed,
         .appleExerciseTime,
         .appleStandTime,
@@ -28,6 +61,7 @@ let readTypes: Set<HKObjectType> = {
         .walkingStepLength,
         .walkingDoubleSupportPercentage,
         .walkingAsymmetryPercentage,
+        .appleWalkingSteadiness,
         .dietaryEnergyConsumed,
         .dietaryProtein,
         .dietaryCarbohydrates,
@@ -87,21 +121,8 @@ let readTypes: Set<HKObjectType> = {
 
     // Clinical Records (FHIR data) — iOS only; not available on macOS
     #if os(iOS)
-    var clinicalTypes: [HKClinicalTypeIdentifier] = [
-        .allergyRecord,
-        .conditionRecord,
-        .coverageRecord,
-        .immunizationRecord,
-        .labResultRecord,
-        .medicationRecord,
-        .procedureRecord,
-        .vitalSignRecord,
-    ]
-    if #available(iOS 16.4, *) {
-        clinicalTypes.append(.clinicalNoteRecord)
-    }
-    for id in clinicalTypes {
-        if let type = HKClinicalType.clinicalType(forIdentifier: id) {
+    for identifier in clinicalRecordTypeIdentifiers {
+        if let type = healthKitClinicalType(for: identifier) {
             types.insert(type)
         }
     }
@@ -110,7 +131,48 @@ let readTypes: Set<HKObjectType> = {
     return types
 }()
 
-/// Types we want to write (dietary data back to HealthKit)
+/// HealthKit sample types that should wake the app for background sync.
+let backgroundDeliveryTypes: Set<HKSampleType> = {
+    var types = Set<HKSampleType>()
+
+    let quantityTypes: [HKQuantityTypeIdentifier] = [
+        .stepCount,
+        .distanceWalkingRunning,
+        .flightsClimbed,
+        .appleExerciseTime,
+        .bodyMass,
+        .bodyFatPercentage,
+        .heartRate,
+        .restingHeartRate,
+        .heartRateVariabilitySDNN,
+        .vo2Max,
+        .oxygenSaturation,
+        .respiratoryRate,
+        .appleSleepingWristTemperature,
+        .walkingSpeed,
+        .walkingStepLength,
+        .walkingDoubleSupportPercentage,
+        .walkingAsymmetryPercentage,
+        .appleWalkingSteadiness,
+    ]
+    for identifier in quantityTypes {
+        if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
+            types.insert(type)
+        }
+    }
+    if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+        types.insert(sleepType)
+    }
+    if let menstrualFlowType = HKCategoryType.categoryType(forIdentifier: .menstrualFlow) {
+        types.insert(menstrualFlowType)
+    }
+    types.insert(HKWorkoutType.workoutType())
+    types.insert(HKSeriesType.workoutRoute())
+
+    return types
+}()
+
+/// Types used to remove legacy Dofek-written dietary samples from HealthKit.
 let writeTypes: Set<HKSampleType> = {
     var types = Set<HKSampleType>()
     let dietaryTypes: [HKQuantityTypeIdentifier] = [
@@ -126,10 +188,3 @@ let writeTypes: Set<HKSampleType> = {
     }
     return types
 }()
-
-func dietaryWriteQuantityType(for typeIdentifier: String) -> HKQuantityType? {
-    guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-        return nil
-    }
-    return writeTypes.contains(quantityType) ? quantityType : nil
-}

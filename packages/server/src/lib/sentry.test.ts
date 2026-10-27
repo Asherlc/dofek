@@ -2,14 +2,22 @@ import type express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  const mockInit = vi.fn();
   const mockCaptureException = vi.fn();
-  return { mockInit, mockCaptureException };
+  const mockInitProductionSentry = vi.fn();
+  const mockInitProductionPostHog = vi.fn();
+  return { mockCaptureException, mockInitProductionSentry, mockInitProductionPostHog };
 });
 
-vi.mock("@sentry/node", () => ({
-  init: mocks.mockInit,
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: mocks.mockCaptureException,
+}));
+
+vi.mock("dofek/lib/sentry", () => ({
+  initProductionSentry: mocks.mockInitProductionSentry,
+}));
+
+vi.mock("dofek/lib/posthog", () => ({
+  initProductionPostHog: mocks.mockInitProductionPostHog,
 }));
 
 /** Type-safe partial mock helper — avoids banned `as` assertions. */
@@ -31,27 +39,27 @@ describe("server sentry", () => {
     vi.unstubAllEnvs();
   });
 
-  it("does not initialize without SENTRY_DSN", async () => {
+  it("delegates an absent DSN once", async () => {
     delete process.env.SENTRY_DSN;
 
     const { initSentry } = await import("./sentry.ts");
     initSentry();
 
-    expect(mocks.mockInit).not.toHaveBeenCalled();
+    expect(mocks.mockInitProductionPostHog).toHaveBeenCalledWith("dofek-web-server");
+    expect(mocks.mockInitProductionSentry).toHaveBeenCalledOnce();
+    expect(mocks.mockInitProductionSentry).toHaveBeenCalledWith(undefined);
   });
 
-  it("initializes Sentry once with skipOpenTelemetrySetup", async () => {
+  it("delegates Sentry initialization once", async () => {
     vi.stubEnv("SENTRY_DSN", "https://key@sentry.example/456");
 
     const { initSentry } = await import("./sentry.ts");
     initSentry();
     initSentry(); // idempotent
 
-    expect(mocks.mockInit).toHaveBeenCalledTimes(1);
-    expect(mocks.mockInit).toHaveBeenCalledWith({
-      dsn: "https://key@sentry.example/456",
-      skipOpenTelemetrySetup: true,
-    });
+    expect(mocks.mockInitProductionPostHog).toHaveBeenCalledOnce();
+    expect(mocks.mockInitProductionSentry).toHaveBeenCalledOnce();
+    expect(mocks.mockInitProductionSentry).toHaveBeenCalledWith("https://key@sentry.example/456");
   });
 
   it("error handler captures exception and returns 500", async () => {

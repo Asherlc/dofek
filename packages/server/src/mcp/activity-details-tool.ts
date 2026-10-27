@@ -1,0 +1,72 @@
+import type { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { readFingerLoadingActivity } from "../repositories/climbing-training-log-repository.ts";
+import { StrengthRepository } from "../repositories/strength-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
+import type { DofekMcpContext } from "./context.ts";
+import { requireMcpScope } from "./token-repository.ts";
+import { activityDetailsOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
+
+/** Register one-activity structured training details. */
+export function registerActivityDetailsTool(server: McpServer, context: DofekMcpContext): void {
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
+    "get_activity_details",
+    {
+      title: "Get Activity Details",
+      description:
+        "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+      inputSchema: z.object({ activity_id: z.uuid() }),
+      outputSchema: activityDetailsOutputSchema,
+    },
+    async ({ activity_id }) => {
+      requireMcpScope(context.scopes, "activity:read");
+      const activityRepository = new ActivityRepository(
+        context.db,
+        context.userId,
+        context.timezone,
+        { kind: "full", paid: true, reason: "paid_grant" },
+        context.sensorStore,
+      );
+      const activity = await activityRepository.findById(activity_id);
+      if (!activity) throw new Error("Activity not found.");
+      const stableGroupId = activity.id;
+      const gradePreference = await loadClimbingGradePreference(context.db, context.userId);
+      const [strengthExercises, climbingLogEntries, fingerLoading] = await Promise.all([
+        new StrengthRepository(
+          context.db,
+          context.userId,
+          context.timezone,
+        ).getExercisesForActivity(stableGroupId),
+        new ClimbingRepository(
+          context.db,
+          context.userId,
+          context.timezone,
+          {
+            kind: "full",
+            paid: true,
+            reason: "paid_grant",
+          },
+          gradePreference,
+        ).getActivityLogEntries(stableGroupId),
+        readFingerLoadingActivity({
+          activityId: stableGroupId,
+          database: context.db,
+          userId: context.userId,
+        }),
+      ]);
+      return jsonToolResult({
+        activity,
+        climbing_log_entries: climbingLogEntries.map((entry) => entry.toDetail()),
+        finger_loading: fingerLoading,
+        strength_exercises: strengthExercises.map((exercise) => exercise.toDetail()),
+      });
+    },
+  );
+}

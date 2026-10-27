@@ -11,18 +11,12 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOn {
-            connectionManager?.handleCentralManagerPoweredOn()
-        }
+        connectionManager?.handleCentralManagerStateUpdated(central.state)
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-              let peripheral = peripherals.first else {
-            return
-        }
-        peripheral.delegate = self
-        connectionManager?.handleRestoredPeripheral(peripheral)
+        let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        connectionManager?.handleRestoration(peripherals)
     }
 
     func centralManager(
@@ -59,6 +53,11 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             NSLog("[WhoopBLE] service discovery error: %@", error.localizedDescription)
+            connectionManager?.abortHandshake(
+                for: peripheral,
+                with: .serviceDiscoveryFailed(error.localizedDescription),
+                underlyingError: error
+            )
             return
         }
         connectionManager?.handleServicesDiscovered(peripheral)
@@ -71,9 +70,26 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     ) {
         if let error = error {
             NSLog("[WhoopBLE] characteristic discovery error: %@", error.localizedDescription)
+            connectionManager?.abortHandshake(
+                for: peripheral,
+                with: .characteristicDiscoveryFailed(error.localizedDescription),
+                underlyingError: error
+            )
             return
         }
         connectionManager?.handleCharacteristicsDiscovered(peripheral, service: service)
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        connectionManager?.handleNotificationStateUpdated(
+            peripheral,
+            characteristic: characteristic,
+            error: error
+        )
     }
 
     func peripheral(

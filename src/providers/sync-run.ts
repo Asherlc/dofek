@@ -1,4 +1,5 @@
 import type { SyncDatabase } from "../db/index.ts";
+import type { SyncLogOrigin } from "../db/schema/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import type { SyncWindow } from "./sync-window.ts";
 
@@ -19,6 +20,14 @@ export interface SyncCheckpointStore {
  * Options for a sync run, passed as a bag so we can extend without adding positional params.
  */
 export interface SyncOptions {
+  /** Cancellation propagated by the queue worker for this run. */
+  signal?: AbortSignal;
+  /** How this sync was requested, used when provider calendar semantics differ by trigger. */
+  origin?: SyncLogOrigin;
+  /** Stable wall-clock instant captured when this sync request was created. */
+  requestedAt?: Date;
+  /** The bounded window came from a relative day lookback, not literal range bounds. */
+  relativeWindow?: boolean;
   /** Callback to report progress (0-100%) */
   onProgress?: SyncProgressCallback;
   /** User ID for attributing sync log entries */
@@ -27,6 +36,8 @@ export interface SyncOptions {
   checkpoint?: SyncCheckpointStore;
   /** Optional publisher override for metric-stream writers. */
   metricStreamPublisher?: MetricStreamEventPublisher;
+  /** Enqueue the next step of a multi-job provider sync (e.g. WHOOP). */
+  enqueueSyncContinuation?: (checkpoint: unknown) => Promise<void>;
 }
 
 export type SyncRunParams = {
@@ -43,13 +54,28 @@ export class SyncRun {
   constructor({
     db,
     window,
+    signal,
+    origin,
+    requestedAt,
+    relativeWindow,
     onProgress,
     userId,
     checkpoint,
     metricStreamPublisher,
+    enqueueSyncContinuation,
   }: SyncRunParams) {
     this.db = db;
     this.window = window;
-    this.options = { onProgress, userId, checkpoint, metricStreamPublisher };
+    this.options = {
+      signal,
+      origin,
+      requestedAt,
+      relativeWindow,
+      onProgress,
+      userId,
+      checkpoint,
+      metricStreamPublisher,
+      enqueueSyncContinuation,
+    };
   }
 }

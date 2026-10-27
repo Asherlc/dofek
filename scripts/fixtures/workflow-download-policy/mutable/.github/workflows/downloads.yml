@@ -1,0 +1,14 @@
+name: Mutable executable downloads
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mutable-installer:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+      - run: curl -fsSL https://github.com/rhysd/actionlint/raw/master/actionlint_checksums.txt
+      - run: curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash
+      - run: curl -fsSL https://github.com/example/tool/archive/refs/heads/main.tar.gz
+      - run: curl -fsSL https://codeload.github.com/example/tool/tar.gz/main

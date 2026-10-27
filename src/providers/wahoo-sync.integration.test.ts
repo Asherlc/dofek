@@ -2,16 +2,16 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createProviderArtifactStorageTestContext } from "../test-helpers.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
-import type { WahooWorkout } from "./wahoo/client.ts";
+import { WAHOO_API_BASE, type WahooWorkout } from "./wahoo/client.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
 
 // Fake Wahoo API responses
@@ -43,11 +43,27 @@ function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
   };
 }
 
+function fakeWorkoutWithoutFitFile(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
+  const workout = fakeWorkout(overrides);
+  if (!workout.workout_summary) return workout;
+  const { file: _file, ...summaryWithoutFile } = workout.workout_summary;
+  return { ...workout, workout_summary: summaryWithoutFile };
+}
+
 // Load a real FIT fixture for testing
 const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../fit/fixtures/test.fit");
 const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
 
-function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean }) {
+function wahooHandlers(
+  workouts: WahooWorkout[],
+  opts?: {
+    fitFileError?: boolean;
+    total?: number;
+    workoutPage?: (page: number) => WahooWorkout[];
+    onWorkoutRequest?: (page: number) => void;
+  },
+) {
+  let workoutListCallCount = 0;
   return [
     // Token refresh
     http.post("https://api.wahooligan.com/oauth/token", () => {
@@ -69,10 +85,16 @@ function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean
 
     // Workout list
     http.get("https://api.wahooligan.com/v1/workouts", () => {
+      workoutListCallCount++;
+      opts?.onWorkoutRequest?.(workoutListCallCount);
       return HttpResponse.json({
-        workouts,
-        total: workouts.length,
-        page: 1,
+        workouts: opts?.workoutPage
+          ? opts.workoutPage(workoutListCallCount)
+          : workoutListCallCount === 1
+            ? workouts
+            : [],
+        total: opts?.total ?? workouts.length,
+        page: workoutListCallCount,
         per_page: 30,
         order: "descending",
         sort: "starts",
@@ -81,13 +103,15 @@ function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean
   ];
 }
 
-const server = setupServer();
+const archive = createProviderArtifactStorageTestContext("http://r2.wahoo-fit.test");
+const server = archive.server;
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WahooProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    archive.stubEnvironment();
     process.env.WAHOO_CLIENT_ID = "test-client-id";
     process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
@@ -96,6 +120,8 @@ describe("WahooProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
+    archive.originals.clear();
+    archive.writes.length = 0;
     metricStreamCapture.publishedMetricStreamRows.length = 0;
     metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
@@ -106,6 +132,8 @@ describe("WahooProvider.sync() (integration)", () => {
 
   afterAll(async () => {
     server.close();
+    archive.client.destroy();
+    vi.unstubAllEnvs();
     if (ctx) await ctx.cleanup();
   });
 
@@ -138,7 +166,8 @@ describe("WahooProvider.sync() (integration)", () => {
 
     expect(result.provider).toBe("wahoo");
     expect(result.recordsSynced).toBe(2);
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors).toEqual([]);
+    expect([...archive.originals.values()]).toEqual([fitFileBuffer]);
 
     // Verify rows in DB
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "wahoo"));
@@ -147,11 +176,11 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "1001");
     if (!ride) throw new Error("expected workout 1001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
 
     const run = rows.find((r) => r.externalId === "1002");
     if (!run) throw new Error("expected workout 1002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -214,9 +243,68 @@ describe("WahooProvider.sync() (integration)", () => {
     );
 
     // Verify token was refreshed in DB
-    const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wahoo");
     expect(tokens?.accessToken).toBe("refreshed-token");
+  });
+
+  it("refreshes and retries when Wahoo rejects a locally unexpired access token", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "stale-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const attemptedTokens: string[] = [];
+    server.use(
+      http.post(`${WAHOO_API_BASE}/oauth/token`, async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("valid-refresh");
+        return HttpResponse.json({
+          access_token: "refreshed-after-rejection",
+          refresh_token: "rotated-refresh",
+          expires_in: 7200,
+          scope: "user_read workouts_read",
+        });
+      }),
+      http.get(`${WAHOO_API_BASE}/v1/workouts`, ({ request }) => {
+        const authorization = request.headers.get("Authorization");
+        if (authorization) attemptedTokens.push(authorization);
+        if (authorization === "Bearer stale-token") {
+          return HttpResponse.json({ error: "Access token has expired" }, { status: 401 });
+        }
+        if (authorization === "Bearer refreshed-after-rejection") {
+          return HttpResponse.json({
+            workouts: [],
+            total: 0,
+            page: 1,
+            per_page: 30,
+            order: "descending",
+            sort: "starts",
+          });
+        }
+        return HttpResponse.json({ error: "Unexpected token" }, { status: 401 });
+      }),
+    );
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.duration).toBeLessThan(60_000);
+    expect(attemptedTokens).toEqual(["Bearer stale-token", "Bearer refreshed-after-rejection"]);
+    await expect(loadTokens(ctx.db, "wahoo")).resolves.toMatchObject({
+      accessToken: "refreshed-after-rejection",
+      refreshToken: "rotated-refresh",
+    });
   });
 
   it("downloads FIT files and publishes Redpanda metric stream events", async () => {
@@ -265,6 +353,148 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(metrics.every((sample) => sample.activityId === activityId)).toBe(true);
   });
 
+  it("reports degraded pagination and skips reconciliation when totals imply another empty page", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    await ctx.db.insert(activity).values({
+      providerId: "wahoo",
+      userId: "00000000-0000-0000-0000-000000000001",
+      externalId: "9100",
+      canonicalType: "cycling",
+      providerType: "0",
+      modality: null,
+      startedAt: new Date("2026-04-02T10:00:00Z"),
+      name: "Missing Wahoo workout",
+    });
+
+    const requestedPages: number[] = [];
+    const workouts = [fakeWorkout({ id: 9101, starts: "2026-04-01T10:00:00Z" })];
+    server.use(
+      ...wahooHandlers(workouts, {
+        total: 31,
+        onWorkoutRequest: (page) => requestedPages.push(page),
+      }),
+    );
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_empty_page_with_cursor",
+        providerId: "wahoo",
+        stepName: "activity_list",
+        message: "Provider returned an empty page with a continuation cursor",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 2,
+        },
+      }),
+    ]);
+    expect(requestedPages).toEqual([1, 2]);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "9100"));
+    expect(rows[0]?.providerAbsentAt).toBeNull();
+  });
+
+  it("reconciles missing activities after a complete workout list", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    await ctx.db.insert(activity).values({
+      providerId: "wahoo",
+      userId: "00000000-0000-0000-0000-000000000001",
+      externalId: "9200",
+      canonicalType: "cycling",
+      providerType: "0",
+      modality: null,
+      startedAt: new Date("2026-04-03T10:00:00Z"),
+      name: "Removed Wahoo workout",
+    });
+
+    const workouts = [fakeWorkout({ id: 9201, starts: "2026-04-01T10:00:00Z" })];
+    server.use(...wahooHandlers(workouts, { total: 1 }));
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.degradations).toBeUndefined();
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "9200"));
+    expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+  });
+
+  it("reports max-page degradation at the exact page guard", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const requestedPages: number[] = [];
+    server.use(
+      ...wahooHandlers([], {
+        total: 3001,
+        workoutPage: (page) => [
+          fakeWorkoutWithoutFitFile({ id: 9300 + page, starts: "2026-04-01T10:00:00Z" }),
+        ],
+        onWorkoutRequest: (page) => requestedPages.push(page),
+      }),
+    );
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(100);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_max_pages_exceeded",
+        providerId: "wahoo",
+        stepName: "activity_list",
+        message: "Provider pagination exceeded the maximum page count",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 100,
+        },
+      }),
+    ]);
+    expect(requestedPages).toHaveLength(100);
+    expect(requestedPages[0]).toBe(1);
+    expect(requestedPages.at(-1)).toBe(100);
+  });
+
   it("continues syncing if FIT file download fails", async () => {
     await saveTokens(ctx.db, "wahoo", {
       accessToken: "valid-token",
@@ -302,7 +532,7 @@ describe("WahooProvider.sync() (integration)", () => {
     // Clear tokens by saving then deleting — or simpler, just test with
     // a provider that tries to sync without tokens.
     // Delete existing wahoo tokens first.
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     const { eq } = await import("drizzle-orm");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 

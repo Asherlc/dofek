@@ -1,0 +1,468 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`synchronizeActivityTimeseries > calculates moving time only when speed observations support it 1`] = `
+{
+  "effectiveResolutionSeconds": null,
+  "offsetsSeconds": [
+    0,
+    1,
+    2,
+    3,
+  ],
+  "streams": {
+    "moving_time": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "calculated_zero",
+        "calculated",
+        "calculated",
+        "calculated",
+      ],
+      "summary": {
+        "average": 1.25,
+        "largestGapSeconds": 1,
+        "max": 2,
+        "min": 0,
+        "missingPoints": 0,
+        "observedSamples": 4,
+        "zeroPoints": 1,
+      },
+      "unit": "s",
+      "values": [
+        0,
+        1,
+        2,
+        2,
+      ],
+    },
+    "speed": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "measured",
+        "measured",
+        "measured_zero",
+        "measured_zero",
+      ],
+      "summary": {
+        "average": 1,
+        "largestGapSeconds": 1,
+        "max": 2,
+        "min": 0,
+        "missingPoints": 0,
+        "observedSamples": 4,
+        "zeroPoints": 2,
+      },
+      "unit": "m/s",
+      "values": [
+        2,
+        2,
+        0,
+        0,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+    "2026-09-01T10:00:01.000Z",
+    "2026-09-01T10:00:02.000Z",
+    "2026-09-01T10:00:03.000Z",
+  ],
+}
+`;
+
+exports[`synchronizeActivityTimeseries > calculates moving time only when speed observations support it 2`] = `
+{
+  "effectiveResolutionSeconds": null,
+  "offsetsSeconds": [
+    2,
+    3,
+  ],
+  "streams": {
+    "moving_time": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "calculated",
+        "calculated",
+      ],
+      "summary": {
+        "average": 2,
+        "largestGapSeconds": 1,
+        "max": 2,
+        "min": 2,
+        "missingPoints": 0,
+        "observedSamples": 4,
+        "zeroPoints": 0,
+      },
+      "unit": "s",
+      "values": [
+        2,
+        2,
+      ],
+    },
+    "speed": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "measured_zero",
+        "measured_zero",
+      ],
+      "summary": {
+        "average": 0,
+        "largestGapSeconds": 1,
+        "max": 0,
+        "min": 0,
+        "missingPoints": 0,
+        "observedSamples": 2,
+        "zeroPoints": 2,
+      },
+      "unit": "m/s",
+      "values": [
+        0,
+        0,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:02.000Z",
+    "2026-09-01T10:00:03.000Z",
+  ],
+}
+`;
+
+exports[`synchronizeActivityTimeseries > calculates moving time only when speed observations support it 3`] = `
+{
+  "effectiveResolutionSeconds": null,
+  "offsetsSeconds": [
+    0,
+  ],
+  "streams": {
+    "moving_time": {
+      "availabilityReason": "Moving time requires provider-recorded moving time or speed samples.",
+      "sourceIndexes": [
+        null,
+      ],
+      "states": [
+        "missing",
+      ],
+      "summary": {
+        "average": null,
+        "largestGapSeconds": null,
+        "max": null,
+        "min": null,
+        "missingPoints": 1,
+        "observedSamples": 0,
+        "zeroPoints": 0,
+      },
+      "unit": "s",
+      "values": [
+        null,
+      ],
+    },
+    "power": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "measured",
+      ],
+      "summary": {
+        "average": 100,
+        "largestGapSeconds": null,
+        "max": 100,
+        "min": 100,
+        "missingPoints": 0,
+        "observedSamples": 1,
+        "zeroPoints": 0,
+      },
+      "unit": "W",
+      "values": [
+        100,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+  ],
+}
+`;
+
+exports[`synchronizeActivityTimeseries > preserves measured zero while marking independently missing raw streams 1`] = `
+{
+  "effectiveResolutionSeconds": null,
+  "offsetsSeconds": [
+    0,
+    1,
+    2,
+  ],
+  "streams": {
+    "heart_rate": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        null,
+        [
+          1,
+        ],
+        null,
+      ],
+      "states": [
+        "missing",
+        "measured",
+        "missing",
+      ],
+      "summary": {
+        "average": 140,
+        "largestGapSeconds": null,
+        "max": 140,
+        "min": 140,
+        "missingPoints": 2,
+        "observedSamples": 1,
+        "zeroPoints": 0,
+      },
+      "unit": "bpm",
+      "values": [
+        null,
+        140,
+        null,
+      ],
+    },
+    "power": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        null,
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "measured_zero",
+        "missing",
+        "measured",
+      ],
+      "summary": {
+        "average": 100,
+        "largestGapSeconds": 2,
+        "max": 200,
+        "min": 0,
+        "missingPoints": 1,
+        "observedSamples": 2,
+        "zeroPoints": 1,
+      },
+      "unit": "W",
+      "values": [
+        0,
+        null,
+        200,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+    "2026-09-01T10:00:01.000Z",
+    "2026-09-01T10:00:02.000Z",
+  ],
+}
+`;
+
+exports[`synchronizeActivityTimeseries > uses elapsed-time weighting within a fixed scalar bucket 1`] = `
+{
+  "effectiveResolutionSeconds": 5,
+  "offsetsSeconds": [
+    0,
+    5,
+  ],
+  "streams": {
+    "power": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+          1,
+          2,
+        ],
+        null,
+      ],
+      "states": [
+        "aggregated",
+        "missing",
+      ],
+      "summary": {
+        "average": 200,
+        "largestGapSeconds": 3,
+        "max": 200,
+        "min": 200,
+        "missingPoints": 1,
+        "observedSamples": 3,
+        "zeroPoints": 0,
+      },
+      "unit": "W",
+      "values": [
+        200,
+        null,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+    "2026-09-01T10:00:05.000Z",
+  ],
+}
+`;
+
+exports[`synchronizeActivityTimeseries > uses elapsed-time weighting within a fixed scalar bucket 2`] = `
+{
+  "effectiveResolutionSeconds": 5,
+  "offsetsSeconds": [
+    0,
+    5,
+  ],
+  "streams": {
+    "power": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+          1,
+          2,
+        ],
+        null,
+      ],
+      "states": [
+        "aggregated",
+        "missing",
+      ],
+      "summary": {
+        "average": 200,
+        "largestGapSeconds": 3,
+        "max": 200,
+        "min": 200,
+        "missingPoints": 1,
+        "observedSamples": 3,
+        "zeroPoints": 0,
+      },
+      "unit": "W",
+      "values": [
+        200,
+        null,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+    "2026-09-01T10:00:05.000Z",
+  ],
+}
+`;
+
+exports[`synchronizeActivityTimeseries > uses final cumulative distance and latest complete GPS pair per bucket 1`] = `
+{
+  "effectiveResolutionSeconds": 5,
+  "offsetsSeconds": [
+    0,
+  ],
+  "streams": {
+    "distance": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "aggregated",
+      ],
+      "summary": {
+        "average": 20,
+        "largestGapSeconds": 2,
+        "max": 20,
+        "min": 20,
+        "missingPoints": 0,
+        "observedSamples": 2,
+        "zeroPoints": 0,
+      },
+      "unit": "m",
+      "values": [
+        20,
+      ],
+    },
+    "position": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          1,
+        ],
+      ],
+      "states": [
+        "aggregated",
+      ],
+      "summary": {
+        "average": null,
+        "largestGapSeconds": 3,
+        "max": null,
+        "min": null,
+        "missingPoints": 0,
+        "observedSamples": 2,
+        "zeroPoints": 0,
+      },
+      "unit": "degrees",
+      "values": [
+        [
+          -122.2,
+          37.2,
+        ],
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+  ],
+}
+`;

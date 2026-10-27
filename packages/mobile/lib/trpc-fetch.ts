@@ -1,3 +1,5 @@
+import { captureException, captureTelemetrySessionGuard, logger } from "./telemetry";
+
 const BODY_PREVIEW_LIMIT = 240;
 
 function getResponseContentType(response: Response): string | null {
@@ -14,7 +16,10 @@ function buildContentTypeLabel(response: Response): string {
   return contentType ? `content-type ${contentType}` : "content-type absent";
 }
 
-function getTrpcPath(input: Parameters<typeof fetch>[0]): string {
+function getTrpcPath(
+  input: Parameters<typeof fetch>[0],
+  isTelemetrySessionCurrent: () => boolean,
+): string {
   const rawUrl =
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   const pathPrefix = "/api/trpc/";
@@ -23,7 +28,11 @@ function getTrpcPath(input: Parameters<typeof fetch>[0]): string {
     const url = new URL(rawUrl, "https://dofek.local");
     const pathIndex = url.pathname.indexOf(pathPrefix);
     return pathIndex >= 0 ? url.pathname.slice(pathIndex + pathPrefix.length) : url.pathname;
-  } catch {
+  } catch (error: unknown) {
+    captureException(error, {
+      source: "trpc-request-url-parse",
+      ...(isTelemetrySessionCurrent() ? {} : { retiredLifetime: true }),
+    });
     return rawUrl;
   }
 }
@@ -34,24 +43,75 @@ function buildStatusLabel(response: Response): string {
     : String(response.status);
 }
 
-async function readBodyPreview(response: Response): Promise<string> {
+async function readBodyPreview(
+  response: Response,
+  isTelemetrySessionCurrent: () => boolean,
+): Promise<string> {
   try {
     return (await response.clone().text()).slice(0, BODY_PREVIEW_LIMIT);
-  } catch {
+  } catch (error: unknown) {
+    captureException(error, {
+      source: "trpc-response-body-preview",
+      ...(isTelemetrySessionCurrent() ? {} : { retiredLifetime: true }),
+    });
     return "body preview unavailable";
   }
 }
 
+async function parseJsonBody(
+  response: Response,
+  input: Parameters<typeof fetch>[0],
+  isTelemetrySessionCurrent: () => boolean,
+): Promise<unknown> {
+  const bodyText = await response.text();
+  if (bodyText.trim().length === 0) {
+    throw new Error(
+      `The server returned an empty response for ${getTrpcPath(input, isTelemetrySessionCurrent)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
+    );
+  }
+
+  try {
+    return JSON.parse(bodyText);
+  } catch (error) {
+    const diagnosticError = new Error(
+      `The server returned an invalid response for ${getTrpcPath(input, isTelemetrySessionCurrent)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
+      { cause: error },
+    );
+    captureException(diagnosticError, isTelemetrySessionCurrent() ? {} : { retiredLifetime: true });
+    throw diagnosticError;
+  }
+}
+
+function withJsonBodyDiagnostics(
+  response: Response,
+  input: Parameters<typeof fetch>[0],
+  isTelemetrySessionCurrent: () => boolean,
+): Response {
+  response.json = () => parseJsonBody(response, input, isTelemetrySessionCurrent);
+  return response;
+}
+
 export function createTrpcFetch(fetchImpl: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
+    const batchId = new Headers(init?.headers).get("x-dofek-upload-id");
+    const isTelemetrySessionCurrent = captureTelemetrySessionGuard();
+    const startedAt = Date.now();
     const response = await fetchImpl(input, init);
+    if (batchId && isTelemetrySessionCurrent()) {
+      logger.info("whoop-ble", "upload_http_response", {
+        event: "upload_http_response",
+        batchId,
+        httpStatus: response.status,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
     if (isJsonResponse(response)) {
-      return response;
+      return withJsonBodyDiagnostics(response, input, isTelemetrySessionCurrent);
     }
 
-    const bodyPreview = await readBodyPreview(response);
+    const bodyPreview = await readBodyPreview(response, isTelemetrySessionCurrent);
     throw new Error(
-      `Non-JSON tRPC response from ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}, ${bodyPreview}`,
+      `Non-JSON tRPC response from ${getTrpcPath(input, isTelemetrySessionCurrent)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}, ${bodyPreview}`,
     );
   };
 }

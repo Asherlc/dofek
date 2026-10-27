@@ -1,13 +1,13 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
-import { endDateSchema } from "../lib/date-window.ts";
+import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { InsightsRepository } from "../repositories/insights-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 export const insightsRouter = router({
-  compute: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
-    .query(async ({ ctx, input }) => {
+  compute: selectedChartDateRangeQuery(
+    "insights.compute",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -17,6 +17,8 @@ export const insightsRouter = router({
       }
 
       const repo = new InsightsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      return repo.computeInsights(input.days, input.endDate);
-    }),
+      return repo.computeInsights(range.days, input.endDate);
+    },
+    { keyVersion: "insights-evidence-v1" },
+  ),
 });

@@ -1,0 +1,920 @@
+[
+  {
+    "name": "Personalized Apple Watch initiates alongside WHOOP and its copies",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Asher’s Apple\u00a0Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "peloton",
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5",
+        "sourceName": null,
+        "raw": { "platform": "whoop", "deviceType": "whoop" }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Apple Watch source recognition ignores case and whitespace",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "  aPpLe   wAtCh  ",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Apple Watch and Strong together remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch and Hang Ten together remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Multiple Apple Watch recordings remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Alice’s Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "apple_health",
+        "sourceName": "Bob’s Apple Watch",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch with contradictory source bundle stays unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": { "sourceBundle": "com.strava.strava" }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch device label on another provider is not an initiating source",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "strava",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch text inside an app name is not an initiating source",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch Companion",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "WHOOP workout propagated to Peloton",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "whoop",
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "peloton",
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5",
+        "sourceName": null,
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "whoop"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "WHOOP metadata with a different workout identity is unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "whoop",
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "peloton",
+        "externalId": "24cbaba10c204a52a38b9fd1191a705d",
+        "sourceName": null,
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "whoop"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "complete transfer chain",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strava",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "only downstream copies available",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strava",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000002",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000002"]
+  },
+  {
+    "name": "only Apple Health available",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strava",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000003",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000003"]
+  },
+  {
+    "name": "only Strava available",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000002",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000002"]
+  },
+  {
+    "name": "missing provenance",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "unknown Apple Health source",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Unknown app",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "conflicting Apple Health source bundle",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Garmin",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "ambiguous same-provider records",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000004"
+    ]
+  },
+  {
+    "name": "direct Strava recording is not demoted by Garmin priority",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "iPhone",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "case and surrounding whitespace",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "  gArMiN eDgE 530  ",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": " STRAVA ",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "non-ASCII unknown labels",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "時計",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "incompatible recording devices",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 830",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Wahoo recording copied to Strava",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "wahoo",
+        "sourceName": "Wahoo ELEMNT",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Wahoo ELEMNT",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "singleton remains the closest held record despite conflicting upstream hints",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Garmin",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000003",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000003"]
+  },
+  {
+    "name": "Strong via Apple Health is the original alongside WHOOP and its copies",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Strong",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "whoop"
+        },
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5"
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Strong CSV is preferred over its Health copy and overlapping WHOOP",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "whoop"
+        },
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "providerId": "apple_health",
+        "sourceName": "Strong",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Strong source labels are normalized for origin attribution",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "  sTrOnG  ",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Multiple Strong recordings remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Strong",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strong",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "Multiple native Strong records remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "Hang Ten is the original alongside WHOOP and its copies",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "peloton",
+        "sourceName": null,
+        "raw": {
+          "platform": "whoop",
+          "deviceType": "whoop"
+        },
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5"
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Hang Ten Training labels are normalized",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "  hAnG tEn TrAiNiNg  ",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Strong and Hang Ten together remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Strong",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "Strong CSV and Hang Ten together remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "Multiple Hang Ten recordings remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null,
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "Strong with contradictory source bundle stays unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Strong",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Hang Ten with contradictory source bundle stays unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Hang Ten Training with contradictory source bundle stays unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten Training",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  }
+]

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildPanelMap,
   extractCodeBySystem,
   type FhirAllergyIntolerance,
   type FhirCondition,
@@ -379,57 +378,6 @@ describe("FHIR Lab Result Parsing", () => {
 
     it("returns undefined when coding is empty", () => {
       expect(extractCodeBySystem({}, "http://loinc.org")).toBeUndefined();
-    });
-  });
-
-  describe("buildPanelMap", () => {
-    it("maps observation IDs to panel names", () => {
-      const reports = [diagnosticReport];
-      const panelMap = buildPanelMap(reports);
-
-      expect(panelMap.get("obs-chol-001")).toBe("Lipid Panel");
-      expect(panelMap.get("obs-ldl-001")).toBe("Lipid Panel");
-    });
-
-    it("returns empty map for no reports", () => {
-      const panelMap = buildPanelMap([]);
-      expect(panelMap.size).toBe(0);
-    });
-
-    it("uses code text when display is missing", () => {
-      const report: FhirDiagnosticReport = {
-        ...diagnosticReport,
-        code: { coding: [{ system: "http://loinc.org", code: "57698-3" }], text: "Lipid Profile" },
-        result: [{ reference: "Observation/obs-123" }],
-      };
-      const panelMap = buildPanelMap([report]);
-      expect(panelMap.get("obs-123")).toBe("Lipid Profile");
-    });
-
-    it("only strips Observation/ prefix, not mid-string occurrences", () => {
-      const report: FhirDiagnosticReport = {
-        ...diagnosticReport,
-        result: [{ reference: "Observation/obs-1" }, { reference: "SomeObservation/obs-2" }],
-      };
-      const panelMap = buildPanelMap([report]);
-      // "Observation/" prefix stripped, but "SomeObservation/" kept intact
-      expect(panelMap.get("obs-1")).toBe("Lipid Panel");
-      expect(panelMap.get("SomeObservation/obs-2")).toBe("Lipid Panel");
-    });
-
-    it("handles multiple reports", () => {
-      const cbc: FhirDiagnosticReport = {
-        resourceType: "DiagnosticReport",
-        id: "dr-cbc",
-        status: "final",
-        code: { coding: [{ display: "CBC", system: "http://loinc.org", code: "58410-2" }] },
-        result: [{ reference: "Observation/obs-wbc" }, { reference: "Observation/obs-rbc" }],
-      };
-      const panelMap = buildPanelMap([diagnosticReport, cbc]);
-
-      expect(panelMap.get("obs-chol-001")).toBe("Lipid Panel");
-      expect(panelMap.get("obs-wbc")).toBe("CBC");
-      expect(panelMap.get("obs-rbc")).toBe("CBC");
     });
   });
 });

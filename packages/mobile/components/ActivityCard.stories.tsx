@@ -11,12 +11,14 @@ const meta = {
   args: {
     name: "Morning Run",
     activityType: "running",
+    primaryActivityType: null,
     startedAt: "2026-03-31T08:00:00Z",
     endedAt: "2026-03-31T08:45:00Z",
     avgHr: 145,
     maxHr: 172,
     avgPower: null,
     distanceKm: 8.5,
+    distanceState: { status: "available" },
     units: metricUnits,
   },
 } satisfies Meta<typeof ActivityCard>;
@@ -26,6 +28,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const RunningMetric: Story = {};
+
+export const PrimarySourceWithoutTitle: Story = {
+  args: { name: null, activityType: "walking", primaryActivityType: "running" },
+};
 
 export const RunningImperial: Story = {
   args: {
@@ -50,27 +56,29 @@ export const Cycling: Story = {
 export const Strength: Story = {
   args: {
     name: "Upper Body Power",
-    activityType: "strength_training",
+    activityType: "strength",
     startedAt: "2026-03-31T17:00:00Z",
     endedAt: "2026-03-31T18:00:00Z",
     avgHr: 115,
     maxHr: 140,
     avgPower: null,
-    distanceKm: undefined,
+    distanceKm: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
     units: metricUnits,
   },
 };
 
 export const Minimal: Story = {
   args: {
-    name: "",
+    name: null,
     activityType: "yoga",
     startedAt: "2026-03-31T10:00:00Z",
     endedAt: null,
     avgHr: null,
     maxHr: null,
     avgPower: null,
-    distanceKm: undefined,
+    distanceKm: null,
+    distanceState: { status: "missing", reason: "Distance not recorded" },
     units: metricUnits,
   },
 };

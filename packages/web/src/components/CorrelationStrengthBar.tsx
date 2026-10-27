@@ -1,4 +1,5 @@
 import { formatSigned } from "@dofek/format/format";
+import { chartColors } from "@dofek/scoring/colors";
 
 interface CorrelationStrengthBarProps {
   rho: number;
@@ -16,19 +17,16 @@ export function CorrelationStrengthBar({ rho }: CorrelationStrengthBarProps) {
         <div className="absolute left-1/2 top-0 bottom-0 w-px bg-border-strong" />
         {/* Fill bar */}
         <div
-          className={`absolute top-0 bottom-0 ${isPositive ? "bg-emerald-500/70" : "bg-rose-500/70"}`}
+          data-testid="correlation-fill"
+          className="absolute top-0 bottom-0"
           style={
             isPositive
-              ? { left: "50%", width: `${percentage}%` }
-              : { right: "50%", width: `${percentage}%` }
+              ? { backgroundColor: chartColors.blue, left: "50%", width: `${percentage}%` }
+              : { backgroundColor: chartColors.blue, right: "50%", width: `${percentage}%` }
           }
         />
       </div>
-      <span
-        className={`text-xs font-mono tabular-nums w-12 text-right ${
-          isPositive ? "text-emerald-400" : "text-rose-400"
-        }`}
-      >
+      <span className="text-xs font-mono tabular-nums w-12 text-right text-muted">
         {formatSigned(clampedRho, 2)}
       </span>
     </div>

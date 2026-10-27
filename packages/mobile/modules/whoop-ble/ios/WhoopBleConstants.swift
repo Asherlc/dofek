@@ -88,11 +88,8 @@ enum WhoopBleConstants {
 
     // MARK: - Command bytes (written to CMD_TO_STRAP)
 
-    static let commandGetHello: UInt8 = 0x91
     static let commandToggleRealtimeHr: UInt8 = 0x03
-    static let commandStartRawData: UInt8 = 0x51
     static let commandStopRawData: UInt8 = 0x52
-    static let commandToggleImuModeHistorical: UInt8 = 0x69
     static let commandToggleImuMode: UInt8 = 0x6A
     static let commandToggleOpticalMode: UInt8 = 0x6C
     static let commandSendR10R11Realtime: UInt8 = 0x3F

@@ -1,15 +1,26 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { ZWIFT_API_BASE, ZwiftClient } from "@dofek/zwift/client";
+import { parseZwiftActivity, parseZwiftFitnessData } from "@dofek/zwift/parsing";
+import type { ZwiftActivitySummary } from "@dofek/zwift/types";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { ZWIFT_API_BASE, ZwiftClient } from "zwift-client/client";
-import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
+import { zwiftImageDiscovery } from "../activity-images/providers.ts";
+import type { ImageDiscovery } from "../activity-images/types.ts";
+import { recordActivityImageDiscovery } from "../db/activity-images.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import {
   ProviderAuthenticationFailedError,
   ProviderStoredIdentityInvalidError,
@@ -22,13 +33,25 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 // Provider implementation
 // ============================================================
 
+const ZWIFT_ACTIVITY_PAGE_SIZE = 20;
+const ZWIFT_MAX_ACTIVITY_PAGES = 100;
+
 export class ZwiftProvider implements SyncProvider {
   readonly id = "zwift";
   readonly name = "Zwift";
   #fetchFn: typeof globalThis.fetch;
+  #imageSummaries = new WeakMap<
+    SyncRun,
+    {
+      client: ZwiftClient;
+      nextOffset: number;
+      finished: boolean;
+      byId: Map<string, ZwiftActivitySummary>;
+    }
+  >();
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "zwift" });
+    this.#fetchFn = createProviderRateLimitFetch("zwift", fetchFn);
   }
 
   validate(): string | null {
@@ -194,6 +217,57 @@ export class ZwiftProvider implements SyncProvider {
     return /\(401\)|\b401\b|\(403\)|\b403\b|unauthorized|invalid_token/i.test(error.message);
   }
 
+  async discoverActivityImages(
+    run: SyncRun,
+    activityExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery> {
+    const userId = run.options.userId;
+    if (!userId) throw Error("Zwift image discovery requires an owner");
+    const rows = await executeWithSchema(
+      run.db,
+      z.object({ raw: z.record(z.string(), z.unknown()) }),
+      sql`SELECT raw FROM fitness.activity WHERE user_id=${userId}::uuid AND provider_id='zwift' AND external_id=${activityExternalId} AND deleted_at IS NULL AND provider_absent_at IS NULL`,
+    );
+    const stored = rows[0]?.raw;
+    if (!options?.refresh && stored?.primaryImageUrl) return zwiftImageDiscovery(stored);
+    if (options?.refresh) this.#imageSummaries.delete(run);
+    let cache = this.#imageSummaries.get(run);
+    if (!cache) {
+      const { accessToken, athleteId } = await this.#resolveTokens(run.db);
+      cache = {
+        client: new ZwiftClient(accessToken, athleteId, this.#fetchFn),
+        nextOffset: 0,
+        finished: false,
+        byId: new Map(),
+      };
+      this.#imageSummaries.set(run, cache);
+    }
+    let found = cache.byId.get(activityExternalId);
+    while (
+      !found &&
+      !cache.finished &&
+      cache.nextOffset < ZWIFT_MAX_ACTIVITY_PAGES * ZWIFT_ACTIVITY_PAGE_SIZE
+    ) {
+      const summaries = await cache.client.getActivities(
+        cache.nextOffset,
+        ZWIFT_ACTIVITY_PAGE_SIZE,
+      );
+      cache.nextOffset += ZWIFT_ACTIVITY_PAGE_SIZE;
+      cache.finished = summaries.length < ZWIFT_ACTIVITY_PAGE_SIZE;
+      for (const summary of summaries)
+        cache.byId.set(summary.id_str || String(summary.id), summary);
+      found = cache.byId.get(activityExternalId);
+    }
+    if (found) return zwiftImageDiscovery(found);
+    return {
+      coverage: "partial",
+      expectedCount: null,
+      reason: "zwift_summary_not_found",
+      images: [],
+    };
+  }
+
   async sync(run: SyncRun): Promise<SyncResult> {
     const { db, window, options } = run;
     const start = Date.now();
@@ -201,6 +275,10 @@ export class ZwiftProvider implements SyncProvider {
     let recordsSynced = 0;
 
     await ensureProvider(db, this.id, this.name, ZWIFT_API_BASE);
+    const userId = options?.userId ?? getTokenUserId();
+    if (!userId) {
+      throw new Error("Zwift sync requires a user ID");
+    }
 
     let client: ZwiftClient;
     try {
@@ -230,6 +308,7 @@ export class ZwiftProvider implements SyncProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -237,107 +316,138 @@ export class ZwiftProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let offset = 0;
-          const PAGE_SIZE = 20;
-          let done = false;
+          let reachedSyncWindowStart = false;
 
-          while (!done) {
-            const activities = await runWithAuthRetry((activeClient) =>
-              activeClient.getActivities(offset, PAGE_SIZE),
-            );
-            if (activities.length === 0) break;
+          const pages = await fetchProviderPages<ZwiftActivitySummary, number>({
+            providerId: this.id,
+            stepName: "activity_list",
+            initialCursor: 0,
+            maxPages: ZWIFT_MAX_ACTIVITY_PAGES,
+            fetchPage: async (offset) => {
+              const currentOffset = offset ?? 0;
+              const activities = await runWithAuthRetry((activeClient) =>
+                activeClient.getActivities(currentOffset, ZWIFT_ACTIVITY_PAGE_SIZE),
+              );
+              return {
+                items: activities,
+                nextCursor:
+                  activities.length >= ZWIFT_ACTIVITY_PAGE_SIZE
+                    ? currentOffset + ZWIFT_ACTIVITY_PAGE_SIZE
+                    : null,
+              };
+            },
+            onPage: async (pageResult) => {
+              for (const raw of pageResult.items) {
+                const actStart = new Date(raw.startDate);
+                if (actStart < since) {
+                  reachedSyncWindowStart = true;
+                  break;
+                }
+                if (actStart >= syncWindowEnd) {
+                  continue;
+                }
 
-            for (const raw of activities) {
-              const actStart = new Date(raw.startDate);
-              if (actStart < since) {
-                done = true;
-                break;
-              }
-
-              const parsed = parseZwiftActivity(raw);
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await db
-                  .insert(activity)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
+                const parsed = parseZwiftActivity(raw);
+                presentActivityExternalIds.add(parsed.externalId);
+                try {
+                  const imageActivity = await upsertProviderActivity(
+                    db,
+                    {
+                      providerId: this.id,
+                      externalId: parsed.externalId,
                       activityType: parsed.activityType,
                       name: parsed.name,
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
                       raw: parsed.raw,
-                      providerAbsentAt: null,
                     },
-                  });
-                count++;
-
-                // Fetch detailed streams
-                try {
-                  const detail = await runWithAuthRetry((activeClient) =>
-                    activeClient.getActivityDetail(raw.id),
+                    {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
                   );
-                  const fullDataUrl = detail.fitnessData?.fullDataUrl;
-                  if (fullDataUrl) {
-                    const fitnessData = await runWithAuthRetry((activeClient) =>
-                      activeClient.getFitnessData(fullDataUrl),
-                    );
-                    const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
-                    const metricRows = samples.map((s) => ({
-                      providerId: this.id,
-                      recordedAt: s.recordedAt,
-                      heartRate: s.heartRate,
-                      power: s.power,
-                      cadence: s.cadence,
-                      altitude: s.altitude,
-                      lat: s.lat,
-                      lng: s.lng,
-                    }));
-                    await writeMetricStreamBatch(
-                      db,
-                      metricRows,
-                      SOURCE_TYPE_API,
-                      undefined,
-                      options?.metricStreamPublisher,
-                    );
+                  if (imageActivity?.id && userId && raw.primaryImageUrl) {
+                    try {
+                      await recordActivityImageDiscovery(db, {
+                        userId,
+                        activityId: imageActivity.id,
+                        providerId: this.id,
+                        discovery: zwiftImageDiscovery(raw),
+                      });
+                    } catch (error) {
+                      errors.push({
+                        message: "Zwift image discovery persistence failed",
+                        cause: error,
+                      });
+                    }
                   }
-                } catch (streamErr) {
-                  // Non-fatal: log but continue
+                  count++;
+
+                  try {
+                    const detail = await runWithAuthRetry((activeClient) =>
+                      activeClient.getActivityDetail(raw.id),
+                    );
+                    const fullDataUrl = detail.fitnessData?.fullDataUrl;
+                    if (fullDataUrl) {
+                      const fitnessData = await runWithAuthRetry((activeClient) =>
+                        activeClient.getFitnessData(fullDataUrl),
+                      );
+                      const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
+                      const metricRows = samples.map((sample) => ({
+                        providerId: this.id,
+                        recordedAt: sample.recordedAt,
+                        heartRate: sample.heartRate,
+                        power: sample.power,
+                        cadence: sample.cadence,
+                        altitude: sample.altitude,
+                        lat: sample.lat,
+                        lng: sample.lng,
+                      }));
+                      await writeMetricStreamBatch(
+                        db,
+                        metricRows,
+                        SOURCE_TYPE_API,
+                        undefined,
+                        options?.metricStreamPublisher,
+                      );
+                    }
+                  } catch (streamErr) {
+                    errors.push({
+                      message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                      externalId: parsed.externalId,
+                      cause: streamErr,
+                      context: {
+                        activityId: parsed.externalId,
+                      },
+                    });
+                  }
+                } catch (err) {
                   errors.push({
-                    message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                    message: err instanceof Error ? err.message : String(err),
                     externalId: parsed.externalId,
-                    cause: streamErr,
+                    cause: err,
                   });
                 }
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
               }
-            }
-
-            offset += PAGE_SIZE;
-          }
-
-          await reconcileProviderActivityAbsence(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
+            },
+            shouldStopAfterPage: () => reachedSyncWindowStart,
           });
-          return { recordCount: count, result: count };
+
+          degradations.push(...pages.degradations);
+
+          if (pages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
@@ -353,6 +463,7 @@ export class ZwiftProvider implements SyncProvider {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations: degradations.length > 0 ? degradations : undefined,
       duration: Date.now() - start,
     };
   }

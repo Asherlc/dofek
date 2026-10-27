@@ -1,5 +1,9 @@
 import type { Database } from "dofek/db";
 import {
+  buildPersonalizationModelCards,
+  type PersonalizationModelCard,
+} from "dofek/personalization/model-card";
+import {
   DEFAULT_PARAMS,
   type EffectiveParams,
   getEffectiveParams,
@@ -19,6 +23,7 @@ export interface PersonalizationStatus {
   defaults: EffectiveParams;
   effective: EffectiveParams;
   parameters: PersonalizationParameters;
+  modelCards: PersonalizationModelCard[];
 }
 
 export interface PersonalizationParameters {
@@ -99,6 +104,7 @@ export class PersonalizationRepository {
         stressThresholds: stored?.stressThresholds ?? null,
         trainingImpulseConstants: stored?.trainingImpulseConstants ?? null,
       },
+      modelCards: buildPersonalizationModelCards(stored),
     };
   }
 

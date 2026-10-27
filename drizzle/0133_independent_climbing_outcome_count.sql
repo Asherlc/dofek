@@ -1,0 +1,1 @@
+ALTER TABLE fitness.climbing_entry DROP CONSTRAINT climbing_entry_aggregate_pair;

@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { type BodyClickHouseStore, bodyMeasurementClickHouseSchema } from "./body-clickhouse.ts";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +28,96 @@ export interface BodyMeasurementRow {
   createdAt: string;
 }
 
+const reconciledBodySourceRowSchema = z.object({
+  date: dateStringSchema,
+  recorded_at: timestampStringSchema,
+  provider_id: z.string(),
+  body_priority: z.coerce.number().int(),
+  weight_kg: z.coerce.number().nullable(),
+  body_fat_pct: z.coerce.number().nullable(),
+  bmi: z.coerce.number().nullable(),
+});
+
+type ReconciledBodySourceRow = z.infer<typeof reconciledBodySourceRowSchema>;
+
+export interface ReconciledBodyDay {
+  date: string;
+  weightKg: number | null;
+  weightMeasurementKind: "direct" | "unavailable";
+  bodyFatPct: number | null;
+  bodyFatMeasurementKind: "unknown" | "unavailable";
+  leanMassKg: number | null;
+  leanMassMeasurementKind: "calculated_from_unknown_composition" | "unavailable";
+  bmi: number | null;
+  weightRolling: {
+    average7dKg: number | null;
+    average28dKg: number | null;
+    observedDays7d: number;
+    observedDays28d: number;
+  };
+  sourceProviderByMetric: {
+    weightKg: string | null;
+    bodyFatPct: string | null;
+    bmi: string | null;
+  };
+  sources: Array<{
+    sourceProvider: string;
+    recordedAt: string;
+    weightKg: number | null;
+    bodyFatPct: number | null;
+    bmi: number | null;
+  }>;
+  coverage: { sourceCount: number };
+}
+
+function preferredMetric(
+  rows: ReconciledBodySourceRow[],
+  metric: "weight_kg" | "body_fat_pct" | "bmi",
+): { value: number | null; provider: string | null } {
+  const selected = rows.find(
+    (row) =>
+      row[metric] !== null &&
+      (metric !== "weight_kg" || (Number.isFinite(row.weight_kg) && (row.weight_kg ?? 0) > 0)),
+  );
+  return selected
+    ? { value: selected[metric], provider: selected.provider_id }
+    : { value: null, provider: null };
+}
+
+const DAY_MILLISECONDS = 86_400_000;
+
+function dayNumber(date: string): number {
+  return Date.parse(`${date}T00:00:00.000Z`) / DAY_MILLISECONDS;
+}
+
+function rollingWeight(
+  date: string,
+  dailyWeights: ReadonlyArray<{ date: string; weightKg: number | null }>,
+) {
+  const currentDay = dayNumber(date);
+  const observed = (windowDays: number) =>
+    dailyWeights.filter(
+      (row): row is { date: string; weightKg: number } =>
+        row.weightKg !== null &&
+        Number.isFinite(row.weightKg) &&
+        row.weightKg > 0 &&
+        dayNumber(row.date) <= currentDay &&
+        dayNumber(row.date) > currentDay - windowDays,
+    );
+  const sevenDays = observed(7);
+  const twentyEightDays = observed(28);
+  const average = (rows: Array<{ weightKg: number }>) =>
+    rows.length === 0
+      ? null
+      : Math.round((rows.reduce((sum, row) => sum + row.weightKg, 0) / rows.length) * 1000) / 1000;
+  return {
+    average7dKg: average(sevenDays),
+    average28dKg: average(twentyEightDays),
+    observedDays7d: sevenDays.length,
+    observedDays28d: twentyEightDays.length,
+  };
+}
+
 /** A single body measurement record from any provider. */
 export class BodyMeasurement {
   readonly #row: BodyMeasurementRow;
@@ -50,6 +142,14 @@ export class BodyMeasurement {
     return this.#row.bodyFatPct;
   }
 
+  get providerId(): string {
+    return this.#row.providerId;
+  }
+
+  get bmi(): number | null {
+    return this.#row.bmi;
+  }
+
   toDetail() {
     return { ...this.#row };
   }
@@ -63,9 +163,11 @@ export class BodyMeasurement {
 export class BodyRepository {
   readonly #store: BodyClickHouseStore;
   readonly #userId: string;
-  constructor(store: BodyClickHouseStore, userId: string, _timezone: string) {
+  readonly #timezone: string;
+  constructor(store: BodyClickHouseStore, userId: string, timezone: string) {
     this.#store = store;
     this.#userId = userId;
+    this.#timezone = timezone;
   }
 
   /** All body measurements within the given day window, newest first. */
@@ -151,5 +253,245 @@ export class BodyRepository {
           createdAt: row.created_at,
         }),
     );
+  }
+
+  /** Body measurements inside an exact inclusive local-date range. */
+  async listRange(startDate: string, endDate: string): Promise<BodyMeasurement[]> {
+    const rows = await this.#store.query(
+      bodyMeasurementClickHouseSchema,
+      `
+        SELECT
+          toString(id) AS id,
+          toString(body_measurements.recorded_at) AS recorded_at,
+          provider_id,
+          toString(user_id) AS user_id,
+          external_id,
+          weight_kg,
+          body_fat_pct,
+          muscle_mass_kg,
+          bone_mass_kg,
+          water_pct,
+          bmi,
+          height_cm,
+          waist_circumference_cm,
+          systolic_bp,
+          diastolic_bp,
+          heart_pulse,
+          temperature_c,
+          source_name,
+          toString(created_at) AS created_at
+        FROM (
+          SELECT
+            id,
+            recorded_at,
+            provider_id,
+            user_id,
+            external_id,
+            weight_kg,
+            body_fat_pct,
+            muscle_mass_kg,
+            bone_mass_kg,
+            water_pct,
+            bmi,
+            height_cm,
+            waist_circumference_cm,
+            systolic_bp,
+            diastolic_bp,
+            heart_pulse,
+            temperature_c,
+            source_name,
+            created_at,
+            row_number() OVER (
+              PARTITION BY provider_id, toDate(toTimeZone(recorded_at, {timezone:String}))
+              ORDER BY recorded_at DESC, created_at DESC
+            ) AS row_number
+            FROM analytics.v_body_measurement
+            WHERE user_id = {userId:UUID}
+              AND toDate(toTimeZone(recorded_at, {timezone:String})) >= toDate({startDate:String})
+              AND toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate({endDate:String})
+        ) AS body_measurements
+        WHERE row_number = 1
+        ORDER BY body_measurements.recorded_at ASC
+      `,
+      { userId: this.#userId, timezone: this.#timezone, startDate, endDate },
+    );
+
+    return rows.map(
+      (row) =>
+        new BodyMeasurement({
+          id: row.id,
+          recordedAt: row.recorded_at,
+          providerId: row.provider_id,
+          userId: row.user_id,
+          externalId: row.external_id,
+          weightKg: row.weight_kg,
+          bodyFatPct: row.body_fat_pct,
+          muscleMassKg: row.muscle_mass_kg,
+          boneMassKg: row.bone_mass_kg,
+          waterPct: row.water_pct,
+          bmi: row.bmi,
+          heightCm: row.height_cm,
+          waistCircumferenceCm: row.waist_circumference_cm,
+          systolicBp: row.systolic_bp,
+          diastolicBp: row.diastolic_bp,
+          heartPulse: row.heart_pulse,
+          temperatureC: row.temperature_c,
+          sourceName: row.source_name,
+          createdAt: row.created_at,
+        }),
+    );
+  }
+
+  /** One reconciled body-composition record per local date, plus every contributing source. */
+  async listReconciledRange(startDate: string, endDate: string): Promise<ReconciledBodyDay[]> {
+    const rows = await this.#store.query(
+      reconciledBodySourceRowSchema,
+      `
+        WITH active_provider_priority AS (
+          SELECT provider_id, priority, body_priority
+          FROM postgres_fitness.provider_priority FINAL
+          WHERE _peerdb_is_deleted = 0
+        ),
+        raw_body_samples AS (
+          SELECT
+            id,
+            toDate(toTimeZone(recorded_at, {timezone:String})) AS local_date,
+            recorded_at,
+            provider_id,
+            channel,
+            scalar,
+            _peerdb_synced_at AS sample_refreshed_at
+          FROM analytics.body_measurement_sample FINAL
+          WHERE user_id = {userId:UUID}
+            AND _peerdb_is_deleted = 0
+            AND scalar IS NOT NULL
+            AND channel IN ('body_weight', 'body_fat_percentage', 'body_mass_index')
+            AND toDate(toTimeZone(recorded_at, {timezone:String}))
+              BETWEEN addDays(toDate({startDate:String}), -27) AND toDate({endDate:String})
+        ),
+        source_measurements AS (
+          SELECT
+            raw_body_samples.local_date AS local_date,
+            raw_body_samples.provider_id AS provider_id,
+            coalesce(
+              active_provider_priority.body_priority,
+              active_provider_priority.priority,
+              100
+            ) AS body_priority,
+            max(raw_body_samples.recorded_at) AS recorded_at,
+            argMaxIf(
+              raw_body_samples.scalar,
+              (
+                raw_body_samples.recorded_at,
+                raw_body_samples.sample_refreshed_at,
+                toString(raw_body_samples.id)
+              ),
+              raw_body_samples.channel = 'body_weight'
+            ) AS weight_kg,
+            argMaxIf(
+              raw_body_samples.scalar,
+              (
+                raw_body_samples.recorded_at,
+                raw_body_samples.sample_refreshed_at,
+                toString(raw_body_samples.id)
+              ),
+              raw_body_samples.channel = 'body_fat_percentage'
+            ) AS body_fat_pct,
+            argMaxIf(
+              raw_body_samples.scalar,
+              (
+                raw_body_samples.recorded_at,
+                raw_body_samples.sample_refreshed_at,
+                toString(raw_body_samples.id)
+              ),
+              raw_body_samples.channel = 'body_mass_index'
+            ) AS bmi
+          FROM raw_body_samples
+          LEFT JOIN active_provider_priority
+            ON active_provider_priority.provider_id = raw_body_samples.provider_id
+          GROUP BY
+            raw_body_samples.local_date,
+            raw_body_samples.provider_id,
+            body_priority
+        )
+        SELECT
+          toString(local_date) AS date,
+          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
+          provider_id,
+          body_priority,
+          weight_kg,
+          body_fat_pct,
+          bmi
+        FROM source_measurements
+        ORDER BY local_date ASC, body_priority ASC, provider_id ASC
+      `,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        startDate,
+        endDate,
+      },
+    );
+
+    const rowsByDate = new Map<string, ReconciledBodySourceRow[]>();
+    for (const row of rows) {
+      const dateRows = rowsByDate.get(row.date) ?? [];
+      dateRows.push(row);
+      rowsByDate.set(row.date, dateRows);
+    }
+
+    const reconciled = [...rowsByDate.entries()].map(([date, dateRows]) => {
+      dateRows.sort(
+        (left, right) =>
+          left.body_priority - right.body_priority ||
+          Date.parse(right.recorded_at) - Date.parse(left.recorded_at) ||
+          left.provider_id.localeCompare(right.provider_id),
+      );
+      const weight = preferredMetric(dateRows, "weight_kg");
+      const bodyFat = preferredMetric(dateRows, "body_fat_pct");
+      const bmi = preferredMetric(dateRows, "bmi");
+
+      return {
+        date,
+        weightKg: weight.value,
+        weightMeasurementKind:
+          weight.value === null ? ("unavailable" as const) : ("direct" as const),
+        bodyFatPct: bodyFat.value,
+        bodyFatMeasurementKind:
+          bodyFat.value === null ? ("unavailable" as const) : ("unknown" as const),
+        leanMassKg:
+          weight.value !== null && bodyFat.value !== null
+            ? Math.round(weight.value * (1 - bodyFat.value / 100) * 10) / 10
+            : null,
+        leanMassMeasurementKind:
+          weight.value !== null && bodyFat.value !== null
+            ? ("calculated_from_unknown_composition" as const)
+            : ("unavailable" as const),
+        bmi: bmi.value,
+        weightRolling: {
+          average7dKg: null,
+          average28dKg: null,
+          observedDays7d: 0,
+          observedDays28d: 0,
+        },
+        sourceProviderByMetric: {
+          weightKg: weight.provider,
+          bodyFatPct: bodyFat.provider,
+          bmi: bmi.provider,
+        },
+        sources: dateRows.map((row) => ({
+          sourceProvider: row.provider_id,
+          recordedAt: row.recorded_at,
+          weightKg: row.weight_kg,
+          bodyFatPct: row.body_fat_pct,
+          bmi: row.bmi,
+        })),
+        coverage: { sourceCount: dateRows.length },
+      };
+    });
+    const weights = reconciled.map(({ date, weightKg }) => ({ date, weightKg }));
+    return reconciled
+      .filter((row) => row.date >= startDate && row.date <= endDate)
+      .map((row) => ({ ...row, weightRolling: rollingWeight(row.date, weights) }));
   }
 }

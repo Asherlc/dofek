@@ -7,12 +7,14 @@
         "src/db/setup-clickhouse-cdc.ts",
         "src/jobs/worker.ts",
         "src/opentelemetry-hook.mjs",
+        "scripts/run-analytics-build.ts",
+        "scripts/warm-query-cache.ts",
         "vitest.config.mutation.ts"
       ],
-      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js,json}"],
-      "ignoreDependencies": ["sharp", "tsx"],
+      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}"],
+      "ignoreDependencies": ["supports-color"],
       "ignoreBinaries": [
-        "tsr", "expo", "license-checker",
+        "cmake", "dbt", "expo", "infisical", "open", "openssl", "uv",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
       ],
@@ -29,7 +31,7 @@
       }
     },
     "packages/web": {
-      "ignoreDependencies": ["@tanstack/router-cli"],
+      "entry": ["test-setup.ts"],
       "vitest": {
         "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.{ts,tsx}"]
@@ -38,11 +40,13 @@
     "packages/mobile": {
       "entry": [
         "app/**/*.{ts,tsx}",
+        "fingerprint.config.js",
         "modules/*/index.ts",
-        "metro.config.js",
         "plugins/*.js",
+        "scripts/capture-app-store-screenshots.ts",
         "types/api.ts",
-        "theme.ts"
+        "theme.ts",
+        "theme.ios.ts"
       ],
       "project": [
         "**/*.{ts,tsx,js}",
@@ -78,13 +82,7 @@
       }
     },
     "packages/trainerroad-client": {},
-    "packages/velohero-client": {
-      "vitest": {
-        "config": ["../../vitest.config.ts"],
-        "entry": ["src/**/*.test.ts"]
-      }
-    },
-    "packages/garmin-connect": {
+    "packages/mountain-project-client": {
       "vitest": {
         "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
@@ -93,6 +91,29 @@
     "packages/trainingpeaks-connect": {
       "vitest": {
         "config": ["../../vitest.config.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
+    "packages/zepp": {
+      "entry": [
+        "build.ts",
+        "app.ts",
+        "page/index.ts",
+        "app-side/index.ts",
+        "setting/index.ts",
+        "app-service/health_service.ts",
+        "tools/decode-imu.ts",
+        "tools/zeus.ts",
+        "workout-extension/app.ts",
+        "workout-extension/build.ts",
+        "workout-extension/data-widget/index.ts",
+        "workout-extension/setting/index.ts",
+        "workout-extension/zeus.ts"
+      ],
+      "ignore": ["src/__mocks__/**"],
+      "ignoreDependencies": ["@zeppos/device-types", "@zos/app-access", "@zos/ui"],
+      "vitest": {
+        "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     }

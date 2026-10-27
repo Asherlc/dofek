@@ -1,17 +1,32 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
-import { captureException } from "@sentry/node";
-import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { signInToZepp, ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { deleteTokens, ensureProvider, loadTokens } from "../db/tokens.ts";
+import { captureException } from "../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import {
+  AccessTokenExpiredError,
+  authFailureReasonFromError,
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
 } from "./auth-errors.ts";
@@ -20,6 +35,14 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
 const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
+
+function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServiceUnavailableError {
+  return (
+    error instanceof ProviderServiceUnavailableError &&
+    error.providerId === "amazfit-zepp" &&
+    error.statusCode === 500
+  );
+}
 
 const optionalNumber = z.preprocess((value) => {
   if (typeof value === "string" && value.trim() !== "") return Number(value);
@@ -114,7 +137,6 @@ type ZeppWorkoutSummary = z.infer<typeof zeppWorkoutSummarySchema>;
 export interface ParsedZeppDailyMetrics {
   date: string;
   steps?: number;
-  activeEnergyKcal?: number;
   distanceKm?: number;
 }
 
@@ -127,6 +149,7 @@ export interface ParsedZeppSleep {
   lightMinutes?: number;
   remMinutes?: number;
   awakeMinutes?: number;
+  stagingAvailable: boolean;
 }
 
 export interface ParsedZeppHeartRateSample {
@@ -143,7 +166,7 @@ export interface ParsedZeppBandDay {
 
 interface ParsedZeppWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   startedAt: Date;
   endedAt: Date | null;
 }
@@ -181,7 +204,7 @@ function zeppSleepBoundaryToDate(date: string, boundary: number): Date {
   return dateAtUtcMinute(date, boundary);
 }
 
-const ZEPP_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
+const ZEPP_WORKOUT_TYPE_MAP: Record<number, LegacyActivityType> = {
   1: "running",
   6: "walking",
   8: "running",
@@ -192,9 +215,11 @@ const ZEPP_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
   92: "badminton",
 };
 
-function mapZeppWorkoutType(type: number | undefined): CanonicalActivityType {
-  if (type === undefined) return "other";
-  return ZEPP_WORKOUT_TYPE_MAP[type] ?? "other";
+function mapZeppWorkoutType(type: number | undefined): ProviderActivityType {
+  return resolveProviderActivityType(
+    type ?? "unknown",
+    ZEPP_WORKOUT_TYPE_MAP[type ?? -1] ?? "other",
+  );
 }
 
 function dateFromEpochSeconds(seconds: number): Date {
@@ -280,16 +305,14 @@ async function resolveZeppCredentials(
 function parseDailyMetrics(date: string, summary: ZeppSummary): ParsedZeppDailyMetrics | undefined {
   const steps = summary.stp?.ttl;
   const distanceMeters = summary.stp?.dis;
-  const calories = summary.stp?.cal;
 
-  if (steps === undefined && distanceMeters === undefined && calories === undefined) {
+  if (steps === undefined && distanceMeters === undefined) {
     return undefined;
   }
 
   return {
     date,
     steps: steps === undefined ? undefined : Math.round(steps),
-    activeEnergyKcal: calories,
     distanceKm: distanceMeters === undefined ? undefined : distanceMeters / 1000,
   };
 }
@@ -302,6 +325,11 @@ function parseSleep(date: string, summary: ZeppSummary): ParsedZeppSleep | undef
   const lightMinutes = sleep.lt;
   const remMinutes = sleep.dt;
   const awakeMinutes = sleep.wk;
+  const stagingAvailable =
+    deepMinutes !== undefined &&
+    lightMinutes !== undefined &&
+    remMinutes !== undefined &&
+    awakeMinutes !== undefined;
   const durationMinutes = Math.round((deepMinutes ?? 0) + (lightMinutes ?? 0) + (remMinutes ?? 0));
   if (durationMinutes <= 0 || sleep.st === undefined || sleep.ed === undefined) return undefined;
 
@@ -317,6 +345,7 @@ function parseSleep(date: string, summary: ZeppSummary): ParsedZeppSleep | undef
     lightMinutes: lightMinutes === undefined ? undefined : Math.round(lightMinutes),
     remMinutes: remMinutes === undefined ? undefined : Math.round(remMinutes),
     awakeMinutes: awakeMinutes === undefined ? undefined : Math.round(awakeMinutes),
+    stagingAvailable,
   };
 }
 
@@ -350,7 +379,9 @@ export class AmazfitZeppClient {
   ) {
     this.#appToken = appToken;
     this.#userId = userId;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn, {
+      additionalServiceUnavailableStatusCodes: [500],
+    });
     this.#apiBaseUrl = apiBaseUrl;
   }
 
@@ -377,55 +408,74 @@ export class AmazfitZeppClient {
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 401) {
+        throw new AccessTokenExpiredError("Amazfit/Zepp", {
+          cause: new Error(`Amazfit/Zepp API error (${response.status}): ${text}`),
+        });
+      }
       throw new Error(`Amazfit/Zepp API error (${response.status}): ${text}`);
     }
 
     const payload = zeppBandDataResponseSchema.parse(await response.json());
     if (payload.code !== 1) {
-      throw new Error(`Amazfit/Zepp API error: ${payload.message ?? `code ${payload.code}`}`);
+      const message = payload.message ?? `code ${payload.code}`;
+      if (payload.code === 1002) {
+        throw new AccessTokenExpiredError("Amazfit/Zepp", {
+          cause: new Error(`Amazfit/Zepp API error: ${message}`),
+        });
+      }
+      throw new Error(`Amazfit/Zepp API error: ${message}`);
     }
 
     return payload.data;
   }
 
-  async getWorkoutHistory(): Promise<ZeppWorkoutSummary[]> {
-    const summaries: ZeppWorkoutSummary[] = [];
-    let fromTrackId: number | undefined;
-    const seenCursors = new Set<number>();
+  async getWorkoutHistory(
+    providerId: string,
+  ): Promise<{ items: ZeppWorkoutSummary[]; degradations: SyncDegradation[] }> {
+    const result = await fetchProviderPages<ZeppWorkoutSummary, number>({
+      providerId,
+      stepName: "workouts",
+      fetchPage: async (fromTrackId) => {
+        const url = new URL("/v1/sport/run/history.json", this.#apiBaseUrl);
+        url.searchParams.set("userid", this.#userId);
+        if (fromTrackId !== undefined) {
+          url.searchParams.set("trackid", String(fromTrackId));
+        }
 
-    while (true) {
-      const url = new URL("/v1/sport/run/history.json", this.#apiBaseUrl);
-      url.searchParams.set("userid", this.#userId);
-      if (fromTrackId !== undefined) {
-        url.searchParams.set("trackid", String(fromTrackId));
-      }
+        const response = await this.#fetchFn(url.toString(), {
+          headers: this.#headers(),
+        });
 
-      const response = await this.#fetchFn(url.toString(), {
-        headers: this.#headers(),
-      });
+        if (!response.ok) {
+          const text = await response.text();
+          if (response.status === 401) {
+            throw new AccessTokenExpiredError("Amazfit/Zepp", {
+              cause: new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`),
+            });
+          }
+          throw new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`);
+        }
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`);
-      }
+        const payload = zeppWorkoutHistoryResponseSchema.parse(await response.json());
+        if (payload.code !== 1) {
+          const message = payload.message ?? `code ${payload.code}`;
+          if (payload.code === 1002) {
+            throw new AccessTokenExpiredError("Amazfit/Zepp", {
+              cause: new Error(`Amazfit/Zepp workout API error: ${message}`),
+            });
+          }
+          throw new Error(`Amazfit/Zepp workout API error: ${message}`);
+        }
 
-      const payload = zeppWorkoutHistoryResponseSchema.parse(await response.json());
-      if (payload.code !== 1) {
-        throw new Error(
-          `Amazfit/Zepp workout API error: ${payload.message ?? `code ${payload.code}`}`,
-        );
-      }
+        return {
+          items: payload.data.summary,
+          nextCursor: payload.data.next === -1 ? null : payload.data.next,
+        };
+      },
+    });
 
-      summaries.push(...payload.data.summary);
-      if (payload.data.next === -1) return summaries;
-      if (seenCursors.has(payload.data.next)) {
-        throw new Error(
-          `Amazfit/Zepp workout API error: repeated pagination cursor ${payload.data.next}`,
-        );
-      }
-      seenCursors.add(payload.data.next);
-      fromTrackId = payload.data.next;
-    }
+    return { items: result.items, degradations: result.degradations };
   }
 }
 
@@ -439,7 +489,9 @@ export class AmazfitZeppProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn, {
+      additionalServiceUnavailableStatusCodes: [500],
+    });
   }
 
   validate(): string | null {
@@ -534,7 +586,6 @@ export class AmazfitZeppProvider implements SyncProvider {
                     userId: scopedUserId,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     steps: parsed.dailyMetrics.steps,
-                    activeEnergyKcal: parsed.dailyMetrics.activeEnergyKcal,
                     distanceKm: parsed.dailyMetrics.distanceKm,
                   })
                   .onConflictDoUpdate({
@@ -547,7 +598,6 @@ export class AmazfitZeppProvider implements SyncProvider {
                     set: {
                       sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                       steps: parsed.dailyMetrics.steps,
-                      activeEnergyKcal: parsed.dailyMetrics.activeEnergyKcal,
                       distanceKm: parsed.dailyMetrics.distanceKm,
                     },
                   });
@@ -568,6 +618,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                     lightMinutes: parsed.sleep.lightMinutes,
                     remMinutes: parsed.sleep.remMinutes,
                     awakeMinutes: parsed.sleep.awakeMinutes,
+                    stagingAvailable: parsed.sleep.stagingAvailable,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                   })
                   .onConflictDoUpdate({
@@ -580,6 +631,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                       lightMinutes: parsed.sleep.lightMinutes,
                       remMinutes: parsed.sleep.remMinutes,
                       awakeMinutes: parsed.sleep.awakeMinutes,
+                      stagingAvailable: parsed.sleep.stagingAvailable,
                       sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     },
                   });
@@ -625,14 +677,34 @@ export class AmazfitZeppProvider implements SyncProvider {
       );
       recordsSynced += count;
     } catch (error: unknown) {
-      if (error instanceof ProviderRateLimitError) throw error;
-      captureException(error, {
-        tags: { provider: this.id, dataType: "band_data", phase: "sync" },
-      });
+      if (error instanceof ProviderRateLimitError || isZeppHttp500ServiceUnavailable(error)) {
+        throw error;
+      }
+      const bandDataAuthFailure = authFailureReasonFromError(error);
+      if (!bandDataAuthFailure) {
+        captureException(error, {
+          tags: { provider: this.id, dataType: "band_data", phase: "sync" },
+        });
+      }
       errors.push({
         message: `band_data: ${error instanceof Error ? error.message : String(error)}`,
         cause: error,
       });
+      if (bandDataAuthFailure) {
+        try {
+          await deleteTokens(db, this.id, scopedUserId);
+        } catch (deleteError) {
+          captureException(deleteError, {
+            tags: { provider: this.id, phase: "token_deletion" },
+          });
+        }
+        return {
+          provider: this.id,
+          recordsSynced,
+          errors,
+          duration: Date.now() - start,
+        };
+      }
     }
 
     try {
@@ -644,17 +716,17 @@ export class AmazfitZeppProvider implements SyncProvider {
           let synced = 0;
           const presentActivityExternalIds = new Set<string>();
           onProgress?.(0, "Fetching workout history");
-          const summaries = await client.getWorkoutHistory();
+          const workoutPages = await client.getWorkoutHistory(this.id);
 
-          for (const [workoutIndex, summary] of summaries.entries()) {
+          for (const [workoutIndex, summary] of workoutPages.items.entries()) {
             try {
               const parsed = parseZeppWorkoutSummary(summary);
               const isWithinWindow = parsed.startedAt >= since && parsed.startedAt <= window.until;
               if (isWithinWindow) {
                 presentActivityExternalIds.add(parsed.externalId);
-                await db
-                  .insert(activity)
-                  .values({
+                await upsertProviderActivity(
+                  db,
+                  {
                     providerId: this.id,
                     userId: scopedUserId,
                     externalId: parsed.externalId,
@@ -663,18 +735,15 @@ export class AmazfitZeppProvider implements SyncProvider {
                     endedAt: parsed.endedAt,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     raw: summary,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
-                      raw: summary,
-                      providerAbsentAt: null,
-                    },
-                  });
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
+                    raw: summary,
+                  },
+                );
                 synced++;
               }
             } catch (error: unknown) {
@@ -687,34 +756,50 @@ export class AmazfitZeppProvider implements SyncProvider {
               });
             }
             onProgress?.(
-              Math.round(((workoutIndex + 1) / summaries.length) * 100),
-              `${workoutIndex + 1}/${summaries.length} workouts`,
+              Math.round(((workoutIndex + 1) / workoutPages.items.length) * 100),
+              `${workoutIndex + 1}/${workoutPages.items.length} workouts`,
             );
           }
-          if (summaries.length === 0) onProgress?.(100, "0/0 workouts");
+          if (workoutPages.items.length === 0) onProgress?.(100, "0/0 workouts");
 
-          await reconcileProviderActivityAbsence(db, {
-            providerId: this.id,
-            userId: scopedUserId,
-            windowStart: since,
-            windowEnd: window.until,
-            presentExternalIds: presentActivityExternalIds,
-          });
+          if (workoutPages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: scopedUserId,
+              windowStart: since,
+              windowEnd: window.until,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
 
-          return { recordCount: synced, result: synced };
+          return { recordCount: synced, result: synced, degradations: workoutPages.degradations };
         },
         scopedUserId,
       );
       recordsSynced += count;
     } catch (error: unknown) {
-      if (error instanceof ProviderRateLimitError) throw error;
-      captureException(error, {
-        tags: { provider: this.id, dataType: "workouts", phase: "sync" },
-      });
+      if (error instanceof ProviderRateLimitError || isZeppHttp500ServiceUnavailable(error)) {
+        throw error;
+      }
+      if (!authFailureReasonFromError(error)) {
+        captureException(error, {
+          tags: { provider: this.id, dataType: "workouts", phase: "sync" },
+        });
+      }
       errors.push({
         message: `workouts: ${error instanceof Error ? error.message : String(error)}`,
         cause: error,
       });
+    }
+
+    if (errors.some((syncError) => authFailureReasonFromError(syncError.cause))) {
+      try {
+        await deleteTokens(db, this.id, scopedUserId);
+      } catch (deleteError) {
+        captureException(deleteError, {
+          tags: { provider: this.id, phase: "token_deletion" },
+        });
+      }
     }
 
     return {

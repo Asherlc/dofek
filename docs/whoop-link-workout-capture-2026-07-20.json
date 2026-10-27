@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-07-20T22:07:20.813Z",
+  "validated_at": "2026-07-20T22:21:16Z",
+  "environment": "WHOOP production API",
+  "privacy": "Account identifiers, activity identifiers, timestamps, exercise details, and health values are omitted.",
+  "template_creation": {
+    "method": "POST",
+    "path": "/weightlifting-service/v3/workout-template",
+    "status": 200,
+    "request_shape": {
+      "name": "string",
+      "workout_groups": "WorkoutTemplateGroupDto[]"
+    },
+    "response_shape": {
+      "parent_template_key": "number | null",
+      "workout_template_key": "number",
+      "name": "string",
+      "workout_groups": "WorkoutTemplateGroupDto[]",
+      "is_draft": "boolean",
+      "source": "string"
+    },
+    "observed_examples": {
+      "is_draft": false,
+      "source": "USER"
+    }
+  },
+  "workout_link": {
+    "method": "POST",
+    "path": "/weightlifting-service/v2/weightlifting-workout/link-cardio-workout",
+    "status": 200,
+    "request_shape": {
+      "template": "WorkoutTemplateDto",
+      "template_id": "number",
+      "activity_id": "UUID string",
+      "rpe": "number"
+    },
+    "response_shape": {
+      "original_activity_id": "UUID string",
+      "original_activity_type": "string",
+      "workout_metadata": {
+        "deleted": "boolean",
+        "id": "UUID string",
+        "cycle_id": "number",
+        "user_id": "number",
+        "created_at": "string",
+        "updated_at": "string",
+        "version": "number",
+        "during": "string",
+        "timezone": "string",
+        "timezone_offset": "null",
+        "source": "string",
+        "score_state": "string",
+        "score_type": "string",
+        "type": "string",
+        "translated_type": "string",
+        "source_id": "string",
+        "activity_v1_id": "null",
+        "weightlifting_workout_id": "UUID string",
+        "workout_template_id": "number",
+        "name": "string",
+        "pushcore_version": "null",
+        "total_effective_volume_kg": "number",
+        "raw_msk_strain_score": "number",
+        "msk_intensity_percent": "number",
+        "scaled_msk_strain_score": "number",
+        "timezone_offset_from_model": "string"
+      }
+    },
+    "observed_examples": {
+      "original_activity_type": "weightlifting",
+      "workout_metadata.score_type": "CARDIO",
+      "workout_metadata.type": "weightlifting"
+    },
+    "required_field_checks": {
+      "without_template": 422,
+      "without_template_id": 422,
+      "without_activity_id": 422
+    },
+    "optional_rpe_check": {
+      "status": 404,
+      "result": "Request passed validation and reached lookup for the intentionally nonexistent activity."
+    }
+  }
+}

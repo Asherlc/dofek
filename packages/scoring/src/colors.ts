@@ -6,6 +6,47 @@
  * Tailwind utility classes remain platform-specific (web only).
  */
 
+/**
+ * Presentation colors for generic operational states on the light theme.
+ *
+ * These roles describe application state, not health or scoring meaning.
+ * Foregrounds meet WCAG 2.2 AA normal-text contrast on their paired surfaces,
+ * while borders and indicators meet the 3:1 non-text contrast target on both
+ * their paired surfaces and white cards.
+ */
+export const operationalStatusColors = {
+  neutral: {
+    foreground: "#334155",
+    surface: "#f1f5f9",
+    border: "#64748b",
+    indicator: "#334155",
+  },
+  info: {
+    foreground: "#1e3a8a",
+    surface: "#dbeafe",
+    border: "#1d4ed8",
+    indicator: "#1d4ed8",
+  },
+  success: {
+    foreground: "#14532d",
+    surface: "#dcfce7",
+    border: "#15803d",
+    indicator: "#15803d",
+  },
+  warning: {
+    foreground: "#713f12",
+    surface: "#fef3c7",
+    border: "#a16207",
+    indicator: "#a16207",
+  },
+  danger: {
+    foreground: "#7f1d1d",
+    surface: "#fee2e2",
+    border: "#b91c1c",
+    indicator: "#b91c1c",
+  },
+} as const;
+
 /** Status colors for scores, alerts, and thresholds.
  *  Darkened one shade vs originals for contrast on light sage background. */
 export const statusColors = {

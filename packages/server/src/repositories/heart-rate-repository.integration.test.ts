@@ -3,18 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import { HeartRateRepository, type MetricStreamClickHouseReader } from "./heart-rate-repository.ts";
+import {
+  type MetricStreamSeedRow,
+  seedMetricStreamRows,
+} from "./metric-stream-integration-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-0000000000a1";
-
-interface SeedRow {
-  id: string;
-  recorded_at: string;
-  provider_id: string;
-  channel: string;
-  scalar: number;
-  _peerdb_is_deleted: 0 | 1;
-  _peerdb_version: number;
-}
 
 const client = createClickHouseClientFromEnv();
 
@@ -27,22 +21,8 @@ const reader: MetricStreamClickHouseReader = {
   },
 };
 
-async function seed(rows: SeedRow[]): Promise<void> {
-  await client.insert?.({
-    table: "postgres_fitness.metric_stream",
-    format: "JSONEachRow",
-    values: rows.map((row) => ({
-      id: row.id,
-      user_id: testUserId,
-      recorded_at: row.recorded_at,
-      provider_id: row.provider_id,
-      channel: row.channel,
-      scalar: row.scalar,
-      _peerdb_is_deleted: row._peerdb_is_deleted,
-      _peerdb_synced_at: "2026-04-12 00:00:00.000",
-      _peerdb_version: row._peerdb_version,
-    })),
-  });
+async function seed(rows: MetricStreamSeedRow[]): Promise<void> {
+  await seedMetricStreamRows(client, testUserId, rows);
 }
 
 describe("HeartRateRepository (integration)", () => {
@@ -51,7 +31,9 @@ describe("HeartRateRepository (integration)", () => {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
 
@@ -64,8 +46,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 72,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: randomUUID(),
@@ -73,8 +55,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 74,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // apple_health: same minute as whoop — must stay a separate source (no priority collapse)
       {
@@ -83,8 +65,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "apple_health",
         channel: "heart_rate",
         scalar: 70,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // version dedup: same id/time, v1 supersedes v0 — FINAL must keep 99, not 50
       {
@@ -93,8 +75,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 50,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: supersededId,
@@ -102,8 +84,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 99,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 1,
+        is_deleted: 0,
+        version: 1,
       },
       // excluded rows
       {
@@ -112,8 +94,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 88,
-        _peerdb_is_deleted: 1,
-        _peerdb_version: 1,
+        is_deleted: 1,
+        version: 1,
       }, // deleted
       {
         id: randomUUID(),
@@ -121,8 +103,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 60,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       }, // other day
       {
         id: randomUUID(),
@@ -130,8 +112,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 0,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       }, // zero
       {
         id: randomUUID(),
@@ -139,15 +121,17 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "power",
         scalar: 200,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       }, // other channel
     ]);
   }, 120_000);
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
     await client.close?.();
@@ -165,6 +149,14 @@ describe("HeartRateRepository (integration)", () => {
     expect(byProvider.apple_health.samples).toEqual([
       { time: "2026-04-12T10:00:00.000Z", heartRate: 70 },
     ]);
+    expect(byProvider.apple_health).toEqual(
+      expect.objectContaining({
+        sampleCount: 1,
+        minHeartRate: 70,
+        avgHeartRate: 70,
+        maxHeartRate: 70,
+      }),
+    );
 
     // whoop_ble: 10:00, 10:01, and the version-deduped 11:00 (99, not 50);
     // deleted / other-day / zero / other-channel rows excluded
@@ -172,6 +164,52 @@ describe("HeartRateRepository (integration)", () => {
       { time: "2026-04-12T10:00:00.000Z", heartRate: 72 },
       { time: "2026-04-12T10:01:00.000Z", heartRate: 74 },
       { time: "2026-04-12T11:00:00.000Z", heartRate: 99 },
+    ]);
+    expect(byProvider.whoop_ble).toEqual(
+      expect.objectContaining({
+        sampleCount: 3,
+        minHeartRate: 72,
+        avgHeartRate: 82,
+        maxHeartRate: 99,
+      }),
+    );
+  });
+
+  it("uses the requested timezone when selecting a local calendar day", async () => {
+    const beforeLocalMidnightId = randomUUID();
+    const atLocalMidnightId = randomUUID();
+    await seed([
+      {
+        id: beforeLocalMidnightId,
+        recorded_at: "2026-04-12 06:59:59.000",
+        provider_id: "timezone_boundary",
+        channel: "heart_rate",
+        scalar: 61,
+        is_deleted: 0,
+        version: 0,
+      },
+      {
+        id: atLocalMidnightId,
+        recorded_at: "2026-04-12 07:00:00.000",
+        provider_id: "timezone_boundary",
+        channel: "heart_rate",
+        scalar: 62,
+        is_deleted: 0,
+        version: 0,
+      },
+    ]);
+
+    const repo = new HeartRateRepository(reader, testUserId, "America/Los_Angeles");
+    const timezoneBoundarySeries = (await repo.dailyBySource("2026-04-12")).find(
+      (series) => series.providerId === "timezone_boundary",
+    );
+
+    if (!timezoneBoundarySeries) {
+      throw new Error("Expected timezone_boundary heart-rate series");
+    }
+
+    expect(timezoneBoundarySeries.samples).toEqual([
+      { time: "2026-04-12T07:00:00.000Z", heartRate: 62 },
     ]);
   });
 });

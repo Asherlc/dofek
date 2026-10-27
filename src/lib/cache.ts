@@ -1,7 +1,8 @@
-import { RedisConnection } from "bullmq";
-import { getRedisConnection } from "dofek/jobs/queues";
+import { getSharedRedisConnection } from "dofek/jobs/queues";
+import { captureException } from "./error-reporting.ts";
 
 export interface CacheStore {
+  invalidate(key: string): Promise<void>;
   get(key: string): Promise<unknown | undefined>;
   set<T>(key: string, data: T, ttlMs: number): Promise<void>;
   invalidateByPrefix(prefix: string): Promise<void>;
@@ -54,6 +55,10 @@ export class MemoryCacheStore implements CacheStore {
     this.#store.set(key, { data, expiresAt: Date.now() + ttlMs });
   }
 
+  async invalidate(key: string): Promise<void> {
+    this.#store.delete(key);
+  }
+
   async invalidateByPrefix(prefix: string): Promise<void> {
     for (const key of this.#store.keys()) {
       if (key.startsWith(prefix)) this.#store.delete(key);
@@ -87,7 +92,20 @@ export class RedisCacheStore implements CacheStore {
       await client.srem(CACHE_KEY_REGISTRY, cacheKey);
       return undefined;
     }
-    return JSON.parse(payload);
+    try {
+      return JSON.parse(payload);
+    } catch (error) {
+      captureException(error, { tags: { cacheStore: "redis", cacheOperation: "get" } });
+      try {
+        await client.del(cacheKey);
+        await client.srem(CACHE_KEY_REGISTRY, cacheKey);
+      } catch (cleanupError) {
+        captureException(cleanupError, {
+          tags: { cacheStore: "redis", cacheOperation: "evictInvalidPayload" },
+        });
+      }
+      return undefined;
+    }
   }
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {
@@ -95,6 +113,13 @@ export class RedisCacheStore implements CacheStore {
     const cacheKey = redisCacheKey(key);
     await client.set(cacheKey, JSON.stringify(data), "PX", ttlMs);
     await client.sadd(CACHE_KEY_REGISTRY, cacheKey);
+  }
+
+  async invalidate(key: string): Promise<void> {
+    const client = await this.#getRedisClient();
+    const cacheKey = redisCacheKey(key);
+    await client.del(cacheKey);
+    await client.srem(CACHE_KEY_REGISTRY, cacheKey);
   }
 
   async invalidateByPrefix(prefix: string): Promise<void> {
@@ -126,21 +151,14 @@ export class NullCacheStore implements CacheStore {
     return undefined;
   }
   async set(): Promise<void> {}
+  async invalidate(): Promise<void> {}
   async invalidateByPrefix(): Promise<void> {}
   async invalidateAll(): Promise<void> {}
 }
 
-let sharedRedisConnection: RedisConnection | null = null;
-
 async function getSharedRedisClient(): Promise<RedisClient> {
-  if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
-      shared: true,
-      blocking: false,
-      skipVersionCheck: true,
-    });
-  }
-  const redisClient = await sharedRedisConnection.client;
+  const connection = getSharedRedisConnection();
+  const redisClient = await connection.client;
   return {
     set: async (key, value, mode, millisecondsToExpire) =>
       redisClient.set(key, value, mode, millisecondsToExpire),
@@ -158,3 +176,30 @@ export const queryCache: CacheStore =
     : process.env.NODE_ENV === "test"
       ? new MemoryCacheStore()
       : new RedisCacheStore();
+
+const USER_QUERY_PREFIXES = {
+  activity: ["activity.", "calendar."],
+  personalization: ["personalization.", "mobileDashboard.", "recovery.", "stress.", "pmc."],
+  sportSettings: ["sportSettings."],
+} as const;
+
+export type UserQueryCacheDomain = keyof typeof USER_QUERY_PREFIXES;
+
+/**
+ * Invalidates every cached read model derived from the supplied user domains.
+ * Keep the dependency map here so router, job, and REST write paths agree.
+ */
+export async function invalidateUserQueryDomains(
+  userId: string,
+  domains: readonly UserQueryCacheDomain[],
+): Promise<void> {
+  const prefixes = new Set(domains.flatMap((domain) => USER_QUERY_PREFIXES[domain]));
+  await Promise.all(
+    [...prefixes].map((prefix) => queryCache.invalidateByPrefix(`${userId}:${prefix}`)),
+  );
+}
+
+/** Invalidates every cached query for a user after a cross-domain write. */
+export async function invalidateAllUserQueries(userId: string): Promise<void> {
+  await queryCache.invalidateByPrefix(`${userId}:`);
+}

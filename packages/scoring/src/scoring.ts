@@ -12,7 +12,10 @@ export class StrainScore {
   static readonly #MAX = 21;
   static readonly #ACUTE_LOAD_DAYS = 7;
 
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value > 17) return statusColors.danger;
@@ -83,54 +86,6 @@ export function scoreLabel(score: number): string {
   return "Poor";
 }
 
-/** Get a contextual description for a recovery score explaining what it means */
-export function scoreDescription(score: number): string {
-  if (score > SCORE_RECOVERED_THRESHOLD)
-    return "You're well recovered and ready for high-intensity training.";
-  if (score >= SCORE_WARNING_THRESHOLD)
-    return "Your body is at a moderate recovery level. Steady effort is recommended.";
-  return "Recovery is low. Focus on rest and keep today's effort light.";
-}
-
-/** Strain zone classification with display properties. */
-export class StrainZone {
-  constructor(readonly zone: string) {}
-
-  get color(): string {
-    if (this.zone === "optimal") return statusColors.positive;
-    if (this.zone === "overreaching") return statusColors.danger;
-    if (this.zone === "restoring") return statusColors.info;
-    return textColors.secondary;
-  }
-
-  get label(): string {
-    if (this.zone === "optimal") return "Optimal";
-    if (this.zone === "overreaching") return "Overreaching";
-    if (this.zone === "restoring") return "Restoring";
-    return this.zone;
-  }
-}
-
-/** Workload ratio (ACWR) with display classification. */
-export class WorkloadRatio {
-  constructor(readonly value: number | null) {}
-
-  get color(): string {
-    if (this.value == null) return textColors.secondary;
-    if (this.value >= 0.8 && this.value <= 1.3) return statusColors.positive;
-    if (this.value >= 0.5 && this.value <= 1.5) return statusColors.warning;
-    return statusColors.danger;
-  }
-
-  get hint(): string | null {
-    if (this.value == null) return null;
-    if (this.value >= 0.8 && this.value <= 1.3) return "Optimal training zone";
-    if (this.value < 0.8) return "Detraining risk - increase load gradually";
-    if (this.value <= 1.5) return "High load - monitor recovery closely";
-    return "Injury risk zone - consider rest";
-  }
-}
-
 export interface WeekSummary {
   week: string;
   hours: number;
@@ -163,7 +118,10 @@ export function trendDirection(current: number, previous: number): "up" | "down"
 
 /** Stress score (0-3 Whoop-like scale) with display classification. */
 export class StressScore {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value <= 0.5) return statusColors.positive;
@@ -203,14 +161,6 @@ export function healthStatusColor(status: "excellent" | "good" | "fair" | "poor"
   return statusColors.danger;
 }
 
-/** Get the color for a ramp rate value (always uses absolute value) */
-export function rampRateColor(rate: number): string {
-  const absRate = Math.abs(rate);
-  if (absRate < 5) return statusColors.positive;
-  if (absRate <= 7) return statusColors.warning;
-  return statusColors.danger;
-}
-
 /**
  * Map a z-score to a 0-100 recovery score using an asymmetric sigmoid.
  * Tuned to match Whoop's recovery scoring:
@@ -230,6 +180,45 @@ export function zScoreToRecoveryScore(zScore: number): number {
       ? center + scaleUp * ((sigmoid - 0.5) / 0.5)
       : center - scaleDown * ((0.5 - sigmoid) / 0.5);
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+export const DEFAULT_READINESS_COMPONENT_SCORE = 62;
+
+export interface BaselineReadinessInputs {
+  hrvZScore: number | null;
+  respiratoryRateZScore: number | null;
+  restingHeartRateZScore: number | null;
+  sleepEfficiency: number | null;
+}
+
+export interface BaselineReadinessComponents {
+  hrvScore: number;
+  respiratoryRateScore: number;
+  restingHrScore: number;
+  sleepScore: number;
+}
+
+export function baselineReadinessComponents(
+  inputs: BaselineReadinessInputs,
+): BaselineReadinessComponents {
+  return {
+    hrvScore:
+      inputs.hrvZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(inputs.hrvZScore),
+    restingHrScore:
+      inputs.restingHeartRateZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(-inputs.restingHeartRateZScore),
+    sleepScore:
+      inputs.sleepEfficiency == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : Math.max(0, Math.min(100, Math.round(inputs.sleepEfficiency))),
+    respiratoryRateScore:
+      inputs.respiratoryRateZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(-inputs.respiratoryRateZScore),
+  };
 }
 
 /** Get the color for a sleep performance tier */
@@ -279,7 +268,10 @@ export const FORM_ZONE_COLORS = {
 
 /** Form zone (training stress balance) classification with display properties. */
 export class FormZone {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value > FORM_ZONE_TRANSITION) return FORM_ZONE_COLORS.transition;

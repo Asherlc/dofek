@@ -1,7 +1,15 @@
+import {
+  type ActivityHeatmapBandId,
+  activityHeatmapBandById,
+  activityHeatmapBandForMinutes,
+} from "@dofek/training/activity-heatmap";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -31,7 +39,14 @@ export class CalendarDay {
   }
 
   toDetail() {
-    return { ...this.#row };
+    const trainingTimeBand: ActivityHeatmapBandId = activityHeatmapBandForMinutes(
+      this.#row.totalMinutes,
+    );
+    return {
+      ...this.#row,
+      trainingTimeBand,
+      trainingTimeMeaning: activityHeatmapBandById(trainingTimeBand).meaning,
+    };
   }
 }
 
@@ -43,7 +58,7 @@ const calendarRowSchema = z.object({
   date: dateStringSchema,
   activity_count: z.coerce.number(),
   total_minutes: z.coerce.number(),
-  activity_types: z.array(z.string()),
+  canonical_types: z.array(z.string()),
 });
 
 // ---------------------------------------------------------------------------
@@ -63,18 +78,20 @@ export class CalendarRepository {
   }
 
   /** Daily activity counts for calendar heatmap rendering. */
-  async getCalendarData(days: number): Promise<CalendarDay[]> {
+  async getCalendarData(days: RangeDays): Promise<CalendarDay[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
+    const activityDate = postgresActivityCalendarDate(sql`a`, this.#timezone);
     const rows = await executeWithSchema(
       this.#db,
       calendarRowSchema,
       sql`SELECT
-          (a.started_at AT TIME ZONE ${this.#timezone})::date as date,
+          ${activityDate} as date,
           COUNT(*)::int as activity_count,
           ROUND(SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::numeric) as total_minutes,
-          array_agg(DISTINCT a.activity_type::text) as activity_types
+          array_agg(DISTINCT a.canonical_type::text) as canonical_types
         FROM fitness.v_activity a
         WHERE a.user_id = ${this.#userId}
-          AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          ${rangeFilter}
           AND a.ended_at IS NOT NULL
         GROUP BY 1
         ORDER BY date`,
@@ -86,7 +103,7 @@ export class CalendarRepository {
           date: row.date,
           activityCount: row.activity_count,
           totalMinutes: row.total_minutes,
-          activityTypes: row.activity_types,
+          activityTypes: row.canonical_types,
         }),
     );
   }

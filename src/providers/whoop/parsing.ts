@@ -1,15 +1,19 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
-import { mapSportId, mapV2ActivityType } from "whoop-whoop/sports";
+import {
+  type NormalizedActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { mapSportId, mapV2ActivityType } from "@dofek/whoop/sports";
 import type {
   WhoopCycle,
   WhoopHrValue,
-  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
+  WhoopWeightliftingSet,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
-import { parseDuringRange } from "whoop-whoop/utils";
+} from "@dofek/whoop/types";
+import { parseDuringRange } from "@dofek/whoop/utils";
 import { z } from "zod";
 
 // ============================================================
@@ -80,18 +84,16 @@ export interface ParsedSleep {
   externalId: string;
   startedAt: Date;
   endedAt: Date;
-  durationMinutes: number;
-  deepMinutes: number;
-  remMinutes: number;
-  lightMinutes: number;
-  awakeMinutes: number;
+  durationMinutes?: number;
+  deepMinutes?: number;
+  remMinutes?: number;
+  lightMinutes?: number;
+  awakeMinutes?: number;
+  stagingAvailable: boolean;
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
-  sleepNeedBaselineMinutes?: number;
-  sleepNeedFromDebtMinutes?: number;
-  sleepNeedFromStrainMinutes?: number;
-  sleepNeedFromNapMinutes?: number;
+  respiratoryRateAvg?: number;
 }
 
 export interface ParsedSleepStage {
@@ -138,11 +140,7 @@ export const inlineSleepSchema = z.object({
   slow_wave_sleep_duration: z.number(),
   rem_sleep_duration: z.number(),
   in_sleep_efficiency: z.number().optional(),
-  sleep_need: z.number().optional(),
-  habitual_sleep_need: z.number().optional(),
-  debt_post: z.number().optional(),
-  need_from_strain: z.number().optional(),
-  credit_from_naps: z.number().optional(),
+  respiratory_rate: z.number().optional(),
   significant: z.boolean().optional(),
 });
 
@@ -153,9 +151,36 @@ export type InlineSleepRecord = z.infer<typeof inlineSleepSchema>;
  * This is the primary sleep parsing path since the sleep-service endpoint
  * changed to return raw stage arrays instead of summary objects.
  */
+/**
+ * Prefer the WHOOP sleep activity id for main sleeps so stage sync can match
+ * sessions without a separate lookup key. Naps and cycles without ids keep the
+ * inline fallback external id.
+ */
+export function resolveInlineSleepExternalId(
+  cycle: WhoopCycle,
+  record: InlineSleepRecord,
+  sleepIndex: number,
+): string {
+  if (record.significant !== false) {
+    const numericId = cycle.recovery?.sleep_id ?? cycle.sleep?.id;
+    if (numericId != null) {
+      return String(numericId);
+    }
+  }
+
+  let range: { start: Date };
+  try {
+    range = parseDuringRange(record.during);
+  } catch {
+    return `inline-unknown-${sleepIndex}`;
+  }
+  return `inline-${range.start.toISOString()}-${sleepIndex}`;
+}
+
 export function parseInlineSleep(
   record: InlineSleepRecord,
   sleepIndex: number,
+  externalId?: string,
 ): ParsedSleep | null {
   let range: { start: Date; end: Date };
   try {
@@ -170,7 +195,7 @@ export function parseInlineSleep(
   const durationMilli = record.time_in_bed - record.wake_duration;
 
   return {
-    externalId: `inline-${range.start.toISOString()}-${sleepIndex}`,
+    externalId: externalId ?? `inline-${range.start.toISOString()}-${sleepIndex}`,
     startedAt: range.start,
     endedAt: range.end,
     durationMinutes: milliToMinutes(durationMilli),
@@ -178,76 +203,21 @@ export function parseInlineSleep(
     remMinutes: milliToMinutes(record.rem_sleep_duration),
     lightMinutes: milliToMinutes(record.light_sleep_duration),
     awakeMinutes: milliToMinutes(record.wake_duration),
+    stagingAvailable: true,
     efficiencyPct: normalizeEfficiencyPct(record.in_sleep_efficiency),
     sleepType: record.significant === false ? "nap" : "sleep",
     isNap: record.significant === false,
-    sleepNeedBaselineMinutes:
-      record.habitual_sleep_need != null ? milliToMinutes(record.habitual_sleep_need) : undefined,
-    sleepNeedFromDebtMinutes:
-      record.debt_post != null ? milliToMinutes(record.debt_post) : undefined,
-    sleepNeedFromStrainMinutes:
-      record.need_from_strain != null ? milliToMinutes(record.need_from_strain) : undefined,
-    sleepNeedFromNapMinutes:
-      record.credit_from_naps != null ? milliToMinutes(record.credit_from_naps) : undefined,
-  };
-}
-
-/** Parse a sleep record from the legacy sleep-service API response. */
-export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
-  // BFF v0 uses `during` range; fall back to legacy `start`/`end`
-  let startedAt: Date;
-  let endedAt: Date;
-  if (record.during) {
-    const range = parseDuringRange(record.during);
-    startedAt = range.start;
-    endedAt = range.end;
-  } else {
-    startedAt = new Date(record.start ?? "");
-    endedAt = new Date(record.end ?? "");
-  }
-
-  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
-    return null;
-  }
-
-  const stages = record.score?.stage_summary;
-  const totalSleepMilli =
-    (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
-  const sleepNeeded = record.score?.sleep_needed;
-
-  return {
-    externalId: String(record.id),
-    startedAt,
-    endedAt,
-    durationMinutes: milliToMinutes(totalSleepMilli),
-    deepMinutes: milliToMinutes(stages?.total_slow_wave_sleep_time_milli ?? 0),
-    remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
-    lightMinutes: milliToMinutes(stages?.total_light_sleep_time_milli ?? 0),
-    awakeMinutes: milliToMinutes(stages?.total_awake_time_milli ?? 0),
-    efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
-    sleepType: record.nap ? "nap" : "sleep",
-    isNap: record.nap,
-    sleepNeedBaselineMinutes: sleepNeeded ? milliToMinutes(sleepNeeded.baseline_milli) : undefined,
-    sleepNeedFromDebtMinutes: sleepNeeded
-      ? milliToMinutes(sleepNeeded.need_from_sleep_debt_milli)
-      : undefined,
-    sleepNeedFromStrainMinutes: sleepNeeded
-      ? milliToMinutes(sleepNeeded.need_from_recent_strain_milli)
-      : undefined,
-    sleepNeedFromNapMinutes: sleepNeeded
-      ? milliToMinutes(sleepNeeded.need_from_recent_nap_milli)
-      : undefined,
+    respiratoryRateAvg: record.respiratory_rate,
   };
 }
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;
   distanceMeters?: number;
-  calories?: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
   totalElevationGain?: number;
@@ -277,21 +247,25 @@ export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): strin
 export function resolveActivityType(
   sportId: number,
   v2ActivityTypeName?: string,
-): CanonicalActivityType {
+  developerSportName?: string,
+): ProviderActivityType {
   const fromSportId = mapSportId(sportId);
-  if (fromSportId !== "other") return fromSportId;
-
-  if (v2ActivityTypeName) {
-    const fromTypeName = mapV2ActivityType(v2ActivityTypeName);
-    if (fromTypeName) return fromTypeName;
-  }
-
-  return "other";
+  const fromDeveloperSportName = developerSportName ? mapV2ActivityType(developerSportName) : null;
+  const normalizedType: NormalizedActivityType =
+    fromDeveloperSportName ??
+    (fromSportId === "other" && v2ActivityTypeName
+      ? (mapV2ActivityType(v2ActivityTypeName) ?? "other")
+      : fromSportId);
+  return resolveProviderActivityType(
+    developerSportName ?? v2ActivityTypeName ?? sportId,
+    normalizedType,
+  );
 }
 
 export function parseWorkout(
   record: WhoopWorkoutRecord,
   v2ActivityTypeName?: string,
+  developerSportName?: string,
 ): ParsedWorkout | null {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
@@ -316,12 +290,11 @@ export function parseWorkout(
 
   return {
     externalId,
-    activityType: resolveActivityType(record.sport_id, v2ActivityTypeName),
+    activityType: resolveActivityType(record.sport_id, v2ActivityTypeName, developerSportName),
     startedAt,
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),
     distanceMeters: undefined, // BFF v0 doesn't include distance at top level
-    calories: record.kilojoules ? Math.round(record.kilojoules / 4.184) : undefined,
     avgHeartRate: record.average_heart_rate,
     maxHeartRate: record.max_heart_rate,
     totalElevationGain: undefined,
@@ -338,11 +311,6 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
     recordedAt: new Date(v.time),
     heartRate: v.data,
   }));
-}
-
-export interface ParsedDailyStepCount {
-  date: string;
-  steps: number;
 }
 
 function isWhoopBffRecord(value: unknown): value is Record<string, unknown> {
@@ -393,25 +361,6 @@ export function parseStrainDeepDiveSteps(raw: unknown): number | null {
   }
 
   return null;
-}
-
-export function parseDailyStepValues(values: WhoopMetricValue[]): ParsedDailyStepCount[] {
-  const maxStepsByDate = new Map<string, number>();
-
-  for (const value of values) {
-    const roundedSteps = Math.round(value.data);
-    if (!Number.isFinite(roundedSteps) || roundedSteps < 0) continue;
-
-    const date = new Date(value.time).toISOString().slice(0, 10);
-    const currentMax = maxStepsByDate.get(date);
-    if (currentMax == null || roundedSteps > currentMax) {
-      maxStepsByDate.set(date, roundedSteps);
-    }
-  }
-
-  return [...maxStepsByDate.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([date, steps]) => ({ date, steps }));
 }
 
 /**
@@ -485,6 +434,10 @@ export interface ParsedStrengthSet {
   durationSeconds: number | null;
   strapLocation: string | null;
   strapLocationLaterality: string | null;
+  raw: WhoopWeightliftingSet & {
+    providerExerciseId: string;
+    providerExerciseName: string;
+  };
 }
 
 export interface ParsedWeightliftingWorkout {
@@ -520,6 +473,11 @@ export function parseWeightliftingWorkout(
           durationSeconds: isTimeFormat && set.time_in_seconds > 0 ? set.time_in_seconds : null,
           strapLocation: set.strap_location ?? null,
           strapLocationLaterality: set.strap_location_laterality ?? null,
+          raw: {
+            ...set,
+            providerExerciseId: details.exercise_id,
+            providerExerciseName: details.name,
+          },
         });
         setIndex++;
       }

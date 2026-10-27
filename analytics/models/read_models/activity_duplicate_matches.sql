@@ -8,10 +8,14 @@
     }
 ) }}
 
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 WITH source_records AS (
     SELECT
         activity_id,
+        provider_id,
         user_id,
+        canonical_type,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ ref('activity_source_records') }} FINAL
@@ -22,12 +26,14 @@ tombstoned_records AS (
     SELECT
         activity.id AS activity_id,
         activity.user_id AS user_id,
+        activity.provider_id AS provider_id,
+        activity.canonical_type AS canonical_type,
         activity.started_at AS started_at,
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
     WHERE activity._peerdb_is_deleted = 0
-        AND activity.provider_absent_at IS NOT null
-        AND activity.deleted_at IS null
+        AND coalesce(activity.provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
+        AND coalesce(activity.deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
 ),
 
 active_duplicate_matches AS (
@@ -47,15 +53,64 @@ active_duplicate_matches AS (
     INNER JOIN source_records AS right_activity
         ON left_activity.user_id = right_activity.user_id
         AND toString(left_activity.activity_id) < toString(right_activity.activity_id)
-        AND dateDiff(
-            'second',
-            greatest(left_activity.started_at, right_activity.started_at),
-            least(left_activity.ended_at, right_activity.ended_at)
-        ) / nullIf(dateDiff(
-            'second',
-            least(left_activity.started_at, right_activity.started_at),
-            greatest(left_activity.ended_at, right_activity.ended_at)
-        ), 0) > 0.8
+        AND (
+            (
+                left_activity.canonical_type = right_activity.canonical_type
+                AND (
+                    left_activity.canonical_type != 'other'
+                    OR left_activity.provider_id = right_activity.provider_id
+                )
+            )
+            OR (
+                left_activity.canonical_type = 'other'
+                AND right_activity.canonical_type != 'other'
+                AND left_activity.provider_id = right_activity.provider_id
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at)
+                    <= dateDiff('second', right_activity.started_at, right_activity.ended_at)
+            )
+            OR (
+                right_activity.canonical_type = 'other'
+                AND left_activity.canonical_type != 'other'
+                AND right_activity.provider_id = left_activity.provider_id
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                    <= dateDiff('second', left_activity.started_at, left_activity.ended_at)
+            )
+        )
+        AND (
+            dateDiff(
+                'second',
+                greatest(left_activity.started_at, right_activity.started_at),
+                least(left_activity.ended_at, right_activity.ended_at)
+            ) / nullIf(dateDiff(
+                'second',
+                least(left_activity.started_at, right_activity.started_at),
+                greatest(left_activity.ended_at, right_activity.ended_at)
+            ), 0) > 0.8
+            OR (
+                left_activity.provider_id != right_activity.provider_id
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) / nullIf(least(
+                    dateDiff('second', left_activity.started_at, left_activity.ended_at),
+                    dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                ), 0) > 0.8
+            )
+        )
+        {% if activity_refresh_scoped %}
+        AND (
+            left_activity.activity_id IN {{ activity_refresh_ids() }}
+            OR right_activity.activity_id IN {{ activity_refresh_ids() }}
+        )
+        {% endif %}
 ),
 
 active_to_tombstoned_matches AS (
@@ -74,15 +129,64 @@ active_to_tombstoned_matches AS (
     FROM source_records AS left_activity
     INNER JOIN tombstoned_records AS right_activity
         ON left_activity.user_id = right_activity.user_id
-        AND dateDiff(
-            'second',
-            greatest(left_activity.started_at, right_activity.started_at),
-            least(left_activity.ended_at, right_activity.ended_at)
-        ) / nullIf(dateDiff(
-            'second',
-            least(left_activity.started_at, right_activity.started_at),
-            greatest(left_activity.ended_at, right_activity.ended_at)
-        ), 0) > 0.8
+        AND (
+            (
+                left_activity.canonical_type = right_activity.canonical_type
+                AND (
+                    left_activity.canonical_type != 'other'
+                    OR left_activity.provider_id = right_activity.provider_id
+                )
+            )
+            OR (
+                left_activity.canonical_type = 'other'
+                AND right_activity.canonical_type != 'other'
+                AND left_activity.provider_id = right_activity.provider_id
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at)
+                    <= dateDiff('second', right_activity.started_at, right_activity.ended_at)
+            )
+            OR (
+                right_activity.canonical_type = 'other'
+                AND left_activity.canonical_type != 'other'
+                AND right_activity.provider_id = left_activity.provider_id
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                    <= dateDiff('second', left_activity.started_at, left_activity.ended_at)
+            )
+        )
+        AND (
+            dateDiff(
+                'second',
+                greatest(left_activity.started_at, right_activity.started_at),
+                least(left_activity.ended_at, right_activity.ended_at)
+            ) / nullIf(dateDiff(
+                'second',
+                least(left_activity.started_at, right_activity.started_at),
+                greatest(left_activity.ended_at, right_activity.ended_at)
+            ), 0) > 0.8
+            OR (
+                left_activity.provider_id != right_activity.provider_id
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) / nullIf(least(
+                    dateDiff('second', left_activity.started_at, left_activity.ended_at),
+                    dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                ), 0) > 0.8
+            )
+        )
+        {% if activity_refresh_scoped %}
+        AND (
+            left_activity.activity_id IN {{ activity_refresh_ids() }}
+            OR right_activity.activity_id IN {{ activity_refresh_ids() }}
+        )
+        {% endif %}
 ),
 
 current_duplicate_matches AS (
@@ -108,6 +212,12 @@ existing_duplicate_matches AS (
             duplicate_activity_id
         FROM {{ this }} FINAL
         WHERE is_deleted = 0
+            {% if activity_refresh_scoped %}
+            AND (
+                activity_id IN {{ activity_refresh_ids() }}
+                OR duplicate_activity_id IN {{ activity_refresh_ids() }}
+            )
+            {% endif %}
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
@@ -121,10 +231,9 @@ stale_duplicate_matches AS (
         existing_duplicate_matches.activity_id,
         existing_duplicate_matches.duplicate_activity_id
     FROM existing_duplicate_matches
-    LEFT JOIN current_duplicate_matches
+    LEFT ANTI JOIN current_duplicate_matches
         ON current_duplicate_matches.activity_id = existing_duplicate_matches.activity_id
         AND current_duplicate_matches.duplicate_activity_id = existing_duplicate_matches.duplicate_activity_id
-    WHERE current_duplicate_matches.activity_id IS null
 ),
 
 refresh_clock AS (

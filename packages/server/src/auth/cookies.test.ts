@@ -32,16 +32,16 @@ function mockRequest(
 
 /** Create a mock Express Response that tracks cookie operations */
 function mockResponse(): Response & {
-  cookie: ReturnType<typeof vi.fn>;
-  clearCookie: ReturnType<typeof vi.fn>;
+  cookie: CallableVitestMock;
+  clearCookie: CallableVitestMock;
 } {
   const res = {
     cookie: vi.fn().mockReturnThis(),
     clearCookie: vi.fn().mockReturnThis(),
   } satisfies Partial<Response>;
   const result: Response & {
-    cookie: ReturnType<typeof vi.fn>;
-    clearCookie: ReturnType<typeof vi.fn>;
+    cookie: CallableVitestMock;
+    clearCookie: CallableVitestMock;
   } = Object.assign(Object.create(null), res);
   return result;
 }
@@ -298,27 +298,9 @@ describe("Auth cookies", () => {
       expect(getSessionIdFromRequest(req)).toBeUndefined();
     });
 
-    it("returns session from query parameter when no cookie or header", () => {
+    it("does not accept session from query parameter", () => {
       const req = mockRequest({});
       req.query = { session: "query-session" };
-      expect(getSessionIdFromRequest(req)).toBe("query-session");
-    });
-
-    it("prefers cookie over query parameter", () => {
-      const req = mockRequest({ session: "cookie-session" });
-      req.query = { session: "query-session" };
-      expect(getSessionIdFromRequest(req)).toBe("cookie-session");
-    });
-
-    it("prefers Authorization header over query parameter", () => {
-      const req = mockRequest({}, { authorization: "Bearer header-session" });
-      req.query = { session: "query-session" };
-      expect(getSessionIdFromRequest(req)).toBe("header-session");
-    });
-
-    it("ignores non-string query parameter", () => {
-      const req = mockRequest({});
-      req.query = { session: ["array-value"] };
       expect(getSessionIdFromRequest(req)).toBeUndefined();
     });
   });

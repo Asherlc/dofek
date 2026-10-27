@@ -1,4 +1,4 @@
-import { captureException } from "@sentry/node";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { setupClickHouseCdcFromEnv } from "./clickhouse-cdc.ts";
 

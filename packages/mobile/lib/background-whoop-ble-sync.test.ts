@@ -4,52 +4,32 @@ import {
   initBackgroundWhoopBleSync,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
-  type WhoopBleRealtimeUploadClient,
-  type WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync.ts";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
+} from "./background-whoop-ble-sync";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./whoop-ble-sync-types";
+import { makeMockDeps, makeMockRealtimeClient, makeMockTrpcClient } from "./whoop-ble-test-helpers";
 
-function makeMockDeps(): WhoopBleSyncDeps {
-  return {
-    isBluetoothAvailable: vi.fn().mockReturnValue(true),
-    findWhoop: vi.fn().mockResolvedValue({ id: "whoop-123", name: "WHOOP 4.0" }),
-    connect: vi.fn().mockResolvedValue(true),
-    startImuStreaming: vi.fn().mockResolvedValue(true),
-    stopImuStreaming: vi.fn().mockResolvedValue(true),
-    peekBufferedSamples: vi.fn().mockResolvedValue([]),
-    confirmSamplesDrain: vi.fn(),
-    peekBufferedRealtimeData: vi.fn().mockResolvedValue([]),
-    confirmRealtimeDataDrain: vi.fn(),
-    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
-    disconnect: vi.fn(),
-  };
-}
+const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
+  mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),
+}));
 
-function makeMockTrpcClient(): InertialMeasurementUnitUploadClient {
+vi.mock("./device-erasure-cutoff", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./device-erasure-cutoff")>();
   return {
-    inertialMeasurementUnitSync: {
-      pushSamples: {
-        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
-      },
-    },
+    ...actual,
+    loadDeviceErasureCutoff: mockLoadDeviceErasureCutoff,
   };
-}
-
-function makeMockRealtimeClient(): WhoopBleRealtimeUploadClient {
-  return {
-    whoopBleSync: {
-      pushRealtimeData: {
-        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
-      },
-    },
-  };
-}
+});
 
 let appStateCallback: ((state: string) => void) | null = null;
 const mockRemove = vi.fn();
 
 vi.mock("react-native", () => ({
   AppState: {
+    currentState: "active",
     addEventListener: vi
       .fn()
       .mockImplementation((_event: string, callback: (state: string) => void) => {
@@ -78,9 +58,11 @@ describe("background-whoop-ble-sync", () => {
   let trpcClient: InertialMeasurementUnitUploadClient;
 
   beforeEach(() => {
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     appStateCallback = null;
+    AppState.currentState = "active";
     mockRemove.mockClear();
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundWhoopBleSync();
@@ -104,43 +86,82 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
   });
 
-  it("uploads buffered samples with gyroscope data immediately on init", async () => {
-    const samples = [
-      {
-        timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
-        gyroscopeX: 10,
-        gyroscopeY: -20,
-        gyroscopeZ: 30,
-      },
-    ];
-    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+  it("waits to connect until the app foregrounds when initialized in the background", async () => {
+    AppState.currentState = "background";
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
-      deviceId: "WHOOP Strap",
-      deviceType: "whoop",
-      samples: [
-        {
-          timestamp: "2026-03-27T10:00:00.000Z",
-          x: 1,
-          y: 2,
-          z: 3,
-          gyroscopeX: 10,
-          gyroscopeY: -20,
-          gyroscopeZ: 30,
-        },
-      ],
+    expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+
+    AppState.currentState = "active";
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+      expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
     });
   });
 
-  it("requests bounded IMU batches from the native buffer", async () => {
+  it("prevents a foreground transition from overlapping the initial sync", async () => {
+    let resolveInitialDrain: (() => void) | null = null;
+    vi.mocked(whoopDeps.peekBufferedSamples)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitialDrain = () => resolve([]);
+          }),
+      )
+      .mockResolvedValue([]);
+
+    const initPromise = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => {
+      expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+    });
+
+    appStateCallback?.("active");
+
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+
+    resolveInitialDrain?.();
+    await initPromise;
+  });
+
+  it("does not connect when the app backgrounds while searching for WHOOP", async () => {
+    vi.mocked(whoopDeps.findWhoop).mockImplementation(async () => {
+      AppState.currentState = "background";
+      return { id: "whoop-123", name: "WHOOP 4.0" };
+    });
+
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledWith(500);
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+  });
+
+  it("disconnects when the app backgrounds while connecting to WHOOP", async () => {
+    vi.mocked(whoopDeps.connect).mockImplementation(async () => {
+      AppState.currentState = "background";
+      return true;
+    });
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+    expect(whoopDeps.disconnect).toHaveBeenCalled();
+  });
+
+  it("disconnects when the app backgrounds while starting WHOOP streaming", async () => {
+    vi.mocked(whoopDeps.startImuStreaming).mockImplementation(async () => {
+      AppState.currentState = "background";
+      return true;
+    });
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.disconnect).toHaveBeenCalled();
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
   });
 
   it("connects to WHOOP and starts streaming on first foreground", async () => {
@@ -158,9 +179,9 @@ describe("background-whoop-ble-sync", () => {
     const samples = [
       {
         timestamp: "2026-03-25T08:00:00.000Z",
-        accelerometerX: 100,
-        accelerometerY: -200,
-        accelerometerZ: 300,
+        x: 100,
+        y: -200,
+        z: 300,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -173,6 +194,7 @@ describe("background-whoop-ble-sync", () => {
 
     await vi.waitFor(() => {
       expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+        telemetry: expect.objectContaining({ batchId: expect.any(String) }),
         deviceId: "WHOOP Strap",
         deviceType: "whoop",
         samples: expect.arrayContaining([
@@ -200,13 +222,6 @@ describe("background-whoop-ble-sync", () => {
     await appStateCallback?.("active");
 
     expect(whoopDeps.connect).not.toHaveBeenCalled();
-  });
-
-  it("does not upload when buffer is empty", async () => {
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
-    await appStateCallback?.("active");
-
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
   });
 
   it("ignores non-active state changes", async () => {
@@ -244,7 +259,7 @@ describe("background-whoop-ble-sync", () => {
 
     // getBufferedSamples should only be called once for the foreground events
     // (the second call was skipped due to the syncing guard)
-    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1));
 
     // Resolve so cleanup doesn't hang
     resolveBuffered?.();
@@ -268,6 +283,16 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.disconnect).toHaveBeenCalled();
   });
 
+  it("disconnects a native-restored connection without a JS connection attempt", async () => {
+    AppState.currentState = "background";
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    const listener = vi.mocked(whoopDeps.addConnectionStateListener).mock.calls[0]?.[0];
+    listener?.({ state: "connected", peripheralId: "whoop-123" });
+    teardownBackgroundWhoopBleSync();
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+    expect(whoopDeps.disconnect).toHaveBeenCalledTimes(1);
+  });
+
   it("teardown clears the periodic drain timer", async () => {
     vi.useFakeTimers();
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
@@ -284,14 +309,146 @@ describe("background-whoop-ble-sync", () => {
     vi.useRealTimers();
   });
 
+  it("uploads with a new client while a retired session request remains pending", async () => {
+    const samples = [{ timestamp: "2026-03-27T10:00:00.000Z", x: 1, y: 2, z: 3 }];
+    const buffer = [...samples];
+    let releaseOldUpload: (() => void) | undefined;
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementation(async () => [...buffer]);
+    vi.mocked(whoopDeps.confirmSamplesDrain).mockImplementation((count) => {
+      buffer.splice(0, count);
+    });
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseOldUpload = () => resolve({ inserted: 1 });
+        }),
+    );
+    const oldInitialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => expect(releaseOldUpload).toBeDefined());
+    teardownBackgroundWhoopBleSync();
+
+    const nextClient = makeMockTrpcClient();
+    const nextInitialization = initBackgroundWhoopBleSync(nextClient, whoopDeps);
+    try {
+      await vi.waitFor(() => {
+        expect(nextClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({ samples: expect.arrayContaining(samples) }),
+        );
+        expect(buffer).toHaveLength(0);
+      });
+      expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(0);
+    } finally {
+      releaseOldUpload?.();
+      await Promise.all([oldInitialization, nextInitialization]);
+    }
+    expect(
+      vi.mocked(whoopDeps.confirmSamplesDrain).mock.calls.filter(([count]) => count > 0),
+    ).toEqual([[1]]);
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for a retired native peek and releases its cursor before the next session peeks", async () => {
+    let releaseOldPeek: (() => void) | undefined;
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseOldPeek = () =>
+            resolve([{ timestamp: "2026-03-27T10:00:00.000Z", x: 1, y: 2, z: 3 }]);
+        }),
+    );
+    const oldInitialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => expect(releaseOldPeek).toBeDefined());
+    teardownBackgroundWhoopBleSync();
+
+    const nextClient = makeMockTrpcClient();
+    const nextInitialization = initBackgroundWhoopBleSync(nextClient, whoopDeps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+    releaseOldPeek?.();
+    await Promise.all([oldInitialization, nextInitialization]);
+
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(0);
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+    const releaseOrder = vi.mocked(whoopDeps.confirmSamplesDrain).mock.invocationCallOrder[0];
+    const nextPeekOrder = vi.mocked(whoopDeps.peekBufferedSamples).mock.invocationCallOrder[1];
+    expect(releaseOrder).toBeLessThan(nextPeekOrder ?? 0);
+  });
+
+  it("releases a rejected retired peek before allowing a new session to drain", async () => {
+    const { captureException } = await import("./telemetry");
+    const error = new Error("old native peek rejected");
+    let rejectPeek: (() => void) | undefined;
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectPeek = () => reject(error);
+        }),
+    );
+    const oldInitialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => expect(rejectPeek).toBeDefined());
+    teardownBackgroundWhoopBleSync();
+    const nextInitialization = initBackgroundWhoopBleSync(makeMockTrpcClient(), whoopDeps);
+    rejectPeek?.();
+    await Promise.all([oldInitialization, nextInitialization]);
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(2);
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(0);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      source: "whoop-ble-init-sync",
+      retiredLifetime: true,
+    });
+  });
+
+  it("does not disconnect the next session when a retired connection finishes", async () => {
+    let resolveConnect: (() => void) | undefined;
+    vi.mocked(whoopDeps.connect).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConnect = () => resolve(true);
+        }),
+    );
+    const oldInitialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => expect(resolveConnect).toBeDefined());
+    teardownBackgroundWhoopBleSync();
+    expect(whoopDeps.disconnect).toHaveBeenCalledTimes(1);
+    const nextDeps = makeMockDeps();
+    await initBackgroundWhoopBleSync(makeMockTrpcClient(), nextDeps);
+    resolveConnect?.();
+    await oldInitialization;
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+    expect(whoopDeps.disconnect).toHaveBeenCalledTimes(1);
+    expect(nextDeps.disconnect).not.toHaveBeenCalled();
+    expect(nextDeps.startImuStreaming).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels connection intent while retired streaming startup is pending", async () => {
+    let finishStreaming: (() => void) | undefined;
+    vi.mocked(whoopDeps.startImuStreaming).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStreaming = () => resolve(true);
+        }),
+    );
+    const oldInitialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => expect(finishStreaming).toBeDefined());
+    teardownBackgroundWhoopBleSync();
+    expect(whoopDeps.disconnect).toHaveBeenCalledTimes(1);
+    const nextDeps = makeMockDeps();
+    await initBackgroundWhoopBleSync(makeMockTrpcClient(), nextDeps);
+    finishStreaming?.();
+    await oldInitialization;
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+    expect(whoopDeps.disconnect).toHaveBeenCalledTimes(1);
+    expect(nextDeps.disconnect).not.toHaveBeenCalled();
+  });
+
   it("periodic drain uploads buffered samples every 30s", async () => {
     vi.useFakeTimers();
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -312,6 +469,7 @@ describe("background-whoop-ble-sync", () => {
 
     expect(whoopDeps.peekBufferedSamples).toHaveBeenCalled();
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: expect.arrayContaining([
@@ -322,95 +480,72 @@ describe("background-whoop-ble-sync", () => {
     vi.useRealTimers();
   });
 
-  it("drains buffer in multiple batches until empty", async () => {
-    const batch1 = [
-      {
-        timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
-        gyroscopeX: 10,
-        gyroscopeY: -20,
-        gyroscopeZ: 30,
-      },
-    ];
-    const batch2 = [
-      {
-        timestamp: "2026-03-27T10:00:01.000Z",
-        accelerometerX: 4,
-        accelerometerY: 5,
-        accelerometerZ: 6,
-        gyroscopeX: 40,
-        gyroscopeY: -50,
-        gyroscopeZ: 60,
-      },
-    ];
-
-    // Return batch1 on first call, batch2 on second, then empty
-    vi.mocked(whoopDeps.peekBufferedSamples)
-      .mockResolvedValueOnce(batch1)
-      .mockResolvedValueOnce(batch2)
-      .mockResolvedValueOnce([]);
-
+  it("skips periodic drain while the app is backgrounded", async () => {
+    vi.useFakeTimers();
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    // Should have uploaded twice — once per batch
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        samples: expect.arrayContaining([
-          expect.objectContaining({ timestamp: "2026-03-27T10:00:00.000Z" }),
-        ]),
-      }),
-    );
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        samples: expect.arrayContaining([
-          expect.objectContaining({ timestamp: "2026-03-27T10:00:01.000Z" }),
-        ]),
-      }),
-    );
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    AppState.currentState = "background";
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 
-  it("confirms drain after successful upload", async () => {
+  it("stops the periodic drain timer when the app backgrounds", async () => {
+    vi.useFakeTimers();
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    clearIntervalSpy.mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    AppState.currentState = "background";
+    appStateCallback?.("background");
+
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+
+    clearIntervalSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("stops periodic drain before upload when the app backgrounds after reading samples", async () => {
+    vi.useFakeTimers();
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
       },
     ];
-    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
 
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(1);
-  });
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementationOnce(async () => {
+      AppState.currentState = "background";
+      return samples;
+    });
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockClear();
 
-  it("does not confirm drain when upload fails", async () => {
-    const samples = [
-      {
-        timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
-        gyroscopeX: 10,
-        gyroscopeY: -20,
-        gyroscopeZ: 30,
-      },
-    ];
-    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValue(samples);
-    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
-      new Error("network error"),
-    );
+    await vi.advanceTimersByTimeAsync(30_000);
 
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledWith(500);
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(whoopDeps.confirmSamplesDrain).mock.calls.filter(([count]) => count > 0),
+    ).toEqual([]);
 
-    expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("resets connected on BLE disconnect event", async () => {
@@ -444,8 +579,8 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.connect).toHaveBeenCalled();
   });
 
-  it("calls Sentry.captureException when foreground sync rejects", async () => {
-    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+  it("calls the canonical telemetry helper when foreground sync rejects", async () => {
+    const { captureException } = await import("./telemetry");
 
     // Let init succeed normally first
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
@@ -458,22 +593,22 @@ describe("background-whoop-ble-sync", () => {
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
-      expect(sentryCaptureException).toHaveBeenCalledWith(syncError, {
-        tags: { source: "whoop-ble-foreground-sync" },
+      expect(captureException).toHaveBeenCalledWith(syncError, {
+        source: "whoop-ble-foreground-sync",
       });
     });
   });
 
-  it("calls Sentry.captureException when init sync rejects", async () => {
-    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+  it("calls the canonical telemetry helper when init sync rejects", async () => {
+    const { captureException } = await import("./telemetry");
     const initError = new Error("init BLE failure");
     vi.mocked(whoopDeps.connect).mockRejectedValue(initError);
 
     // Init should not throw
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    expect(sentryCaptureException).toHaveBeenCalledWith(initError, {
-      tags: { source: "whoop-ble-init-sync" },
+    expect(captureException).toHaveBeenCalledWith(initError, {
+      source: "whoop-ble-init-sync",
     });
   });
 });
@@ -484,6 +619,7 @@ describe("syncWhoopBle", () => {
 
   beforeEach(() => {
     teardownBackgroundWhoopBleSync();
+    AppState.currentState = "active";
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
   });
@@ -496,9 +632,9 @@ describe("syncWhoopBle", () => {
     const samples = [
       {
         timestamp: "2026-03-25T08:00:00.000Z",
-        accelerometerX: 100,
-        accelerometerY: -200,
-        accelerometerZ: 300,
+        x: 100,
+        y: -200,
+        z: 300,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -511,6 +647,34 @@ describe("syncWhoopBle", () => {
     expect(whoopDeps.findWhoop).toHaveBeenCalled();
     expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+      ]),
+    });
+  });
+
+  it("uploads buffered samples when invoked by background refresh while app is backgrounded", async () => {
+    AppState.currentState = "background";
+    const samples = [
+      {
+        timestamp: "2026-03-25T08:00:00.000Z",
+        x: 100,
+        y: -200,
+        z: 300,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+
+    await syncWhoopBle(trpcClient, whoopDeps);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: expect.arrayContaining([
@@ -527,23 +691,74 @@ describe("syncWhoopBle", () => {
     expect(whoopDeps.connect).not.toHaveBeenCalled();
   });
 
-  it("reports errors to Sentry", async () => {
-    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+  it("reports errors through the canonical telemetry helper", async () => {
+    const { captureException } = await import("./telemetry");
     const bleError = new Error("BLE error");
     vi.mocked(whoopDeps.connect).mockRejectedValue(bleError);
 
-    await syncWhoopBle(trpcClient, whoopDeps);
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).rejects.toBe(bleError);
 
-    expect(sentryCaptureException).toHaveBeenCalledWith(bleError, {
-      tags: { source: "whoop-ble-background-refresh" },
+    expect(captureException).toHaveBeenCalledWith(bleError, {
+      source: "whoop-ble-background-refresh",
     });
   });
 
-  it("does not throw on errors", async () => {
-    vi.mocked(whoopDeps.connect).mockRejectedValue(new Error("BLE error"));
+  it("uploads buffered samples and does not report when the connect handshake times out", async () => {
+    const { captureException } = await import("./telemetry");
+    vi.mocked(captureException).mockClear();
+    const samples = [
+      {
+        timestamp: "2026-03-25T08:00:00.000Z",
+        x: 100,
+        y: -200,
+        z: 300,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+    vi.mocked(whoopDeps.connect).mockRejectedValue(
+      Object.assign(new Error("TIMEOUT: undefined reason"), { code: "TIMEOUT" }),
+    );
 
-    // Should not throw
-    await syncWhoopBle(trpcClient, whoopDeps);
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).resolves.toBeUndefined();
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+      ]),
+    });
+    expect(captureException).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: "whoop-ble-background-refresh" }),
+    );
+  });
+
+  it("still reports and rejects non-timeout connect errors", async () => {
+    const { captureException } = await import("./telemetry");
+    vi.mocked(captureException).mockClear();
+    const deviceNotFoundError = Object.assign(new Error("Peripheral not found"), {
+      code: "NOT_FOUND",
+    });
+    vi.mocked(whoopDeps.connect).mockRejectedValue(deviceNotFoundError);
+
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).rejects.toBe(deviceNotFoundError);
+
+    expect(captureException).toHaveBeenCalledWith(deviceNotFoundError, {
+      source: "whoop-ble-background-refresh",
+    });
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+  });
+
+  it("rejects on errors so the native background task can report failure", async () => {
+    const error = new Error("BLE error");
+    vi.mocked(whoopDeps.connect).mockRejectedValue(error);
+
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).rejects.toBe(error);
   });
 });
 
@@ -553,7 +768,9 @@ describe("realtime data (beat interval + quaternion) sync", () => {
   let realtimeClient: WhoopBleRealtimeUploadClient;
 
   beforeEach(() => {
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     teardownBackgroundWhoopBleSync();
+    AppState.currentState = "active";
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     realtimeClient = makeMockRealtimeClient();
@@ -563,83 +780,11 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     teardownBackgroundWhoopBleSync();
   });
 
-  it("drains realtime data buffer on init", async () => {
-    const realtimeSamples = [
-      {
-        timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
-        quaternionW: 0.02,
-        quaternionX: 0.68,
-        quaternionY: -0.71,
-        quaternionZ: 0.2,
-        rrIntervalMs: 0,
-        opticalRawHex: "000000000000000000000000000000000000",
-      },
-    ];
-    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
-
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
-
-    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
-      deviceId: "WHOOP Strap",
-      samples: [
-        {
-          timestamp: "2026-03-30T12:00:00.000Z",
-          quaternionW: 0.02,
-          quaternionX: 0.68,
-          quaternionY: -0.71,
-          quaternionZ: 0.2,
-          rrIntervalMs: 0,
-          opticalRawHex: "000000000000000000000000000000000000",
-        },
-      ],
-    });
-  });
-
-  it("requests bounded realtime batches from the native buffer", async () => {
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
-
-    expect(whoopDeps.peekBufferedRealtimeData).toHaveBeenCalledWith(500);
-  });
-
-  it("uploads only stored realtime fields and omits device heart rate", async () => {
-    const realtimeSamples = [
-      {
-        timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
-        quaternionW: 0,
-        quaternionX: 0,
-        quaternionY: 0,
-        quaternionZ: 0,
-        rrIntervalMs: 833,
-        opticalRawHex: "000000000000000000000000000000000000",
-      },
-    ];
-    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
-
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
-
-    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
-      deviceId: "WHOOP Strap",
-      samples: [
-        {
-          timestamp: "2026-03-30T12:00:00.000Z",
-          quaternionW: 0,
-          quaternionX: 0,
-          quaternionY: 0,
-          quaternionZ: 0,
-          rrIntervalMs: 833,
-          opticalRawHex: "000000000000000000000000000000000000",
-        },
-      ],
-    });
-  });
-
   it("does not call realtime upload when no realtime client is provided", async () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
+        heartRateBpm: 72,
         quaternionW: 0.0,
         quaternionX: 0.0,
         quaternionY: 0.0,
@@ -657,83 +802,91 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     expect(whoopDeps.peekBufferedRealtimeData).not.toHaveBeenCalled();
   });
 
-  it("drains both IMU and realtime buffers independently", async () => {
-    const imuSamples = [
-      {
-        timestamp: "2026-03-30T12:00:00.000Z",
-        accelerometerX: 100,
-        accelerometerY: -200,
-        accelerometerZ: 4096,
-        gyroscopeX: 10,
-        gyroscopeY: -20,
-        gyroscopeZ: 30,
-      },
-    ];
-    const realtimeSamples = [
-      {
-        timestamp: "2026-03-30T12:00:00.500Z",
-        heartRate: 75,
-        quaternionW: 0.5,
-        quaternionX: 0.5,
-        quaternionY: 0.5,
-        quaternionZ: 0.5,
-        rrIntervalMs: 0,
-        opticalRawHex: "000000000000000000000000000000000000",
-      },
-    ];
-
-    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(imuSamples);
-    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
-
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
-
-    // Both should be uploaded
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
-    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
-      deviceId: "WHOOP Strap",
-      samples: [
-        {
-          timestamp: "2026-03-30T12:00:00.500Z",
-          quaternionW: 0.5,
-          quaternionX: 0.5,
-          quaternionY: 0.5,
-          quaternionZ: 0.5,
-          rrIntervalMs: 0,
-          opticalRawHex: "000000000000000000000000000000000000",
-        },
-      ],
+  it("uploads new realtime samples on a periodic tick while motion is still draining", async () => {
+    const { logger } = await import("./telemetry");
+    vi.useFakeTimers();
+    let releaseMotion: (() => void) | undefined;
+    const motionGate = new Promise<void>((resolve) => {
+      releaseMotion = resolve;
     });
-  });
-
-  it("realtime error does not prevent IMU upload", async () => {
-    const imuSamples = [
+    const realtimeSample = {
+      timestamp: "2026-03-30T12:00:00.000Z",
+      heartRateBpm: 75,
+      rrIntervalMs: 800,
+      quaternionW: 1,
+      quaternionX: 0,
+      quaternionY: 0,
+      quaternionZ: 0,
+      opticalRawHex: "000000000000000000000000000000000000",
+    };
+    const realtimeBuffer: Array<typeof realtimeSample> = [];
+    const uploadedRealtime: number[] = [];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce([
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 0,
         gyroscopeY: 0,
         gyroscopeZ: 0,
       },
-    ];
-    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(imuSamples);
-    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockRejectedValue(
-      new Error("realtime buffer error"),
+    ]);
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      async () => {
+        await motionGate;
+        return { inserted: 1 };
+      },
     );
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockImplementation(async () =>
+      realtimeBuffer.slice(),
+    );
+    vi.mocked(whoopDeps.confirmRealtimeDataDrain).mockImplementation((count) => {
+      realtimeBuffer.splice(0, count);
+    });
+    vi.mocked(realtimeClient.whoopBleSync.pushRealtimeData.mutate).mockImplementation(
+      async ({ samples }) => {
+        uploadedRealtime.push(...samples.map((sample) => sample.heartRateBpm));
+        return { inserted: samples.length };
+      },
+    );
+    const initialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+      expect(whoopDeps.peekBufferedRealtimeData).toHaveBeenCalledTimes(1);
+      realtimeBuffer.push(realtimeSample);
 
-    // Should not throw — errors are caught at the outer level
-    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+      await vi.advanceTimersByTimeAsync(30_000);
 
-    // IMU should still have been uploaded before the realtime error
-    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        "whoop-ble",
+        "capture_snapshot",
+        expect.objectContaining({
+          trigger: "periodic",
+          imuRequestPending: true,
+          imuPendingRequestAgeMs: 30_000,
+          imuPendingBatchId: expect.any(String),
+        }),
+      );
+      expect(uploadedRealtime).toEqual([75]);
+      expect(realtimeBuffer).toHaveLength(0);
+      expect(
+        vi.mocked(whoopDeps.confirmSamplesDrain).mock.calls.filter(([count]) => count > 0),
+      ).toEqual([]);
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseMotion?.();
+      await initialization;
+      vi.useRealTimers();
+    }
   });
 
   it("syncWhoopBle passes realtime client through", async () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 80,
+        heartRateBpm: 80,
         quaternionW: 1.0,
         quaternionX: 0.0,
         quaternionY: 0.0,
@@ -747,10 +900,12 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     await syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       samples: [
         {
           timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 80,
           quaternionW: 1.0,
           quaternionX: 0.0,
           quaternionY: 0.0,

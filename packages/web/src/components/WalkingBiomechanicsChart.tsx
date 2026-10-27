@@ -17,6 +17,8 @@ function buildLineOption(
   color: string,
   convert?: (v: number) => number,
 ) {
+  const signalPointCount = data.filter((row) => valueAccessor(row) != null).length;
+
   return {
     grid: dofekGrid("single", { top: 30, right: 15, bottom: 25 }),
     tooltip: dofekTooltip(),
@@ -30,7 +32,11 @@ function buildLineOption(
             const value = valueAccessor(d);
             return [d.date, value != null && convert ? convert(value) : value];
           }),
-          { color },
+          {
+            color,
+            symbol: signalPointCount === 1 ? "circle" : undefined,
+            symbolSize: signalPointCount === 1 ? 6 : undefined,
+          },
         ),
         connectNulls: true,
       },
@@ -60,6 +66,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
     name: string;
     unit: string;
     color: string;
+    emptyMessage: string;
     accessor: (d: WalkingBiomechanicsRow) => number | null;
     convert?: (v: number) => number;
   }[] = [
@@ -67,6 +74,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
       name: "Walking Speed",
       unit: units.speedLabel,
       color: statusColors.positive,
+      emptyMessage: "No walking speed data available",
       accessor: (d) => d.walkingSpeedKmh,
       convert: (v) => units.convertSpeed(v),
     },
@@ -74,16 +82,24 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
       name: "Step Length",
       unit: units.heightLabel,
       color: chartColors.blue,
+      emptyMessage: "No step length data available",
       accessor: (d) => d.stepLengthCm,
       convert: (v) => units.convertHeight(v),
     },
     {
       name: "Double Support",
-      unit: "%",
+      unit: units.percentageLabel,
       color: chartColors.amber,
+      emptyMessage: "No double support data available",
       accessor: (d) => d.doubleSupportPct,
     },
-    { name: "Asymmetry", unit: "%", color: statusColors.danger, accessor: (d) => d.asymmetryPct },
+    {
+      name: "Asymmetry",
+      unit: units.percentageLabel,
+      color: statusColors.danger,
+      emptyMessage: "No asymmetry data available",
+      accessor: (d) => d.asymmetryPct,
+    },
   ];
 
   return (
@@ -101,6 +117,8 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
                 chart.color,
                 chart.convert,
               )}
+              empty={!data.some((row) => chart.accessor(row) != null)}
+              emptyMessage={chart.emptyMessage}
               height={200}
             />
           </div>

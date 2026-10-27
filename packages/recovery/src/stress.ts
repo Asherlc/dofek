@@ -35,15 +35,6 @@ export interface WeeklyStressRow {
   highStressDays: number;
 }
 
-// ── Default thresholds ──────────────────────────────────────────
-
-export function defaultStressThresholds(): StressThresholds {
-  return {
-    hrvThresholds: [-2.0, -1.5, -1.0],
-    rhrThresholds: [2.0, 1.5, 1.0],
-  };
-}
-
 // ── Daily stress computation ────────────────────────────────────
 
 /**

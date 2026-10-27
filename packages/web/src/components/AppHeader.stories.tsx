@@ -8,17 +8,18 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { AppHeader } from "./AppHeader";
 
 const storyPaths = [
   "/dashboard",
+  "/alerts",
   "/training",
   "/activities",
   "/sleep",
   "/nutrition",
   "/body",
   "/correlation",
-  "/tracking",
   "/settings",
   "/admin",
 ] as const;
@@ -61,7 +62,36 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByText("Dofek")).toHaveLength(2);
+    await expect(canvas.queryByRole("heading", { name: "Dofek" })).not.toBeInTheDocument();
+    await expect(
+      within(canvas.getByRole("navigation", { name: "Sections" })).getByRole("link", {
+        name: "Overview",
+        current: "page",
+      }),
+    ).toHaveClass("text-accent", "bg-accent/10", "rounded-md");
+  },
+};
+
+export const MobileNavigationOpen: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Toggle navigation menu" }),
+    );
+    const dialog = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Navigation",
+    });
+    await expect(
+      within(dialog).getByRole("link", { name: "Overview", current: "page" }),
+    ).toHaveClass("text-accent", "bg-accent/10", "rounded-md");
+  },
+};
 
 export const EmptyNoUser: Story = {
   name: "No user",
@@ -87,5 +117,11 @@ export const WithHeaderAction: Story = {
         30 days
       </button>
     ),
+  },
+};
+
+export const WithActiveAlerts: Story = {
+  args: {
+    activeAlertCount: 3,
   },
 };

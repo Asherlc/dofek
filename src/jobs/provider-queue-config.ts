@@ -57,25 +57,19 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["strava", realtimeProvider(2, { max: 90, duration: 15 * 60_000 })],
   // Withings: 120 req/min
   ["withings", realtimeProvider(1, { max: 120, duration: 60_000 })],
-  // Fitbit: 150 req/hour
-  ["fitbit", frequentProvider(2, { max: 150, duration: 60 * 60_000 })],
-
   // ── Realtime tier (no documented rate limit) ──
-  ["garmin", realtimeProvider(1)],
   ["wahoo", realtimeProvider()],
   ["polar", realtimeProvider()],
   ["ride-with-gps", realtimeProvider()],
-  ["suunto", realtimeProvider()],
-  ["coros", realtimeProvider()],
-  ["komoot", realtimeProvider()],
-  ["decathlon", realtimeProvider()],
-  ["velohero", realtimeProvider()],
   ["xert", realtimeProvider()],
   ["cycling_analytics", realtimeProvider()],
-  ["mapmyfitness", realtimeProvider()],
 
   // ── Frequent tier ──
-  ["whoop", frequentProvider()],
+  // WHOOP sync is step-chained: one BullMQ job ≈ one API step (~3 HTTP calls with auth).
+  // Job limiter paces steps; adaptive fetch paces individual HTTP calls.
+  ["whoop", frequentProvider(1, { max: 1, duration: 1_000 })],
+  ["ziva", { concurrency: 1, syncTier: "frequent" }],
+  ["kaya", frequentProvider(1)],
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
   ["ultrahuman", frequentProvider()],
@@ -85,12 +79,15 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["zwift", frequentProvider()],
   ["wger", frequentProvider()],
   ["concept2", frequentProvider()],
-  ["auto-supplements", frequentProvider()],
+  ["mountain-project", frequentProvider()],
+  ["openbeta", frequentProvider()],
 
   // ── Daily tier ──
   ["fatsecret", { concurrency: 2, syncTier: "daily" }],
+  ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──
+  ["garmin", { concurrency: 3, syncTier: "on-demand" }],
   ["bodyspec", { concurrency: 1, syncTier: "on-demand" }],
 ]);
 

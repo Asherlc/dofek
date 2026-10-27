@@ -1,0 +1,194 @@
+import { z } from "zod";
+
+export const KAYA_API_URL = "https://kaya-beta.kayaclimb.com";
+const KAYA_APP_URL = "https://kaya-app.kayaclimb.com";
+const PAGE_SIZE = 100;
+
+const idSchema = z.union([z.string(), z.number()]).transform(String);
+const coordinateSchema = z
+  .union([z.number(), z.string().trim().min(1).transform(Number)])
+  .pipe(z.number().finite());
+const locationSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  latitude: coordinateSchema.nullable().optional(),
+  longitude: coordinateSchema.nullable().optional(),
+});
+const gymSchema = locationSchema.extend({
+  address: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  region: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
+});
+const climbSchema = z.object({
+  id: idSchema,
+  name: z.string().nullable(),
+  color: z.object({ name: z.string().nullable() }).nullish(),
+  slug: z.string().nullish(),
+  lead: z.boolean().nullish(),
+  climb_type: z.object({ id: idSchema, name: z.string() }),
+  grade: z
+    .object({
+      id: idSchema,
+      name: z.string().refine((name) => name.trim().length > 0, "Grade must not be blank"),
+      climb_type_group: z.string(),
+    })
+    .nullable(),
+  gym: gymSchema.nullable(),
+  destination: locationSchema.nullable(),
+  area: locationSchema.nullable(),
+  subarea: locationSchema.nullable(),
+  board: locationSchema.pick({ id: true, name: true }).nullable(),
+  angle: z.number().int().nullable(),
+});
+const attemptCountSchema = z.number().int().positive().nullable();
+const sessionSchema = z.object({
+  id: idSchema,
+  start_time: z.string(),
+  end_time: z.string().nullable(),
+  notes: z.string().nullable().optional(),
+  gym: gymSchema.nullable(),
+  board: locationSchema.nullable().optional(),
+  destination: locationSchema.nullable().optional(),
+  attempted_climbs: z.array(
+    climbSchema.extend({ attempts: attemptCountSchema, sent: z.boolean() }),
+  ),
+});
+const ascentSchema = z.object({
+  // Validate media independently so an unknown photo cannot invalidate the logbook.
+  photo: z.json().optional(),
+  id: idSchema,
+  session_id: idSchema.nullable(),
+  date: z.string(),
+  comment: z.string().nullable().optional(),
+  rating: z.number().nullable().optional(),
+  stiffness: z.number().nullable().optional(),
+  attempts: attemptCountSchema,
+  ascent_type: z.object({ id: idSchema, name: z.string() }),
+  gym: gymSchema.nullable().optional(),
+  climb: climbSchema,
+});
+
+export type KayaSession = z.infer<typeof sessionSchema>;
+export type KayaAscent = z.infer<typeof ascentSchema>;
+
+export class KayaInvalidCredentialsError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Kaya rejected the email or password", options);
+    this.name = new.target.name;
+  }
+}
+
+export class KayaApiError extends Error {
+  readonly status: number | undefined;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = new.target.name;
+    this.status = status;
+  }
+}
+
+export async function signInToKaya(
+  email: string,
+  password: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<{ accessToken: string; refreshToken: string; userId: string }> {
+  const response = await fetchFn(`${KAYA_API_URL}/api/user/login`, {
+    method: "POST",
+    headers: browserHeaders(),
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) throw new KayaInvalidCredentialsError();
+  const payload: unknown = await response.json();
+  const parsed = z
+    .object({
+      message: z.literal("ok"),
+      token: z.string(),
+      refresh_token: z.string(),
+      user: z.object({ id: idSchema }),
+    })
+    .safeParse(payload);
+  if (!parsed.success) throw new KayaInvalidCredentialsError();
+  return {
+    accessToken: parsed.data.token,
+    refreshToken: parsed.data.refresh_token,
+    userId: parsed.data.user.id,
+  };
+}
+
+export async function refreshKayaAccessToken(
+  refreshToken: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<string> {
+  const response = await fetchFn(`${KAYA_API_URL}/api/user/refresh-token`, {
+    method: "POST",
+    headers: browserHeaders(),
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!response.ok) {
+    throw new KayaApiError(`Kaya token refresh failed (${response.status})`, response.status);
+  }
+  const payload: unknown = await response.json();
+  const parsed = z.object({ message: z.literal("ok"), token: z.string() }).safeParse(payload);
+  if (!parsed.success) throw new KayaApiError("Kaya token refresh returned an invalid response");
+  return parsed.data.token;
+}
+
+export class KayaClient {
+  readonly accessToken: string;
+  readonly fetchFn: typeof fetch;
+
+  constructor(accessToken: string, fetchFn: typeof fetch = globalThis.fetch) {
+    this.accessToken = accessToken;
+    this.fetchFn = fetchFn;
+  }
+
+  listSessions(userId: string): Promise<KayaSession[]> {
+    return this.#list(userId, "sessionsForUser", SESSION_QUERY, sessionSchema);
+  }
+
+  listAscents(userId: string): Promise<KayaAscent[]> {
+    return this.#list(userId, "ascentsForUser", ASCENT_QUERY, ascentSchema);
+  }
+
+  async #list<T>(
+    userId: string,
+    field: "sessionsForUser" | "ascentsForUser",
+    query: string,
+    itemSchema: z.ZodType<T>,
+  ): Promise<T[]> {
+    const items: T[] = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const response = await this.fetchFn(`${KAYA_API_URL}/graphql`, {
+        method: "POST",
+        headers: { ...browserHeaders(), authorization: `Bearer ${this.accessToken}` },
+        body: JSON.stringify({ query, variables: { user_id: userId, offset, count: PAGE_SIZE } }),
+      });
+      if (!response.ok)
+        throw new KayaApiError(`Kaya API request failed (${response.status})`, response.status);
+      const payload: unknown = await response.json();
+      const envelope = z
+        .object({
+          data: z.object({ [field]: z.array(itemSchema).optional() }).nullish(),
+          errors: z.array(z.object({ message: z.string() })).optional(),
+        })
+        .parse(payload);
+      if (envelope.errors?.length)
+        throw new KayaApiError(envelope.errors.map(({ message }) => message).join("; "));
+      const page = envelope.data?.[field];
+      if (page === undefined)
+        throw new KayaApiError("Kaya returned no logbook data. Try syncing again.");
+      items.push(...page);
+      if (page.length < PAGE_SIZE) return items;
+    }
+  }
+}
+
+function browserHeaders(): Record<string, string> {
+  return { "content-type": "application/json", origin: KAYA_APP_URL, referer: `${KAYA_APP_URL}/` };
+}
+
+const CLIMB_FIELDS = `id name color { name } slug lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } destination { id name latitude longitude } area { id name latitude longitude } subarea { id name latitude longitude } board { id name } angle`;
+const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { id name address city region country latitude longitude } board { id name latitude longitude } destination { id name latitude longitude } attempted_climbs { attempts: session_attempts sent ${CLIMB_FIELDS} } } }`;
+const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts photo { photo_url thumb_url } ascent_type { id name } gym { id name address city region country latitude longitude } climb { ${CLIMB_FIELDS} } } }`;

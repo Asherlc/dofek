@@ -4,8 +4,36 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activity-metric-source": "./src/activity-metric-source.ts",
+    "./activity-origin": "./src/activity-origin.ts",
+    "./activity-source-details": "./src/activity-source-details.ts",
+    "./activity-source-tree": "./src/activity-source-tree.ts",
+    "./device-names": "./src/device-names.ts",
+    "./activity-source-hardware": "./src/activity-source-hardware.ts",
     "./providers": "./src/providers.ts",
+    "./provider-catalog": "./src/provider-catalog.ts",
+    "./provider-connection": "./src/provider-connection.ts",
     "./provider-stats": "./src/provider-stats.ts",
-    "./whoop": "./src/whoop.ts"
+    "./provider-health": "./src/provider-health.ts",
+    "./health-provenance": "./src/health-provenance.ts",
+    "./provider-disconnect": "./src/provider-disconnect.ts",
+    "./sync-log-presentation": "./src/sync-log-presentation.ts",
+    "./sync-card-summary": "./src/sync-card-summary.ts",
+    "./whoop": "./src/whoop.ts",
+    "./push-providers": "./src/push-providers.ts",
+    "./processing-alerts": "./src/processing-alerts.ts",
+    "./processing-status": "./src/processing-status.ts",
+    "./sync-actions": "./src/sync-actions.ts",
+    "./auth-provider-grouping": "./src/auth-provider-grouping.ts",
+    "./hangboarding": "./src/hangboarding.ts",
+    "./garmin-devices": "./src/garmin-devices.ts",
+    "./activity-hardware": "./src/activity-hardware.ts"
+  },
+  "dependencies": {
+    "@dofek/format": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

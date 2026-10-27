@@ -26,10 +26,7 @@ export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
       {/* Welcome header */}
       <View style={styles.header}>
         <Text style={styles.title}>Welcome to Dofek</Text>
-        <Text style={styles.subtitle}>
-          Connect your health and fitness accounts to unlock personalized insights, recovery
-          tracking, training analysis, and more.
-        </Text>
+        <Text style={styles.subtitle}>Connect a health app or device to get started.</Text>
       </View>
 
       {/* Category cards */}
@@ -60,11 +57,18 @@ export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
         style={styles.primaryButton}
         onPress={() => router.push("/providers")}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Set up data sources"
       >
         <Text style={styles.primaryButtonText}>Set up data sources</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={onDismiss} activeOpacity={0.7}>
+      <TouchableOpacity
+        onPress={onDismiss}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Skip for now"
+      >
         <Text style={styles.skipText}>Skip for now</Text>
       </TouchableOpacity>
     </View>

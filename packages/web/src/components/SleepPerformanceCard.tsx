@@ -22,7 +22,7 @@ export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProp
     }
     return (
       <div className="card p-6 flex items-center justify-center h-[140px]">
-        <span className="text-dim text-sm">No sleep data yet</span>
+        <span className="text-dim text-sm">No sleep data to display</span>
       </div>
     );
   }
@@ -57,7 +57,7 @@ export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProp
               <p className="text-foreground font-medium">{formatIntensity(data.efficiency)}</p>
             </div>
           </div>
-          <div className="pt-1 border-t border-border">
+          <div className="pt-1 border-t border-border space-y-1">
             <p className="text-xs text-subtle">
               Recommended bedtime:{" "}
               <span className="text-foreground font-medium">{data.recommendedBedtime}</span>
@@ -65,6 +65,13 @@ export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProp
           </div>
         </div>
       </div>
+      <a
+        aria-label="View sleep source data"
+        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+        href="#sleep-data-sources"
+      >
+        View data <span aria-hidden>→</span>
+      </a>
     </div>
   );
 }

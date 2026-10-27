@@ -1,55 +1,7 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseFitFile, parseFitRecord, parseFitSession } from "./parser.ts";
-
-const FIXTURES = resolve(import.meta.dirname, "fixtures");
-
-function loadFixture(name: string): Buffer {
-  return readFileSync(resolve(FIXTURES, name));
-}
+import { parseFitRecord, parseFitSession } from "./parser.ts";
 
 describe("FIT Parser", () => {
-  describe("parseFitFile", () => {
-    it("parses a cycling FIT file with power data", async () => {
-      const buf = loadFixture("road-with-power.fit");
-      const result = await parseFitFile(buf);
-
-      expect(result.session.sport).toBe("cycling");
-      expect(result.session.totalDistance).toBeGreaterThan(30000);
-      expect(result.session.totalCalories).toBe(741);
-      expect(result.session.avgPower).toBe(134);
-      expect(result.session.maxPower).toBe(1336);
-      expect(result.session.normalizedPower).toBe(151);
-      expect(result.session.tss).toBeCloseTo(54.5);
-      expect(result.session.intensityFactor).toBeCloseTo(0.645);
-      expect(result.session.avgHeartRate).toBe(113);
-      expect(result.session.maxHeartRate).toBe(137);
-      expect(result.session.avgCadence).toBe(73);
-      expect(result.session.totalAscent).toBe(198);
-      expect(result.session.avgTemperature).toBe(10);
-
-      expect(result.records.length).toBe(4746);
-    });
-
-    it("parses a basic cycling FIT file", async () => {
-      const buf = loadFixture("test.fit");
-      const result = await parseFitFile(buf);
-
-      expect(result.session.sport).toBe("cycling");
-      expect(result.records.length).toBe(3229);
-    });
-
-    it("extracts start and end times from session", async () => {
-      const buf = loadFixture("road-with-power.fit");
-      const result = await parseFitFile(buf);
-
-      expect(result.session.startTime).toBeInstanceOf(Date);
-      expect(result.session.totalElapsedTime).toBeGreaterThan(0);
-      expect(result.session.totalTimerTime).toBeGreaterThan(0);
-    });
-  });
-
   describe("parseFitRecord", () => {
     it("extracts typed fields from a record with power data", () => {
       const rawRecord = {
@@ -179,7 +131,6 @@ describe("FIT Parser", () => {
       expect(session.totalElapsedTime).toBe(0);
       expect(session.totalTimerTime).toBe(0);
       expect(session.totalDistance).toBe(0);
-      expect(session.totalCalories).toBe(0);
     });
 
     it("returns undefined for optional numeric fields when missing", () => {
@@ -209,31 +160,6 @@ describe("FIT Parser", () => {
     it("preserves the raw record", () => {
       const raw = { sport: "running", start_time: "2026-01-01T00:00:00Z", custom_field: 42 };
       expect(parseFitSession(raw).raw).toBe(raw);
-    });
-  });
-
-  describe("full pipeline — file to stream rows", () => {
-    it("produces records with timestamps and raw data", async () => {
-      const buf = loadFixture("road-with-power.fit");
-      const result = await parseFitFile(buf);
-
-      const firstRecord = result.records[0];
-      expect(firstRecord).toBeDefined();
-      expect(firstRecord?.recordedAt).toBeInstanceOf(Date);
-      expect(firstRecord?.raw).toBeDefined();
-      expect(firstRecord?.raw.timestamp).toBeDefined();
-    });
-
-    it("preserves all fields in raw even when not mapped to typed columns", async () => {
-      const buf = loadFixture("road-with-power.fit");
-      const result = await parseFitFile(buf);
-
-      // The road-with-power file has left_torque_effectiveness — should be in raw
-      const recordWithTorque = result.records.find(
-        (r) => r.raw.left_torque_effectiveness !== undefined,
-      );
-      expect(recordWithTorque).toBeDefined();
-      expect(recordWithTorque?.raw.left_torque_effectiveness).toBeTypeOf("number");
     });
   });
 });

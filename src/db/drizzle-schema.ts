@@ -1,0 +1,31 @@
+import * as accountSchema from "./schema/account.ts";
+import * as activitySchema from "./schema/activity.ts";
+import * as activityImageSchema from "./schema/activity-images.ts";
+import * as climbingSchema from "./schema/climbing.ts";
+import * as clinicalSchema from "./schema/clinical.ts";
+import * as coreSchema from "./schema/core.ts";
+import * as enumSchema from "./schema/enums.ts";
+import * as eventSchema from "./schema/events.ts";
+import * as externalSchema from "./schema/external.ts";
+import * as mcpSchema from "./schema/mcp.ts";
+import * as nutritionSchema from "./schema/nutrition.ts";
+import * as processingSchema from "./schema/processing.ts";
+import * as recordModificationsSchema from "./schema/record-modifications.ts";
+import * as referenceSchema from "./schema/reference.ts";
+
+export const drizzleSchema = {
+  ...coreSchema,
+  ...enumSchema,
+  ...referenceSchema,
+  ...activitySchema,
+  ...activityImageSchema,
+  ...climbingSchema,
+  ...nutritionSchema,
+  ...mcpSchema,
+  ...clinicalSchema,
+  ...accountSchema,
+  ...eventSchema,
+  ...externalSchema,
+  ...processingSchema,
+  ...recordModificationsSchema,
+};

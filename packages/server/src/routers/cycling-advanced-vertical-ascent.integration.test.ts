@@ -1,7 +1,7 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -69,6 +69,12 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       new Date(startedAt.getTime() + 40 * 60 * 1000),
       new Date(endedAt.getTime() + 40 * 60 * 1000),
     );
+    const walkingClimbId = await createActivity(
+      "Walking Climb",
+      new Date(startedAt.getTime() + 60 * 60 * 1000),
+      new Date(endedAt.getTime() + 60 * 60 * 1000),
+      "walking",
+    );
 
     const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
     for (let second = 0; second <= 360; second += 120) {
@@ -84,6 +90,9 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       ).toISOString();
       const altitudeOnlyTimestamp = new Date(
         startedAt.getTime() + 40 * 60 * 1000 + second * 1000,
+      ).toISOString();
+      const walkingTimestamp = new Date(
+        startedAt.getTime() + 60 * 60 * 1000 + second * 1000,
       ).toISOString();
       const altitude = 400 + second * 0.6;
 
@@ -133,6 +142,15 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           activityId: altitudeOnlyClimbId,
           scalar: altitude,
         },
+        {
+          userId: TEST_USER_ID,
+          recordedAt: walkingTimestamp,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "altitude",
+          activityId: walkingClimbId,
+          scalar: altitude,
+        },
       );
     }
 
@@ -144,34 +162,45 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       {
         date: string;
         activityName: string;
+        activityType: string;
         verticalAscentRate: number;
         elevationGainMeters: number;
-        climbingMinutes: number;
+        elapsedMinutes: number;
       }[]
     >("cyclingAdvanced.verticalAscentRate", { days: 3 });
 
     const offsetRow = result.find((row) => row.activityName === "Offset Grade Climb");
     const altitudeOnlyRow = result.find((row) => row.activityName === "Altitude Only Climb");
     const lowGradeRow = result.find((row) => row.activityName === "Low Grade Drift");
+    const walkingRow = result.find((row) => row.activityName === "Walking Climb");
 
     expect(offsetRow).toBeDefined();
     expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
-    expect(offsetRow?.climbingMinutes).toBeGreaterThan(5);
+    expect(offsetRow?.elapsedMinutes).toBeGreaterThan(5);
     expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
 
     expect(altitudeOnlyRow).toBeDefined();
     expect(altitudeOnlyRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(altitudeOnlyRow?.verticalAscentRate).toBeGreaterThan(0);
 
-    expect(lowGradeRow).toBeUndefined();
+    expect(lowGradeRow).toBeDefined();
+    expect(lowGradeRow?.elevationGainMeters).toBeGreaterThan(0);
+    expect(lowGradeRow?.verticalAscentRate).toBeGreaterThan(0);
+    expect(walkingRow).toBeUndefined();
   });
 
-  async function createActivity(name: string, startedAt: Date, endedAt: Date): Promise<string> {
+  async function createActivity(
+    name: string,
+    startedAt: Date,
+    endedAt: Date,
+    activityType = "cycling",
+  ): Promise<string> {
     const activityRows = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'cycling', ${startedAt.toISOString()},
+            'test_provider', ${TEST_USER_ID}, ${`vertical-ascent-${name}-${startedAt.toISOString()}`}, ${activityType}, ${activityType},
+            ${startedAt.toISOString()},
             ${endedAt.toISOString()}, ${name}
           )
           RETURNING id`,

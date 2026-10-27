@@ -1,47 +1,100 @@
-import * as Sentry from "@sentry/node";
-import { Worker } from "bullmq";
+import { randomUUID } from "node:crypto";
+import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
+import { createEncryptedAccountErasureSnapshot } from "../account-erasure/remote-snapshot.ts";
+import { createAccountErasureRestoreLedgerFromEnv } from "../account-erasure/restore-ledger.ts";
+import { reconcileAccountErasureRestoreIntents } from "../account-erasure/restore-reconciliation.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
-import { jobContext, logger } from "../logger.ts";
-import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
-import { processExportJob } from "./process-export-job.ts";
-import { processImportJob } from "./process-import-job.ts";
-import { processPostSyncJob } from "./process-post-sync-job.ts";
-import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
-import { processSyncJob } from "./process-sync-job.ts";
-import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
+import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
+import { captureException } from "../lib/error-reporting.ts";
+import { initProductionSentry } from "../lib/sentry.ts";
+import { logger } from "../logger.ts";
+import { validateMetricStreamTopicConfiguration } from "../metric-stream/routes.ts";
+import { getAllProviders } from "../providers/index.ts";
+import { requiredR2EnvironmentVariable } from "../r2-storage.ts";
+import { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
+import { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
+import { runAccountErasureRestoreStartupGate } from "./account-erasure-startup.ts";
+import { createAccountErasureWorkLockPoolFromEnv } from "./account-erasure-work-guard.ts";
+import { createAccountErasureWorkPurgerFromEnv } from "./account-erasure-work-purger.ts";
+import { startActivityImageOutboxDispatcher } from "./activity-image-outbox.ts";
+import { createActivityImageReconciler } from "./activity-image-reconciliation.ts";
+import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";
+import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
+import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
+import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
+import { dispatchActivityImageBackfills } from "./process-activity-image-backfill-job.ts";
+import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
+import { ensureProvidersRegistered } from "./provider-registration.ts";
 import {
-  ACTIVITY_DELETE_ANALYTICS_QUEUE,
-  type ActivityAnalyticsJobData,
-  EXPORT_QUEUE,
-  type ExportJobData,
+  getAccountErasureQueue,
+  getActivityImageQueue,
+  getDataExportQueue,
+  getImportQueue,
+  getProviderDataDeletionQueue,
   getRedisConnection,
-  IMPORT_QUEUE,
-  type ImportJobData,
-  POST_SYNC_QUEUE,
-  type PostSyncJobData,
-  providerSyncQueueName,
-  SCHEDULED_SYNC_QUEUE,
-  type ScheduledSyncJobData,
-  SYNC_QUEUE,
-  type SyncJobData,
 } from "./queues.ts";
-import { setupScheduledSync } from "./scheduled-sync.ts";
+import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES, setupScheduledSync } from "./scheduled-sync.ts";
+import { attachWorkerEvents } from "./worker-events.ts";
+import { createWorkerLifecycle } from "./worker-lifecycle.ts";
+import { createWorkerQueues } from "./worker-queues.ts";
+import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-if (sentryDsn) {
-  Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
-}
+initProductionSentry(sentryDsn);
+validateMetricStreamTopicConfiguration();
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const WORKER_READINESS_HOST = "127.0.0.1";
+const WORKER_READINESS_PORT = 3001;
 
 const db = createDatabaseFromEnv();
+const accountErasureWorkLockPool = createAccountErasureWorkLockPoolFromEnv();
+validateAccountErasureLedgerKeyring();
+const accountErasureRestoreLedger = createAccountErasureRestoreLedgerFromEnv();
+await ensureProvidersRegistered();
+await runAccountErasureRestoreStartupGate(() =>
+  reconcileAccountErasureRestoreIntents({
+    createEncryptedRemoteSnapshot: (transaction, userId) =>
+      createEncryptedAccountErasureSnapshot(transaction, userId, getAllProviders()),
+    database: db,
+    ledger: accountErasureRestoreLedger,
+  }),
+);
 const connection = getRedisConnection();
+let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
 
-// Lazy-init the CH-backed refit sensor store. Created when the post-sync worker
-// first needs it (avoids forcing every worker to depend on CLICKHOUSE_URL).
+const rawSyncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES;
+const syncIntervalMinutes =
+  rawSyncIntervalMinutes === undefined
+    ? DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES
+    : Number(rawSyncIntervalMinutes);
+try {
+  if (!Number.isFinite(syncIntervalMinutes) || syncIntervalMinutes <= 0) {
+    throw new Error(
+      `SYNC_INTERVAL_MINUTES must be a finite positive number, received ${JSON.stringify(rawSyncIntervalMinutes)}`,
+    );
+  }
+  await setupScheduledSync(syncIntervalMinutes);
+} catch (error: unknown) {
+  captureException(error, {
+    tags: { workerStartupStep: "scheduledSyncRegistration" },
+  });
+  logger.error("[worker] Failed to set up scheduled sync", {
+    error,
+    errorStack: error instanceof Error ? error.stack : undefined,
+  });
+  throw error;
+}
+
+function getImportUploadStorage() {
+  importUploadStorage ??= createImportUploadStorageFromEnv();
+  return importUploadStorage;
+}
+
+// Reuse one ClickHouse client, and create the refit sensor store when post-sync
+// first needs it.
 let refitSensorStore: ReturnType<typeof createRefitSensorStore> | null = null;
 let clickHouseClient: ReturnType<typeof createClickHouseClientFromEnv> | null = null;
 function getClickHouseClient() {
@@ -60,161 +113,82 @@ async function refreshPostSyncBodyMeasurements() {
   await refreshBodyMeasurementReadModel(getClickHouseClient());
 }
 
-// ── Per-provider sync workers ──
+const accountErasureRuntime = await createAccountErasureRuntime(
+  db,
+  getClickHouseClient(),
+  createAccountErasureWorkPurgerFromEnv(),
+);
+const accountErasureLeaseOwner = `account-erasure-worker:${randomUUID()}`;
 
-const providerWorkers = new Map<string, Worker<SyncJobData>>();
-
-for (const providerId of getConfiguredProviderIds()) {
-  const config = getProviderQueueConfig(providerId);
-  const worker = new Worker<SyncJobData>(
-    providerSyncQueueName(providerId),
-    (job) => jobContext.run(job, () => processSyncJob(job, db)),
-    {
-      connection,
-      concurrency: config.concurrency,
-      ...(config.limiter ? { limiter: config.limiter } : {}),
-    },
-  );
-  providerWorkers.set(providerId, worker);
-}
-
-logger.info(`[worker] Created ${providerWorkers.size} per-provider sync workers`);
-
-// ── Legacy sync worker (drains old "sync" queue) ──
-
-const legacySyncWorker = new Worker<SyncJobData>(
-  SYNC_QUEUE,
-  (job) => {
-    logger.warn(
-      `[worker] Processing job from legacy "sync" queue (provider=${job.data.providerId}). ` +
-        "New jobs should use per-provider queues.",
-    );
-    return jobContext.run(job, () => processSyncJob(job, db));
-  },
-  { connection },
+const { allWorkers, fitFileImportWorker, providerDataDeletionWorker } = createWorkerQueues({
+  db,
+  connection,
+  accountErasureWorkLockPool,
+  getImportUploadStorage,
+  getClickHouseClient,
+  getRefitSensorStore,
+  refreshPostSyncBodyMeasurements,
+  accountErasureLeaseOwner,
+  accountErasureRuntime,
+});
+const garminImportProgressCoordinator = createGarminImportProgressCoordinator(connection);
+const accountErasureOutboxDispatcher = startAccountErasureOutboxDispatcher(
+  db,
+  getAccountErasureQueue(),
+);
+const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDispatcher(
+  db,
+  getProviderDataDeletionQueue(),
+);
+const dataExportOutboxDispatcher = startDataExportOutboxDispatcher(db, getDataExportQueue());
+const fileUploadOutboxDispatcher = startFileUploadOutboxDispatcher(db, getImportQueue());
+const fileUploadReconciler = startFileUploadReconciler(db, getImportUploadStorage());
+requiredR2EnvironmentVariable("ACTIVITY_MEDIA_R2_BUCKET");
+const activityImageOutboxDispatcher = startActivityImageOutboxDispatcher(
+  db,
+  getActivityImageQueue(),
+  createActivityImageReconciler(db, accountErasureWorkLockPool),
+  () => dispatchActivityImageBackfills(db, getActivityImageQueue()),
 );
 
-// ── Other workers ──
-
-const importWorker = new Worker<ImportJobData>(
-  IMPORT_QUEUE,
-  (job) => jobContext.run(job, () => processImportJob(job, db)),
-  { connection },
-);
-const exportWorker = new Worker<ExportJobData>(
-  EXPORT_QUEUE,
-  (job) => jobContext.run(job, () => processExportJob(job, db)),
-  { connection },
-);
-const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
-  SCHEDULED_SYNC_QUEUE,
-  (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
-  { connection },
-);
-const postSyncWorker = new Worker<PostSyncJobData>(
-  POST_SYNC_QUEUE,
-  (job) =>
-    jobContext.run(job, () =>
-      processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
-    ),
-  { connection, concurrency: 1 },
-);
-const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
-  ACTIVITY_DELETE_ANALYTICS_QUEUE,
-  (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJob(job)),
-  { connection, concurrency: 1 },
-);
-// Training export jobs are processed by the standalone Python BullMQ worker
-// (packages/ml) — not by this Node.js worker.
-
-// ── Idle spin-down ──
-
-let idleTimer: NodeJS.Timeout | null = null;
-let activeJobs = 0;
-
-function resetIdleTimer() {
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
+const lifecycle = createWorkerLifecycle({
+  allWorkers,
+  db,
+  getReadinessServer: () => readinessServer,
+  accountErasureOutboxDispatcher,
+  providerDataDeletionOutboxDispatcher,
+  dataExportOutboxDispatcher,
+  fileUploadOutboxDispatcher,
+  fileUploadReconciler,
+  activityImageOutboxDispatcher,
+  garminImportProgressCoordinator,
+  accountErasureRuntime,
+  accountErasureWorkLockPool,
+});
+attachWorkerEvents(allWorkers, db, providerDataDeletionWorker);
+fitFileImportWorker.on("completed", (job) => {
+  garminImportProgressCoordinator.observeFitJob(job);
+});
+fitFileImportWorker.on("failed", (job) => {
+  if (job) {
+    garminImportProgressCoordinator.observeFitJob(job);
   }
-}
-
-function startIdleTimer() {
-  resetIdleTimer();
-  idleTimer = setTimeout(async () => {
-    logger.info("[worker] Idle timeout reached, shutting down...");
-    await shutdown();
-  }, IDLE_TIMEOUT_MS);
-}
-
-const allWorkers: Worker[] = [
-  ...providerWorkers.values(),
-  legacySyncWorker,
-  importWorker,
-  exportWorker,
-  scheduledSyncWorker,
-  postSyncWorker,
-  activityDeleteAnalyticsWorker,
-];
+});
 
 for (const worker of allWorkers) {
-  worker.on("active", () => {
-    activeJobs++;
-    resetIdleTimer();
-  });
-
-  worker.on("completed", () => {
-    activeJobs--;
-    if (activeJobs <= 0) startIdleTimer();
-  });
-
-  worker.on("failed", (_job, err) => {
-    activeJobs--;
-    Sentry.captureException(err);
-    logger.error(`[worker] Job failed: ${err.message}`);
-    if (activeJobs <= 0) startIdleTimer();
-  });
-
-  worker.on("error", (err) => {
-    Sentry.captureException(err);
-    logger.error(`[worker] Worker error: ${err.message}`);
-  });
+  void worker.run();
 }
-
-// Start idle timer immediately (exit if no jobs arrive within timeout)
-startIdleTimer();
-
-// Set up periodic sync for API providers
-const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
-  ? Number(process.env.SYNC_INTERVAL_MINUTES)
-  : 30;
-setupScheduledSync(syncIntervalMinutes).catch((err) => {
-  logger.error(`[worker] Failed to set up scheduled sync: ${err}`);
+void garminImportProgressCoordinator.reconcile().catch((error: unknown) => {
+  captureException(error, { tags: { garminDumpStep: "progress-reconcile" } });
+  logger.error(`[worker] Failed to reconcile Garmin import progress: ${String(error)}`);
 });
 
-// ── Graceful shutdown ──
+const readinessServer = createWorkerReadinessServer(allWorkers);
+readinessServer.listen(WORKER_READINESS_PORT, WORKER_READINESS_HOST);
+logger.info(
+  `[worker] Readiness endpoint listening on http://${WORKER_READINESS_HOST}:${WORKER_READINESS_PORT}/readyz`,
+);
 
-let shuttingDown = false;
-
-async function shutdown() {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info("[worker] Shutting down gracefully...");
-  await Promise.all(allWorkers.map((w) => w.close()));
-  logger.info("[worker] Shutdown complete.");
-  process.exit(0);
-}
-
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
-
-// Prevent unhandled promise rejections from crashing the worker process.
-// BullMQ and DB operations can produce rejections that escape the job
-// processor's try/catch (e.g., from concurrent batch inserts via postgres.js).
-// Log the error but keep the worker alive so it can process the next job.
-process.on("unhandledRejection", (err) => {
-  Sentry.captureException(err);
-  logger.error(`[worker] Unhandled rejection (worker still running): ${err}`);
-});
+lifecycle.registerProcessHandlers();
 
 logger.info("[worker] Started, waiting for jobs...");

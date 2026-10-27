@@ -10,6 +10,8 @@ import {
 import type { ComponentType } from "react";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
+const recentSuccessfulAt = new Date(Date.now() - 3600_000).toISOString();
+
 function withRouter(Story: ComponentType) {
   const rootRoute = createRootRoute({
     component: Outlet,
@@ -31,7 +33,7 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen max-w-sm p-6 bg-background">
+    <div className="w-[calc(100vw-2rem)] max-w-sm p-6 bg-background">
       <RouterProvider router={router} />
     </div>
   );
@@ -45,9 +47,17 @@ const meta = {
   args: {
     provider: {
       id: "strava",
+      authType: "oauth",
       name: "Strava",
-      lastSyncedAt: "2026-05-12T10:00:00.000Z",
+      lastSyncedAt: recentSuccessfulAt,
+      lastSuccessfulSyncAt: recentSuccessfulAt,
+      lastProcessedUpdateAt: null,
+      syncFreshness: {
+        status: "current",
+        label: "Sync current",
+      },
       authorized: true,
+      description: null,
     },
     state: { status: "idle" },
     needsAuth: false,
@@ -55,8 +65,10 @@ const meta = {
     stats: undefined,
     recentLogs: [
       {
-        syncedAt: "2026-05-12T10:00:00.000Z",
+        id: "strava-sync-1",
+        syncedAt: recentSuccessfulAt,
         status: "success",
+        dataType: "activities",
         recordCount: 12,
         durationMs: 1200,
         errorMessage: null,
@@ -64,7 +76,6 @@ const meta = {
       },
     ],
     onSync: () => {},
-    onFullSync: () => {},
   },
 } satisfies Meta<typeof SyncProviderCard>;
 
@@ -85,9 +96,41 @@ export const NoSyncHistory: Story = {
     recentLogs: [],
     provider: {
       id: "strava",
+      authType: "oauth",
       name: "Strava",
       lastSyncedAt: null,
+      lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
+      syncFreshness: {
+        status: "unknown",
+        label: "Sync status unknown",
+        description: "No successful sync has been recorded.",
+      },
       authorized: true,
+      description: null,
+    },
+  },
+};
+
+export const OverdueProvider: Story = {
+  name: "Overdue provider",
+  tags: ["review-scenario", "review-scenario-stale-provider"],
+  args: {
+    recentLogs: [],
+    provider: {
+      id: "strava",
+      authType: "oauth",
+      name: "Strava",
+      lastSyncedAt: "2026-08-12T12:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+      lastProcessedUpdateAt: null,
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
+      authorized: true,
+      description: null,
     },
   },
 };
@@ -96,9 +139,14 @@ export const NeedsAuth: Story = {
   args: {
     provider: {
       id: "oura",
+      authType: "oauth",
       name: "Oura",
       lastSyncedAt: null,
+      lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
+      syncFreshness: null,
       authorized: false,
+      description: null,
     },
     needsAuth: true,
     recentLogs: [],
@@ -107,12 +155,80 @@ export const NeedsAuth: Story = {
 
 export const NeedsReauth: Story = {
   args: {
+    recentLogs: [],
     provider: {
       id: "whoop",
+      authType: "oauth",
       name: "WHOOP",
       lastSyncedAt: "2026-05-10T10:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-05-10T10:00:00.000Z",
+      lastProcessedUpdateAt: null,
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
       authorized: true,
+      description: null,
     },
     needsReauth: true,
+  },
+};
+
+const garminProvider = {
+  id: "garmin",
+  name: "Garmin",
+  authType: "oauth",
+  authorized: false,
+  description: null,
+  lastSyncedAt: null,
+  lastSuccessfulSyncAt: null,
+  lastProcessedUpdateAt: null,
+  syncFreshness: null,
+};
+
+export const GarminConnect: Story = {
+  args: {
+    provider: garminProvider,
+    pushOnly: true,
+    needsAuth: true,
+    recentLogs: [],
+  },
+};
+
+export const GarminConnected: Story = {
+  args: {
+    ...GarminConnect.args,
+    provider: { ...garminProvider, authorized: true },
+    needsAuth: false,
+  },
+};
+
+export const GarminReconnect: Story = {
+  args: { ...GarminConnected.args, needsReauth: true },
+};
+
+export const GarminUpdateProcessed: Story = {
+  args: {
+    ...GarminConnected.args,
+    provider: { ...garminProvider, authorized: true, lastProcessedUpdateAt: recentSuccessfulAt },
+  },
+};
+
+export const GarminUpdateFailed: Story = {
+  args: {
+    ...GarminUpdateProcessed.args,
+    recentLogs: [
+      {
+        id: "garmin-update-1",
+        syncedAt: new Date().toISOString(),
+        dataType: "update",
+        status: "error",
+        recordCount: null,
+        durationMs: null,
+        errorMessage: "An activity file could not be read.",
+        authFailureReason: null,
+      },
+    ],
   },
 };

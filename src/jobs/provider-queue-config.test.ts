@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CyclingAnalyticsProvider } from "../providers/cycling-analytics.ts";
 import {
   DEFAULT_QUEUE_CONFIG,
   getConfiguredProviderIds,
@@ -25,12 +26,12 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("realtime");
   });
 
-  it("returns fitbit-specific config with rate limiter", () => {
-    const config = getProviderQueueConfig("fitbit");
-    expect(config.limiter).toBeDefined();
-    expect(config.limiter?.max).toBe(150);
-    expect(config.limiter?.duration).toBe(3_600_000); // 1 hour
-    expect(config.syncTier).toBe("frequent");
+  it("returns the realtime config for Cycling Analytics' canonical ID", () => {
+    const providerId = new CyclingAnalyticsProvider().id;
+    const config = getProviderQueueConfig(providerId);
+    expect(config.limiter).toBeUndefined();
+    expect(config.concurrency).toBe(3);
+    expect(config.syncTier).toBe("realtime");
   });
 
   it("returns default config for unknown provider", () => {
@@ -52,16 +53,17 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("daily");
   });
 
-  it("returns realtime tier for garmin", () => {
-    const config = getProviderQueueConfig("garmin");
-    expect(config.syncTier).toBe("realtime");
-    expect(config.limiter).toBeUndefined();
-    expect(config.concurrency).toBe(1);
-  });
-
-  it("returns frequent tier for whoop", () => {
+  it("returns frequent tier for whoop with step-chain job limiter", () => {
     const config = getProviderQueueConfig("whoop");
     expect(config.syncTier).toBe("frequent");
+    expect(config.concurrency).toBe(1);
+    expect(config.limiter).toEqual({ max: 1, duration: 1_000 });
+  });
+
+  it("serializes Ziva sync jobs without an inferred rate limiter", () => {
+    const config = getProviderQueueConfig("ziva");
+
+    expect(config).toStrictEqual({ concurrency: 1, syncTier: "frequent" });
   });
 });
 
@@ -95,12 +97,16 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids.length).toBeGreaterThan(20);
+    expect(ids).toHaveLength(25);
     expect(ids).toContain("strava");
     expect(ids).toContain("garmin");
     expect(ids).toContain("whoop");
     expect(ids).toContain("fatsecret");
     expect(ids).toContain("bodyspec");
+    expect(ids).toContain("openbeta");
+    expect(ids).toContain("thecrag");
+    expect(ids).toContain("ziva");
+    expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
 
   it("does not contain duplicates", () => {

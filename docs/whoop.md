@@ -32,12 +32,30 @@ Full API documentation is in [`whoop-api.openapi.yaml`](whoop-api.openapi.yaml) 
 | Workouts | `GET /core-details-bff/v0/cycles/details` | Embedded in cycle response under `strain.workouts[]`. Aggregate only: strain, HR, calories, zones. |
 | Strength workouts | `GET /weightlifting-service/v2/weightlifting-workout/{activityId}` | Discovered, not yet synced. Exercise-level data: sets, reps, weight, muscle groups, MSK strain. |
 | Heart rate | `GET /metrics-service/v1/metrics/user/<userId>` | 6-second interval time series. |
-| Journal | `GET /behavior-impact-service/v1/impact` | Behavior/journal entries with impact scores. |
 
 ### Key implementation notes
 
 - The cycles BFF limits queries to **200-day windows** — the provider loops in chunks.
 - Strength Trainer workouts (sport_id=123) include an `msk_score` object with muscular load metrics, but this is aggregate only — no exercise-level data.
+
+### Commute classification across sources
+
+- The official WHOOP workout contract now requires `sport_name`; its legacy
+  table identifies `sport_id=89` as `Commuting` and states that `sport_id` does
+  not exist after September 1, 2025. Dofek therefore recognizes both the legacy
+  raw ID `89` and the current commute name. See the
+  [official WHOOP workout contract](https://developer.whoop.com/docs/developing/user-data/workout/).
+- Dofek's internal BFF path receives the human-readable `v2_activities.type`
+  value and uses it before falling back to the numeric sport ID. The current
+  implementation is documented in the
+  [WHOOP activity parser](../src/providers/whoop/parsing.ts) and
+  [sport mapping](../packages/whoop-whoop/src/sports.ts).
+- Apple Health exposes cycling as an `HKWorkoutActivityType` and indoor/outdoor
+  location separately, but the activity-type enum has no commute-purpose case.
+  Dofek does not infer commute purpose from Apple Health alone; a merged record
+  must retain the WHOOP commute label. See Apple's
+  [workout activity types](https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype)
+  and [workout session location type](https://developer.apple.com/documentation/healthkit/hkworkoutsessionlocationtype).
 
 ## Strength Trainer Data (exercises, sets, reps, weight)
 
@@ -104,7 +122,7 @@ Example response shape:
 | `GET /weightlifting-service/v3/workout-library` | Same (v3) |
 | `GET /weightlifting-service/v3/prs` | Personal records |
 
-#### Write endpoints (POST, confirmed to exist via 405/422 responses)
+#### Write endpoints (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -114,6 +132,11 @@ Example response shape:
 | `POST /weightlifting-service/v2/performance-profile` | Write performance profile |
 | `POST /weightlifting-service/v2/weightlifting-workout/link-cardio-workout` | Link cardio workout |
 | `POST /weightlifting-service/v1/raw-data/protobuf` | Upload raw strap data |
+
+The link-cardio-workout endpoint was validated end to end on July 20, 2026:
+creating a workout template and linking it to an existing activity both returned
+HTTP 200. The request and response shapes are preserved in a
+[sanitized capture](whoop-link-workout-capture-2026-07-20.json).
 
 #### Other paths (from APK decompilation, not all tested)
 

@@ -1,3 +1,4 @@
+import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -5,8 +6,10 @@ import {
   dofekGrid,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface EftpPoint {
   date: string;
@@ -18,9 +21,14 @@ interface EftpTrendChartProps {
   data: EftpPoint[];
   currentEftp: number | null;
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
-export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartProps) {
+export function EftpTrendChart({ data, currentEftp, loading, availability }: EftpTrendChartProps) {
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   const markLine =
     currentEftp != null
       ? {
@@ -51,8 +59,12 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
         const [dateStr, watts] = point.data;
         const match = data.find((d) => d.date === dateStr);
         const name = match?.activityName ?? "";
-        const lines = [`<strong>${watts}W</strong>`, point.axisValueLabel];
-        if (name) lines.push(`<span style="color:${chartThemeColors.legendText}">${name}</span>`);
+        const lines = [`<strong>${watts}W</strong>`, escapeTooltipHtml(point.axisValueLabel)];
+        if (name) {
+          lines.push(
+            `<span style="color:${chartThemeColors.legendText}">${escapeTooltipHtml(name)}</span>`,
+          );
+        }
         return lines.join("<br/>");
       },
     }),

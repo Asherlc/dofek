@@ -1,23 +1,5 @@
-import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
-
-/**
- * Sync providers that predated the per-user auth requirement and still use
- * deployment-wide user credentials (env vars) instead of a Connect flow.
- *
- * Do not add new provider IDs here — implement authSetup() instead.
- */
-export const LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS = new Set(["ultrahuman"]);
-
-/**
- * Sync providers that read/write user-owned data without an external account.
- */
-export const INTERNAL_SYNC_PROVIDER_IDS = new Set(["auto-supplements"]);
-
-export function requiresPerUserConnect(providerId: string): boolean {
-  if (LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS.has(providerId)) return false;
-  if (INTERNAL_SYNC_PROVIDER_IDS.has(providerId)) return false;
-  return true;
-}
+import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "../lib/custom-auth-providers.ts";
+import { getProviderAuthTypeFromSetup, type Provider, type ProviderAuthSetup } from "./types.ts";
 
 export function isImportOnlyProvider(provider: Provider): boolean {
   return "importOnly" in provider && provider.importOnly === true;
@@ -27,23 +9,16 @@ export type PerUserAuthComplianceResult =
   | { ok: true }
   | { ok: false; providerId: string; reason: string };
 
-function getAuthTypeFromSetup(setup: ProviderAuthSetup): ProviderAuthType | "none" {
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig && setup.exchangeCode) return "oauth";
-  return "none";
-}
-
 /**
  * Validates that a provider follows the per-user authentication policy.
- * Import-only, internal, and legacy providers are exempt.
+ * Import-only providers are exempt.
  */
 export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthComplianceResult {
   if (isImportOnlyProvider(provider)) {
     return { ok: true };
   }
 
-  if (!requiresPerUserConnect(provider.id)) {
+  if (CUSTOM_AUTH_SYNC_PROVIDER_IDS.has(provider.id)) {
     return { ok: true };
   }
 
@@ -76,7 +51,7 @@ export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthCompl
     };
   }
 
-  const authType = getAuthTypeFromSetup(setup);
+  const authType = getProviderAuthTypeFromSetup(setup);
   if (authType === "none") {
     return {
       ok: false,

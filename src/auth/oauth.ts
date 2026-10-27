@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
+const DEFAULT_REDIRECT_URI = "https://dofek.fit/callback";
 
 function isLocalOrPrivateHost(host: string): boolean {
   if (host.includes("localhost")) {
@@ -74,6 +74,8 @@ export interface OAuthConfig {
   usePkce?: boolean;
   /** Auth0 audience parameter */
   audience?: string;
+  /** OAuth 2.0 resource indicator identifying the target protected resource. */
+  resource?: string;
   /** How to send client credentials to the token endpoint.
    *  "body" (default): client_id/client_secret as form params
    *  "basic": HTTP Basic Auth header (base64-encoded client_id:client_secret) */
@@ -82,7 +84,7 @@ export interface OAuthConfig {
    *  Some providers (e.g. Strava) require "," instead. */
   scopeSeparator?: string;
   /** OAuth 2.0 Token Revocation endpoint (RFC 7009).
-   *  When set, existing tokens can be revoked before exchanging a new authorization code. */
+   *  When set, superseded tokens can be revoked during reconnect. */
   revokeUrl?: string;
 }
 
@@ -100,8 +102,12 @@ export function generateCodeChallenge(verifier: string): string {
 
 export interface TokenSet {
   accessToken: string;
+  /** Identifies a provider authorization grant across access-token refreshes. */
+  authorizationId?: string;
   refreshToken: string | null;
   expiresAt: Date;
+  /** Stable provider-side account identifier tied to this authorization. */
+  providerAccountId?: string;
   scopes: string | null;
 }
 
@@ -115,9 +121,14 @@ export function buildAuthorizationUrl(
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
+  if (config.scopes.length > 0) {
+    url.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
+  }
   if (config.audience) {
     url.searchParams.set("audience", config.audience);
+  }
+  if (config.resource) {
+    url.searchParams.set("resource", config.resource);
   }
   if (pkce) {
     url.searchParams.set("code_challenge", pkce.codeChallenge);
@@ -136,11 +147,16 @@ const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
 function parseTokenResponse(data: Record<string, unknown>): TokenSet {
   const expiresIn =
     typeof data.expires_in === "number" ? data.expires_in : DEFAULT_EXPIRES_IN_SECONDS;
+  const providerAccountId =
+    typeof data.user_id === "number" || typeof data.user_id === "string"
+      ? String(data.user_id).trim()
+      : null;
   return {
     accessToken: String(data.access_token),
     refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
     scopes: typeof data.scope === "string" ? data.scope : null,
+    ...(providerAccountId ? { providerAccountId } : {}),
   };
 }
 
@@ -160,6 +176,7 @@ export async function exchangeCodeForTokens(
     params.client_id = config.clientId;
     if (config.clientSecret) params.client_secret = config.clientSecret;
   }
+  if (config.resource) params.resource = config.resource;
   if (pkce) params.code_verifier = pkce.codeVerifier;
 
   const body = new URLSearchParams(params);
@@ -200,6 +217,7 @@ export async function refreshAccessToken(
     params.client_id = config.clientId;
     if (config.clientSecret) params.client_secret = config.clientSecret;
   }
+  if (config.resource) params.resource = config.resource;
 
   const body = new URLSearchParams(params);
   const headers: Record<string, string> = {
@@ -222,7 +240,8 @@ export async function refreshAccessToken(
 
   const data = await response.json();
   const parsed: Record<string, unknown> = data;
-  return parseTokenResponse(parsed);
+  const tokens = parseTokenResponse(parsed);
+  return { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken };
 }
 
 /**

@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { runWithProviderTokenDiagnostics } from "../lib/provider-token-diagnostic-context.ts";
 
 const tokenUserContext = new AsyncLocalStorage<string>();
 
 export function runWithTokenUser<T>(userId: string, callback: () => Promise<T>): Promise<T> {
-  return tokenUserContext.run(userId, callback);
+  return tokenUserContext.run(userId, () => runWithProviderTokenDiagnostics(userId, callback));
 }
 
 export function getTokenUserId(): string | undefined {

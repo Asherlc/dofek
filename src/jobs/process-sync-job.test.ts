@@ -1,284 +1,400 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { SyncDatabase } from "../db/index.ts";
-import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncRun } from "../providers/sync-run.ts";
-import { SyncWindow } from "../providers/sync-window.ts";
-import type { SyncProvider, SyncResult } from "../providers/types.ts";
+import type { SyncResult } from "../providers/types.ts";
 
-type MockCooldownRecord = {
-  providerId: string;
-  scope: "provider" | "user";
-  userId: string | null;
-  expiresAt: Date;
-};
+import {
+  createMockJob as createBaseMockJob,
+  createMockProvider,
+  mockCaptureException,
+  mockDb,
+  mockEnqueueDebouncedPostSyncMaintenance,
+  mockEnqueueDebouncedUserRefit,
+  mockGetEnabledSyncProviders,
+  mockGetProvider,
+  mockInvalidateAllUserQueries,
+  mockIsSyncEligibleProvider,
+  mockLoggerError,
+  mockLogSync,
+  mockProviderQueueAdd,
+  mockProviderQueueGetJob,
+  mockWithUserWriteFence,
+  resetSyncMocks,
+} from "./sync-test/test-helpers.ts";
 
-const MockJobDataSchema = z.object({
-  providerId: z.string().optional(),
-  sinceDays: z.number().optional(),
-  sinceIso: z.string().optional(),
-  untilIso: z.string().optional(),
-  userId: z.string(),
-  checkpoint: z.unknown().optional(),
-});
-
-const mockProviderRateLimitCooldownRecords = vi.hoisted(
-  (): Map<string, MockCooldownRecord> => new Map(),
-);
-
-const mockCaptureException = vi.fn();
-vi.mock("@sentry/node", () => ({
-  captureException: (...args: unknown[]) => mockCaptureException(...args),
-}));
-
-const mockLoggerInfo = vi.fn();
-const mockLoggerError = vi.fn();
-const mockLoggerWarn = vi.fn();
-
-vi.mock("../logger.ts", () => ({
-  logger: {
-    info: (...args: unknown[]) => mockLoggerInfo(...args),
-    error: (...args: unknown[]) => mockLoggerError(...args),
-    warn: (...args: unknown[]) => mockLoggerWarn(...args),
-    debug: vi.fn(),
-  },
-}));
-
-// Mock dependencies — the mock functions are accessed via module-level refs
-
-vi.mock("./provider-registration.ts", () => ({
-  ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
-}));
-
-const mockGetEnabledSyncProviders = vi.fn<() => SyncProvider[]>().mockReturnValue([]);
-const mockGetProvider = vi.fn<
-  (providerId: string) => { id: string; importOnly?: boolean } | undefined
->(() => undefined);
-const mockIsSyncEligibleProvider = vi.fn<
-  (provider: { id: string; importOnly?: boolean }) => boolean
->(() => true);
-vi.mock("../providers/index.ts", () => ({
-  getEnabledSyncProviders: (...args: []) => mockGetEnabledSyncProviders(...args),
-  getProvider: (...args: [string]) => mockGetProvider(...args),
-  isSyncEligibleProvider: (...args: [{ id: string; importOnly?: boolean }]) =>
-    mockIsSyncEligibleProvider(...args),
-}));
-
-const mockLogSync = vi.fn().mockResolvedValue(undefined);
-vi.mock("../db/sync-log.ts", () => ({
-  logSync: (...args: unknown[]) => mockLogSync(...args),
-}));
-
-const mockEnsureProvider = vi.fn().mockResolvedValue("test-id");
-const mockLoadTokens = vi.fn().mockResolvedValue({
-  accessToken: "valid",
-  refreshToken: "refresh",
-  expiresAt: new Date("2099-01-01"),
-  scopes: null,
-});
-vi.mock("../db/tokens.ts", () => ({
-  ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
-  loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
-}));
-
-const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
-const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
-const mockProviderQueueAdd = vi.fn().mockResolvedValue(undefined);
-vi.mock("./queues.ts", () => ({
-  enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
-    mockEnqueueDebouncedPostSyncMaintenance(...args),
-  enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
-  getProviderSyncQueue: vi.fn(() => ({ add: mockProviderQueueAdd })),
-  SYNC_JOB_RETRY_OPTIONS: {
-    attempts: 288,
-    backoff: { type: "fixed", delay: 300_000 },
-    removeOnComplete: { age: 86_400, count: 1_000 },
-    removeOnFail: { age: 604_800, count: 1_000 },
-  },
-}));
-
-const mockSyncRecordsTotal = { add: vi.fn() };
-const mockSyncOperationsTotal = { add: vi.fn() };
-const mockSyncDuration = { record: vi.fn() };
-const mockSyncErrorsTotal = { add: vi.fn() };
-vi.mock("../sync-metrics.ts", () => ({
-  syncRecordsTotal: mockSyncRecordsTotal,
-  syncOperationsTotal: mockSyncOperationsTotal,
-  syncDuration: mockSyncDuration,
-  syncErrorsTotal: mockSyncErrorsTotal,
-}));
-
-vi.mock("./provider-rate-limit-cooldown.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./provider-rate-limit-cooldown.ts")>();
-
-  function cooldownKey(providerId: string, scope: "provider" | "user", userId: string | null) {
-    return scope === "provider"
-      ? `${providerId}:provider`
-      : `${providerId}:user:${userId ?? "unknown"}`;
-  }
-
-  function activeCooldown(cooldown: MockCooldownRecord | null): MockCooldownRecord | null {
-    if (!cooldown) return null;
-    return cooldown.expiresAt > new Date() ? cooldown : null;
-  }
-
-  function laterCooldown(
-    first: MockCooldownRecord | null,
-    second: MockCooldownRecord | null,
-  ): MockCooldownRecord | null {
-    if (!first) return second;
-    if (!second) return first;
-    return first.expiresAt >= second.expiresAt ? first : second;
-  }
-
-  return {
-    ...actual,
-    providerRateLimitCooldownStore: {
-      record: async (error: ProviderRateLimitError, fallbackUserId: string) => {
-        const scope = error.scope;
-        const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
-        const expiresAt = new Date(Date.now() + (error.retryAfterSeconds ?? 30 * 60) * 1000);
-        const cooldown = { providerId: error.providerId, scope, userId, expiresAt };
-        const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
-        const existing = activeCooldown(mockProviderRateLimitCooldownRecords.get(key) ?? null);
-        const effective = laterCooldown(existing, cooldown) ?? cooldown;
-        mockProviderRateLimitCooldownRecords.set(key, effective);
-        return effective;
-      },
-      getActive: async (providerId: string, userId: string) => {
-        const providerCooldown = activeCooldown(
-          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "provider", null)) ??
-            null,
-        );
-        const userCooldown = activeCooldown(
-          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "user", userId)) ?? null,
-        );
-        return laterCooldown(providerCooldown, userCooldown);
-      },
-    },
-  };
-});
-
-// Import after mocks are set up
 const { processSyncJob } = await import("./process-sync-job.ts");
-
-// All DB functions are mocked at module level, so the db object is never actually called.
-const mockDb: SyncDatabase = {
-  select: vi.fn(),
-  insert: vi.fn(),
-  delete: vi.fn(),
-  execute: vi.fn(),
-};
-
-interface MockJob {
-  data: {
-    providerId?: string;
-    sinceDays?: number;
-    sinceIso?: string;
-    targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
-    userId: string;
-    checkpoint?: unknown;
-  };
-  updateProgress: ReturnType<typeof vi.fn>;
-  updateData: ReturnType<typeof vi.fn>;
-}
-
-function createMockJob(
-  data: {
-    providerId?: string;
-    sinceDays?: number;
-    sinceIso?: string;
-    targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
-    userId?: string;
-    checkpoint?: unknown;
-  } = {},
-): MockJob {
-  const job: MockJob = {
-    data: { userId: "user-1", ...data },
-    updateProgress: vi.fn().mockResolvedValue(undefined),
-    updateData: vi.fn(),
-  };
-  job.updateData.mockImplementation((nextData: MockJob["data"]) => {
-    job.data = nextData;
-    return Promise.resolve();
-  });
+const runSyncJob = processSyncJob;
+function createMockJob(data: Parameters<typeof createBaseMockJob>[0] = {}) {
+  const job = createBaseMockJob(data);
+  job.id = "coordinator-1";
   return job;
 }
 
-function createMockProvider(overrides: Partial<SyncProvider> = {}): SyncProvider {
-  return {
-    id: "test-provider",
-    name: "Test Provider",
-    validate: () => null,
-    sync: vi.fn().mockResolvedValue({
-      provider: "test-provider",
-      recordsSynced: 5,
-      errors: [],
-      duration: 100,
-    } satisfies SyncResult),
-    ...overrides,
-  };
-}
-
-// Helper to call processSyncJob with a mock job.
-// processSyncJob accepts any object with .data and .updateProgress (SyncJob interface).
-function runSyncJob(job: MockJob, db: SyncDatabase) {
-  return processSyncJob(job, db);
-}
-
-describe("processSyncJob", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockProviderRateLimitCooldownRecords.clear();
-    // Restore default return values after clearAllMocks
-    mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockGetProvider.mockReturnValue(undefined);
-    mockIsSyncEligibleProvider.mockReturnValue(true);
-    mockLogSync.mockResolvedValue(undefined);
-    mockEnsureProvider.mockResolvedValue("test-id");
-    mockLoadTokens.mockResolvedValue({
-      accessToken: "valid",
-      refreshToken: "refresh",
-      expiresAt: new Date("2099-01-01"),
-      scopes: null,
-    });
-    mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
-    mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
-    mockProviderQueueAdd.mockResolvedValue(undefined);
-  });
-
+describe("process-sync-job", () => {
+  beforeEach(resetSyncMocks);
   afterEach(() => {
-    // Restore real timers so a test that throws before its own useRealTimers()
-    // can't leak the fake clock into later tests.
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it("syncs all valid providers when no providerId specified", async () => {
+  it("requires a durable coordinator job ID", async () => {
+    const job = createMockJob();
+    delete job.id;
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow(
+      "Shared sync coordination requires a BullMQ job ID",
+    );
+  });
+
+  it("requires the coordinator's actual BullMQ worker token", async () => {
+    const job = { ...createMockJob(), token: undefined };
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow(
+      "Shared sync coordination requires a BullMQ worker token",
+    );
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it.each(["sinceIso", "untilIso", "requestedAtIso"] as const)(
+    "resolves and persists a partially anchored request missing %s",
+    async (missing) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-21T06:30:00.000Z"));
+      mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+      const bounds = {
+        sinceIso: "2026-09-20T00:00:00.000Z",
+        untilIso: "2026-09-21T23:59:59.999Z",
+        requestedAtIso: "2026-09-21T06:30:00.000Z",
+      };
+      const job = createMockJob({ sinceDays: 1, ...bounds, [missing]: undefined });
+      const expectedBounds = {
+        ...bounds,
+        untilIso: missing === "untilIso" ? bounds.requestedAtIso : bounds.untilIso,
+      };
+      await runSyncJob(job, mockDb);
+      expect(job.updateData).toHaveBeenCalledOnce();
+      expect(job.updateData).toHaveBeenCalledWith(expect.objectContaining(expectedBounds));
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining(expectedBounds),
+        expect.any(Object),
+      );
+    },
+  );
+
+  it("uses fully persisted bounds on retry without rewriting them", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-05T15:00:00.000Z"));
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    const bounds = {
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+      requestedAtIso: "2026-09-21T06:30:00.000Z",
+    };
+    const job = createMockJob({ sinceDays: 1, ...bounds });
+    job.attemptsMade = 1;
+    await runSyncJob(job, mockDb);
+    expect(job.updateData).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining(bounds),
+      expect.any(Object),
+    );
+  });
+
+  it("persists absolute bounds before dispatch and preserves them on a later retry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-21T06:30:00.000Z"));
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ id: "a" }),
+      createMockProvider({ id: "b" }),
+    ]);
+    const error = new Error("Redis enqueue unavailable");
+    mockProviderQueueAdd
+      .mockResolvedValueOnce({ getState: vi.fn().mockResolvedValue("waiting"), remove: vi.fn() })
+      .mockRejectedValueOnce(error);
+    const job = createMockJob({ origin: "scheduled", sinceDays: 1 });
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
+    const firstWindow = { sinceIso: job.data.sinceIso, untilIso: job.data.untilIso };
+    expect(firstWindow).toEqual({
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+    });
+    const childId = z
+      .object({ jobId: z.string() })
+      .parse(mockProviderQueueAdd.mock.calls[0]?.[2]).jobId;
+    job.getDependencies.mockResolvedValue({ processed: { [`bull:sync-a:${childId}`]: null } });
+    mockProviderQueueAdd.mockClear();
+    mockProviderQueueGetJob.mockResolvedValue(undefined); // Completed child has been removed by retention.
+    vi.setSystemTime(new Date("2026-09-22T18:00:00.000Z"));
+    await runSyncJob(job, mockDb);
+    expect(mockProviderQueueAdd).toHaveBeenCalledOnce();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "b",
+        ...firstWindow,
+        requestedAtIso: "2026-09-21T06:30:00.000Z",
+      }),
+      expect.any(Object),
+    );
+    expect(job.moveToWaitingChildren).toHaveBeenCalledWith("sync-token");
+  });
+
+  it("recovers a lost enqueue acknowledgement after the completed child is pruned", async () => {
+    const child = { getState: vi.fn().mockResolvedValue("completed"), remove: vi.fn() };
+    const queuedChildren = new Map<string, typeof child>();
+    mockProviderQueueAdd.mockImplementation(
+      async (_name: unknown, _data: unknown, options: unknown) => {
+        queuedChildren.set(z.object({ jobId: z.string() }).parse(options).jobId, child);
+        throw new Error("Enqueue acknowledgement lost");
+      },
+    );
+    mockProviderQueueGetJob.mockImplementation(async (id: unknown) =>
+      queuedChildren.get(String(id)),
+    );
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ id: "a" }),
+      createMockProvider({ id: "b" }),
+    ]);
+    const job = createMockJob({
+      requestedAtIso: "2026-09-21T06:30:00.000Z",
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+    });
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow("Enqueue acknowledgement lost");
+    expect(mockProviderQueueAdd).toHaveBeenCalledTimes(1);
+    const childId = [...queuedChildren.keys()][0];
+    queuedChildren.clear();
+    job.getDependencies.mockResolvedValue({ processed: { [`bull:sync-a:${childId}`]: null } });
+    mockProviderQueueAdd.mockResolvedValue(child);
+    await runSyncJob(job, mockDb);
+    expect(mockProviderQueueAdd).toHaveBeenCalledTimes(2);
+    expect(child.remove).not.toHaveBeenCalled();
+    expect(job.moveToWaitingChildren).toHaveBeenCalledWith("sync-token");
+  });
+
+  it("moves the coordinator to waiting-children without treating it as a failure", async () => {
+    const job = createMockJob();
+    job.moveToWaitingChildren.mockResolvedValue(true);
+    await expect(runSyncJob(job, mockDb)).rejects.toMatchObject({ name: "WaitingChildrenError" });
+  });
+
+  it.each(["processed", "ignored", "unprocessed", "failed"])(
+    "reuses a %s dependency when the child queue record is gone",
+    async (state) => {
+      mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+      const job = createMockJob();
+      await runSyncJob(job, mockDb);
+      const childId = z
+        .object({ jobId: z.string() })
+        .parse(mockProviderQueueAdd.mock.calls[0]?.[2]).jobId;
+      const childKey = `bull:provider:${childId}`;
+      job.getDependencies.mockResolvedValue({
+        [state]: state === "processed" || state === "ignored" ? { [childKey]: null } : [childKey],
+      });
+      mockProviderQueueAdd.mockClear();
+      mockProviderQueueGetJob.mockResolvedValue(undefined);
+      await runSyncJob(job, mockDb);
+      expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    },
+  );
+
+  it("checks cancellation after acquiring the coordinator write fence", async () => {
+    let releaseFence!: () => void;
+    let enteredFence!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredFence = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseFence = resolve;
+    });
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => {
+        enteredFence();
+        await gate;
+        return operation(database);
+      },
+    );
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    const controller = new AbortController();
+    const reason = new DOMException("Coordinator cancelled", "AbortError");
+    const result = runSyncJob(createMockJob(), mockDb, controller.signal);
+    await entered;
+    controller.abort(reason);
+    releaseFence();
+    await expect(result).rejects.toBe(reason);
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("rejects a pre-aborted sync before provider or post-sync work", async () => {
+    const provider = createMockProvider();
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled before start", "AbortError");
+    controller.abort(reason);
+
+    await expect(runSyncJob(createMockJob(), mockDb, controller.signal)).rejects.toBe(reason);
+
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("logs a cancel SyncResult with no commits and skips post-sync maintenance", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled during sync", "AbortError");
+    const provider = createMockProvider({
+      sync: vi.fn(async () => {
+        controller.abort(reason);
+        return {
+          provider: "test-provider",
+          recordsSynced: 0,
+          errors: [{ message: "Sync cancelled", cause: reason }],
+          duration: 1,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal);
+
+    expect(mockInvalidateAllUserQueries).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledOnce();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("invalidates and logs when a cancel SyncResult includes committed records", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled after commits", "AbortError");
+    const provider = createMockProvider({
+      sync: vi.fn(async () => {
+        controller.abort(reason);
+        return {
+          provider: "test-provider",
+          recordsSynced: 3,
+          errors: [{ message: "Sync cancelled", cause: reason }],
+          duration: 1,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal);
+
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "test-provider",
+        errorMessage: "Sync cancelled",
+        recordCount: 3,
+      }),
+    );
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("skips post-sync work when cancellation arrives without a provider", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled before post-sync", "AbortError");
+    const job = createMockJob();
+    job.updateProgress.mockImplementationOnce(async () => {
+      controller.abort(reason);
+    });
+
+    await expect(runSyncJob(job, mockDb, controller.signal)).rejects.toBe(reason);
+
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("dispatches a dedicated job for every eligible provider", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
     const providerB = createMockProvider({ id: "b", name: "Provider B" });
     mockGetEnabledSyncProviders.mockReturnValue([providerA, providerB]);
 
-    await runSyncJob(createMockJob(), mockDb);
+    const job = createMockJob();
+    const progress: object[] = [];
+    job.updateProgress.mockImplementation(async (value: object) => {
+      progress.push(structuredClone(value));
+    });
+    await runSyncJob(job, mockDb);
 
-    expect(providerA.sync).toHaveBeenCalledOnce();
-    expect(providerB.sync).toHaveBeenCalledOnce();
+    expect(progress).toEqual([
+      { providers: { a: { status: "pending" }, b: { status: "pending" } }, percentage: 0 },
+      {
+        providers: {
+          a: { status: "done", message: "Provider sync queued" },
+          b: { status: "pending" },
+        },
+        percentage: 50,
+      },
+      {
+        providers: {
+          a: { status: "done", message: "Provider sync queued" },
+          b: { status: "done", message: "Provider sync queued" },
+        },
+        percentage: 100,
+      },
+    ]);
+    expect(mockProviderQueueAdd).toHaveBeenCalledTimes(2);
+    expect(mockProviderQueueAdd).toHaveBeenNthCalledWith(
+      1,
+      "sync",
+      expect.objectContaining({
+        providerId: "a",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+      }),
+      expect.objectContaining({
+        attempts: 288,
+        parent: { id: "coordinator-1", queue: "bull:sync" },
+        ignoreDependencyOnFailure: true,
+      }),
+    );
+    expect(mockProviderQueueAdd).toHaveBeenNthCalledWith(
+      2,
+      "sync",
+      expect.objectContaining({
+        providerId: "b",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+      }),
+      expect.objectContaining({
+        attempts: 288,
+        parent: { id: "coordinator-1", queue: "bull:sync" },
+        ignoreDependencyOnFailure: true,
+      }),
+    );
+    expect(providerA.sync).not.toHaveBeenCalled();
+    expect(providerB.sync).not.toHaveBeenCalled();
   });
 
-  it("filters out invalid providers", async () => {
+  it("dispatches only the enabled provider list", async () => {
     const valid = createMockProvider({ id: "valid", name: "Valid" });
     mockGetEnabledSyncProviders.mockReturnValue([valid]);
 
     await runSyncJob(createMockJob(), mockDb);
 
-    expect(valid.sync).toHaveBeenCalledOnce();
+    expect(mockProviderQueueAdd).toHaveBeenCalledOnce();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ providerId: "valid" }),
+      expect.any(Object),
+    );
   });
 
   it("syncs only the specified provider when providerId is given", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
     const providerB = createMockProvider({ id: "b", name: "Provider B" });
     mockGetEnabledSyncProviders.mockReturnValue([providerA, providerB]);
+    mockGetProvider.mockReturnValue(providerB);
 
     await runSyncJob(createMockJob({ providerId: "b" }), mockDb);
 
@@ -295,264 +411,6 @@ describe("processSyncJob", () => {
     );
   });
 
-  it("records provider rate-limit cooldown records and schedules a deterministic delayed retry", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      sync: vi.fn().mockRejectedValue(
-        new ProviderRateLimitError({
-          message: "Garmin API rate limit exceeded (429): limited",
-          providerId: "garmin",
-          statusCode: 429,
-          responseBody: "limited",
-          scope: "provider",
-          retryAfterSeconds: 600,
-        }),
-      ),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
-    await runSyncJob(job, mockDb);
-
-    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
-      "sync",
-      {
-        providerId: "garmin",
-        userId: "user-1",
-        sinceDays: 1,
-        sinceIso: "2026-06-01T00:00:00.000Z",
-        untilIso: "2026-06-02T23:59:59.999Z",
-      },
-      expect.objectContaining({
-        attempts: 288,
-        delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
-      }),
-    );
-    expect(mockCaptureException).not.toHaveBeenCalledWith(
-      expect.any(ProviderRateLimitError),
-      expect.anything(),
-    );
-
-    // The rate-limited provider counts as completed (1/1 → 100%) and its status
-    // is reported as running with the retry message.
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      providers: {
-        garmin: { status: "running", message: expect.stringContaining("retry scheduled") },
-      },
-      percentage: 100,
-    });
-
-    // The 429 is logged as an error with the provider's message and the elapsed
-    // duration (0 under frozen time — guards against Date.now() + syncStart).
-    expect(mockLogSync).toHaveBeenCalledWith(mockDb, {
-      providerId: "garmin",
-      dataType: "sync",
-      status: "error",
-      errorMessage: "Garmin API rate limit exceeded (429): limited",
-      durationMs: 0,
-      userId: "user-1",
-    });
-
-    // Metrics are tagged with the provider, not an empty options object.
-    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
-      provider: "garmin",
-      data_type: "sync",
-      status: "error",
-    });
-    expect(mockSyncDuration.record).toHaveBeenCalledWith(0, {
-      provider: "garmin",
-      data_type: "sync",
-    });
-    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
-      provider: "garmin",
-      data_type: "sync",
-    });
-    vi.useRealTimers();
-  });
-
-  it("requeues a rate-limited run with the resolved absolute since timestamp", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      sync: vi.fn().mockRejectedValue(
-        new ProviderRateLimitError({
-          message: "Garmin API rate limit exceeded (429): limited",
-          providerId: "garmin",
-          statusCode: 429,
-          responseBody: "limited",
-          scope: "provider",
-          retryAfterSeconds: 600,
-        }),
-      ),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 7 });
-    await runSyncJob(job, mockDb);
-
-    // The original run resolved a 7-day window ending at the end of the sync day.
-    const expectedWindow = SyncWindow.lastDays(7, { now: new Date("2026-06-02T12:00:00Z") });
-    const firstCall = mockProviderQueueAdd.mock.calls[0];
-    expect(firstCall).toBeDefined();
-    const requeuedData = MockJobDataSchema.parse(firstCall?.[1]);
-    expect(requeuedData.sinceIso).toBe(expectedWindow.sinceIso);
-    expect(requeuedData.untilIso).toBe(expectedWindow.untilIso);
-
-    // The delayed retry resolves the same absolute window from persisted ISO timestamps.
-    vi.setSystemTime(new Date("2026-06-02T12:30:00Z"));
-    const retryProvider = createMockProvider({ id: "garmin", name: "Garmin" });
-    mockGetEnabledSyncProviders.mockReturnValue([retryProvider]);
-    await runSyncJob(createMockJob(requeuedData), mockDb);
-
-    expect(retryProvider.sync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        db: mockDb,
-        window: expectedWindow,
-        options: expect.objectContaining({
-          onProgress: expect.any(Function),
-          userId: "user-1",
-        }),
-      }),
-    );
-    vi.useRealTimers();
-  });
-
-  it("schedules a delayed retry when a sync result returns a rate-limit error", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const rateLimitError = new ProviderRateLimitError({
-      message: "Garmin API rate limit exceeded (429): limited",
-      providerId: "garmin",
-      statusCode: 429,
-      responseBody: "limited",
-      scope: "provider",
-      retryAfterSeconds: 600,
-    });
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      sync: vi.fn().mockResolvedValue({
-        provider: "garmin",
-        recordsSynced: 0,
-        errors: [{ message: rateLimitError.message, cause: rateLimitError }],
-        duration: 100,
-      } satisfies SyncResult),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
-    await runSyncJob(job, mockDb);
-
-    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
-      "sync",
-      expect.objectContaining({
-        providerId: "garmin",
-        userId: "user-1",
-        sinceIso: "2026-06-01T00:00:00.000Z",
-        untilIso: "2026-06-02T23:59:59.999Z",
-      }),
-      expect.objectContaining({
-        delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
-      }),
-    );
-    expect(mockCaptureException).not.toHaveBeenCalled();
-    vi.useRealTimers();
-  });
-
-  it("defers sync without calling the provider when a rate-limit cooldown is already active", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      sync: vi.fn(),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
-    await providerRateLimitCooldownStore.record(
-      new ProviderRateLimitError({
-        message: "Garmin API rate limit exceeded (429): limited",
-        providerId: "garmin",
-        statusCode: 429,
-        responseBody: "limited",
-        scope: "provider",
-        retryAfterSeconds: 600,
-      }),
-      "user-1",
-    );
-
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
-    await runSyncJob(job, mockDb);
-
-    expect(provider.sync).not.toHaveBeenCalled();
-    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
-      "sync",
-      expect.objectContaining({
-        providerId: "garmin",
-        userId: "user-1",
-        sinceIso: "2026-06-01T00:00:00.000Z",
-        untilIso: "2026-06-02T23:59:59.999Z",
-      }),
-      expect.objectContaining({
-        delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
-      }),
-    );
-    expect(mockLogSync).not.toHaveBeenCalled();
-    expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      providers: {
-        garmin: {
-          status: "running",
-          message: "Rate limited; retry scheduled for 2026-06-02T12:10:00.000Z",
-        },
-      },
-      percentage: 100,
-    });
-    vi.useRealTimers();
-  });
-
-  it("skips disconnected OAuth providers before active cooldown deferral", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      authSetup: () => undefined,
-      sync: vi.fn(),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    mockLoadTokens.mockResolvedValue(null);
-
-    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
-    await providerRateLimitCooldownStore.record(
-      new ProviderRateLimitError({
-        message: "Garmin API rate limit exceeded (429): limited",
-        providerId: "garmin",
-        statusCode: 429,
-        responseBody: "limited",
-        scope: "provider",
-        retryAfterSeconds: 600,
-      }),
-      "user-1",
-    );
-
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
-    await runSyncJob(job, mockDb);
-
-    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "garmin", "user-1");
-    expect(provider.sync).not.toHaveBeenCalled();
-    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      providers: { garmin: { status: "done", message: "Skipped — not connected" } },
-      percentage: 100,
-    });
-    vi.useRealTimers();
-  });
-
   it("skips import-only providers when enqueued by id", async () => {
     mockGetProvider.mockReturnValue({ id: "strong-csv", importOnly: true });
     mockIsSyncEligibleProvider.mockReturnValue(false);
@@ -566,630 +424,229 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("updates job progress through pending → running → done states", async () => {
-    const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    // Capture snapshots since the status object is mutated in place
-    const progressSnapshots: Array<Record<string, unknown>> = [];
-    const job = createMockJob();
-    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
-      progressSnapshots.push(structuredClone(data));
-      return Promise.resolve();
+  it("processes a notification provider excluded from polling", async () => {
+    const syncWebhookEvent = vi.fn().mockResolvedValue({
+      provider: "garmin",
+      recordsSynced: 1,
+      errors: [],
+      duration: 1,
     });
-
-    await runSyncJob(job, mockDb);
-
-    expect(progressSnapshots).toHaveLength(3);
-    expect(progressSnapshots[0]).toEqual({
-      providers: { test: { status: "pending" } },
-      percentage: 0,
-    });
-    expect(progressSnapshots[1]).toEqual({
-      providers: { test: { status: "running" } },
-      percentage: 0,
-    });
-    expect(progressSnapshots[2]).toEqual({
-      providers: { test: { status: "done", message: "5 synced" } },
-      percentage: 100,
-    });
-  });
-
-  it("logs success to sync log with userId", async () => {
-    const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob({ userId: "user-1" }), mockDb);
-
-    expect(mockLogSync).toHaveBeenCalledWith(
+    const provider = {
+      ...createMockProvider({ id: "garmin" }),
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent,
+    };
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetProvider.mockReturnValue(provider);
+    mockIsSyncEligibleProvider.mockReturnValue(false);
+    const webhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update" as const,
+      objectType: "dailies",
+    };
+    await runSyncJob(createMockJob({ providerId: "garmin", webhookEvent }), mockDb);
+    expect(syncWebhookEvent).toHaveBeenCalledWith(
       mockDb,
-      expect.objectContaining({
-        providerId: "test",
-        dataType: "sync",
-        status: "success",
-        recordCount: 5,
-        errorMessage: undefined,
-        userId: "user-1",
-      }),
+      webhookEvent,
+      expect.objectContaining({ userId: "user-1" }),
     );
   });
 
-  it("logs errors to sync log when provider.sync throws", async () => {
-    const provider = createMockProvider({
-      id: "broken",
-      name: "Broken",
-      sync: vi.fn().mockRejectedValue(new Error("API timeout")),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const progressSnapshots: Array<Record<string, unknown>> = [];
-    const job = createMockJob();
-    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
-      progressSnapshots.push(structuredClone(data));
-      return Promise.resolve();
-    });
-
-    // Should not throw — errors are caught per-provider
-    await runSyncJob(job, mockDb);
-
-    expect(mockLogSync).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({
-        providerId: "broken",
-        dataType: "sync",
-        status: "error",
-        errorMessage: "API timeout",
-        durationMs: expect.any(Number),
-        userId: "user-1",
-      }),
-    );
-
-    // Verify error status was reported in progress with the error message
-    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
-    expect(lastSnapshot).toEqual({
-      providers: { broken: { status: "error", message: "API timeout" } },
-      percentage: 100,
-    });
-  });
-
-  it("reports error status with message when sync has errors", async () => {
-    const provider = createMockProvider({
-      id: "partial",
-      name: "Partial",
-      sync: vi.fn().mockResolvedValue({
-        provider: "partial",
-        recordsSynced: 3,
-        errors: [{ message: "bad record 1" }, { message: "bad record 2" }],
-        duration: 50,
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const progressSnapshots: Array<Record<string, unknown>> = [];
-    const job = createMockJob();
-    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
-      progressSnapshots.push(structuredClone(data));
-      return Promise.resolve();
-    });
-
-    await runSyncJob(job, mockDb);
-
-    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
-    expect(lastSnapshot).toEqual({
-      providers: { partial: { status: "error", message: "3 synced, 2 errors" } },
-      percentage: 100,
-    });
-
-    // Verify errors are joined with "; " separator
-    expect(mockLogSync).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({
-        providerId: "partial",
-        status: "error",
-        errorMessage: "bad record 1; bad record 2",
-        userId: "user-1",
-      }),
-    );
-
-    // Verify each error is logged individually via Winston
-    expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
-    expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
-  });
-
-  it("reports thrown sync errors to Sentry", async () => {
-    const thrownError = new Error("API timeout");
-    const provider = createMockProvider({
-      id: "broken",
-      name: "Broken",
-      sync: vi.fn().mockRejectedValue(thrownError),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockCaptureException).toHaveBeenCalledWith(thrownError, {
-      tags: { provider: "broken" },
-    });
-  });
-
-  it("does not report thrown expired access token errors to Sentry", async () => {
-    const expiredTokenError = new AccessTokenExpiredError("Wahoo");
-    const provider = createMockProvider({
-      id: "wahoo",
-      name: "Wahoo",
-      sync: vi.fn().mockRejectedValue(expiredTokenError),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(mockLogSync).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({
-        providerId: "wahoo",
-        status: "error",
-        errorMessage: expiredTokenError.message,
-        authFailureReason: "access_token_expired",
-      }),
-    );
-  });
-
-  it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {
-    const infraError = new Error("FATAL: the database system is in recovery mode");
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      sync: vi.fn().mockRejectedValue(infraError),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
+  it("skips polling a notification provider when a stale job has no event", async () => {
+    const provider = {
+      ...createMockProvider({ id: "garmin" }),
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn(),
+    };
+    mockGetProvider.mockReturnValue(provider);
+    mockIsSyncEligibleProvider.mockReturnValue(false);
     const job = createMockJob({ providerId: "garmin" });
-
-    await expect(runSyncJob(job, mockDb)).rejects.toThrow("database system is in recovery mode");
-
-    expect(mockLogSync).not.toHaveBeenCalled();
-    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
-    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    await runSyncJob(job, mockDb);
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: { status: "done", message: "Data arrives automatically from this provider" },
+      },
+      percentage: 100,
+    });
+    expect(provider.sync).not.toHaveBeenCalled();
   });
 
-  it("reports returned sync errors to Sentry", async () => {
-    const cause = new Error("original cause");
-    const provider = createMockProvider({
-      id: "partial",
-      name: "Partial",
-      sync: vi.fn().mockResolvedValue({
-        provider: "partial",
-        recordsSynced: 3,
-        errors: [{ message: "bad record 1", cause }, { message: "bad record 2" }],
-        duration: 50,
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+  it("rejects notification processing when the push provider is misconfigured", async () => {
+    const provider = {
+      ...createMockProvider({ id: "garmin", validate: () => "GARMIN_CLIENT_ID is required" }),
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn(),
+    };
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetProvider.mockReturnValue(provider);
+    const webhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update" as const,
+      objectType: "dailies",
+    };
 
-    await runSyncJob(createMockJob(), mockDb);
-
-    // First error: uses the cause as the exception
-    expect(mockCaptureException).toHaveBeenCalledWith(cause, {
-      tags: { provider: "partial" },
-    });
-    // Second error: creates an Error from the message
-    expect(mockCaptureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "bad record 2" }),
-      { tags: { provider: "partial" } },
-    );
+    await expect(
+      runSyncJob(createMockJob({ providerId: "garmin", webhookEvent }), mockDb),
+    ).rejects.toThrow("Provider not configured: GARMIN_CLIENT_ID is required");
+    expect(provider.syncWebhookEvent).not.toHaveBeenCalled();
+    expect(provider.sync).not.toHaveBeenCalled();
   });
 
-  it("does not report returned provider auth errors to Sentry", async () => {
-    const cause = new RefreshTokenRevokedError("Withings");
-    const provider = createMockProvider({
-      id: "withings",
-      name: "Withings",
-      sync: vi.fn().mockResolvedValue({
-        provider: "withings",
-        recordsSynced: 0,
-        errors: [{ message: cause.message, cause }],
-        duration: 50,
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(mockLogSync).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({
-        providerId: "withings",
-        status: "error",
-        errorMessage: cause.message,
-        authFailureReason: "refresh_token_revoked",
-      }),
-    );
-  });
-
-  it("calls ensureProvider for each synced provider", async () => {
-    const provider = createMockProvider({ id: "test", name: "Test Provider" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockEnsureProvider).toHaveBeenCalledWith(
-      mockDb,
-      "test",
-      "Test Provider",
-      undefined,
-      "user-1",
-    );
+  it("rejects a webhook job for an unregistered provider", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetProvider.mockReturnValue(undefined);
+    const webhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update" as const,
+      objectType: "dailies",
+    };
+    await expect(
+      runSyncJob(createMockJob({ providerId: "missing", webhookEvent }), mockDb),
+    ).rejects.toThrow("Unknown provider: missing");
   });
 
   it("enqueues debounced global maintenance and per-user refit after sync", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
 
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+  });
+
+  it("enqueues a continuation job and skips post-sync when sync returns continued", async () => {
+    const continuationCheckpoint = { phase: "api", apiStepIndex: 2 };
+    const provider = createMockProvider({
+      id: "whoop",
+      name: "WHOOP",
+      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
+        await run.options.enqueueSyncContinuation?.(continuationCheckpoint);
+        return {
+          provider: "whoop",
+          recordsSynced: 4,
+          errors: [],
+          duration: 12,
+          continued: true,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "whoop" });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "whoop",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+        checkpoint: continuationCheckpoint,
+      }),
+      expect.any(Object),
+    );
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+    expect(job.updateProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: { whoop: { status: "running", message: "4 synced so far" } },
+      }),
+    );
+  });
+
+  it("does not enqueue a user refit after cancellation while waiting for the write fence", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    let releaseFence!: () => void;
+    let markFenceEntered!: () => void;
+    const fenceEntered = new Promise<void>((resolve) => {
+      markFenceEntered = resolve;
+    });
+    const fenceGate = new Promise<void>((resolve) => {
+      releaseFence = resolve;
+    });
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => {
+        markFenceEntered();
+        await fenceGate;
+        return operation(database);
+      },
+    );
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled before user refit", "AbortError");
+
+    const syncPromise = runSyncJob(
+      createMockJob({ providerId: "test-provider" }),
+      mockDb,
+      controller.signal,
+    );
+    await fenceEntered;
+    controller.abort(reason);
+    releaseFence();
+
+    await expect(syncPromise).rejects.toBe(reason);
+    expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
 
   it("continues when global post-sync enqueue fails", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
+    const enqueueError = new Error("queue gone");
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(enqueueError);
 
     // Should not throw
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue global post-sync maintenance"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-global-maintenance-enqueue" },
+    });
   });
 
   it("continues when per-user refit enqueue fails", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
+    const enqueueError = new Error("queue gone");
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    mockEnqueueDebouncedUserRefit.mockRejectedValue(enqueueError);
 
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue user refit"),
     );
-  });
-
-  it("relays within-provider progress to job.updateProgress with correct percentage", async () => {
-    // Provider that calls the onProgress callback during sync
-    const provider = createMockProvider({
-      id: "test",
-      name: "Test",
-      sync: vi.fn().mockImplementation(async (run: SyncRun) => {
-        run.options?.onProgress?.(50, "5/10 activities");
-        return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const progressSnapshots: Array<Record<string, unknown>> = [];
-    const job = createMockJob();
-    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
-      progressSnapshots.push(structuredClone(data));
-      return Promise.resolve();
-    });
-
-    await runSyncJob(job, mockDb);
-
-    // With 1 provider: within-provider 50% should yield 50% overall
-    const withinProviderSnapshot = progressSnapshots.find(
-      (s) => "percentage" in s && s.percentage === 50,
-    );
-    expect(withinProviderSnapshot).toBeDefined();
-    expect(withinProviderSnapshot).toMatchObject({
-      providers: { test: { status: "running", message: "5/10 activities" } },
-      percentage: 50,
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-user-refit-enqueue" },
     });
   });
 
-  it("computes percentage across multiple providers", async () => {
-    const providerA = createMockProvider({ id: "a", name: "A" });
-    const providerB = createMockProvider({ id: "b", name: "B" });
-    mockGetEnabledSyncProviders.mockReturnValue([providerA, providerB]);
-
-    const progressSnapshots: Array<Record<string, unknown>> = [];
-    const job = createMockJob();
-    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
-      progressSnapshots.push(structuredClone(data));
-      return Promise.resolve();
+  it("does not swallow cancellation during the final post-sync enqueue", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled during post-sync", "AbortError");
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    mockEnqueueDebouncedUserRefit.mockImplementationOnce(async () => {
+      controller.abort(reason);
+      throw reason;
     });
 
-    await runSyncJob(job, mockDb);
+    await expect(
+      runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal),
+    ).rejects.toBe(reason);
 
-    // After first provider completes: 50%, after second: 100%
-    const percentages = progressSnapshots.map((s) =>
-      "percentage" in s ? s.percentage : undefined,
-    );
-    expect(percentages[percentages.length - 1]).toBe(100);
-    // After first provider done, before second starts running
-    expect(percentages).toContain(50);
-  });
-
-  it("computes since date from sinceDays", async () => {
-    const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const now = new Date("2026-06-18T15:00:00.000Z");
-    vi.spyOn(Date, "now").mockReturnValue(now.getTime());
-
-    await runSyncJob(createMockJob({ sinceDays: 30 }), mockDb);
-
-    const expectedWindow = SyncWindow.lastDays(30, { now });
-    expect(provider.sync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        db: mockDb,
-        window: expectedWindow,
-        options: expect.objectContaining({
-          onProgress: expect.any(Function),
-          userId: "user-1",
-        }),
-      }),
-    );
-  });
-
-  it("uses sinceIso instead of recomputing sinceDays on retry", async () => {
-    const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValue(now);
-    const sinceIso = "2026-03-15T12:00:00.000Z";
-
-    await runSyncJob(createMockJob({ sinceDays: 30, sinceIso }), mockDb);
-
-    expect(provider.sync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        db: mockDb,
-        window: SyncWindow.fromIsoRange({
-          sinceIso,
-          untilIso: new Date(now).toISOString(),
-        }),
-        options: expect.objectContaining({
-          onProgress: expect.any(Function),
-          userId: "user-1",
-        }),
-      }),
-    );
-  });
-
-  it("passes a Redis-backed checkpoint store to providers", async () => {
-    const initialCheckpoint = { phase: "sleep", nextDate: "2026-03-02" };
-    const savedCheckpoint = { phase: "daily_metrics", nextDate: "2026-03-03" };
-    const observedCheckpoints: unknown[] = [];
-    const provider = createMockProvider({
-      id: "garmin",
-      name: "Garmin",
-      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
-        const options = run.options;
-        observedCheckpoints.push(await options?.checkpoint?.load());
-        await options?.checkpoint?.save(savedCheckpoint);
-        return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const job = createMockJob({ providerId: "garmin", checkpoint: initialCheckpoint });
-
-    await runSyncJob(job, mockDb);
-
-    expect(observedCheckpoints).toEqual([initialCheckpoint]);
-    expect(job.updateData).toHaveBeenCalledWith({
-      providerId: "garmin",
-      userId: "user-1",
-      checkpoint: savedCheckpoint,
-    });
-    expect(job.data.checkpoint).toEqual(savedCheckpoint);
-  });
-
-  it("uses epoch when sinceDays is not provided", async () => {
-    const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const now = new Date("2026-06-18T15:00:00.000Z");
-    vi.spyOn(Date, "now").mockReturnValue(now.getTime());
-
-    await runSyncJob(createMockJob({}), mockDb);
-
-    expect(provider.sync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        db: mockDb,
-        window: SyncWindow.full(now),
-        options: expect.objectContaining({
-          onProgress: expect.any(Function),
-          userId: "user-1",
-        }),
-      }),
-    );
-  });
-
-  it("emits sync metrics on successful sync", async () => {
-    const provider = createMockProvider({ id: "garmin", name: "Garmin" });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockSyncRecordsTotal.add).toHaveBeenCalledWith(5, {
-      provider: "garmin",
-      data_type: "sync",
-      status: "success",
-    });
-    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
-      provider: "garmin",
-      data_type: "sync",
-      status: "success",
-    });
-    expect(mockSyncDuration.record).toHaveBeenCalledWith(expect.any(Number), {
-      provider: "garmin",
-      data_type: "sync",
-    });
-    expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
-  });
-
-  it("emits sync error metrics when sync has errors", async () => {
-    const provider = createMockProvider({
-      id: "partial",
-      name: "Partial",
-      sync: vi.fn().mockResolvedValue({
-        provider: "partial",
-        recordsSynced: 3,
-        errors: [{ message: "bad record 1" }, { message: "bad record 2" }],
-        duration: 50,
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockSyncRecordsTotal.add).toHaveBeenCalledWith(3, {
-      provider: "partial",
-      data_type: "sync",
-      status: "error",
-    });
-    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
-      provider: "partial",
-      data_type: "sync",
-      status: "error",
-    });
-    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(2, {
-      provider: "partial",
-      data_type: "sync",
-    });
-  });
-
-  it("emits sync error metrics when sync throws", async () => {
-    const provider = createMockProvider({
-      id: "broken",
-      name: "Broken",
-      sync: vi.fn().mockRejectedValue(new Error("API timeout")),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
-      provider: "broken",
-      data_type: "sync",
-      status: "error",
-    });
-    expect(mockSyncDuration.record).toHaveBeenCalledWith(expect.any(Number), {
-      provider: "broken",
-      data_type: "sync",
-    });
-    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
-      provider: "broken",
-      data_type: "sync",
-    });
-  });
-
-  it("skips providers without stored tokens and logs a message", async () => {
-    // Wahoo uses OAuth — has authSetup — so the token check applies
-    const provider = createMockProvider({
-      id: "wahoo",
-      name: "Wahoo",
-      authSetup: () => undefined,
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    mockLoadTokens.mockResolvedValue(null);
-
-    const progressSnapshots: Array<Record<string, unknown>> = [];
-    const job = createMockJob();
-    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
-      progressSnapshots.push(structuredClone(data));
-      return Promise.resolve();
-    });
-
-    await runSyncJob(job, mockDb);
-
-    // sync() should never be called
-    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockCaptureException).not.toHaveBeenCalled();
-
-    // Verify logger was called via the mocked logger
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Skipping Wahoo: not connected"),
-    );
-
-    // Should report skipped status
-    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
-    expect(lastSnapshot).toEqual({
-      providers: { wahoo: { status: "done", message: "Skipped — not connected" } },
-      percentage: 100,
-    });
-  });
-
-  it("syncs providers that have stored tokens", async () => {
-    // Strava uses OAuth — has authSetup — so the token check applies and tokens are present
-    const provider = createMockProvider({
-      id: "strava",
-      name: "Strava",
-      authSetup: () => undefined,
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    mockLoadTokens.mockResolvedValue({
-      accessToken: "valid",
-      refreshToken: "refresh",
-      expiresAt: new Date("2099-01-01"),
-      scopes: null,
-    });
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(provider.sync).toHaveBeenCalledOnce();
-    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "strava", "user-1");
-  });
-
-  it("skips unconnected providers but syncs connected ones", async () => {
-    const connected = createMockProvider({
-      id: "strava",
-      name: "Strava",
-      authSetup: () => undefined,
-    });
-    const unconnected = createMockProvider({
-      id: "wahoo",
-      name: "Wahoo",
-      authSetup: () => undefined,
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([connected, unconnected]);
-    mockLoadTokens.mockImplementation(async (_db: SyncDatabase, providerId: string) => {
-      if (providerId === "strava") {
-        return {
-          accessToken: "valid",
-          refreshToken: "refresh",
-          expiresAt: new Date("2099-01-01"),
-          scopes: null,
-        };
-      }
-      return null;
-    });
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    expect(connected.sync).toHaveBeenCalledOnce();
-    expect(unconnected.sync).not.toHaveBeenCalled();
-  });
-
-  it("always syncs providers without auth setup even when loadTokens returns null", async () => {
-    // Providers like AppleHealth have no authSetup — the token check must be skipped
-    const provider = createMockProvider({ id: "apple_health", name: "Apple Health" });
-    // No authSetup on the provider (default from createMockProvider)
-    expect(provider.authSetup).toBeUndefined();
-
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    mockLoadTokens.mockResolvedValue(null);
-
-    await runSyncJob(createMockJob(), mockDb);
-
-    // sync() should be called regardless of tokens
-    expect(provider.sync).toHaveBeenCalledOnce();
-    expect(mockLoadTokens).not.toHaveBeenCalled();
   });
 });

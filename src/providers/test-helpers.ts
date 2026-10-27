@@ -5,15 +5,195 @@
  * `SyncDatabase` mock — eliminating the need for type suppression
  * comments throughout provider test files.
  */
+import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { vi } from "vitest";
-import type { SyncDatabase } from "../db/index.ts";
+import { drizzleSchema } from "../db/drizzle-schema.ts";
+import type { SyncDatabase, TransactionDatabase } from "../db/index.ts";
+import type {
+  ProviderDataGenerationContext,
+  ProviderDataScope,
+} from "../db/provider-data-deletion.ts";
+import type { Database } from "../db/typed-sql.ts";
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamEventV1,
+  type MetricStreamEventV2,
   type MetricStreamRowInput,
 } from "../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+
+export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
+
+/** Synthetic fixtures for the published personal-logbook contract; not live API captures. */
+export function theCragAscent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "1001",
+    epoch: 1791676800,
+    date: "2026-10-10",
+    logDate: "2026-10-11",
+    climbedGearStyle: "sport",
+    tick: { label: "redpoint", name: "Redpoint" },
+    markdown: "Personal ascent notes",
+    historical: false,
+    cpr: null,
+    cprStyle: "sport",
+    tags: [],
+    pitch: [],
+    route: {
+      id: "2001",
+      name: "Sunset Arete",
+      grade: "5.10a",
+      gradeBand: 3,
+      gradeAtom: { grade: "5.10a", gradeBand: 3, type: "unverified-native-type" },
+      style: "Sport",
+      height: null,
+      displayHeight: null,
+      stars: 2,
+      bolts: 8,
+      urlAncestorStub: "/en/climbing/example-crag",
+      ancestors: {
+        country: { id: "3001", name: "United States", subType: "Country", depth: 1 },
+        TLC: { id: "3002", name: "Example Crag", subType: "Crag", depth: 4 },
+        parent: { id: "3003", name: "South Wall", subType: "Sector", depth: 5 },
+      },
+      tags: [],
+    },
+    ...overrides,
+  };
+}
+
+export function theCragPage(
+  ascents: Record<string, unknown>[],
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    data: {
+      account: { id: "123", name: "Climber", login: "climber" },
+      ascents,
+      numberAscents: ascents.length,
+      page: "1",
+      perPage: 250,
+      ...overrides,
+    },
+  };
+}
+
+export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    vscale: null,
+    yds: "5.10a",
+    ewbank: null,
+    french: null,
+    font: null,
+    uiaa: null,
+    brazilianCrux: null,
+    ...overrides,
+  };
+}
+
+export function kayaClimbFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "2001",
+    name: "Test problem",
+    lead: false,
+    climb_type: { id: "1", name: "Bouldering" },
+    grade: { id: "6", name: "V4", climb_type_group: "boulder" },
+    gym: { id: "4001", name: "Test Gym", latitude: 0, longitude: -122.25 },
+    destination: null,
+    area: null,
+    subarea: null,
+    board: null,
+    angle: null,
+    ...overrides,
+  };
+}
+export function kayaAscentFixture(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "3001",
+    session_id: "1000",
+    date: "2026-08-01T10:30:00Z",
+    attempts: null,
+    ascent_type: { id: "flash", name: "Flash" },
+    climb: kayaClimbFixture(),
+    ...overrides,
+  };
+}
+export function kayaSessionFixture(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "1000",
+    start_time: "2026-08-01T10:00:00Z",
+    end_time: "2026-08-01T11:00:00Z",
+    gym: { id: "4001", name: "Test Gym", latitude: 0, longitude: -122.25 },
+    attempted_climbs: [],
+    ...overrides,
+  };
+}
+
+export function openBetaClimb(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    uuid: "climb-uuid-1",
+    name: "Sunset Arete",
+    grades: openBetaGrades(),
+    type: { bouldering: false, sport: null, trad: null },
+    parent: { area_name: "Smith Rock" },
+    ...overrides,
+  };
+}
+
+export function openBetaTick(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    _id: "tick-1",
+    userId: OPENBETA_TEST_USER_UUID,
+    name: "Sunset Arete",
+    notes: "Great movement",
+    climbId: "climb-uuid-1",
+    style: "Lead",
+    attemptType: "Redpoint",
+    dateClimbed: 1786320000000,
+    grade: "5.10a",
+    source: "OB",
+    user: { username: "climber", displayName: "Climber" },
+    climb: openBetaClimb({ type: { trad: true, sport: false, bouldering: false } }),
+    ...overrides,
+  };
+}
+
+export function fakeJwt(expirationEpochSeconds: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.signature`;
+}
+
+export async function resolveProviderDataGenerationsForTest(
+  database: Database,
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGenerationContext> {
+  await database.execute(sql`SELECT 0 AS generation`);
+  return {
+    generations: scopes.map((scope) => ({ ...scope, generation: 0 })),
+    operationRevision: "1000000000000000",
+  };
+}
+
+export function makeTransactionalTestDatabase<
+  TDatabase extends Omit<SyncDatabase, "transaction"> &
+    Partial<Pick<TransactionDatabase, "query" | "update">>,
+>(database: TDatabase): TDatabase & TransactionDatabase {
+  const transaction: SyncDatabase["transaction"] = async (work) => work(transactionDb);
+  const transactionDb = Object.assign(database, {
+    query: database.query ?? drizzle.mock({ schema: drizzleSchema }).query,
+    update: database.update ?? vi.fn(),
+    transaction,
+  });
+  return transactionDb;
+}
 
 /**
  * Options for configuring the mock database behavior.
@@ -70,16 +250,16 @@ export function createCapturingMetricStreamPublisher(): CapturingMetricStreamPub
     publishedMetricStreamRows,
     deletedMetricStreamScopes,
     publisher: {
-      async publishRows(rows: readonly MetricStreamRowInput[]): Promise<MetricStreamEventV1[]> {
+      async publishRows(rows, options): Promise<MetricStreamEventV2[]> {
         publishedMetricStreamRows.push(...rows);
-        return rows.map((row) => createMetricStreamEvent(row));
+        return rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
       },
-      async replaceRows(scope, rows) {
+      async replaceRows(scope, rows, operationRevision) {
         publishedMetricStreamRows.push(...rows);
         deletedMetricStreamScopes.push(scope);
         return {
-          deleted: createMetricStreamDeletedEvent(scope),
-          rows: rows.map((row) => createMetricStreamEvent(row)),
+          deleted: createMetricStreamDeletedEvent(scope, operationRevision),
+          rows: rows.map((row) => createMetricStreamEvent(row, operationRevision)),
         };
       },
     },
@@ -155,12 +335,12 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   // Build the db object that structurally satisfies SyncDatabase.
   // We use a function-typed variable so TypeScript infers the mock
   // return values' chain types without needing type assertions.
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return { db, spies };
 }

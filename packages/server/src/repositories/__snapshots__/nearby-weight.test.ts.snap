@@ -1,0 +1,69 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`selectNearbyWeight > interpolates between two measurements within fourteen days 1`] = `
+{
+  "distance_days": 5,
+  "kind": "interpolated",
+  "method": "linear_interpolation",
+  "quality": "medium",
+  "sources": [
+    {
+      "date": "2026-06-10",
+      "measurement_kind": "direct",
+      "provider": "withings",
+      "recorded_at": "2026-06-10T08:00:00.000Z",
+      "source_record_id": "weight-2026-06-10",
+      "value_kg": 70,
+    },
+    {
+      "date": "2026-06-20",
+      "measurement_kind": "direct",
+      "provider": "withings",
+      "recorded_at": "2026-06-20T08:00:00.000Z",
+      "source_record_id": "weight-2026-06-20",
+      "value_kg": 72,
+    },
+  ],
+  "value_kg": 71,
+}
+`;
+
+exports[`selectNearbyWeight > prefers the earlier measurement when nearest dates tie 1`] = `
+{
+  "distance_days": 20,
+  "kind": "nearest",
+  "method": "nearest_within_30_days",
+  "quality": "low",
+  "sources": [
+    {
+      "date": "2026-05-26",
+      "measurement_kind": "direct",
+      "provider": "withings",
+      "recorded_at": "2026-05-26T08:00:00.000Z",
+      "source_record_id": "weight-2026-05-26",
+      "value_kg": 70,
+    },
+  ],
+  "value_kg": 70,
+}
+`;
+
+exports[`selectNearbyWeight > uses the latest valid same-day measured weight 1`] = `
+{
+  "distance_days": 0,
+  "kind": "measured",
+  "method": "same_day",
+  "quality": "high",
+  "sources": [
+    {
+      "date": "2026-06-15",
+      "measurement_kind": "direct",
+      "provider": "withings",
+      "recorded_at": "2026-06-15T09:00:00.000Z",
+      "source_record_id": "weight-2026-06-15",
+      "value_kg": 71,
+    },
+  ],
+  "value_kg": 71,
+}
+`;

@@ -1,8 +1,14 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls } = vi.hoisted<{
   metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
@@ -63,13 +69,15 @@ afterEach(() => {
 
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
+  AppleHealthImportValidationError,
   buildSourceNameMap,
   defaultConsoleProgress,
   extractExportXml,
-  findLatestExport,
   importAppleHealthFile,
   importClinicalRecords,
+  importMedicationDoseEvents,
   readZipEntries,
   runImport,
 } from "./import.ts";
@@ -215,8 +223,20 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   const deleteFn = vi.fn().mockReturnValue({ where: deleteWhere });
 
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  let insertedRowCount = 0;
+  const returning = vi
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(
+        Array.from({ length: insertedRowCount }, () => ({ id: "inserted-clinical-record" })),
+      ),
+    );
+  const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
+  const values = vi.fn().mockImplementation((records: unknown) => {
+    insertedRowCount = Array.isArray(records) ? records.length : 1;
+    return { onConflictDoUpdate, onConflictDoNothing };
+  });
   const insertFn = vi.fn().mockReturnValue({ values });
 
   // select().from().where() must be directly awaitable (returns Promise)
@@ -226,12 +246,12 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
 
   const execute = vi.fn().mockResolvedValue([]);
 
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return {
     db,
@@ -240,7 +260,9 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
       deleteWhere,
       insertFn,
       values,
+      onConflictDoUpdate,
       onConflictDoNothing,
+      returning,
       selectFn,
       selectFrom,
       selectWhere,
@@ -370,6 +392,539 @@ describe("importAppleHealthFile", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
+
+  it("imports medication dose events as raw provider records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-events", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-1",
+          startDate: "2026-06-29T15:30:00.000Z",
+          endDate: "2026-06-29T15:30:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+          sourceName: "Apple Health",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
+    const doseEventBatch = allValuesCalls.find((values) =>
+      Array.isArray(values) ? values.some((value) => value.medicationName === "rxnorm-123") : false,
+    );
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId: "dose-1",
+        medicationName: "rxnorm-123",
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "taken",
+        recordedAt: new Date("2026-06-29T15:30:00.000Z"),
+        providerId: "apple_health",
+        userId: "00000000-0000-0000-0000-000000000001",
+        sourceName: "Apple Health",
+        raw: expect.objectContaining({ uuid: "dose-1", logStatus: 1 }),
+      }),
+    ]);
+    expect(spies.onConflictDoUpdate).toHaveBeenCalled();
+  });
+
+  it("updates mutable medication dose fields when a provider event is reimported", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-update", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-1",
+          startDate: "2026-06-29T15:30:00.000Z",
+          endDate: "2026-06-29T15:30:00.000Z",
+          logStatus: "paused",
+          medicationDisplayName: "Metformin 500 mg",
+          medicationConceptIdentifier: "rxnorm-123",
+          sourceName: "Apple Health Watch",
+        }),
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result.errors).toHaveLength(0);
+    expect(spies.values).toHaveBeenCalledWith([
+      expect.objectContaining({
+        medicationName: "Metformin 500 mg",
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "paused",
+        recordedAt: new Date("2026-06-29T15:30:00.000Z"),
+        sourceName: "Apple Health Watch",
+        raw: expect.objectContaining({ uuid: "dose-1", logStatus: "paused" }),
+      }),
+    ]);
+    expect(spies.onConflictDoUpdate).toHaveBeenCalledWith({
+      target: expect.any(Array),
+      set: expect.objectContaining({
+        medicationName: expect.anything(),
+        medicationConceptId: expect.anything(),
+        doseStatus: expect.anything(),
+        recordedAt: expect.anything(),
+        sourceName: expect.anything(),
+        raw: expect.anything(),
+      }),
+    });
+  });
+
+  it("derives a stable external id for medication dose events without uuid", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-events-without-uuid", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 2,
+          medicationConceptIdentifier: "rxnorm-123",
+          sourceName: "Apple Health",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
+    const doseEventBatch = allValuesCalls.find((values) =>
+      Array.isArray(values)
+        ? values.some((value) =>
+            String(value.externalId).startsWith("apple-health-medication-dose:"),
+          )
+        : false,
+    );
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
+        medicationName: "rxnorm-123",
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "skipped",
+      }),
+    ]);
+    expect(spies.onConflictDoUpdate).toHaveBeenCalled();
+  });
+
+  it("uses display name and normalized fallback fields for medication dose events", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-display-name", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "   ",
+          logStatus: " paused ",
+          medicationConceptIdentifier: "   ",
+          medicationDisplayName: "  Vitamin D  ",
+          sourceName: "   ",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
+    const doseEventBatch = allValuesCalls.find((values) =>
+      Array.isArray(values) ? values.some((value) => value.medicationName === "Vitamin D") : false,
+    );
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:unscheduled:Vitamin D:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
+        medicationName: "Vitamin D",
+        medicationConceptId: null,
+        doseStatus: "paused",
+        sourceName: null,
+      }),
+    ]);
+  });
+
+  it("keeps fallback medication dose external ids stable when dose status changes", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-status-change", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 2,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result.errors).toHaveLength(0);
+    const doseEventBatch = spies.values.mock.calls.find(([values]) =>
+      Array.isArray(values)
+        ? values.some((value) => value.medicationConceptId === "rxnorm-123")
+        : false,
+    )?.[0];
+    expect(doseEventBatch).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          externalId:
+            "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
+          doseStatus: "taken",
+        }),
+        expect.objectContaining({
+          externalId:
+            "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-002.json",
+          doseStatus: "skipped",
+        }),
+      ]),
+    );
+    expect(doseEventBatch).toHaveLength(2);
+  });
+
+  it("preserves duplicate medication dose events without uuids by assigning distinct fallback external ids", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-fallback-collision", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+    spies.values.mockImplementationOnce((values) => ({
+      onConflictDoNothing: spies.onConflictDoNothing,
+      onConflictDoUpdate: async (config: unknown) => {
+        if (!Array.isArray(values)) {
+          return spies.onConflictDoUpdate(config);
+        }
+
+        const externalIds = values.map((value) => String(value.externalId));
+        if (new Set(externalIds).size !== externalIds.length) {
+          throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
+        }
+
+        return spies.onConflictDoUpdate(config);
+      },
+    }));
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 2, skipped: 0, errors: [] });
+    const doseEventBatch = spies.values.mock.calls[0]?.[0];
+    expect(doseEventBatch).toHaveLength(2);
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "taken",
+        raw: expect.not.objectContaining({ uuid: expect.any(String) }),
+      }),
+      expect.objectContaining({
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "taken",
+        raw: expect.not.objectContaining({ uuid: expect.any(String) }),
+      }),
+    ]);
+    const externalIds = Array.isArray(doseEventBatch)
+      ? doseEventBatch.map((value) => String(value.externalId))
+      : [];
+    expect(new Set(externalIds).size).toBe(2);
+    expect(externalIds[0]).not.toBe(externalIds[1]);
+  });
+
+  it("does not batch duplicate medication dose conflict keys into one upsert", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-duplicate-uuid", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "duplicate-dose-id",
+          startDate: "2026-06-29T15:30:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          uuid: "duplicate-dose-id",
+          startDate: "2026-06-29T15:30:00.000Z",
+          logStatus: 2,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+    spies.values.mockImplementation((values) => ({
+      onConflictDoNothing: spies.onConflictDoNothing,
+      onConflictDoUpdate: async (config: unknown) => {
+        if (Array.isArray(values)) {
+          const conflictKeys = values.map(
+            (value) => `${value.userId}:${value.providerId}:${value.externalId}`,
+          );
+          if (new Set(conflictKeys).size !== conflictKeys.length) {
+            throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
+          }
+        }
+
+        return spies.onConflictDoUpdate(config);
+      },
+    }));
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 2, skipped: 0, errors: [] });
+    expect(spies.values).toHaveBeenCalledWith([
+      expect.objectContaining({ externalId: "duplicate-dose-id" }),
+    ]);
+    expect(spies.values).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps string, custom, and unknown medication dose statuses from Apple Health", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-string-statuses", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-string-taken",
+          startDate: "2026-06-29T15:30:00.000Z",
+          logStatus: "1",
+          medicationConceptIdentifier: "rxnorm-taken",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          uuid: "dose-string-skipped",
+          startDate: "2026-06-29T16:30:00.000Z",
+          logStatus: "2",
+          medicationConceptIdentifier: "rxnorm-skipped",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-003.json",
+        content: JSON.stringify({
+          uuid: "dose-custom-status",
+          startDate: "2026-06-29T17:30:00.000Z",
+          logStatus: " deferred ",
+          medicationConceptIdentifier: "rxnorm-deferred",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-004.json",
+        content: JSON.stringify({
+          uuid: "dose-unknown-status",
+          startDate: "2026-06-29T18:30:00.000Z",
+          logStatus: 3,
+          medicationConceptIdentifier: "rxnorm-unknown",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 4, skipped: 0, errors: [] });
+    const doseEventBatch = spies.values.mock.calls.find(([values]) =>
+      Array.isArray(values)
+        ? values.some((value) => value.externalId === "dose-string-taken")
+        : false,
+    )?.[0];
+    expect(doseEventBatch).toHaveLength(4);
+    expect(doseEventBatch).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalId: "dose-string-taken", doseStatus: "taken" }),
+        expect.objectContaining({ externalId: "dose-string-skipped", doseStatus: "skipped" }),
+        expect.objectContaining({ externalId: "dose-custom-status", doseStatus: "deferred" }),
+        expect.objectContaining({ externalId: "dose-unknown-status", doseStatus: "unknown" }),
+      ]),
+    );
+  });
+
+  it("ignores zip entries that are not medication dose JSON files", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-entry-filter", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-valid-entry",
+          startDate: "2026-06-29T15:30:00.000Z",
+          medicationConceptIdentifier: "rxnorm-valid",
+        }),
+      },
+      {
+        name: "Observation-001.json",
+        content: "{not-json",
+      },
+      {
+        name: "MedicationDoseEvent-ignored.txt",
+        content: "{not-json",
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 1, skipped: 0, errors: [] });
+    expect(spies.values).toHaveBeenCalledTimes(1);
+    expect(spies.values.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ externalId: "dose-valid-entry" }),
+    ]);
+  });
+
+  it("inserts medication dose events in 500-row batches", async () => {
+    const doseEventFiles = Array.from({ length: 501 }, (_, index) => ({
+      name: `MedicationDoseEvent-${String(index).padStart(3, "0")}.json`,
+      content: JSON.stringify({
+        uuid: `dose-batch-${index}`,
+        startDate: new Date(Date.UTC(2026, 5, 29, 15, index)).toISOString(),
+        medicationConceptIdentifier: "rxnorm-batch",
+      }),
+    }));
+    const zipPath = createClinicalZip(tmpDir, "dose-event-batches", doseEventFiles);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 501, skipped: 0, errors: [] });
+    expect(spies.values).toHaveBeenCalledTimes(2);
+    expect(spies.values.mock.calls[0]?.[0]).toHaveLength(500);
+    expect(spies.values.mock.calls[1]?.[0]).toHaveLength(1);
+  });
+
+  it("returns zero medication dose counts when the export contains no dose files", async () => {
+    const zipPath = createEmptyZip(tmpDir, "dose-events-empty");
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 0, skipped: 0, errors: [] });
+    expect(spies.deleteFn).toHaveBeenCalledTimes(1);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(1);
+    expect(spies.insertFn).not.toHaveBeenCalled();
+  });
+
+  it("preserves medication records when a replacement includes both valid and invalid rows", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-partial", [
+      {
+        name: "MedicationDoseEvent-valid.json",
+        content: JSON.stringify({ uuid: "valid", startDate: "2026-09-01T12:00:00Z" }),
+      },
+      { name: "MedicationDoseEvent-invalid.json", content: "{invalid" },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("reports medication dose parse errors without inserting invalid dose rows", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-invalid-json", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: "{not-json",
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result.inserted).toBe(0);
+    expect(result.skipped).toBe(0);
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("MedicationDoseEvent"),
+      }),
+    ]);
+    expect(result.errors[0]?.message).toContain("MedicationDoseEvent-001.json");
+    expect(spies.insertFn).not.toHaveBeenCalled();
+  });
+
+  it("propagates invalid medication dose dates into the import result", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-invalid-date", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-invalid-date",
+          startDate: "not-a-date",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          uuid: "dose-invalid-date-type",
+          startDate: 123,
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-456",
+        }),
+      },
+    ]);
+    const { db } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors.map((error) => error.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "MedicationDoseEvent apple_health_export/clinical-records/MedicationDoseEvent-001.json: Invalid medication dose event startDate: not-a-date",
+        ),
+        expect.stringContaining("MedicationDoseEvent-002.json"),
+        expect.stringContaining("expected string"),
+      ]),
+    );
+  });
+
+  it("requires token user context for medication dose imports", async () => {
+    vi.resetModules();
+    vi.doMock("../../db/token-user-context.ts", () => ({
+      getTokenUserId: () => null,
+      runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+    }));
+    const { importMedicationDoseEvents: importMedicationDoseEventsWithoutUser } = await import(
+      "./import.ts"
+    );
+    const zipPath = createEmptyZip(tmpDir, "dose-event-no-user");
+    const { db } = createRunImportMockDb();
+
+    await expect(
+      importMedicationDoseEventsWithoutUser(db, "apple_health", zipPath),
+    ).rejects.toThrow("apple-health medication dose import requires user context");
+
+    vi.doMock("../../db/token-user-context.ts", () => ({
+      getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+      runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+    }));
+    vi.resetModules();
+  });
 });
 
 // ============================================================
@@ -391,12 +946,12 @@ function createRunImportMockDb() {
 
   const execute = vi.fn().mockResolvedValue([]);
 
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return {
     db,
@@ -559,12 +1114,12 @@ describe("runImport (control-flow mutation killers)", () => {
     const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoNothing });
     const insertFn = vi.fn().mockReturnValue({ values });
-    return {
+    return makeTransactionalTestDatabase({
       delete: deleteFn,
       insert: insertFn,
       select: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
   }
 
   it("routes each record bucket and accumulates exact synced counts", async () => {
@@ -579,6 +1134,7 @@ describe("runImport (control-flow mutation killers)", () => {
     const upsertWorkoutBatch = vi.fn().mockResolvedValue(3);
     const aggregateSpO2ToDailyMetrics = vi.fn().mockResolvedValue(undefined);
     const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+    const finishProviderActivityListSync = vi.fn().mockResolvedValue(undefined);
 
     vi.doMock("./db-insertion.ts", () => ({
       METRIC_STREAM_TYPES: { "metric.type": true },
@@ -596,6 +1152,14 @@ describe("runImport (control-flow mutation killers)", () => {
       aggregateSpO2ToDailyMetrics,
       aggregateSkinTempToDailyMetrics,
     }));
+
+    vi.doMock("../../db/provider-activity-sync.ts", async (importOriginal) => {
+      const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
+      return {
+        ...original,
+        finishProviderActivityListSync,
+      };
+    });
 
     vi.doMock("./streaming.ts", () => ({
       streamHealthExport: vi.fn(
@@ -617,9 +1181,11 @@ describe("runImport (control-flow mutation killers)", () => {
             { type: "unknown.type" },
           ]);
           await handlers.onSleepBatch([{}]);
-          await handlers.onWorkoutBatch([{}]);
+          await handlers.onWorkoutBatch([{ startDate: new Date("2026-03-01T10:00:00Z") }]);
           await handlers.onCategoryBatch([
             {
+              metadata: {},
+              sourceBundle: "com.example.watch",
               type: "category.type",
               value: "mindful",
               sourceName: "Watch",
@@ -655,6 +1221,240 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
     expect(aggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);
     expect(aggregateSkinTempToDailyMetrics).toHaveBeenCalledTimes(1);
+    expect(finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "apple_health",
+        windowEnd: new Date("2026-03-01T10:00:00.000Z"),
+        presentExternalIds: new Set(["ah:workout:2026-03-01T10:00:00.000Z"]),
+      }),
+    );
+  });
+
+  it("preserves category values and derives distinct stable external ids", async () => {
+    vi.resetModules();
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set<string>(),
+      DAILY_METRIC_TYPES: new Set<string>(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set<string>(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onCategoryBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          const shared = {
+            metadata: { HKMetadataKeyMenstrualCycleStart: true },
+            sourceBundle: "com.example.cycle",
+            type: "HKCategoryTypeIdentifierMenstrualFlow",
+            sourceName: "Cycle Source",
+            startDate: new Date("2026-03-01T10:00:00Z"),
+            endDate: new Date("2026-03-01T10:05:00Z"),
+          };
+          await handlers.onCategoryBatch([
+            { ...shared, value: "light" },
+            { ...shared, value: "heavy" },
+          ]);
+          return { recordCount: 0, workoutCount: 0, sleepCount: 0, categoryCount: 2 };
+        },
+      ),
+    }));
+
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const db = makeTransactionalTestDatabase({
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      insert: vi.fn().mockReturnValue({ values }),
+      select: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    });
+    const { runImport: mockedRunImport } = await import("./import.ts");
+
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.recordsSynced).toBe(2);
+    const categoryRows = values.mock.calls
+      .map(([rows]) => rows)
+      .find(
+        (rows) => Array.isArray(rows) && rows[0]?.type === "HKCategoryTypeIdentifierMenstrualFlow",
+      );
+    expect(categoryRows).toEqual([
+      expect.objectContaining({
+        valueText: "light",
+        externalId: expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      }),
+      expect.objectContaining({
+        valueText: "heavy",
+        externalId: expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      }),
+    ]);
+    expect(new Set(categoryRows.map((row: { externalId: string }) => row.externalId)).size).toBe(2);
+  });
+
+  it("uses the latest workout end timestamp for reconciliation windowEnd", async () => {
+    vi.resetModules();
+
+    const finishProviderActivityListSync = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set<string>(),
+      DAILY_METRIC_TYPES: new Set<string>(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set<string>(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(2),
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("../../db/provider-activity-sync.ts", async (importOriginal) => {
+      const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
+      return {
+        ...original,
+        finishProviderActivityListSync,
+      };
+    });
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onRecordBatch: (records: Array<{ type: string }>) => Promise<void>;
+            onSleepBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+            onWorkoutBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+            onCategoryBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onRecordBatch([]);
+          await handlers.onSleepBatch([]);
+          await handlers.onWorkoutBatch([
+            {
+              startDate: new Date("2026-03-01T10:00:00Z"),
+              endDate: new Date("2026-03-01T11:00:00Z"),
+            },
+            {
+              startDate: new Date("2026-03-01T12:00:00Z"),
+              endDate: new Date("2026-03-01T13:30:00Z"),
+            },
+          ]);
+          await handlers.onCategoryBatch([]);
+          return { recordCount: 0, workoutCount: 2, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const db = createRunImportDbForMockedStreaming();
+    const since = new Date("2026-03-01T00:00:00Z");
+    await mockedRunImport(db, "apple_health", "/tmp/stream.xml", since);
+
+    expect(finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        windowStart: since,
+        windowEnd: new Date("2026-03-01T13:30:00.000Z"),
+        presentExternalIds: new Set([
+          "ah:workout:2026-03-01T10:00:00.000Z",
+          "ah:workout:2026-03-01T12:00:00.000Z",
+        ]),
+      }),
+    );
+  });
+
+  it("falls back to since for reconciliation windowEnd when no workouts import", async () => {
+    vi.resetModules();
+
+    const finishProviderActivityListSync = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set<string>(),
+      DAILY_METRIC_TYPES: new Set<string>(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set<string>(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("../../db/provider-activity-sync.ts", async (importOriginal) => {
+      const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
+      return {
+        ...original,
+        finishProviderActivityListSync,
+      };
+    });
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onRecordBatch: (records: Array<{ type: string }>) => Promise<void>;
+            onSleepBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+            onWorkoutBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+            onCategoryBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onRecordBatch([]);
+          await handlers.onSleepBatch([]);
+          await handlers.onWorkoutBatch([]);
+          await handlers.onCategoryBatch([]);
+          return { recordCount: 0, workoutCount: 0, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const db = createRunImportDbForMockedStreaming();
+    const since = new Date("2026-03-01T00:00:00Z");
+    await mockedRunImport(db, "apple_health", "/tmp/stream.xml", since);
+
+    expect(finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        windowStart: since,
+        windowEnd: since,
+        presentExternalIds: new Set<string>(),
+      }),
+    );
   });
 
   it("aggregates only metric records collected across multiple record batches", async () => {
@@ -809,6 +1609,74 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertHealthEventBatch).not.toHaveBeenCalled();
   });
 
+  it("reports malformed Hang Ten segments after importing the workout", async () => {
+    vi.resetModules();
+    const upsertWorkoutBatch = vi.fn().mockResolvedValue(1);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set(),
+      DAILY_METRIC_TYPES: new Set(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch,
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onWorkoutBatch: (workouts: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onWorkoutBatch([
+            {
+              activityType: "hangboard",
+              sourceName: "Hang Ten",
+              durationSeconds: 600,
+              startDate: new Date("2026-08-07T14:00:00Z"),
+              endDate: new Date("2026-08-07T14:10:00Z"),
+              hangTen: {
+                planName: "Max Hangs",
+                rawActivitySegments: "{not json",
+                activitySegmentsError:
+                  "Invalid Hang Ten activity segments JSON: could not parse JSON",
+              },
+            },
+          ]);
+          return { recordCount: 0, workoutCount: 1, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const result = await mockedRunImport(
+      createRunImportDbForMockedStreaming(),
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-08-07T00:00:00Z"),
+    );
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        externalId: "ah:workout:2026-08-07T14:00:00.000Z",
+        message: "Invalid Hang Ten activity segments JSON: could not parse JSON",
+      }),
+    ]);
+    expect(result.recordsSynced).toBe(1);
+    expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
+  });
+
   it("does not run daily metric aggregation when streamed records contain no metric records", async () => {
     vi.resetModules();
 
@@ -930,7 +1798,12 @@ describe("extractExportXml", () => {
     const zipPath = join(tmpDir, "no-xml.zip");
     execSync(`cd "${dir}" && zip -r "${zipPath}" other.txt`);
 
-    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml found");
+    const error = await extractExportXml(zipPath).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AppleHealthImportValidationError);
+    expect(error).toMatchObject({
+      message:
+        "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    });
   });
 
   it("rejects when zip file does not exist", async () => {
@@ -1083,16 +1956,43 @@ describe("importClinicalRecords", () => {
     }
   });
 
-  it("deletes existing records before importing", async () => {
+  it("rejects malformed supported FHIR resources before replacing clinical records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "invalid-supported-fhir", [
+      { name: "valid.json", content: JSON.stringify(labObservation) },
+      { name: "invalid.json", content: JSON.stringify({ resourceType: "Observation", id: 1 }) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "invalid-supported-fhir.xml", []);
+    const { db, spies } = createImportMockDb();
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid clinical dates before replacing clinical records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "invalid-clinical-date", [
+      {
+        name: "invalid.json",
+        content: JSON.stringify({ ...labObservation, effectiveDateTime: "invalid-date" }),
+      },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "invalid-clinical-date.xml", []);
+    const { db, spies } = createImportMockDb();
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("replaces existing records when the archive is valid and empty", async () => {
     const zipPath = createEmptyZip(tmpDir, "delete-test");
     const xmlPath = createTestXml(tmpDir, "delete-test.xml", []);
     const { db, spies } = createImportMockDb();
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // Should delete lab_result, lab_panel, medication, condition, allergy_intolerance
-    expect(spies.deleteFn).toHaveBeenCalledTimes(5);
-    expect(spies.deleteWhere).toHaveBeenCalledTimes(5);
+    expect(spies.deleteFn).toHaveBeenCalledTimes(1);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(1);
   });
 
   it("returns early with zero counts when ZIP has no clinical records", async () => {
@@ -1107,7 +2007,7 @@ describe("importClinicalRecords", () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it("imports lab observations and links to diagnostic report panels", async () => {
+  it("imports lab observations and reports into canonical FHIR storage", async () => {
     const zipPath = createClinicalZip(tmpDir, "lab-data", [
       { name: "obs-glucose-001.json", content: JSON.stringify(labObservation) },
       { name: "dr-metabolic-001.json", content: JSON.stringify(diagnosticReport) },
@@ -1124,21 +2024,20 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    expect(result.inserted).toBe(1);
+    expect(result.inserted).toBe(2);
     expect(result.skipped).toBe(0);
     expect(result.errors).toHaveLength(0);
 
-    // Should have queried back panel IDs
-    expect(spies.selectFn).toHaveBeenCalled();
-
-    // Verify panel ID was resolved in the lab result
-    const allValuesCalls = spies.values.mock.calls;
-    // Last values() call is the lab result batch
-    const labResultBatch = allValuesCalls[allValuesCalls.length - 1]?.[0];
-    expect(Array.isArray(labResultBatch)).toBe(true);
-    expect(labResultBatch[0].panelId).toBe("panel-uuid-1");
-    expect(labResultBatch[0].externalId).toBe("obs-glucose-001");
-    expect(labResultBatch[0].sourceName).toBe("Quest Diagnostics");
+    expect(spies.selectFn).not.toHaveBeenCalled();
+    const records = spies.values.mock.calls[0]?.[0];
+    const labResult = records.find(
+      (record: { externalId: string }) => record.externalId === "obs-glucose-001",
+    );
+    expect(labResult).toMatchObject({
+      clinicalType: "labResult",
+      displayName: "Glucose",
+      sourceName: "Quest Diagnostics",
+    });
   });
 
   it("skips non-lab observations (vital signs)", async () => {
@@ -1241,7 +2140,7 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    expect(result.inserted).toBe(1); // Only lab observation
+    expect(result.inserted).toBe(0); // A malformed file rejects the complete replacement.
     expect(result.skipped).toBe(2); // vital + non-FHIR
     expect(result.errors).toHaveLength(1); // broken JSON
   });
@@ -1330,7 +2229,8 @@ describe("importClinicalRecords", () => {
     const panelValues = spies.values.mock.calls[0]?.[0];
     expect(Array.isArray(panelValues)).toBe(true);
     expect(panelValues[0].externalId).toBe("dr-metabolic-001");
-    expect(panelValues[0].name).toBe("Metabolic Panel");
+    expect(panelValues[0].displayName).toBe("Metabolic Panel");
+    expect(panelValues[0].clinicalType).toBe("labResult");
     expect(panelValues[0].providerId).toBe("test-provider");
     expect(panelValues[0].sourceName).toBe("Unknown");
   });
@@ -1352,14 +2252,14 @@ describe("importClinicalRecords", () => {
     expect(result.inserted).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const medicationBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.name === "Cephalexin 500 mg Cap",
-    )?.[0];
-    expect(medicationBatch).toBeDefined();
-    expect(medicationBatch[0].rxnormCode).toBe("2231");
-    expect(medicationBatch[0].sourceName).toBe("UCSF Health");
-    expect(medicationBatch[0].prescriberName).toBe("Dr. Smith");
+    const medication = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(medication).toMatchObject({
+      clinicalType: "medication",
+      displayName: "Cephalexin 500 mg Cap",
+      externalId: "med-ceph-001",
+      sourceName: "UCSF Health",
+      fhir: medicationRequest,
+    });
   });
 
   it("imports Condition resources", async () => {
@@ -1376,12 +2276,12 @@ describe("importClinicalRecords", () => {
     expect(result.inserted).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const conditionBatch = allValuesCalls.find((call) => call[0]?.[0]?.name === "Anxiety")?.[0];
-    expect(conditionBatch).toBeDefined();
-    expect(conditionBatch[0].icd10Code).toBe("F41.9");
-    expect(conditionBatch[0].snomedCode).toBe("48694002");
-    expect(conditionBatch[0].clinicalStatus).toBe("active");
+    expect(spies.values.mock.calls[0]?.[0]?.[0]).toMatchObject({
+      clinicalType: "condition",
+      displayName: "Anxiety",
+      externalId: "cond-anxiety-001",
+      fhir: conditionResource,
+    });
   });
 
   it("imports AllergyIntolerance resources", async () => {
@@ -1401,11 +2301,12 @@ describe("importClinicalRecords", () => {
     expect(result.inserted).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const allergyBatch = allValuesCalls.find((call) => call[0]?.[0]?.name === "LACTASE")?.[0];
-    expect(allergyBatch).toBeDefined();
-    expect(allergyBatch[0].type).toBe("allergy");
-    expect(allergyBatch[0].rxnormCode).toBe("41397");
+    expect(spies.values.mock.calls[0]?.[0]?.[0]).toMatchObject({
+      clinicalType: "allergy",
+      displayName: "LACTASE",
+      externalId: "allergy-lactase-001",
+      fhir: allergyResource,
+    });
   });
 
   it("imports mixed clinical record types together", async () => {
@@ -1424,8 +2325,8 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // 1 lab + 1 medication + 1 condition + 1 allergy = 4
-    expect(result.inserted).toBe(4);
+    // One canonical record for each supplied FHIR resource.
+    expect(result.inserted).toBe(5);
     expect(result.errors).toHaveLength(0);
     expect(result.skipped).toBe(0);
   });
@@ -1444,8 +2345,7 @@ describe("importClinicalRecords", () => {
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // insert calls: 1 panel batch + 1 lab batch + 1 medication batch + 1 condition batch + 1 allergy batch = 5
-    expect(spies.insertFn).toHaveBeenCalledTimes(5);
+    expect(spies.insertFn).toHaveBeenCalledTimes(1);
   });
 
   it("returns correct skipped count for non-lab observations in mixed import", async () => {
@@ -1527,20 +2427,13 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find((call) => call[0]?.[0]?.externalId === "med-ceph-001")?.[0];
-    expect(batch).toBeDefined();
-    expect(batch[0]).toMatchObject({
+    const record = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(record).toMatchObject({
       providerId: "test-provider",
       externalId: "med-ceph-001",
-      name: "Cephalexin 500 mg Cap",
-      status: "stopped",
-      authoredOn: "2024-01-10",
-      dosageText: "Take 1 capsule 2x daily",
-      route: "Oral",
-      form: "Capsule",
-      rxnormCode: "2231",
-      prescriberName: "Dr. Smith",
+      displayName: "Cephalexin 500 mg Cap",
+      clinicalType: "medication",
+      fhir: medicationRequest,
     });
   });
 
@@ -1552,20 +2445,13 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "cond-anxiety-001",
-    )?.[0];
-    expect(batch).toBeDefined();
-    expect(batch[0]).toMatchObject({
+    const record = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(record).toMatchObject({
       providerId: "test-provider",
       externalId: "cond-anxiety-001",
-      name: "Anxiety",
-      clinicalStatus: "active",
-      verificationStatus: "confirmed",
-      icd10Code: "F41.9",
-      snomedCode: "48694002",
-      onsetDate: "2023-06-02",
+      displayName: "Anxiety",
+      clinicalType: "condition",
+      fhir: conditionResource,
     });
   });
 
@@ -1577,23 +2463,14 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "allergy-lactase-001",
-    )?.[0];
-    expect(batch).toBeDefined();
-    expect(batch[0]).toMatchObject({
+    const record = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(record).toMatchObject({
       providerId: "test-provider",
       externalId: "allergy-lactase-001",
-      name: "LACTASE",
-      type: "allergy",
-      clinicalStatus: "active",
-      rxnormCode: "41397",
-      onsetDate: "2023-03-27",
+      displayName: "LACTASE",
+      clinicalType: "allergy",
+      fhir: allergyResource,
     });
-    expect(batch[0].reactions).toEqual([
-      { manifestation: "GI distress", description: "GI distress" },
-    ]);
   });
 
   it("resolves source names for clinical record types from XML", async () => {
@@ -1613,21 +2490,19 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const medBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "med-ceph-001",
-    )?.[0];
-    expect(medBatch?.[0].sourceName).toBe("Sutter Health");
-
-    const condBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "cond-anxiety-001",
-    )?.[0];
-    expect(condBatch?.[0].sourceName).toBe("Quest");
-
-    const allergyBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "allergy-lactase-001",
-    )?.[0];
-    expect(allergyBatch?.[0].sourceName).toBe("UCSF");
+    const records = spies.values.mock.calls[0]?.[0];
+    expect(
+      records.find((record: { clinicalType: string }) => record.clinicalType === "medication")
+        ?.sourceName,
+    ).toBe("Sutter Health");
+    expect(
+      records.find((record: { clinicalType: string }) => record.clinicalType === "condition")
+        ?.sourceName,
+    ).toBe("Quest");
+    expect(
+      records.find((record: { clinicalType: string }) => record.clinicalType === "allergy")
+        ?.sourceName,
+    ).toBe("UCSF");
   });
 
   it("handles MedicationRequest parse errors gracefully", async () => {
@@ -1670,23 +2545,18 @@ describe("importClinicalRecords", () => {
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
     expect(result.inserted).toBe(1);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "cond-coding-only",
-    )?.[0];
-    expect(batch?.[0].name).toBe("Back Pain");
+    expect(spies.values.mock.calls[0]?.[0]?.[0].displayName).toBe("Back Pain");
   });
 
-  it("deletes medication, condition, allergy tables on re-import", async () => {
+  it("deletes the provider's canonical clinical records on re-import", async () => {
     const zipPath = createEmptyZip(tmpDir, "delete-clinical");
     const xmlPath = createTestXml(tmpDir, "delete-clinical.xml", []);
     const { db, spies } = createImportMockDb();
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // 5 deletes: labResult, labPanel, medication, condition, allergyIntolerance
-    expect(spies.deleteFn).toHaveBeenCalledTimes(5);
-    expect(spies.deleteWhere).toHaveBeenCalledTimes(5);
+    expect(spies.deleteFn).toHaveBeenCalledTimes(1);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1695,6 +2565,40 @@ describe("importClinicalRecords", () => {
 // ============================================================
 
 describe("readZipEntries", () => {
+  it.each(["entry header", "entry stream"])(
+    "rejects corrupt %s instead of returning an incomplete archive",
+    async (failure) => {
+      const directory = join(tmpdir(), `ah-corrupt-${failure.replaceAll(" ", "-")}-${Date.now()}`);
+      mkdirSync(directory, { recursive: true });
+      try {
+        const zipPath = createClinicalZip(directory, "corrupt", [
+          { name: "record.json", content: JSON.stringify({ data: "repeat".repeat(1000) }) },
+        ]);
+        const data = readFileSync(zipPath);
+        const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+        let offset = data.indexOf(centralSignature);
+        while (offset >= 0) {
+          const filenameLength = data.readUInt16LE(offset + 28);
+          const filename = data.toString("utf8", offset + 46, offset + 46 + filenameLength);
+          if (filename.endsWith("record.json")) {
+            if (failure === "entry header") {
+              data.writeUInt32LE(0, data.readUInt32LE(offset + 42));
+            } else {
+              data.writeUInt32LE(data.readUInt32LE(offset + 24) + 1, offset + 24);
+            }
+            break;
+          }
+          offset = data.indexOf(centralSignature, offset + 4);
+        }
+        expect(offset).toBeGreaterThanOrEqual(0);
+        writeFileSync(zipPath, data);
+        await expect(readZipEntries(zipPath, (name) => name.endsWith(".json"))).rejects.toThrow();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   let tmpDir: string;
 
   beforeAll(() => {
@@ -1851,82 +2755,5 @@ describe("buildSourceNameMap", () => {
     // Only the entry with both attributes should be in the map
     expect(map.size).toBe(1);
     expect(map.get("clinical-records/valid.json")).toBe("LabCorp");
-  });
-});
-
-// ============================================================
-// findLatestExport
-// ============================================================
-
-describe("findLatestExport", () => {
-  let tmpDir: string;
-  const savedEnv = process.env.APPLE_HEALTH_IMPORT_DIR;
-
-  beforeAll(() => {
-    tmpDir = join(tmpdir(), `find-export-test-${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    if (savedEnv !== undefined) {
-      process.env.APPLE_HEALTH_IMPORT_DIR = savedEnv;
-    } else {
-      delete process.env.APPLE_HEALTH_IMPORT_DIR;
-    }
-  });
-
-  afterAll(() => {
-    try {
-      rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-      /* best effort */
-    }
-  });
-
-  it("returns null when APPLE_HEALTH_IMPORT_DIR is not set", () => {
-    delete process.env.APPLE_HEALTH_IMPORT_DIR;
-    expect(findLatestExport()).toBeNull();
-  });
-
-  it("returns null when directory does not exist", () => {
-    process.env.APPLE_HEALTH_IMPORT_DIR = join(tmpDir, "nonexistent");
-    expect(findLatestExport()).toBeNull();
-  });
-
-  it("returns null when no .xml or .zip files exist", () => {
-    const dir = join(tmpDir, "no-match");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "readme.txt"), "data");
-    process.env.APPLE_HEALTH_IMPORT_DIR = dir;
-
-    expect(findLatestExport()).toBeNull();
-  });
-
-  it("returns the latest export file by modification time", () => {
-    // Use file names where alphabetical order differs from mtime order
-    // to ensure the sort is actually working (not just relying on fs order)
-    const dir = join(tmpDir, "multi-files");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "aaa-old.xml"), "old data");
-    writeFileSync(join(dir, "zzz-new.zip"), "new data");
-    // Force aaa-old.xml to have an old mtime
-    utimesSync(join(dir, "aaa-old.xml"), new Date("2020-01-01"), new Date("2020-01-01"));
-    process.env.APPLE_HEALTH_IMPORT_DIR = dir;
-
-    const result = findLatestExport();
-
-    // zzz-new.zip is newest by mtime, even though alphabetically last
-    expect(result).toBe(join(dir, "zzz-new.zip"));
-  });
-
-  it("returns .xml file when it is the only option", () => {
-    const dir = join(tmpDir, "xml-only");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "export.xml"), "xml data");
-    process.env.APPLE_HEALTH_IMPORT_DIR = dir;
-
-    const result = findLatestExport();
-
-    expect(result).toBe(join(dir, "export.xml"));
   });
 });

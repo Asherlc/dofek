@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  collectSqlText,
+  expectSensorStoreFiniteDaysFilter,
+  expectSensorStoreUnboundedDaysFilter,
+} from "./test-helpers.ts";
 import { TrainingRepository } from "./training-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -8,23 +13,7 @@ import { TrainingRepository } from "./training-repository.ts";
 // ---------------------------------------------------------------------------
 
 describe("TrainingRepository", () => {
-  function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-  }
-
-  function collectSqlText(value: unknown): string {
-    if (typeof value === "string") return value;
-    if (!isRecord(value)) return "";
-    if (Array.isArray(value.value)) {
-      return value.value.map((chunk) => (typeof chunk === "string" ? chunk : "")).join("");
-    }
-    if (Array.isArray(value.queryChunks)) {
-      return value.queryChunks.map((chunk) => collectSqlText(chunk)).join("");
-    }
-    return "";
-  }
-
-  function executedSql(execute: ReturnType<typeof vi.fn>, callIndex = 0): string {
+  function executedSql(execute: CallableVitestMock, callIndex = 0): string {
     return collectSqlText(execute.mock.calls[callIndex]?.[0]);
   }
 
@@ -37,7 +26,13 @@ describe("TrainingRepository", () => {
         if (queryText.includes("raw_activity_count")) {
           return [schema.parse({ raw_activity_count: rawActivityCount })];
         }
-        return rows.map((row) => schema.parse(row));
+        return rows.map((row) =>
+          schema.parse(
+            typeof row === "object" && row !== null && "id" in row
+              ? { primary_canonical_type: null, ...row }
+              : row,
+          ),
+        );
       });
     return {
       query,
@@ -100,7 +95,10 @@ describe("TrainingRepository", () => {
         expect.stringContaining("FROM analytics.activity_summary"),
         expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
       );
-      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain("analytics.v_activity");
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain(
+        "analytics.deduped_activities",
+      );
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
     });
 
     it("does not add access-window filters for full access", async () => {
@@ -112,7 +110,8 @@ describe("TrainingRepository", () => {
       const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
       expect(query).toContain("FROM analytics.activity_summary");
-      expect(query).toContain("analytics.v_activity");
+      expect(query).toContain("analytics.deduped_activities");
+      expect(query).not.toContain("analytics.v_activity");
       expect(query).not.toContain("toDateTime({accessStart:String})");
       expect(query).not.toContain("toDateTime({accessEnd:String})");
       expect(params).toEqual({ userId: "user-1", timezone: "UTC", days: 30 });
@@ -122,7 +121,7 @@ describe("TrainingRepository", () => {
       const accessWindow: AccessWindow = {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2024-01-01T00:00:00Z",
         endDateExclusive: "2024-01-08T00:00:00Z",
       };
@@ -143,13 +142,40 @@ describe("TrainingRepository", () => {
       });
     });
 
+    it("applies inclusive finite selected-range lower-bound filters to the raw activity preflight", async () => {
+      const { repo, execute, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(30);
+
+      expect(executedSql(execute)).toContain("started_at::date >= (CURRENT_DATE -");
+      expect(executedSql(execute)).not.toContain("CURRENT_TIMESTAMP -");
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
+      expect(sensorStore.query).toHaveBeenCalled();
+    });
+
+    it("applies finite selected-range lower-bound filters to the weekly volume query", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(30);
+
+      expectSensorStoreFiniteDaysFilter(sensorStore);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(null);
+
+      expectSensorStoreUnboundedDaysFilter(sensorStore);
+    });
+
     it("returns parsed weekly volume rows", async () => {
       const { repo } = makeRepository([
-        { week: "2024-01-15", activity_type: "cycling", count: 3, hours: 4.5 },
+        { week: "2024-01-15", canonical_type: "cycling", count: 3, hours: 4.5 },
       ]);
       const result = await repo.getWeeklyVolume(90);
       expect(result).toHaveLength(1);
-      expect(result[0]?.activity_type).toBe("cycling");
+      expect(result[0]?.canonical_type).toBe("cycling");
       expect(result[0]?.hours).toBe(4.5);
     });
   });
@@ -158,9 +184,22 @@ describe("TrainingRepository", () => {
     it("returns null maxHr and empty weeks when no data", async () => {
       const { repo, execute, sensorStore } = makeRepository([]);
       const result = await repo.getHrZones(90);
-      expect(result).toEqual({ maxHr: null, weeks: [] });
+      expect(result).toEqual({
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 0,
+          zones: expect.arrayContaining([
+            expect.objectContaining({ zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 }),
+            expect.objectContaining({ zone: 5, label: "VO2max", seconds: 0, percent: 0 }),
+          ]),
+          explanation: expect.stringContaining("endurance training time"),
+        },
+      });
       expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
-      expect(executedSql(execute)).toContain("activity_type IN");
+      expect(executedSql(execute)).toContain("canonical_type IN");
       expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
@@ -182,6 +221,45 @@ describe("TrainingRepository", () => {
       expect(result.weeks).toHaveLength(1);
       expect(result.weeks[0]?.zone0).toBe(75);
       expect(result.weeks[0]?.zone2).toBe(200);
+      expect(result.intensityDistribution).toMatchObject({
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 585,
+        zones: expect.arrayContaining([
+          { zone: 0, label: "Below Zone 1", seconds: 75, percent: 12.8 },
+          { zone: 2, label: "Aerobic", seconds: 200, percent: 34.2 },
+        ]),
+      });
+    });
+
+    it("returns an empty distribution when activity rows have no usable max heart rate", async () => {
+      const { repo } = makeRepository([
+        {
+          max_hr: null,
+          week: "2024-01-15",
+          zone0: 75,
+          zone1: 100,
+          zone2: 200,
+          zone3: 150,
+          zone4: 50,
+          zone5: 10,
+        },
+      ]);
+
+      await expect(repo.getHrZones(90)).resolves.toEqual({
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 0,
+          zones: expect.arrayContaining([
+            expect.objectContaining({ zone: 0, seconds: 0, percent: 0 }),
+            expect.objectContaining({ zone: 5, seconds: 0, percent: 0 }),
+          ]),
+          explanation: expect.stringContaining("endurance training time"),
+        },
+      });
     });
 
     it("uses activity-specific heart-rate values in canonical zone SQL", async () => {
@@ -195,18 +273,44 @@ describe("TrainingRepository", () => {
       expect(query).not.toContain("{maxHr:Float64}");
     });
 
-    it("bounds heart-rate samples in the activity join", async () => {
+    it("joins the current heart-rate distribution by user and activity", async () => {
       const { repo, sensorStore } = makeRepository([], undefined, 1);
 
       await repo.getHrZones(90);
 
       const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(query).toContain("INNER JOIN activity_meta am");
-      expect(query).toContain("ON ds.user_id = am.user_id");
-      expect(query).toContain("AND ds.recorded_at >= am.started_at");
-      expect(query).toContain(
-        "AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)",
-      );
+      expect(query).toContain("analytics.activity_heart_rate_distribution distribution FINAL");
+      expect(query).toContain("ON distribution.user_id = am.user_id");
+      expect(query).toContain("AND distribution.activity_id = am.id");
+      expect(query).toContain("ARRAY JOIN distribution.samples AS sample");
+      expect(query).toContain("sumIf(sample.2, sample.1");
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getHrZones(30);
+
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(query).toContain("asum.started_at > today() - INTERVAL {days:Int32} DAY");
+      expect(query).toContain("toDate({rhrWindowStart:String})");
+      expect(params).toHaveProperty("days", 30);
+      expect(params).toHaveProperty("rhrWindowStart");
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getHrZones(null);
+
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(query).not.toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(query).not.toContain("toDate({rhrWindowStart:String})");
+      expect(params).not.toHaveProperty("days");
+      expect(params).not.toHaveProperty("rhrWindowStart");
     });
   });
 
@@ -243,7 +347,8 @@ describe("TrainingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "act-1",
-          activity_type: "running",
+          canonical_type: "running",
+          primary_canonical_type: "walking",
           name: "Morning Run",
           started_at: "2024-01-15T08:00:00Z",
           ended_at: "2024-01-15T09:00:00Z",
@@ -259,7 +364,8 @@ describe("TrainingRepository", () => {
       ]);
       const result = await repo.getActivityStats(90);
       expect(result).toHaveLength(1);
-      expect(result[0]?.activity_type).toBe("running");
+      expect(result[0]?.canonical_type).toBe("running");
+      expect(result[0]?.primary_canonical_type).toBe("walking");
       expect(result[0]?.avg_hr).toBe(145.5);
       expect(result[0]?.distance_meters).toBe(10500);
     });
@@ -269,7 +375,7 @@ describe("TrainingRepository", () => {
         [
           {
             id: "act-hidden",
-            activity_type: "running",
+            canonical_type: "running",
             name: "Deleted Run",
             started_at: "2024-01-15T08:00:00Z",
             ended_at: "2024-01-15T09:00:00Z",
@@ -298,7 +404,7 @@ describe("TrainingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "act-no-sensor",
-          activity_type: "strength_training",
+          canonical_type: "strength",
           name: "Gym Session",
           started_at: "2024-01-15T10:00:00Z",
           ended_at: "2024-01-15T11:00:00Z",
@@ -326,7 +432,7 @@ describe("TrainingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "act-2",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Afternoon Ride",
           started_at: "2024-01-15T14:00:00Z",
           ended_at: "2024-01-15T15:30:00Z",
@@ -365,7 +471,8 @@ describe("TrainingRepository", () => {
               return [
                 schema.parse({
                   id: "act-1",
-                  activity_type: "running",
+                  canonical_type: "running",
+                  primary_canonical_type: null,
                   name: "Morning Run",
                   started_at: "2024-01-15T08:00:00Z",
                   ended_at: "2024-01-15T09:00:00Z",
@@ -383,7 +490,7 @@ describe("TrainingRepository", () => {
             return [
               schema.parse({
                 week: "2024-01-15",
-                activity_type: "running",
+                canonical_type: "running",
                 count: 3,
                 hours: 4.5,
               }),
@@ -414,7 +521,7 @@ describe("TrainingRepository", () => {
       expect(execute).toHaveBeenCalledTimes(2);
       expect(query).toHaveBeenCalledTimes(2);
       expect(result.activities).toHaveLength(1);
-      expect(result.activities[0]?.activity_type).toBe("running");
+      expect(result.activities[0]?.canonical_type).toBe("running");
       expect(result.weeklyVolume).toHaveLength(1);
       expect(result.weeklyVolume[0]?.hours).toBe(4.5);
     });
@@ -423,7 +530,7 @@ describe("TrainingRepository", () => {
       const accessWindow: AccessWindow = {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2024-01-01T00:00:00Z",
         endDateExclusive: "2024-01-08T00:00:00Z",
       };
@@ -435,7 +542,8 @@ describe("TrainingRepository", () => {
               return [
                 schema.parse({
                   id: "act-in-window",
-                  activity_type: "running",
+                  canonical_type: "running",
+                  primary_canonical_type: null,
                   name: "In Window Run",
                   started_at: "2024-01-03T08:00:00Z",
                   ended_at: "2024-01-03T09:00:00Z",
@@ -453,7 +561,7 @@ describe("TrainingRepository", () => {
             return [
               schema.parse({
                 week: "2024-01-01",
-                activity_type: "running",
+                canonical_type: "running",
                 count: 1,
                 hours: 1,
               }),

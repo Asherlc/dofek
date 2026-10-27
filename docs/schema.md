@@ -1,8 +1,24 @@
 # Database Schema
 
 Canonical source-of-truth tables live in the `fitness` Postgres schema. The source of
-truth is `src/db/schema.ts` (Drizzle generates migrations from it). Rebuildable read
-models live outside `fitness`, currently in the `analytics` schema.
+truth is the domain modules under `src/db/schema/` (Drizzle generates migrations from
+them through `src/db/drizzle-schema.ts`). Rebuildable read models live outside
+`fitness`, currently in the `analytics` schema.
+
+Tracking storage is retired by [migration 0139](../drizzle/0139_remove_tracking.sql):
+journal entries and questions, daily subjective check-ins and symptoms,
+injury events, and body-region references are dropped with their data. PostgreSQL
+[`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html) removes
+the tables and their indexes and constraints. The provider-statistics projection is
+rebuilt first; [ClickHouse migration 0100](../src/db/clickhouse-migrations/0100_remove_tracking.ts)
+removes the journal mirror and derived statistics. Use the existing
+[deployment sequence](../deploy/README.md#deployment) to reconcile PeerDB mappings
+before migrations. [Migration 0140](../drizzle/0140_remove_tracking_mcp_scope.sql)
+removes the retired injury-write permission while preserving other token and grant
+permissions.
+
+Personal experiments and life events were retired by [migration 0137](../drizzle/0137_remove_personal_experiments.sql)
+and [migration 0138](../drizzle/0138_remove_life_events.sql), respectively.
 
 ## Data Model Philosophy: Raw Data Only
 
@@ -32,6 +48,13 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in sensor_sample, never aggregated to daily. Removed in migration 0042. |
 | `daily_metrics.resting_hr` | Derived from low-percentile sleep-window heart-rate samples. Removed in migration 0007. |
 | `daily_metrics.vo2max` | Derived from qualifying activity-level estimates using transparent public equations. Removed in migration 0007. |
+| `daily_metrics.cycling_distance_km` | Derivable from activity distance/routes/sensor streams instead of stored as a duplicate daily total. Removed in migration 0046. |
+| `daily_metrics.stress_high_minutes`, `daily_metrics.recovery_high_minutes`, `daily_metrics.resilience_level` | Provider-derived stress and resilience classifications. Removed in migration 0074. |
+| `sleep_session.sleep_need_*` | Provider-derived sleep-need components. Removed in migration 0074. |
+| `daily_metrics.active_energy_kcal` | Provider/device estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
+| `daily_metrics.basal_energy_kcal` | Formula-based provider/device estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
+| `dexa_scan.resting_metabolic_rate_kcal` | Formula-based provider estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
+| `dexa_scan.resting_metabolic_rate_raw` | Dedicated storage for formula estimates rather than opaque provider provenance. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
 
 The ClickHouse `analytics.activity_summary` read model computes these values from mirrored raw sensor data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
@@ -45,16 +68,11 @@ The ClickHouse `analytics.activity_summary` read model computes these values fro
 | `spo2_avg` | Pulse oximeter reading. Raw infrared/red light sensor data is not stored. |
 | `respiratory_rate_avg` | Derived from accelerometer + PPG during sleep. Raw sensor streams unavailable. |
 | `steps` | Accelerometer-counted throughout the day. We don't store raw accelerometer data. |
-| `active_energy_kcal` | Device-computed from HR, motion, body metrics across the full 24-hour day (not just activities). We lack the continuous sensor data. |
-| `basal_energy_kcal` | Based on BMR formulas using body composition. The formula + inputs aren't stored. |
 | `distance_km` | All-day walking/running distance from step count + stride length. Includes non-activity movement we don't track. |
-| `cycling_distance_km` | All-day cycling distance, often from phone GPS during commutes. Not linked to recorded activities. |
 | `flights_climbed` | Barometric altimeter counts. Raw pressure data not stored. |
 | `exercise_minutes` | Device-determined from sustained HR elevation. Proprietary threshold logic. |
 | `walking_speed`, `walking_step_length`, etc. | Apple Health walking analysis from phone accelerometer + gyroscope during daily walking. Raw IMU data not stored. |
 | `skin_temp_c` | Skin temperature sensor (WHOOP, Oura ring). Raw thermistor data unavailable. |
-| `stress_high_minutes`, `recovery_high_minutes` | Oura's proprietary stress/recovery classification from HRV + motion. |
-| `resilience_level` | Oura's resilience score, proprietary algorithm. |
 
 ### Derived cardio metrics
 
@@ -83,13 +101,52 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 ## Tables
 
+### Human record ledger foundation
+
+`human_record_identity` stores stable user-owned source identities;
+`human_record_change` stores commands; `human_record_target` stores their
+append-only predecessor chains. Food identities use the `nutrition.food`
+domain, the source provider ID as their namespace, and either
+`external:<external_id>` or `row:<food_entry.id>` as their source key. External
+identities survive provider row replacement and are modifiable. Row identities
+are readable but deliberately unmodifiable because they have no stable
+provider key. The command check requires
+`undo_change_id` exactly when `kind = 'undo'`; its foreign key also requires the
+referenced command to belong to the same user. The target change lookup index
+supports foreign-key checks during account erasure. See the
+[schema](../src/db/schema/record-modifications.ts),
+[migration](../drizzle/0110_human_record_ledger.sql), and PostgreSQL's
+[constraint documentation](https://www.postgresql.org/docs/current/ddl-constraints.html).
+
+The head, field, and visibility views are read-only projections, not additional
+stored state. `human_food_nutrient_decision` stores append-only, normalized
+per-target nutrient decisions. Its `set` operation accepts a non-negative amount
+or explicit `NULL`; `clear` must have a null amount and resumes following the
+raw source nutrient. `v_human_food_nutrient_decision` walks the current target
+chain and selects the nearest decision for each nutrient. See the [record
+projection definitions](../drizzle/0111_human_record_projections.sql) and
+[food nutrient decision migration](../drizzle/0112_human_food_nutrient_decisions.sql).
+
 ### Reference
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.provider` | Registered data sources (wahoo, strava, etc.) |
+| `fitness.provider` | Global data-source catalog (wahoo, strava, etc.); `user_id` is a deprecated rollback-only field and is not authoritative. |
+| `fitness.provider_connection` | Per-user provider connections, keyed by `(user_id, provider_id)`; this is the authoritative configured/connected relationship. |
 | `fitness.exercise` | Canonical exercise library (provider-agnostic) |
 | `fitness.exercise_alias` | Maps provider-specific exercise names to canonical exercises |
+
+OAuth tokens and user-scoped webhook subscriptions reference the same
+`(user_id, provider_id)` connection, so deleting one user's connection cascades
+only that user's credentials. The deploy migration creates the catalog and
+connection structures additively; after the new application version converges,
+the resumable `backfill:provider-connections` command derives connections from
+the legacy owner, OAuth tokens, and every raw child table, validates the
+composite foreign keys, and removes the obsolete application-wide webhook
+uniqueness index. PostgreSQL documents this `NOT VALID` then `VALIDATE
+CONSTRAINT` cutover pattern for adding foreign keys without holding the
+validation scan's stronger lock during the initial constraint addition:
+<https://www.postgresql.org/docs/current/sql-altertable.html>.
 
 ### Activities
 
@@ -98,6 +155,38 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 | `fitness.activity` | Any timed activity (type, times, raw JSONB summary from provider) |
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
+| `fitness.finger_loading_entry` | Finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values; existing rows remain read-only in the application |
+| `fitness.area` | Current user/provider-owned location hierarchy and native coordinates |
+| `fitness.climb` / `fitness.pitch` | Shared physical climbing definitions and identified pitches |
+| `fitness.climb_grade` / `fitness.pitch_grade` | Ordered published grade components owned by their definitions |
+| `fitness.climbing_log_entry` | Source occurrence, independent source date, notes, provenance, experience context and optional Activity |
+| `fitness.climbing_log_entry_grade` | Ordered separately reported grade components |
+| `fitness.climbing_attempt` | Scoped occurrences with original source result labels and independent nullable execution facts |
+
+Climb references Area; Pitch references Climb. Historical logs display current
+shared definitions. Verified source identities are user/provider scoped;
+unverified names do not merge objects. Coordinates are native PostgreSQL
+points with longitude as x and latitude as y. See the
+[climbing schema](../src/db/schema/climbing.ts), [model guide](climbing-context.md)
+and [PostgreSQL geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
+
+Attempts record whole-Climb or pitch scope, nullable raw source result labels, and independent
+rope method, solo, protection, aid, fall/hang, dab, beta and history facts.
+Pitch attempts may identify a Pitch and an established parent whole-Climb
+attempt. `fitness.v_climbing_attempt` computes completion through the
+[canonical result function](../drizzle/0148_compute_climbing_attempt_outcome.sql),
+and `fitness.v_climbing_log_entry` derives current paths, owned grades,
+scoped counts and compatible free-rock labels without storing duplicate
+summaries. See the [writer](../src/db/climbing-log-sync.ts) and PostgreSQL's
+[view semantics](https://www.postgresql.org/docs/current/sql-createview.html).
+
+`climbed_on` remains independent of attachment. Same-day suggestions include
+active unattached logs for eligible climbing or hiking Activities. Attachment
+preserves the source date; deleting an Activity unlinks its logs. Undated logs
+remain accessible through provider records. See the
+[association rules](../packages/server/src/repositories/climbing-log-entry-associator.ts).
+Finger-loading effective load is derived as bodyweight plus signed external
+load; see the [finger-loading schema](../src/db/schema/activity.ts).
 
 ### Daily Metrics
 
@@ -133,32 +222,108 @@ tables through ClickHouse replication.
 | Table | Purpose |
 |-------|---------|
 | `fitness.strength_workout` | Workout sessions |
+| `fitness.mcp_oidc_adapter` | Canonical OAuth artifacts, including opaque access tokens, refresh tokens, authorization codes, and grants; nullable account ownership supports erasure and grant activity tracking ([adapter](../packages/server/src/mcp/oidc/adapter.ts)) |
+| `fitness.mcp_access_token` | Manually created personal MCP tokens, stored as hashes with scopes, expiry, and revocation state ([schema](../src/db/schema/account.ts)) |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
-| `fitness.sleep_session` | Sleep sessions with stage breakdown |
-| `fitness.food_entry` | Food items and unnamed nutrition samples from providers |
+| `fitness.sleep_session` | Sleep sessions with nullable provider-reported measurements and an explicit `staging_available` quality flag; see the [historical repair runbook](sleep-quality-backfill-runbook.md) |
+| `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
-| `fitness.supplement_nutrient` | Row-based supplement nutrient amounts |
-| `fitness.v_nutrition_daily` | Daily nutrient totals derived from food-entry nutrient rows |
+| `fitness.human_food_nutrient_decision` | Append-only normalized nutrient decisions attached to human record targets |
+| `fitness.v_human_food_nutrient_decision` | Nearest effective decision per food identity and nutrient |
+| `fitness.v_food_entry_effective` | Raw food scalar fields overlaid with current human field and visibility decisions |
+| `fitness.v_food_entry_effective_nutrient` | Raw normalized nutrient rows overlaid with current human nutrient decisions and provenance |
+| `fitness.v_nutrition_provider_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
+| `fitness.v_nutrition_daily_resolution` | Per-user/date canonical contribution decision and selected/excluded source provenance |
+| `fitness.v_nutrition_canonical_nutrient` | Nutrient rows from the resolved contribution set |
+| `fitness.v_nutrition_daily` | Canonical daily totals; overlapping ambiguous sources produce explicit unavailable rows |
+| `fitness.v_nutrition_display_entry` | Itemized entries and meal aggregates shown once as editable food cards; daily aggregates and ambiguous samples remain totals-only provider data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
-| `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
-| `fitness.life_events` | Life event markers (travel, illness, etc.) |
+
+Supplement schedules, definitions, nutrients, and dose history are removed by
+[migration 0141](../drizzle/0141_remove_supplements.sql). Food entries and food
+nutrients remain canonical; nutrition views project only the resolved food
+contribution set. The migration drops dependent views explicitly before their
+tables, following [PostgreSQL view dependency rules](https://www.postgresql.org/docs/current/sql-dropview.html).
 
 ### Daily Nutrition vs Food Entries
 
-`fitness.food_entry` plus `fitness.food_entry_nutrient` is the source of truth for nutrition. Providers that have itemized foods store named food entries. Providers that only have nutrient samples store unnamed food entries with timestamps/source metadata and nutrient rows.
+`fitness.food_entry` plus `fitness.food_entry_nutrient` is the raw source of truth
+for nutrition. `food_entry.nutrition_grain` records whether a writer supplied
+itemized foods, meal aggregates, or daily aggregates. Existing rows remain nullable and are
+classified conservatively from their stored shape rather than rewritten.
+Providers that have itemized foods store named food entries. Providers that
+only have nutrient samples store unnamed food entries with timestamps/source
+metadata and nutrient rows.
 
-**Apple Health** provides individual `HKQuantityType` samples (e.g., "120 calories at 12:30pm", "30g protein at 1:00pm") with source/timestamp metadata but no food name, meal type, serving size, or food identifier. These become unnamed `food_entry` rows with associated `food_entry_nutrient` rows.
+Meal aggregates retain one raw meal record and its nutrient totals, even when
+the provider payload contains display-only item descriptions. Those items do
+not create nutrient-bearing food rows. Nullable `food_entry.source_account_key`
+identifies the upstream account for source resolution; nonblank account keys
+take precedence over source names and never become display labels. See the
+[canonical schema](../src/db/schema/nutrition.ts) and
+[migration 0124](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
-**Cronometer CSV** writes itemized foods into `food_entry` and `food_entry_nutrient`. Daily totals are derived from those rows instead of inserted separately.
+**Apple Health** provides numerical `HKQuantitySample` records with units,
+timestamps, and source revision metadata. Dofek's nutrition import has no
+itemized food identity for those samples, so they become unnamed
+`daily_aggregate` food entries with associated nutrient rows. See Apple's
+[`HKQuantitySample`](https://developer.apple.com/documentation/healthkit/hkquantitysample),
+[`HKSample`](https://developer.apple.com/documentation/healthkit/hksample), and
+[`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision)
+documentation.
 
-**FatSecret** writes itemized food entries through the same normalized path.
+**Cronometer CSV** writes `itemized` foods into `food_entry` and
+`food_entry_nutrient`. Daily totals are derived from those rows instead of
+inserted separately.
 
-Routers that need daily nutrient totals query `fitness.v_nutrition_daily`. Routers that need entry-level or micronutrient detail query `food_entry` / `food_entry_nutrient` directly.
+**FatSecret** and manual food logging write `itemized`
+entries through the normalized food path.
+
+Serving code reads `fitness.v_nutrition_daily` and
+`fitness.v_nutrition_canonical_nutrient`. Selection prefers itemized sources,
+then meal-aggregate sources, then daily-aggregate sources. Multiple sources at
+the selected tier or mixed ambiguous legacy rows return
+`source_conflict` with null totals and selected/excluded provenance rather than
+silently double-counting or choosing by row order. PostgreSQL views provide
+these query-time projections without duplicating raw storage; see
+[PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
+
+Provider details, provider statistics, and exports continue to use raw
+`food_entry` / `food_entry_nutrient` data. Itemized and meal-aggregate rows each
+appear once in editable food cards and meal counts. Daily-aggregate and
+ambiguous rows are excluded from those cards, but are not deleted; see
+[the display-view migration](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
+
+Human edits are overlay decisions rather than changes to provider facts.
+`fitness.v_food_entry_effective` applies the current scalar and deletion
+decisions to the latest raw row resolved by stable identity.
+`fitness.v_food_entry_effective_nutrient` takes the union of raw and decided
+canonical nutrient IDs: a numeric `set` replaces the effective amount, `set
+NULL` represents an explicit unknown value, and `clear` follows the current raw
+amount. Both views retain the source entry and provider attribution. They are
+defined in [migration 0113](../drizzle/0113_effective_food_records.sql), using
+PostgreSQL views so the overlay does not duplicate the raw source of truth
+([PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)).
+
+Canonical nutrition applies effective visibility, dates, scalar classification,
+and nutrients before choosing the contributing source set. A deletion therefore
+removes the item from serving totals, a restore contributes it again, and a
+corrected nutrient contributes exactly once under the existing overlap rules.
+`fitness.v_nutrition_provider_daily` remains the raw per-provider projection for
+provenance and inspection. The effective projections do not snapshot historical
+provider facts; the append-only history records commands and decisions, while a
+read resolves them against the current provider row.
 
 ## Deduplication
 
-All provider-sourced tables have a `(provider_id, external_id)` unique index. Syncs use upsert to avoid duplicates.
+Provider-sourced tables use unique external-ID indexes as appropriate for each
+source's identity scope. When supplied, `(user_id, provider_id, external_id)`
+identifies a climbing source log for idempotent upserts. Climb identity is
+separate from occurrence identity; repeated source occurrences remain separate.
+Cross-provider overlap is resolved at query time while retaining attribution.
+See the [source identity index](../src/db/schema/climbing.ts) and
+[observation selection](../packages/server/src/repositories/climbing-repository.ts).
 
 Every metric-stream ingestion path must publish Redpanda events with a stable `external_id`. Provider-supplied IDs are preferred; when the source does not expose a sample ID, ingestion derives a deterministic ID from provider, activity/source, channel, and timestamp. Metric stream events use `(user_id, provider_id, external_id, channel, recorded_at)` as the logical idempotency key so failed syncs can be retried without duplicating raw samples in ClickHouse.
 

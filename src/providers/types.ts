@@ -1,8 +1,14 @@
+import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import type { ImageDiscovery } from "../activity-images/types.ts";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import type { WebhookEvent } from "../webhook-event.ts";
 import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+export type { WebhookEvent } from "../webhook-event.ts";
 export type {
   SyncCheckpointStore,
   SyncOptions,
@@ -31,6 +37,7 @@ export interface OAuth1Flow {
 export interface ProviderIdentity {
   providerAccountId: string;
   email: string | null;
+  emailVerified: boolean;
   name: string | null;
 }
 
@@ -39,20 +46,58 @@ export interface ProviderIdentityCapabilities {
   providesEmail: boolean;
 }
 
+/** Commit rotated credentials before a provider revoker performs further remote work. */
+export type ProviderRevocationTokenPersistence = (tokens: TokenSet) => Promise<void>;
+
 /**
  * Auth setup returned by providers that require user connection.
  * OAuth providers supply oauthConfig + exchangeCode; credential providers use automatedLogin only.
  */
 export interface ProviderAuthSetup {
+  /** Validate connection ownership inside the credential persistence transaction. */
+  assertCanConnect?: (db: SyncDatabase, userId: string, tokens: TokenSet) => Promise<void>;
   oauthConfig?: OAuthConfig;
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
-  exchangeCode?: (code: string, codeVerifier?: string) => Promise<TokenSet>;
-  /** Provider-specific cleanup before exchanging a new auth code. */
-  revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
+  exchangeCode?: (
+    code: string,
+    codeVerifier?: string,
+    onTokensIssued?: (tokens: TokenSet) => void,
+  ) => Promise<TokenSet>;
+  /** Provider-specific cleanup for an existing authorization. */
+  revokeExistingTokens?: (
+    tokens: TokenSet,
+    onTokensRefreshed?: ProviderRevocationTokenPersistence,
+  ) => Promise<void>;
+  /**
+   * Provider-specific revocation semantics for durable account-erasure replay.
+   * This must accept only provider-documented terminal outcomes.
+   */
+  revokeTokensForAccountErasure?: (
+    tokens: TokenSet,
+    onTokensRefreshed?: ProviderRevocationTokenPersistence,
+  ) => Promise<void>;
+  /**
+   * Provider-specific reconnect lifecycle.
+   * `replace` replaces credentials only for the same verified providerAccountId,
+   * preserving the registration on success and any failed OAuth connection.
+   * Registration deletion is reserved for explicit disconnect/account erasure.
+   * `revoke-then-replace` revokes before exchange.
+   * `deauthorize-on-token-limit` exchanges first and deauthorizes only after
+   * the provider explicitly rejects the exchange for too many active tokens.
+   * The default exchanges and persists the replacement before cleaning up old tokens.
+   */
+  reconnectStrategy?: "replace" | "deauthorize-on-token-limit" | "revoke-then-replace";
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
+  /** User-supplied public profile identity or provider-issued access token. */
+  manualToken?: {
+    kind: ProviderManualConnectionKind;
+    label: string;
+    instructionsUrl: `https://${string}`;
+    exchangeToken: (token: string) => Promise<TokenSet>;
+  };
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */
   oauth1Flow?: OAuth1Flow;
   /** Extract user identity from this provider (enables using it as a login provider) */
@@ -68,13 +113,17 @@ export interface SyncResult {
   provider: string;
   recordsSynced: number;
   errors: SyncError[];
+  degradations?: SyncDegradation[];
   duration: number;
+  /** When true, more BullMQ jobs will run to finish this sync run. */
+  continued?: boolean;
 }
 
 export interface SyncError {
   message: string;
   externalId?: string;
   cause?: unknown;
+  context?: Record<string, string | number | boolean | null>;
 }
 
 // ============================================================
@@ -85,10 +134,52 @@ export interface SyncError {
  * How a provider authenticates users.
  * - 'oauth': Standard OAuth 2.0 redirect flow (Strava, Fitbit, etc.)
  * - 'credential': User provides username/password, server authenticates (Eight Sleep, Zwift, etc.)
+ * - 'token': User supplies a provider-issued personal token
+ * - 'public-profile': User supplies a public profile identity without a remote authorization
  * - 'file-import': No authentication needed, user uploads files
  * - 'oauth1': OAuth 1.0 3-legged flow (FatSecret)
  */
-export type ProviderAuthType = "oauth" | "credential" | "file-import" | "oauth1";
+export type ProviderAuthType =
+  | "oauth"
+  | "credential"
+  | "token"
+  | "public-profile"
+  | "file-import"
+  | "oauth1";
+
+export interface ProviderAuthCapabilities {
+  automatedLogin: boolean;
+  manualToken: ProviderManualConnectionKind | null;
+  oauth1: boolean;
+  oauth: boolean;
+}
+
+/**
+ * Canonical precedence for providers that expose more than one connection flow.
+ * Personal tokens are the public self-service path when OAuth is also available.
+ */
+export function classifyProviderAuth(
+  capabilities: ProviderAuthCapabilities,
+): ProviderAuthType | "none" {
+  if (capabilities.automatedLogin) return "credential";
+  if (capabilities.oauth1) return "oauth1";
+  if (capabilities.manualToken === "public-profile") return "public-profile";
+  if (capabilities.manualToken === "access-token") return "token";
+  if (capabilities.oauth) return "oauth";
+  return "none";
+}
+
+export function getProviderAuthTypeFromSetup(
+  setup: ProviderAuthSetup | undefined,
+): ProviderAuthType | "none" {
+  if (!setup) return "none";
+  return classifyProviderAuth({
+    automatedLogin: Boolean(setup.automatedLogin),
+    oauth1: Boolean(setup.oauth1Flow),
+    manualToken: setup.manualToken?.kind ?? null,
+    oauth: Boolean(setup.oauthConfig && setup.exchangeCode),
+  });
+}
 
 /**
  * Common fields shared by all providers (sync and import).
@@ -99,6 +190,12 @@ interface BaseProvider {
 
   /** Human-readable name */
   readonly name: string;
+
+  /** Data arrives through notifications; this source must not be polled. */
+  readonly pushOnly?: boolean;
+
+  /** Optional explicit processing-status scope for custom providers and tests. */
+  readonly processingDatasetKeys?: readonly ProcessingDatasetKey[];
 
   /**
    * Validate that the provider is configured (API keys present, etc.)
@@ -128,6 +225,16 @@ interface BaseProvider {
  * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
+  discoverClimbingImages?(
+    run: SyncRun,
+    climbingExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery>;
+  discoverActivityImages?(
+    run: SyncRun,
+    activityExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery>;
   /**
    * Number of days scheduled sync jobs should request by default.
    * Omit to use the framework default.
@@ -160,48 +267,8 @@ export function isSyncProvider(provider: Provider): provider is SyncProvider {
 }
 
 // ============================================================
-// Specialized provider interfaces
-// ============================================================
-
-/** Provider that authenticates via OAuth 2.0 redirect (Strava, Fitbit, Wahoo, etc.) */
-export interface OAuthProvider extends SyncProvider {
-  authSetup(options?: { host?: string }): ProviderAuthSetup;
-}
-
-/** Provider that authenticates via user-provided credentials (Eight Sleep, Zwift, etc.) */
-export interface CredentialProvider extends SyncProvider {
-  authSetup(options?: { host?: string }): ProviderAuthSetup & {
-    automatedLogin: NonNullable<ProviderAuthSetup["automatedLogin"]>;
-  };
-}
-
-/** Provider that uses file import only (Strong CSV, Cronometer CSV) */
-export interface FileImportProvider extends ImportProvider {}
-
-// ============================================================
 // Webhook support
 // ============================================================
-
-/**
- * An event parsed from an incoming webhook payload.
- * Used to determine which user needs a sync.
- */
-export interface WebhookEvent {
-  /** Provider-specific owner/user ID (e.g., Strava athlete_id, Fitbit user_id) */
-  ownerExternalId: string;
-  /** What happened */
-  eventType: "create" | "update" | "delete";
-  /** What kind of object changed (activity, sleep, body, etc.) */
-  objectType: string;
-  /** External ID of the changed object (if available) */
-  objectId?: string;
-  /**
-   * Provider-specific metadata carried through to syncWebhookEvent().
-   * Can include the full payload (Wahoo, Concept2, Suunto), a date (Fitbit),
-   * a time range (Withings), or any other context needed for targeted sync.
-   */
-  metadata?: Record<string, unknown>;
-}
 
 /**
  * A provider that supports receiving webhook push notifications.
@@ -277,30 +344,28 @@ export interface WebhookProvider extends SyncProvider {
   readonly webhookScope: "app" | "user";
 }
 
+/** Notification ingestion whose receiving endpoint is configured in a provider portal. */
+export interface PushProvider extends SyncProvider {
+  readonly pushOnly: true;
+  parseWebhookPayload(body: unknown): WebhookEvent[];
+  syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult>;
+}
+
+export function isPushProvider(provider: Provider): provider is PushProvider {
+  return (
+    provider.pushOnly === true &&
+    "syncWebhookEvent" in provider &&
+    typeof provider.syncWebhookEvent === "function" &&
+    "parseWebhookPayload" in provider &&
+    typeof provider.parseWebhookPayload === "function"
+  );
+}
+
 /** Type guard: narrows a Provider to WebhookProvider. */
 export function isWebhookProvider(provider: Provider): provider is WebhookProvider {
   return "registerWebhook" in provider && typeof provider.registerWebhook === "function";
-}
-
-// ============================================================
-// Runtime auth type detection
-// ============================================================
-
-/**
- * Detect a provider's authentication type from its interface.
- * Used by the sync router to tell the frontend which auth flow to use.
- */
-export function getProviderAuthType(provider: Provider): ProviderAuthType | "none" {
-  if ("importOnly" in provider && provider.importOnly === true) return "file-import";
-  let setup: ProviderAuthSetup | undefined;
-  try {
-    setup = provider.authSetup?.();
-  } catch {
-    return "none";
-  }
-  if (!setup) return "none";
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig) return "oauth";
-  return "none";
 }

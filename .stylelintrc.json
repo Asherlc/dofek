@@ -48,6 +48,7 @@
     "**/dist/**",
     "**/build/**",
     "**/coverage/**",
+    "**/coverage-integration*/**",
     "**/.next/**",
     "**/storybook-static/**"
   ]

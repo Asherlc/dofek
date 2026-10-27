@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -7,7 +7,11 @@ import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { captureException } from "../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -160,6 +164,10 @@ function isWithingsAccessTokenRejected(error: unknown): boolean {
   return error instanceof WithingsApiError && error.status === 401;
 }
 
+function throwIfProviderSyncAbortError(error: unknown): void {
+  if (isRetryableInfraError(error) || error instanceof ProviderRateLimitError) throw error;
+}
+
 export function withingsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WITHINGS_CLIENT_ID;
   const clientSecret = process.env.WITHINGS_CLIENT_SECRET;
@@ -182,7 +190,6 @@ async function withingsTokenExchange(
   params: Record<string, string>,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "withings" });
   const bodyParams: Record<string, string> = {
     action: "requesttoken",
     client_id: config.clientId,
@@ -191,7 +198,7 @@ async function withingsTokenExchange(
   if (config.clientSecret) bodyParams.client_secret = config.clientSecret;
   const body = new URLSearchParams(bodyParams);
 
-  const response = await rateLimitFetchFn(config.tokenUrl, {
+  const response = await fetchFn(config.tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -213,11 +220,19 @@ async function withingsTokenExchange(
 
   const data = json.body;
   const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 10800;
+  const providerAccountId = z
+    .union([z.string().min(1), z.number().int().nonnegative()])
+    .safeParse(data.userid);
 
   return {
     accessToken: String(data.access_token),
     refreshToken: String(data.refresh_token),
     expiresAt: new Date(Date.now() + expiresIn * 1000),
+    ...(providerAccountId.success
+      ? {
+          providerAccountId: String(providerAccountId.data),
+        }
+      : {}),
     scopes: typeof data.scope === "string" ? data.scope : "",
   };
 }
@@ -263,7 +278,7 @@ export class WithingsClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "withings" });
+    this.#fetchFn = fetchFn;
   }
 
   async #post<T>(path: string, params: Record<string, string>): Promise<T> {
@@ -330,7 +345,7 @@ export class WithingsProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "withings" });
+    this.#fetchFn = createProviderRateLimitFetch("withings", fetchFn);
   }
 
   validate(): string | null {
@@ -403,7 +418,7 @@ export class WithingsProvider implements WebhookProvider {
     if (!config) throw new Error("WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeWithingsCode(config, code),
+      exchangeCode: (code) => exchangeWithingsCode(config, code, this.#fetchFn),
       apiBaseUrl: WITHINGS_API_BASE,
     };
   }
@@ -459,6 +474,7 @@ export class WithingsProvider implements WebhookProvider {
     try {
       tokens = await this.#resolveTokens(db);
     } catch (err) {
+      throwIfProviderSyncAbortError(err);
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
@@ -466,6 +482,7 @@ export class WithingsProvider implements WebhookProvider {
     let client = new WithingsClient(tokens.accessToken, this.#fetchFn);
     const sinceUnix = Math.floor(since.getTime() / 1000);
     const nowUnix = Math.floor(Date.now() / 1000);
+    let metricStreamRecordsSynced = 0;
 
     try {
       const measCount = await withSyncLog(
@@ -474,79 +491,96 @@ export class WithingsProvider implements WebhookProvider {
         "metric_stream",
         async () => {
           let count = 0;
-          let offset = 0;
-          let more = 1;
           let refreshedAfterAccessTokenRejection = false;
 
-          while (more) {
-            let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
-            try {
-              response = await client.getMeas(sinceUnix, nowUnix, offset);
-            } catch (err) {
-              if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
-                logger.info("[withings] Access token rejected by API, refreshing and retrying...");
-                tokens = await this.#refreshTokens(db, tokens);
-                client = new WithingsClient(tokens.accessToken, this.#fetchFn);
-                refreshedAfterAccessTokenRejection = true;
-                continue;
-              }
-              throw err;
-            }
-
-            for (const group of response.measuregrps) {
-              const parsed = parseMeasureGroup(group);
-
-              // Skip empty groups (objectives or unknown types)
-              if (
-                parsed.weightKg === undefined &&
-                parsed.systolicBp === undefined &&
-                parsed.temperatureC === undefined
-              ) {
-                continue;
-              }
-
+          const pageResult = await fetchProviderPages<WithingsMeasureGroup, number>({
+            providerId: this.id,
+            stepName: "metric_stream",
+            initialCursor: 0,
+            fetchPage: async (offset) => {
+              let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
               try {
-                await writeMetricStreamBatch(
-                  db,
-                  [
-                    {
-                      providerId: this.id,
-                      externalId: parsed.externalId,
-                      recordedAt: parsed.recordedAt,
-                      weightKg: parsed.weightKg,
-                      bodyFatPct: parsed.bodyFatPct,
-                      muscleMassKg: parsed.muscleMassKg,
-                      boneMassKg: parsed.boneMassKg,
-                      systolicBp: parsed.systolicBp,
-                      diastolicBp: parsed.diastolicBp,
-                      heartPulse: parsed.heartPulse,
-                      temperatureC: parsed.temperatureC,
-                    },
-                  ],
-                  SOURCE_TYPE_API,
-                  undefined,
-                  options?.metricStreamPublisher,
-                );
-                count++;
+                response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
               } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
+                if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
+                  logger.info(
+                    "[withings] Access token rejected by API, refreshing and retrying...",
+                  );
+                  tokens = await this.#refreshTokens(db, tokens);
+                  client = new WithingsClient(tokens.accessToken, this.#fetchFn);
+                  refreshedAfterAccessTokenRejection = true;
+                  response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
+                } else {
+                  throw err;
+                }
               }
-            }
 
-            more = response.more;
-            offset = response.offset;
-          }
+              for (const group of response.measuregrps) {
+                const parsed = parseMeasureGroup(group);
 
-          return { recordCount: count, result: count };
+                // Skip empty groups (objectives or unknown types)
+                if (
+                  parsed.weightKg === undefined &&
+                  parsed.systolicBp === undefined &&
+                  parsed.temperatureC === undefined
+                ) {
+                  continue;
+                }
+
+                try {
+                  await writeMetricStreamBatch(
+                    db,
+                    [
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        recordedAt: parsed.recordedAt,
+                        weightKg: parsed.weightKg,
+                        bodyFatPct: parsed.bodyFatPct,
+                        muscleMassKg: parsed.muscleMassKg,
+                        boneMassKg: parsed.boneMassKg,
+                        systolicBp: parsed.systolicBp,
+                        diastolicBp: parsed.diastolicBp,
+                        heartPulse: parsed.heartPulse,
+                        temperatureC: parsed.temperatureC,
+                      },
+                    ],
+                    SOURCE_TYPE_API,
+                    undefined,
+                    options?.metricStreamPublisher,
+                  );
+                  count++;
+                  metricStreamRecordsSynced = count;
+                } catch (err) {
+                  throwIfProviderSyncAbortError(err);
+                  captureException(err);
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+
+              return {
+                items: response.measuregrps,
+                nextCursor: response.more ? response.offset : null,
+              };
+            },
+          });
+
+          return {
+            recordCount: count,
+            result: count,
+            degradations: pageResult.degradations,
+          };
         },
         options?.userId,
       );
       recordsSynced += measCount;
     } catch (err) {
+      throwIfProviderSyncAbortError(err);
+      recordsSynced += metricStreamRecordsSynced;
       errors.push({
         message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,

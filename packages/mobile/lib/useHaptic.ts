@@ -6,8 +6,34 @@ import {
   selectionAsync,
 } from "expo-haptics";
 import { useCallback, useRef } from "react";
+import { captureException } from "./telemetry";
 
 const THROTTLE_MS = 150;
+
+type OptionalHapticResult = { status: "performed" } | { status: "unavailable"; cause: unknown };
+
+function isHapticUnavailableError(error: unknown): error is { code: "ERR_UNAVAILABLE" } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ERR_UNAVAILABLE"
+  );
+}
+
+async function performOptionalHaptic(
+  operation: () => Promise<void>,
+): Promise<OptionalHapticResult> {
+  try {
+    await operation();
+    return { status: "performed" };
+  } catch (cause: unknown) {
+    if (isHapticUnavailableError(cause)) {
+      return { status: "unavailable", cause };
+    }
+    throw cause;
+  }
+}
 
 /**
  * Haptic feedback hook with built-in throttling.
@@ -22,9 +48,8 @@ export function useHaptic() {
     const now = Date.now();
     if (now - lastFired.current < THROTTLE_MS) return;
     lastFired.current = now;
-    fn().catch((_error: unknown) => {
-      // Haptics unavailable — intentionally ignored (simulator, low power mode).
-      // This is non-critical UI feedback; logging would just create noise.
+    void performOptionalHaptic(fn).catch((error: unknown) => {
+      captureException(error, { source: "optional-haptic-feedback" });
     });
   }, []);
 

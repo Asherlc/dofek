@@ -1,9 +1,12 @@
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
+import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
+import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { useCallback, useMemo, useState } from "react";
-import { type LayoutChangeEvent, StyleSheet, View } from "react-native";
+import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
-import { ChartTitleWithTooltip } from "./ChartTitleWithTooltip";
+import { MapProcessingState } from "./MapProcessingState";
 
 interface GpsPoint {
   lat: number | null;
@@ -13,15 +16,33 @@ interface GpsPoint {
 interface RouteMapProps {
   points: GpsPoint[];
   hoveredPosition?: { lat: number; lng: number } | null;
+  climbMarkers?: readonly ClimbingMapMarker[];
+  compact?: boolean;
+  onSelectEntry?: (entryId: string) => void;
 }
 
 const MAP_HEIGHT = 280;
+const NO_CLIMB_MARKERS: readonly ClimbingMapMarker[] = [];
 
-export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
+export function RouteMap({
+  points,
+  hoveredPosition,
+  climbMarkers = NO_CLIMB_MARKERS,
+  compact = false,
+  onSelectEntry,
+}: RouteMapProps) {
   const [mapWidth, setMapWidth] = useState<number | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const markerGroups = useMemo(
+    () => groupClimbingMapMarkers(climbMarkers, providerSourceLabel),
+    [climbMarkers],
+  );
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    setMapWidth(event.nativeEvent.layout.width);
+    const width = event.nativeEvent.layout.width;
+    if (width > 0) setMapWidth(width);
   }, []);
 
   const gpsPoints = useMemo(
@@ -33,7 +54,14 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
   );
 
   const region = useMemo(() => {
-    const firstPoint = gpsPoints[0];
+    const mapPoints = [
+      ...gpsPoints,
+      ...(climbMarkers ?? []).map(({ location }) => ({
+        lat: location.coordinates.latitude,
+        lng: location.coordinates.longitude,
+      })),
+    ];
+    const firstPoint = mapPoints[0];
     if (!firstPoint) return null;
 
     let minLat = firstPoint.lat;
@@ -41,7 +69,7 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
     let minLng = firstPoint.lng;
     let maxLng = firstPoint.lng;
 
-    for (const point of gpsPoints) {
+    for (const point of mapPoints) {
       if (point.lat < minLat) minLat = point.lat;
       if (point.lat > maxLat) maxLat = point.lat;
       if (point.lng < minLng) minLng = point.lng;
@@ -57,9 +85,9 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
       latitudeDelta: latDelta,
       longitudeDelta: lngDelta,
     };
-  }, [gpsPoints]);
+  }, [gpsPoints, climbMarkers]);
 
-  if (gpsPoints.length === 0 || region == null) return null;
+  if (region == null) return null;
 
   const coordinates = gpsPoints.map((point) => ({
     latitude: point.lat,
@@ -70,36 +98,76 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
   const endCoordinate = coordinates[coordinates.length - 1];
 
   return (
-    <View style={styles.container}>
-      <ChartTitleWithTooltip
-        title="Route Map"
-        description="This map shows your recorded route, including start and finish locations."
-        textStyle={styles.title}
-      />
-      <View style={styles.mapWrapper} onLayout={handleLayout}>
+    <View style={compact ? styles.compactContainer : styles.container}>
+      {!compact && gpsPoints.length > 0 && <Text style={styles.title}>Route Map</Text>}
+      <View
+        style={[styles.mapWrapper, { height: compact ? 140 : MAP_HEIGHT }]}
+        onLayout={handleLayout}
+      >
         {mapWidth != null && (
           <MapView
-            style={{ width: mapWidth, height: MAP_HEIGHT }}
-            initialRegion={region}
-            scrollEnabled={false}
-            zoomEnabled={false}
+            style={{ width: mapWidth, height: compact ? 140 : MAP_HEIGHT }}
+            pointerEvents={compact ? "none" : "auto"}
+            region={region}
+            scrollEnabled={!compact}
+            zoomEnabled={!compact}
             rotateEnabled={false}
             pitchEnabled={false}
             toolbarEnabled={false}
             showsUserLocation={false}
             showsPointsOfInterests={false}
+            onMapReady={() => setMapReady(true)}
+            loadingEnabled
+            loadingIndicatorColor={colors.accent}
+            loadingBackgroundColor={colors.surfaceSecondary}
           >
-            <Polyline
-              coordinates={coordinates}
-              strokeColor={statusColors.positive}
-              strokeWidth={3}
-            />
+            {coordinates.length > 0 && (
+              <Polyline
+                coordinates={coordinates}
+                strokeColor={statusColors.positive}
+                strokeWidth={3}
+              />
+            )}
             {startCoordinate != null && (
               <Marker coordinate={startCoordinate} pinColor={statusColors.positive} title="Start" />
             )}
             {endCoordinate != null && (
               <Marker coordinate={endCoordinate} pinColor={statusColors.danger} title="Finish" />
             )}
+            {markerGroups.map(({ coordinates, markers, title, description }) => (
+              <Marker
+                key={`${coordinates.latitude}:${coordinates.longitude}`}
+                identifier={markers[0].entryId}
+                coordinate={coordinates}
+                title={title}
+                description={description}
+                anchor={{ x: 0.5, y: 0.5 }}
+                onPress={
+                  compact
+                    ? undefined
+                    : () => {
+                        if (markers.length === 1) {
+                          setSelectedEntryId(markers[0].entryId);
+                          setInspectedPoint(null);
+                          onSelectEntry?.(markers[0].entryId);
+                        } else {
+                          setInspectedPoint(coordinates);
+                        }
+                      }
+                }
+              >
+                <View
+                  style={[
+                    styles.sourceMarker,
+                    markers.every((marker) => marker.location.scope === "area") &&
+                      styles.areaMarker,
+                    markers.length > 1 && styles.groupMarker,
+                  ]}
+                >
+                  {markers.length > 1 && <Text style={styles.markerCount}>{markers.length}</Text>}
+                </View>
+              </Marker>
+            ))}
             {hoveredPosition != null && (
               <Marker
                 coordinate={{
@@ -113,12 +181,42 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
             )}
           </MapView>
         )}
+        {!mapReady && (
+          <View style={StyleSheet.absoluteFill}>
+            <MapProcessingState />
+          </View>
+        )}
       </View>
+      {!compact && inspectedPoint && (
+        <View accessibilityLabel="Climbing entries at this location" style={styles.occurrences}>
+          {climbMarkers.map((marker) => {
+            const { latitude, longitude } = marker.location.coordinates;
+            if (latitude !== inspectedPoint.latitude || longitude !== inspectedPoint.longitude)
+              return null;
+            return (
+              <Pressable
+                key={marker.entryId}
+                accessibilityRole="button"
+                accessibilityLabel={marker.label}
+                accessibilityState={{ selected: selectedEntryId === marker.entryId }}
+                style={styles.occurrence}
+                onPress={() => {
+                  setSelectedEntryId(marker.entryId);
+                  onSelectEntry?.(marker.entryId);
+                }}
+              >
+                <Text style={styles.occurrenceLabel}>{marker.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  compactContainer: { overflow: "hidden", borderRadius: radius.lg },
   container: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
@@ -144,4 +242,30 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: statusColors.positive,
   },
+  sourceMarker: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.accent,
+    borderWidth: 2,
+    borderColor: "#ffffff",
+  },
+  areaMarker: { backgroundColor: statusColors.warning },
+  groupMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  markerCount: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
+  occurrences: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  occurrence: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.lg,
+    padding: 10,
+    maxWidth: "100%",
+  },
+  occurrenceLabel: { color: colors.accent, fontSize: 13, flexShrink: 1 },
 });

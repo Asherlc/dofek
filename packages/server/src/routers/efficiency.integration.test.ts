@@ -1,10 +1,11 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import type { PolarizationTrendResult } from "../repositories/efficiency-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("efficiency.polarizationTrend integration", () => {
@@ -75,24 +76,22 @@ describe("efficiency.polarizationTrend integration", () => {
     return first?.result?.data;
   }
 
-  interface PolarizationResult {
-    maxHr: number | null;
-    weeks: Array<{
-      week: string;
-      z1Seconds: number;
-      z2Seconds: number;
-      z3Seconds: number;
-      polarizationIndex: number | null;
-    }>;
-  }
-
   it("returns maxHr from user profile", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
     expect(result.maxHr).toBe(MAX_HR);
+    expect(result).toMatchObject({
+      model: "treff-three-zone",
+      activityScope: "cycling",
+      threshold: 2,
+    });
   });
 
   it("bins HR samples into correct %HRmax zones", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
 
     const totalZ1 = result.weeks.reduce((sum, w) => sum + w.z1Seconds, 0);
     const totalZ2 = result.weeks.reduce((sum, w) => sum + w.z2Seconds, 0);
@@ -104,30 +103,42 @@ describe("efficiency.polarizationTrend integration", () => {
   });
 
   it("places HR at exactly 80% HRmax (152) in Z2, not Z1", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
     const totalZ2 = result.weeks.reduce((sum, w) => sum + w.z2Seconds, 0);
     // If 152 bpm was in Z1 instead of Z2, total Z2 would be 300 not 400
     expect(totalZ2).toBe(400);
   });
 
   it("places HR at exactly 90% HRmax (171) in Z3, not Z2", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
     const totalZ3 = result.weeks.reduce((sum, w) => sum + w.z3Seconds, 0);
     // If 171 bpm was in Z2 instead of Z3, total Z3 would be 100 not 200
     expect(totalZ3).toBe(200);
   });
 
   it("returns null PI when a zone has zero samples", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
     const z1OnlyWeek = result.weeks.find((w) => w.z2Seconds === 0 && w.z3Seconds === 0);
     expect(z1OnlyWeek).toBeDefined();
     if (z1OnlyWeek) {
       expect(z1OnlyWeek.polarizationIndex).toBeNull();
+      expect(z1OnlyWeek).toMatchObject({
+        status: "insufficient_data",
+        statusLabel: "Not calculated",
+      });
     }
   });
 
   it("computes Treff PI correctly from real zone data", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
     const threeZoneWeek = result.weeks.find(
       (w) => w.z1Seconds > 0 && w.z2Seconds > 0 && w.z3Seconds > 0,
     );
@@ -137,13 +148,17 @@ describe("efficiency.polarizationTrend integration", () => {
       const f1 = threeZoneWeek.z1Seconds / total;
       const f2 = threeZoneWeek.z2Seconds / total;
       const f3 = threeZoneWeek.z3Seconds / total;
-      const expectedPi = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
+      const expectedPi = Math.round(Math.log10((f1 / f2) * f3 * 100) * 1000) / 1000;
       expect(threeZoneWeek.polarizationIndex).toBe(expectedPi);
+      expect(threeZoneWeek.status).toBe(expectedPi > 2 ? "polarized" : "not_polarized");
+      expect(threeZoneWeek.totalSeconds).toBe(total);
     }
   });
 
   it("does not require resting HR for zone calculation", async () => {
-    const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
+    const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
+      days: 90,
+    });
     expect(result.weeks.length).toBeGreaterThan(0);
     expect(result.maxHr).toBe(MAX_HR);
   });

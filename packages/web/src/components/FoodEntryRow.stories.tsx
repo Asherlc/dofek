@@ -49,8 +49,6 @@ const meta = {
     servingDescription: "1 bowl",
     calories: 420,
     nutrients: nutrientDetails,
-    onDelete: () => undefined,
-    deleting: false,
   },
 } satisfies Meta<typeof FoodEntryRow>;
 
@@ -69,11 +67,5 @@ export const NoDescription: Story = {
 export const NoNutrients: Story = {
   args: {
     nutrients: [],
-  },
-};
-
-export const Deleting: Story = {
-  args: {
-    deleting: true,
   },
 };

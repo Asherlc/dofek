@@ -1,0 +1,1230 @@
+// @vitest-environment jsdom
+
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import React from "react";
+import { Alert, Linking } from "react-native";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockFileWrite = vi.fn();
+const mockFileDelete = vi.fn();
+const mockDownloadFileAsync = vi.fn();
+vi.mock("expo-file-system", () => {
+  const MockDirectory = vi.fn(function directoryConstructor(
+    parent: { uri: string },
+    directoryName: string,
+  ) {
+    return {
+      create: vi.fn(),
+      delete: vi.fn(),
+      exists: true,
+      uri: `${parent.uri}/${directoryName}`,
+    };
+  });
+  const MockFile = vi.fn(function fileConstructor(parent: { uri: string }, filename: string) {
+    return {
+      delete: mockFileDelete,
+      exists: true,
+      uri: `${parent.uri}/${filename}`,
+      write: mockFileWrite,
+    };
+  });
+  MockFile.downloadFileAsync = mockDownloadFileAsync;
+  return {
+    Directory: MockDirectory,
+    Paths: { cache: { uri: "file:///tmp/cache" } },
+    File: MockFile,
+  };
+});
+
+vi.mock("expo-sharing", () => ({
+  shareAsync: vi.fn(),
+}));
+
+vi.mock("../components/PersonalizationPanel", () => ({
+  PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
+}));
+
+vi.mock("../components/AccountErasurePanel", () => ({
+  AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
+}));
+
+vi.mock("../components/ProviderLogo", () => ({
+  ProviderLogo: ({ provider }: { provider: string }) =>
+    React.createElement("span", { "data-testid": `provider-logo-${provider}` }),
+}));
+
+vi.mock("../components/McpClientSetupPanel", () => ({
+  McpClientSetupPanel: ({ endpoint }: { endpoint: string }) =>
+    React.createElement("div", { "data-testid": "mcp-client-setup" }, endpoint),
+}));
+
+const mockRouterPush = vi.fn();
+const mockRouterSetParams = vi.fn();
+let mockSearchParams: { tab?: string } = {};
+const mockLogout = vi.fn();
+let mockAuthServerUrl = "https://test.example.com";
+const mockBillingStatusInvalidate = vi.fn();
+const mockAppStoreBilling = vi.hoisted(() => ({
+  loadProduct: vi.fn().mockResolvedValue({
+    productID: "com.dofek.premium.monthly",
+    displayName: "Dofek Premium",
+    description: "Full access",
+    displayPrice: "$4.99",
+  }),
+  restore: vi.fn().mockResolvedValue(0),
+  showManageSubscriptions: vi.fn().mockResolvedValue(undefined),
+  subscribe: vi.fn().mockResolvedValue({ outcome: "cancelled" }),
+}));
+let mockSessionToken: string | null = "test-token";
+const defaultBillingStatus = {
+  hasFullAccess: false,
+  access: {
+    kind: "limited",
+    paid: false,
+    reason: "free_recent_week",
+    startDate: "2026-04-01",
+    endDateExclusive: "2026-04-08",
+  } as const,
+  stripeSubscriptionStatus: null,
+  canManageBilling: false,
+  appStoreSubscriptionStatus: null,
+  canManageAppStoreSubscription: false,
+};
+let mockBillingStatus = {
+  ...defaultBillingStatus,
+  access: { ...defaultBillingStatus.access },
+};
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockRouterPush, setParams: mockRouterSetParams }),
+  useLocalSearchParams: () => mockSearchParams,
+}));
+
+vi.mock("../lib/app-store-billing", () => ({
+  AppStoreBillingService: class AppStoreBillingService {
+    readonly loadProduct = mockAppStoreBilling.loadProduct;
+    readonly restore = mockAppStoreBilling.restore;
+    readonly showManageSubscriptions = mockAppStoreBilling.showManageSubscriptions;
+    readonly subscribe = mockAppStoreBilling.subscribe;
+  },
+}));
+
+vi.mock("../lib/auth-context", () => ({
+  useAuth: () => ({
+    logout: mockLogout,
+    serverUrl: mockAuthServerUrl,
+    sessionToken: mockSessionToken,
+  }),
+}));
+
+const mockLinkedAccountsRefetch = vi.fn();
+const mockCaptureException = vi.fn();
+const mockSettingsGetData = vi.fn();
+const mockSettingsSetData = vi.fn();
+const mockSettingsInvalidate = vi.fn();
+const mockSettingsSetMutate = vi.fn();
+const mockUnitSettingRefetch = vi.fn();
+const mockUnitSettingQuery: {
+  data: { key: string; value: unknown } | undefined;
+  error: Error | null;
+  refetch: typeof mockUnitSettingRefetch;
+} = {
+  data: { key: "unitSystem", value: "metric" },
+  error: null,
+  refetch: mockUnitSettingRefetch,
+};
+const mockClimbingGradeSettingQuery: {
+  data: { key: string; value: unknown } | null | undefined;
+  error: Error | null;
+} = {
+  data: null,
+  error: null,
+};
+const mockZeppPairingClaim = vi.fn();
+const mockZeppConnectionRevoke = vi.fn();
+let mockZeppConnections: Array<{
+  connectionType: "zepp-main" | "zepp-workout";
+}> = [];
+type ZeppPairingMutationOptions = {
+  onError?: (error: { message: string }) => void;
+  onMutate?: () => void;
+  onSuccess?: () => void;
+};
+let mockZeppPairingMutationOptions: ZeppPairingMutationOptions | null = null;
+type SetPasswordMutationOptions = {
+  onError?: (error: { message: string }) => void;
+  onSuccess?: () => Promise<void>;
+};
+let mockSetPasswordMutationOptions: SetPasswordMutationOptions | null = null;
+const mockSetPasswordMutate = vi.fn();
+const mockPasswordCredentialStatusQuery = vi.fn(() => ({
+  data: { hasPassword: false },
+  isLoading: false,
+  error: null,
+}));
+
+const mockProvidersData = [
+  { id: "wahoo", name: "Wahoo", authorized: true, importOnly: false },
+  { id: "strava", name: "Strava", authorized: true, importOnly: false },
+  { id: "polar", name: "Polar", authorized: false, importOnly: false },
+];
+const mockProvidersQuery: {
+  data: typeof mockProvidersData | undefined;
+  error: Error | null;
+  isLoading: boolean;
+} = {
+  data: mockProvidersData,
+  error: null,
+  isLoading: false,
+};
+
+vi.mock("../lib/trpc", () => ({
+  trpc: {
+    useUtils: () => ({
+      invalidate: vi.fn(),
+      client: {},
+      auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
+      billing: { status: { invalidate: mockBillingStatusInvalidate } },
+      bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
+      settings: {
+        get: {
+          getData: mockSettingsGetData,
+          setData: mockSettingsSetData,
+          invalidate: mockSettingsInvalidate,
+        },
+      },
+    }),
+    sync: {
+      providers: {
+        useQuery: () => mockProvidersQuery,
+      },
+    },
+    auth: {
+      linkedAccounts: {
+        useQuery: () => ({
+          isLoading: false,
+          data: [
+            {
+              id: "acct-1",
+              authProvider: "ride-with-gps",
+              email: "test@example.com",
+            },
+          ],
+          refetch: mockLinkedAccountsRefetch,
+        }),
+      },
+      unlinkAccount: {
+        useMutation: () => ({
+          mutate: vi.fn(),
+          isPending: false,
+        }),
+      },
+      passwordCredentialStatus: {
+        useQuery: () => mockPasswordCredentialStatusQuery(),
+      },
+      setPassword: {
+        useMutation: (options: SetPasswordMutationOptions) => {
+          mockSetPasswordMutationOptions = options;
+          return {
+            mutate: mockSetPasswordMutate,
+            isPending: false,
+          };
+        },
+      },
+      set: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
+    billing: {
+      status: { useQuery: () => ({ data: mockBillingStatus, isLoading: false }) },
+    },
+    mcp: {
+      listTokens: {
+        useQuery: () => ({ data: [], error: null, isLoading: false }),
+      },
+      listConnectedApps: {
+        useQuery: () => ({ data: { items: [], nextCursor: null }, error: null, isLoading: false }),
+      },
+      revokeToken: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
+      revokeConnectedApp: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
+      updateConnectedAppScopes: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
+    },
+    companionPairing: {
+      claim: {
+        useMutation: (options: ZeppPairingMutationOptions) => {
+          mockZeppPairingMutationOptions = options;
+          return {
+            mutate: (input: { code: string }) => {
+              options.onMutate?.();
+              mockZeppPairingClaim(input);
+            },
+            isPending: false,
+            isError: false,
+            error: null,
+          };
+        },
+      },
+    },
+    companionToken: {
+      list: {
+        useQuery: () => ({
+          data: mockZeppConnections,
+          error: null,
+          isLoading: false,
+          refetch: vi.fn().mockResolvedValue(undefined),
+        }),
+      },
+      revoke: {
+        useMutation: () => ({
+          mutate: mockZeppConnectionRevoke,
+          error: null,
+          isPending: false,
+        }),
+      },
+    },
+    medicationDoseEvents: {
+      list: {
+        useQuery: () => ({ data: { events: [] }, isLoading: false, error: null }),
+      },
+    },
+    settings: {
+      get: {
+        useQuery: (input: { key: string }) =>
+          input.key === "unitSystem" ? mockUnitSettingQuery : mockClimbingGradeSettingQuery,
+      },
+      set: {
+        useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }),
+      },
+      deleteAllUserData: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
+    bodyAnalytics: {
+      setGoalWeight: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+      weightPrediction: {
+        invalidate: vi.fn(),
+      },
+    },
+  },
+}));
+
+vi.mock("../lib/telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
+beforeEach(() => {
+  mockSearchParams = {};
+  mockAuthServerUrl = "https://test.example.com";
+  mockProvidersQuery.data = mockProvidersData;
+  mockProvidersQuery.error = null;
+  mockProvidersQuery.isLoading = false;
+  mockSessionToken = "test-token";
+  mockBillingStatus = {
+    ...defaultBillingStatus,
+    access: { ...defaultBillingStatus.access },
+  };
+  mockZeppPairingMutationOptions = null;
+  mockZeppConnections = [];
+  mockSetPasswordMutationOptions = null;
+  mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
+  mockUnitSettingQuery.error = null;
+  mockClimbingGradeSettingQuery.data = null;
+  mockClimbingGradeSettingQuery.error = null;
+  vi.clearAllMocks();
+  mockAppStoreBilling.loadProduct.mockResolvedValue({
+    productID: "com.dofek.premium.monthly",
+    displayName: "Dofek Premium",
+    description: "Full access",
+    displayPrice: "$4.99",
+  });
+});
+
+describe("SettingsScreen categories", () => {
+  it("shows searchable categories with Account selected by default", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("textbox", { name: "Search settings" })).toBeTruthy();
+    for (const category of [
+      "Account",
+      "Data Sources",
+      "Models & Units",
+      "Privacy/Export",
+      "Medications",
+      "Billing",
+      "Advanced",
+    ]) {
+      expect(screen.getByRole("button", { name: category })).toBeTruthy();
+    }
+    expect(screen.getByRole("button", { name: "Account" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("Password")).toBeTruthy();
+    expect(screen.queryByText("2 connected")).toBeNull();
+  });
+
+  it("filters categories and opens the matching section from a search term", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "medication" },
+    });
+
+    expect(screen.getByRole("button", { name: "Medications" })).toBeTruthy();
+    expect(screen.getByText("Medication Doses")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
+  });
+
+  it("switches from Account to Data Sources", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Data Sources" }));
+
+    expect(screen.getByText("2 connected")).toBeTruthy();
+    expect(screen.queryByText("Password")).toBeNull();
+    expect(screen.getByRole("button", { name: "Account" }).getAttribute("aria-selected")).toBe(
+      "false",
+    );
+    const selectedDataSourceCategory = screen
+      .getAllByRole("button", { name: "Data Sources" })
+      .find((button) => button.getAttribute("aria-selected") === "true");
+    expect(selectedDataSourceCategory).toBeTruthy();
+    expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "data-sources" });
+  });
+
+  it("respects a billing category deep link", async () => {
+    mockSearchParams = { tab: "billing" };
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
+    expect(screen.queryByText("Units")).toBeNull();
+    expect(screen.getByRole("button", { name: "Billing" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+
+  it.each([
+    ["connections", "Data Sources", "2 connected"],
+    ["general", "Models & Units", "Units"],
+    ["health", "Models & Units", "Units"],
+    ["account", "Account", "Password"],
+  ] as const)(
+    "normalizes the legacy %s deep link to %s",
+    async (legacyTab, currentCategory, sectionText) => {
+      mockSearchParams = { tab: legacyTab };
+      const { default: SettingsScreen } = await import("../app/settings");
+
+      render(<SettingsScreen />);
+
+      const selectedCategoryButton = screen
+        .getAllByRole("button", { name: currentCategory })
+        .find((button) => button.getAttribute("aria-selected") === "true");
+      expect(selectedCategoryButton).toBeTruthy();
+      expect(screen.getByText(sectionText)).toBeTruthy();
+    },
+  );
+});
+
+describe("SettingsScreen climbing grade systems", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "models-units" };
+  });
+
+  it("shows editable default grades when no preference has been saved", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Fontainebleau" }));
+    expect(mockSettingsSetMutate).toHaveBeenCalledWith(
+      { key: "climbingGradeSystems", value: { boulder: "font", route: "yds" } },
+      expect.any(Object),
+    );
+  });
+
+  it("shows default grades after an initially pending request returns no saved preference", async () => {
+    mockClimbingGradeSettingQuery.data = undefined;
+    const { default: SettingsScreen } = await import("../app/settings");
+    const { rerender } = render(<SettingsScreen />);
+
+    expect(screen.queryByRole("button", { name: "V Scale" })).toBeNull();
+    await act(async () => {
+      mockClimbingGradeSettingQuery.data = null;
+      rerender(<SettingsScreen />);
+    });
+
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("keeps default grades and the server error visible when an unset preference fails to refresh", async () => {
+    mockClimbingGradeSettingQuery.error = new Error(
+      "Your session expired. Sign in again to refresh your settings.",
+    );
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(
+      screen.getByText("Your session expired. Sign in again to refresh your settings."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("keeps a saved preference selected", async () => {
+    mockClimbingGradeSettingQuery.data = {
+      key: "climbingGradeSystems",
+      value: { boulder: "font", route: "french" },
+    };
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Fontainebleau" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByRole("button", { name: "French" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+});
+
+describe("SettingsScreen unit system", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "models-units" };
+  });
+
+  it("restores the exact cached unit setting and shows the server error when a write fails", async () => {
+    const previousSetting = { key: "unitSystem", value: "metric" };
+    mockSettingsGetData.mockReturnValue(previousSetting);
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Imperial" }));
+    const options = mockSettingsSetMutate.mock.calls[0]?.[1];
+    const writeError = new Error("Unit preference was not saved.");
+    act(() => options.onError(writeError));
+    act(() => options.onSettled());
+
+    expect(mockSettingsSetData).toHaveBeenLastCalledWith({ key: "unitSystem" }, previousSetting);
+    expect(mockSettingsInvalidate).toHaveBeenCalledWith({ key: "unitSystem" });
+    expect(Alert.alert).toHaveBeenCalledWith("Error", writeError.message);
+    expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
+      context: "unit-system-write",
+    });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps cached units visible and displays an exact background read error", async () => {
+    const readError = new Error("Unit settings could not be loaded.");
+    mockUnitSettingQuery.error = readError;
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("button", { name: "Metric" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText(readError.message)).toBeTruthy();
+    await waitFor(() =>
+      expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+        context: "unit-system-read",
+      }),
+    );
+    expect(mockCaptureException.mock.calls.filter(([error]) => error === readError)).toHaveLength(
+      1,
+    );
+  });
+});
+
+describe("SettingsScreen data sources", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "data-sources" };
+  });
+
+  it("renders Data Sources section with connected count", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getAllByText("Data Sources")).toHaveLength(2);
+    expect(screen.getByText("2 connected")).toBeTruthy();
+  });
+
+  it("keeps the Bluetooth Devices settings entry discoverable", async () => {
+    mockSearchParams = {};
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Data Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bluetooth Devices" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/bluetooth-devices");
+  });
+
+  it("renders provider logos for connected providers only", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByTestId("provider-logo-wahoo")).toBeTruthy();
+    expect(screen.getByTestId("provider-logo-strava")).toBeTruthy();
+    expect(screen.queryByTestId("provider-logo-polar")).toBeNull();
+  });
+
+  it("shows the provider inventory error instead of a zero count on initial failure", async () => {
+    mockProvidersQuery.data = undefined;
+    mockProvidersQuery.error = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    expect(
+      screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
+    ).toBeTruthy();
+    expect(screen.queryByText("0 connected")).toBeNull();
+  });
+
+  it("shows retained provider inventory with a refresh warning after a background failure", async () => {
+    mockProvidersQuery.error = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("2 connected")).toBeTruthy();
+    expect(screen.getByText("Could not refresh data sources")).toBeTruthy();
+    expect(
+      screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
+    ).toBeTruthy();
+  });
+
+  it("exposes the Data Sources card as a named accessibility action", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    const dataSourcesButton = screen
+      .getAllByRole("button", { name: "Data Sources" })
+      .find((button) => button.getAttribute("aria-busy") !== null);
+    if (!dataSourcesButton) throw new Error("Expected the Data Sources card");
+    expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
+  });
+
+  it("navigates to developer integrations from Advanced settings", async () => {
+    mockSearchParams = { tab: "advanced" };
+    mockAuthServerUrl = "https://test.example.com/dofek";
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("mcp-client-setup").textContent).toBe(
+      "https://test.example.com/dofek/api/mcp",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");
+  });
+
+  it("navigates to providers screen when tapped", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByText("2 connected"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/providers");
+  });
+});
+
+describe("SettingsScreen password", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "account" };
+  });
+
+  it("renders set password controls when no password credential exists", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: false },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(await screen.findByText("Password")).toBeTruthy();
+    expect(await screen.findByText("Set Password")).toBeTruthy();
+  });
+
+  it("renders change password controls when a password credential exists", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
+    expect(await screen.findByText("Change Password")).toBeTruthy();
+  });
+
+  it("shows shared requirements, native semantics, and independent visibility controls", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    const currentPassword = await screen.findByLabelText("Current password");
+    const newPassword = screen.getByLabelText("New password");
+    const confirmPassword = screen.getByLabelText("Confirm password");
+
+    expect(currentPassword.getAttribute("autocomplete")).toBe("current-password");
+    expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 8; maxlength: 128;");
+    expect(confirmPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByText("Use 8–128 characters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show current password" }));
+    expect(currentPassword.getAttribute("type")).toBe("text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide current password" }));
+    expect(currentPassword.getAttribute("type")).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show new password" }));
+    expect(newPassword.getAttribute("type")).toBe("text");
+    expect(confirmPassword.getAttribute("type")).toBe("password");
+  });
+
+  it("blocks an invalid new password before calling the mutation", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: false },
+      isLoading: false,
+      error: null,
+    });
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set Password" }));
+
+    expect(await screen.findByText("Use at least 8 characters.")).toBeTruthy();
+    expect(mockSetPasswordMutate).not.toHaveBeenCalled();
+  });
+
+  it("requires the current password before changing an existing credential", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+
+    expect(await screen.findByText("Enter your current password.")).toBeTruthy();
+    expect(mockSetPasswordMutate).not.toHaveBeenCalled();
+  });
+
+  it("confirms before logging out after changing an existing password", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    await act(async () => {
+      await mockSetPasswordMutationOptions?.onSuccess?.();
+    });
+
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith("Password Updated", "Please sign in again.", [
+      { text: "OK", onPress: expect.any(Function) },
+    ]);
+
+    const onPress = alertSpy.mock.calls[0]?.[2]?.[0]?.onPress;
+    onPress?.();
+
+    expect(mockLogout).toHaveBeenCalledOnce();
+  });
+});
+
+describe("SettingsScreen Zepp pairing", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "data-sources" };
+  });
+
+  it("claims a short code from settings", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.change(screen.getByPlaceholderText("Short code"), {
+      target: { value: "ABCD23" },
+    });
+    fireEvent.click(screen.getByText("Connect Zepp App"));
+
+    expect(mockZeppPairingClaim).toHaveBeenCalledWith({ code: "ABCD23" });
+  });
+
+  it("clears stale pairing messages when the code changes", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    await act(async () => {
+      mockZeppPairingMutationOptions?.onError?.({ message: "Old pairing error" });
+    });
+    expect(await screen.findByText("Old pairing error")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Short code"), {
+      target: { value: "WXYZ34" },
+    });
+
+    expect(screen.queryByText("Old pairing error")).toBeNull();
+  });
+
+  it("shows and disconnects each active Zepp app independently", async () => {
+    mockZeppConnections = [{ connectionType: "zepp-main" }, { connectionType: "zepp-workout" }];
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Zepp app: Connected")).toBeTruthy();
+    expect(screen.getByText("Workout extension: Connected")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Disconnect Workout extension"));
+    expect(mockZeppConnectionRevoke).toHaveBeenCalledWith({
+      connectionType: "zepp-workout",
+    });
+  });
+});
+
+describe("SettingsScreen medication doses", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "medications" };
+  });
+
+  it("shows medication dose empty state when no imported dose events exist", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Medication Doses")).toBeTruthy();
+    expect(screen.getByText("No medication dose events to display.")).toBeTruthy();
+  });
+});
+
+describe("SettingsScreen billing", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "billing" };
+  });
+
+  it("renders recent-week limited access notice", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
+    expect(screen.getByText(/Access limited to your most recent 7 days/)).toBeTruthy();
+    expect(screen.getByText("Subscribe for Premium/month")).toBeTruthy();
+    expect(screen.getByText("Restore Purchases")).toBeTruthy();
+  });
+
+  it("starts a StoreKit subscription instead of opening Stripe Checkout on iOS", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+
+    await waitFor(() => expect(mockAppStoreBilling.subscribe).toHaveBeenCalledOnce());
+    expect(Linking.openURL).not.toHaveBeenCalled();
+  });
+
+  it("restores App Store purchases and reports the result", async () => {
+    mockAppStoreBilling.restore.mockResolvedValueOnce(1);
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Restore Purchases" }));
+
+    await waitFor(() => expect(screen.getByText("1 purchase restored.")).toBeTruthy());
+  });
+
+  it("opens Apple subscription management for an App Store subscriber", async () => {
+    mockBillingStatus = {
+      hasFullAccess: true,
+      access: {
+        kind: "full",
+        paid: true,
+        reason: "app_store_subscription",
+      },
+      stripeSubscriptionStatus: null,
+      canManageBilling: false,
+      appStoreSubscriptionStatus: "active",
+      canManageAppStoreSubscription: true,
+    };
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage Subscription" }));
+
+    await waitFor(() => expect(mockAppStoreBilling.showManageSubscriptions).toHaveBeenCalledOnce());
+  });
+
+  it("shows the specific App Store error and restores the action controls", async () => {
+    mockAppStoreBilling.subscribe.mockRejectedValueOnce(
+      new Error("Transaction belongs to another Dofek account."),
+    );
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Transaction belongs to another Dofek account.")).toBeTruthy(),
+    );
+    expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("shows subscription progress and disables billing actions while purchasing", async () => {
+    mockAppStoreBilling.subscribe.mockReturnValueOnce(new Promise(() => undefined));
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+
+    expect(screen.getByRole("button", { name: "Subscribing..." })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Restore Purchases" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+});
+
+describe("SettingsScreen export UI rendering", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "privacy-export" };
+  });
+
+  it("renders the Start Export button", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Start Export")).toBeTruthy();
+  });
+
+  it("renders account deletion controls in Privacy/Export", async () => {
+    mockSessionToken = "   ";
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Danger Zone")).toBeTruthy();
+    expect(screen.getByText("AccountErasurePanel")).toBeTruthy();
+  });
+
+  it("shows Starting... and disables the button while processing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ exports: [] }),
+        })
+        .mockImplementation(() => new Promise(() => {})),
+    );
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("No exports available.");
+    const button = screen.getByText("Start Export");
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText("Starting...")).toBeTruthy();
+    });
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("SettingsScreen account erasure", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "privacy-export" };
+  });
+
+  it("uses the durable account-erasure flow in the danger zone", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("AccountErasurePanel")).toBeTruthy();
+    expect(screen.queryByText("Delete All User Data")).toBeNull();
+  });
+});
+
+describe("SettingsScreen export flow", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "privacy-export" };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows active exports and tells the user to expect email", async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url === "https://test.example.com/api/export") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              exports: [
+                {
+                  id: "export-123",
+                  status: "processing",
+                  filename: "dofek-export.zip",
+                  sizeBytes: null,
+                  createdAt: "2026-04-26T12:00:00.000Z",
+                  startedAt: "2026-04-26T12:01:00.000Z",
+                  completedAt: null,
+                  expiresAt: "2026-05-03T12:00:00.000Z",
+                  errorMessage: null,
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Export in progress")).toBeTruthy();
+    });
+    expect(screen.getByText("We'll email you when it finishes.")).toBeTruthy();
+  });
+
+  it("does not request exports when the session token is blank", async () => {
+    mockSessionToken = "   ";
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("Sign in again to load exports.");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("queues an export and refreshes the export list", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ exports: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ status: "queued", exportId: "export-456" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            exports: [
+              {
+                id: "export-456",
+                status: "queued",
+                filename: "dofek-export.zip",
+                sizeBytes: null,
+                createdAt: "2026-04-26T12:00:00.000Z",
+                startedAt: null,
+                completedAt: null,
+                expiresAt: "2026-05-03T12:00:00.000Z",
+                errorMessage: null,
+              },
+            ],
+          }),
+      });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("No exports available.");
+    fireEvent.click(screen.getByText("Start Export"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Export in progress")).toBeTruthy();
+    });
+  });
+
+  it("shows an error state when the trigger request fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ exports: [] }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          json: () =>
+            Promise.resolve({
+              error:
+                "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+            }),
+        }),
+    );
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("No exports available.");
+    fireEvent.click(screen.getByText("Start Export"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("downloads a completed export from the available export list", async () => {
+    const { shareAsync } = await import("expo-sharing");
+    const { File: ExpoFile } = await import("expo-file-system");
+    mockDownloadFileAsync.mockResolvedValue(undefined);
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url === "https://test.example.com/api/export") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              exports: [
+                {
+                  id: "export-789",
+                  status: "completed",
+                  filename: "dofek-export.zip",
+                  sizeBytes: 1024,
+                  createdAt: "2026-04-25T12:00:00.000Z",
+                  startedAt: "2026-04-25T12:01:00.000Z",
+                  completedAt: "2026-04-25T12:02:00.000Z",
+                  expiresAt: "2026-05-02T12:02:00.000Z",
+                  errorMessage: null,
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("Available exports");
+    fireEvent.click(screen.getByText("Download dofek-export.zip"));
+
+    await waitFor(() => {
+      expect(ExpoFile).toHaveBeenCalled();
+      expect(mockDownloadFileAsync).toHaveBeenCalledWith(
+        "https://test.example.com/api/export/download/export-789",
+        expect.objectContaining({
+          uri: "file:///tmp/cache/dofek-exports-v1/export-789-dofek-export.zip",
+        }),
+        expect.objectContaining({
+          headers: { Authorization: "Bearer test-token" },
+          idempotent: true,
+        }),
+      );
+      expect(shareAsync).toHaveBeenCalledWith(
+        "file:///tmp/cache/dofek-exports-v1/export-789-dofek-export.zip",
+        expect.objectContaining({ mimeType: "application/zip" }),
+      );
+      expect(mockFileDelete).toHaveBeenCalledOnce();
+    });
+  });
+});

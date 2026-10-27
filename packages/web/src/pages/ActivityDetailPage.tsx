@@ -1,13 +1,15 @@
 import {
-  formatDateLong,
-  formatDateTime,
-  formatDurationSeconds,
-  formatNumber,
-  formatTimeOnly,
-} from "@dofek/format/format";
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import { formatDateLong, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
-import { providerSourceLabel } from "@dofek/providers/providers";
-import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
+import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
+import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import {
   computeIntensities,
   expandMuscleGroup,
@@ -17,89 +19,174 @@ import {
   muscleGroupLabel,
 } from "@dofek/training/muscle-groups";
 import {
-  cadenceAxisLabel,
   cadenceUnit,
   formatActivityTypeLabel,
+  isActivityDetailType,
   isCyclingActivity,
 } from "@dofek/training/training";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "@tanstack/react-router";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ActivityMetricSourceSelection,
+  ActivityMetric as SourceMetric,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
-import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
+import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
-import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
-import { DofekChart } from "../components/DofekChart.tsx";
+import { ActivityMetricSourcePicker } from "../components/ActivityMetricSourcePicker.tsx";
+import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
+import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
+import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
+import { ActivitySourceDisclosure } from "../components/ActivitySourceDisclosure.tsx";
+import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { MapProcessingIndicator } from "../components/MapProcessingIndicator.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
-import {
-  chartThemeColors,
-  dofekAxis,
-  dofekGrid,
-  dofekLegend,
-  dofekTooltip,
-} from "../lib/chartTheme.ts";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import {
+  ElevationChart,
+  MetricsChart,
+} from "./activity-detail/components/ActivityDetailCharts.tsx";
+import { ClimbingLogEntryBreakdown } from "./activity-detail/components/ClimbingLogEntryBreakdown.tsx";
+import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
+import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
+import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
+import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
+import { RecordDetailModal } from "./RecordDetailModal.tsx";
 
-const CHART_COLORS = {
-  heartRate: activityMetricColors.heartRate,
-  power: activityMetricColors.power,
-  speed: activityMetricColors.speed,
-  cadence: activityMetricColors.cadence,
-  altitude: "#6b7280",
-};
-
-/**
- * Builds ECharts event handlers that translate axis pointer hover into a GPS position callback.
- * Used by MetricsChart and ElevationChart to sync hover with the RouteMap.
- */
-function buildAxisPointerEvents(
-  dataPoints: StreamPoint[],
-  onHoverPosition?: (position: { lat: number; lng: number } | null) => void,
-) {
-  if (!onHoverPosition) return undefined;
-  return {
-    updateAxisPointer: (params: Record<string, unknown>) => {
-      const axesInfo = params.axesInfo;
-      if (Array.isArray(axesInfo) && axesInfo.length > 0) {
-        const rawValue: unknown = axesInfo[0]?.value;
-        if (typeof rawValue === "number" && rawValue >= 0 && rawValue < dataPoints.length) {
-          const point = dataPoints[Math.round(rawValue)];
-          if (point?.lat != null && point?.lng != null) {
-            onHoverPosition({ lat: point.lat, lng: point.lng });
-            return;
-          }
-        }
-      }
-      onHoverPosition(null);
-    },
-    globalout: () => onHoverPosition(null),
-  };
-}
-
-const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
-
-function isStrengthActivityType(activityType: string): boolean {
-  return STRENGTH_ACTIVITY_TYPES.has(activityType);
-}
+const EMPTY_ROUTE_POINTS: ComponentProps<typeof ActivityRouteMap>["points"] = [];
 
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
   const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
-  const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
-  const hrZones = trpc.activity.hrZones.useQuery({ id });
+  const hardware = trpc.activity.hardware.useQuery({ id });
+  const images = trpc.activity.images.useQuery({ id }, ACTIVITY_IMAGES_QUERY_OPTIONS);
+  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" });
+  const [sourceSelection, setSourceSelection] = useState<{
+    activityId: string;
+    sources: ActivityMetricSourceSelection;
+  } | null>(null);
+  const sources: ActivityMetricSourceSelection = {};
+  for (const metric of metricSources.data ?? []) {
+    const selected =
+      sourceSelection?.activityId === id ? sourceSelection.sources[metric.key] : undefined;
+    sources[metric.key] = metric.sources.some((source) => source.id === selected)
+      ? selected
+      : metric.defaultSourceId;
+  }
+  const selectSource = (metric: SourceMetric, sourceId: string) =>
+    setSourceSelection((previous) => ({
+      activityId: id ?? "",
+      sources: { ...(previous?.activityId === id ? previous.sources : {}), [metric]: sourceId },
+    }));
+  const sourceControls = (metricSources.data ?? []).map((metric) => ({
+    ...metric,
+    selectedId: sources[metric.key] ?? metric.defaultSourceId,
+    onChange: (sourceId: string) => selectSource(metric.key, sourceId),
+  }));
+  const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
+  const stream = trpc.activity.stream.useQuery(
+    { id, maxPoints: 500, sources },
+    { placeholderData: (previousData) => previousData },
+  );
+  const route = trpc.activity.route.useQuery(
+    { id, maxPoints: 500 },
+    {
+      refetchInterval: (query) =>
+        query.state.data?.status === "processing" ? processingPollInterval("active") : false,
+    },
+  );
+  const hrZones = trpc.activity.hrZones.useQuery(
+    { id, ...heartRateSourceInput },
+    { placeholderData: (previousData) => previousData },
+  );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
-  const powerZones = trpc.activity.powerZones.useQuery({ id }, { enabled: isCycling && hasPower });
+  const powerZones = trpc.activity.powerZones.useQuery(
+    { id, powerSourceId: sources.power },
+    { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
+  );
   const isStrengthActivity =
-    detail.data != null && isStrengthActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
+  );
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
+    { activityId: id },
+    { enabled: isClimbingActivity },
+  );
+  const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
+    { activityId: id },
+    { enabled: isClimbingActivity },
+  );
+  const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
+  const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const selectedClimbingEntry = climbingEntries.data?.find(
+    (entry) => entry.id === selectedClimbingEntryId,
+  );
+  const climbingLocations = useMemo(
+    () =>
+      buildClimbingMapLocations([
+        ...(climbingEntries.data ?? []),
+        ...(entrySuggestions.data ?? []),
+      ]),
+    [climbingEntries.data, entrySuggestions.data],
+  );
+  const climbMarkers = useMemo(
+    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
+    [climbingEntries.data],
+  );
+  const trpcUtils = trpc.useUtils();
+  const [entryAttachState, setEntryAttachState] = useState<
+    Record<string, { pending: boolean; error: string | null }>
+  >({});
+  const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
+    onSuccess: async (_result, input) => {
+      await Promise.all([
+        trpcUtils.activity.images.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
+        trpcUtils.climbing.sessionSummary.invalidate(),
+        trpcUtils.climbing.gradeProgression.invalidate(),
+        trpcUtils.climbing.volumeByGrade.invalidate(),
+        trpcUtils.climbing.strengths.invalidate(),
+        trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
+          activityId: input.activityId,
+        }),
+      ]);
+    },
+  });
+  const handleAttachEntry = (entryId: string) => {
+    setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
+    attachEntry.mutate(
+      { activityId: id, climbingLogEntryId: entryId },
+      {
+        onSuccess: () =>
+          setEntryAttachState((current) => ({
+            ...current,
+            [entryId]: { pending: false, error: null },
+          })),
+        onError: (error) =>
+          setEntryAttachState((current) => ({
+            ...current,
+            [entryId]: { pending: false, error: userFacingErrorMessage(error) },
+          })),
+      },
+    );
+  };
+  const isHangboardingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
+  const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
+    { id },
+    { enabled: isHangboardingActivity },
   );
 
   // Ref-based hover callback avoids re-rendering the entire page on every mouse move.
@@ -117,7 +204,7 @@ export function ActivityDetailPage() {
     );
   }
 
-  if (detail.error || !detail.data) {
+  if (detail.error && !detail.data && detail.error.data?.code === "NOT_FOUND") {
     return (
       <PageLayout>
         <div className="py-8 text-center">
@@ -130,14 +217,33 @@ export function ActivityDetailPage() {
     );
   }
 
+  if (!detail.data) {
+    return (
+      <PageLayout>
+        <QueryStatePanel
+          error={
+            detail.error ??
+            new Error("Activity details are unavailable. Return to Activities and try again.")
+          }
+          height={400}
+        />
+      </PageLayout>
+    );
+  }
+
   const activity = detail.data;
   const zones = hrZones.data ?? [];
-  const hasGps = points.some((p) => p.lat != null && p.lng != null);
+  const exercises = strengthExercises.data ?? [];
+  const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
+  const hasGps = routePoints.length > 0;
+  const routeProcessing = route.isLoading || route.data?.status === "processing";
   const hasHr = points.some((p) => p.heartRate != null);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
-  const showHrZones = hasHr || zones.length > 0;
+  const showHrZones = hrZones.error != null || hasHr || zones.length > 0;
+  const hrZonesHaveCachedData = zones.length > 0;
+  const strengthExercisesHaveCachedData = exercises.length > 0;
 
   return (
     <PageLayout>
@@ -148,10 +254,12 @@ export function ActivityDetailPage() {
           </Link>
           <span>/</span>
           <span className="text-foreground">
-            {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+            {activity.name ??
+              formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <RecomputeActivityButton key={id} activityId={id} />
           <ActivityExportDropdown activityId={id} hasGps={hasGps} />
           <DeleteActivityButton activityId={id} />
         </div>
@@ -159,22 +267,76 @@ export function ActivityDetailPage() {
 
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
 
-      <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
+      <ActivityHeader
+        activity={activity}
+        units={units}
+        hardware={hardware.data}
+        hardwareLoading={hardware.isLoading}
+        hardwareError={hardware.error}
+        onRetryHardware={() => void hardware.refetch()}
+      />
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
-      {hasGps && (
-        <Section
-          title="Route Map"
-          description="This map shows your recorded route, including start and finish locations."
-        >
-          <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
+      <ActivityPhotos
+        key={id}
+        images={images.data?.images ?? []}
+        loading={images.isLoading}
+        error={images.error}
+        retrying={images.isFetching}
+        onRetry={() => {
+          void images.refetch();
+        }}
+      />
+
+      {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
+
+      {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
+      {stream.error ? (
+        <Section title="Sensor Data">
+          <QueryStatePanel error={stream.error} height={72} />
+        </Section>
+      ) : null}
+
+      {(route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
+        <Section title={!hasGps && climbMarkers.length > 0 ? undefined : "Route Map"}>
+          {route.error ? (
+            <QueryStatePanel error={route.error} height={160} />
+          ) : routeProcessing ? (
+            hasGps || climbMarkers.length > 0 ? (
+              <p role="status" className="text-sm text-muted">
+                {route.isLoading ? "Loading route map…" : "Processing route map…"}
+              </p>
+            ) : (
+              <div className="relative isolate h-[400px] rounded-lg">
+                <MapProcessingIndicator
+                  label={route.isLoading ? "Loading route map…" : "Processing route map…"}
+                />
+              </div>
+            )
+          ) : null}
+          {(hasGps || climbMarkers.length > 0) && (
+            <ActivityRouteMap
+              points={routePoints}
+              climbMarkers={climbMarkers}
+              onSelectEntry={setSelectedClimbingEntryId}
+              onRegisterHoverCallback={mapHoverRef}
+            />
+          )}
         </Section>
       )}
 
-      {(hasHr || hasPower || hasSpeed || hasCadence) && (
-        <Section
-          title="Performance"
-          description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
-        >
+      {(hasHr ||
+        hasPower ||
+        hasSpeed ||
+        hasCadence ||
+        sourceControls.some((metric) => metric.key !== "altitude")) && (
+        <Section title="Performance">
+          {sourceControls.length > 0 &&
+            (stream.isFetching || hrZones.isFetching || powerZones.isFetching) && (
+              <p role="status" className="mb-2 text-xs text-muted">
+                Updating metrics…
+              </p>
+            )}
           <MetricsChart
             points={points}
             activityType={activity.activityType}
@@ -183,28 +345,106 @@ export function ActivityDetailPage() {
             hasSpeed={hasSpeed}
             hasCadence={hasCadence}
             loading={stream.isLoading}
+            error={stream.error}
+            metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
             units={units}
             onHoverPosition={hasGps ? handleChartHover : undefined}
           />
         </Section>
       )}
 
-      {(strengthExercises.data?.length ?? 0) > 0 && (
-        <Section
-          title="Exercises"
-          description="Exercises performed during this strength workout, with details for each set."
-        >
-          <WorkoutMuscleMap exercises={strengthExercises.data ?? []} />
-          <StrengthExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
+      {isStrengthActivity &&
+        (strengthExercises.isLoading || strengthExercises.error || exercises.length > 0) && (
+          <Section title="Exercises">
+            {strengthExercises.error && !strengthExercisesHaveCachedData ? (
+              <QueryStatePanel error={strengthExercises.error} height={160} />
+            ) : strengthExercises.isLoading && !strengthExercisesHaveCachedData ? (
+              <QueryStatePanel variant="loading" height={160} />
+            ) : (
+              <>
+                <WorkoutMuscleMap exercises={exercises} />
+                <StrengthExerciseBreakdown exercises={exercises} units={units} />
+                {strengthExercises.error ? (
+                  <QueryStatePanel error={strengthExercises.error} height={72} />
+                ) : null}
+              </>
+            )}
+          </Section>
+        )}
+
+      {isClimbingActivity && (
+        <Section title="Climbs">
+          {climbingEntries.error && (
+            <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
+          )}
+          {climbingEntriesLoading ? (
+            <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
+          ) : (climbingEntries.data?.length ?? 0) > 0 ? (
+            <ClimbingLogEntryBreakdown
+              entries={climbingEntries.data ?? []}
+              locations={climbingLocations}
+              selectedEntryId={selectedClimbingEntryId}
+            />
+          ) : null}
+          {(entrySuggestions.error ||
+            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
+            (entrySuggestions.data?.length ?? 0) > 0 ||
+            (climbingEntries.data !== undefined && climbingEntries.data.length === 0)) && (
+            <div
+              className={
+                climbingEntries.error ||
+                climbingEntriesLoading ||
+                (climbingEntries.data?.length ?? 0) > 0
+                  ? "mt-3 border-t border-border pt-3"
+                  : undefined
+              }
+            >
+              <UnattachedClimbingLogEntries
+                suggestions={entrySuggestions.data}
+                locations={climbingLocations}
+                selectedEntryId={selectedClimbingEntryId}
+                error={entrySuggestions.error}
+                isLoading={entrySuggestions.isLoading}
+                state={entryAttachState}
+                onAttach={handleAttachEntry}
+              />
+            </div>
+          )}
+          {selectedClimbingEntry && (
+            <RecordDetailModal
+              dataType="climbingLogEntries"
+              state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
+              onClose={() => setSelectedClimbingEntryId(null)}
+            />
+          )}
+        </Section>
+      )}
+
+      {isHangboardingActivity && (
+        <Section title={formatActivityTypeLabel(activity.activityType)}>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
         </Section>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {hasAltitude && (
-          <Section
-            title="Elevation Profile"
-            description="This chart shows how your elevation changed over time during the activity."
-          >
+        {(hasAltitude || sources.altitude) && (
+          <Section title="Elevation Profile">
+            {sourceControls
+              .filter((metric) => metric.key === "altitude")
+              .map((metric) => (
+                <ActivityMetricSourcePicker
+                  key={metric.key}
+                  label="Elevation"
+                  className="mb-2 rounded-lg border border-border px-3"
+                  sources={metric.sources}
+                  selectedId={metric.selectedId}
+                  onChange={metric.onChange}
+                />
+              ))}
             <ElevationChart
               points={points}
               loading={stream.isLoading}
@@ -215,28 +455,32 @@ export function ActivityDetailPage() {
         )}
 
         {showHrZones && (
-          <Section
-            title="Heart Rate Zones"
-            description="This chart shows how much time you spent in each heart rate zone."
-          >
-            <HrZonesChart
-              zones={zones}
-              loading={hrZones.isLoading}
-              errorMessage={hrZones.error?.message}
-            />
+          <Section title="Heart Rate Zones">
+            {hrZones.error && !hrZonesHaveCachedData ? (
+              <QueryStatePanel error={hrZones.error} height={250} />
+            ) : (
+              <>
+                <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+                {hrZones.error ? <QueryStatePanel error={hrZones.error} height={72} /> : null}
+              </>
+            )}
           </Section>
         )}
 
-        {isCycling && hasPower && powerZones.data != null && (
-          <Section
-            title="Power Zones"
-            description="This chart shows how much time you spent in each power zone."
-          >
-            <PowerZonesChart
-              zones={powerZones.data.zones}
-              ftp={powerZones.data.ftp}
-              loading={powerZones.isLoading}
-            />
+        {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
+          <Section title="Power Zones">
+            {powerZones.error && powerZones.data == null ? (
+              <QueryStatePanel error={powerZones.error} height={250} />
+            ) : powerZones.data ? (
+              <>
+                <PowerZonesChart
+                  zones={powerZones.data.zones}
+                  ftp={powerZones.data.ftp}
+                  loading={powerZones.isLoading}
+                />
+                {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
+              </>
+            ) : null}
           </Section>
         )}
       </div>
@@ -244,109 +488,27 @@ export function ActivityDetailPage() {
   );
 }
 
-function DeleteActivityButton({ activityId }: { activityId: string }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const navigate = useNavigate();
-  const trpcUtils = trpc.useUtils();
-  const deleteMutation = trpc.activity.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
-      navigate({ to: "/dashboard" });
-    },
-  });
-
-  if (showConfirm) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">Delete this activity? This cannot be undone.</span>
-        <button
-          type="button"
-          onClick={() => deleteMutation.mutate({ id: activityId })}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          {deleteMutation.isPending ? "Deleting..." : "Confirm Delete"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowConfirm(false)}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setShowConfirm(true)}
-      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors cursor-pointer"
-    >
-      Delete Activity
-    </button>
-  );
-}
-
-export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail }) {
-  const providerLabel = providerSourceLabel(activity.providerId, activity.subsource);
-
-  return (
-    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-      <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-        Removed from provider sync
-      </div>
-      <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-            Status
-          </dt>
-          <dd className="mt-0.5 text-foreground">Removed</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-            Provider
-          </dt>
-          <dd className="mt-0.5 text-foreground">{providerLabel}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-            Removed at
-          </dt>
-          <dd className="mt-0.5 text-foreground">
-            {activity.providerAbsentAt ? formatDateTime(activity.providerAbsentAt) : "—"}
-          </dd>
-        </div>
-      </dl>
-      <p className="mt-3 text-xs text-amber-800/80 dark:text-amber-200/80">
-        This activity was hidden because {providerLabel} reported it as deleted or missing. You can
-        restore it from the activities page while showing hidden activities.
-      </p>
-    </div>
-  );
-}
-
 export function ActivityHeader({
   activity,
   units,
-  hasGps,
+  ...sourceDetails
 }: {
   activity: ActivityDetail;
   units: UnitConverter;
-  hasGps: boolean;
-}) {
+} & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
           (new Date(activity.endedAt).getTime() - new Date(activity.startedAt).getTime()) / 60000,
         )
       : null;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
 
   const formatDuration = (mins: number) => {
     const hours = Math.floor(mins / 60);
@@ -354,446 +516,112 @@ export function ActivityHeader({
     return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
   };
 
-  const stats: Array<{ label: string; value: string }> = [];
+  const stats: Array<ActivityMetric | { label: string; value: string }> = [];
 
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
-  if (hasGps && activity.totalDistance != null)
-    stats.push({
-      label: "Distance",
-      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
-    });
-  if (hasGps && activity.elevationGain != null)
-    stats.push({
-      label: "Elevation Gain",
-      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
-    });
-  if (activity.avgHr != null)
-    stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
-  if (activity.maxHr != null)
-    stats.push({ label: "Max Heart Rate", value: `${Math.round(activity.maxHr)} bpm` });
-  if (activity.avgPower != null)
-    stats.push({ label: "Avg Power", value: `${Math.round(activity.avgPower)} W` });
-  if (activity.maxPower != null)
-    stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
-  if (hasGps && activity.avgSpeed != null)
-    stats.push({
-      label: "Avg Speed",
-      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
-    });
-  if (activity.avgCadence != null)
-    stats.push({
-      label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
-    });
+  stats.push(
+    formatActivityMetric(
+      "Distance",
+      activity.totalDistance,
+      activity.totalDistanceState,
+      (distanceMeters) =>
+        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+    ),
+    formatActivityMetric(
+      "Elevation Gain",
+      activity.elevationGain,
+      activity.elevationGainState,
+      (elevationMeters) =>
+        `${Math.round(units.convertElevation(elevationMeters))} ${units.elevationLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Heart Rate",
+      activity.avgHr,
+      activity.avgHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Max Heart Rate",
+      activity.maxHr,
+      activity.maxHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Avg Power",
+      activity.avgPower,
+      activity.avgPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Max Power",
+      activity.maxPower,
+      activity.maxPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Avg Speed",
+      activity.avgSpeed,
+      activity.avgSpeedState,
+      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Cadence",
+      activity.avgCadence,
+      activity.avgCadenceState,
+      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+    ),
+  );
 
   return (
     <div>
       <div className="flex items-baseline gap-3 mb-1">
         <h1 className="text-xl font-semibold text-foreground">
-          {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+          {activity.name ??
+            formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
         </h1>
         <span className="text-xs text-subtle">
           {formatActivityTypeLabel(activity.activityType)}
         </span>
       </div>
       <p className="text-sm text-subtle">
-        {formatDateLong(activity.startedAt)} at {formatTimeOnly(activity.startedAt)}
+        {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
+        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
-      {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-        <p className="text-xs text-subtle mb-4">
-          Source: <SourceLinks activity={activity} />
-        </p>
-      )}
+      <ActivitySourceDisclosure tree={activity.sourceTree} {...sourceDetails} />
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {stats.map((s) => (
-            <div key={s.label} className="card px-4 py-3">
-              <div className="text-xs text-subtle mb-0.5">{s.label}</div>
-              <div className="text-lg font-medium tabular-nums">{s.value}</div>
-            </div>
-          ))}
+          {stats
+            .filter((stat) => !("status" in stat) || stat.status !== "missing")
+            .map((s) => {
+              const metric = "status" in s ? s : null;
+              const unavailableMetric = metric?.status !== "available" ? metric : null;
+              const displayedValue =
+                "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+              return (
+                <section
+                  key={s.label}
+                  className="card px-4 py-3"
+                  data-state={metric?.status}
+                  aria-label={
+                    unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                      : undefined
+                  }
+                >
+                  <div className="text-xs text-subtle mb-0.5">
+                    {unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                      : s.label}
+                  </div>
+                  <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
+                </section>
+              );
+            })}
         </div>
       )}
     </div>
   );
-}
-
-function SourceLinks({ activity }: { activity: ActivityDetail }) {
-  const linkMap = new Map(activity.sourceLinks.map((link) => [link.providerId, link]));
-
-  return (
-    <>
-      {activity.sourceProviders.map((providerId, index) => {
-        const link = linkMap.get(providerId);
-        return (
-          <span key={providerId}>
-            {index > 0 && ", "}
-            {link?.providerAbsentAt ? (
-              <span
-                className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
-                title={
-                  link.providerAbsentAt
-                    ? `Removed ${formatDateTime(link.providerAbsentAt)}`
-                    : "Removed from provider sync"
-                }
-              >
-                {link.label} (removed)
-              </span>
-            ) : link?.url ? (
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-secondary underline"
-              >
-                {link.label}
-              </a>
-            ) : (
-              providerSourceLabel(providerId, activity.subsource)
-            )}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-function RouteMap({
-  points,
-  onRegisterHoverCallback,
-}: {
-  points: StreamPoint[];
-  onRegisterHoverCallback?: React.MutableRefObject<
-    (position: { lat: number; lng: number } | null) => void
-  >;
-}) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
-
-  useEffect(() => {
-    const container = mapRef.current;
-    if (!container) return;
-
-    const gpsPoints = points.filter(
-      (p): p is StreamPoint & { lat: number; lng: number } => p.lat != null && p.lng != null,
-    );
-    if (gpsPoints.length === 0) return;
-
-    let cancelled = false;
-
-    import("leaflet").then((L) => {
-      if (cancelled || !container) return;
-
-      // Clean up any existing map instance
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-
-      const map = L.map(container, { zoomControl: true, attributionControl: false });
-      mapInstanceRef.current = map;
-
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 19,
-      }).addTo(map);
-
-      const latLngs = gpsPoints.map((p) => L.latLng(p.lat, p.lng));
-
-      L.polyline(latLngs, {
-        color: statusColors.positive,
-        weight: 3,
-        opacity: 0.8,
-      }).addTo(map);
-
-      // Start and end markers
-      const startLatLng = latLngs[0];
-      const endLatLng = latLngs[latLngs.length - 1];
-      if (startLatLng) {
-        L.circleMarker(startLatLng, {
-          radius: 6,
-          color: statusColors.positive,
-          fillColor: statusColors.positive,
-          fillOpacity: 1,
-        }).addTo(map);
-      }
-      if (endLatLng) {
-        L.circleMarker(endLatLng, {
-          radius: 6,
-          color: statusColors.danger,
-          fillColor: statusColors.danger,
-          fillOpacity: 1,
-        }).addTo(map);
-      }
-
-      const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [30, 30] });
-
-      // Register hover marker callback so charts can update the map without React re-renders
-      if (onRegisterHoverCallback) {
-        let hoverMarker: ReturnType<typeof L.circleMarker> | null = null;
-
-        onRegisterHoverCallback.current = (position) => {
-          if (position) {
-            if (hoverMarker) {
-              hoverMarker.setLatLng([position.lat, position.lng]);
-            } else {
-              hoverMarker = L.circleMarker([position.lat, position.lng], {
-                radius: 7,
-                color: statusColors.positive,
-                fillColor: "#ffffff",
-                fillOpacity: 1,
-                weight: 3,
-              }).addTo(map);
-            }
-          } else {
-            if (hoverMarker) {
-              hoverMarker.remove();
-              hoverMarker = null;
-            }
-          }
-        };
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      if (onRegisterHoverCallback) {
-        onRegisterHoverCallback.current = () => {};
-      }
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [points, onRegisterHoverCallback]);
-
-  return <div ref={mapRef} className="w-full h-[400px] rounded-lg" />;
-}
-
-interface MetricDefinition {
-  name: string;
-  axisName: string;
-  color: string;
-  data: Array<number | null>;
-}
-
-function MetricsChart({
-  points,
-  activityType,
-  hasHr,
-  hasPower,
-  hasSpeed,
-  hasCadence,
-  loading,
-  units,
-  onHoverPosition,
-}: {
-  points: StreamPoint[];
-  activityType: string;
-  hasHr: boolean;
-  hasPower: boolean;
-  hasSpeed: boolean;
-  hasCadence: boolean;
-  loading: boolean;
-  units: UnitConverter;
-  onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
-}) {
-  const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
-
-  const handleLegendChange = useCallback((params: Record<string, unknown>) => {
-    const raw = params.selected;
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      const selected: Record<string, boolean> = {};
-      for (const [key, value] of Object.entries(raw)) {
-        if (typeof value === "boolean") {
-          selected[key] = value;
-        }
-      }
-      setLegendSelected(selected);
-    }
-  }, []);
-
-  const chartEvents = useMemo(
-    () => ({
-      ...(buildAxisPointerEvents(points, onHoverPosition) ?? {}),
-      legendselectchanged: handleLegendChange,
-    }),
-    [points, onHoverPosition, handleLegendChange],
-  );
-
-  if (loading) return <ChartLoadingSkeleton height={300} />;
-  if (points.length === 0) return null;
-
-  const metrics: MetricDefinition[] = [];
-  if (hasHr)
-    metrics.push({
-      name: "Heart Rate",
-      axisName: "Heart Rate (bpm)",
-      color: CHART_COLORS.heartRate,
-      data: points.map((p) => p.heartRate),
-    });
-  if (hasPower)
-    metrics.push({
-      name: "Power",
-      axisName: "Power (W)",
-      color: CHART_COLORS.power,
-      data: points.map((p) => p.power),
-    });
-  if (hasSpeed)
-    metrics.push({
-      name: "Speed",
-      axisName: `Speed (${units.speedLabel})`,
-      color: CHART_COLORS.speed,
-      data: points.map((p) =>
-        p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
-      ),
-    });
-  if (hasCadence)
-    metrics.push({
-      name: "Cadence",
-      axisName: cadenceAxisLabel(activityType),
-      color: CHART_COLORS.cadence,
-      data: points.map((p) => p.cadence),
-    });
-
-  const isVisible = (name: string) => legendSelected[name] !== false;
-
-  const times = points.map((p) => p.recordedAt);
-  const yAxes = metrics.map((metric, index) => {
-    const visible = isVisible(metric.name);
-    const isFirst = index === 0;
-    const position = isFirst ? "left" : "right";
-    const visibleRightBefore = metrics.slice(1, index).filter((m) => isVisible(m.name)).length;
-    const firstVisibleIndex = metrics.findIndex((m) => isVisible(m.name));
-    const showSplitLine = visible && index === firstVisibleIndex;
-
-    return {
-      ...dofekAxis.value({
-        name: metric.axisName,
-        min: "dataMin",
-        max: "dataMax",
-        position,
-        showSplitLine,
-        axisLabel: { color: metric.color },
-      }),
-      show: visible,
-      offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
-    };
-  });
-
-  const series = metrics.map((metric, index) => ({
-    name: metric.name,
-    type: "line" as const,
-    yAxisIndex: index,
-    data: metric.data,
-    showSymbol: false,
-    lineStyle: { width: 1.5, color: metric.color },
-    itemStyle: { color: metric.color },
-  }));
-
-  const visibleRightAxisCount = metrics.slice(1).filter((m) => isVisible(m.name)).length;
-
-  const option = {
-    grid: {
-      top: 40,
-      right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
-      bottom: 60,
-      left: 60,
-    },
-    tooltip: dofekTooltip(),
-    legend: { ...dofekLegend(true), selected: legendSelected },
-    dataZoom: [
-      { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
-      {
-        type: "slider",
-        xAxisIndex: 0,
-        start: 0,
-        end: 100,
-        height: 20,
-        bottom: 10,
-        borderColor: chartThemeColors.tooltipBorder,
-        backgroundColor: chartThemeColors.tooltipBackground,
-        fillerColor: `${statusColors.positive}26`,
-        handleStyle: { color: statusColors.positive },
-        textStyle: { color: chartThemeColors.axisLabel },
-      },
-    ],
-    xAxis: dofekAxis.category({
-      data: times,
-      axisLabel: {
-        formatter: (v: string) => formatTimeOnly(v),
-      },
-    }),
-    yAxis: yAxes,
-    series,
-  };
-
-  return <DofekChart option={option} height={350} onEvents={chartEvents} />;
-}
-
-function ElevationChart({
-  points,
-  loading,
-  units,
-  onHoverPosition,
-}: {
-  points: StreamPoint[];
-  loading: boolean;
-  units: UnitConverter;
-  onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
-}) {
-  const elevPoints = points.filter((p) => p.altitude != null);
-  const chartEvents = useMemo(
-    () => buildAxisPointerEvents(elevPoints, onHoverPosition),
-    [elevPoints, onHoverPosition],
-  );
-
-  if (loading) return <ChartLoadingSkeleton height={200} />;
-  if (elevPoints.length === 0) return null;
-
-  const option = {
-    grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
-    tooltip: dofekTooltip({
-      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
-        const firstParam = params[0];
-        if (!firstParam) return "";
-        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${units.elevationLabel}`;
-      },
-    }),
-    xAxis: dofekAxis.category({
-      data: elevPoints.map((p) => p.recordedAt),
-      axisLabel: {
-        formatter: (v: string) => formatTimeOnly(v),
-      },
-    }),
-    yAxis: dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }),
-    series: [
-      {
-        type: "line",
-        data: elevPoints.map((p) =>
-          p.altitude != null ? Math.round(units.convertElevation(p.altitude)) : null,
-        ),
-        showSymbol: false,
-        lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
-        areaStyle: {
-          color: {
-            type: "linear",
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 1,
-            colorStops: [
-              { offset: 0, color: "rgba(107,114,128,0.3)" },
-              { offset: 1, color: "rgba(107,114,128,0.05)" },
-            ],
-          },
-        },
-      },
-    ],
-  };
-
-  return <DofekChart option={option} height={200} onEvents={chartEvents} />;
 }
 
 function WorkoutMuscleMap({ exercises }: { exercises: StrengthExerciseDetail[] }) {
@@ -918,7 +746,7 @@ function StrengthExerciseBreakdown({
         const hasRpe = exercise.sets.some((set) => set.rpe != null);
 
         return (
-          <div key={exercise.exerciseIndex}>
+          <div key={`${exercise.activityId}:${exercise.exerciseIndex}`}>
             <div className="flex items-baseline gap-2 mb-2">
               <h3 className="text-sm font-medium text-foreground">{exercise.exerciseName}</h3>
               {exercise.equipment && (
@@ -986,24 +814,15 @@ function StrengthExerciseBreakdown({
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section>
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
-      </div>
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      {title && (
+        <div className="mb-2 flex items-center gap-2">
+          <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
+        </div>
+      )}
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

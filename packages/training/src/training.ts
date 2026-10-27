@@ -1,145 +1,158 @@
+import {
+  type ActivityModality,
+  isActivityDetailType,
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "./activity-types.ts";
+
+export { isActivityDetailType };
+
 export const OTHER_ACTIVITY_TYPE = "__other__";
 
-// ============================================================
-// Canonical activity types
-// ============================================================
+export const STRENGTH_ACTIVITY_TYPES = ["strength"] as const;
+
+export interface StrengthExerciseIdentity {
+  exerciseName: string;
+  equipment: string | null;
+}
+
+/** Compare the structured identity used by strength history series. */
+export function isSameStrengthExercise(
+  left: StrengthExerciseIdentity,
+  right: StrengthExerciseIdentity,
+): boolean {
+  return left.exerciseName === right.exerciseName && left.equipment === right.equipment;
+}
+
+/** Collision-safe React/list key for a structured strength exercise identity. */
+export function strengthExerciseIdentityKey(identity: StrengthExerciseIdentity): string {
+  return JSON.stringify([identity.exerciseName, identity.equipment]);
+}
+
+function ambiguousStrengthExerciseNames(
+  identities: readonly StrengthExerciseIdentity[],
+): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const ambiguous = new Set<string>();
+  for (const identity of identities) {
+    if (seen.has(identity.exerciseName)) ambiguous.add(identity.exerciseName);
+    seen.add(identity.exerciseName);
+  }
+  return ambiguous;
+}
+
+function equipmentDisplayLabel(equipment: string | null): string {
+  const normalizedEquipment = equipment?.trim().toLowerCase();
+  if (!normalizedEquipment) return "Unspecified Equipment";
+  return normalizedEquipment
+    .split(/[_\s-]+/)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
+function strengthExerciseDisplayLabel(
+  identity: StrengthExerciseIdentity,
+  namesRequiringEquipment: ReadonlySet<string>,
+): string {
+  if (!namesRequiringEquipment.has(identity.exerciseName)) return identity.exerciseName;
+  return `${identity.exerciseName} (${equipmentDisplayLabel(identity.equipment)})`;
+}
+
+function losslessEquipmentDiscriminator(equipment: string | null): string {
+  return equipment === null ? "recorded without equipment" : `recorded as “${equipment}”`;
+}
+
+function groupByLabel<T>(
+  values: readonly T[],
+  labelFor: (value: T) => string,
+): ReadonlyMap<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const value of values) {
+    const label = labelFor(value);
+    const group = groups.get(label);
+    if (group) group.push(value);
+    else groups.set(label, [value]);
+  }
+  return groups;
+}
+
+export interface StrengthExerciseDisplayLabel {
+  baseLabel: string;
+  discriminator: string | null;
+  label: string;
+}
+
+function strengthExercisePresentation(
+  baseLabel: string,
+  discriminator: string | null,
+): StrengthExerciseDisplayLabel {
+  return {
+    baseLabel,
+    discriminator,
+    label: discriminator ? `${baseLabel} — ${discriminator}` : baseLabel,
+  };
+}
 
 /**
- * Superset of all valid internal activity types across all providers.
- * Providers map their domain-specific types to one of these canonical values.
+ * Allocate concise, deterministic labels for strength identities rendered together.
+ * Readable labels stay unchanged unless they collide; collisions gain the lossless
+ * recorded equipment value, with a stable ordinal only for a second-order collision.
  */
-export const CANONICAL_ACTIVITY_TYPES = [
-  "cycling",
-  "road_cycling",
-  "mountain_biking",
-  "gravel_cycling",
-  "indoor_cycling",
-  "virtual_cycling",
-  "e_bike_cycling",
-  "cyclocross",
-  "track_cycling",
-  "bmx",
-  "running",
-  "swimming",
-  "walking",
-  "hiking",
-  "strength",
-  "strength_training",
-  "functional_strength",
-  "yoga",
-  "pilates",
-  "elliptical",
-  "rowing",
-  "skiing",
-  "skating",
-  "climbing",
-  "cardio",
-  "hiit",
-  "cross_training",
-  "trail_running",
-  "stair_climbing",
-  "stairmaster",
-  "stretching",
-  "dance",
-  "martial_arts",
-  "tennis",
-  "basketball",
-  "soccer",
-  "golf",
-  "ice_hockey",
-  "snowboarding",
-  "rock_climbing",
-  "surfing",
-  "kayaking",
-  "functional_fitness",
-  "bootcamp",
-  "boxing",
-  "core",
-  "aqua_fitness",
-  "circuit_training",
-  "group_exercise",
-  "triathlon",
-  "dancing",
-  // Apple Health granular types
-  "american_football",
-  "archery",
-  "australian_football",
-  "badminton",
-  "baseball",
-  "bowling",
-  "cricket",
-  "curling",
-  "equestrian",
-  "fencing",
-  "fishing",
-  "gymnastics",
-  "handball",
-  "hockey",
-  "hunting",
-  "lacrosse",
-  "mind_and_body",
-  "mixed_cardio",
-  "paddle_sports",
-  "play",
-  "preparation_and_recovery",
-  "racquetball",
-  "rugby",
-  "sailing",
-  "snow_sports",
-  "softball",
-  "squash",
-  "table_tennis",
-  "track_and_field",
-  "volleyball",
-  "water_fitness",
-  "water_polo",
-  "water_sports",
-  "wrestling",
-  "barre",
-  "core_training",
-  "flexibility",
-  "jump_rope",
-  "kickboxing",
-  "stairs",
-  "step_training",
-  "wheelchair_walk",
-  "wheelchair_run",
-  "tai_chi",
-  "mixed_metabolic_cardio",
-  "hand_cycling",
-  "disc_sports",
-  "fitness_gaming",
-  "cardio_dance",
-  "social_dance",
-  "paddle_racquet",
-  "cooldown",
-  "transition",
-  "underwater_diving",
-  "cross_country_skiing",
-  "downhill_skiing",
-  // Provider-specific types (Garmin, Peloton, Komoot, Decathlon)
-  "breathwork",
-  "meditation",
-  "paddleboarding",
-  "snowshoeing",
-  "pickleball",
-  "padel",
-  "football",
-  "multisport",
-  "disc_golf",
-  "skydiving",
-  "paragliding",
-  "diving",
-  "snorkeling",
-  "navigation",
-  "geocaching",
-  "paddling",
-  "gym",
-  "open_water_swimming",
-  "other",
-] as const;
+export function strengthExerciseDisplayLabels(
+  identities: readonly StrengthExerciseIdentity[],
+): readonly StrengthExerciseDisplayLabel[] {
+  const ambiguousNames = ambiguousStrengthExerciseNames(identities);
+  const entries = identities.map((identity) => ({
+    identity,
+    presentation: strengthExercisePresentation(
+      strengthExerciseDisplayLabel(identity, ambiguousNames),
+      null,
+    ),
+  }));
+  const readableGroups = groupByLabel(entries, ({ presentation }) => presentation.label);
+  for (const group of readableGroups.values()) {
+    if (group.length < 2) continue;
+    for (const entry of group) {
+      entry.presentation = strengthExercisePresentation(
+        entry.presentation.baseLabel,
+        losslessEquipmentDiscriminator(entry.identity.equipment),
+      );
+    }
+  }
 
-export type CanonicalActivityType = (typeof CANONICAL_ACTIVITY_TYPES)[number];
+  const usedLabels = new Set(entries.map(({ presentation }) => presentation.label));
+  const discriminatedGroups = groupByLabel(entries, ({ presentation }) => presentation.label);
+  const collisionGroups = [...discriminatedGroups.values()].filter((group) => group.length > 1);
+
+  for (const group of collisionGroups) {
+    const identityGroups = groupByLabel(group, ({ identity }) => identity.exerciseName);
+    const sortedIdentityGroups = [...identityGroups]
+      .map(([identityKey, identityEntries]) => ({ identityKey, identityEntries }))
+      .sort((left, right) => left.identityKey.localeCompare(right.identityKey));
+    let variant = 1;
+    for (const { identityEntries } of sortedIdentityGroups) {
+      for (const entry of identityEntries) {
+        let discriminator = entry.presentation.discriminator
+          ? `${entry.presentation.discriminator} · variant ${variant}`
+          : `variant ${variant}`;
+        let allocated = strengthExercisePresentation(entry.presentation.baseLabel, discriminator);
+        while (usedLabels.has(allocated.label)) {
+          variant += 1;
+          discriminator = entry.presentation.discriminator
+            ? `${entry.presentation.discriminator} · variant ${variant}`
+            : `variant ${variant}`;
+          allocated = strengthExercisePresentation(entry.presentation.baseLabel, discriminator);
+        }
+        entry.presentation = allocated;
+        usedLabels.add(allocated.label);
+        variant += 1;
+      }
+    }
+  }
+
+  return entries.map(({ presentation }) => presentation);
+}
 
 // ============================================================
 // Cycling activity types
@@ -150,25 +163,13 @@ export type CanonicalActivityType = (typeof CANONICAL_ACTIVITY_TYPES)[number];
  * Individual activities show the specific subtype, but aggregated views
  * (weekly volume, PMC, cycling page) treat them as one sport.
  */
-export const CYCLING_ACTIVITY_TYPES = [
-  "cycling",
-  "road_cycling",
-  "mountain_biking",
-  "gravel_cycling",
-  "indoor_cycling",
-  "virtual_cycling",
-  "e_bike_cycling",
-  "cyclocross",
-  "track_cycling",
-  "bmx",
-  "hand_cycling",
-] as const;
+export const CYCLING_ACTIVITY_TYPES = ["cycling"] as const;
 
 export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
 
 /** Check whether an activity type is a cycling variant. */
 export function isCyclingActivity(activityType: string): activityType is CyclingActivityType {
-  return CYCLING_ACTIVITY_TYPES.some((t) => t === activityType);
+  return activityType === "cycling";
 }
 
 /** Cadence unit for display based on activity type. */
@@ -194,10 +195,10 @@ export function cadenceAxisLabel(activityType: string): string {
  * Unknown provider types default to "other".
  */
 export function createActivityTypeMapper<K extends string | number>(
-  providerMappings: Record<K, CanonicalActivityType>,
-): (providerType: K) => CanonicalActivityType {
-  return (providerType: K): CanonicalActivityType => {
-    return providerMappings[providerType] ?? "other";
+  providerMappings: Record<K, LegacyActivityType>,
+): (providerType: K) => ProviderActivityType {
+  return (providerType: K): ProviderActivityType => {
+    return resolveProviderActivityType(providerType, providerMappings[providerType] ?? "other");
   };
 }
 
@@ -206,7 +207,7 @@ export function createActivityTypeMapper<K extends string | number>(
 // ============================================================
 
 /** Strava sport_type → canonical activity type */
-export const STRAVA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+export const STRAVA_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
   Ride: "road_cycling",
   VirtualRide: "virtual_cycling",
   MountainBikeRide: "mountain_biking",
@@ -236,7 +237,7 @@ export const STRAVA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
 };
 
 /** Wahoo workout_type_id (numeric) → canonical activity type */
-export const WAHOO_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
+export const WAHOO_WORKOUT_TYPE_MAP: Record<number, LegacyActivityType> = {
   0: "cycling",
   1: "running",
   2: "running", // treadmill
@@ -254,7 +255,7 @@ export const WAHOO_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
 };
 
 /** Polar sport (lowercased) → canonical activity type */
-export const POLAR_SPORT_MAP: Record<string, CanonicalActivityType> = {
+export const POLAR_SPORT_MAP: Record<string, LegacyActivityType> = {
   running: "running",
   cycling: "cycling",
   swimming: "swimming",
@@ -300,7 +301,7 @@ export const POLAR_SPORT_MAP: Record<string, CanonicalActivityType> = {
 };
 
 /** Garmin activityType → canonical activity type */
-export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
   // Running
   RUNNING: "running",
   TRAIL_RUNNING: "running",
@@ -328,10 +329,72 @@ export const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   PILATES: "pilates",
   ELLIPTICAL: "elliptical",
   ROWING: "rowing",
+  ULTRA_RUNNING: "running",
+  VIRTUAL_RUN: "running",
+  BMX: "bmx",
+  CYCLOCROSS: "cyclocross",
+  RECUMBENT_CYCLING: "cycling",
+  E_BIKE_MOUNTAIN: "e_bike_cycling",
+  E_BIKE_FITNESS: "e_bike_cycling",
+  CASUAL_WALKING: "walking",
+  SPEED_WALKING: "walking",
+  FITNESS_EQUIPMENT: "cardio",
+  STAIR_CLIMBING: "cardio",
+  BREATHWORK: "breathwork",
+  INDOOR_ROWING: "rowing",
+  KAYAKING: "kayaking",
+  STAND_UP_PADDLEBOARDING: "paddleboarding",
+  SURFING: "surfing",
+  WHITEWATER_RAFTING: "rowing",
+  RESORT_SKIING_SNOWBOARDING_WS: "skiing",
+  CROSS_COUNTRY_SKIING_WS: "skiing",
+  BACKCOUNTRY_SKIING_SNOWBOARDING_WS: "skiing",
+  SKATE_SKIING_WS: "skiing",
+  SNOWSHOEING_WS: "snowshoeing",
+  ICE_SKATING: "skating",
+  TENNIS: "tennis",
+  TABLE_TENNIS: "tennis",
+  BADMINTON: "badminton",
+  PICKLEBALL: "pickleball",
+  RACQUETBALL: "racquetball",
+  SQUASH: "squash",
+  PADEL: "padel",
+  SOCCER: "soccer",
+  BASKETBALL: "basketball",
+  VOLLEYBALL: "volleyball",
+  AMERICAN_FOOTBALL: "football",
+  RUGBY: "rugby",
+  CRICKET: "cricket",
+  HOCKEY: "hockey",
+  LACROSSE: "lacrosse",
+  SOFTBALL: "softball",
+  BASEBALL: "baseball",
+  BOULDERING: "climbing",
+  INDOOR_CLIMBING: "climbing",
+  TRIATHLON: "triathlon",
+  MULTI_SPORT: "multisport",
+  TRANSITION: "transition",
+  GOLF: "golf",
+  HORSEBACK_RIDING: "equestrian",
+  HUNTING: "hunting",
+  FISHING: "fishing",
+  SKATING: "skating",
+  INLINE_SKATING: "skating",
+  DISC_GOLF: "disc_golf",
+  JUMPMASTER: "skydiving",
+  SKY_DIVING: "skydiving",
+  WINGSUIT_FLYING: "skydiving",
+  PARAGLIDING: "paragliding",
+  HANG_GLIDING: "paragliding",
+  DIVING: "diving",
+  SNORKELING: "snorkeling",
+  NAVIGATE: "navigation",
+  GEOCACHING: "geocaching",
+  OTHER: "other",
 };
 
 /** Oura activity (lowercased) → canonical activity type */
-export const OURA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+export const OURA_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
   walking: "walking",
   running: "running",
   cycling: "cycling",
@@ -350,8 +413,14 @@ export const OURA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
 };
 
 /** RideWithGPS activity_type → canonical activity type */
-export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
   cycling: "cycling",
+  "cycling:generic": "cycling",
+  "cycling:road": "road_cycling",
+  "cycling:mountain": "mountain_biking",
+  "cycling:gravel": "gravel_cycling",
+  "cycling:cyclocross": "cyclocross",
+  "cycling:track": "track_cycling",
   mountain_biking: "mountain_biking",
   road_cycling: "road_cycling",
   gravel_cycling: "gravel_cycling",
@@ -360,12 +429,13 @@ export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityTy
   running: "running",
   trail_running: "running",
   walking: "walking",
+  "walking:hiking": "hiking",
   hiking: "hiking",
   swimming: "swimming",
 };
 
 /** Apple Health HKWorkoutActivityType → normalized lowercase name */
-export const APPLE_HEALTH_WORKOUT_TYPE_MAP: Record<string, CanonicalActivityType> = {
+export const APPLE_HEALTH_WORKOUT_TYPE_MAP: Record<string, LegacyActivityType> = {
   HKWorkoutActivityTypeAmericanFootball: "american_football",
   HKWorkoutActivityTypeArchery: "archery",
   HKWorkoutActivityTypeAustralianFootball: "australian_football",
@@ -453,7 +523,7 @@ export const APPLE_HEALTH_WORKOUT_TYPE_MAP: Record<string, CanonicalActivityType
 
 export interface WeeklyVolumeChartRow {
   week: string;
-  activity_type: string;
+  canonical_type: string;
   count: number;
   hours: number;
 }
@@ -486,12 +556,27 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   strength: "Strength",
   strength_training: "Strength Training",
   functional_strength: "Functional Strength",
+  hangboard: "Hangboarding",
   stair_climbing: "Stair Climbing",
   cross_training: "Cross Training",
   hiit: "HIIT",
   cardio: "Cardio",
   other: "Other",
 };
+
+export type VerticalAscentActivityTypeGroup =
+  | "road_cycling"
+  | "mountain_biking"
+  | "gravel_cycling"
+  | "other_cycling";
+
+const VERTICAL_ASCENT_ACTIVITY_TYPE_GROUP_LABELS: Record<VerticalAscentActivityTypeGroup, string> =
+  {
+    road_cycling: "Road Cycling",
+    mountain_biking: "Mountain Biking",
+    gravel_cycling: "Gravel Cycling",
+    other_cycling: "Other Cycling",
+  };
 
 function toTitleCase(value: string): string {
   return value
@@ -521,6 +606,21 @@ export function formatActivityTypeLabel(activityType: string): string {
   return ACTIVITY_TYPE_LABELS[normalized] ?? toTitleCase(normalized);
 }
 
+export function getVerticalAscentActivityTypeGroup(
+  modality: ActivityModality | null,
+): VerticalAscentActivityTypeGroup {
+  if (modality === "road") return "road_cycling";
+  if (modality === "mountain") return "mountain_biking";
+  if (modality === "gravel") return "gravel_cycling";
+  return "other_cycling";
+}
+
+export function formatVerticalAscentActivityTypeGroupLabel(
+  activityTypeGroup: VerticalAscentActivityTypeGroup,
+): string {
+  return VERTICAL_ASCENT_ACTIVITY_TYPE_GROUP_LABELS[activityTypeGroup];
+}
+
 export function collapseWeeklyVolumeActivityTypes(
   rows: WeeklyVolumeChartRow[],
   maxLegendItems = 6,
@@ -529,16 +629,16 @@ export function collapseWeeklyVolumeActivityTypes(
 
   // Consolidate all cycling subtypes into generic "cycling" before grouping
   const normalizedRows = rows.map((row) => {
-    const normalized = normalizeActivityType(row.activity_type);
+    const normalized = normalizeActivityType(row.canonical_type);
     return {
       ...row,
-      activity_type: isCyclingActivity(normalized) ? "cycling" : normalized,
+      canonical_type: isCyclingActivity(normalized) ? "cycling" : normalized,
     };
   });
 
   const totalsByType = new Map<string, number>();
   for (const row of normalizedRows) {
-    totalsByType.set(row.activity_type, (totalsByType.get(row.activity_type) ?? 0) + row.hours);
+    totalsByType.set(row.canonical_type, (totalsByType.get(row.canonical_type) ?? 0) + row.hours);
   }
 
   const orderedTypes = [...totalsByType.entries()]
@@ -552,7 +652,9 @@ export function collapseWeeklyVolumeActivityTypes(
 
   const aggregated = new Map<string, WeeklyVolumeChartRow>();
   for (const row of normalizedRows) {
-    const groupedType = keepTypes.has(row.activity_type) ? row.activity_type : OTHER_ACTIVITY_TYPE;
+    const groupedType = keepTypes.has(row.canonical_type)
+      ? row.canonical_type
+      : OTHER_ACTIVITY_TYPE;
     const key = `${row.week}::${groupedType}`;
     const existing = aggregated.get(key);
     if (existing) {
@@ -562,7 +664,7 @@ export function collapseWeeklyVolumeActivityTypes(
     }
     aggregated.set(key, {
       week: row.week,
-      activity_type: groupedType,
+      canonical_type: groupedType,
       count: row.count,
       hours: row.hours,
     });
@@ -570,7 +672,7 @@ export function collapseWeeklyVolumeActivityTypes(
 
   return [...aggregated.values()].sort((a, b) => {
     if (a.week !== b.week) return a.week.localeCompare(b.week);
-    return a.activity_type.localeCompare(b.activity_type);
+    return a.canonical_type.localeCompare(b.canonical_type);
   });
 }
 

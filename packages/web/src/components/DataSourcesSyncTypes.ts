@@ -7,10 +7,38 @@ export interface ProviderState {
 }
 
 export interface SyncLogEntry {
+  id: string;
   status: string;
   syncedAt: string;
   recordCount: number | null;
   durationMs: number | null;
+  dataType: string;
   errorMessage: string | null;
   authFailureReason: string | null;
 }
+
+export type ProviderSyncFreshness =
+  | { status: "unknown"; label: "Sync status unknown"; description: string }
+  | { status: "current"; label: "Sync current" }
+  | { status: "deferred"; label: "Sync deferred"; description: string }
+  | { status: "overdue"; label: "Sync overdue"; description: string };
+
+/** Row returned by sync.providers — registered OAuth/import and push-only providers. */
+export interface SyncProviderSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  authType: string;
+  tokenAuth: ProviderManualConnectionMetadata | null;
+  authorized: boolean;
+  lastSyncedAt: string | null;
+  lastSuccessfulSyncAt: string | null;
+  lastProcessedUpdateAt: string | null;
+  syncFreshness: ProviderSyncFreshness | null;
+  importOnly: boolean;
+  pushOnly: boolean;
+  needsReauth: boolean;
+  recentLogs: SyncLogEntry[];
+}
+
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

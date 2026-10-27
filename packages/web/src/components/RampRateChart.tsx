@@ -1,8 +1,7 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
-import { rampRateColor } from "@dofek/scoring/scoring";
+import { chartThemeColors } from "@dofek/scoring/colors";
 import type { RampRateWeek } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { dofekAxis, dofekGrid, dofekTooltip, escapeTooltipHtml } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface RampRateChartProps {
@@ -28,10 +27,10 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         const idx = first.dataIndex;
         const dataPoint = data[idx];
         if (!dataPoint) return "";
-        const color = rampRateColor(dataPoint.rampRate);
+        const color = chartThemeColors.axisLabel;
         const dateLabel = formatDateMedium(dataPoint.week);
         return [
-          `<strong>${dateLabel}</strong>`,
+          `<strong>${escapeTooltipHtml(dateLabel)}</strong>`,
           `Ramp Rate: <span style="color:${color}">${formatNumber(dataPoint.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
@@ -44,26 +43,8 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         type: "bar",
         data: data.map((d) => ({
           value: [d.week, d.rampRate],
-          itemStyle: { color: rampRateColor(d.rampRate) },
+          itemStyle: { color: chartThemeColors.axisLabel },
         })),
-      },
-      {
-        name: "Safe Threshold",
-        type: "line",
-        markLine: {
-          silent: true,
-          symbol: "none",
-          lineStyle: { color: statusColors.warning, type: "dashed" as const, width: 1 },
-          data: [
-            {
-              yAxis: 5,
-              label: { formatter: "Safe Limit", color: statusColors.warning, fontSize: 10 },
-            },
-          ],
-          tooltip: { show: false },
-        },
-        data: [],
-        tooltip: { show: false },
       },
     ],
   };
@@ -76,7 +57,7 @@ export function RampRateChart({
   loading,
 }: RampRateChartProps) {
   const option = data.length > 0 ? buildRampRateOption(data) : {};
-  const badgeColor = rampRateColor(currentRampRate);
+  const badgeColor = chartThemeColors.axisLabel;
 
   return (
     <div>

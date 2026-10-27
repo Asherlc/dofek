@@ -4,6 +4,7 @@ import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts"
 const stressRepositoryMock = vi.hoisted(() => ({
   getStressScores: vi.fn(),
 }));
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -17,15 +18,18 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
 
 vi.mock("../repositories/stress-repository.ts", () => ({
   StressRepository: class {
-    getStressScores(days: number, endDate: string) {
-      return stressRepositoryMock.getStressScores(days, endDate);
+    getStressScores(days: number, endDate: string, options?: { priority?: "dashboard" }) {
+      return stressRepositoryMock.getStressScores(days, endDate, options);
     }
   },
 }));
@@ -65,8 +69,11 @@ interface SleepNeedFixtureRow {
   median_hrv?: number | null;
   good_recovery?: boolean;
   yesterday_load?: number;
+  hasYesterdayLoad?: boolean;
   efficiency_pct?: number | null;
   provider_id?: string | null;
+  source_name?: string | null;
+  source_providers?: string[];
 }
 
 function addDays(dateString: string, days: number): string {
@@ -75,9 +82,27 @@ function addDays(dateString: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function completeSleepNeedRows(
+  overrides: Partial<SleepNeedFixtureRow> = {},
+): SleepNeedFixtureRow[] {
+  return Array.from({ length: 7 }, (_, index) => ({
+    date: addDays("2026-03-15", index - 7),
+    duration_minutes: 480,
+    next_day_hrv: 50,
+    median_hrv: 45,
+    good_recovery: true,
+    yesterday_load: 0,
+    ...overrides,
+  }));
+}
+
 function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
   return rows.map((row) => ({
     date: row.date,
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "provider_offset",
     started_at: `${row.date}T22:00:00`,
     ended_at: `${addDays(row.date, 1)}T06:00:00`,
     duration_minutes: row.duration_minutes,
@@ -86,7 +111,10 @@ function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
+    staging_available: false,
     provider_id: row.provider_id ?? null,
+    source_name: row.source_name ?? null,
+    source_providers: row.source_providers ?? (row.provider_id ? [row.provider_id] : []),
   }));
 }
 
@@ -101,10 +129,14 @@ function toHrvRows(rows: SleepNeedFixtureRow[]) {
 
 function createCalculateCaller(rows: SleepNeedFixtureRow[]) {
   const yesterdayLoad = rows[0]?.yesterday_load ?? 0;
+  const hasYesterdayLoad = rows[0]?.hasYesterdayLoad ?? true;
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(toHrvRows(rows)) },
     userId: "user-1",
-    sensorStore: makeMockSensorStore([[{ load: yesterdayLoad }], toClickHouseSleepRows(rows)]),
+    sensorStore: makeMockSensorStore([
+      hasYesterdayLoad ? [{ load: yesterdayLoad }] : [],
+      toClickHouseSleepRows(rows),
+    ]),
   });
 }
 
@@ -112,14 +144,126 @@ function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
   const sleepRows = [...rows].sort((leftRow, rightRow) =>
     leftRow.date.localeCompare(rightRow.date),
   );
+  const clickHouseRows = toClickHouseSleepRows(sleepRows);
   return createCaller({
     db: { execute: vi.fn() },
     userId: "user-1",
-    sensorStore: makeMockSensorStore([toClickHouseSleepRows(sleepRows), []]),
+    sensorStore: makeMockSensorStore([clickHouseRows, clickHouseRows, []]),
   });
 }
 
 describe("sleepNeedRouter", () => {
+  describe("calculateV2", () => {
+    it("returns the unavailable variant without recommendation fields when prior sleep is missing", async () => {
+      const caller = createCalculateCaller([]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toEqual({
+        availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      });
+    });
+
+    it("returns the unavailable variant when the prior-night duration is missing", async () => {
+      const caller = createCalculateCaller([
+        {
+          date: "2026-03-14",
+          duration_minutes: null,
+        },
+      ]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toEqual({
+        availability: "missing_previous_night",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        message: "Sync last night's sleep data to see tonight's sleep need.",
+      });
+    });
+
+    it("returns an insufficient-data state when baseline history is short", async () => {
+      const caller = createCalculateCaller([
+        {
+          date: "2026-03-14",
+          duration_minutes: 390,
+          next_day_hrv: 50,
+          yesterday_load: 100,
+        },
+      ]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toEqual({
+        availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        reason: "insufficient_baseline_history",
+        message: "Sync at least 7 qualifying nights to estimate sleep need.",
+        nextAction: "Sync more sleep and recovery data.",
+      });
+    });
+
+    it("returns an insufficient-data state when yesterday's load is missing", async () => {
+      const caller = createCalculateCaller([...completeSleepNeedRows({ hasYesterdayLoad: false })]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toEqual({
+        availability: "insufficient_data",
+        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+        reason: "missing_previous_day_load",
+        message: "Sync yesterday's activity data to include training load in sleep need.",
+        nextAction: "Sync activity data for the previous day.",
+      });
+    });
+
+    it("excludes older missing durations from debt and recent-night values", async () => {
+      const recentRows = completeSleepNeedRows().map((row) =>
+        row.date === "2026-03-13" ? { ...row, duration_minutes: null } : row,
+      );
+      recentRows.push({
+        date: "2026-03-07",
+        duration_minutes: 480,
+        next_day_hrv: 50,
+        median_hrv: 45,
+        good_recovery: true,
+        yesterday_load: 0,
+      });
+      const caller = createCalculateCaller([
+        {
+          date: "2026-03-01",
+          duration_minutes: null,
+        },
+        ...recentRows,
+      ]);
+
+      const result = await caller.calculateV2({ endDate: "2026-03-15" });
+
+      expect(result).toMatchObject({
+        availability: "available",
+        epistemicStatus: { kind: "estimated", label: "Estimated" },
+        accumulatedDebtMinutes: 0,
+        debtRecoveryMinutes: 0,
+        totalNeedMinutes: 480,
+        estimateMetadata: {
+          baselineQualifyingNightCount: 7,
+          debtObservedNightCount: 7,
+          basisLabel:
+            "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
+        },
+      });
+      if (result.availability !== "available") {
+        throw new Error("Expected available sleep need");
+      }
+      expect(result.recentNights.find((night) => night.date === "2026-03-01")).toBeUndefined();
+      expect(result.recentNights.find((night) => night.date === "2026-03-13")).toMatchObject({
+        actualMinutes: null,
+        debtMinutes: null,
+      });
+    });
+  });
+
   // ── calculate ──────────────────────────────────────────
 
   describe("calculate", () => {
@@ -136,7 +280,7 @@ describe("sleepNeedRouter", () => {
       });
     });
 
-    it("returns default baseline (480 min) when no data", async () => {
+    it("preserves the legacy recommendation shape when no data is available", async () => {
       const sensorStore = makeMockSensorStore([]);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -145,18 +289,18 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480);
-      expect(result.strainDebtMinutes).toBe(0);
-      expect(result.accumulatedDebtMinutes).toBe(0);
-      expect(result.totalNeedMinutes).toBe(480);
-      // Calendar-based: always 7 nights (null for missing)
-      expect(result.recentNights).toHaveLength(7);
-      for (const night of result.recentNights) {
-        expect(night.actualMinutes).toBeNull();
-      }
-      expect(result.canRecommend).toBe(false);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        totalNeedMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(queryText).toContain("analytics.daily_strain FINAL");
+      expect(queryText).toContain("sumOrNull(daily_load)");
+      expect(queryText).toContain("is_deleted = 0");
       expect(queryText).toContain("toDate(toTimeZone(toDateTime(date), {timezone:String}))");
       expect(queryText).not.toContain("analytics.activity_summary");
     });
@@ -189,13 +333,13 @@ describe("sleepNeedRouter", () => {
       }));
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // Average of 450, 455, 460, 465, 470, 475, 480, 485, 490, 495 = 472.5
       expect(result.baselineMinutes).toBe(473); // rounded
     });
 
-    it("uses default baseline of 480 when fewer than 7 good recovery nights", async () => {
+    it("keeps the legacy recommendation unavailable when fewer than 7 good nights exist", async () => {
       const rows = Array.from({ length: 5 }, (_, i) => ({
         date: `2026-03-${String(i + 1).padStart(2, "0")}`,
         duration_minutes: 450,
@@ -204,11 +348,20 @@ describe("sleepNeedRouter", () => {
         good_recovery: true,
         yesterday_load: 0,
       }));
+      rows.push({
+        date: "2026-03-14",
+        duration_minutes: 450,
+        next_day_hrv: 50,
+        median_hrv: 45,
+        good_recovery: false,
+        yesterday_load: 0,
+      });
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.baselineMinutes).toBe(480);
+      expect(result.canRecommend).toBe(false);
     });
 
     it("excludes bad recovery nights from baseline calculation", async () => {
@@ -234,43 +387,24 @@ describe("sleepNeedRouter", () => {
       ];
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // Only good nights (420 min each) count for baseline
       expect(result.baselineMinutes).toBe(420);
     });
 
     it("computes strain debt from yesterday's load, capped at 60 minutes", async () => {
-      const rows = [
-        {
-          date: "2026-03-01",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 200, // 200 / 5 = 40 min
-        },
-      ];
+      const rows = completeSleepNeedRows({ yesterday_load: 200 });
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Only 1 good night < 7 -> baseline defaults to 480
       // strainDebt = Math.min(60, Math.round(200 / 5)) = Math.min(60, 40) = 40
       expect(result.strainDebtMinutes).toBe(40);
     });
 
     it("caps strain debt at 60 minutes for very high load", async () => {
-      const rows = [
-        {
-          date: "2026-03-01",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 500, // 500 / 5 = 100, capped to 60
-        },
-      ];
+      const rows = completeSleepNeedRows({ yesterday_load: 500 });
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
@@ -279,24 +413,8 @@ describe("sleepNeedRouter", () => {
     });
 
     it("uses yesterday_load from first row in array", async () => {
-      const rows = [
-        {
-          date: "2026-02-28",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 150,
-        },
-        {
-          date: "2026-03-01",
-          duration_minutes: 480,
-          next_day_hrv: 50,
-          median_hrv: 45,
-          good_recovery: true,
-          yesterday_load: 0, // different value in second row
-        },
-      ];
+      const rows = completeSleepNeedRows({ yesterday_load: 150 });
+      rows[1] = { ...rows[1], yesterday_load: 0 };
 
       const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
@@ -315,6 +433,7 @@ describe("sleepNeedRouter", () => {
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.strainDebtMinutes).toBe(0);
+      expect(result.canRecommend).toBe(false);
     });
 
     it("computes accumulated sleep debt over last 14 nights", async () => {
@@ -460,7 +579,7 @@ describe("sleepNeedRouter", () => {
       }));
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // baseline = 420, actual = 420, debt = 0
       // Only check nights that have data (some calendar dates may be null)
@@ -493,7 +612,7 @@ describe("sleepNeedRouter", () => {
       ];
 
       const caller = createCalculateCaller(rows);
-      const result = await caller.calculate({ endDate: "2026-03-15" });
+      const result = await caller.calculate({ endDate: "2026-03-11" });
 
       // baseline = (8*480 + 2*520)/10 = (3840 + 1040)/10 = 488
       // Recent nights at 520 have debtMinutes = max(0, 488-520) = 0
@@ -507,7 +626,7 @@ describe("sleepNeedRouter", () => {
       // Some good nights with 0 duration should be excluded
       const rows = [
         ...Array.from({ length: 7 }, (_, i) => ({
-          date: `2026-03-${String(i + 1).padStart(2, "0")}`,
+          date: `2026-03-${String(i + 8).padStart(2, "0")}`,
           duration_minutes: 480,
           next_day_hrv: 55,
           median_hrv: 45,
@@ -515,7 +634,7 @@ describe("sleepNeedRouter", () => {
           yesterday_load: 0,
         })),
         {
-          date: "2026-03-08",
+          date: "2026-03-07",
           duration_minutes: 0,
           next_day_hrv: 55,
           median_hrv: 45,
@@ -530,11 +649,83 @@ describe("sleepNeedRouter", () => {
       // Only 7 good nights with duration > 0 at 480 each
       expect(result.baselineMinutes).toBe(480);
     });
+
+    it("includes provenance on recent nights with sleep data", async () => {
+      const rows: SleepNeedFixtureRow[] = [];
+      for (let dayOffset = 7; dayOffset >= 1; dayOffset -= 1) {
+        rows.push({
+          date: addDays("2026-03-15", -dayOffset),
+          duration_minutes: 480,
+          provider_id: "whoop",
+          next_day_hrv: 50,
+          median_hrv: 45,
+          good_recovery: true,
+          yesterday_load: 0,
+        });
+      }
+
+      const caller = createCalculateCaller(rows);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      for (const night of result.recentNights) {
+        expect(night.providerId).toBe("whoop");
+        expect(night.sourceName).toBeNull();
+        expect(night.sourceProviders).toEqual(["whoop"]);
+      }
+    });
+
+    it("maps provenance from the matching sleep row for each recent night", async () => {
+      const rows: SleepNeedFixtureRow[] = [];
+      for (let dayOffset = 7; dayOffset >= 1; dayOffset -= 1) {
+        const date = addDays("2026-03-15", -dayOffset);
+        rows.push({
+          date,
+          duration_minutes: 480,
+          provider_id: date === "2026-03-14" ? "apple_health" : "whoop",
+          source_name: date === "2026-03-14" ? "Apple Watch" : null,
+          source_providers: date === "2026-03-14" ? ["apple_health", "whoop"] : ["whoop"],
+          next_day_hrv: 50,
+          median_hrv: 45,
+          good_recovery: true,
+          yesterday_load: 0,
+        });
+      }
+
+      const caller = createCalculateCaller(rows);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(result.recentNights.find((night) => night.date === "2026-03-13")).toMatchObject({
+        providerId: "whoop",
+        sourceName: null,
+        sourceProviders: ["whoop"],
+      });
+      expect(result.recentNights.find((night) => night.date === "2026-03-14")).toMatchObject({
+        providerId: "apple_health",
+        sourceName: "Apple Watch",
+        sourceProviders: ["apple_health", "whoop"],
+      });
+    });
+
+    it("returns the legacy calendar shape when recent nights have no sleep data", async () => {
+      const caller = createCalculateCaller([]);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(result.recentNights).toHaveLength(7);
+      expect(result.recentNights.every((night) => night.actualMinutes === null)).toBe(true);
+      expect(result.canRecommend).toBe(false);
+    });
   });
 
   // ── performance ──────────────────────────────────────────
 
   describe("performance", () => {
+    it("uses a versioned cache key for the response contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 600_000,
+        keyVersion: "sleep-performance-contract-v1",
+      });
+    });
+
     it("requires a ClickHouse sensor store", async () => {
       const caller = createCaller({
         db: { execute: vi.fn() },
@@ -581,12 +772,27 @@ describe("sleepNeedRouter", () => {
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
     });
 
+    it("returns the effective date and timezone with sleep performance", async () => {
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
+
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.summaryDateContext).toEqual({
+        effectiveDate: "2026-03-15",
+        timezone: "UTC",
+      });
+    });
+
     it("reads dashboard sleep performance from the daily sleep summary once", async () => {
       const rows = [
         { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
         { date: "2026-03-01", duration_minutes: 480 },
       ];
-      const sensorStore = makeMockSensorStore([toClickHouseSleepRows(rows), []]);
+      const clickHouseRows = toClickHouseSleepRows(rows);
+      const sensorStore = makeMockSensorStore([clickHouseRows]);
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
@@ -599,7 +805,50 @@ describe("sleepNeedRouter", () => {
       expect(
         queryTexts.filter((queryText) => queryText.includes("analytics.daily_sleep")),
       ).toHaveLength(1);
-      expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
+      expect(
+        queryTexts.filter((queryText) => queryText.includes("analytics.v_sleep")),
+      ).toHaveLength(0);
+    });
+
+    it("uses dashboard priority for every sleep-performance ClickHouse read", async () => {
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ];
+      const clickHouseRows = toClickHouseSleepRows(rows);
+      const sensorStore = makeMockSensorStore([clickHouseRows]);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        sensorStore,
+      });
+
+      await caller.performance({ endDate: "2026-03-15" });
+
+      const queryOptions = vi.mocked(sensorStore.query).mock.calls.map((call) => call[3]);
+      expect(queryOptions).toEqual([{ priority: "dashboard" }]);
+      expect(stressRepositoryMock.getStressScores).toHaveBeenCalledWith(90, "2026-03-15", {
+        priority: "dashboard",
+      });
+    });
+
+    it("includes provenance from the daily sleep model on performance response", async () => {
+      const caller = createPerformanceCaller([
+        {
+          date: "2026-03-14",
+          duration_minutes: 450,
+          efficiency_pct: 92,
+          provider_id: "whoop",
+          source_name: "WHOOP 4.0",
+          source_providers: ["whoop", "apple_health"],
+        },
+        { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+      ]);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("whoop");
+      expect(result?.sourceName).toBe("WHOOP 4.0");
+      expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {
@@ -735,15 +984,14 @@ describe("sleepNeedRouter", () => {
       expect(result?.score).toBe(70);
     });
 
-    it("uses default efficiency of 85 when null", async () => {
+    it("returns unavailable performance when efficiency was not reported", async () => {
       const caller = createPerformanceCaller([
         { date: "2026-03-14", duration_minutes: 480, efficiency_pct: null },
         { date: "2026-03-01", duration_minutes: 480 },
       ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
-      expect(result).not.toBeNull();
-      expect(result?.efficiency).toBe(85);
+      expect(result).toBeNull();
     });
 
     it("uses default baseline of 480 when avg_duration is null", async () => {

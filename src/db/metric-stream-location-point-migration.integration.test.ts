@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -6,6 +6,7 @@ import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
+import { writeTestMigrationFiles } from "./test-helpers.ts";
 
 const testDatabaseImage = "mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all";
 const columnRowsSchema = z.array(z.object({ column_name: z.string() }));
@@ -106,10 +107,6 @@ describe("metric_stream location point migration", () => {
         join(import.meta.dirname, "../../drizzle/0018_metric_stream_location_point.sql"),
         "utf-8",
       );
-      writeFileSync(
-        join(temporaryDirectory, "0018_metric_stream_location_point.sql"),
-        migrationContent,
-      );
       const dropCoordinateProjectionMigrationContent = readFileSync(
         join(
           import.meta.dirname,
@@ -117,10 +114,18 @@ describe("metric_stream location point migration", () => {
         ),
         "utf-8",
       );
-      writeFileSync(
-        join(temporaryDirectory, "0022_drop_metric_stream_coordinate_projections.sql"),
-        dropCoordinateProjectionMigrationContent,
-      );
+      writeTestMigrationFiles(temporaryDirectory, [
+        {
+          content: migrationContent,
+          file: "0018_metric_stream_location_point.sql",
+          when: 2_200_000_000_000,
+        },
+        {
+          content: dropCoordinateProjectionMigrationContent,
+          file: "0022_drop_metric_stream_coordinate_projections.sql",
+          when: 2_200_000_000_001,
+        },
+      ]);
 
       const migrationCount = await runMigrations(connectionString, temporaryDirectory);
       expect(migrationCount).toBe(2);

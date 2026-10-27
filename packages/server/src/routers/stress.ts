@@ -1,13 +1,12 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
-import { endDateSchema } from "../lib/date-window.ts";
+import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import {
   type DailyStressRow,
   StressRepository,
   type StressResult,
   type WeeklyStressRow,
 } from "../repositories/stress-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 export type { DailyStressRow, StressResult, WeeklyStressRow };
 
@@ -16,9 +15,10 @@ export const stressRouter = router({
    * Stress Monitor — daily stress scores from HR/HRV deviation against personal baselines.
    * Mirrors Whoop's 0-3 stress scale with cumulative weekly tracking.
    */
-  scores: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().min(1).max(365).default(90), endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<StressResult> => {
+  scores: selectedChartDateRangeQuery(
+    "stress.scores",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }): Promise<StressResult> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -33,6 +33,8 @@ export const stressRouter = router({
         ctx.timezone,
         ctx.sensorStore,
         ctx.accessWindow,
-      ).getStressScores(input.days, input.endDate);
-    }),
+      ).getStressScores(range.days, input.endDate);
+    },
+    { min: 1, max: 365 },
+  ),
 });

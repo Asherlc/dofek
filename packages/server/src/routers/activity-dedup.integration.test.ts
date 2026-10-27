@@ -1,12 +1,202 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { reconcileActivityGroups } from "../../../../src/db/activity-group-reconciliation.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
+
+describe("Persisted PostgreSQL activity representatives", () => {
+  let context: TestContext;
+  const groupId = "00000000-0000-4000-8000-000000000301";
+  const firstId = "00000000-0000-4000-8000-000000000302";
+  const secondId = "00000000-0000-4000-8000-000000000303";
+  const exerciseId = "00000000-0000-4000-8000-000000000304";
+  const projectionSchema = z.object({
+    id: z.string(),
+    representative_activity_id: z.string(),
+    member_activity_ids: z.array(z.string()),
+    source_providers: z.array(z.string()),
+    source_external_ids: z.array(z.object({ memberActivityId: z.string() }).passthrough()),
+    started_at: z.string(),
+    ended_at: z.string(),
+    raw: z.record(z.string(), z.unknown()),
+    timezone: z.string().nullable(),
+    local_time_source: z.string(),
+    perceived_exertion: z.number().nullable(),
+  });
+  const readProjection = () =>
+    executeWithSchema(
+      context.db,
+      projectionSchema,
+      sql`SELECT id, representative_activity_id, member_activity_ids::text[], source_providers,
+        source_external_ids, started_at::text, ended_at::text, raw, timezone,
+        local_time_source, perceived_exertion
+        FROM fitness.v_activity WHERE ${firstId}::uuid = ANY(member_activity_ids)`,
+    );
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await context.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
+      VALUES ('wahoo', 'Wahoo', ${TEST_USER_ID}), ('apple_health', 'Apple Health', ${TEST_USER_ID})
+      ON CONFLICT DO NOTHING`);
+    await context.db.execute(
+      sql`INSERT INTO fitness.exercise (id, name) VALUES (${exerciseId}::uuid, 'Squat')`,
+    );
+  });
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+  beforeEach(async () => {
+    await context.db.execute(sql`DELETE FROM fitness.activity`);
+    await context.db.execute(sql`INSERT INTO fitness.provider_priority (provider_id, priority)
+      VALUES ('wahoo', 1), ('apple_health', 99)
+      ON CONFLICT (provider_id) DO UPDATE SET priority = EXCLUDED.priority`);
+    await context.db.execute(sql`INSERT INTO fitness.activity
+      (id, group_id, user_id, provider_id, external_id, canonical_type, provider_type,
+       started_at, ended_at, raw, timezone, local_time_source, perceived_exertion)
+      VALUES
+      (${firstId}::uuid, ${groupId}::uuid, ${TEST_USER_ID}, 'wahoo', 'representative-first',
+       'strength', 'strength', '2026-01-01 10:00:00+00', '2026-01-01 11:00:00+00',
+       '{"first":1}', NULL, 'unknown', NULL),
+      (${secondId}::uuid, ${groupId}::uuid, ${TEST_USER_ID}, 'apple_health', 'representative-second',
+       'strength', 'strength', '2026-01-01 09:59:00+00', '2026-01-01 11:01:00+00',
+       '{"second":2}', 'America/Los_Angeles', 'provider_timezone', 8)`);
+  });
+
+  it("keeps persisted identity when provider priority changes the representative", async () => {
+    expect((await readProjection())[0]).toMatchObject({
+      id: groupId,
+      representative_activity_id: firstId,
+    });
+    await context.db.execute(
+      sql`UPDATE fitness.provider_priority SET priority = 0 WHERE provider_id = 'apple_health'`,
+    );
+    expect((await readProjection())[0]).toMatchObject({
+      id: groupId,
+      representative_activity_id: secondId,
+    });
+  });
+
+  it("prefers strength payload and preserves all member evidence when it arrives", async () => {
+    const before = (await readProjection())[0];
+    expect(before?.representative_activity_id).toBe(firstId);
+    await context.db.execute(sql`INSERT INTO fitness.strength_set
+      (activity_id, exercise_id, exercise_index, set_index, reps, weight_kg)
+      VALUES (${secondId}::uuid, ${exerciseId}::uuid, 0, 0, 5, 0)`);
+    const after = (await readProjection())[0];
+    expect(after).toMatchObject({
+      id: groupId,
+      representative_activity_id: secondId,
+      member_activity_ids: [firstId, secondId],
+      source_providers: ["apple_health", "wahoo"],
+      started_at: "2026-01-01 09:59:00+00",
+      ended_at: "2026-01-01 11:01:00+00",
+      raw: { first: 1, second: 2 },
+      timezone: "America/Los_Angeles",
+      local_time_source: "provider_timezone",
+      perceived_exertion: 8,
+    });
+    expect(after?.source_external_ids.map((source) => source.memberActivityId).sort()).toEqual([
+      firstId,
+      secondId,
+    ]);
+    expect(after?.id).toBe(before?.id);
+  });
+
+  it.each(["cycling", "running", "strength", "walking", "climbing"])(
+    "prefers specific %s classification over generic cardio",
+    async (specificType) => {
+      await context.db.execute(
+        sql`UPDATE fitness.activity SET canonical_type = 'cardio', provider_type = 'cardio' WHERE id = ${firstId}::uuid`,
+      );
+      await context.db.execute(
+        sql`UPDATE fitness.activity SET canonical_type = ${specificType}::fitness.canonical_activity_type, provider_type = ${specificType} WHERE id = ${secondId}::uuid`,
+      );
+      expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
+    },
+  );
+
+  it("prefers a provider-type refinement before configured priority", async () => {
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET provider_type = '  Functional_Strength  ' WHERE id = ${secondId}::uuid`,
+    );
+    expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
+  });
+
+  it.each([
+    { reps: 0, weight: null, duration: null, distance: null },
+    { reps: null, weight: 0, duration: null, distance: null },
+    { reps: null, weight: null, duration: 30, distance: null },
+    { reps: null, weight: null, duration: null, distance: 10 },
+  ])(
+    "prefers quantitative working sets over more incomplete or warmup sets: %j",
+    async (values) => {
+      await context.db.execute(sql`INSERT INTO fitness.strength_set
+      (activity_id, exercise_id, exercise_index, set_index, set_type, reps)
+      VALUES (${firstId}::uuid, ${exerciseId}::uuid, 0, 0, 'working', NULL),
+        (${firstId}::uuid, ${exerciseId}::uuid, 0, 1, 'warmup', 10)`);
+      await context.db.execute(sql`INSERT INTO fitness.strength_set
+      (activity_id, exercise_id, exercise_index, set_index, reps, weight_kg, duration_seconds, distance_meters)
+      VALUES (${secondId}::uuid, ${exerciseId}::uuid, 0, 0,
+        ${values.reps}, ${values.weight}, ${values.duration}, ${values.distance})`);
+      expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
+    },
+  );
+
+  it("uses total set count when quantitative working-set counts tie", async () => {
+    await context.db.execute(sql`INSERT INTO fitness.strength_set
+      (activity_id, exercise_id, exercise_index, set_index)
+      VALUES (${firstId}::uuid, ${exerciseId}::uuid, 0, 0),
+        (${secondId}::uuid, ${exerciseId}::uuid, 0, 0),
+        (${secondId}::uuid, ${exerciseId}::uuid, 0, 1)`);
+    expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
+  });
+
+  it("uses distinct exercise count when set counts tie", async () => {
+    const otherExerciseId = "00000000-0000-4000-8000-000000000305";
+    await context.db.execute(sql`INSERT INTO fitness.exercise (id, name)
+      VALUES (${otherExerciseId}::uuid, 'Pull-up') ON CONFLICT DO NOTHING`);
+    await context.db.execute(sql`INSERT INTO fitness.strength_set
+      (activity_id, exercise_id, exercise_index, set_index)
+      VALUES (${firstId}::uuid, ${exerciseId}::uuid, 0, 0),
+        (${firstId}::uuid, ${exerciseId}::uuid, 0, 1),
+        (${secondId}::uuid, ${exerciseId}::uuid, 0, 0),
+        (${secondId}::uuid, ${otherExerciseId}::uuid, 1, 0)`);
+    expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
+  });
+
+  it.each(["", "   ", " STRENGTH "])(
+    "normalizes an unrefined provider type %j before comparing priority",
+    async (providerType) => {
+      await context.db.execute(sql`UPDATE fitness.provider_priority
+        SET priority = CASE provider_id WHEN 'wahoo' THEN 99 ELSE 1 END
+        WHERE provider_id IN ('wahoo', 'apple_health')`);
+      await context.db.execute(
+        sql`UPDATE fitness.activity SET provider_type = ${providerType} WHERE id = ${firstId}::uuid`,
+      );
+      expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
+    },
+  );
+
+  it("uses member UUID after equal payload, classification and priority", async () => {
+    await context.db.execute(
+      sql`UPDATE fitness.provider_priority SET priority = 1 WHERE provider_id = 'apple_health'`,
+    );
+    expect((await readProjection())[0]?.representative_activity_id).toBe(firstId);
+  });
+});
+
+const groupedActivityBoundsRowSchema = z.object({
+  started_at: z.string(),
+  ended_at: z.string(),
+  member_activity_ids: z.array(z.string()),
+});
 
 /**
  * Integration test verifying that overlapping activities are deduplicated
@@ -19,6 +209,7 @@ describe("Activity summary deduplication", () => {
   let sessionCookie: string;
   let canonicalActivityId: string;
   let memberActivityId: string;
+  let memberActivityIds: string[];
   let sensorStore: ActivitySensorStore;
   const baseUtcNow = new Date();
 
@@ -63,9 +254,9 @@ describe("Activity summary deduplication", () => {
     for (const daysAgo of activityOffsetsDaysAgo) {
       const wahooResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, ${`wahoo-overlap-${daysAgo}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               'Morning Ride'
@@ -75,9 +266,9 @@ describe("Activity summary deduplication", () => {
 
       const appleResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'apple_health', ${TEST_USER_ID}, 'cycling',
+              'apple_health', ${TEST_USER_ID}, ${`apple-overlap-${daysAgo}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '10 seconds',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second' - INTERVAL '10 seconds',
               'Morning Ride'
@@ -90,6 +281,9 @@ describe("Activity summary deduplication", () => {
       }
     }
 
+    await testCtx.db.transaction((transaction) =>
+      reconcileActivityGroups(transaction, TEST_USER_ID),
+    );
     const aliasRows = await testCtx.db.execute<{ id: string; member_activity_ids: string[] }>(
       sql`SELECT id, member_activity_ids::text[] AS member_activity_ids
           FROM fitness.v_activity
@@ -106,19 +300,55 @@ describe("Activity summary deduplication", () => {
       throw new Error("Expected overlapping activity aliases in fitness.v_activity");
     }
     canonicalActivityId = aliasRow.id;
+    memberActivityIds = aliasRow.member_activity_ids;
     memberActivityId = nonCanonicalMemberId;
+
+    await testCtx.db.execute(
+      sql`UPDATE fitness.activity
+          SET perceived_exertion = 8
+          WHERE id = ${memberActivityId}::uuid`,
+    );
 
     const previousLoadDate = dateDaysAgo(14);
     const recentLoadDate = dateDaysAgo(3);
+    const previousLoadWeek = dateDaysAgo(14);
+    const recentLoadWeek = dateDaysAgo(3);
 
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
+      if (
+        queryText.includes("analytics.weekly_endurance_ramp_rate") ||
+        queryText.includes("analytics.daily_endurance_load")
+      ) {
+        return [
+          {
+            week: previousLoadWeek,
+            ctl_start: 50,
+            ctl_end: 50,
+            ramp_rate: 0,
+            is_deleted: 0,
+          },
+          {
+            week: recentLoadWeek,
+            ctl_start: 50,
+            ctl_end: 52,
+            ramp_rate: 2,
+            is_deleted: 0,
+          },
+        ];
+      }
       if (queryText.includes("SELECT date, resting_hr")) {
         return [{ date: previousLoadDate, resting_hr: 50 }];
       }
-      return [
-        { day: previousLoadDate, trimp: 50 },
-        { day: recentLoadDate, trimp: 52 },
-      ];
+      if (queryText.includes("analytics.daily_activity_load")) {
+        return [
+          { day: previousLoadDate, trimp: 50 },
+          { day: recentLoadDate, trimp: 52 },
+        ];
+      }
+      if (queryText.includes("analytics.activity_location_sample")) {
+        return [];
+      }
+      throw new Error(`Unrecognized query text: ${queryText}`);
     };
 
     sensorStore = {
@@ -126,7 +356,7 @@ describe("Activity summary deduplication", () => {
       query: vi.fn(queryMock),
       getActivitySummaries: vi.fn().mockResolvedValue([
         {
-          activity_id: memberActivityId,
+          activity_id: canonicalActivityId,
           avg_hr: 144,
           max_hr: 171,
           avg_power: 212,
@@ -199,9 +429,9 @@ describe("Activity summary deduplication", () => {
 
     const inserted = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'wahoo', ${TEST_USER_ID}, 'cycling',
+            'wahoo', ${TEST_USER_ID}, 'fresh-ride-visible-in-view', 'cycling', 'cycling',
             CURRENT_TIMESTAMP + INTERVAL '1 day',
             CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '30 minutes',
             'Fresh Ride'
@@ -215,10 +445,13 @@ describe("Activity summary deduplication", () => {
     }
 
     try {
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
       const viewResult = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
             FROM fitness.v_activity
-            WHERE id = ${activityId}`,
+            WHERE ${activityId}::uuid = ANY(member_activity_ids)`,
       );
       expect(Number(viewResult[0]?.count)).toBe(1);
     } finally {
@@ -234,64 +467,227 @@ describe("Activity summary deduplication", () => {
     expect(Number(result[0]?.count)).toBe(2);
   });
 
-  it.each([
-    { primaryName: null, description: "has no title" },
-    { primaryName: "Evening Run", description: "has its own title" },
-  ])("keeps the primary source title when it $description", async ({ primaryName }) => {
-    const primaryActivityId = "00000000-0000-4000-8000-000000000201";
-    const secondaryActivityId = "00000000-0000-4000-8000-000000000202";
-
+  it("groups contained auto-started activities from another provider", async () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('strava', 'Strava', ${TEST_USER_ID})
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
+
+    const activityIds = [
+      "00000000-0000-4000-8000-000000000091",
+      "00000000-0000-4000-8000-000000000092",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, activity_type, started_at, ended_at,
-            name, source_name, raw
+            id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
-          (
-            ${primaryActivityId}::uuid,
-            'apple_health', ${TEST_USER_ID}, 'running',
-            TIMESTAMPTZ '2026-01-12 10:00:00+00',
-            TIMESTAMPTZ '2026-01-12 10:41:00+00',
-            ${primaryName}, 'Apple Watch', '{"sourceName":"Apple Watch"}'::jsonb
-          ),
-          (
-            ${secondaryActivityId}::uuid,
-            'strava', ${TEST_USER_ID}, 'walking',
-            TIMESTAMPTZ '2026-01-12 10:00:10+00',
-            TIMESTAMPTZ '2026-01-12 10:40:58+00',
-            '40 min 58 sec Walking', NULL, '{}'::jsonb
-          )`,
+            (
+              ${activityIds[0]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'apple-contained-run',
+              'running',
+              'running',
+              TIMESTAMPTZ '2026-01-12 14:00:00+00',
+              TIMESTAMPTZ '2026-01-12 15:00:00+00',
+              'Outdoor Run'
+            ),
+            (
+              ${activityIds[1]}::uuid,
+              'whoop', ${TEST_USER_ID}, 'whoop-contained-run',
+              'running',
+              'running',
+              TIMESTAMPTZ '2026-01-12 14:15:00+00',
+              TIMESTAMPTZ '2026-01-12 15:00:00+00',
+              'Outdoor Run'
+            )`,
     );
 
     try {
-      await queryCache.invalidateAll();
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
+      const groupedRows = await testCtx.db.execute<{ member_activity_ids: string[] }>(
+        sql`SELECT member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${insertedIdArray}`,
+      );
 
-      for (const activityId of [primaryActivityId, secondaryActivityId]) {
-        const { status, result } = await query("activity.byId", { id: activityId });
-        expect(status).toBe(200);
-        expect(result.result.data).toMatchObject({
-          id: primaryActivityId,
-          providerId: "apple_health",
-          activityType: "running",
-          subsource: "Apple Watch",
-          name: primaryName,
-          sourceProviders: ["apple_health", "strava"],
-        });
-      }
+      expect(groupedRows).toHaveLength(1);
+      expect(groupedRows[0]?.member_activity_ids.sort()).toEqual([...activityIds].sort());
     } finally {
       await testCtx.db.execute(
-        sql`DELETE FROM fitness.activity
-            WHERE id IN (${primaryActivityId}::uuid, ${secondaryActivityId}::uuid)`,
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
       );
-      await queryCache.invalidateAll();
     }
   });
 
-  it("does not collapse long overlap chains into one canonical activity", async () => {
+  it("uses the earliest start and latest end from every canonical activity member", async () => {
+    const activityIds = [
+      "00000000-0000-4000-8000-0000000000a1",
+      "00000000-0000-4000-8000-0000000000a2",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
+          ) VALUES
+            (
+              ${activityIds[0]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'wahoo-expanded-bounds', 'cycling', 'cycling',
+              TIMESTAMPTZ '2026-01-14 10:00:05+00',
+              TIMESTAMPTZ '2026-01-14 11:00:00+00',
+              'Expanded Bounds Ride'
+            ),
+            (
+              ${activityIds[1]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'apple-expanded-bounds', 'cycling', 'cycling',
+              TIMESTAMPTZ '2026-01-14 10:00:00+00',
+              TIMESTAMPTZ '2026-01-14 11:05:00+00',
+              'Expanded Bounds Ride'
+            )`,
+    );
+
+    try {
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
+      const groupedRows = await executeWithSchema(
+        testCtx.db,
+        groupedActivityBoundsRowSchema,
+        sql`SELECT
+              started_at::text AS started_at,
+              ended_at::text AS ended_at,
+              member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${insertedIdArray}`,
+      );
+
+      expect(groupedRows).toHaveLength(1);
+      expect(groupedRows[0]?.member_activity_ids.sort()).toEqual([...activityIds].sort());
+      expect(groupedRows[0]?.started_at).toBe("2026-01-14 10:00:00+00");
+      expect(groupedRows[0]?.ended_at).toBe("2026-01-14 11:05:00+00");
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
+
+  it("does not group active activities through a stale Apple tombstone", async () => {
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+
+    const activityIds = [
+      "00000000-0000-4000-8000-0000000000b1",
+      "00000000-0000-4000-8000-0000000000b2",
+      "00000000-0000-4000-8000-0000000000b3",
+      "00000000-0000-4000-8000-0000000000b4",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, canonical_type, provider_type, external_id,
+            started_at, ended_at, provider_absent_at, name, raw
+          ) VALUES
+            (
+              ${activityIds[0]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'running', 'running', 'wahoo-stale-bridge-left',
+              TIMESTAMPTZ '2026-01-13 10:00:00+00',
+              TIMESTAMPTZ '2026-01-13 10:30:00+00',
+              NULL,
+              'Left Run',
+              '{}'::jsonb
+            ),
+            (
+              ${activityIds[1]}::uuid,
+              'whoop', ${TEST_USER_ID}, 'running', 'running', 'whoop-stale-bridge-right',
+              TIMESTAMPTZ '2026-01-13 10:40:00+00',
+              TIMESTAMPTZ '2026-01-13 11:10:00+00',
+              NULL,
+              'Right Run',
+              '{}'::jsonb
+            ),
+            (
+              ${activityIds[2]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'running', 'running', 'apple-stale-bridge',
+              TIMESTAMPTZ '2026-01-13 10:05:00+00',
+              TIMESTAMPTZ '2026-01-13 11:05:00+00',
+              NOW(),
+              'Stale Apple Bridge',
+              jsonb_build_object(
+                'metadata',
+                jsonb_build_object(
+                  'HKMetadataKeySyncIdentifier', 'stale-bridge-sync-id',
+                  'HKMetadataKeySyncVersion', '1'
+                )
+              )
+            ),
+            (
+              ${activityIds[3]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'running', 'running', 'apple-current-sibling',
+              TIMESTAMPTZ '2026-01-13 12:00:00+00',
+              TIMESTAMPTZ '2026-01-13 12:30:00+00',
+              NULL,
+              'Current Apple Sibling',
+              jsonb_build_object(
+                'metadata',
+                jsonb_build_object(
+                  'HKMetadataKeySyncIdentifier', 'stale-bridge-sync-id',
+                  'HKMetadataKeySyncVersion', '2'
+                )
+              )
+            )`,
+    );
+
+    try {
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
+      const activeIdArray = sql`ARRAY[${activityIds[0]}::uuid, ${activityIds[1]}::uuid]`;
+      const groupedRows = await testCtx.db.execute<{ member_activity_ids: string[] }>(
+        sql`SELECT member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${activeIdArray}
+            ORDER BY started_at`,
+      );
+
+      expect(groupedRows).toHaveLength(2);
+      expect(
+        groupedRows.some((row) =>
+          activityIds
+            .slice(0, 2)
+            .every((activityId) => row.member_activity_ids.includes(activityId)),
+        ),
+      ).toBe(false);
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
+
+  it("projects every member of a reconciled transitive overlap component", async () => {
     const chainActivityIds = [
       "00000000-0000-4000-8000-000000000101",
       "00000000-0000-4000-8000-000000000102",
@@ -307,32 +703,40 @@ describe("Activity summary deduplication", () => {
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, activity_type, started_at, ended_at, name
+            id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
             (
               ${chainActivityIds[0]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-a',
+              'cycling',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:00:00+00',
               TIMESTAMPTZ '2026-01-10 10:30:00+00',
               'Two-hop chain A'
             ),
             (
               ${chainActivityIds[1]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-b',
+              'cycling',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:02:00+00',
               TIMESTAMPTZ '2026-01-10 10:32:00+00',
               'Two-hop chain B'
             ),
             (
               ${chainActivityIds[2]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-c',
+              'cycling',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:04:00+00',
               TIMESTAMPTZ '2026-01-10 10:34:00+00',
               'Two-hop chain C'
             ),
             (
               ${chainActivityIds[3]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-d',
+              'cycling',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:06:00+00',
               TIMESTAMPTZ '2026-01-10 10:36:00+00',
               'Two-hop chain D'
@@ -340,6 +744,9 @@ describe("Activity summary deduplication", () => {
     );
 
     try {
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
       const groupedRows = await testCtx.db.execute<{ member_activity_ids: string[] }>(
         sql`SELECT member_activity_ids::text[] AS member_activity_ids
             FROM fitness.v_activity
@@ -347,8 +754,8 @@ describe("Activity summary deduplication", () => {
             ORDER BY started_at`,
       );
 
-      expect(groupedRows.length).toBeGreaterThan(1);
-      expect(groupedRows.map((row) => row.member_activity_ids.length).sort()).toEqual([1, 3]);
+      expect(groupedRows).toHaveLength(1);
+      expect(groupedRows[0]?.member_activity_ids).toEqual(chainActivityIds);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
@@ -379,6 +786,7 @@ describe("Activity summary deduplication", () => {
     expect(byId.status).toBe(200);
     expect(byId.result.result.data).toMatchObject({
       id: canonicalActivityId,
+      perceivedExertion: 8,
       avgHr: 144,
       avgPower: 212,
       sampleCount: 1800,
@@ -405,27 +813,23 @@ describe("Activity summary deduplication", () => {
       expect.arrayContaining([expect.objectContaining({ zone: 2, seconds: 120 })]),
     );
 
-    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith(
-      expect.arrayContaining([canonicalActivityId, memberActivityId]),
-    );
+    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith([canonicalActivityId]);
     expect(sensorStore.getStream).toHaveBeenCalledWith(
       expect.objectContaining({
         activityId: canonicalActivityId,
-        memberActivityIds: expect.arrayContaining([canonicalActivityId, memberActivityId]),
+        memberActivityIds,
       }),
       100,
     );
     expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
       expect.objectContaining({
         activityId: canonicalActivityId,
-        memberActivityIds: expect.arrayContaining([canonicalActivityId, memberActivityId]),
+        memberActivityIds,
       }),
-      190,
-      50,
     );
   });
 
-  it("surfaces tombstoned provider sources on overlapping deduped activities", async () => {
+  it("hides deduped activities when any grouped provider source is tombstoned", async () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
@@ -436,9 +840,9 @@ describe("Activity summary deduplication", () => {
     const endedAt = "2026-01-15T10:30:00Z";
     const wahooInsert = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'wahoo', ${TEST_USER_ID}, 'cycling',
+            'wahoo', ${TEST_USER_ID}, 'wahoo-tombstone-dedup', 'cycling', 'cycling',
             ${startedAt}::timestamptz,
             ${endedAt}::timestamptz,
             'Tombstone Dedup Ride'
@@ -448,9 +852,9 @@ describe("Activity summary deduplication", () => {
 
     const whoopInsert = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, external_id, provider_absent_at
+            provider_id, user_id, canonical_type, provider_type, started_at, ended_at, external_id, provider_absent_at
           ) VALUES (
-            'whoop', ${TEST_USER_ID}, 'cycling',
+            'whoop', ${TEST_USER_ID}, 'cycling', 'cycling',
             ${startedAt}::timestamptz,
             ${endedAt}::timestamptz,
             'whoop-tombstone-dedup',
@@ -458,38 +862,27 @@ describe("Activity summary deduplication", () => {
           ) RETURNING id`,
     );
     const whoopActivityId = whoopInsert[0]?.id;
+    await testCtx.db.execute(sql`UPDATE fitness.activity
+      SET group_id = (SELECT group_id FROM fitness.activity WHERE id = ${wahooActivityId}::uuid)
+      WHERE id = ${whoopActivityId}::uuid`);
 
     try {
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
       expect(wahooActivityId).toBeDefined();
       expect(whoopActivityId).toBeDefined();
 
       const viewRows = await testCtx.db.execute<{
         id: string;
-        absent_source_external_ids: Array<Record<string, string>>;
-        member_activity_ids: string[];
       }>(
-        sql`SELECT
-              id,
-              absent_source_external_ids,
-              member_activity_ids::text[] AS member_activity_ids
+        sql`SELECT id
             FROM fitness.v_activity
             WHERE user_id = ${TEST_USER_ID}
-              AND ${wahooActivityId}::uuid = ANY(member_activity_ids)
-            LIMIT 1`,
+              AND ${wahooActivityId}::uuid = ANY(member_activity_ids)`,
       );
 
-      const viewRow = viewRows[0];
-      expect(viewRow?.member_activity_ids).toEqual(
-        expect.arrayContaining([wahooActivityId, whoopActivityId]),
-      );
-      expect(viewRow?.absent_source_external_ids).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            providerId: "whoop",
-            externalId: "whoop-tombstone-dedup",
-          }),
-        ]),
-      );
+      expect(viewRows).toHaveLength(0);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id IN (${wahooActivityId}::uuid, ${whoopActivityId}::uuid)`,
@@ -500,16 +893,20 @@ describe("Activity summary deduplication", () => {
   it("soft-deletes all raw member rows when deleting a deduped activity member", async () => {
     const inserted = await testCtx.db.execute<{ id: string; provider_id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
           (
-            'wahoo', ${TEST_USER_ID}, 'cycling',
+            'wahoo', ${TEST_USER_ID}, 'wahoo-delete-me',
+            'cycling',
+            'cycling',
             CURRENT_TIMESTAMP + INTERVAL '3 days',
             CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '30 minutes',
             'Delete Me'
           ),
           (
-            'apple_health', ${TEST_USER_ID}, 'cycling',
+            'apple_health', ${TEST_USER_ID}, 'apple-delete-me',
+            'cycling',
+            'cycling',
             CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '10 seconds',
             CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '29 minutes 50 seconds',
             'Delete Me'
@@ -521,6 +918,9 @@ describe("Activity summary deduplication", () => {
       insertedIds.map((activityId) => sql`${activityId}::uuid`),
       sql`, `,
     )}]`;
+    await testCtx.db.transaction((transaction) =>
+      reconcileActivityGroups(transaction, TEST_USER_ID),
+    );
     const aliasRows = await testCtx.db.execute<{ id: string; member_activity_ids: string[] }>(
       sql`SELECT id, member_activity_ids::text[] AS member_activity_ids
           FROM fitness.v_activity
@@ -534,11 +934,14 @@ describe("Activity summary deduplication", () => {
     );
 
     try {
+      await testCtx.db.transaction((transaction) =>
+        reconcileActivityGroups(transaction, TEST_USER_ID),
+      );
       expect(insertedIds).toHaveLength(2);
       expect(aliasRow?.member_activity_ids).toEqual(expect.arrayContaining(insertedIds));
       expect(activityIdToDelete).toBeDefined();
 
-      const { status, result } = await query("activity.delete", { id: activityIdToDelete });
+      const { status, result } = await query("activity.delete", { id: aliasRow.id });
       expect(status).toBe(200);
       expect(result.result.data).toEqual({ success: true });
 
@@ -553,6 +956,13 @@ describe("Activity summary deduplication", () => {
       );
       expect(remainingRows).toHaveLength(2);
       expect(remainingRows.every((row) => row.deleted_at !== null)).toBe(true);
+
+      const visibleGroup = await testCtx.db.execute<{ id: string }>(
+        sql`SELECT id::text AS id
+            FROM fitness.v_activity
+            WHERE id = ${aliasRow.id}::uuid`,
+      );
+      expect(visibleGroup).toHaveLength(0);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,

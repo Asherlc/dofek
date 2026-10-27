@@ -1,4 +1,5 @@
 import { formatDateMedium } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
@@ -67,6 +68,16 @@ async function fetchExports(): Promise<DataExport[]> {
   return body.exports;
 }
 
+async function getResponseErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    return isRecord(body) && typeof body.error === "string" ? body.error : fallback;
+  } catch (error: unknown) {
+    captureException(error, { context: "data-export-response-error-json" });
+    return fallback;
+  }
+}
+
 export function ExportPanel() {
   const [exports, setExports] = useState<DataExport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +103,7 @@ export function ExportPanel() {
       setMessage("");
     } catch (error: unknown) {
       captureException(error, { context: "data-export-list" });
-      setMessage(error instanceof Error ? error.message : "Failed to load exports");
+      setMessage(userFacingErrorMessage(error, "Failed to load exports"));
     } finally {
       setLoading(false);
     }
@@ -123,13 +134,13 @@ export function ExportPanel() {
       });
 
       if (!triggerRes.ok) {
-        throw new Error("Failed to start export");
+        throw new Error(await getResponseErrorMessage(triggerRes, "Failed to start export"));
       }
 
       await refreshExports();
     } catch (error: unknown) {
       captureException(error, { context: "data-export-start" });
-      setMessage(error instanceof Error ? error.message : "Failed to start export");
+      setMessage(userFacingErrorMessage(error, "Failed to start export"));
     } finally {
       setStarting(false);
     }

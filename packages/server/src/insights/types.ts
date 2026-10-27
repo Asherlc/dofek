@@ -1,3 +1,4 @@
+import type { InsightEvidence } from "./evidence.ts";
 import type { CorrelationResult, DescriptiveStats } from "./stats.ts";
 
 // ── Configuration ─────────────────────────────────────────────────────────
@@ -20,7 +21,6 @@ export interface DailyRow {
   hrv: number | null;
   spo2_avg: number | null;
   steps: number | null;
-  active_energy_kcal: number | null;
   skin_temp_c: number | null;
 }
 
@@ -38,9 +38,11 @@ export interface SleepRow {
 
 export interface ActivityRow {
   [key: string]: string | number | Date | boolean | null | undefined;
+  /** Canonical local calendar date when supplied by the source query. */
+  date?: string | Date;
   started_at: string;
   ended_at: string | null;
-  activity_type: string;
+  canonical_type: string;
 }
 
 export interface NutritionRow {
@@ -56,6 +58,8 @@ export interface NutritionRow {
 
 export interface BodyCompRow {
   [key: string]: string | number | Date | boolean | null | undefined;
+  /** Canonical local calendar date when supplied by the source query. */
+  date?: string | Date;
   recorded_at: string;
   weight_kg: number | null;
   body_fat_pct: number | null;
@@ -78,6 +82,7 @@ export interface Insight {
   correlation?: CorrelationResult;
   explanation?: string;
   confounders?: string[];
+  evidence?: InsightEvidence;
 
   /** Raw data points for scatter plot visualization (correlation/discovery types) */
   dataPoints?: Array<{ x: number; y: number; date: string }>;

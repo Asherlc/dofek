@@ -1,28 +1,84 @@
 # Providers
 
+<!-- cspell:ignore Ziva -->
+
 This directory contains implementations for various data providers (fitness trackers, smart scales, nutrition apps).
 
 ## Core Concepts
 
 - **Provider Interface**: All providers implement the `Provider` interface (defined in `types.ts`).
-- **Sync vs Import**: Providers are either `SyncProvider` (fetches data via API) or `ImportProvider` (processes uploaded files).
-- **Authentication**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), and credential-based (`credential`) authentication. **New sync providers must authenticate per user** — see `docs/adding-a-provider.md` and `provider-auth-policy.ts`.
+- **Sync, Push, and Import**: The [provider interfaces](types.ts) distinguish `SyncProvider` (fetches API data), `PushProvider` (processes official pushed events), and `ImportProvider` (processes uploaded files).
+- **Connections**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), credentials (`credential`), and public profile identity (`public-profile`). Each sync provider connects per user through the [provider contract](types.ts) and [auth policy](provider-auth-policy.ts); see [the provider guide](../../docs/adding-a-provider.md).
+- **Manual connections**: `manualToken.kind` distinguishes `public-profile` from `access-token`. Both use the existing connect form and encrypted identity/token repository; [account-erasure snapshotting](../account-erasure/remote-snapshot.ts) marks public-profile connections as `no_remote_authorization`, including identities stored before this classification was added.
 - **Webhooks**: Many providers (Strava, Fitbit, Oura) support real-time updates via webhooks (`WebhookProvider`).
 
 ## Implementation Details
 
 - **Registry**: All active providers are registered in `index.ts`.
-- **HTTP Client**: A shared `HttpClient` in `http-client.ts` handles rate limiting, retries, and logging.
+- **HTTP Client**: Provider fetches pass through the shared `@dofek/provider-http` boundary for adaptive rate limiting and a two-minute request deadline. The deadline composes with a caller-provided abort signal; request-start timeouts use `ETIMEDOUT`, and native response-body `TimeoutError` failures are also retryable instead of leaving a BullMQ job active indefinitely. Node.js documents [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal).
+- **Authorization diagnostics**: The [shared HTTP observer](../lib/provider-diagnostics.ts)
+  reports rejected requests with provider/user attribution, HTTP status, request
+  start/duration, and an endpoint hash. When credentials were loaded in the current
+  user's sync context, it adds their expiry and seconds remaining at request start
+  and response, plus refresh-token availability. HTTP 401/403 JSON responses are
+  read through a clone and reduced to allowlisted error codes/resources/fields;
+  tokens, raw bodies, descriptions, URL paths, and queries are excluded. Bearer
+  error categories follow [RFC 6750 section 3.1](https://www.rfc-editor.org/rfc/rfc6750#section-3.1).
 - **Validation**: `validate()` may gate app-level OAuth client config, but must not gate on per-user credentials. User auth is checked at sync time via `loadTokens()`.
 - **UI visibility**: Providers that fail `validate()` are hidden until required app config is present. Users connect individually via Connect buttons.
-- **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema (see `src/db/schema.ts`).
-- **Activity absence tombstones**: Activity syncs that fetch an authoritative provider activity list must call `reconcileProviderActivityAbsence()` for the covered time window. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Activity upserts must clear `providerAbsentAt` so restored provider activities become visible again. Do not reconcile when a provider response is partial because of rate limits, auth failures, or other fetch errors.
+- **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema modules (see `src/db/schema/`).
+- **Activity absence tombstones**: Use `src/db/provider-activity-sync.ts`. Upsert activities with `upsertProviderActivity()` or `ProviderActivityListSync.upsert()`. After a completed authoritative activity-list fetch for the sync window, call `finishProviderActivityListSync()` or `ProviderActivityListSync.reconcile()`. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Shared upserts never set `providerAbsentAt: null`; reconciliation clears tombstones for activities still present in the provider list. Do not reconcile when a provider response is partial because of rate limits, auth failures, or other fetch errors.
+
+## Climbing tick removals
+
+Mountain Project, OpenBeta, Kaya, and theCrag reconcile their complete logbooks
+on each successful sync, including valid empty lists. The
+[snapshot writer](../db/climbing-log-snapshot.ts) marks missing source records
+with `providerAbsentAt`, preserves their raw payloads and attempts, and restores
+the same records if they return. Normal climbing views and statistics exclude
+absent records; the provider record browser retains them. See the
+[active-log projection](../../packages/server/src/repositories/climbing-rock-observations.ts)
+and [provider records](../../packages/server/src/repositories/provider-detail-repository.ts).
+Failed, malformed, or incomplete discovery never retires records.
+
+CSV uploads retain their existing session-scoped reconciliation because an
+upload need not contain the complete remote logbook; see the
+[Kaya importer](kaya/import.ts).
 
 ## Supported Providers
 
-- **API sync providers**: Amazfit/Zepp, BodySpec, Concept2, Coros, Cycling Analytics, Decathlon, Eight Sleep, FatSecret, Garmin, Komoot, MapMyFitness, Peloton, Ride with GPS, Strava, Suunto, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, Withings, Xert, Zwift.
-- **Import-only providers**: Cronometer CSV, Strong CSV.
-- **Planned via native/mobile flows rather than this directory**: Apple Health and WHOOP BLE capture live in the mobile app and native modules.
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
+- **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
+- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
+- **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
+
+The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
+historical provider IDs and future vendor onboarding, but are not loaded by the production server or
+worker registries:
+
+- Fitbit must be rebuilt for the Google Health API before the legacy Fitbit Web API is turned down
+  in September 2026 ([Google Health API migration overview](https://developers.google.com/health/about)).
+- Suunto requires organization/partner approval and development and production subscriptions
+  ([Suunto API Zone onboarding](https://apizone.suunto.com/how-to-start)).
+- COROS issues credentials after developer onboarding
+  ([COROS API application](https://support.coros.com/hc/en-us/articles/17085887816340-Submitting-an-API-Application)).
+- Komoot does not offer a public API and selects integration partners
+  ([Komoot API support policy](https://support.komoot.com/hc/en-us/articles/10331570510618-komoot-API)).
+- MapMyFitness limits personal API access to paid MVP accounts and up to ten users
+  ([MapMyFitness developer portal](https://developer.mapmyfitness.com/)).
+- Decathlon requires an approved application registration before issuing client credentials
+  ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
+
+## Ziva
+
+Ziva is a per-user OAuth nutrition provider backed by its documented stateless
+MCP endpoint. Dofek imports saved meals read-only as account-scoped meal totals
+and never calls Ziva's meal-write or delete tools. Authentication, the verified
+read contract, supported and unavailable fields, connection lifecycle, and the
+operator smoke command are documented in the
+[Ziva provider guide](../../docs/ziva.md). See Ziva's
+[official MCP reference](https://ziva.fit/mcp-docs) for the public endpoint and
+tool catalog.
 
 ## Amazfit/Zepp
 
@@ -39,6 +95,101 @@ metadata. Do not use the older `account.huami.com` or `account.zepp.com` token
 exchange hosts for credential login; Zepp rejects that stale request shape with
 HTTP `400`.
 
-The first sync slice reads `/v1/data/band_data.json` and stores decoded daily steps, distance, active calories, sleep sessions, and minute-level heart rate samples.
+The first sync slice reads `/v1/data/band_data.json` and stores decoded daily steps, distance, sleep sessions, and minute-level heart rate samples.
 
 **Note:** Zepp accounts signed in via Xiaomi or Google SSO cannot authenticate with email/password login.
+
+## Polar
+
+Polar's OAuth token response includes the stable `x_user_id`, and AccessLink
+access tokens do not expire unless a partner or user explicitly revokes them.
+Dofek encrypts that account identifier alongside the OAuth credential so
+account-erasure retries can address the same AccessLink registration without
+rediscovering it through a revoked token. Existing Polar connections created
+before this metadata was stored must reconnect before account erasure begins.
+[Polar AccessLink authentication](https://www.polar.com/accesslink-api/#authentication).
+
+Account-erasure revocation first checks the exact `/v3/users/{user-id}`
+registration. Polar documents `204` as absent for that check and `204` as
+successful deregistration for `DELETE`; other statuses fail closed. A replay
+also accepts only a `401` response carrying the exact Bearer
+`error="invalid_token"` challenge defined by OAuth, because Polar documents
+these access tokens as non-expiring unless explicitly revoked. Normal Polar
+reconnect remains stricter and requires confirmed deregistration.
+[Polar AccessLink users](https://www.polar.com/accesslink-api/#users),
+[OAuth 2.0 Bearer `invalid_token`](https://www.rfc-editor.org/rfc/rfc6750#section-3.1).
+
+## OpenBeta
+
+OpenBeta is a public-profile climbing tick provider. Users connect by entering
+their public OpenBeta profile URL or username; the provider resolves the
+profile to its stable UUID and reads the paginated `userTicks` GraphQL query.
+The OpenBeta GraphQL repository documents the production endpoint as
+`https://api.openbeta.io` and describes the API as a climbing database API
+([OpenBeta GraphQL API](https://github.com/OpenBeta/openbeta-graphql)).
+
+The first integration imports public ticks only. Each tick is stored as an
+unattached `fitness.climbing_log_entry` with its original GraphQL payload in
+`raw`; no OpenBeta credentials, session cookies, route writes, or synthetic
+activities are used. OpenBeta's public profile pages expose a user's logbook
+and tick history ([example public tick page](https://openbeta.io/u/thickles/ticks)).
+
+Tick dates arrive as Unix milliseconds from OpenBeta's
+[GraphQL Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts).
+The provider converts them to UTC calendar dates and preserves the numeric
+timestamps in each raw payload.
+
+OpenBeta Climb/Pitch grades stay in owned published collections, and tick
+grades stay in the log's reported collection. Current shared Area ancestry
+and native coordinates are retained independently of attempts. See the
+[OpenBeta mapping](openbeta.ts). A complete tick list, including an explicitly
+empty list, reconciles missing OpenBeta ticks as soft tombstones. Malformed,
+partially unsupported, or failed responses do not retire existing rows.
+
+## theCrag
+
+theCrag imports a connected user's climbing logbook through the personal-key
+read API. Users need active supporter status and generate their own key in
+Settings → API Keys; the same secure token form connects the provider on web
+and mobile. The API includes private notes and supports pagination and
+incremental reads by ascent update time
+([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
+
+The [provider](thecrag/provider.ts) stores standalone climbing log entries and original
+source payloads without creating workouts. Every sync reads the complete
+paginated logbook so removed ascents can be marked absent. Dofek polls daily
+with one concurrent sync job. Full reads use more of the API's weekly account
+budget than its recommended incremental reads; the numeric budget is not
+published in the [personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
+See the [theCrag provider guide](../../docs/thecrag.md) for connection,
+storage, and the limits of published-contract testing.
+
+## OAuth authorization erasure
+
+MapMyFitness stores the numeric user ID returned by the authenticated
+`/v7.1/user/self/` resource with the encrypted OAuth credential. Account
+erasure sends `DELETE /v7.1/oauth2/connection/?user_id=...&client_id=...` and
+accepts only the documented `204` response. Connections created before the
+user ID was stored must reconnect before erasure starts.
+[MapMyFitness User resource](https://developer.mapmyfitness.com/docs/v71_User/),
+[MapMyFitness OAuth 2 Revoke](https://developer.mapmyfitness.com/docs/v71_OAuth2ConnectionRevokeResource/).
+
+Komoot account erasure deletes the user's refresh token through
+`/v1/clients/{client_id}/refresh_tokens/` using HTTP Basic client
+authentication and accepts only the documented `200` response. A legacy
+connection without a refresh token must reconnect before erasure starts.
+[Komoot OAuth 2 partner documentation](https://static.komoot.de/doc/auth/oauth2.html#v1_clients__client_id__refresh_tokens_).
+
+Suunto account erasure calls the Authorization API's
+`GET /oauth/deauthorize?client_id=...` operation with the user's Bearer token
+and accepts only the documented `200` response.
+[Suunto Authorization API](https://apizone.suunto.com/api-details#api=oauth2-api&operation=deauthorize).
+
+COROS and Decathlon connections fail account-erasure activation while they
+remain linked because their current public integration documentation does not
+provide a server-side grant-revocation operation that Dofek can verify.
+COROS users must first disconnect Dofek under the documented third-party app
+settings, and Decathlon users must manually unlink Dofek; both must then
+disconnect the provider in Dofek before starting erasure.
+[COROS third-party app disconnection](https://support.coros.com/hc/en-us/articles/360040256591-Syncing-with-3rd-Party-Apps),
+[Decathlon login logout documentation](https://login-doc.decathlon.com/logout.html).

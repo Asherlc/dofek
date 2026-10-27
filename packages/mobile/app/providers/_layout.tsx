@@ -1,5 +1,5 @@
 import { Stack } from "expo-router";
-import { rootStackScreenOptions } from "../_layout-options";
+import { rootStackScreenOptions } from "../../lib/root-stack-screen-options";
 
 export default function ProvidersLayout() {
   return (

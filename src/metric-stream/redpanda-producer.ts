@@ -1,12 +1,17 @@
 import { Kafka } from "kafkajs";
+import { captureException } from "../lib/error-reporting.ts";
 import {
+  createMetricStreamBatchCompletedEvent,
+  createMetricStreamBatchPartitionKey,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamDeletedEventV1,
+  type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScopeInput,
-  type MetricStreamEventV1,
+  type MetricStreamEventV2,
+  type MetricStreamProcessingContext,
   type MetricStreamRowInput,
 } from "./events.ts";
+import { type MetricStreamRoute, metricStreamTopicForRoute } from "./routes.ts";
 
 export interface KafkaProducerMessage {
   key: string;
@@ -35,17 +40,25 @@ export interface KafkaProducerLike {
 export interface MetricStreamEventPublisher {
   publishRows(
     rows: readonly MetricStreamRowInput[],
-    partitionKey?: string,
-  ): Promise<MetricStreamEventV1[]>;
+    options: MetricStreamPublishOptions,
+  ): Promise<MetricStreamEventV2[]>;
   replaceRows?(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
+    processing?: MetricStreamProcessingContext,
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 
+export interface MetricStreamPublishOptions {
+  operationRevision: string;
+  partitionKey?: string;
+  processing?: MetricStreamProcessingContext;
+}
+
 export interface MetricStreamReplacementPublishResult {
-  deleted: MetricStreamDeletedEventV1;
-  rows: MetricStreamEventV1[];
+  deleted: MetricStreamDeletedEventV3;
+  rows: MetricStreamEventV2[];
 }
 
 export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublisher {
@@ -98,19 +111,29 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
 
   async publishRows(
     rows: readonly MetricStreamRowInput[],
-    partitionKey?: string,
-  ): Promise<MetricStreamEventV1[]> {
-    const events = rows.map((row) => createMetricStreamEvent(row));
+    options: MetricStreamPublishOptions,
+  ): Promise<MetricStreamEventV2[]> {
+    const events = rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
     if (events.length === 0) {
       return [];
     }
 
-    await this.#sendChunked(
-      events.map((event) => ({
+    const partitionKey = options.processing
+      ? (options.partitionKey ?? createMetricStreamBatchPartitionKey(options.processing))
+      : options.partitionKey;
+    const processingMarker = options.processing
+      ? createMetricStreamBatchCompletedEvent(options.processing, events.length, partitionKey)
+      : undefined;
+
+    await this.#sendChunked([
+      ...events.map((event) => ({
         key: partitionKey ?? event.id,
         value: JSON.stringify(event),
       })),
-    );
+      ...(processingMarker
+        ? [{ key: processingMarker.partitionKey, value: JSON.stringify(processingMarker) }]
+        : []),
+    ]);
 
     return events;
   }
@@ -118,9 +141,14 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   async replaceRows(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
+    processing?: MetricStreamProcessingContext,
   ): Promise<MetricStreamReplacementPublishResult> {
-    const deleted = createMetricStreamDeletedEvent(scope);
-    const events = rows.map((row) => createMetricStreamEvent(row));
+    const deleted = createMetricStreamDeletedEvent(scope, operationRevision);
+    const events = rows.map((row) => createMetricStreamEvent(row, operationRevision));
+    const processingMarker = processing
+      ? createMetricStreamBatchCompletedEvent(processing, events.length + 1, deleted.partitionKey)
+      : undefined;
 
     // Delete event first, then replacements — all on the same partition key, so
     // chunking into multiple ordered requests preserves delete-before-insert.
@@ -130,6 +158,9 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
         key: deleted.partitionKey,
         value: JSON.stringify(event),
       })),
+      ...(processingMarker
+        ? [{ key: deleted.partitionKey, value: JSON.stringify(processingMarker) }]
+        : []),
     ]);
 
     return { deleted, rows: events };
@@ -140,17 +171,13 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   }
 }
 
-let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
+const metricStreamPublisherPromises = new Map<string, Promise<KafkaMetricStreamEventPublisher>>();
 
 export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
-  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
-  return defaultMetricStreamPublisherPromise;
+  return createKafkaMetricStreamEventPublisherForRoute("live");
 }
 
-function readRequiredEnvironmentValue(
-  env: NodeJS.ProcessEnv,
-  key: "METRIC_STREAM_TOPIC" | "REDPANDA_BROKERS",
-): string {
+function readRequiredEnvironmentValue(env: NodeJS.ProcessEnv, key: "REDPANDA_BROKERS"): string {
   const value = env[key];
   if (!value) {
     throw new Error(`${key} is required`);
@@ -158,10 +185,11 @@ function readRequiredEnvironmentValue(
   return value;
 }
 
-export async function createKafkaMetricStreamEventPublisherFromEnv(
+export async function createKafkaMetricStreamEventPublisherForRoute(
+  route: MetricStreamRoute,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<KafkaMetricStreamEventPublisher> {
-  const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
+  const topic = metricStreamTopicForRoute(route, env);
   const brokers = readRequiredEnvironmentValue(env, "REDPANDA_BROKERS")
     .split(",")
     .map((broker) => broker.trim())
@@ -170,12 +198,30 @@ export async function createKafkaMetricStreamEventPublisherFromEnv(
     throw new Error("REDPANDA_BROKERS must contain at least one broker");
   }
 
-  const kafka = new Kafka({
-    brokers,
-    clientId: "dofek-metric-stream-producer",
-  });
-
-  const producer = kafka.producer();
-  await producer.connect();
-  return new KafkaMetricStreamEventPublisher(producer, topic);
+  const publisherCacheKey = JSON.stringify([route, topic, brokers]);
+  let publisherPromise = metricStreamPublisherPromises.get(publisherCacheKey);
+  if (!publisherPromise) {
+    publisherPromise = (async () => {
+      const kafka = new Kafka({
+        brokers,
+        clientId: "dofek-metric-stream-producer",
+      });
+      const producer = kafka.producer();
+      await producer.connect();
+      return new KafkaMetricStreamEventPublisher(producer, topic);
+    })();
+    metricStreamPublisherPromises.set(publisherCacheKey, publisherPromise);
+    void publisherPromise.catch((error: unknown) => {
+      if (metricStreamPublisherPromises.get(publisherCacheKey) === publisherPromise) {
+        metricStreamPublisherPromises.delete(publisherCacheKey);
+      }
+      captureException(error, {
+        tags: {
+          metricStreamProducer: "redpanda",
+          metricStreamFailure: "publisher-connect",
+        },
+      });
+    });
+  }
+  return publisherPromise;
 }

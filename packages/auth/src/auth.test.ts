@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { AuthUserSchema, ConfiguredProvidersSchema, IDENTITY_PROVIDER_NAMES } from "./auth";
+import {
+  AuthUserSchema,
+  ConfiguredProvidersSchema,
+  getEmailValidationError,
+  getNewPasswordValidationError,
+  IDENTITY_PROVIDER_NAMES,
+  isExpectedUserInputError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "./auth";
 
 describe("IDENTITY_PROVIDER_NAMES", () => {
   it("contains the expected providers", () => {
@@ -88,5 +98,82 @@ describe("ConfiguredProvidersSchema", () => {
       data: [],
     });
     expect(result.nativeApple).toBeUndefined();
+  });
+
+  it("accepts password flag", () => {
+    const result = ConfiguredProvidersSchema.parse({
+      identity: [],
+      data: [],
+      password: true,
+    });
+    expect(result.password).toBe(true);
+  });
+});
+
+describe("getEmailValidationError", () => {
+  it("requires an email address", () => {
+    expect(getEmailValidationError("   ")).toBe("Enter your email address.");
+  });
+
+  it("rejects malformed email addresses", () => {
+    expect(getEmailValidationError("not-an-email")).toBe("Enter a valid email address.");
+  });
+
+  it("accepts a trimmed email address", () => {
+    expect(getEmailValidationError("  athlete@example.com ")).toBeNull();
+  });
+});
+
+describe("getNewPasswordValidationError", () => {
+  it("matches the existing server password boundaries", () => {
+    expect(PASSWORD_MIN_LENGTH).toBe(8);
+    expect(PASSWORD_MAX_LENGTH).toBe(128);
+    expect(PASSWORD_REQUIREMENT_TEXT).toBe("Use 8–128 characters.");
+  });
+
+  it("rejects passwords below the minimum length", () => {
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MIN_LENGTH - 1))).toBe(
+      "Use at least 8 characters.",
+    );
+  });
+
+  it("accepts passwords at both length boundaries", () => {
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MIN_LENGTH))).toBeNull();
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MAX_LENGTH))).toBeNull();
+  });
+
+  it("rejects passwords above the maximum length", () => {
+    expect(getNewPasswordValidationError("a".repeat(PASSWORD_MAX_LENGTH + 1))).toBe(
+      "Use no more than 128 characters.",
+    );
+  });
+});
+
+describe("isExpectedUserInputError", () => {
+  it.each([
+    "Invalid email or password",
+    "Unable to create an account with these details",
+    "Invalid password reset request",
+    "Invalid password reset details",
+  ])("classifies server validation message %s", (message) => {
+    expect(isExpectedUserInputError(new Error(message))).toBe(true);
+  });
+
+  it("does not classify service failures as user input", () => {
+    expect(isExpectedUserInputError(new Error("Password reset service unavailable"))).toBe(false);
+  });
+
+  it("reads error-like response objects", () => {
+    expect(isExpectedUserInputError({ message: "Invalid email or password" })).toBe(true);
+  });
+
+  it.each([
+    ["a trimmed string", "  Invalid email or password  ", true],
+    ["a non-matching string", "Credentials service unavailable", false],
+    ["an object without a message", { reason: "invalid credentials" }, false],
+    ["an object with a non-string message", { message: 401 }, false],
+    ["null", null, false],
+  ])("classifies %s without assuming an Error instance", (_description, error, expected) => {
+    expect(isExpectedUserInputError(error)).toBe(expected);
   });
 });

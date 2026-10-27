@@ -8,12 +8,13 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { type LandingPageProvider, LandingPageView } from "./LandingPage.tsx";
 
 const configuredProviders: LandingPageProvider[] = [
   { id: "apple_health", name: "Apple Health", authType: "file-import", importOnly: true },
   { id: "strava", name: "Strava", authType: "oauth", importOnly: false },
-  { id: "garmin", name: "Garmin", authType: "custom:garmin", importOnly: false },
+  { id: "garmin", name: "Garmin", authType: "oauth", importOnly: false },
   { id: "whoop", name: "WHOOP", authType: "custom:whoop", importOnly: false },
   { id: "oura", name: "Oura", authType: "oauth", importOnly: false },
   { id: "fitbit", name: "Fitbit", authType: "oauth", importOnly: false },
@@ -50,8 +51,16 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen bg-page">
+    <div className="bg-page">
       <RouterProvider router={router} />
+    </div>
+  );
+}
+
+function withFixedMobileViewport(Story: ComponentType) {
+  return (
+    <div style={{ width: "390px", height: "667px", overflow: "hidden" }}>
+      <Story />
     </div>
   );
 }
@@ -74,6 +83,59 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ConfiguredProviders: Story = {};
+
+export const MobileHeader: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  play: async ({ canvasElement }) => {
+    const signInLink = within(canvasElement).getByRole("link", { name: "Sign in" });
+
+    await expect(signInLink).toBeVisible();
+    await expect(signInLink).toHaveAttribute("href", "/login");
+  },
+};
+
+export const MobileFirstViewport: Story = {
+  name: "Mobile first viewport",
+  decorators: [withFixedMobileViewport],
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Keeps brand, headline, and the neural data-flow hero visible within a fixed 390 × 667 first-viewport frame.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(
+      canvas.getByRole("heading", { name: /your health data, in one place/i }),
+    ).toBeVisible();
+    await expect(canvas.getByText("Sleep")).toBeVisible();
+    await expect(canvas.getByText("Get started")).toBeVisible();
+  },
+};
+
+export const NeuralHero: Story = {
+  name: "Neural data-flow hero",
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Full-bleed hero with source signals flowing into a central Dofek core and insights flowing out.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Heart rate")).toBeVisible();
+    await expect(canvas.getByText("Correlations")).toBeVisible();
+    await expect(canvas.getByText("History")).toBeVisible();
+  },
+};
 
 export const ImportOnlyProviders: Story = {
   args: {

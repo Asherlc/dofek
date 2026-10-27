@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, dailyMetrics } from "../db/schema.ts";
+import { activity, dailyMetrics } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -17,13 +17,19 @@ import { ZwiftProvider } from "./zwift.ts";
 // ============================================================
 
 function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
+  const startDate =
+    typeof overrides.startDate === "string" && !Number.isNaN(Date.parse(overrides.startDate))
+      ? overrides.startDate
+      : "2026-03-01T10:00:00Z";
+  const endDate =
+    typeof overrides.endDate === "string"
+      ? overrides.endDate
+      : new Date(new Date(startDate).getTime() + 60 * 60 * 1000).toISOString();
   return {
     id: 100001,
     id_str: "100001",
     profileId: 42,
     name: "Watopia Hilly Route",
-    startDate: "2026-03-01T10:00:00Z",
-    endDate: "2026-03-01T11:00:00Z",
     distanceInMeters: 35000,
     avgHeartRate: 155,
     maxHeartRate: 182,
@@ -38,6 +44,8 @@ function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
     rideOnGiven: 5,
     activityRideOnCount: 12,
     ...overrides,
+    startDate,
+    endDate,
   };
 }
 
@@ -97,6 +105,18 @@ function fakeZwiftPowerCurve(overrides: Record<string, unknown> = {}) {
 // JWT with sub claim for athleteId 42
 const FAKE_JWT_PAYLOAD = Buffer.from(JSON.stringify({ sub: "42" })).toString("base64url");
 const FAKE_ACCESS_TOKEN = `header.${FAKE_JWT_PAYLOAD}.signature`;
+
+describe("fakeZwiftActivitySummary", () => {
+  it("keeps validated dates after applying overrides", () => {
+    const summary = fakeZwiftActivitySummary({
+      startDate: "not-a-date",
+      endDate: undefined,
+    });
+
+    expect(summary.startDate).toBe("2026-03-01T10:00:00Z");
+    expect(summary.endDate).toBe("2026-03-01T11:00:00.000Z");
+  });
+});
 
 // ============================================================
 // MSW handler factory
@@ -282,12 +302,12 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "100001");
     if (!ride) throw new Error("expected activity 100001");
-    expect(ride.activityType).toBe("virtual_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Watopia Hilly Route");
 
     const run = activityRows.find((r) => r.externalId === "100002");
     if (!run) throw new Error("expected activity 100002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify metric stream events were published from fitness data
     const metrics = metricStreamCapture.publishedMetricStreamRows;
@@ -375,7 +395,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "zwift"));
 
     const provider = new ZwiftProvider();

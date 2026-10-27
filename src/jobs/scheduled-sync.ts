@@ -2,7 +2,7 @@ import { logger } from "../logger.ts";
 import { createScheduledSyncQueue } from "./queues.ts";
 
 export const SCHEDULER_KEY = "scheduled-sync-all-users";
-const DEFAULT_INTERVAL_MINUTES = 30;
+export const DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES = 30;
 
 /**
  * Sets up a repeating BullMQ job scheduler that enqueues sync-all jobs
@@ -12,7 +12,9 @@ const DEFAULT_INTERVAL_MINUTES = 30;
  * This only covers API-based providers (Strava, Wahoo, etc.).
  * HealthKit data must be pushed from the iOS app.
  */
-export async function setupScheduledSync(intervalMinutes = DEFAULT_INTERVAL_MINUTES) {
+export async function setupScheduledSync(
+  intervalMinutes = DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+) {
   const queue = createScheduledSyncQueue();
   const intervalMs = intervalMinutes * 60 * 1000;
 

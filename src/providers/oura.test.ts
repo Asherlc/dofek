@@ -3,51 +3,47 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
-  activity as activityTable,
   dailyMetrics as dailyMetricsTable,
-  healthEvent as healthEventTable,
   sleepSession as sleepSessionTable,
-} from "../db/schema.ts";
-import { logger } from "../logger.ts";
+} from "../db/schema/activity.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { fetchAllPagesOptional } from "./oura/pagination.ts";
-import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
+import {
+  mapOuraActivityType,
+  ouraProviderOffsetColumns,
+  parseOuraDailyMetrics,
+  parseOuraSleep,
+} from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
   type OuraDailyActivity,
-  type OuraDailyCardiovascularAge,
-  type OuraDailyReadiness,
-  type OuraDailyResilience,
   type OuraDailySpO2,
-  type OuraDailyStress,
   type OuraEnhancedTag,
   type OuraHeartRate,
   type OuraRestModePeriod,
   type OuraSession,
   type OuraSleepDocument,
-  type OuraSleepTime,
   type OuraTag,
-  type OuraVO2Max,
   type OuraWorkout,
   ouraDailyActivitySchema,
-  ouraDailyCardiovascularAgeSchema,
-  ouraDailyReadinessSchema,
-  ouraDailyResilienceSchema,
   ouraDailySpO2Schema,
-  ouraDailyStressSchema,
   ouraEnhancedTagSchema,
   ouraHeartRateSchema,
   ouraRestModePeriodSchema,
   ouraSessionSchema,
   ouraSleepDocumentSchema,
-  ouraSleepTimeSchema,
   ouraTagSchema,
-  ouraVO2MaxSchema,
   ouraWorkoutSchema,
 } from "./oura/schemas.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -55,15 +51,23 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
-const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+const { syncLogEntries } = vi.hoisted<{
+  syncLogEntries: Record<string, unknown>[];
+}>(() => ({
+  syncLogEntries: [],
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -87,8 +91,11 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockReset();
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockResolvedValue(undefined);
+  syncLogEntries.length = 0;
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-id" });
 });
 
 // ============================================================
@@ -99,12 +106,36 @@ vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     async (
       _db: unknown,
-      _providerId: string,
-      _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      providerId: string,
+      dataType: string,
+      fn: () => Promise<{
+        recordCount: number;
+        result: unknown;
+        degradations?: Record<string, unknown>[];
+      }>,
     ) => {
-      const { result } = await fn();
-      return result;
+      try {
+        const { recordCount, result, degradations = [] } = await fn();
+        const firstDegradation = degradations[0];
+        syncLogEntries.push({
+          providerId,
+          dataType,
+          status: firstDegradation ? "degraded" : "success",
+          recordCount,
+          errorMessage: firstDegradation?.message,
+          degradationKind: firstDegradation?.kind,
+        });
+        return result;
+      } catch (err) {
+        syncLogEntries.push({
+          providerId,
+          dataType,
+          status: "error",
+          recordCount: undefined,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
     },
   ),
 }));
@@ -160,14 +191,14 @@ function createMockDb() {
 
   const insertFn = vi.fn().mockReturnValue(chain);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: insertFn,
     delete: vi.fn(),
-    execute: vi.fn(),
-  };
+    execute: vi.fn().mockResolvedValue([]),
+  });
 
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 function expectConflictTarget(
@@ -230,7 +261,6 @@ function expectSchemaParseAndKeys<T extends Record<string, unknown>>(
 }
 
 const recordSchema = z.record(z.string(), z.unknown());
-const recordArraySchema = z.array(recordSchema);
 
 /**
  * Finds a mock call argument matching a predicate and returns it as a record.
@@ -247,19 +277,15 @@ function findValuesCall(
   throw new Error("No matching values call found");
 }
 
-/**
- * Finds a mock call argument matching a predicate, where the argument is an array.
- * Returns the array of records.
- */
-function findBatchValuesCall(
-  db: ReturnType<typeof createMockDb>,
-  predicate: (val: Array<Record<string, unknown>>) => boolean,
-): Array<Record<string, unknown>> {
-  for (const c of db.values.mock.calls) {
-    const parsed = recordArraySchema.safeParse(c[0]);
+function findUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    const parsed = recordSchema.safeParse(values);
     if (parsed.success && predicate(parsed.data)) return parsed.data;
   }
-  throw new Error("No matching batch values call found");
+  throw new Error("No matching upsert values call found");
 }
 
 /**
@@ -341,27 +367,6 @@ function fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
   };
 }
 
-function fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyReadiness {
-  return {
-    id: "readiness-001",
-    day: "2026-03-01",
-    score: 82,
-    temperature_deviation: -0.15,
-    temperature_trend_deviation: 0.05,
-    contributors: {
-      resting_heart_rate: 85,
-      hrv_balance: 78,
-      body_temperature: 90,
-      recovery_index: 72,
-      sleep_balance: 80,
-      previous_night: 88,
-      previous_day_activity: 75,
-      activity_balance: 82,
-    },
-    ...overrides,
-  };
-}
-
 function fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActivity {
   return {
     id: "activity-001",
@@ -385,51 +390,6 @@ function fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
     day: "2026-03-01",
     spo2_percentage: { average: 97.5 },
     breathing_disturbance_index: 12,
-    ...overrides,
-  };
-}
-
-function fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
-  return {
-    id: "vo2max-001",
-    day: "2026-03-01",
-    timestamp: "2026-03-01T08:00:00",
-    vo2_max: 42.5,
-    ...overrides,
-  };
-}
-
-function fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
-  return {
-    id: "stress-001",
-    day: "2026-03-01",
-    stress_high: 5400,
-    recovery_high: 10800,
-    day_summary: "restored",
-    ...overrides,
-  };
-}
-
-function fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDailyResilience {
-  return {
-    id: "resilience-001",
-    day: "2026-03-01",
-    level: "solid",
-    contributors: {
-      sleep_recovery: 85,
-      daytime_recovery: 72,
-      stress: 68,
-    },
-    ...overrides,
-  };
-}
-
-function fakeCvAge(
-  overrides: Partial<OuraDailyCardiovascularAge> = {},
-): OuraDailyCardiovascularAge {
-  return {
-    day: "2026-03-01",
-    vascular_age: 35,
     ...overrides,
   };
 }
@@ -470,21 +430,6 @@ function fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestMode
   };
 }
 
-function fakeSleepTime(overrides: Partial<OuraSleepTime> = {}): OuraSleepTime {
-  return {
-    id: "st-001",
-    day: "2026-03-01",
-    optimal_bedtime: {
-      day_tz: -18000,
-      end_offset: 3600,
-      start_offset: 0,
-    },
-    recommendation: "follow_optimal_bedtime",
-    status: "optimal_found",
-    ...overrides,
-  };
-}
-
 // ============================================================
 // Helper: create a mock fetch that routes Oura API calls
 // ============================================================
@@ -494,27 +439,17 @@ interface MockApiData {
   workouts?: OuraWorkout[];
   sessions?: OuraSession[];
   heartRate?: OuraHeartRate[];
-  readiness?: OuraDailyReadiness[];
   dailyActivity?: OuraDailyActivity[];
   spo2?: OuraDailySpO2[];
-  vo2max?: OuraVO2Max[];
-  stress?: OuraDailyStress[];
-  resilience?: OuraDailyResilience[];
-  cvAge?: OuraDailyCardiovascularAge[];
   tags?: OuraTag[];
   enhancedTags?: OuraEnhancedTag[];
   restMode?: OuraRestModePeriod[];
-  sleepTime?: OuraSleepTime[];
 }
 
 function createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
   return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
-    // Sleep time must come before sleep check
-    if (urlStr.includes("/v2/usercollection/sleep_time")) {
-      return Response.json({ data: data.sleepTime ?? [], next_token: null });
-    }
     if (urlStr.includes("/v2/usercollection/sleep")) {
       return Response.json({ data: data.sleep ?? [], next_token: null });
     }
@@ -527,26 +462,11 @@ function createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
     if (urlStr.includes("/v2/usercollection/heartrate")) {
       return Response.json({ data: data.heartRate ?? [], next_token: null });
     }
-    if (urlStr.includes("/v2/usercollection/daily_readiness")) {
-      return Response.json({ data: data.readiness ?? [], next_token: null });
-    }
     if (urlStr.includes("/v2/usercollection/daily_activity")) {
       return Response.json({ data: data.dailyActivity ?? [], next_token: null });
     }
     if (urlStr.includes("/v2/usercollection/daily_spo2")) {
       return Response.json({ data: data.spo2 ?? [], next_token: null });
-    }
-    if (urlStr.includes("/v2/usercollection/daily_stress")) {
-      return Response.json({ data: data.stress ?? [], next_token: null });
-    }
-    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
-      return Response.json({ data: data.resilience ?? [], next_token: null });
-    }
-    if (urlStr.includes("/v2/usercollection/daily_cardiovascular_age")) {
-      return Response.json({ data: data.cvAge ?? [], next_token: null });
-    }
-    if (urlStr.includes("/v2/usercollection/vO2_max")) {
-      return Response.json({ data: data.vo2max ?? [], next_token: null });
     }
     // Enhanced tags must come before tags
     if (urlStr.includes("/v2/usercollection/enhanced_tag")) {
@@ -614,31 +534,6 @@ const sampleSpO2: OuraDailySpO2 = {
   breathing_disturbance_index: 12,
 };
 
-const sampleVO2Max: OuraVO2Max = {
-  id: "vo2max-abc123",
-  day: "2026-03-01",
-  timestamp: "2026-03-01T08:00:00",
-  vo2_max: 42.5,
-};
-
-const sampleReadiness: OuraDailyReadiness = {
-  id: "readiness-abc123",
-  day: "2026-03-01",
-  score: 82,
-  temperature_deviation: -0.15,
-  temperature_trend_deviation: 0.05,
-  contributors: {
-    resting_heart_rate: 85,
-    hrv_balance: 78,
-    body_temperature: 90,
-    recovery_index: 72,
-    sleep_balance: 80,
-    previous_night: 88,
-    previous_day_activity: 75,
-    activity_balance: 82,
-  },
-};
-
 const sampleActivity: OuraDailyActivity = {
   id: "activity-abc123",
   day: "2026-03-01",
@@ -653,30 +548,24 @@ const sampleActivity: OuraDailyActivity = {
   total_calories: 2300,
 };
 
-const sampleStress: OuraDailyStress = {
-  id: "stress-abc123",
-  day: "2026-03-01",
-  stress_high: 5400, // 90 min in seconds
-  recovery_high: 10800, // 180 min in seconds
-  day_summary: "restored",
-};
-
-const sampleResilience: OuraDailyResilience = {
-  id: "resilience-abc123",
-  day: "2026-03-01",
-  level: "solid",
-  contributors: {
-    sleep_recovery: 85,
-    daytime_recovery: 72,
-    stress: 68,
-  },
-};
-
 // ============================================================
 // Parsing tests
 // ============================================================
 
 describe("Oura Provider", () => {
+  describe("ouraProviderOffsetColumns", () => {
+    it("maps independent timestamp offsets to provider-local persistence columns", () => {
+      expect(
+        ouraProviderOffsetColumns("2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00"),
+      ).toEqual({
+        timezone: null,
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_offset",
+      });
+    });
+  });
+
   describe("parseOuraSleep", () => {
     it("maps sleep fields correctly", () => {
       const result = parseOuraSleep(sampleSleep);
@@ -689,6 +578,7 @@ describe("Oura Provider", () => {
       expect(result.remMinutes).toBe(95);
       expect(result.lightMinutes).toBe(240);
       expect(result.awakeMinutes).toBe(55);
+      expect(result.stagingAvailable).toBe(true);
       expect(result.efficiencyPct).toBe(87);
       expect(result.isNap).toBe(false);
     });
@@ -730,6 +620,7 @@ describe("Oura Provider", () => {
       expect(result.lightMinutes).toBeUndefined();
       expect(result.awakeMinutes).toBeUndefined();
       expect(result.durationMinutes).toBeUndefined();
+      expect(result.stagingAvailable).toBe(false);
     });
 
     it("rounds seconds to nearest minute", () => {
@@ -755,128 +646,41 @@ describe("Oura Provider", () => {
   });
 
   describe("parseOuraDailyMetrics", () => {
-    it("uses sleep average_hrv and lowest_heart_rate instead of readiness contributor scores", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        null,
-        null,
-        sampleSleep,
-      );
+    it("maps measured sleep, activity, and SpO2 observations", () => {
+      const result = parseOuraDailyMetrics(sampleActivity, sampleSpO2, sampleSleep);
 
-      // HRV should be the actual measurement from sleep (48 ms), NOT the
-      // readiness contributor score (78 = "how much HRV contributes to readiness")
-      expect(result.hrv).toBe(48);
-      // Resting HR should be from sleep (45 bpm), NOT the contributor score (85)
-      expect(result.restingHr).toBe(45);
-    });
-
-    it("maps daily readiness and activity fields", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        null,
-        null,
-        sampleSleep,
-      );
-
-      expect(result.date).toBe("2026-03-01");
-      expect(result.steps).toBe(9500);
-      expect(result.activeEnergyKcal).toBe(450);
-      expect(result.hrv).toBe(48);
-      expect(result.restingHr).toBe(45);
-      expect(result.exerciseMinutes).toBe(75);
-      expect(result.skinTempC).toBe(-0.15);
+      expect(result).toEqual({
+        date: "2026-03-01",
+        steps: 9500,
+        hrv: 48,
+        restingHr: 45,
+        spo2Avg: 97.5,
+      });
     });
 
     it("includes SpO2 when provided", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        sampleSpO2,
-        null,
-        null,
-        null,
-        null,
-      );
+      const result = parseOuraDailyMetrics(sampleActivity, sampleSpO2, null);
 
       expect(result.spo2Avg).toBe(97.5);
-    });
-
-    it("includes VO2 max when provided", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        sampleVO2Max,
-        null,
-        null,
-        null,
-      );
-
-      expect(result.vo2max).toBe(42.5);
-    });
-
-    it("includes both SpO2 and VO2 max", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        sampleSpO2,
-        sampleVO2Max,
-        null,
-        null,
-        null,
-      );
-
-      expect(result.spo2Avg).toBe(97.5);
-      expect(result.vo2max).toBe(42.5);
     });
 
     it("handles null spo2_percentage", () => {
       const noPercentage: OuraDailySpO2 = { ...sampleSpO2, spo2_percentage: null };
-      const result = parseOuraDailyMetrics(null, null, noPercentage, null, null, null, null);
+      const result = parseOuraDailyMetrics(null, noPercentage, null);
       expect(result.spo2Avg).toBeUndefined();
     });
 
-    it("handles null vo2_max value", () => {
-      const noValue: OuraVO2Max = { ...sampleVO2Max, vo2_max: null };
-      const result = parseOuraDailyMetrics(null, null, null, noValue, null, null, null);
-      expect(result.vo2max).toBeUndefined();
-    });
-
     it("returns undefined hrv and restingHr when no sleep data", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        null,
-        null,
-        null,
-      );
+      const result = parseOuraDailyMetrics(sampleActivity, null, null);
 
       expect(result.hrv).toBeUndefined();
       expect(result.restingHr).toBeUndefined();
     });
 
     it("handles null activity", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        null,
-        null,
-        null,
-        null,
-        null,
-        sampleSleep,
-      );
+      const result = parseOuraDailyMetrics(null, null, sampleSleep);
 
       expect(result.steps).toBeUndefined();
-      expect(result.activeEnergyKcal).toBeUndefined();
-      expect(result.exerciseMinutes).toBeUndefined();
       expect(result.hrv).toBe(48);
       expect(result.restingHr).toBe(45);
     });
@@ -887,109 +691,23 @@ describe("Oura Provider", () => {
         average_hrv: null,
         lowest_heart_rate: null,
       };
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        null,
-        null,
-        noHrv,
-      );
+      const result = parseOuraDailyMetrics(sampleActivity, null, noHrv);
       expect(result.hrv).toBeUndefined();
       expect(result.restingHr).toBeUndefined();
     });
 
-    it("uses activity day when readiness is null", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity, null, null, null, null, null);
+    it("uses activity day when no other source is present", () => {
+      const result = parseOuraDailyMetrics(sampleActivity, null, null);
       expect(result.date).toBe("2026-03-01");
     });
 
     it("returns empty date when all are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null, null, null, null);
+      const result = parseOuraDailyMetrics(null, null, null);
       expect(result.date).toBe("");
     });
 
-    it("uses spo2 day when readiness and activity are null", () => {
-      const result = parseOuraDailyMetrics(null, null, sampleSpO2, null, null, null, null);
-      expect(result.date).toBe("2026-03-01");
-    });
-
-    it("uses vo2max day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, sampleVO2Max, null, null, null);
-      expect(result.date).toBe("2026-03-01");
-    });
-
-    it("rounds exercise minutes from seconds", () => {
-      const activity: OuraDailyActivity = {
-        ...sampleActivity,
-        high_activity_time: 100, // 1.67 min
-        medium_activity_time: 100, // 1.67 min
-      };
-      const result = parseOuraDailyMetrics(null, activity, null, null, null, null, null);
-      expect(result.exerciseMinutes).toBe(3); // Math.round(200/60)
-    });
-
-    it("includes stress data when provided", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        sampleStress,
-        null,
-        null,
-      );
-      expect(result.stressHighMinutes).toBe(90);
-      expect(result.recoveryHighMinutes).toBe(180);
-    });
-
-    it("includes resilience level when provided", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        null,
-        sampleResilience,
-        null,
-      );
-      expect(result.resilienceLevel).toBe("solid");
-    });
-
-    it("handles null stress fields", () => {
-      const nullStress: OuraDailyStress = {
-        ...sampleStress,
-        stress_high: null,
-        recovery_high: null,
-      };
-      const result = parseOuraDailyMetrics(null, null, null, null, nullStress, null, null);
-      expect(result.stressHighMinutes).toBeUndefined();
-      expect(result.recoveryHighMinutes).toBeUndefined();
-    });
-
-    it("handles null stress and resilience", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        null,
-        null,
-        null,
-        null,
-        null,
-      );
-      expect(result.stressHighMinutes).toBeUndefined();
-      expect(result.recoveryHighMinutes).toBeUndefined();
-      expect(result.resilienceLevel).toBeUndefined();
-    });
-
-    it("uses stress day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null, sampleStress, null, null);
-      expect(result.date).toBe("2026-03-01");
-    });
-
-    it("uses resilience day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null, null, sampleResilience, null);
+    it("uses spo2 day when activity is null", () => {
+      const result = parseOuraDailyMetrics(null, sampleSpO2, null);
       expect(result.date).toBe("2026-03-01");
     });
   });
@@ -1130,6 +848,7 @@ describe("OuraProvider.getUserIdentity()", () => {
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("abc-123");
     expect(identity.email).toBe("ring@test.com");
+    expect(identity.emailVerified).toBe(false);
     expect(identity.name).toBeNull();
   });
 
@@ -1184,28 +903,11 @@ describe("Oura API schemas", () => {
       "type",
       "efficiency",
     ]);
-    expectSchemaParseAndKeys(ouraDailyReadinessSchema, fakeReadiness(), [
-      "id",
-      "day",
-      "contributors",
-    ]);
     expectSchemaParseAndKeys(ouraDailyActivitySchema, fakeActivity(), ["id", "day", "steps"]);
     expectSchemaParseAndKeys(ouraDailySpO2Schema, fakeSpO2(), ["id", "day", "spo2_percentage"]);
-    expectSchemaParseAndKeys(ouraVO2MaxSchema, fakeVO2Max(), ["id", "day", "vo2_max"]);
     expectSchemaParseAndKeys(ouraWorkoutSchema, fakeWorkout(), ["id", "activity", "intensity"]);
     expectSchemaParseAndKeys(ouraHeartRateSchema, fakeHeartRate(), ["bpm", "source", "timestamp"]);
     expectSchemaParseAndKeys(ouraSessionSchema, fakeSession(), ["id", "type", "mood"]);
-    expectSchemaParseAndKeys(ouraDailyStressSchema, fakeStress(), ["id", "day", "day_summary"]);
-    expectSchemaParseAndKeys(ouraDailyResilienceSchema, fakeResilience(), [
-      "id",
-      "day",
-      "contributors",
-      "level",
-    ]);
-    expectSchemaParseAndKeys(ouraDailyCardiovascularAgeSchema, fakeCvAge(), [
-      "day",
-      "vascular_age",
-    ]);
     expectSchemaParseAndKeys(ouraTagSchema, fakeTag(), ["id", "day", "tags"]);
     expectSchemaParseAndKeys(ouraEnhancedTagSchema, fakeEnhancedTag(), [
       "id",
@@ -1213,13 +915,6 @@ describe("Oura API schemas", () => {
       "start_day",
     ]);
     expectSchemaParseAndKeys(ouraRestModePeriodSchema, fakeRestMode(), ["id", "start_day"]);
-    expectSchemaParseAndKeys(ouraSleepTimeSchema, fakeSleepTime(), [
-      "id",
-      "day",
-      "optimal_bedtime",
-      "recommendation",
-      "status",
-    ]);
   });
 
   it("rejects malformed objects and invalid enum values", () => {
@@ -1227,10 +922,6 @@ describe("Oura API schemas", () => {
     expect(ouraSleepDocumentSchema.safeParse({ ...fakeSleepDoc(), type: "bad_type" }).success).toBe(
       false,
     );
-
-    expect(
-      ouraDailyReadinessSchema.safeParse({ ...fakeReadiness(), contributors: {} }).success,
-    ).toBe(false);
 
     expect(
       ouraDailySpO2Schema.safeParse({
@@ -1248,34 +939,7 @@ describe("Oura API schemas", () => {
       false,
     );
 
-    expect(
-      ouraDailyStressSchema.safeParse({ ...fakeStress(), day_summary: "very_stress" }).success,
-    ).toBe(false);
-    expect(
-      ouraDailyResilienceSchema.safeParse({ ...fakeResilience(), contributors: {} }).success,
-    ).toBe(false);
-
-    expect(ouraDailyCardiovascularAgeSchema.safeParse({}).success).toBe(false);
     expect(ouraTagSchema.safeParse({ ...fakeTag(), tags: "caffeine" }).success).toBe(false);
-
-    expect(
-      ouraSleepTimeSchema.safeParse({
-        ...fakeSleepTime(),
-        optimal_bedtime: { day_tz: -18_000 },
-      }).success,
-    ).toBe(false);
-    expect(
-      ouraSleepTimeSchema.safeParse({
-        ...fakeSleepTime(),
-        recommendation: "best",
-      }).success,
-    ).toBe(false);
-    expect(
-      ouraSleepTimeSchema.safeParse({
-        ...fakeSleepTime(),
-        status: "unknown",
-      }).success,
-    ).toBe(false);
   });
 });
 
@@ -1360,6 +1024,45 @@ describe("OuraClient", () => {
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
       "Invalid API key provided",
     );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(
+      "Invalid API key provided…",
+    );
+  });
+
+  it("throws OuraApiError with structured status on API failures", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      name: "OuraApiError",
+      status: 401,
+    });
+  });
+
+  it("includes error bodies up to 200 characters without truncation", async () => {
+    const body = "a".repeat(200);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body, { status: 500 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(body);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(`${body}…`);
+  });
+
+  it("truncates error bodies longer than 200 characters", async () => {
+    const body = "x".repeat(250);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body, { status: 500 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
+      `${"x".repeat(200)}…`,
+    );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(body);
   });
 
   it("fetches daily SpO2 data successfully", async () => {
@@ -1404,46 +1107,28 @@ describe("OuraClient", () => {
     await expect(client.getDailySpO2("2026-03-01", "2026-03-02")).rejects.toThrow("API error 403");
   });
 
-  it("fetches VO2 max data successfully", async () => {
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [sampleVO2Max], next_token: null });
-    };
-
-    const client = new OuraClient("test-token", mockFetch);
-    const result = await client.getVO2Max("2026-03-01", "2026-03-02");
-
-    expect(capturedUrl).toContain("/v2/usercollection/vO2_max");
-    expect(capturedUrl).toContain("start_date=2026-03-01");
-    expect(result.data).toHaveLength(1);
-    expect(result.data[0]?.vo2_max).toBe(42.5);
-  });
-
-  it("passes next_token for VO2 max pagination", async () => {
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    };
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getVO2Max("2026-03-01", "2026-03-02", "vo2page");
-
-    expect(capturedUrl).toContain("next_token=vo2page");
-  });
-
-  it("throws on non-OK response for VO2 max", async () => {
+  it("truncates long error response bodies at 200 characters", async () => {
+    const longBody = "x".repeat(201);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Server Error", { status: 500 });
+      return new Response(longBody, { status: 500 });
     };
 
     const client = new OuraClient("token", mockFetch);
-    await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow("API error 500");
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      message: expect.stringContaining("…"),
+    });
+  });
+
+  it("does not truncate error responses exactly at 200 characters", async () => {
+    const body200 = "x".repeat(200);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body200, { status: 500 });
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      message: expect.not.stringContaining("…"),
+    });
   });
 
   it("fetches workouts with correct URL", async () => {
@@ -1491,48 +1176,6 @@ describe("OuraClient", () => {
     expect(capturedUrl).toContain("/v2/usercollection/session");
   });
 
-  it("fetches daily stress with correct URL", async () => {
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    };
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyStress("2026-03-01", "2026-03-02");
-    expect(capturedUrl).toContain("/v2/usercollection/daily_stress");
-  });
-
-  it("fetches daily resilience with correct URL", async () => {
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    };
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyResilience("2026-03-01", "2026-03-02");
-    expect(capturedUrl).toContain("/v2/usercollection/daily_resilience");
-  });
-
-  it("fetches cardiovascular age with correct URL", async () => {
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    };
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyCardiovascularAge("2026-03-01", "2026-03-02");
-    expect(capturedUrl).toContain("/v2/usercollection/daily_cardiovascular_age");
-  });
-
   it("fetches tags with correct URL", async () => {
     let capturedUrl = "";
     const mockFetch: typeof globalThis.fetch = async (
@@ -1574,20 +1217,6 @@ describe("OuraClient", () => {
     await client.getRestModePeriods("2026-03-01", "2026-03-02");
     expect(capturedUrl).toContain("/v2/usercollection/rest_mode_period");
   });
-
-  it("fetches sleep time with correct URL", async () => {
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    };
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getSleepTime("2026-03-01", "2026-03-02");
-    expect(capturedUrl).toContain("/v2/usercollection/sleep_time");
-  });
 });
 
 // ============================================================
@@ -1596,21 +1225,21 @@ describe("OuraClient", () => {
 
 describe("mapOuraActivityType", () => {
   it("maps known activity types", () => {
-    expect(mapOuraActivityType("walking")).toBe("walking");
-    expect(mapOuraActivityType("running")).toBe("running");
-    expect(mapOuraActivityType("cycling")).toBe("cycling");
-    expect(mapOuraActivityType("swimming")).toBe("swimming");
-    expect(mapOuraActivityType("strength_training")).toBe("strength");
+    expect(mapOuraActivityType("walking").canonicalType).toBe("walking");
+    expect(mapOuraActivityType("running").canonicalType).toBe("running");
+    expect(mapOuraActivityType("cycling").canonicalType).toBe("cycling");
+    expect(mapOuraActivityType("swimming").canonicalType).toBe("swimming");
+    expect(mapOuraActivityType("strength_training").canonicalType).toBe("strength");
   });
 
   it("handles case-insensitive input", () => {
-    expect(mapOuraActivityType("Walking")).toBe("walking");
-    expect(mapOuraActivityType("RUNNING")).toBe("running");
+    expect(mapOuraActivityType("Walking").canonicalType).toBe("walking");
+    expect(mapOuraActivityType("RUNNING").canonicalType).toBe("running");
   });
 
   it("returns other for unknown types", () => {
-    expect(mapOuraActivityType("kickboxing")).toBe("other");
-    expect(mapOuraActivityType("CrossFit")).toBe("other");
+    expect(mapOuraActivityType("kickboxing").canonicalType).toBe("other");
+    expect(mapOuraActivityType("CrossFit").canonicalType).toBe("other");
   });
 });
 
@@ -1657,6 +1286,7 @@ describe("OuraProvider.sync()", () => {
     expect(sleepValues.remMinutes).toBe(95);
     expect(sleepValues.lightMinutes).toBe(240);
     expect(sleepValues.awakeMinutes).toBe(55);
+    expect(sleepValues.stagingAvailable).toBe(true);
     expect(sleepValues.efficiencyPct).toBe(87);
     expect(sleepValues.sleepType).toBe("long_sleep");
     expect(sleepValues.startedAt).toEqual(new Date("2026-02-28T22:30:00+00:00"));
@@ -1666,6 +1296,80 @@ describe("OuraProvider.sync()", () => {
       sleepSessionTable.providerId,
       sleepSessionTable.externalId,
     ]);
+  });
+
+  it("follows Oura pagination tokens when syncing sleep sessions", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-page-1" });
+    const secondSleep = fakeSleepDoc({ id: "sleep-page-2", day: "2026-03-02" });
+    const requestedUrls: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      requestedUrls.push(urlStr);
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return Response.json({ data: [secondSleep], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const sleepExternalIds = filterValuesCalls(
+      db,
+      (values) => values.providerId === "oura" && typeof values.externalId === "string",
+    ).map((values) => values.externalId);
+    expect(sleepExternalIds).toContain("sleep-page-1");
+    expect(sleepExternalIds).toContain("sleep-page-2");
+    expect(
+      requestedUrls.some(
+        (requestedUrl) =>
+          requestedUrl.includes("/v2/usercollection/sleep") &&
+          requestedUrl.includes("next_token=page-2"),
+      ),
+    ).toBe(true);
+  });
+
+  it("persists Oura sleep pages fetched before a later page failure", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-before-error" });
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return new Response("temporary failure", { status: 502 });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("sleep"))).toBe(true);
+    const persistedSleep = findValuesCall(
+      db,
+      (values) => values.externalId === "sleep-before-error" && values.providerId === "oura",
+    );
+    expect(persistedSleep.durationMinutes).toBe(480);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "sleep",
+        status: "error",
+      }),
+    );
   });
 
   it("syncs workouts to activity table", async () => {
@@ -1682,22 +1386,20 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify workout values
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "workout-001" && v.activityType === "running",
+    const val = findUpsertValues(
+      (v) =>
+        v.externalId === "workout-001" &&
+        typeof v.activityType === "object" &&
+        v.activityType !== null &&
+        Reflect.get(v.activityType, "canonicalType") === "running",
     );
     expect(val.providerId).toBe("oura");
+    expect(val.activityType).toMatchObject({ providerType: "running" });
     expect(val.name).toBe("Morning Run");
     expect(val.startedAt).toEqual(new Date("2026-03-01T08:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T08:30:00+00:00"));
     expect(val.raw).toEqual(workout);
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "oura",
@@ -1709,7 +1411,7 @@ describe("OuraProvider.sync()", () => {
 
   it("reports activity absence reconciliation errors without rejecting sync", async () => {
     setupEnv();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockRejectedValueOnce(
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
       new Error("write failed"),
     );
     const workout = fakeWorkout();
@@ -1742,20 +1444,19 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "session-001" && v.activityType === "meditation",
+    const val = findUpsertValues(
+      (v) =>
+        v.externalId === "session-001" &&
+        typeof v.activityType === "object" &&
+        v.activityType !== null &&
+        Reflect.get(v.activityType, "canonicalType") === "meditation",
     );
     expect(val.providerId).toBe("oura");
+    expect(val.activityType).toMatchObject({ providerType: "meditation" });
     expect(val.name).toBe("meditation");
     expect(val.startedAt).toEqual(new Date("2026-03-01T07:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T07:15:00+00:00"));
     expect(val.raw).toEqual(session);
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
   });
 
   it("maps breathing sessions to breathwork activity type", async () => {
@@ -1770,8 +1471,8 @@ describe("OuraProvider.sync()", () => {
     );
 
     expect(result.errors).toHaveLength(0);
-    const value = findValuesCall(db, (record) => record.externalId === "session-breathing");
-    expect(value.activityType).toBe("breathwork");
+    const value = findUpsertValues((record) => record.externalId === "session-breathing");
+    expect(value.activityType).toMatchObject({ canonicalType: "breathwork" });
   });
 
   it("syncs heart rate data", async () => {
@@ -1847,88 +1548,6 @@ describe("OuraProvider.sync()", () => {
       const diff = (end - start) / (1000 * 60 * 60 * 24);
       expect(diff).toBeLessThanOrEqual(31); // Allow 1 day margin
     }
-  });
-
-  it("syncs daily stress", async () => {
-    setupEnv();
-    const stress = fakeStress();
-    const mockFetch = createMockApiFetch({ stress: [stress] });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-
-    // Stress is batched as an array in the values call
-    const stressRows = findBatchValuesCall(db, (arr) =>
-      arr.some((v) => v.type === "oura_daily_stress"),
-    );
-    const stressRow = stressRows.find((r) => r.type === "oura_daily_stress");
-    expect(stressRow).toBeDefined();
-    expect(stressRow?.providerId).toBe("oura");
-    expect(stressRow?.externalId).toBe("stress-001");
-    expect(stressRow?.value).toBe(5400);
-    expect(stressRow?.valueText).toBe("restored");
-    expect(stressRow?.startDate).toEqual(new Date("2026-03-01T00:00:00"));
-    expectConflictTarget(db, [
-      healthEventTable.userId,
-      healthEventTable.providerId,
-      healthEventTable.externalId,
-    ]);
-  });
-
-  it("syncs daily resilience", async () => {
-    setupEnv();
-    const resilience = fakeResilience();
-    const mockFetch = createMockApiFetch({ resilience: [resilience] });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-
-    const val = findValuesCall(
-      db,
-      (v) => v.type === "oura_daily_resilience" && v.externalId === "resilience-001",
-    );
-    expect(val.providerId).toBe("oura");
-    expect(val.valueText).toBe("solid");
-    expect(val.startDate).toEqual(new Date("2026-03-01T00:00:00"));
-    expectConflictTarget(db, [
-      healthEventTable.userId,
-      healthEventTable.providerId,
-      healthEventTable.externalId,
-    ]);
-  });
-
-  it("syncs cardiovascular age and skips null values", async () => {
-    setupEnv();
-    const cvAgeValid = fakeCvAge({ day: "2026-03-01", vascular_age: 35 });
-    const cvAgeNull = fakeCvAge({ day: "2026-03-02", vascular_age: null });
-    const mockFetch = createMockApiFetch({ cvAge: [cvAgeValid, cvAgeNull] });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-
-    // Should only have one CV age insert (the null one is skipped)
-    const cvAgeValues = filterValuesCalls(db, (v) => v.type === "oura_cardiovascular_age");
-    expect(cvAgeValues).toHaveLength(1);
-    expect(cvAgeValues[0]?.externalId).toBe("oura_cv_age:2026-03-01");
-    expect(cvAgeValues[0]?.value).toBe(35);
-    expect(cvAgeValues[0]?.startDate).toEqual(new Date("2026-03-01T00:00:00"));
   });
 
   it("syncs tags", async () => {
@@ -2012,45 +1631,14 @@ describe("OuraProvider.sync()", () => {
     expect(val.endDate).toEqual(new Date("2026-03-02T08:00:00+00:00"));
   });
 
-  it("syncs sleep time recommendations", async () => {
-    setupEnv();
-    const sleepTime = fakeSleepTime();
-    const mockFetch = createMockApiFetch({ sleepTime: [sleepTime] });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-
-    const val = findValuesCall(
-      db,
-      (v) => v.type === "oura_sleep_time" && v.externalId === "st-001",
-    );
-    expect(val.providerId).toBe("oura");
-    expect(val.valueText).toBe("follow_optimal_bedtime");
-    expect(val.startDate).toEqual(new Date("2026-03-01T00:00:00"));
-  });
-
   it("syncs daily metrics from multiple sources", async () => {
     setupEnv();
-    const readiness = fakeReadiness();
     const dailyActivity = fakeActivity();
     const spo2 = fakeSpO2();
-    const vo2max = fakeVO2Max();
-    const stress = fakeStress();
-    const resilience = fakeResilience();
     const sleep = fakeSleepDoc();
     const mockFetch = createMockApiFetch({
-      readiness: [readiness],
       dailyActivity: [dailyActivity],
       spo2: [spo2],
-      vo2max: [vo2max],
-      stress: [stress],
-      resilience: [resilience],
       sleep: [sleep],
     });
     const provider = new OuraProvider(mockFetch);
@@ -2070,18 +1658,10 @@ describe("OuraProvider.sync()", () => {
       (v) => v.date === "2026-03-01" && v.providerId === "oura" && v.steps === 9500,
     );
     expect(val.steps).toBe(9500);
-    expect(val.activeEnergyKcal).toBe(450);
-    // HRV comes from sleep data (actual measurements), not readiness contributor scores.
-    // Resting HR and VO2 Max are derived by server-side views, not stored from providers.
+    // HRV and resting HR come from sleep measurements, not provider score fields.
     expect(val.hrv).toBe(48);
     expect("restingHr" in val).toBe(false);
-    expect(val.exerciseMinutes).toBe(75);
-    expect(val.skinTempC).toBe(-0.15);
     expect(val.spo2Avg).toBe(97.5);
-    expect("vo2max" in val).toBe(false);
-    expect(val.stressHighMinutes).toBe(90);
-    expect(val.recoveryHighMinutes).toBe(180);
-    expect(val.resilienceLevel).toBe("solid");
     expectConflictTarget(db, [
       dailyMetricsTable.userId,
       dailyMetricsTable.date,
@@ -2124,10 +1704,6 @@ describe("OuraProvider.sync()", () => {
     ): Promise<Response> => {
       const urlStr = input.toString();
 
-      // Sleep time must come before sleep check
-      if (urlStr.includes("/v2/usercollection/sleep_time")) {
-        return Response.json({ data: [], next_token: null });
-      }
       if (urlStr.includes("/v2/usercollection/sleep")) {
         return Response.json({ data: [sleep], next_token: null });
       }
@@ -2167,7 +1743,7 @@ describe("OuraProvider.sync()", () => {
 
     // Verify tags endpoint was actually called (phases after workout still ran)
     expect(callCount).toBe(1);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("handles empty API responses gracefully", async () => {
@@ -2188,114 +1764,6 @@ describe("OuraProvider.sync()", () => {
     // values() should never have been called with actual data
     expect(db.values).not.toHaveBeenCalled();
   });
-
-  it("skips scope-gated endpoints on 401 and does not produce errors", async () => {
-    setupEnv();
-    const readiness = fakeReadiness();
-    const dailyActivity = fakeActivity();
-
-    // Return 401 for all scope-gated endpoints (stress, resilience, cv_age, vo2max)
-    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/v2/usercollection/sleep_time")) {
-        return Response.json({ data: [], next_token: null });
-      }
-      if (urlStr.includes("/v2/usercollection/sleep")) {
-        return Response.json({ data: [], next_token: null });
-      }
-      if (urlStr.includes("/v2/usercollection/daily_readiness")) {
-        return Response.json({ data: [readiness], next_token: null });
-      }
-      if (urlStr.includes("/v2/usercollection/daily_activity")) {
-        return Response.json({ data: [dailyActivity], next_token: null });
-      }
-      if (
-        urlStr.includes("/v2/usercollection/daily_stress") ||
-        urlStr.includes("/v2/usercollection/daily_resilience") ||
-        urlStr.includes("/v2/usercollection/daily_cardiovascular_age") ||
-        urlStr.includes("/v2/usercollection/vO2_max")
-      ) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      return Response.json({ data: [], next_token: null });
-    };
-
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
-    );
-
-    // No errors — 401s on optional scopes are silently skipped
-    expect(result.errors).toHaveLength(0);
-    // Readiness + activity should still have synced
-    const val = findValuesCall(
-      db,
-      (v) => v.date === "2026-03-01" && v.providerId === "oura" && v.steps === 9500,
-    );
-    expect(val.steps).toBe(9500);
-    // Stress/resilience fields are absent when scope is missing
-    expect(val.stressHighMinutes).toBeUndefined();
-    expect(val.resilienceLevel).toBeUndefined();
-  });
-});
-
-// ============================================================
-// fetchAllPagesOptional tests
-// ============================================================
-
-describe("fetchAllPagesOptional", () => {
-  it("returns data normally when the fetch succeeds", async () => {
-    const fetchPage = async () => ({ data: [{ id: "x" }], next_token: null });
-    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
-    expect(result).toEqual([{ id: "x" }]);
-  });
-
-  it("returns empty array on API error 401", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 401: Unauthorized");
-    };
-    const result = await fetchAllPagesOptional(fetchPage, "daily_stress");
-    expect(result).toEqual([]);
-  });
-
-  it("logs a warning on 401 with the endpoint name", async () => {
-    const warnSpy = vi.mocked(logger.warn);
-    warnSpy.mockClear();
-
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 401: Unauthorized");
-    };
-    await fetchAllPagesOptional(fetchPage, "daily_resilience");
-
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("daily_resilience"));
-  });
-
-  it("re-throws non-401 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 500: Internal Server Error");
-    };
-    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 500");
-  });
-
-  it("re-throws 403 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 403: Forbidden");
-    };
-    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 403");
-  });
-
-  it("paginates through multiple pages before returning", async () => {
-    let page = 0;
-    const fetchPage = async (_nextToken?: string) => {
-      page++;
-      if (page === 1) return { data: [{ id: "a" }], next_token: "tok2" };
-      return { data: [{ id: "b" }], next_token: null };
-    };
-    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
-    expect(result).toEqual([{ id: "a" }, { id: "b" }]);
-  });
 });
 
 // ============================================================
@@ -2314,7 +1782,7 @@ describe("OuraProvider.registerWebhook()", () => {
     process.env.OURA_CLIENT_SECRET = "test-client-secret";
 
     const requestBodies: Array<Record<string, unknown>> = [];
-    const requestHeaders: Array<Record<string, string>> = [];
+    const requestHeaders: Array<Record<string, unknown>> = [];
 
     const mockFetch: typeof globalThis.fetch = async (
       _input: RequestInfo | URL,
@@ -2322,10 +1790,10 @@ describe("OuraProvider.registerWebhook()", () => {
     ): Promise<Response> => {
       const headers = init?.headers;
       if (headers && typeof headers === "object" && !Array.isArray(headers)) {
-        requestHeaders.push(z.record(z.string()).parse(headers));
+        requestHeaders.push(z.record(z.string(), z.unknown()).parse(headers));
       }
       if (init?.body) {
-        const bodyParsed = z.record(z.unknown()).parse(JSON.parse(String(init.body)));
+        const bodyParsed = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init.body)));
         requestBodies.push(bodyParsed);
       }
       return Response.json({ id: "sub-first-type" });
@@ -2337,18 +1805,15 @@ describe("OuraProvider.registerWebhook()", () => {
     expect(result.subscriptionId).toBe("sub-first-type");
     expect(result.expiresAt).toBeInstanceOf(Date);
 
-    // Should have made 8 POST requests (one per data type)
-    expect(requestBodies).toHaveLength(8);
+    // Should make one POST request per supported raw data type.
+    expect(requestBodies).toHaveLength(5);
 
     const dataTypes = requestBodies.map((b) => b.data_type);
     expect(dataTypes).toContain("daily_activity");
-    expect(dataTypes).toContain("daily_readiness");
     expect(dataTypes).toContain("daily_sleep");
     expect(dataTypes).toContain("workout");
     expect(dataTypes).toContain("session");
     expect(dataTypes).toContain("daily_spo2");
-    expect(dataTypes).toContain("daily_stress");
-    expect(dataTypes).toContain("daily_resilience");
 
     // Verify each request has correct callback_url and verification_token
     for (const body of requestBodies) {
@@ -2383,8 +1848,8 @@ describe("OuraProvider.registerWebhook()", () => {
 
     // Should use the first successful ID
     expect(result.subscriptionId).toBe("sub-001");
-    // All 8 types should have been attempted
-    expect(callCount).toBe(8);
+    // All supported types should have been attempted
+    expect(callCount).toBe(5);
   });
 
   it("throws on non-409 error response", async () => {
@@ -2440,7 +1905,7 @@ describe("OuraProvider.unregisterWebhook()", () => {
 
     let capturedUrl = "";
     let capturedMethod = "";
-    let capturedHeaders: Record<string, string> = {};
+    let capturedHeaders: Record<string, unknown> = {};
 
     const mockFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
@@ -2449,7 +1914,7 @@ describe("OuraProvider.unregisterWebhook()", () => {
       capturedUrl = input.toString();
       capturedMethod = init?.method ?? "GET";
       if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
-        capturedHeaders = z.record(z.string()).parse(init.headers);
+        capturedHeaders = z.record(z.string(), z.unknown()).parse(init.headers);
       }
       return new Response(null, { status: 204 });
     };
@@ -2524,16 +1989,7 @@ describe("OuraProvider.parseWebhookPayload()", () => {
 
   it("parses events for each supported data type", () => {
     const provider = new OuraProvider();
-    const dataTypes = [
-      "daily_activity",
-      "daily_readiness",
-      "daily_sleep",
-      "workout",
-      "session",
-      "daily_spo2",
-      "daily_stress",
-      "daily_resilience",
-    ];
+    const dataTypes = ["daily_activity", "daily_sleep", "workout", "session", "daily_spo2"];
 
     for (const dataType of dataTypes) {
       const body = { data_type: dataType, user_id: "user-1" };
@@ -2584,27 +2040,9 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.recordsSynced).toBe(1);
     expectReasonableDuration(result.duration);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "workout-001" && v.providerId === "oura",
-    );
-    expect(val.activityType).toBe("running");
+    const val = findUpsertValues((v) => v.externalId === "workout-001" && v.providerId === "oura");
+    expect(val.activityType).toMatchObject({ canonicalType: "running" });
     expect(val.name).toBe("Morning Run");
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "activityType",
-    );
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "raw",
-    );
   });
 
   it("syncs sessions when data_type is session", async () => {
@@ -2627,22 +2065,9 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.recordsSynced).toBe(1);
     expectReasonableDuration(result.duration);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "session-001" && v.providerId === "oura",
-    );
-    expect(val.activityType).toBe("meditation");
+    const val = findUpsertValues((v) => v.externalId === "session-001" && v.providerId === "oura");
+    expect(val.activityType).toMatchObject({ canonicalType: "meditation" });
     expect(val.name).toBe("meditation");
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "activityType",
-    );
   });
 
   it("syncs sleep when data_type is daily_sleep", async () => {
@@ -2707,195 +2132,10 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     ]);
   });
 
-  it("syncs daily_stress healthEvents and daily metrics", async () => {
-    setupEnv();
-    const stress = fakeStress();
-    const readiness = fakeReadiness();
-    const dailyActivity = fakeActivity();
-    const mockFetch = createMockApiFetch({
-      stress: [stress],
-      readiness: [readiness],
-      dailyActivity: [dailyActivity],
-    });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const event: import("./types.ts").WebhookEvent = {
-      ownerExternalId: "user-1",
-      eventType: "create",
-      objectType: "daily_stress",
-    };
-
-    const result = await provider.syncWebhookEvent(db, event);
-
-    expect(result.provider).toBe("oura");
-    expect(result.errors).toHaveLength(0);
-    // Should sync stress healthEvents + daily metrics composite
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
-    expectReasonableDuration(result.duration);
-    expectConflictTarget(db, [
-      healthEventTable.userId,
-      healthEventTable.providerId,
-      healthEventTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [healthEventTable.userId, healthEventTable.providerId, healthEventTable.externalId],
-      "value",
-    );
-    expectConflictTarget(db, [
-      dailyMetricsTable.userId,
-      dailyMetricsTable.date,
-      dailyMetricsTable.providerId,
-      dailyMetricsTable.sourceName,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [
-        dailyMetricsTable.userId,
-        dailyMetricsTable.date,
-        dailyMetricsTable.providerId,
-        dailyMetricsTable.sourceName,
-      ],
-      "stressHighMinutes",
-    );
-
-    const metricsRow = findValuesCall(
-      db,
-      (value) => value.providerId === "oura" && value.date === "2026-03-01",
-    );
-    expect(metricsRow.steps).toBe(9500);
-    expect(metricsRow.stressHighMinutes).toBe(90);
-    expect(metricsRow.recoveryHighMinutes).toBe(180);
-  });
-
-  it("batches daily_stress health events and preserves per-batch upsert values", async () => {
-    setupEnv();
-    const stressRows: OuraDailyStress[] = Array.from({ length: 1500 }, (_, index) => ({
-      ...fakeStress(),
-      id: `stress-${index}`,
-      day: `2026-03-${String((index % 28) + 1).padStart(2, "0")}`,
-      stress_high: index,
-      day_summary: index % 2 === 0 ? "normal" : "stressful",
-    }));
-
-    const mockFetch = createMockApiFetch({ stress: stressRows });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const event: import("./types.ts").WebhookEvent = {
-      ownerExternalId: "user-1",
-      eventType: "create",
-      objectType: "daily_stress",
-    };
-
-    const result = await provider.syncWebhookEvent(db, event);
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(stressRows.length);
-
-    const healthEventBatches = db.values.mock.calls
-      .map((callArgs) => recordArraySchema.safeParse(callArgs[0]))
-      .filter(
-        (parsed): parsed is z.SafeParseSuccess<Array<Record<string, unknown>>> => parsed.success,
-      )
-      .map((parsed) => parsed.data)
-      .filter(
-        (rows) =>
-          rows.length > 0 &&
-          rows.every((row) => row.providerId === "oura" && row.type === "oura_daily_stress"),
-      );
-
-    expect(healthEventBatches.length).toBeGreaterThan(1);
-    const totalRows = healthEventBatches.reduce((sum, batch) => sum + batch.length, 0);
-    expect(totalRows).toBe(stressRows.length);
-    expect(healthEventBatches.every((batch) => batch.length <= 1000)).toBe(true);
-
-    const upsertCalls = db.onConflictDoUpdate.mock.calls
-      .map((callArgs) => callArgs[0])
-      .filter((arg) => {
-        if (typeof arg !== "object" || arg === null || !("target" in arg) || !("set" in arg)) {
-          return false;
-        }
-        const target = Reflect.get(arg, "target");
-        if (!Array.isArray(target) || target.length !== 3) return false;
-        return (
-          target[0] === healthEventTable.userId &&
-          target[1] === healthEventTable.providerId &&
-          target[2] === healthEventTable.externalId
-        );
-      });
-    expect(upsertCalls.length).toBe(healthEventBatches.length);
-
-    for (let i = 0; i < upsertCalls.length; i++) {
-      const set = Reflect.get(upsertCalls[i], "set");
-      if (typeof set !== "object" || set === null) {
-        throw new Error("expected conflict set object");
-      }
-      // Verify upsert uses SQL EXCLUDED references (not static row values)
-      const valueField = Reflect.get(set, "value");
-      const valueTextField = Reflect.get(set, "valueText");
-      expect(valueField).toHaveProperty("queryChunks");
-      expect(valueTextField).toHaveProperty("queryChunks");
-      expect(valueField.queryChunks[0].value[0]).toBe("excluded.value");
-      expect(valueTextField.queryChunks[0].value[0]).toBe("excluded.value_text");
-    }
-  });
-
-  it("syncs daily_resilience healthEvents and daily metrics", async () => {
-    setupEnv();
-    const resilience = fakeResilience();
-    const readiness = fakeReadiness();
-    const dailyActivity = fakeActivity();
-    const mockFetch = createMockApiFetch({
-      resilience: [resilience],
-      readiness: [readiness],
-      dailyActivity: [dailyActivity],
-    });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const event: import("./types.ts").WebhookEvent = {
-      ownerExternalId: "user-1",
-      eventType: "create",
-      objectType: "daily_resilience",
-    };
-
-    const result = await provider.syncWebhookEvent(db, event);
-
-    expect(result.provider).toBe("oura");
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
-    expectReasonableDuration(result.duration);
-    expectConflictTarget(db, [
-      healthEventTable.userId,
-      healthEventTable.providerId,
-      healthEventTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [healthEventTable.userId, healthEventTable.providerId, healthEventTable.externalId],
-      "valueText",
-    );
-    expectConflictSetContainsKey(
-      db,
-      [
-        dailyMetricsTable.userId,
-        dailyMetricsTable.date,
-        dailyMetricsTable.providerId,
-        dailyMetricsTable.sourceName,
-      ],
-      "resilienceLevel",
-    );
-  });
-
   it("syncs only daily metrics for daily_activity", async () => {
     setupEnv();
     const dailyActivity = fakeActivity();
-    const readiness = fakeReadiness();
-    const mockFetch = createMockApiFetch({
-      dailyActivity: [dailyActivity],
-      readiness: [readiness],
-    });
+    const mockFetch = createMockApiFetch({ dailyActivity: [dailyActivity] });
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
@@ -2932,11 +2172,7 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     setupEnv();
     const mockFetch = createMockApiFetch({
       dailyActivity: [fakeActivity()],
-      readiness: [fakeReadiness()],
       spo2: [fakeSpO2()],
-      vo2max: [fakeVO2Max()],
-      stress: [fakeStress()],
-      resilience: [fakeResilience()],
       sleep: [
         fakeSleepDoc({
           id: "sleep-short",
@@ -2971,48 +2207,8 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     );
     expect(metricsRow.steps).toBe(9500);
     expect(metricsRow.spo2Avg).toBe(97.5);
-    expect("vo2max" in metricsRow).toBe(false);
-    expect(metricsRow.stressHighMinutes).toBe(90);
-    expect(metricsRow.recoveryHighMinutes).toBe(180);
-    expect(metricsRow.resilienceLevel).toBe("solid");
     expect(metricsRow.hrv).toBe(66);
     expect("restingHr" in metricsRow).toBe(false);
-  });
-
-  it("syncs only daily metrics for daily_readiness", async () => {
-    setupEnv();
-    const readiness = fakeReadiness();
-    const mockFetch = createMockApiFetch({ readiness: [readiness] });
-    const provider = new OuraProvider(mockFetch);
-    const db = createMockDb();
-
-    const event: import("./types.ts").WebhookEvent = {
-      ownerExternalId: "user-1",
-      eventType: "create",
-      objectType: "daily_readiness",
-    };
-
-    const result = await provider.syncWebhookEvent(db, event);
-
-    expect(result.provider).toBe("oura");
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-    expectConflictTarget(db, [
-      dailyMetricsTable.userId,
-      dailyMetricsTable.date,
-      dailyMetricsTable.providerId,
-      dailyMetricsTable.sourceName,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [
-        dailyMetricsTable.userId,
-        dailyMetricsTable.date,
-        dailyMetricsTable.providerId,
-        dailyMetricsTable.sourceName,
-      ],
-      "skinTempC",
-    );
   });
 
   it("syncs only daily metrics for daily_spo2", async () => {

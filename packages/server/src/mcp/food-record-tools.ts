@@ -1,0 +1,589 @@
+import type { DayNutritionPreview } from "@dofek/mcp-contracts/day-nutrition";
+import type { McpServer } from "@modelcontextprotocol/server";
+import { NUTRIENT_FIELD_BY_ID } from "dofek/db/nutrient-columns";
+import { foodCategoryEnum, mealEnum } from "dofek/db/schema/enums";
+import { captureException } from "dofek/lib/error-reporting";
+import { z } from "zod";
+import { dateSchema } from "../lib/date-schema.ts";
+import { FoodRecordRepository } from "../repositories/food-record-repository.ts";
+import type {
+  EffectiveFoodRecord,
+  FoodRecordHistoryItem,
+  FoodRecordHistoryPage,
+} from "../repositories/food-record-types.ts";
+import { FoodRepository } from "../repositories/food-repository.ts";
+import {
+  FoodRecordError,
+  type FoodRecordMutationResult,
+  FoodRecordService,
+  reportUnexpectedFoodRecordError,
+} from "../services/food-record-service.ts";
+import { dayNutritionResourceUri } from "./app-resource.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
+import type { DofekMcpContext } from "./context.ts";
+import { toDayNutritionPreview } from "./day-nutrition-output.ts";
+import { foodMutationTelemetryForTool, logFoodMutation } from "./mutation-telemetry.ts";
+import { requireMcpScope } from "./token-repository.ts";
+import { mcpOutputSchemas } from "./tool-output.ts";
+import { jsonToolError, jsonToolResult } from "./tool-result.ts";
+import { assertDateRange } from "./tool-utils.ts";
+
+const nutrientIds = new Set(Object.keys(NUTRIENT_FIELD_BY_ID));
+const nutrientIdSchema = z.string().refine((value) => nutrientIds.has(value), {
+  message: "Unknown canonical nutrient ID",
+});
+const nutrientAmountSchema = z.number().finite().nonnegative();
+const nullableNutrientAmountSchema = nutrientAmountSchema.nullable();
+const nullableNonemptyTextSchema = z.string().trim().min(1).nullable();
+const zeroCalorieEvidenceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .optional()
+  .describe(
+    "Required whenever the resulting calories are zero. Identify the product label, manufacturer, reliable food database (include a URL when available), or user confirmation of a genuinely zero-calorie item. This evidence is retained in food_description and cannot override contradictory protein/fat values. Never use zero for unknown nutrition.",
+  );
+const editableFieldSchema = z.enum([
+  "date",
+  "meal",
+  "food_name",
+  "food_description",
+  "category",
+  "number_of_units",
+  "serving_unit",
+  "serving_weight_grams",
+]);
+const foodRecordCursorSchema = z.object({
+  record_id: z.uuid(),
+});
+const requestIdSchema = z
+  .uuid({
+    error:
+      "request_id must be a UUID. Generate a fresh UUID for each new operation (for example with crypto.randomUUID()), then retry. Reuse the same UUID only when retrying the identical request.",
+  })
+  .describe(
+    "Caller-generated UUID used to prevent duplicate writes. Generate a fresh UUID for each new operation (for example with crypto.randomUUID()); do not use descriptive text or ask the user for this ID. Reuse the same UUID only when retrying the identical request. Separate food entries require separate UUIDs.",
+  );
+const targetInputSchema = {
+  record_id: z.uuid(),
+  expected_version: z.uuid().nullable(),
+  request_id: requestIdSchema,
+};
+
+const readAnnotations = {
+  readOnlyHint: true,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
+const mutationAnnotations = {
+  readOnlyHint: false,
+  openWorldHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+} as const;
+const mutationUiMeta = { ui: { resourceUri: dayNutritionResourceUri } } as const;
+
+function foodRecordToTransport(record: EffectiveFoodRecord) {
+  return {
+    record_id: record.recordId,
+    source_entry_id: record.sourceEntryId,
+    version: record.version,
+    deleted: record.deleted,
+    modifiable: record.modifiable,
+    modification_unavailable_reason: record.modificationUnavailableReason,
+    date: record.date,
+    meal: record.meal,
+    food_name: record.foodName,
+    food_description: record.foodDescription,
+    category: record.category,
+    number_of_units: record.numberOfUnits,
+    serving_unit: record.servingUnit,
+    serving_weight_grams: record.servingWeightGrams,
+    nutrients: record.nutrients,
+    source_provider: record.sourceProvider,
+    provenance: Object.fromEntries(
+      Object.entries(record.provenance).map(([field, provenance]) => [
+        camelToSnake(field),
+        { origin: provenance.origin, change_id: provenance.changeId },
+      ]),
+    ),
+  };
+}
+
+function historyItemToTransport(item: FoodRecordHistoryItem) {
+  return {
+    change_id: item.changeId,
+    request_id: item.requestId,
+    version: item.version,
+    predecessor_version: item.predecessorVersion,
+    kind: item.kind,
+    channel: item.channel,
+    client_id: item.clientId,
+    recorded_at: item.recordedAt,
+    effective_at: item.effectiveAt,
+    schema_version: item.schemaVersion,
+    undo_change_id: item.undoChangeId,
+    deleted: item.deleted,
+    fields: item.fields,
+    nutrients: item.nutrients,
+  };
+}
+
+function historyToTransport(page: FoodRecordHistoryPage) {
+  return {
+    record_id: page.recordId,
+    items: page.items.map(historyItemToTransport),
+    next_cursor: page.nextCursor,
+  };
+}
+
+function mutationToTransport(
+  result: FoodRecordMutationResult,
+  daySummary: DayNutritionPreview | null,
+) {
+  return {
+    operation: {
+      change_id: result.operation.changeId,
+      resulting_version: result.operation.resultingVersion,
+      replayed: result.operation.replayed,
+    },
+    record: foodRecordToTransport(result.record),
+    day_summary: daySummary,
+  };
+}
+
+function camelToSnake(value: string): string {
+  return value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeDetailValueToTransport(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(safeDetailValueToTransport);
+  return isObjectRecord(value) ? safeDetailsToTransport(value) : value;
+}
+
+function safeDetailsToTransport(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      camelToSnake(key),
+      safeDetailValueToTransport(entry),
+    ]),
+  );
+}
+
+async function foodToolResult<T>(
+  operation: () => Promise<T>,
+  telemetry?: ReturnType<typeof foodMutationTelemetryForTool>,
+): Promise<ReturnType<typeof jsonToolResult> | ReturnType<typeof jsonToolError>> {
+  try {
+    const result = jsonToolResult(await operation());
+    if (telemetry) logFoodMutation(telemetry, "succeeded");
+    return result;
+  } catch (error: unknown) {
+    if (error instanceof FoodRecordError) {
+      if (telemetry) logFoodMutation(telemetry, "rejected", { errorCode: error.code });
+      const details = safeDetailsToTransport(error.details);
+      return jsonToolError(
+        error.code,
+        error.message,
+        Object.keys(details).length === 0 ? undefined : details,
+      );
+    }
+    if (telemetry) logFoodMutation(telemetry, "rejected", { errorCode: "INTERNAL_ERROR" });
+    reportUnexpectedFoodRecordError(error, "mcp_tool");
+    return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
+  }
+}
+
+async function mutationToolResult(
+  operation: () => Promise<ReturnType<typeof mutationToTransport>>,
+  telemetry?: ReturnType<typeof foodMutationTelemetryForTool>,
+) {
+  const result = await foodToolResult(operation, telemetry);
+  if ("isError" in result && result.isError) return result;
+  return { ...result, _meta: mutationUiMeta };
+}
+
+function requireMutationScopes(context: DofekMcpContext): void {
+  requireMcpScope(context.scopes, "nutrition:read");
+  requireMcpScope(context.scopes, "nutrition:write");
+}
+
+function dateRangeToolError(
+  startDate: string,
+  endDate: string,
+): ReturnType<typeof jsonToolError> | null {
+  try {
+    assertDateRange(startDate, endDate);
+    return null;
+  } catch (error: unknown) {
+    if (error instanceof Error) return jsonToolError("INVALID_ARGUMENT", error.message);
+    captureException(new Error("MCP food record date range validation failed"));
+    return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
+  }
+}
+
+function scalarSetToDomain(set: {
+  date?: string;
+  meal?: (typeof mealEnum.enumValues)[number] | null;
+  food_name?: string | null;
+  food_description?: string | null;
+  category?: (typeof foodCategoryEnum.enumValues)[number] | null;
+  number_of_units?: number | null;
+  serving_unit?: string | null;
+  serving_weight_grams?: number | null;
+}) {
+  return {
+    ...(set.date !== undefined ? { date: set.date } : {}),
+    ...(set.meal !== undefined ? { meal: set.meal } : {}),
+    ...(set.food_name !== undefined ? { foodName: set.food_name } : {}),
+    ...(set.food_description !== undefined ? { foodDescription: set.food_description } : {}),
+    ...(set.category !== undefined ? { category: set.category } : {}),
+    ...(set.number_of_units !== undefined ? { numberOfUnits: set.number_of_units } : {}),
+    ...(set.serving_unit !== undefined ? { servingUnit: set.serving_unit } : {}),
+    ...(set.serving_weight_grams !== undefined
+      ? { servingWeightGrams: set.serving_weight_grams }
+      : {}),
+  };
+}
+
+function editableFieldToDomain(field: z.infer<typeof editableFieldSchema>) {
+  const fieldNames = {
+    date: "date",
+    meal: "meal",
+    food_name: "foodName",
+    food_description: "foodDescription",
+    category: "category",
+    number_of_units: "numberOfUnits",
+    serving_unit: "servingUnit",
+    serving_weight_grams: "servingWeightGrams",
+  } as const;
+  return fieldNames[field];
+}
+
+async function loadDaySummary(
+  context: DofekMcpContext,
+  date: string,
+): Promise<DayNutritionPreview | null> {
+  const foodRepository = new FoodRepository(context.db, context.userId, context.timezone);
+  const { summary } = await foodRepository.nutritionTotalsByDate(date);
+  return summary === null ? null : toDayNutritionPreview(date, summary);
+}
+
+async function mutateWithDaySummary(
+  context: DofekMcpContext,
+  mutate: () => Promise<FoodRecordMutationResult>,
+): Promise<ReturnType<typeof mutationToTransport>> {
+  const result = await mutate();
+  return mutationToTransport(result, await loadDaySummary(context, result.record.date));
+}
+
+export function registerFoodRecordTools(server: McpServer, context: DofekMcpContext): void {
+  const repository = new FoodRecordRepository(context.db, context.userId);
+  const service = new FoodRecordService({
+    database: context.db,
+    userId: context.userId,
+    actor: { channel: "mcp", clientId: context.clientId },
+  });
+
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
+    "search_food_entries",
+    {
+      title: "Search Food Entries",
+      description: "Search effective food records in an exact date range.",
+      annotations: readAnnotations,
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+        query: z.string().trim().min(1).nullable().optional(),
+        visibility: z.enum(["visible", "deleted", "all"]).optional(),
+        cursor: foodRecordCursorSchema.nullable().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      }),
+      outputSchema: mcpOutputSchemas.foodRecordSearch,
+    },
+    async ({ start_date, end_date, query, visibility, cursor, limit }) => {
+      requireMcpScope(context.scopes, "nutrition:read");
+      const rangeError = dateRangeToolError(start_date, end_date);
+      if (rangeError) return rangeError;
+      return foodToolResult(async () => {
+        const result = await repository.search({
+          startDate: start_date,
+          endDate: end_date,
+          query: query ?? null,
+          visibility: visibility ?? "visible",
+          cursor: cursor ? { recordId: cursor.record_id } : null,
+          limit: limit ?? 50,
+        });
+        return {
+          items: result.items.map(foodRecordToTransport),
+          next_cursor: result.nextCursor ? { record_id: result.nextCursor.recordId } : null,
+        };
+      });
+    },
+    reportUnexpectedFoodRecordError,
+  );
+
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
+    "get_food_entry",
+    {
+      title: "Get Food Entry",
+      description: "Return one effective food record with its provenance and version.",
+      annotations: readAnnotations,
+      inputSchema: z.object({ record_id: z.uuid() }),
+      outputSchema: mcpOutputSchemas.foodRecordDetail,
+    },
+    async ({ record_id }) => {
+      requireMcpScope(context.scopes, "nutrition:read");
+      return foodToolResult(async () => {
+        const record = await repository.get(record_id);
+        return record ? foodRecordToTransport(record) : null;
+      });
+    },
+    reportUnexpectedFoodRecordError,
+  );
+
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read", "nutrition:write"],
+    "create_food_entry",
+    {
+      title: "Create Food Entry",
+      description:
+        "Create one itemized Dofek food record and return that day's calorie and macro preview. Calories, protein, carbohydrate, and fat are required for the consumed portion. Obtain them from a product label, manufacturer, or reliable food database before calling this tool. Also seek and include available fiber and micronutrients (vitamins and minerals). Ask for the brand, label, portion, or missing required nutrition when needed. Never invent missing values, fill blanks with zero, or substitute zero for unknown nutrients. Zero is valid only when explicitly known; zero calories require zero_calorie_evidence. Contradictory calories and protein/fat are rejected; recheck the source and consumed portion, preserving label calories rather than forcing 4/4/9 equality. Use estimates only with the user's approval and identify them as estimates. Do not call this tool until all four required values are available.",
+      annotations: mutationAnnotations,
+      inputSchema: z.object({
+        request_id: requestIdSchema,
+        date: dateSchema,
+        meal: z.enum(mealEnum.enumValues).nullable().optional(),
+        food_name: z.string().trim().min(1),
+        zero_calorie_evidence: zeroCalorieEvidenceSchema,
+        food_description: nullableNonemptyTextSchema
+          .optional()
+          .describe(
+            "Food details and nutrition source, including a source URL when available. Identify user-approved estimates here.",
+          ),
+        category: z.enum(foodCategoryEnum.enumValues).nullable().optional(),
+        number_of_units: z.number().finite().nonnegative().nullable().optional(),
+        serving_unit: nullableNonemptyTextSchema.optional(),
+        serving_weight_grams: z
+          .number()
+          .finite()
+          .nonnegative()
+          .nullable()
+          .optional()
+          .describe("Weight actually consumed in grams, not the label's reference serving weight."),
+        nutrients: z
+          .object({
+            calories: nutrientAmountSchema,
+            protein: nutrientAmountSchema,
+            carbohydrate: nutrientAmountSchema,
+            fat: nutrientAmountSchema,
+          })
+          .catchall(nutrientAmountSchema)
+          .superRefine((nutrients, context) => {
+            for (const id of Object.keys(nutrients)) {
+              if (!nutrientIds.has(id)) {
+                context.addIssue({
+                  code: "custom",
+                  path: [id],
+                  message: "Unknown canonical nutrient ID",
+                });
+              }
+            }
+          })
+          .describe(
+            "Nutrient totals for the entire consumed portion, scaled from the source serving. Required: calories (kcal), protein, carbohydrate, and fat (grams), each supplied as a nonnegative number, including explicit known zeros. Missing, blank, or unknown required values are not allowed; never fill them with zero. Include available sourced fiber (grams) and micronutrients (vitamins and minerals) in canonical units; omit unknown optional nutrients.",
+          ),
+      }),
+      outputSchema: mcpOutputSchemas.foodRecordMutation,
+      _meta: mutationUiMeta,
+    },
+    async ({
+      request_id,
+      date,
+      meal,
+      food_name,
+      zero_calorie_evidence,
+      food_description,
+      category,
+      number_of_units,
+      serving_unit,
+      serving_weight_grams,
+      nutrients,
+    }) => {
+      requireMutationScopes(context);
+      return mutationToolResult(
+        async () =>
+          mutateWithDaySummary(context, () =>
+            service.create({
+              requestId: request_id,
+              date,
+              meal,
+              foodName: food_name,
+              zeroCalorieEvidence: zero_calorie_evidence,
+              foodDescription: food_description,
+              category,
+              numberOfUnits: number_of_units,
+              servingUnit: serving_unit,
+              servingWeightGrams: serving_weight_grams,
+              nutrients,
+            }),
+          ),
+        foodMutationTelemetryForTool("create_food_entry", request_id),
+      );
+    },
+    reportUnexpectedFoodRecordError,
+  );
+
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read", "nutrition:write"],
+    "update_food_entry",
+    {
+      title: "Update Food Entry",
+      description:
+        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. The complete effective result, including unchanged and source-cleared nutrients, must have consistent calories and protein/fat. If resulting calories are zero, supply zero_calorie_evidence even for a scalar-only edit. When filling missing nutrition, seek calories, macros, and fiber for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Also seek and include available micronutrients (vitamins and minerals). Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
+      annotations: mutationAnnotations,
+      inputSchema: z.object({
+        ...targetInputSchema,
+        zero_calorie_evidence: zeroCalorieEvidenceSchema,
+        set: z.object({
+          date: dateSchema.optional(),
+          meal: z.enum(mealEnum.enumValues).nullable().optional(),
+          food_name: nullableNonemptyTextSchema.optional(),
+          food_description: nullableNonemptyTextSchema.optional(),
+          category: z.enum(foodCategoryEnum.enumValues).nullable().optional(),
+          number_of_units: z.number().finite().nonnegative().nullable().optional(),
+          serving_unit: nullableNonemptyTextSchema.optional(),
+          serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
+        }),
+        clear: z.array(editableFieldSchema),
+        nutrient_set: z
+          .record(nutrientIdSchema, nullableNutrientAmountSchema)
+          .describe(
+            "Only nutrient decisions being changed, expressed as totals for the consumed portion in canonical units. Include fiber and available micronutrients (vitamins and minerals) when filling nutrition gaps. Use sourced values or explicitly approved estimates. Zero is a known zero; null explicitly marks a nutrient unknown. Omit unchanged nutrients.",
+          ),
+        nutrient_clear: z.array(nutrientIdSchema),
+      }),
+      outputSchema: mcpOutputSchemas.foodRecordMutation,
+      _meta: mutationUiMeta,
+    },
+    async ({
+      record_id,
+      expected_version,
+      request_id,
+      zero_calorie_evidence,
+      set,
+      clear,
+      nutrient_set,
+      nutrient_clear,
+    }) => {
+      requireMutationScopes(context);
+      return mutationToolResult(
+        async () =>
+          mutateWithDaySummary(context, () =>
+            service.update({
+              recordId: record_id,
+              expectedVersion: expected_version,
+              requestId: request_id,
+              zeroCalorieEvidence: zero_calorie_evidence,
+              set: scalarSetToDomain(set),
+              clear: clear.map(editableFieldToDomain),
+              nutrientSet: nutrient_set,
+              nutrientClear: nutrient_clear,
+            }),
+          ),
+        foodMutationTelemetryForTool("update_food_entry", request_id),
+      );
+    },
+    reportUnexpectedFoodRecordError,
+  );
+
+  const registerTargetMutation = (
+    name: "delete_food_entry" | "restore_food_entry",
+    title: string,
+    description: string,
+    operation: (input: {
+      recordId: string;
+      expectedVersion: string | null;
+      requestId: string;
+    }) => Promise<FoodRecordMutationResult>,
+  ) => {
+    registerAuthorizedTool(
+      server,
+      ["nutrition:read", "nutrition:write"],
+      name,
+      {
+        title,
+        description,
+        annotations: {
+          ...mutationAnnotations,
+          destructiveHint: name === "delete_food_entry",
+        },
+        inputSchema: z.object(targetInputSchema),
+        outputSchema: mcpOutputSchemas.foodRecordMutation,
+        _meta: mutationUiMeta,
+      },
+      async ({ record_id, expected_version, request_id }) => {
+        requireMutationScopes(context);
+        return mutationToolResult(
+          async () =>
+            mutateWithDaySummary(context, () =>
+              operation({
+                recordId: record_id,
+                expectedVersion: expected_version,
+                requestId: request_id,
+              }),
+            ),
+          foodMutationTelemetryForTool(name, request_id),
+        );
+      },
+      reportUnexpectedFoodRecordError,
+    );
+  };
+
+  registerTargetMutation(
+    "delete_food_entry",
+    "Delete Food Entry",
+    "Append a deletion tombstone to a food record and return that day's calorie and macro preview.",
+    (input) => service.delete(input),
+  );
+  registerTargetMutation(
+    "restore_food_entry",
+    "Restore Food Entry",
+    "Restore a deleted food record while retaining its field decisions and return that day's calorie and macro preview.",
+    (input) => service.restore(input),
+  );
+
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
+    "get_food_entry_history",
+    {
+      title: "Get Food Entry History",
+      description: "Return paginated food record operations and provenance.",
+      annotations: readAnnotations,
+      inputSchema: z.object({
+        record_id: z.uuid(),
+        cursor: z.string().nullable().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      }),
+      outputSchema: mcpOutputSchemas.foodRecordHistory,
+    },
+    async ({ record_id, cursor, limit }) => {
+      requireMcpScope(context.scopes, "nutrition:read");
+      return foodToolResult(async () =>
+        historyToTransport(await repository.history(record_id, cursor ?? null, limit ?? 50)),
+      );
+    },
+    reportUnexpectedFoodRecordError,
+  );
+}

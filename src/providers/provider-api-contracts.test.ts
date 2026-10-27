@@ -6,11 +6,11 @@
  *
  * Run: source /tmp/contract-test-env.sh && pnpm vitest run src/providers/provider-api-contracts.test.ts
  */
+import { pelotonWorkoutSchema } from "@dofek/peloton/types";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   ouraDailyActivitySchema,
-  ouraDailyReadinessSchema,
   ouraHeartRateSchema,
   ouraSleepDocumentSchema,
   ouraWorkoutSchema,
@@ -122,16 +122,6 @@ describe.skipIf(!hasOura)("Oura API contract", () => {
       accessToken,
     );
     assertSchema(ouraPageSchema(ouraSleepDocumentSchema), data, "Oura sleep");
-  });
-
-  it("daily_readiness endpoint matches schema", async () => {
-    const today = new Date().toISOString().split("T")[0];
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
-    const data = await fetchJson(
-      `https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=${weekAgo}&end_date=${today}`,
-      accessToken,
-    );
-    assertSchema(ouraPageSchema(ouraDailyReadinessSchema), data, "Oura daily_readiness");
   });
 
   it("daily_activity endpoint matches schema", async () => {
@@ -410,18 +400,6 @@ describe.skipIf(!hasPolar)("Polar API contract", () => {
 // ============================================================
 
 const hasPeloton = envOrEmpty("PELOTON_REFRESH_TOKEN").length > 0;
-
-const pelotonWorkoutSchema = z.object({
-  id: z.string(),
-  status: z.string(),
-  fitness_discipline: z.string(),
-  name: z.string(),
-  created_at: z.number(),
-  start_time: z.number(),
-  end_time: z.number(),
-  total_work: z.number().optional(),
-  is_total_work_personal_record: z.boolean().optional(),
-});
 
 const pelotonMeSchema = z.object({
   id: z.string(),

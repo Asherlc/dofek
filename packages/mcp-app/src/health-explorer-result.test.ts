@@ -1,0 +1,41 @@
+import { describe, expect, it } from "vitest";
+import { parseHealthExplorerResult } from "./health-explorer-result.ts";
+
+describe("parseHealthExplorerResult", () => {
+  it("returns a valid Explorer snapshot", () => {
+    expect(
+      parseHealthExplorerResult({
+        range: {
+          start_date: "2026-08-01",
+          end_date: "2026-08-01",
+          granularity: "daily",
+          timezone: "America/Los_Angeles",
+        },
+        series: [
+          {
+            metric: "hrv",
+            label: "Heart rate variability",
+            unit: "ms",
+            points: [{ key: "2026-08-01", value: 51 }],
+            note: null,
+          },
+        ],
+        summary: [{ metric: "hrv", average: 51, min: 51, max: 51 }],
+        coverage: {
+          requested_days: 1,
+          by_metric: {
+            hrv: {
+              observed_days: 1,
+              missing_days: [],
+              missing_days_truncated_count: 0,
+            },
+          },
+        },
+      }),
+    ).toMatchObject({ series: [{ metric: "hrv" }] });
+  });
+
+  it("rejects malformed tool content", () => {
+    expect(parseHealthExplorerResult({})).toBeNull();
+  });
+});

@@ -1,6 +1,9 @@
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { SyncRepository } from "./sync-repository.ts";
+import { collectSqlText } from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,11 +32,171 @@ function makeRepository(
   return { repo, execute, query, select };
 }
 
+function queryBindings(execute: ReturnType<typeof makeRepository>["execute"]): unknown[] {
+  const statement = execute.mock.calls[0]?.[0];
+  if (!(statement instanceof SQL)) throw new Error("Expected a parameterized Drizzle statement");
+  return new PgDialect().sqlToQuery(statement).params;
+}
+
 // ---------------------------------------------------------------------------
 // Repository tests
 // ---------------------------------------------------------------------------
 
 describe("SyncRepository", () => {
+  describe("push update projection", () => {
+    const processedAt = new Date("2026-10-24T10:00:00Z");
+    const failedAt = new Date("2026-10-24T11:00:00Z");
+    const processedRow = {
+      id: "processed-update",
+      provider_id: "garmin",
+      status: "success",
+      synced_at: processedAt,
+      duration_ms: null,
+      record_count: null,
+      data_type: "update",
+      error_message: null,
+      auth_failure_reason: null,
+    };
+    const failureRow = {
+      ...processedRow,
+      id: "failed-update",
+      status: "error",
+      synced_at: failedAt,
+      error_message: "Reconnect Garmin to receive future updates.",
+      auth_failure_reason: "authorization_failed",
+    };
+
+    it("normalizes processed timestamps and binds the authenticated owner", async () => {
+      const { repo, execute } = makeRepository([
+        { provider_id: "garmin", last_synced: processedAt },
+      ]);
+
+      await expect(repo.getLastProcessedUpdateTimes()).resolves.toEqual([
+        { providerId: "garmin", lastSynced: "2026-10-24T10:00:00.000Z" },
+      ]);
+      expect(queryBindings(execute)).toEqual(["user-1"]);
+    });
+
+    it("retains multiple outcomes per provider and keeps other providers separate", async () => {
+      const { repo, execute } = makeRepository([
+        failureRow,
+        processedRow,
+        { ...processedRow, id: "other-update", provider_id: "other" },
+      ]);
+
+      const result = await repo.getRecentPushUpdatesByProvider(2);
+
+      expect(result).toEqual(
+        new Map([
+          [
+            "garmin",
+            [
+              {
+                id: "failed-update",
+                providerId: "garmin",
+                status: "error",
+                syncedAt: "2026-10-24T11:00:00.000Z",
+                durationMs: null,
+                recordCount: null,
+                dataType: "update",
+                errorMessage: "Reconnect Garmin to receive future updates.",
+                authFailureReason: "authorization_failed",
+              },
+              {
+                id: "processed-update",
+                providerId: "garmin",
+                status: "success",
+                syncedAt: "2026-10-24T10:00:00.000Z",
+                durationMs: null,
+                recordCount: null,
+                dataType: "update",
+                errorMessage: null,
+                authFailureReason: null,
+              },
+            ],
+          ],
+          [
+            "other",
+            [
+              {
+                id: "other-update",
+                providerId: "other",
+                status: "success",
+                syncedAt: "2026-10-24T10:00:00.000Z",
+                durationMs: null,
+                recordCount: null,
+                dataType: "update",
+                errorMessage: null,
+                authFailureReason: null,
+              },
+            ],
+          ],
+        ]),
+      );
+      expect(queryBindings(execute)).toEqual(["user-1", 2]);
+    });
+
+    it("binds provider identity, allowlisted filters, and pagination independently", async () => {
+      const providerId = "garmin'); DELETE FROM fitness.user_profile; --";
+      const { repo, execute } = makeRepository([failureRow]);
+
+      const result = await repo.getPushUpdateHistory(providerId, 20, 40, {
+        status: "error",
+        dataType: "update",
+        userId: "different-owner",
+      });
+
+      expect(result).toEqual([
+        {
+          id: "failed-update",
+          providerId: "garmin",
+          status: "error",
+          syncedAt: "2026-10-24T11:00:00.000Z",
+          durationMs: null,
+          recordCount: null,
+          dataType: "update",
+          errorMessage: "Reconnect Garmin to receive future updates.",
+          authFailureReason: "authorization_failed",
+        },
+      ]);
+      expect(queryBindings(execute)).toEqual(["user-1", providerId, "%error%", "%update%", 20, 40]);
+    });
+
+    it("binds a first history page without optional filter values", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await expect(repo.getPushUpdateHistory("garmin", 5)).resolves.toEqual([]);
+
+      expect(queryBindings(execute)).toEqual(["user-1", "garmin", 5, 0]);
+    });
+
+    it("maps filter choices from the ledger while preserving empty categories", async () => {
+      const { repo, execute } = makeRepository([
+        { field: "status", values: ["error", "success"] },
+        { field: "dataType", values: ["update"] },
+      ]);
+
+      await expect(repo.getPushUpdateFilterOptions("garmin")).resolves.toEqual({
+        status: [{ value: "error" }, { value: "success" }],
+        dataType: [{ value: "update" }],
+        authFailureReason: [],
+      });
+      expect(queryBindings(execute)).toEqual(["user-1", "garmin"]);
+    });
+
+    it("returns neutral collections when no push evidence exists", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getLastProcessedUpdateTimes()).resolves.toEqual([]);
+      await expect(repo.getRecentPushUpdatesByProvider(3)).resolves.toEqual(new Map());
+      await expect(repo.getPushUpdateFilterOptions("garmin")).resolves.toEqual({
+        status: [],
+        dataType: [],
+        authFailureReason: [],
+      });
+    });
+  });
+
   describe("getConnectedProviderIds", () => {
     it("returns empty array when no tokens", async () => {
       const { repo } = makeRepository([]);
@@ -45,13 +208,13 @@ describe("SyncRepository", () => {
       const wahooUpdatedAt = new Date("2026-06-02T10:00:00Z");
       const stravaUpdatedAt = new Date("2026-06-02T11:00:00Z");
       const { repo } = makeRepository([
-        { provider_id: "wahoo", updated_at: wahooUpdatedAt },
-        { provider_id: "strava", updated_at: stravaUpdatedAt },
+        { provider_id: "wahoo", updated_at: wahooUpdatedAt, has_tokens: true },
+        { provider_id: "strava", updated_at: stravaUpdatedAt, has_tokens: false },
       ]);
       const result = await repo.getConnectedProviderIds();
       expect(result).toEqual([
-        { providerId: "wahoo", updatedAt: wahooUpdatedAt },
-        { providerId: "strava", updatedAt: stravaUpdatedAt },
+        { providerId: "wahoo", updatedAt: wahooUpdatedAt, hasTokens: true },
+        { providerId: "strava", updatedAt: stravaUpdatedAt, hasTokens: false },
       ]);
     });
 
@@ -76,10 +239,45 @@ describe("SyncRepository", () => {
       ]);
       const result = await repo.getLastSyncTimes();
       expect(result).toEqual([
-        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00Z" },
-        { providerId: "strava", lastSynced: "2024-01-14T08:00:00Z" },
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00.000Z" },
       ]);
     });
+  });
+
+  describe("getLastSuccessfulSyncTimes", () => {
+    it("returns each provider's latest successful sync as LastSync objects", async () => {
+      const { repo, execute } = makeRepository([
+        { provider_id: "wahoo", last_synced: "2024-01-15T10:00:00Z" },
+        { provider_id: "strava", last_synced: "2024-01-14T08:00:00Z" },
+      ]);
+
+      const result = await repo.getLastSuccessfulSyncTimes();
+
+      expect(result).toEqual([
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00.000Z" },
+      ]);
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS last_synced");
+      expect(rawSql).toContain("WHERE user_id = ");
+      expect(rawSql).toContain("AND status = 'success'");
+      expect(rawSql).toContain("AND origin = 'scheduled'");
+      expect(rawSql).toContain("GROUP BY provider_id");
+    });
+  });
+
+  it("normalizes PostgreSQL Date timestamps for both last-sync queries", async () => {
+    const { repo } = makeRepository([
+      { provider_id: "wahoo", last_synced: new Date("2024-01-15T10:00:00Z") },
+    ]);
+
+    await expect(repo.getLastSyncTimes()).resolves.toEqual([
+      { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+    ]);
+    await expect(repo.getLastSuccessfulSyncTimes()).resolves.toEqual([
+      { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+    ]);
   });
 
   describe("getLatestErrors", () => {
@@ -122,6 +320,21 @@ describe("SyncRepository", () => {
         },
       ]);
     });
+
+    it("selects each provider's latest sync rows without a correlated max lookup", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getLatestErrors();
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("WITH latest_sync_times AS");
+      expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS synced_at");
+      expect(rawSql).toContain("GROUP BY provider_id");
+      expect(rawSql).toContain("DISTINCT ON (sync_log.provider_id)");
+      expect(rawSql).toContain("INNER JOIN latest_sync_times");
+      expect(rawSql).toContain("ORDER BY sync_log.provider_id, (sync_log.status = 'error') DESC");
+      expect(rawSql).toContain("WHERE latest_sync_log.status = 'error'");
+      expect(rawSql).not.toContain("SELECT MAX(synced_at) FROM fitness.sync_log s2");
+    });
   });
 
   describe("getLogs", () => {
@@ -152,16 +365,123 @@ describe("SyncRepository", () => {
     });
   });
 
+  describe("getRecentLogsByProvider", () => {
+    it("returns the latest entries grouped by provider", async () => {
+      const syncedAt = new Date("2026-08-27T18:28:22.481Z");
+      const { repo } = makeRepository([
+        {
+          id: "log-1",
+          provider_id: "strava",
+          status: "success",
+          synced_at: syncedAt,
+          duration_ms: 1234,
+          record_count: 12,
+          data_type: "activities",
+          error_message: null,
+          auth_failure_reason: null,
+        },
+      ]);
+
+      await expect(repo.getRecentLogsByProvider(3)).resolves.toEqual(
+        new Map([
+          [
+            "strava",
+            [
+              {
+                id: "log-1",
+                providerId: "strava",
+                status: "success",
+                syncedAt: "2026-08-27T18:28:22.481Z",
+                durationMs: 1234,
+                recordCount: 12,
+                dataType: "activities",
+                errorMessage: null,
+                authFailureReason: null,
+              },
+            ],
+          ],
+        ]),
+      );
+    });
+  });
+
+  describe("getScheduledSyncHealth", () => {
+    it("returns exact top-level scheduled attempt health per provider", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          provider_id: "amazfit-zepp",
+          last_success: "2026-06-28T10:00:00Z",
+          last_attempt: "2026-06-28T11:00:00Z",
+          last_error: "Amazfit/Zepp access token expired.",
+          consecutive_failures: "7",
+        },
+      ]);
+
+      await expect(repo.getScheduledSyncHealth()).resolves.toEqual([
+        {
+          providerId: "amazfit-zepp",
+          lastSuccess: "2026-06-28T10:00:00.000Z",
+          lastAttempt: "2026-06-28T11:00:00.000Z",
+          lastError: "Amazfit/Zepp access token expired.",
+          consecutiveFailures: 7,
+        },
+      ]);
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("data_type = 'sync'");
+      expect(rawSql).toContain("origin = 'scheduled'");
+      expect(rawSql).toContain("ROW_NUMBER() OVER");
+      expect(rawSql).toContain(
+        "attempt_number < COALESCE(latest_success_attempt_number, 2147483647)",
+      );
+    });
+  });
+
   describe("getProviderStats", () => {
+    it("merges PostgreSQL log totals with existing counts and includes log-only providers", async () => {
+      const { repo } = makeRepository(
+        [
+          { provider_id: "wahoo", count: "2" },
+          { provider_id: "mountain-project", count: "3" },
+        ],
+        [
+          {
+            provider_id: "wahoo",
+            activities: 1,
+            daily_metrics: 0,
+            sleep_sessions: 0,
+            body_measurements: 0,
+            food_entries: 0,
+            health_events: 0,
+            metric_stream: 0,
+            nutrition_daily: 0,
+            clinical_records: 0,
+          },
+        ],
+      );
+      expect(await repo.getProviderStats()).toEqual([
+        expect.objectContaining({
+          providerId: "wahoo",
+          totalRecords: 3,
+          activities: 1,
+          climbingLogEntries: 2,
+        }),
+        expect.objectContaining({
+          providerId: "mountain-project",
+          totalRecords: 3,
+          activities: 0,
+          climbingLogEntries: 3,
+        }),
+      ]);
+    });
     it("returns empty array when no providers", async () => {
-      const { repo, execute } = makeRepository([]);
+      const { repo } = makeRepository([]);
       const result = await repo.getProviderStats();
       expect(result).toEqual([]);
-      expect(execute).not.toHaveBeenCalled();
     });
 
     it("maps rows to ProviderStatRow objects with numeric values", async () => {
-      const { repo, execute } = makeRepository(
+      const { repo } = makeRepository(
         [],
         [
           {
@@ -174,9 +494,7 @@ describe("SyncRepository", () => {
             health_events: "1",
             metric_stream: "100",
             nutrition_daily: "6",
-            lab_panels: "4",
-            lab_results: "9",
-            journal_entries: "3",
+            clinical_records: "13",
           },
         ],
       );
@@ -184,6 +502,7 @@ describe("SyncRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         providerId: "wahoo",
+        totalRecords: 165,
         activities: 5,
         dailyMetrics: 30,
         sleepSessions: 0,
@@ -192,11 +511,9 @@ describe("SyncRepository", () => {
         healthEvents: 1,
         metricStream: 100,
         nutritionDaily: 6,
-        labPanels: 4,
-        labResults: 9,
-        journalEntries: 3,
+        clinicalRecords: 13,
+        climbingLogEntries: 0,
       });
-      expect(execute).not.toHaveBeenCalled();
     });
 
     it("handles multiple providers", async () => {
@@ -213,9 +530,7 @@ describe("SyncRepository", () => {
             health_events: "0",
             metric_stream: "0",
             nutrition_daily: "0",
-            lab_panels: "0",
-            lab_results: "0",
-            journal_entries: "0",
+            clinical_records: "0",
           },
           {
             provider_id: "strava",
@@ -227,9 +542,7 @@ describe("SyncRepository", () => {
             health_events: "0",
             metric_stream: "42",
             nutrition_daily: "0",
-            lab_panels: "0",
-            lab_results: "0",
-            journal_entries: "0",
+            clinical_records: "0",
           },
         ],
       );
@@ -244,7 +557,7 @@ describe("SyncRepository", () => {
     });
 
     it("reads provider stats from the compact ClickHouse read model", async () => {
-      const { repo, execute, query } = makeRepository(
+      const { repo, query } = makeRepository(
         [],
         [
           {
@@ -257,9 +570,7 @@ describe("SyncRepository", () => {
             health_events: "6",
             metric_stream: "7",
             nutrition_daily: "8",
-            lab_panels: "9",
-            lab_results: "10",
-            journal_entries: "11",
+            clinical_records: "19",
           },
         ],
       );
@@ -276,7 +587,6 @@ describe("SyncRepository", () => {
       expect(querySql).toEqual(expect.stringContaining("user_id = {userId:UUID}"));
       expect(querySql).toEqual(expect.stringContaining("is_deleted = 0"));
       expect(querySql).not.toEqual(expect.stringContaining("postgres_fitness.metric_stream"));
-      expect(execute).not.toHaveBeenCalled();
     });
   });
 });

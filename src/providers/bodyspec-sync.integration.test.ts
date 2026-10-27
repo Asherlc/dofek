@@ -1,7 +1,7 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { dexaScan, dexaScanRegion } from "../db/schema.ts";
+import { dexaScan, dexaScanRegion } from "../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -143,15 +143,6 @@ const fakeVisceralFat = {
   vat_volume_cm3: 480.2,
 };
 
-const fakeRmr = {
-  result_id: "result-1",
-  section_name: "rmr" as const,
-  estimates: [
-    { formula: "ten Haaf (2014)", kcal_per_day: 1720 },
-    { formula: "Cunningham (1980)", kcal_per_day: 1680 },
-  ],
-};
-
 function bodyspecHandlers(opts?: { apiError?: boolean }) {
   return [
     // Token refresh
@@ -193,11 +184,6 @@ function bodyspecHandlers(opts?: { apiError?: boolean }) {
     // Visceral fat
     http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/visceral-fat", () => {
       return HttpResponse.json(fakeVisceralFat);
-    }),
-
-    // RMR
-    http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
-      return HttpResponse.json(fakeRmr);
     }),
 
     // Percentiles (404 is ok, optional endpoint)
@@ -267,7 +253,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
     expect(scan.androidGynoidRatio).toBe(0.62);
     expect(scan.visceralFatMassKg).toBe(0.45);
     expect(scan.totalBoneMineralDensity).toBe(1.25);
-    expect(scan.restingMetabolicRateKcal).toBe(1720);
 
     // Verify regions were stored
     const regions = await ctx.db.select().from(dexaScanRegion);
@@ -354,9 +339,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
           return new HttpResponse(null, { status: 404 });
         },
       ),
-      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
-        return new HttpResponse(null, { status: 404 });
-      }),
       http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
         return new HttpResponse(null, { status: 404 });
       }),
@@ -391,7 +373,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
     // Optional fields should be null
     expect(scan.totalBoneMineralDensity).toBeNull();
     expect(scan.visceralFatMassKg).toBeNull();
-    expect(scan.restingMetabolicRateKcal).toBeNull();
     expect(scan.percentiles).toBeNull();
   });
 
@@ -431,9 +412,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
           return HttpResponse.json(fakeVisceralFat);
         },
       ),
-      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
-        return HttpResponse.json(fakeRmr);
-      }),
       http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
         return new HttpResponse(null, { status: 404 });
       }),

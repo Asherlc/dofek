@@ -5,8 +5,12 @@
       "args": ["-y", "chrome-devtools-mcp@latest"]
     },
     "codegraph": {
-      "command": "codegraph",
-      "args": ["serve", "--mcp"]
+      "command": "mise",
+      "args": ["exec", "--", "codegraph", "serve", "--mcp"]
+    },
+    "xcodebuildmcp": {
+      "command": "pnpm",
+      "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
     },
     "axiom": {
       "command": "sh",

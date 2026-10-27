@@ -1,4 +1,7 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 
 // ============================================================
@@ -7,7 +10,7 @@ import type { ZwiftActivitySummary, ZwiftFitnessData } from "./types.ts";
 
 export interface ParsedZwiftActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -30,14 +33,15 @@ export interface ParsedZwiftStreamSample {
 // Parsing — pure functions
 // ============================================================
 
-export function mapZwiftSport(sport: string): CanonicalActivityType {
+export function mapZwiftSport(sport: string): ProviderActivityType {
+  const providerType = sport.trim() || "other";
   switch (sport.toUpperCase()) {
     case "CYCLING":
-      return "virtual_cycling";
+      return resolveProviderActivityType(providerType, "virtual_cycling");
     case "RUNNING":
-      return "running";
+      return resolveProviderActivityType(providerType, "running");
     default:
-      return "other";
+      return resolveProviderActivityType(providerType, "other");
   }
 }
 
@@ -49,6 +53,8 @@ export function parseZwiftActivity(act: ZwiftActivitySummary): ParsedZwiftActivi
     startedAt: new Date(act.startDate),
     endedAt: new Date(act.endDate),
     raw: {
+      primaryImageUrl: act.primaryImageUrl,
+      snapshotList: act.snapshotList,
       distanceMeters: act.distanceInMeters,
       avgHeartRate: act.avgHeartRate,
       maxHeartRate: act.maxHeartRate,
@@ -58,7 +64,6 @@ export function parseZwiftActivity(act: ZwiftActivitySummary): ParsedZwiftActivi
       avgSpeed: act.avgSpeedInMetersPerSecond,
       maxSpeed: act.maxSpeedInMetersPerSecond,
       elevationGain: act.totalElevationInMeters,
-      calories: act.calories,
     },
   };
 }
