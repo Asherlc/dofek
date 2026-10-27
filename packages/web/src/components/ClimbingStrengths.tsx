@@ -126,14 +126,6 @@ export function ClimbingStrengths({
                 ))}
               </select>
             </label>
-            <label className="flex min-h-11 items-center gap-2">
-              <input
-                type="checkbox"
-                checked={dimension === "setting"}
-                onChange={(event) => setDimension(event.target.checked ? "setting" : null)}
-              />
-              Compare indoor/outdoor
-            </label>
           </div>
         </details>
       </div>

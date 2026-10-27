@@ -147,12 +147,12 @@ The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 The [shared navigation](../training/src/climbing-strengths-views.ts) offers Styles,
 Grades and Progress. Styles starts at an individual grade; Grades displays a
 scrollable heatmap whose cells select the source climbs. Chart options discloses
-the additional formats and indoor/outdoor comparison. All grades is an explicit
+the additional formats. All grades is an explicit
 pooled selection with a mixed-difficulty qualifier. These choices follow the
 [data exploration guidance](../../docs/data-exploration.md).
 The [native modal](https://reactnative.dev/docs/modal) uses radio choices and
 retains the selected grade and style when changing views. The page-wide climbing
-filters keep climbing type and setting visible, with other facts under More
+filters show a compact type/setting summary. Filters opens a [native modal](https://reactnative.dev/docs/modal) with independent Type and Setting checkboxes; each All checkbox selects or clears its group and exposes partial selections with the [WAI mixed checkbox state](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Other facts stay under More
 filters; strengths uses Wall angle or Hold type as its breakdown, with separate
 labeled sections for multiple returned contexts and
 settings. Every grouping stays clickable and shows an empty state when its

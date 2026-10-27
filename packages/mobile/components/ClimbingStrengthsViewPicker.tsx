@@ -12,13 +12,9 @@ import { colors } from "../theme";
 export function ClimbingStrengthsViewPicker({
   value,
   onChange,
-  compareSettings,
-  onCompareSettingsChange,
 }: {
   value: ClimbingStrengthsView;
   onChange: (value: ClimbingStrengthsView) => void;
-  compareSettings: boolean;
-  onCompareSettingsChange: (value: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -63,15 +59,6 @@ export function ClimbingStrengthsViewPicker({
             style={styles.trigger}
           >
             <Text style={styles.text}>View · {label} ▾</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Compare indoor/outdoor"
-            accessibilityState={{ selected: compareSettings }}
-            onPress={() => onCompareSettingsChange(!compareSettings)}
-            style={[styles.trigger, compareSettings && styles.active]}
-          >
-            <Text style={styles.text}>Compare indoor/outdoor{compareSettings ? " ✓" : ""}</Text>
           </Pressable>
         </View>
       ) : null}

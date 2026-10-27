@@ -370,7 +370,7 @@ describe("climbingRouter", () => {
       days: 30,
       endDate: "2025-02-05",
       climbKind: "boulder" as const,
-      setting: "indoor" as const,
+      setting: ["indoor" as const],
     };
     const result = await caller.strengths(input);
     expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input, input.endDate);
@@ -505,7 +505,7 @@ describe("climbingRouter", () => {
         },
       ],
     ]);
-    const map = await caller.locationMap({ days: 30, setting: "outdoor" });
+    const map = await caller.locationMap({ days: 30, setting: ["outdoor"] });
     expect(map.bounds).toEqual({ south: 0, north: 0, west: -122.25, east: -122.25 });
     expect(map.nodes).toEqual(
       expect.arrayContaining([

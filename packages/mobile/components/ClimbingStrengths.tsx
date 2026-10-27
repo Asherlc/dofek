@@ -69,12 +69,7 @@ export function ClimbingStrengths({
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {data != null || !loading ? (
         <>
-          <ClimbingStrengthsViewPicker
-            value={view}
-            onChange={setView}
-            compareSettings={dimension === "setting"}
-            onCompareSettingsChange={(compare) => setDimension(compare ? "setting" : null)}
-          />
+          <ClimbingStrengthsViewPicker value={view} onChange={setView} />
           <Text style={styles.meta}>Break down by</Text>
           <View style={styles.controls}>
             {Object.entries(dimensions)

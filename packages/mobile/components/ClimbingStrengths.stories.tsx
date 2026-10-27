@@ -52,20 +52,6 @@ export const Sparse: Story = {
     },
   },
 };
-export const Setting: Story = {
-  play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Chart options" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Compare indoor/outdoor" }));
-  },
-  args: {
-    data: {
-      ...climbingStrengthsFixture,
-      panels: climbingStrengthsFixture.panels.filter((panel) => panel.dimension === "setting"),
-    },
-  },
-};
-
 export const MixedUnknownOnlyContext: Story = {
   args: {
     data: {

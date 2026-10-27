@@ -9,8 +9,6 @@ const meta = {
   args: {
     value: "gaps",
     onChange: () => {},
-    compareSettings: false,
-    onCompareSettingsChange: () => {},
   },
   decorators: [
     (Story) => (
@@ -21,16 +19,7 @@ const meta = {
   ],
   render: function ViewPickerStory(args) {
     const [value, setValue] = useState(args.value);
-    const [compareSettings, setCompareSettings] = useState(args.compareSettings);
-    return (
-      <ClimbingStrengthsViewPicker
-        {...args}
-        value={value}
-        onChange={setValue}
-        compareSettings={compareSettings}
-        onCompareSettingsChange={setCompareSettings}
-      />
-    );
+    return <ClimbingStrengthsViewPicker {...args} value={value} onChange={setValue} />;
   },
 } satisfies Meta<typeof ClimbingStrengthsViewPicker>;
 export default meta;

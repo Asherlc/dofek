@@ -87,19 +87,6 @@ describe("ClimbingStrengths", () => {
       ),
     ).toBeTruthy();
   });
-  it("discloses comparison and chart formats separately from breakdown controls", () => {
-    render(<ClimbingStrengths data={data} />);
-    fireEvent.click(screen.getByRole("button", { name: "Chart options" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
-    expect(
-      screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
-    ).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
-    expect(
-      screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
-    ).toBe("false");
-  });
-
   it("keeps grouping and view controls usable when the period has no panels", () => {
     renderWithOptions(<ClimbingStrengths data={{ ...data, panels: [] }} />);
     for (const name of ["Wall angle", "Hold type"]) {
@@ -281,27 +268,7 @@ describe("ClimbingStrengths", () => {
       }),
     ).toBeTruthy();
   });
-  it("explicitly compares settings when angle traits are missing and keeps the grade across dimensions", () => {
-    const panels = data.panels.map((panel) =>
-      panel.dimension === "setting" ? panel : { ...panel, rows: [] },
-    );
-    renderAtV3(<ClimbingStrengths data={{ ...data, panels }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
-    expect(
-      screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
-    ).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "V4" }));
-    fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
-    expect(screen.getByRole("button", { name: "V4" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
-    expect(
-      screen.getByRole("button", {
-        name: "Indoor · 20% · 1 send / 5 climbs · 0 percentage points vs same-grade baseline",
-      }),
-    ).toBeTruthy();
-  });
-  it("shows recorded indoor and outdoor panels after returning from the setting comparison", () => {
+  it("shows recorded indoor and outdoor panels across style breakdowns", () => {
     const angle = data.panels[0];
     const setting = data.panels.find((panel) => panel.dimension === "setting");
     if (!angle || !setting) throw new Error("Missing fixture");
@@ -315,7 +282,6 @@ describe("ClimbingStrengths", () => {
     );
     expect(screen.getByText("Indoor")).toBeTruthy();
     expect(screen.getByText("Outdoor")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
     fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
     expect(screen.getByText("Indoor")).toBeTruthy();
     expect(screen.getByText("Outdoor")).toBeTruthy();

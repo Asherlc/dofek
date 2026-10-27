@@ -17,44 +17,79 @@ export const climbingFiltersSchema = z.object({
   solo: z.boolean().nullable().optional(),
   protectionUsed: protectionStyleSchema.or(unknown).optional(),
   routeProtection: protectionStyleSchema.or(unknown).optional(),
-  setting: climbSettingSchema.or(unknown).optional(),
+  types: z.array(z.enum(["bouldering", "lead", "top_rope"])).optional(),
+  setting: z.array(climbSettingSchema.or(unknown)).optional(),
 });
 export type ClimbingFilters = z.infer<typeof climbingFiltersSchema>;
-export type ClimbingFilterKey = keyof ClimbingFilters;
+export type ClimbingFilterKey = Exclude<keyof ClimbingFilters, "types">;
 
-export const climbingContextPresets = [
-  { value: "all", label: "All climbing" },
-  { value: "bouldering", label: "Bouldering" },
-  { value: "lead", label: "Lead" },
-  { value: "top_rope", label: "Top rope" },
-] as const;
-type ClimbingContextPreset = (typeof climbingContextPresets)[number]["value"];
-
-/** Context shortcuts select factual filters without changing independent facets. */
-export function selectClimbingContext(
+/** Omitted settings select everything; an empty selection selects nothing. */
+export function toggleClimbingSetting(
   filters: ClimbingFilters,
-  context: ClimbingContextPreset,
+  setting: NonNullable<ClimbingFilters["setting"]>[number] | "all",
 ): ClimbingFilters {
+  const options = climbingFilterOptions.setting.map(([option]) => option);
+  const selected = filters.setting ?? options;
   const next = { ...filters };
-  delete next.climbKind;
-  delete next.ropeMethod;
-  if (context === "bouldering") next.climbKind = "boulder";
-  else if (context !== "all") {
-    next.climbKind = "route";
-    next.ropeMethod = context;
-  }
+  const values =
+    setting === "all"
+      ? selected.length === options.length
+        ? []
+        : options
+      : options.filter((option) =>
+          option === setting ? !selected.includes(option) : selected.includes(option),
+        );
+  if (values.length === options.length) delete next.setting;
+  else next.setting = values;
   return next;
 }
 
-export function climbingContextPreset(filters: ClimbingFilters): ClimbingContextPreset | null {
-  if (filters.climbKind === undefined && filters.ropeMethod === undefined) return "all";
-  if (filters.climbKind === "boulder" && filters.ropeMethod === undefined) return "bouldering";
-  if (
-    filters.climbKind === "route" &&
-    (filters.ropeMethod === "lead" || filters.ropeMethod === "top_rope")
-  )
-    return filters.ropeMethod;
-  return null;
+export const climbingTypeOptions = [
+  ["bouldering", "Bouldering"],
+  ["lead", "Lead"],
+  ["top_rope", "Top rope"],
+] as const;
+
+export function toggleClimbingType(
+  filters: ClimbingFilters,
+  type: NonNullable<ClimbingFilters["types"]>[number] | "all",
+): ClimbingFilters {
+  const options = climbingTypeOptions.map(([value]) => value);
+  const selected = filters.types ?? options;
+  const values =
+    type === "all"
+      ? selected.length === options.length
+        ? []
+        : options
+      : options.filter((option) =>
+          option === type ? !selected.includes(option) : selected.includes(option),
+        );
+  const next = { ...filters };
+  if (values.length === options.length) delete next.types;
+  else next.types = values;
+  return next;
+}
+
+export function climbingFilterSummary(filters: ClimbingFilters): string {
+  const types =
+    filters.types === undefined
+      ? "All climbing"
+      : filters.types.length === 0
+        ? "No climbing types"
+        : climbingTypeOptions
+            .filter(([value]) => filters.types?.includes(value))
+            .map(([, label]) => label)
+            .join(" + ");
+  const settings =
+    filters.setting === undefined
+      ? "All settings"
+      : filters.setting.length === 0
+        ? "No settings"
+        : climbingFilterOptions.setting
+            .filter(([value]) => filters.setting?.includes(value))
+            .map(([, label]) => label)
+            .join(" + ");
+  return `${types} · ${settings}`;
 }
 
 export const climbingFilterKeys = [

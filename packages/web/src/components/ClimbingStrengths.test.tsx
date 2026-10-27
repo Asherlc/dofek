@@ -113,16 +113,6 @@ it("starts with same-grade Styles and switches purpose without losing selected c
     ),
   ).toBeVisible();
 });
-it("offers setting comparison separately from style breakdowns", () => {
-  render(<ClimbingStrengths data={fixture} />);
-  fireEvent.click(screen.getByText("Chart options"));
-  fireEvent.click(screen.getByRole("checkbox", { name: "Compare indoor/outdoor" }));
-  expect(screen.getByRole("checkbox", { name: "Compare indoor/outdoor" })).toBeChecked();
-  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
-  expect(screen.getByRole("button", { name: "Hold type" })).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByRole("checkbox", { name: "Compare indoor/outdoor" })).not.toBeChecked();
-});
-
 it("keeps grouping and view controls usable when the period has no panels", () => {
   renderGradeProfile(<ClimbingStrengths data={{ ...fixture, panels: [] }} />);
   for (const name of ["Wall angle", "Hold type"]) {
@@ -244,17 +234,11 @@ it("keeps cached content during loading and distinguishes initial loading from e
 it("renders each context separately and preserves its selected climbs on refresh", () => {
   const angle = fixture.panels[0];
   if (!angle) throw new Error("Missing fixture");
-  const setting = { ...angle, key: "setting", dimension: "setting" as const, setting: null };
   const data = {
     ...fixture,
-    panels: [
-      { ...angle, rows: [] },
-      setting,
-      { ...setting, key: "route", contextKey: "route", contextLabel: "Lead" },
-    ],
+    panels: [angle, { ...angle, key: "route", contextKey: "route", contextLabel: "Lead" }],
   };
   const { rerender } = renderGradeProfile(<ClimbingStrengths data={data} />);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Compare indoor/outdoor" }));
   const route = within(screen.getByRole("region", { name: "Lead" }));
   fireEvent.click(route.getByRole("button", { name: /Vertical · V4/ }));
   expect(route.getByRole("region", { name: "Selected climbs" })).toHaveTextContent("Evening Arete");

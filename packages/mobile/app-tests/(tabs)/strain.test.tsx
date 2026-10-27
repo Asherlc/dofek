@@ -421,6 +421,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockStrengthsState.isFetching = true;
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
@@ -456,6 +457,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({

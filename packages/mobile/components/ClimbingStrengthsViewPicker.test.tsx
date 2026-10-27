@@ -6,12 +6,7 @@ import { ClimbingStrengthsViewPicker } from "./ClimbingStrengthsViewPicker";
 
 function Harness() {
   const [value, onChange] = useState<ClimbingStrengthsView>("gaps");
-  const [compareSettings, onCompareSettingsChange] = useState(false);
-  return (
-    <ClimbingStrengthsViewPicker
-      {...{ value, onChange, compareSettings, onCompareSettingsChange }}
-    />
-  );
+  return <ClimbingStrengthsViewPicker {...{ value, onChange }} />;
 }
 
 it("keeps chart format choices behind a disclosure and updates the selected purpose", () => {
@@ -26,16 +21,4 @@ it("keeps chart format choices behind a disclosure and updates the selected purp
   expect(screen.getByRole("button", { name: "View: Success curves" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByRole("button", { name: "View: Progress" })).toBeTruthy();
-});
-
-it("retains comparison state when chart options are closed and reopened", () => {
-  render(<Harness />);
-  const disclosure = screen.getByRole("button", { name: "Chart options" });
-  fireEvent.click(disclosure);
-  fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
-  fireEvent.click(disclosure);
-  fireEvent.click(disclosure);
-  expect(
-    screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
-  ).toBe("true");
 });
