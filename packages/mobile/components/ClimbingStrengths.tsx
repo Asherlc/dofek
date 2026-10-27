@@ -14,8 +14,7 @@ import {
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
 import { type ReactNode, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Rect } from "react-native-svg";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors, radius, spacing } from "../theme";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
@@ -33,9 +32,8 @@ function observed(panel: ClimbingStrengthsPanel) {
 function defaultPanel(panels: ClimbingStrengthsPanel[]) {
   return (
     panels.find((panel) => panel.dimension === "wall_angle" && observed(panel)) ??
-    panels.find((panel) => panel.dimension === "setting" && observed(panel)) ??
-    panels.find(observed) ??
-    panels[0]
+    panels.find((panel) => panel.dimension === "hold_type" && observed(panel)) ??
+    panels.find((panel) => panel.dimension !== "setting")
   );
 }
 function cellLabel(label: string, cell: ClimbingStrengthsCell) {
@@ -54,7 +52,7 @@ export function ClimbingStrengths({
   error?: { message: string } | null;
   rangeControl?: ReactNode;
 }) {
-  const [view, setView] = useState<ClimbingStrengthsView>("profile");
+  const [view, setView] = useState<ClimbingStrengthsView>("gaps");
   const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
     null,
   );
@@ -66,26 +64,35 @@ export function ClimbingStrengths({
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
+      {rangeControl ? <Text style={styles.meta}>Strengths period</Text> : null}
       {rangeControl}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {data != null || !loading ? (
         <>
-          <ClimbingStrengthsViewPicker value={view} onChange={setView} />
+          <ClimbingStrengthsViewPicker
+            value={view}
+            onChange={setView}
+            compareSettings={dimension === "setting"}
+            onCompareSettingsChange={(compare) => setDimension(compare ? "setting" : null)}
+          />
+          <Text style={styles.meta}>Break down by</Text>
           <View style={styles.controls}>
-            {Object.entries(dimensions).map(([item, label]) => (
-              <Pressable
-                key={item}
-                accessibilityRole="button"
-                accessibilityState={{ selected: dimension === item }}
-                style={[styles.chip, dimension === item && styles.selected]}
-                onPress={() => {
-                  if (item === "wall_angle" || item === "hold_type" || item === "setting")
-                    setDimension(item);
-                }}
-              >
-                <Text style={styles.text}>{label}</Text>
-              </Pressable>
-            ))}
+            {Object.entries(dimensions)
+              .filter(([item]) => item !== "setting")
+              .map(([item, label]) => (
+                <Pressable
+                  key={item}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: dimension === item }}
+                  style={[styles.chip, dimension === item && styles.selected]}
+                  onPress={() => {
+                    if (item === "wall_angle" || item === "hold_type" || item === "setting")
+                      setDimension(item);
+                  }}
+                >
+                  <Text style={styles.text}>{label}</Text>
+                </Pressable>
+              ))}
           </View>
         </>
       ) : null}
@@ -131,7 +138,20 @@ function ClimbingStrengthsContext({
       selectedPanels.flatMap((panel) => panel.grades.map((grade) => [grade.grade, grade] as const)),
     ).values(),
   ].sort((first, second) => first.gradeSortValue - second.gradeSortValue);
-  const grade = grades.find((item) => item.grade === gradeKey)?.grade ?? ALL_CLIMBING_GRADES;
+  const grade =
+    gradeKey === ALL_CLIMBING_GRADES
+      ? ALL_CLIMBING_GRADES
+      : (grades.find((item) => item.grade === gradeKey)?.grade ??
+        grades.find((item) =>
+          selectedPanels.some((panel) =>
+            panel.rows.some((row) =>
+              row.cells.some(
+                (cell) => cell.grade === item.grade && cell.sampleStatus !== "no_data",
+              ),
+            ),
+          ),
+        )?.grade ??
+        ALL_CLIMBING_GRADES);
   return (
     <View style={{ gap: spacing.md }}>
       {label ? (
@@ -139,7 +159,7 @@ function ClimbingStrengthsContext({
           {label}
         </Text>
       ) : null}
-      {grades.length > 0 ? (
+      {view !== "profile" && grades.length > 0 ? (
         <View style={styles.controls}>
           {[ALL_CLIMBING_GRADES, ...grades.map((item) => item.grade)].map((item) => (
             <Pressable
@@ -154,12 +174,19 @@ function ClimbingStrengthsContext({
           ))}
         </View>
       ) : null}
+      {view !== "profile" &&
+      view !== "curves" &&
+      view !== "pyramids" &&
+      grade === ALL_CLIMBING_GRADES &&
+      grades.length > 0 ? (
+        <Text style={styles.meta}>
+          All grades combines different difficulties; comparisons are not grade-adjusted.
+        </Text>
+      ) : null}
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
           <View key={panel.key} style={{ gap: spacing.md }}>
-            {dimension !== "setting" &&
-            (selectedPanels.length > 1 || panel.setting === "unknown") &&
-            panel.setting ? (
+            {dimension !== "setting" && panel.setting ? (
               <Text accessibilityRole="header" style={styles.text}>
                 {panel.setting === "indoor"
                   ? "Indoor"
@@ -217,6 +244,67 @@ function ClimbingStrengthsPanelContent({
     );
   return (
     <View style={{ gap: spacing.md }}>
+      {view === "profile" ? (
+        <ScrollView horizontal accessibilityLabel="Success by grade and style">
+          <View style={{ gap: spacing.xs }}>
+            <View style={styles.heatmapRow}>
+              <Text style={[styles.meta, styles.heatmapLabel]}>Style</Text>
+              {panel.grades.map((item) => (
+                <Text
+                  key={item.grade}
+                  accessibilityRole="header"
+                  style={[styles.text, styles.heatmapCell]}
+                >
+                  {item.grade}
+                </Text>
+              ))}
+            </View>
+            {panel.rows.map((row) => (
+              <View key={row.key} style={styles.heatmapRow}>
+                <Text style={[styles.text, styles.heatmapLabel]}>{row.label}</Text>
+                {row.cells.map((cell) => (
+                  <Pressable
+                    key={cell.grade}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${cellLabel(`${row.label} · ${cell.grade}`, cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`}
+                    accessibilityState={{
+                      selected:
+                        selectedDetail?.rowKey === row.key && selectedDetail.grade === cell.grade,
+                    }}
+                    onPress={() => {
+                      onGradeChange(cell.grade);
+                      setSelectedDetail({ rowKey: row.key, grade: cell.grade });
+                    }}
+                    style={[
+                      styles.heatmapCell,
+                      styles.heatmapValue,
+                      selectedDetail?.rowKey === row.key &&
+                        selectedDetail.grade === cell.grade &&
+                        styles.selected,
+                    ]}
+                  >
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        StyleSheet.absoluteFill,
+                        {
+                          backgroundColor: colors.accent,
+                          opacity: cell.successRate === null ? 0 : cell.successRate * 0.0035,
+                        },
+                      ]}
+                    />
+                    <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
+                    <Text style={styles.meta}>{climbingStrengthsCountLabel(cell)}</Text>
+                    {cell.sampleStatus === "limited" ? (
+                      <Text style={styles.meta}>Limited sample</Text>
+                    ) : null}
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      ) : null}
       {view !== "profile" && (selectedGrade || view === "curves" || view === "pyramids") && (
         <ClimbingStrengthsChart
           panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
@@ -230,67 +318,51 @@ function ClimbingStrengthsPanelContent({
       )}
       {selectedGrade ? (
         <>
-          <Text style={styles.meta}>
-            {selectedGradeKey === ALL_CLIMBING_GRADES ? "Overall" : "Same-grade"} baseline ·{" "}
-            {climbingStrengthsRateLabel(selectedGrade)} ·{" "}
-            {climbingStrengthsCountLabel(selectedGrade)}
-          </Text>
-          {(gradePanel?.rows ?? []).map((row) => {
-            const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
-            return cell ? (
-              <Pressable
-                key={row.key}
-                accessibilityRole="button"
-                accessibilityLabel={cellLabel(row.label, cell)}
-                accessibilityState={{ selected: selectedRowKey === row.key }}
-                style={[styles.row, selectedRowKey === row.key && styles.selected]}
-                onPress={() =>
-                  setSelectedDetail({
-                    rowKey: row.key,
-                    grade: selectedGrade.grade,
-                  })
-                }
-              >
-                <View style={styles.rowHeading}>
-                  <Text style={styles.text}>{row.label}</Text>
-                  <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
-                </View>
-                {view === "profile" && (
-                  <Svg height={8} width="100%" accessibilityElementsHidden>
-                    <Rect width="100%" height={8} rx={4} fill={colors.surfaceSecondary} />
-                    {cell.successRate !== null && (
-                      <Rect
-                        testID={`strength-bar-${row.key}`}
-                        width={`${cell.successRate}%`}
-                        height={8}
-                        rx={4}
-                        fill={colors.accent}
-                      />
+          {view !== "profile" ? (
+            <>
+              <Text style={styles.meta}>
+                {selectedGradeKey === ALL_CLIMBING_GRADES ? "Overall" : "Same-grade"} baseline ·{" "}
+                {climbingStrengthsRateLabel(selectedGrade)} ·{" "}
+                {climbingStrengthsCountLabel(selectedGrade)}
+              </Text>
+              {(gradePanel?.rows ?? []).map((row) => {
+                const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
+                return cell ? (
+                  <Pressable
+                    key={row.key}
+                    accessibilityRole="button"
+                    accessibilityLabel={cellLabel(row.label, cell)}
+                    accessibilityState={{ selected: selectedRowKey === row.key }}
+                    style={[styles.row, selectedRowKey === row.key && styles.selected]}
+                    onPress={() =>
+                      setSelectedDetail({
+                        rowKey: row.key,
+                        grade: selectedGrade.grade,
+                      })
+                    }
+                  >
+                    <View style={styles.rowHeading}>
+                      <Text style={styles.text}>{row.label}</Text>
+                      <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
+                    </View>
+                    <Text style={styles.meta}>
+                      {cell.sampleStatus === "no_data"
+                        ? "No data"
+                        : climbingStrengthsCountLabel(cell)}
+                    </Text>
+                    {cell.differencePercentagePoints !== null && (
+                      <Text style={styles.meta}>
+                        {cell.differencePercentagePoints > 0 ? "+" : ""}
+                        {cell.differencePercentagePoints} percentage points vs{" "}
+                        {selectedGradeKey === ALL_CLIMBING_GRADES ? "overall" : "same-grade"}{" "}
+                        baseline
+                      </Text>
                     )}
-                    {selectedGrade.successRate !== null && (
-                      <Rect
-                        testID={`strength-baseline-${row.key}`}
-                        x={`${selectedGrade.successRate}%`}
-                        width={2}
-                        height={8}
-                        fill={colors.text}
-                      />
-                    )}
-                  </Svg>
-                )}
-                <Text style={styles.meta}>
-                  {cell.sampleStatus === "no_data" ? "No data" : climbingStrengthsCountLabel(cell)}
-                </Text>
-                {cell.differencePercentagePoints !== null && (
-                  <Text style={styles.meta}>
-                    {cell.differencePercentagePoints > 0 ? "+" : ""}
-                    {cell.differencePercentagePoints} percentage points vs{" "}
-                    {selectedGradeKey === ALL_CLIMBING_GRADES ? "overall" : "same-grade"} baseline
-                  </Text>
-                )}
-              </Pressable>
-            ) : null;
-          })}
+                  </Pressable>
+                ) : null;
+              })}
+            </>
+          ) : null}
           {selectedCell && (
             <View style={styles.examples}>
               <Text style={styles.text}>
@@ -352,6 +424,17 @@ function ClimbingStrengthsPanelContent({
   );
 }
 const styles = StyleSheet.create({
+  heatmapRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.xs },
+  heatmapLabel: { width: 90, alignSelf: "center" },
+  heatmapCell: { width: 116, textAlign: "center", padding: spacing.xs },
+  heatmapValue: {
+    minHeight: 104,
+    justifyContent: "center",
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    backgroundColor: colors.surfaceSecondary,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,

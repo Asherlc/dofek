@@ -132,6 +132,28 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const ExplorationInteraction: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Bouldering" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Indoor" }));
+    await expect(canvas.getByRole("button", { name: "Bouldering" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(canvas.getByRole("button", { name: "Indoor" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
+    await userEvent.click(await canvas.findByRole("button", { name: /Vertical · V4/ }));
+    await userEvent.click(canvas.getByRole("button", { name: "Progress" }));
+    await expect(canvas.getByLabelText("Grade")).toHaveValue("V4");
+    await expect(canvas.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+      "Evening Arete",
+    );
+  },
+};
 export const AttachClimbToActivity: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);

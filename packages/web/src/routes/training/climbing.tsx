@@ -1,16 +1,11 @@
-import {
-  type ClimbingFilters,
-  climbingFilterKeys,
-  climbingFilterLabels,
-  climbingFilterOptions,
-  climbingFiltersSchema,
-} from "@dofek/training/climbing-filters";
+import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ClimbingSessionSummaryRow } from "dofek-server/types";
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { Activity } from "../../components/ActivityList.tsx";
 import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
+import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
 import { ClimbingStrengths } from "../../components/ClimbingStrengths.tsx";
@@ -82,9 +77,7 @@ function climbingSessionColumns(
 export function ClimbingTab() {
   const { days } = useTrainingDays();
   const endDate = useTodayQueryDate();
-  const [filters, setFilters] = useState<ClimbingFilters>({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtersId = useId();
+  const [filters, setFilters] = useState<Filters>({});
   const rangeInput = { ...climbingRangeInput(days), ...filters };
   const climbingQueryOptions = {
     ...TRAINING_SLOW_QUERY_OPTIONS,
@@ -108,71 +101,8 @@ export function ClimbingTab() {
 
   return (
     <>
-      <div className="mb-6 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-border px-3 py-2 text-sm"
-            aria-expanded={filtersOpen}
-            aria-controls={filtersId}
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            {Object.keys(filters).length ? "Filter climbing" : "All climbing"}{" "}
-            <span aria-hidden="true">▾</span>
-          </button>
-          {climbingFilterKeys.map((key) => {
-            const label = climbingFilterOptions[key].find(([value]) => value === filters[key])?.[1];
-            return label ? (
-              <button
-                key={key}
-                type="button"
-                aria-label={`Remove ${climbingFilterLabels[key]}: ${label} filter`}
-                className="rounded-full bg-surface-hover px-3 py-1 text-xs"
-                onClick={() =>
-                  setFilters((current) => {
-                    const next = { ...current };
-                    delete next[key];
-                    return next;
-                  })
-                }
-              >
-                {climbingFilterLabels[key]}: {label} <span aria-hidden="true">×</span>
-              </button>
-            ) : null;
-          })}
-        </div>
-        {filtersOpen ? (
-          <div id={filtersId} className="flex flex-wrap gap-4 rounded-lg border border-border p-3">
-            {climbingFilterKeys.map((key) => (
-              <label key={key} className="flex flex-col gap-1 text-xs text-muted">
-                {climbingFilterLabels[key]}
-                <select
-                  className="rounded border border-border bg-surface px-2 py-2 text-sm"
-                  value={filters[key] === undefined ? "" : String(filters[key])}
-                  onChange={(event) =>
-                    setFilters((current) => {
-                      const next = { ...current };
-                      delete next[key];
-                      const selected = climbingFilterOptions[key].find(
-                        ([option]) => String(option) === event.target.value,
-                      );
-                      return climbingFiltersSchema.parse(
-                        selected ? { ...next, [key]: selected[0] } : next,
-                      );
-                    })
-                  }
-                >
-                  <option value="">All</option>
-                  {climbingFilterOptions[key].map(([value, label]) => (
-                    <option key={String(value)} value={String(value)}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-        ) : null}
+      <div className="mb-6">
+        <ClimbingFilters value={filters} onChange={setFilters} />
       </div>
       {gradeProgression.isFetching ||
       volumeByGrade.isFetching ||

@@ -395,11 +395,11 @@ describe("StrainScreen recent activity navigation", () => {
     mockStrengthsState.isFetching = true;
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
     expect(
-      screen.getAllByRole("button", { name: /Slab · 29% · 2 sends \/ 7 climbs/ }),
+      screen.getAllByRole("button", { name: /Slab · 40% · 2 sends \/ 5 climbs/ }),
     ).toHaveLength(2);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
@@ -430,7 +430,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
       climbingFilters: { ropeMethod: "lead" },
@@ -443,7 +443,7 @@ describe("StrainScreen recent activity navigation", () => {
       ropeMethod: "lead",
     });
     expect(
-      screen.getAllByRole("button", { name: /Slab · 29% · 2 sends \/ 7 climbs/ }),
+      screen.getAllByRole("button", { name: /Slab · 40% · 2 sends \/ 5 climbs/ }),
     ).toHaveLength(2);
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
@@ -995,7 +995,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.queryByText("Climbing refresh failed")).toBeNull();
-    expect(screen.getByText("Bouldering")).toBeTruthy();
+    expect(screen.getAllByText("Bouldering")[0]).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
   });
 

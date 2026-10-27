@@ -35,6 +35,34 @@ vi.mock("react-native", () => ({
 import { ClimbingFilters } from "./ClimbingFilters";
 
 afterEach(cleanup);
+it("combines primary climbing and setting choices without opening advanced filters", () => {
+  function Harness() {
+    const [value, onChange] = useState<Filters>({ solo: false });
+    return (
+      <>
+        <ClimbingFilters value={value} onChange={onChange} />
+        <output>{JSON.stringify(value)}</output>
+      </>
+    );
+  }
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Bouldering" }));
+  fireEvent.click(screen.getByRole("button", { name: "Outdoor" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lead" }));
+  expect(JSON.parse(screen.getByRole("status").textContent ?? "")).toEqual({
+    solo: false,
+    climbKind: "route",
+    ropeMethod: "lead",
+    setting: "outdoor",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+  expect(JSON.parse(screen.getByRole("status").textContent ?? "")).toEqual({
+    solo: false,
+    setting: "outdoor",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(screen.getByRole("status").textContent).toBe("{}");
+});
 it("starts compact, combines dimensions, and removes individual filters", () => {
   function Harness() {
     const [value, onChange] = useState<Filters>({});
@@ -47,10 +75,10 @@ it("starts compact, combines dimensions, and removes individual filters", () => 
   }
   render(<Harness />);
   expect(screen.queryByText("Protection used")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
   fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
   fireEvent.click(screen.getByRole("button", { name: "Protection used: Trad" }));
-  fireEvent.click(screen.getByRole("button", { name: "Setting: Outdoor" }));
+  fireEvent.click(screen.getByRole("button", { name: "Outdoor" }));
   expect(screen.getByRole("status").textContent).toBe(
     '{"ropeMethod":"lead","protectionUsed":"trad","setting":"outdoor"}',
   );
@@ -69,7 +97,7 @@ it("retains explicit false and unknown solo selections and clears only that dime
     );
   }
   render(<Harness />);
-  fireEvent.click(screen.getByRole("button", { name: "Filter climbing" }));
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
   fireEvent.click(screen.getByRole("button", { name: "Solo status: With a belayer" }));
   expect(screen.getByRole("status").textContent).toContain('"solo":false');
   expect(screen.getByRole("button", { name: "All Solo status" }).getAttribute("aria-pressed")).toBe(

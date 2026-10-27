@@ -22,6 +22,41 @@ export const climbingFiltersSchema = z.object({
 export type ClimbingFilters = z.infer<typeof climbingFiltersSchema>;
 export type ClimbingFilterKey = keyof ClimbingFilters;
 
+export const climbingContextPresets = [
+  { value: "all", label: "All climbing" },
+  { value: "bouldering", label: "Bouldering" },
+  { value: "lead", label: "Lead" },
+  { value: "top_rope", label: "Top rope" },
+] as const;
+type ClimbingContextPreset = (typeof climbingContextPresets)[number]["value"];
+
+/** Context shortcuts select factual filters without changing independent facets. */
+export function selectClimbingContext(
+  filters: ClimbingFilters,
+  context: ClimbingContextPreset,
+): ClimbingFilters {
+  const next = { ...filters };
+  delete next.climbKind;
+  delete next.ropeMethod;
+  if (context === "bouldering") next.climbKind = "boulder";
+  else if (context !== "all") {
+    next.climbKind = "route";
+    next.ropeMethod = context;
+  }
+  return next;
+}
+
+export function climbingContextPreset(filters: ClimbingFilters): ClimbingContextPreset | null {
+  if (filters.climbKind === undefined && filters.ropeMethod === undefined) return "all";
+  if (filters.climbKind === "boulder" && filters.ropeMethod === undefined) return "bouldering";
+  if (
+    filters.climbKind === "route" &&
+    (filters.ropeMethod === "lead" || filters.ropeMethod === "top_rope")
+  )
+    return filters.ropeMethod;
+  return null;
+}
+
 export const climbingFilterKeys = [
   "climbKind",
   "discipline",

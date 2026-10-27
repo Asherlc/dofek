@@ -16,37 +16,44 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const StyleGaps: Story = {
   play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByText("Chart options"));
     await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "gaps");
   },
 };
 export const SuccessCurves: Story = {
   play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByText("Chart options"));
     await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "curves");
   },
 };
 export const ExposureMap: Story = {
   play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByText("Chart options"));
     await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "exposure");
   },
 };
 export const GradePyramids: Story = {
   play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByText("Chart options"));
     await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "pyramids");
   },
 };
 export const Progress: Story = {
   play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByText("Chart options"));
     await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "progress");
   },
 };
 export const RadarProfile: Story = {
   play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByText("Chart options"));
     await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "radar");
   },
 };
 export const SparseRadar: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByText("Chart options"));
     await userEvent.selectOptions(canvas.getByLabelText("View"), "radar");
     await userEvent.selectOptions(canvas.getByLabelText("Grade"), "V4");
   },
@@ -243,3 +250,18 @@ export const MissingDimension: Story = {
 };
 
 export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownResultsFixture } };
+
+export const Grades: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
+  },
+};
+export const Narrow: Story = {
+  decorators: [
+    (Story) => (
+      <div style={{ width: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
+};

@@ -1,6 +1,9 @@
 import {
+  CLIMBING_STRENGTHS_PURPOSES,
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
+  climbingStrengthsPurpose,
+  climbingStrengthsPurposeView,
 } from "@dofek/training/climbing-strengths-views";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -9,24 +12,69 @@ import { colors } from "../theme";
 export function ClimbingStrengthsViewPicker({
   value,
   onChange,
+  compareSettings,
+  onCompareSettingsChange,
 }: {
   value: ClimbingStrengthsView;
   onChange: (value: ClimbingStrengthsView) => void;
+  compareSettings: boolean;
+  onCompareSettingsChange: (value: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const label = CLIMBING_STRENGTHS_VIEWS.find((view) => view.value === value)?.label;
   return (
     <View>
+      <View style={styles.purposes} accessibilityLabel="Strengths view">
+        {CLIMBING_STRENGTHS_PURPOSES.map((purpose) => (
+          <Pressable
+            key={purpose.value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: climbingStrengthsPurpose(value) === purpose.value }}
+            onPress={() => {
+              if (climbingStrengthsPurpose(value) !== purpose.value)
+                onChange(climbingStrengthsPurposeView(purpose.value));
+            }}
+            style={[
+              styles.trigger,
+              climbingStrengthsPurpose(value) === purpose.value && styles.active,
+            ]}
+          >
+            <Text style={styles.text}>{purpose.label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`View: ${label}`}
-        accessibilityState={{ expanded: open }}
-        aria-haspopup="dialog"
-        onPress={() => setOpen(true)}
+        accessibilityState={{ expanded: optionsOpen }}
+        onPress={() => setOptionsOpen(!optionsOpen)}
         style={styles.trigger}
       >
-        <Text style={styles.text}>View · {label} ▾</Text>
+        <Text style={styles.text}>Chart options</Text>
       </Pressable>
+      {optionsOpen ? (
+        <View style={{ gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`View: ${label}`}
+            accessibilityState={{ expanded: open }}
+            aria-haspopup="dialog"
+            onPress={() => setOpen(true)}
+            style={styles.trigger}
+          >
+            <Text style={styles.text}>View · {label} ▾</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Compare indoor/outdoor"
+            accessibilityState={{ selected: compareSettings }}
+            onPress={() => onCompareSettingsChange(!compareSettings)}
+            style={[styles.trigger, compareSettings && styles.active]}
+          >
+            <Text style={styles.text}>Compare indoor/outdoor{compareSettings ? " ✓" : ""}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {open && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setOpen(false)}>
           <View style={styles.overlay}>
@@ -69,6 +117,8 @@ export function ClimbingStrengthsViewPicker({
   );
 }
 const styles = StyleSheet.create({
+  purposes: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  active: { borderWidth: 1, borderColor: colors.accent },
   trigger: {
     alignSelf: "flex-start",
     minHeight: 44,
