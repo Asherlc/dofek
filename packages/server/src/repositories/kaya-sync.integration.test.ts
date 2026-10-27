@@ -68,11 +68,12 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       gym,
     };
     const attemptedClimbs = [
-      { ...climb, id: "1000_2001", attempts: null },
-      { ...climb, id: "1000_2002", attempts: null },
+      { ...climb, id: "1000_2001", sent: false, attempts: null },
+      { ...climb, id: "1000_2002", sent: false, attempts: null },
       {
         ...climb,
         id: "1000_2003",
+        sent: false,
         grade: { id: "5", name: "v3", climb_type_group: "5" },
         attempts: null,
       },
@@ -147,8 +148,8 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       expect.arrayContaining([
         expect.objectContaining({
           recordedClimbAttemptCount: 1,
-          recordedClimbOutcome: null,
-          attempts: [expect.objectContaining({ outcome: null })],
+          recordedClimbOutcome: "failed",
+          attempts: [expect.objectContaining({ outcome: "failed" })],
         }),
       ]),
     );

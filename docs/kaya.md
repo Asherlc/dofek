@@ -32,9 +32,20 @@ client's typed `attempts` property. The separate ascent feed uses its own
 the reported positive count by creating that many whole-Climb Attempt rows.
 A route's explicit `lead` flag supplies the recorded method on every counted
 occurrence; source result, qualifier, and repeat facts describe only one try.
+The session query also requests the non-null `sent` Boolean. An explicit false
+records `Attempt` on every counted occurrence; true records one generic `Send`
+and leaves additional occurrence outcomes unknown. The original Boolean stays
+in raw provenance. This does not assign Onsight, Flash, or an attempt index.
+The field's Boolean contract and the Cave Route's three attempts with
+`sent: false` were verified through the authenticated
+[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql) on 2026-10-26.
+Kaya documents separate [attempt and send controls](https://kayaclimb.com/support-articles/logging-your-climbs-on-kaya)
+and [attempt logging with Send disabled](https://kayaclimb.com/blog/logging-attempts-on-kaya).
+Earlier imports did not request this field; sync Kaya again to acquire the
+recorded status. Existing unknown records are not rewritten without source evidence.
 The [adapter](../src/providers/kaya-sync.ts) supplies those method-bearing
 occurrences to the shared writer instead of creating methodless route rows.
-A missing total creates one partially described occurrence; it does not
+A missing total creates one occurrence; the count alone does not
 establish complete lifetime history or a failed attempt. Only supported source
 facts describe individual outcomes. Attempted-climb summaries and ascent
 records remain separate source observations until evidence establishes overlap.
@@ -61,6 +72,7 @@ the remaining omissions are shown below:
 
 | Record | Fields |
 | --- | --- |
+| Session attempted climb, requested | `session_attempts` (aliased as `attempts`), `sent` (send status verified 2026-10-26) |
 | Climb, not requested | `description` |
 | Climb, requested | `slug`, `color { name }`, `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
 | Ascent, requested | Its own `grade`, comments, ratings, stiffness, `photo { photo_url thumb_url }` |

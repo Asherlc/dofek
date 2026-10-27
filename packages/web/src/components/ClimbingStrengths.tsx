@@ -5,7 +5,10 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsCountLabel,
   climbingStrengthsGradePanel,
+  climbingStrengthsRateLabel,
+  climbingStrengthsResultLabel,
 } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_VIEWS,
@@ -20,7 +23,7 @@ const dimensions = {
   hold_type: "Hold type",
   setting: "Indoor & outdoor",
 };
-const settings = { indoor: "Indoor", outdoor: "Outdoor" };
+const settings = { indoor: "Indoor", outdoor: "Outdoor", unknown: "Setting unknown" };
 function observed(panel: ClimbingStrengthsPanel) {
   return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
 }
@@ -33,7 +36,7 @@ function preferred(panels: ClimbingStrengthsPanel[]) {
   );
 }
 function rateLabel(cell: ClimbingStrengthsCell) {
-  return cell.successRate === null ? "No data" : `${cell.successRate}%`;
+  return climbingStrengthsRateLabel(cell);
 }
 
 export function ClimbingStrengths({
@@ -43,149 +46,185 @@ export function ClimbingStrengths({
   data: Strengths | undefined;
   loading?: boolean;
 }) {
-  const [panelKey, setPanelKey] = useState<string | null>(null);
-  const [view, setView] = useState<ClimbingStrengthsView>("profile");
-  const [gradeKey, setGradeKey] = useState<string | null>(null);
-  const [lastSetting, setLastSetting] = useState<{
-    contextKey: string;
-    setting: "indoor" | "outdoor";
-  } | null>(null);
-  const [selected, setSelected] = useState<{ panel: string; row: string; grade: string } | null>(
+  const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
     null,
   );
+  const [view, setView] = useState<ClimbingStrengthsView>("profile");
   const panels = data?.panels ?? [];
-  const panel = panels.find((item) => item.key === panelKey) ?? preferred(panels);
+  const dimension = selectedDimension ?? preferred(panels)?.dimension ?? "wall_angle";
   const contexts = [
-    ...new Map(panels.map((item) => [item.contextKey, item.contextLabel])).entries(),
+    ...new Map(panels.map((panel) => [panel.contextKey, panel.contextLabel])).entries(),
   ];
-  const contextPanels = panels.filter((item) => item.contextKey === panel?.contextKey);
-  const settingPanels = contextPanels.filter((item) => item.dimension === panel?.dimension);
+  if (!data && loading)
+    return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(dimensions).map(([item, label]) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={dimension === item}
+              className={
+                "min-h-10 rounded-lg border px-3 text-sm " +
+                (dimension === item
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border text-muted")
+              }
+              onClick={() => {
+                const next = panels.find((panel) => panel.dimension === item)?.dimension;
+                if (next) setDimension(next);
+                else if (item === "wall_angle" || item === "hold_type" || item === "setting")
+                  setDimension(item);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="text-xs text-muted">
+          View
+          <select
+            className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+            value={view}
+            onChange={(event) => {
+              const next = CLIMBING_STRENGTHS_VIEWS.find(
+                (item) => item.value === event.target.value,
+              );
+              if (next) setView(next.value);
+            }}
+          >
+            {CLIMBING_STRENGTHS_VIEWS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {!panels.length ? (
+        <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
+      ) : null}
+      {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
+        <p className="text-xs text-muted">Success rates use climbs with known results.</p>
+      ) : null}
+      {contexts.map(([key, label]) => (
+        <ClimbingStrengthsContext
+          key={key}
+          panels={panels.filter((panel) => panel.contextKey === key)}
+          dimension={dimension}
+          view={view}
+          label={contexts.length > 1 ? label : undefined}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ClimbingStrengthsContext({
+  panels,
+  dimension,
+  view,
+  label,
+}: {
+  panels: ClimbingStrengthsPanel[];
+  dimension: ClimbingStrengthsPanel["dimension"];
+  view: ClimbingStrengthsView;
+  label: string | undefined;
+}) {
+  const [gradeKey, setGradeKey] = useState<string | null>(null);
+  const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
+  const grades = [
+    ...new Map(
+      selectedPanels.flatMap((panel) => panel.grades.map((grade) => [grade.grade, grade] as const)),
+    ).values(),
+  ].sort((first, second) => first.gradeSortValue - second.gradeSortValue);
+  const grade = grades.find((item) => item.grade === gradeKey)?.grade ?? ALL_CLIMBING_GRADES;
+  return (
+    <section className="space-y-3" aria-label={label}>
+      {label ? <h3 className="font-semibold">{label}</h3> : null}
+      {view !== "profile" && view !== "curves" && view !== "pyramids" && grades.length > 0 ? (
+        <label className="text-xs text-muted">
+          Grade
+          <select
+            className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+            value={grade}
+            onChange={(event) => setGradeKey(event.target.value)}
+          >
+            <option value={ALL_CLIMBING_GRADES}>{ALL_CLIMBING_GRADES}</option>
+            {grades.map((item) => (
+              <option key={item.grade} value={item.grade}>
+                {item.grade}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {selectedPanels.length ? (
+        selectedPanels.map((panel) => (
+          <div key={panel.key} className="space-y-3">
+            {dimension !== "setting" &&
+            (selectedPanels.length > 1 || panel.setting === "unknown") &&
+            panel.setting ? (
+              <h4 className="text-sm font-medium">{settings[panel.setting]}</h4>
+            ) : null}
+            <ClimbingStrengthsPanelContent
+              panel={panel}
+              view={view}
+              grade={grade}
+              onGradeChange={setGradeKey}
+            />
+          </div>
+        ))
+      ) : (
+        <QueryStatePanel
+          variant="empty"
+          message={`No recorded ${dimensions[dimension].toLowerCase()} observations for this context.`}
+        />
+      )}
+    </section>
+  );
+}
+
+function ClimbingStrengthsPanelContent({
+  panel,
+  view,
+  grade,
+  onGradeChange,
+}: {
+  panel: ClimbingStrengthsPanel;
+  view: ClimbingStrengthsView;
+  grade: string;
+  onGradeChange: (grade: string) => void;
+}) {
+  const [selected, setSelected] = useState<{ row: string; grade: string } | null>(null);
   const row =
-    panel && selected && panel.key === selected.panel
-      ? (selected.grade === ALL_CLIMBING_GRADES ? panel.allGrades.rows : panel.rows).find(
+    selected &&
+    (selected.grade === ALL_CLIMBING_GRADES ||
+      panel.grades.some((item) => item.grade === selected.grade))
+      ? (grade === ALL_CLIMBING_GRADES ? panel.allGrades.rows : panel.rows).find(
           (item) => item.key === selected.row,
         )
       : undefined;
-  const cell = row?.cells.find((item) => item.grade === selected?.grade);
-  const grade = panel?.grades.find((item) => item.grade === gradeKey)?.grade ?? ALL_CLIMBING_GRADES;
-  const gradePanel = panel ? climbingStrengthsGradePanel(panel, grade) : undefined;
-  const selectCell = (rowKey: string, grade: string) => {
-    if (!panel) return;
-    setGradeKey(grade);
-    setSelected({ panel: panel.key, row: rowKey, grade });
+  const cell = row?.cells.find((item) => item.grade === grade);
+  const gradePanel = climbingStrengthsGradePanel(panel, grade);
+  const selectCell = (rowKey: string, selectedGrade: string) => {
+    onGradeChange(selectedGrade);
+    setSelected({ row: rowKey, grade: selectedGrade });
   };
-
-  if (!data && loading)
-    return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
-  if (!panel)
-    return (
-      <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
-    );
-
   return (
-    <div className="space-y-4">
-      {contexts.length > 1 ? (
-        <fieldset aria-label="Climbing context" className="flex flex-wrap gap-2">
-          {contexts.map(([key, label]) => (
-            <button
-              type="button"
-              key={key}
-              aria-pressed={key === panel.contextKey}
-              className={`min-h-11 rounded-lg border px-3 py-2 text-sm ${key === panel.contextKey ? "border-accent bg-accent/10 text-accent" : "border-border text-muted"}`}
-              onClick={() => {
-                const next = preferred(panels.filter((item) => item.contextKey === key));
-                if (next) setPanelKey(next.key);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </fieldset>
-      ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(dimensions).map(([dimension, label]) => (
-            <button
-              key={dimension}
-              type="button"
-              aria-pressed={panel.dimension === dimension}
-              className={`min-h-10 rounded-lg border px-3 text-sm ${panel.dimension === dimension ? "border-accent bg-accent/10 text-accent" : "border-border text-muted"}`}
-              onClick={() => {
-                const setting =
-                  panel.setting ??
-                  (lastSetting?.contextKey === panel.contextKey ? lastSetting.setting : null);
-                if (panel.setting)
-                  setLastSetting({ contextKey: panel.contextKey, setting: panel.setting });
-                const candidates = contextPanels.filter((item) => item.dimension === dimension);
-                const next =
-                  candidates.find((item) => item.setting === setting) ?? preferred(candidates);
-                if (next) setPanelKey(next.key);
-              }}
-              disabled={!contextPanels.some((item) => item.dimension === dimension)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <label className="text-xs text-muted">
-            View
-            <select
-              className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-              value={view}
-              onChange={(event) => {
-                const next = CLIMBING_STRENGTHS_VIEWS.find(
-                  (item) => item.value === event.target.value,
-                );
-                if (next) setView(next.value);
-              }}
-            >
-              {CLIMBING_STRENGTHS_VIEWS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {view !== "profile" && view !== "curves" && view !== "pyramids" ? (
-            <label className="text-xs text-muted">
-              Grade
-              <select
-                className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-                value={grade}
-                onChange={(event) => {
-                  setGradeKey(event.target.value);
-                  if (row) selectCell(row.key, event.target.value);
-                }}
-              >
-                <option value={ALL_CLIMBING_GRADES}>{ALL_CLIMBING_GRADES}</option>
-                {panel.grades.map((item) => (
-                  <option key={item.grade} value={item.grade}>
-                    {item.grade}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {panel.dimension !== "setting" && settingPanels.length > 1 ? (
-            <label className="text-xs text-muted">
-              Strength setting
-              <select
-                className="ml-2 rounded border border-border bg-surface p-2"
-                value={panel.key}
-                onChange={(event) => setPanelKey(event.target.value)}
-              >
-                {settingPanels.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.setting ? settings[item.setting] : "Unknown"}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
-      </div>
-      {view !== "profile" ? (
+    <div className="space-y-3">
+      {!observed(panel) ? (
+        <QueryStatePanel
+          variant="empty"
+          message={
+            "No recorded " +
+            dimensions[panel.dimension].toLowerCase() +
+            " observations for this context."
+          }
+        />
+      ) : view !== "profile" ? (
         <ClimbingStrengthsChart
           panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
           view={view}
@@ -193,7 +232,7 @@ export function ClimbingStrengths({
           selectedRow={row?.key ?? null}
           onSelectCell={selectCell}
         />
-      ) : observed(panel) ? (
+      ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-separate border-spacing-1 text-sm">
             <caption className="sr-only">
@@ -221,7 +260,7 @@ export function ClimbingStrengths({
                     <td key={value.grade}>
                       <button
                         type="button"
-                        aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${value.sends} sends / ${value.climbs} climbs${value.sampleStatus === "limited" ? " · Limited data" : ""}`}
+                        aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}`}
                         aria-pressed={row?.key === item.key && cell?.grade === value.grade}
                         onClick={() => selectCell(item.key, value.grade)}
                         className={`min-h-20 w-full min-w-24 rounded-lg border p-2 text-center focus-visible:outline-2 focus-visible:outline-accent ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent ring-offset-2 ring-offset-surface-solid" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
@@ -241,11 +280,8 @@ export function ClimbingStrengths({
                         <span className="block text-xs">
                           {value.sampleStatus === "no_data"
                             ? "No recorded climbs"
-                            : `${value.sends} / ${value.climbs} climbs`}
+                            : climbingStrengthsCountLabel(value)}
                         </span>
-                        {value.sampleStatus === "limited" ? (
-                          <span className="block text-xs text-muted">Limited data</span>
-                        ) : null}
                       </button>
                     </td>
                   ))}
@@ -254,11 +290,6 @@ export function ClimbingStrengths({
             </tbody>
           </table>
         </div>
-      ) : (
-        <QueryStatePanel
-          variant="empty"
-          message={`No recorded ${dimensions[panel.dimension].toLowerCase()} observations for this context.`}
-        />
       )}
       {cell && row ? (
         <section
@@ -274,11 +305,8 @@ export function ClimbingStrengths({
             </p>
           ) : null}
           <p>
-            {rateLabel(cell)} · {cell.sends} sends / {cell.climbs} climbs
+            {rateLabel(cell)} · {climbingStrengthsCountLabel(cell)}
           </p>
-          {cell.sampleStatus === "limited" ? (
-            <p className="text-xs text-muted">Limited data</p>
-          ) : null}
           {cell.differencePercentagePoints !== null ? (
             <p className="text-xs text-muted">
               {cell.differencePercentagePoints > 0 ? "+" : ""}
@@ -290,8 +318,7 @@ export function ClimbingStrengths({
             <div key={example.logEntryId} className="border-t border-border pt-3 text-sm">
               <p className="font-medium">{example.name}</p>
               <p className="text-xs text-muted">
-                {example.grade} · {example.date} ·{" "}
-                {example.outcome === "sent" ? "Sent" : "Not sent"}
+                {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
               </p>
               <div className="mt-1 flex gap-3 text-xs text-accent">
                 {example.sourceUrl ? (

@@ -530,13 +530,20 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([expect.objectContaining({ recordedAttempts: 2, sends: 2 })]);
   });
   it.each(["mountain-project", "openbeta"])(
-    "retains unknown %s setting without an inferred provider default",
+    "assumes missing %s catalogue settings are outdoor without changing raw facts",
     async (provider) => {
       await write({}, provider);
-      expect(await volume({ setting: "outdoor" })).toEqual([]);
-      expect(await volume({ setting: "unknown" })).toHaveLength(1);
+      expect(await volume({ setting: "outdoor" })).toHaveLength(1);
+      expect(await volume({ setting: "unknown" })).toEqual([]);
+      const stored = await context.db.select({ setting: climb.setting }).from(climb);
+      expect(stored).toEqual([{ setting: null }]);
     },
   );
+  it("preserves an explicit indoor catalogue setting over the outdoor assumption", async () => {
+    await write({ climb: { ...route, setting: "indoor" } }, "mountain-project");
+    expect(await volume({ setting: "indoor" })).toHaveLength(1);
+    expect(await volume({ setting: "outdoor" })).toEqual([]);
+  });
   it("uses verified settings for both attached and standalone filters", async () => {
     const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
     await write({ activityId: outing.id, climb: { ...route, setting: "indoor" } });

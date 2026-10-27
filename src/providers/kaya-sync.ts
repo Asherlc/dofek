@@ -280,6 +280,7 @@ export class KayaSyncProvider implements SyncProvider {
                   externalId: `kaya:session:${session.id}:attempted:${record.id}`,
                   date: session.start_time,
                   attempts: record.attempts,
+                  sent: record.sent,
                   gym: record.gym ?? session.gym,
                   raw: record,
                 },
@@ -392,6 +393,7 @@ function kayaLogEntry(
     date: string;
     label?: string;
     attempts: number | null;
+    sent?: boolean;
     gym: KayaAscent["climb"]["gym"];
     notes?: string | null;
     raw: SourceClimbingLogEntry["raw"];
@@ -410,7 +412,9 @@ function kayaLogEntry(
     (climbedOn.startsWith("0000-") || !z.iso.date().safeParse(climbedOn).success)
   )
     throw new Error(`Kaya log ${source.externalId} has an invalid climb date.`);
-  const label = source.label?.trim().toLowerCase();
+  const sourceResult =
+    source.label ?? (source.sent === true ? "Send" : source.sent === false ? "Attempt" : undefined);
+  const label = sourceResult?.trim().toLowerCase();
   const qualifier: SourceClimbingAttempt["qualifier"] =
     label === "onsight"
       ? "free-onsight"
@@ -426,13 +430,18 @@ function kayaLogEntry(
     {
       scope: "climb",
       ropeMethod,
-      ...(qualifier === undefined ? {} : { qualifier, sourceResult: source.label }),
+      ...(qualifier === undefined ? {} : { qualifier }),
+      ...(qualifier !== undefined || source.sent === false ? { sourceResult } : {}),
       ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
     },
   ];
-  if (ropeMethod !== null && source.attempts !== null)
+  if ((ropeMethod !== null || source.sent === false) && source.attempts !== null)
     for (let attemptCount = 1; attemptCount < source.attempts; attemptCount++)
-      attempts.push({ scope: "climb", ropeMethod });
+      attempts.push({
+        scope: "climb",
+        ropeMethod,
+        ...(source.sent === false ? { sourceResult: "Attempt" } : {}),
+      });
   return {
     externalId: source.externalId,
     climbedOn,

@@ -39,6 +39,28 @@ describe("KayaClient", () => {
     const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
     expect(request.query).toMatch(/photo\s*\{\s*photo_url\s+thumb_url\s*\}/);
   });
+  it.each([false, true])("requests and retains attempted-climb send status %s", async (sent) => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const query = JSON.parse(String(init?.body)).query;
+      return jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("1000"),
+              attempted_climbs: [
+                {
+                  ...attemptedClimb("1000_2001", 3),
+                  sent: query.includes(" sent ") ? sent : undefined,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+    const result = await new KayaClient("token", fetchFn).listSessions("42");
+    expect(result[0]?.attempted_climbs[0]).toMatchObject({ sent, attempts: 3 });
+  });
   it("retains hold colors on unnamed attempted climbs", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
@@ -697,6 +719,7 @@ function attemptedClimb(id: string, attempts: number | null) {
     ...emptyClimbContext,
     id,
     attempts,
+    sent: false,
     name: null,
     lead: false,
     climb_type: { id: "1", name: "Bouldering" },

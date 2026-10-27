@@ -36,6 +36,116 @@ const dated = (date: string, patch: Partial<ClimbingStrengthsObservation> = {}) 
   return { ...entry, example: { ...entry.example, date } };
 };
 describe("climbing strengths", () => {
+  it("retains grades with unknown outcomes and computes rates only from known results", () => {
+    const result = analyze([
+      observation({ identity: "sent", outcome: "sent" }),
+      observation({ identity: "failed" }),
+      observation({ identity: "unknown", outcome: null }),
+      observation({ identity: "unknown-grade", grade: "V6", gradeSortValue: 6, outcome: null }),
+    ]);
+    const panel = result.panels.find((panel) => panel.dimension === "setting");
+    expect(panel?.grades).toMatchObject([
+      { grade: "V4", sends: 1, climbs: 3, unknownOutcomes: 1, successRate: 50 },
+      { grade: "V6", sends: 0, climbs: 1, unknownOutcomes: 1, successRate: null },
+    ]);
+    expect(panel?.allGrades.grades[0]).toMatchObject({
+      sends: 1,
+      climbs: 4,
+      unknownOutcomes: 2,
+      successRate: 50,
+    });
+    expect(panel?.rows[0]?.cells[1]).toMatchObject({
+      climbs: 1,
+      unknownOutcomes: 1,
+      successRate: null,
+      sampleStatus: "limited",
+      examples: [{ outcome: null }],
+    });
+  });
+
+  it("retains unknown results only in months with actual observations", () => {
+    const result = analyze([
+      dated("2026-09-15", { outcome: null }),
+      dated("2026-09-16", { outcome: null }),
+    ]);
+    const panel = result.panels.find((panel) => panel.dimension === "setting");
+    expect(panel?.progress.map((month) => month.rows[0]?.cells[0])).toMatchObject([
+      { climbs: 0, unknownOutcomes: 0, successRate: null, sampleStatus: "no_data" },
+      { climbs: 1, unknownOutcomes: 1, successRate: null, sampleStatus: "limited" },
+      { climbs: 0, unknownOutcomes: 0, successRate: null, sampleStatus: "no_data" },
+    ]);
+  });
+
+  it("shows genuinely unknown settings without dropping their known or unknown results", () => {
+    const result = analyze([
+      observation({ identity: "unknown", setting: null, outcome: null, holdType: "crimp" }),
+      observation({ identity: "known", setting: null, outcome: "sent", holdType: "crimp" }),
+    ]);
+    const settings = result.panels.find((panel) => panel.dimension === "setting");
+    expect(settings?.rows.find((row) => row.key === "unknown")).toMatchObject({
+      label: "Unknown setting",
+      cells: [{ sends: 1, climbs: 2, unknownOutcomes: 1, successRate: 100 }],
+    });
+    const holds = result.panels.find(
+      (panel) => panel.dimension === "hold_type" && panel.setting === "unknown",
+    );
+    expect(holds?.rows[0]?.cells[0]).toMatchObject({
+      sends: 1,
+      climbs: 2,
+      unknownOutcomes: 1,
+      successRate: 100,
+    });
+  });
+
+  it("resolves a known result without counting repeated unknown observations twice", () => {
+    const result = analyze([
+      observation({ outcome: null }),
+      observation({ outcome: null }),
+      observation({ outcome: "sent" }),
+    ]);
+    const panel = result.panels.find((panel) => panel.dimension === "setting");
+    expect(panel?.grades[0]).toMatchObject({
+      sends: 1,
+      climbs: 1,
+      unknownOutcomes: 0,
+      successRate: 100,
+    });
+    expect(result.coverage.unknownOutcomes).toBe(0);
+  });
+  it("labels a single grading system by climbing context without redundant system text", () => {
+    const result = analyze([
+      observation({ contextLabel: "Bouldering · V Scale" }),
+      observation({
+        contextKey: "lead",
+        laneKey: "lead",
+        contextLabel: "Lead · Yosemite Decimal System",
+        gradeSystem: "yds",
+        grade: "5.8",
+      }),
+    ]);
+    expect(result.panels.find((panel) => panel.contextKey === "boulder")?.contextLabel).toBe(
+      "Bouldering",
+    );
+    expect(result.panels.find((panel) => panel.contextKey === "lead")?.contextLabel).toBe("Lead");
+  });
+
+  it("retains grading system labels when the same climbing lane has different systems", () => {
+    const result = analyze([
+      observation({ contextKey: "v", contextLabel: "Bouldering · V Scale" }),
+      observation({
+        contextKey: "font",
+        gradeSystem: "font",
+        grade: "6b",
+        contextLabel: "Bouldering · Fontainebleau",
+      }),
+    ]);
+    expect(result.panels.find((panel) => panel.contextKey === "v")?.contextLabel).toBe(
+      "Bouldering · V Scale",
+    );
+    expect(result.panels.find((panel) => panel.contextKey === "font")?.contextLabel).toBe(
+      "Bouldering · Fontainebleau",
+    );
+  });
   it("pools distinct climbs across grades using counts and independent monthly outcomes", () => {
     const entries = [
       ...Array.from({ length: 5 }, (_, index) =>
@@ -59,12 +169,20 @@ describe("climbing strengths", () => {
     const result = analyze(entries);
     const panel = result.panels.find((item) => item.dimension === "hold_type");
     expect(panel?.allGrades.grades).toEqual([
-      { grade: "All grades", gradeSortValue: 0, sends: 1, climbs: 6, successRate: 17 },
+      {
+        grade: "All grades",
+        gradeSortValue: 0,
+        sends: 1,
+        climbs: 7,
+        unknownOutcomes: 1,
+        successRate: 17,
+      },
     ]);
     expect(panel?.allGrades.rows[0]?.cells[0]).toMatchObject({
       grade: "All grades",
       sends: 1,
-      climbs: 5,
+      climbs: 6,
+      unknownOutcomes: 1,
       successRate: 20,
       differencePercentagePoints: 3,
       sampleStatus: "available",
@@ -73,20 +191,23 @@ describe("climbing strengths", () => {
     expect(panel?.allGrades.progress[0]?.rows[0]?.cells[0]).toMatchObject({
       sends: 0,
       climbs: 5,
+      unknownOutcomes: 0,
       successRate: 0,
     });
     expect(panel?.allGrades.progress[1]?.rows[0]?.cells[0]).toMatchObject({
       sends: 0,
       climbs: 0,
+      unknownOutcomes: 0,
       successRate: null,
       sampleStatus: "no_data",
     });
     expect(panel?.allGrades.progress[2]?.rows[0]?.cells[0]).toMatchObject({
       sends: 1,
-      climbs: 1,
+      climbs: 2,
+      unknownOutcomes: 1,
       successRate: 100,
     });
-    expect(panel?.grades.map((item) => item.grade)).toEqual(["V3", "V5"]);
+    expect(panel?.grades.map((item) => item.grade)).toEqual(["V3", "V4", "V5"]);
   });
   it("projects independent monthly outcomes after whole-window context and trait resolution", () => {
     const result = analyze([
@@ -102,7 +223,12 @@ describe("climbing strengths", () => {
       dated("2026-10-20", { outcome: null }),
     ]);
     const panel = result.panels.find((candidatePanel) => candidatePanel.dimension === "hold_type");
-    expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 1, climbs: 1, successRate: 100 });
+    expect(panel?.rows[0]?.cells[0]).toMatchObject({
+      sends: 1,
+      climbs: 1,
+      unknownOutcomes: 0,
+      successRate: 100,
+    });
     expect(panel?.progress).toEqual([
       {
         startDate: "2026-08-15",
@@ -110,7 +236,16 @@ describe("climbing strengths", () => {
         rows: [
           {
             key: "crimp",
-            cells: [{ grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" }],
+            cells: [
+              {
+                grade: "V4",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 0,
+                sampleStatus: "limited",
+              },
+            ],
           },
         ],
       },
@@ -121,7 +256,14 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "V4", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+              {
+                grade: "V4",
+                sends: 1,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 100,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -133,7 +275,14 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              {
+                grade: "V4",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 1,
+                successRate: null,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -160,20 +309,52 @@ describe("climbing strengths", () => {
         {
           key: "indoor",
           cells: [
-            { grade: "V3", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-            { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            {
+              grade: "V3",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
+            {
+              grade: "V4",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
           ],
         },
         {
           key: "outdoor",
           cells: [
-            { grade: "V3", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-            { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            {
+              grade: "V3",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
+            {
+              grade: "V4",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
           ],
         },
       ],
     });
-    expect(panel?.progress[1]?.rows[0]?.cells[1]).toMatchObject({ climbs: 0, successRate: null });
+    expect(panel?.progress[1]?.rows[0]?.cells[1]).toMatchObject({
+      climbs: 0,
+      unknownOutcomes: 0,
+      successRate: null,
+    });
     expect(panel?.progress[2]?.rows[0]?.cells[1]).toMatchObject({
       climbs: 1,
       sends: 0,
@@ -240,6 +421,7 @@ describe("climbing strengths", () => {
             grade: "V4",
             sends: 2,
             climbs: 5,
+            unknownOutcomes: 0,
             successRate: 40,
             sampleStatus: "available",
           }),
@@ -247,6 +429,7 @@ describe("climbing strengths", () => {
             grade: "V8",
             sends: 0,
             climbs: 0,
+            unknownOutcomes: 0,
             successRate: null,
             differencePercentagePoints: null,
             sampleStatus: "no_data",
@@ -255,6 +438,7 @@ describe("climbing strengths", () => {
             grade: "V10",
             sends: 1,
             climbs: 1,
+            unknownOutcomes: 0,
             successRate: 100,
             sampleStatus: "limited",
           }),
@@ -268,6 +452,7 @@ describe("climbing strengths", () => {
             grade: "V4",
             sends: 1,
             climbs: 1,
+            unknownOutcomes: 0,
             successRate: 100,
             sampleStatus: "limited",
           }),
@@ -275,6 +460,7 @@ describe("climbing strengths", () => {
             grade: "V8",
             sends: 0,
             climbs: 0,
+            unknownOutcomes: 0,
             successRate: null,
             differencePercentagePoints: null,
             sampleStatus: "no_data",
@@ -283,6 +469,7 @@ describe("climbing strengths", () => {
             grade: "V10",
             sends: 1,
             climbs: 1,
+            unknownOutcomes: 0,
             successRate: 100,
             sampleStatus: "limited",
           }),
@@ -297,17 +484,59 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "V4", sends: 2, climbs: 5, successRate: 40, sampleStatus: "available" },
-              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V10", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+              {
+                grade: "V4",
+                sends: 2,
+                climbs: 5,
+                unknownOutcomes: 0,
+                successRate: 40,
+                sampleStatus: "available",
+              },
+              {
+                grade: "V8",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V10",
+                sends: 1,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 100,
+                sampleStatus: "limited",
+              },
             ],
           },
           {
             key: "sloper",
             cells: [
-              { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
-              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              {
+                grade: "V4",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 0,
+                sampleStatus: "limited",
+              },
+              {
+                grade: "V8",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V10",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 1,
+                successRate: null,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -319,17 +548,59 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              {
+                grade: "V4",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V8",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V10",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
             ],
           },
           {
             key: "sloper",
             cells: [
-              { grade: "V4", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
-              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V10", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+              {
+                grade: "V4",
+                sends: 1,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 100,
+                sampleStatus: "limited",
+              },
+              {
+                grade: "V8",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V10",
+                sends: 1,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 100,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -341,17 +612,59 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              {
+                grade: "V4",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 1,
+                successRate: null,
+                sampleStatus: "limited",
+              },
+              {
+                grade: "V8",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V10",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
             ],
           },
           {
             key: "sloper",
             cells: [
-              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
-              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              {
+                grade: "V4",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V8",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
+              {
+                grade: "V10",
+                sends: 0,
+                climbs: 0,
+                unknownOutcomes: 0,
+                successRate: null,
+                sampleStatus: "no_data",
+              },
             ],
           },
         ],
@@ -372,11 +685,17 @@ describe("climbing strengths", () => {
     const panel = result.panels.find(
       (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
     );
-    expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 0, climbs: 1, successRate: 0 });
+    expect(panel?.rows[0]?.cells[0]).toMatchObject({
+      sends: 0,
+      climbs: 1,
+      unknownOutcomes: 0,
+      successRate: 0,
+    });
     expect(panel?.progress[0]?.rows[0]?.cells[0]).toEqual({
       grade: "V4",
       sends: 0,
       climbs: 1,
+      unknownOutcomes: 0,
       successRate: 0,
       sampleStatus: "limited",
     });
@@ -384,6 +703,7 @@ describe("climbing strengths", () => {
       grade: "V4",
       sends: 0,
       climbs: 0,
+      unknownOutcomes: 0,
       successRate: null,
       sampleStatus: "no_data",
     });
@@ -555,7 +875,7 @@ describe("climbing strengths", () => {
     ]);
     expect(result.coverage.missingGrades).toBe(0);
     const panel = result.panels.find((panel) => panel.dimension === "setting");
-    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Bouldering · V scale" });
+    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Bouldering" });
     expect(panel?.grades[0]).toMatchObject({ grade: "V4", sends: 1, climbs: 1 });
     expect(panel?.rows[0]?.cells[0]?.examples[0]).toMatchObject({ grade: "V4", outcome: "sent" });
   });

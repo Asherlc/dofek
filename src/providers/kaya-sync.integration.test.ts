@@ -3,6 +3,7 @@ import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { persistClimbingLogEntries } from "../db/climbing-log-sync.ts";
 import { activity } from "../db/schema/activity.ts";
 import {
   area,
@@ -45,7 +46,7 @@ describe("KayaSyncProvider canonical persistence", () => {
   beforeEach(() => {
     sessions = [
       kayaSessionFixture({
-        attempted_climbs: [{ ...kayaClimbFixture(), id: "1000_2001", attempts: 4 }],
+        attempted_climbs: [{ ...kayaClimbFixture(), id: "1000_2001", attempts: 4, sent: false }],
       }),
     ];
     ascents = [kayaAscentFixture()];
@@ -173,11 +174,108 @@ describe("KayaSyncProvider canonical persistence", () => {
     );
     expect(images).toEqual([{ retired: true }]);
   });
+  it("refreshes earlier method-only attempts in place when the source send status is fetched", async () => {
+    const record = {
+      ...kayaClimbFixture({
+        climb_type: { id: "routes", name: "Routes" },
+        grade: { id: "59", name: "5.9", climb_type_group: "route" },
+      }),
+      id: "1000_2001",
+      attempts: 3,
+    };
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kaya",
+      entries: [
+        {
+          externalId: "kaya:session:1000:attempted:1000_2001",
+          climbedOn: "2026-08-01",
+          discipline: "rock_climbing",
+          raw: record,
+          reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+          attempts: Array.from({ length: 3 }, () => ({ scope: "climb", ropeMethod: "top_rope" })),
+          climb: {
+            externalId: "2001",
+            name: "Test problem",
+            kind: "route",
+            setting: "indoor",
+            publishedGrades: [{ value: "5.9", system: "yds" }],
+          },
+        },
+      ],
+    });
+    const beforeLog = (await logs())[0];
+    const beforeAttempts = await context.db.select().from(climbingAttempt);
+    expect(beforeAttempts).toHaveLength(3);
+    expect(beforeAttempts.every((attempt) => attempt.sourceResult === null)).toBe(true);
+    sessions = [kayaSessionFixture({ attempted_climbs: [{ ...record, sent: false }] })];
+    ascents = [];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const afterLog = (await logs())[0];
+    const afterAttempts = await context.db.select().from(climbingAttempt);
+    expect(afterLog).toMatchObject({ id: beforeLog?.id, raw: { sent: false, attempts: 3 } });
+    expect(afterAttempts.map((attempt) => attempt.id).sort()).toEqual(
+      beforeAttempts.map((attempt) => attempt.id).sort(),
+    );
+    const outcomes = await executeWithSchema(
+      context.db,
+      z.object({ outcome: z.enum(["completed", "failed"]).nullable() }),
+      sql`SELECT outcome FROM fitness.v_climbing_attempt WHERE climbing_log_entry_id=${afterLog?.id}`,
+    );
+    expect(outcomes).toEqual([{ outcome: "failed" }, { outcome: "failed" }, { outcome: "failed" }]);
+  });
+
+  it.each([false, true])(
+    "persists counted top-rope send status %s from the live client contract",
+    async (sent) => {
+      const record = {
+        ...kayaClimbFixture({
+          climb_type: { id: "routes", name: "Routes" },
+          grade: { id: "59", name: "5.9", climb_type_group: "route" },
+        }),
+        id: "1000_2001",
+        attempts: 3,
+        sent,
+      };
+      sessions = [kayaSessionFixture({ attempted_climbs: [record] })];
+      ascents = [];
+      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+      expect((await logs())[0]?.raw).toMatchObject({ sent, attempts: 3 });
+      const attempts = await executeWithSchema(
+        context.db,
+        z.object({
+          outcome: z.enum(["completed", "failed"]).nullable(),
+          source_result: z.string().nullable(),
+          attempt_index: z.number().nullable(),
+          received_beta: z.boolean().nullable(),
+        }),
+        sql`SELECT attempt.outcome, attempt.source_result, attempt.attempt_index, attempt.received_beta
+      FROM fitness.v_climbing_attempt attempt JOIN fitness.climbing_log_entry entry ON entry.id=attempt.climbing_log_entry_id
+      WHERE entry.user_id=${userId} AND entry.provider_id='kaya'`,
+      );
+      expect(attempts).toHaveLength(3);
+      expect(attempts.filter((attempt) => attempt.outcome === "completed")).toHaveLength(
+        sent ? 1 : 0,
+      );
+      expect(attempts.filter((attempt) => attempt.outcome === "failed")).toHaveLength(sent ? 0 : 3);
+      expect(attempts.filter((attempt) => attempt.outcome === null)).toHaveLength(sent ? 2 : 0);
+      expect(
+        attempts.every(
+          (attempt) => attempt.attempt_index === null && attempt.received_beta === null,
+        ),
+      ).toBe(true);
+      expect(
+        attempts.filter((attempt) => attempt.source_result === (sent ? "Send" : "Attempt")),
+      ).toHaveLength(sent ? 1 : 3);
+    },
+  );
 
   it("persists recorded colors from both feeds while keeping unnamed climbs unnamed", async () => {
     const coloredClimb = kayaClimbFixture({ name: null, color: { name: "Blue" } });
     sessions = [
-      kayaSessionFixture({ attempted_climbs: [{ ...coloredClimb, id: "1000_2001", attempts: 1 }] }),
+      kayaSessionFixture({
+        attempted_climbs: [{ ...coloredClimb, id: "1000_2001", attempts: 1, sent: false }],
+      }),
     ];
     ascents = [kayaAscentFixture({ climb: coloredClimb })];
     expect(await run()).toMatchObject({ errors: [] });
@@ -242,7 +340,7 @@ describe("KayaSyncProvider canonical persistence", () => {
 
     sessions = [
       kayaSessionFixture({
-        attempted_climbs: [{ ...kayaClimbFixture(), id: "1000_2001", attempts: 4 }],
+        attempted_climbs: [{ ...kayaClimbFixture(), id: "1000_2001", attempts: 4, sent: false }],
       }),
     ];
     ascents = [kayaAscentFixture()];
@@ -337,7 +435,7 @@ describe("KayaSyncProvider canonical persistence", () => {
     expect(
       attempts
         .filter((attempt) => attempt.climbingLogEntryId !== send.id)
-        .every((attempt) => attempt.sourceResult === null && attempt.attemptIndex === null),
+        .every((attempt) => attempt.sourceResult === "Attempt" && attempt.attemptIndex === null),
     ).toBe(true);
     expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
     expect(await logs()).toEqual(before);
@@ -428,7 +526,7 @@ describe("KayaSyncProvider canonical persistence", () => {
   it("rolls back the activity and graph when an attempted identity is ambiguous", async () => {
     sessions = [
       kayaSessionFixture({
-        attempted_climbs: [{ ...kayaClimbFixture(), id: "other_2001", attempts: 2 }],
+        attempted_climbs: [{ ...kayaClimbFixture(), id: "other_2001", attempts: 2, sent: false }],
       }),
     ];
     expect(await run()).toMatchObject({

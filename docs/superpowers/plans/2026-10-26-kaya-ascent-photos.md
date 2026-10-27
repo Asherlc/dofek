@@ -28,7 +28,7 @@
 
 ## Task 1: Shared owner model and persistence
 
-**Files:** `src/db/schema/activity-images.ts`, `src/db/schema/climbing.ts`, migration 0164, `src/db/activity-images.ts`, `src/activity-images/types.ts`, corresponding integration/unit tests.
+**Files:** `src/db/schema/activity-images.ts`, `src/db/schema/climbing.ts`, migration 0167, `src/db/activity-images.ts`, `src/activity-images/types.ts`, corresponding integration/unit tests.
 
 **Interfaces:** Add `recordClimbingImageDiscovery(db, {userId, climbingLogEntryId, providerId, discovery})`. Keep `recordActivityImageDiscovery` intact. Acquisition work is a union of existing activity work and climbing work with `activityId: null`, `climbingLogEntryId: string`, and the source log external ID in `activityExternalId`.
 
@@ -88,3 +88,4 @@
 - Ruling: an expired-link refresh records updated discovery before the worker compares revisions. A changed revision schedules new work and cannot be stored under the old generation; unchanged terminal failures are not promised automatic recovery by another sync.
 
 - Final verification: 21,555 unit/mobile tests passed (19 skipped); 55 focused integration tests passed; root/server/web/mobile typechecks passed; full lint and PostgreSQL migration SQLFluff/policy checks passed; schema diagrams regenerated; local analytics build passed 45/45 models after canonical workspace bootstrap. No material review findings remain deferred.
+- Merge preparation: preserved the KAYA send-status and canonical-setting changes from main together with photo behavior and both regression suites. Renumbered the unchanged photo migration from 0164 to 0167 after main allocated 0164–0166; its approved exceptions remain confined to that migration. Focused checks passed 155 unit tests and 45 PostgreSQL integration tests.
