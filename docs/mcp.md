@@ -187,6 +187,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
 | `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing/hiking sessions with full attached log graphs and scoped rock aggregates. |
+| `get_climbing_catalogue_context` | `activity:read` | Reads disposable, attributed catalogue context for one owned active climbing log, without external fetching or changes to recorded facts. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_finger_loading_progression` | `activity:read` | Returns longitudinal finger-load detail, explicit-threshold high-intensity days, consecutive exposure, and provenance as a separate load channel. |
@@ -573,6 +574,15 @@ likewise treats tools as explicit operations rather than hidden background work.
 normalized power by that contemporaneous estimate. Missing power remains
 `null`, and both power and elevation aggregates report activity coverage. See the
 [cycling-performance repository](../packages/server/src/repositories/cycling-performance-repository.ts).
+
+`get_climbing_catalogue_context({climbing_log_entry_id})` reads the same
+informational cache as web/mobile climb details. Missing, pending, ready and
+error states remain explicit; candidate links preserve source attribution,
+match confidence and inherited tag context. This read-only tool does not
+initiate external lookups; use **Find catalogue info** in climb details to
+populate or refresh the cache. Enrichment expires and never changes recorded
+climbs or metrics. See the [tool](../packages/server/src/mcp/climbing-catalogue-tool.ts)
+and [cache contract](climbing-trait-coverage.md#informational-catalogue-cache).
 
 `get_climbing_sessions` returns climbing sessions and hiking outings with
 attached logs. Each log includes current Climb/Area/Pitch definitions,

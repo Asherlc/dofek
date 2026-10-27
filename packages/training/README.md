@@ -53,6 +53,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `activity-images` | [Activity-image metadata, captions, and shared web/mobile query refresh policy](src/activity-images.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
 | `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and grip context |
+| `climbing-catalogue` | [Disposable catalogue context](src/climbing-catalogue.ts): attributed candidate matches, scoped locations, multiple/inherited tags and cache status, separately from recorded climbing facts |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
 | `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
 | `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |

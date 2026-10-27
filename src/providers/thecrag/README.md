@@ -12,3 +12,7 @@ preserving unobserved records because feed events are not a complete snapshot.
 It preserves actionable missing-method errors and sanitizes unexpected database
 failures. Unit tests live beside source modules; the
 [integration suite](../thecrag-sync.integration.test.ts) exercises stored records.
+
+The separate [catalogue reader](catalogue.ts) supports disposable informational
+lookups, including multiple/inherited steepness tags. It does not write to the
+climbing graph; see the [cache lifecycle](../../../docs/climbing-trait-coverage.md#informational-catalogue-cache).

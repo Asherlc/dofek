@@ -1,7 +1,9 @@
+import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportJobData } from "./queues.ts";
 
 const {
+  mockQueueGetJob,
   mockQueueAdd,
   mockQueueClose,
   MockQueue,
@@ -11,9 +13,15 @@ const {
   MockQueueEvents,
   MockRedisConnection,
 } = vi.hoisted(() => {
+  const mockQueueGetJob = vi.fn();
   const mockQueueAdd = vi.fn();
   const mockQueueClose = vi.fn().mockResolvedValue(undefined);
-  const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
+  const mockQueueInstance = {
+    name: "mock-queue",
+    add: mockQueueAdd,
+    getJob: mockQueueGetJob,
+    close: mockQueueClose,
+  };
   const MockQueue = vi.fn(function vitestConstructor() {
     return mockQueueInstance;
   });
@@ -31,6 +39,7 @@ const {
     return { close: vi.fn().mockResolvedValue(undefined) };
   });
   return {
+    mockQueueGetJob,
     mockQueueAdd,
     mockQueueClose,
     MockQueue,
@@ -62,7 +71,71 @@ import {
   providerDataDeletionJobDataSchema,
 } from "./queues.ts";
 
+const catalogueSeed: CatalogueSeed = {
+  userId: "user-a",
+  logEntryId: "log-a",
+  providerId: "kaya",
+  externalId: "1",
+  sourceUrl: null,
+  name: "Crack",
+  kind: "route",
+  setting: "outdoor",
+  locations: [],
+};
+
 describe("queues", () => {
+  it("queues one disposable catalogue refresh per user and log", async () => {
+    const { enqueueClimbingCatalogueRefresh } = await import("./queues.ts");
+    await enqueueClimbingCatalogueRefresh(catalogueSeed);
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "climbing-catalogue",
+      { type: "climbing-catalogue", userId: "user-a", logEntryId: "log-a", seed: catalogueSeed },
+      expect.objectContaining({
+        attempts: 1,
+        removeOnComplete: true,
+        removeOnFail: true,
+        jobId: "climbing-catalogue-user-a-log-a",
+      }),
+    );
+  });
+  it.each(["waiting", "active", "delayed", "prioritized", "waiting-children"])(
+    "projects %s jobs as pending",
+    async (state) => {
+      const { getClimbingCatalogueRefreshState } = await import("./queues.ts");
+      mockQueueGetJob.mockResolvedValue({ getState: async () => state });
+      expect(await getClimbingCatalogueRefreshState("user-a", "log-a")).toBe("pending");
+      expect(mockQueueGetJob).toHaveBeenCalledWith("climbing-catalogue-user-a-log-a");
+    },
+  );
+  it.each(["completed", "failed", "unknown", null])(
+    "does not leave pending after job state %s",
+    async (state) => {
+      const { getClimbingCatalogueRefreshState } = await import("./queues.ts");
+      mockQueueGetJob.mockResolvedValue(
+        state === null ? undefined : { getState: async () => state },
+      );
+      expect(await getClimbingCatalogueRefreshState("user-a", "log-a")).toBeNull();
+    },
+  );
+  it("rejects job snapshots attributed to a different user or log", async () => {
+    const { climbingCatalogueJobDataSchema } = await import("./queues.ts");
+    expect(
+      climbingCatalogueJobDataSchema.safeParse({
+        type: "climbing-catalogue",
+        userId: "other",
+        logEntryId: "log-a",
+        seed: catalogueSeed,
+      }).success,
+    ).toBe(false);
+    expect(
+      climbingCatalogueJobDataSchema.safeParse({
+        type: "climbing-catalogue",
+        userId: "user-a",
+        logEntryId: "other",
+        seed: catalogueSeed,
+      }).success,
+    ).toBe(false);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.REDIS_URL;

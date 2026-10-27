@@ -10,6 +10,7 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Export**: Generating user data ZIP exports.
 - **Scheduled Sync**: High-level orchestrator for triggering periodic syncs based on tiers.
 - **Post-Sync**: Downstream tasks (e.g., recomputing metrics, cache invalidation) triggered after a successful sync.
+- **Catalogue context**: Explicit climb-detail lookups use a distinct [post-sync job payload](queues.ts). The [processor](climbing-catalogue-job.ts) reads active source records and writes only expiring informational cache entries. Live BullMQ state supplies pending status independently of the metadata TTL; see the [queue/repository regressions](../../packages/server/src/repositories/climbing-catalogue-repository.test.ts).
 - **Activity Delete Analytics**: Rebuilds ClickHouse activity read models after user-initiated deletes.
 - **Analytics Refresh**: Reconciled data dispatches a combined refresh request to
   the dedicated analytics worker. Scheduled maintenance uses the same queue;

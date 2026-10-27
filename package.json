@@ -7,6 +7,9 @@
     "ioredis": "6.0.0"
   },
   "exports": {
+    "./climbing-catalogue": "./src/climbing-catalogue.ts",
+    "./climbing-catalogue-sources": "./src/climbing-catalogue-sources.ts",
+    "./db/climbing-catalogue-seed": "./src/db/climbing-catalogue-seed.ts",
     "./test-helpers": "./src/test-helpers.ts",
     "./export": "./src/export.ts",
     "./activity-export": "./src/activity-export/index.ts",

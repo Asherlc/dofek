@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
+import { type CatalogueSeed, catalogueSeedSchema } from "@dofek/training/climbing-catalogue";
 import type { ConnectionOptions, Job, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
@@ -147,7 +148,21 @@ export interface UserRefitPostSyncJobData {
   userId: string;
 }
 
-export type PostSyncJobData = GlobalMaintenancePostSyncJobData | UserRefitPostSyncJobData;
+export const climbingCatalogueJobDataSchema = z
+  .strictObject({
+    type: z.literal("climbing-catalogue"),
+    userId: z.string().min(1),
+    logEntryId: z.string().min(1),
+    seed: catalogueSeedSchema,
+  })
+  .refine((job) => job.seed.userId === job.userId && job.seed.logEntryId === job.logEntryId, {
+    message: "Catalogue refresh seed must belong to the queued user and log.",
+  });
+export type ClimbingCatalogueJobData = z.infer<typeof climbingCatalogueJobDataSchema>;
+export type PostSyncJobData =
+  | GlobalMaintenancePostSyncJobData
+  | UserRefitPostSyncJobData
+  | ClimbingCatalogueJobData;
 
 export interface ActivityDeleteAnalyticsJobData {
   type: "activity-delete-analytics-refresh";
@@ -670,6 +685,41 @@ export async function enqueueDebouncedPostSyncMaintenance(
       removeOnComplete: true,
     },
   );
+}
+
+function climbingCatalogueJobId(userId: string, logEntryId: string): string {
+  return `climbing-catalogue-${userId}-${logEntryId}`;
+}
+
+export async function getClimbingCatalogueRefreshState(
+  userId: string,
+  logEntryId: string,
+  queue: Pick<Queue<PostSyncJobData>, "getJob"> = getPostSyncQueue(),
+): Promise<"pending" | null> {
+  const job = await queue.getJob(climbingCatalogueJobId(userId, logEntryId));
+  if (!job) return null;
+  const state = await job.getState();
+  return ["waiting", "active", "delayed", "prioritized", "waiting-children"].includes(state)
+    ? "pending"
+    : null;
+}
+
+export async function enqueueClimbingCatalogueRefresh(
+  seed: CatalogueSeed,
+  queue: Pick<Queue<PostSyncJobData>, "add"> = getPostSyncQueue(),
+): Promise<void> {
+  const data = climbingCatalogueJobDataSchema.parse({
+    type: "climbing-catalogue",
+    userId: seed.userId,
+    logEntryId: seed.logEntryId,
+    seed,
+  });
+  await queue.add("climbing-catalogue", data, {
+    attempts: 1,
+    removeOnComplete: true,
+    removeOnFail: true,
+    jobId: climbingCatalogueJobId(seed.userId, seed.logEntryId),
+  });
 }
 
 export async function enqueueDebouncedUserRefit(

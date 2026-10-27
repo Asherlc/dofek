@@ -991,6 +991,7 @@ describe("createMcpRouter", () => {
         "render_health_explorer",
       ],
       "activity:read": [
+        "get_climbing_catalogue_context",
         "get_climbing_progression",
         "get_threshold_history",
         "get_strength_progression",
@@ -1382,6 +1383,7 @@ describe("createMcpRouter", () => {
       "get_finger_loading_progression",
       "get_climbing_progression",
       "get_climbing_sessions",
+      "get_climbing_catalogue_context",
       "get_strength_sessions",
       "get_strength_progression",
       "get_nutrition_summary",
@@ -1415,6 +1417,10 @@ describe("createMcpRouter", () => {
         path: ["result", "groups", "[]", "identityEvidence", "[]", "method"],
       },
       { name: "get_daily_health_summary", path: ["result", "source_providers"] },
+      {
+        name: "get_climbing_catalogue_context",
+        path: ["result", "sources", "[]", "matches", "[]", "confidence"],
+      },
       {
         name: "get_health_trends",
         path: [
