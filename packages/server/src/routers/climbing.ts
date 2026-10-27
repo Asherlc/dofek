@@ -287,7 +287,8 @@ export const climbingRouter = router({
     .query(async ({ ctx, input }) =>
       runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
-        return repository.getVolumeOverTime(input.days, input);
+        const { days, ...filters } = input;
+        return repository.getVolumeOverTime(days, filters);
       }),
     ),
 

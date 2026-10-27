@@ -1,9 +1,8 @@
 import type { StrengthExerciseIdentity } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Database } from "../../../../src/db/index.ts";
 import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
-import type { AccessWindow } from "../billing/entitlement.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -290,30 +289,7 @@ const summaryRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Data access for strength training analytics. */
-export class StrengthRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-  readonly #accessWindow: AccessWindow;
-
-  constructor(
-    db: Pick<Database, "execute">,
-    userId: string,
-    timezone: string,
-    accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" },
-  ) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-    this.#accessWindow = accessWindow;
-  }
-
-  #accessFilter() {
-    return this.#accessWindow.kind === "full"
-      ? sql``
-      : sql`AND a.started_at >= (${this.#accessWindow.startDate}::date::timestamp AT TIME ZONE ${this.#timezone}) AND a.started_at < (${this.#accessWindow.endDateExclusive}::date::timestamp AT TIME ZONE ${this.#timezone})`;
-  }
-
+export class StrengthRepository extends BaseRepository {
   #dedupedStrengthSets(days: RangeDays) {
     const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     return sql`WITH strength_source_rows AS (
@@ -352,10 +328,10 @@ export class StrengthRepository {
               dp2.source_name_pattern ASC
             LIMIT 1
           ) dp ON true
-          WHERE a.user_id = ${this.#userId}
+          WHERE a.user_id = ${this.userId}
             AND a.canonical_type = 'strength'
             ${rangeFilter}
-            ${this.#accessFilter()}
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
         ),
         ranked_strength_sets AS (
           SELECT
@@ -480,11 +456,11 @@ export class StrengthRepository {
   async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
     const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       volumeRowSchema,
       sql`${this.#dedupedStrengthSets(days)}, weekly_sets AS (
           SELECT
-            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
+            date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
             COALESCE(SUM(weight_kg * reps) FILTER (WHERE set_type = 'working'), 0)::real AS total_volume_kg,
             COUNT(*) FILTER (WHERE set_type = 'working')::int AS set_count,
             CASE WHEN COUNT(*) FILTER (WHERE set_type = 'working') = COUNT(weight_kg * reps) FILTER (WHERE set_type = 'working')
@@ -494,11 +470,11 @@ export class StrengthRepository {
           FROM deduped_strength_sets
           GROUP BY 1
           ), weekly_time AS (
-            SELECT date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date AS week,
+            SELECT date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
               COUNT(*)::int AS activities,
               CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS duration_minutes
-            FROM fitness.v_activity a WHERE a.user_id = ${this.#userId}
-              AND a.canonical_type = 'strength' ${rangeFilter} ${this.#accessFilter()} GROUP BY 1
+            FROM fitness.v_activity a WHERE a.user_id = ${this.userId}
+              AND a.canonical_type = 'strength' ${rangeFilter} ${this.timestampAccessPredicate(sql`a.started_at`)} GROUP BY 1
           )
           SELECT COALESCE(weekly_sets.week, weekly_time.week)::text AS week,
             COALESCE(weekly_sets.total_volume_kg, 0) AS total_volume_kg,
@@ -526,7 +502,7 @@ export class StrengthRepository {
   /** Estimated 1RM using Epley formula, best e1RM per workout per exercise. */
   async getEstimatedOneRepMax(days: RangeDays): Promise<EstimatedOneRepMax[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       oneRepMaxRowSchema,
       sql`${this.#dedupedStrengthSets(days)},
           best_per_workout AS (
@@ -535,7 +511,7 @@ export class StrengthRepository {
               equipment,
               normalized_exercise_name,
               normalized_equipment,
-              (started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
+              (started_at AT TIME ZONE ${this.timezone})::date::text AS workout_date,
               weight_kg * (1 + reps / 30.0) AS e1rm,
               weight_kg AS actual_weight,
               reps AS actual_reps,
@@ -610,12 +586,12 @@ export class StrengthRepository {
   /** Weekly sets per muscle group. */
   async getMuscleGroupVolume(days: RangeDays): Promise<MuscleGroupVolume[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       muscleGroupRowSchema,
       sql`${this.#dedupedStrengthSets(days)}
           SELECT
             mg AS muscle_group,
-            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date::text AS week,
             COUNT(*) FILTER (WHERE set_type = 'working')::int AS sets
           FROM deduped_strength_sets
           CROSS JOIN LATERAL unnest(muscle_groups) AS mg
@@ -639,13 +615,13 @@ export class StrengthRepository {
   /** Weekly volume per exercise with linear regression slope. */
   async getProgressiveOverload(days: RangeDays): Promise<ProgressiveOverload[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       overloadRowSchema,
       sql`${this.#dedupedStrengthSets(days)}
           SELECT
             MIN(exercise_name) AS exercise_name,
             MIN(equipment) AS equipment,
-            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date::text AS week,
             COALESCE(SUM(weight_kg * reps), 0)::real AS weekly_volume
           FROM deduped_strength_sets
           WHERE weight_kg > 0
@@ -684,7 +660,7 @@ export class StrengthRepository {
   /** Exercises and source-aware deduplicated sets for one resolved activity group. */
   async getExercisesForActivity(activityId: string): Promise<ExerciseWithSets[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       exerciseSetRowSchema,
       sql`SELECT
             ss.activity_id::text AS member_activity_id,
@@ -722,7 +698,7 @@ export class StrengthRepository {
               a.id = ${activityId}::uuid
               OR ${activityId}::uuid = ANY(a.member_activity_ids)
             )
-            AND a.user_id = ${this.#userId}
+            AND a.user_id = ${this.userId}
           ORDER BY
             LOWER(REGEXP_REPLACE(TRIM(e.name), '[[:space:]]+', ' ', 'g')),
             LOWER(REGEXP_REPLACE(TRIM(COALESCE(e.equipment, '')), '[[:space:]]+', ' ', 'g')),
@@ -830,11 +806,11 @@ export class StrengthRepository {
   async getWorkoutSummaries(days: RangeDays): Promise<WorkoutSummary[]> {
     const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       summaryRowSchema,
       sql`${this.#dedupedStrengthSets(days)}
           SELECT
-            (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
+            (a.started_at AT TIME ZONE ${this.timezone})::date::text AS date,
             a.name,
             COUNT(DISTINCT (ss.normalized_exercise_name, ss.normalized_equipment))
               FILTER (WHERE ss.set_type = 'working')::int AS exercise_count,
@@ -843,7 +819,7 @@ export class StrengthRepository {
             ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::int AS duration_minutes
           FROM fitness.v_activity a
           LEFT JOIN deduped_strength_sets ss ON ss.group_activity_id = a.id
-          WHERE a.user_id = ${this.#userId}
+          WHERE a.user_id = ${this.userId}
             AND a.canonical_type = 'strength'
             ${rangeFilter}
             AND a.ended_at IS NOT NULL

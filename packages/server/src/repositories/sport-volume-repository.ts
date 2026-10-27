@@ -6,7 +6,6 @@ import {
 } from "@dofek/training/sport-volume";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
@@ -48,11 +47,6 @@ export class SportVolumeRepository {
     sport?: string;
     metric: SportVolumeMetric;
   }): Promise<SportVolumeResult> {
-    const range = ChartRange.fromDays(input.days);
-    const accessFilter =
-      this.#accessWindow.kind === "limited"
-        ? "AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({accessStart:String}) AND toDate(toTimeZone(activity.started_at, {timezone:String})) < toDate({accessEnd:String})"
-        : "";
     const rows = await this.#store.query(
       activitySchema,
       `SELECT
@@ -66,19 +60,20 @@ export class SportVolumeRepository {
       WHERE activity.user_id = {userId:UUID} AND activity.is_deleted = 0
         AND activity.canonical_type NOT IN ('climbing', 'strength')
         AND toDate(toTimeZone(activity.started_at, {timezone:String})) <= toDate(now(), {timezone:String})
-        ${range.clickHouseDateAfterEndDate({ expression: "toDate(toTimeZone(activity.started_at, {timezone:String}))", endDateExpression: "toDate(now(), {timezone:String})" })}
-        ${accessFilter}
+        AND ({days:Nullable(Int32)} IS NULL OR toDate(toTimeZone(activity.started_at, {timezone:String})) > subtractDays(toDate(now(), {timezone:String}), {days:Nullable(Int32)}))
+        AND ({accessFull:Bool} OR (toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({accessStart:Nullable(String)}) AND toDate(toTimeZone(activity.started_at, {timezone:String})) < toDate({accessEnd:Nullable(String)})))
       ORDER BY week, id SETTINGS join_use_nulls = 1`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        ...range.params(),
+        days: input.days,
         ...(this.#accessWindow.kind === "limited"
           ? {
+              accessFull: false,
               accessStart: this.#accessWindow.startDate,
               accessEnd: this.#accessWindow.endDateExclusive,
             }
-          : {}),
+          : { accessFull: true, accessStart: null, accessEnd: null }),
       },
     );
     const sports = [...new Set(rows.map((row) => row.sport))].sort();
@@ -103,19 +98,18 @@ export class SportVolumeRepository {
       );
       const samples = new Map(powerRows.map((row) => [row.id, row.samples]));
       for (const row of selected) {
-        if (row.duration_seconds == null || row.duration_seconds <= 0) {
+        const nativeSamples = samples.get(row.id);
+        if (nativeSamples === undefined) {
           work.set(row.id, null);
           continue;
         }
-        const observations = (samples.get(row.id) ?? [])
-          .map(([timestamp, powerWatts]) => ({
-            elapsedSeconds: (timestamp - row.started_milliseconds) / 1000,
-            powerWatts,
-          }))
-          .sort((a, b) => a.elapsedSeconds - b.elapsedSeconds);
+        const observations = nativeSamples.map(([timestamp, powerWatts]) => ({
+          elapsedSeconds: (timestamp - row.started_milliseconds) / 1000,
+          powerWatts,
+        }));
         const result = computeCyclingPowerWork(
           observations,
-          row.duration_seconds,
+          row.duration_seconds ?? 0,
           observations
             .filter((sample) => sample.powerWatts == null || sample.powerWatts < 0)
             .map((sample) => sample.elapsedSeconds),

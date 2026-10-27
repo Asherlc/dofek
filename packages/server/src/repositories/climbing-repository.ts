@@ -25,6 +25,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   type ClimbingActivityLogEntry,
@@ -344,7 +345,9 @@ export class ClimbingRepository extends BaseRepository {
       .map((row) => new ClimbingVolumeByGrade(row));
   }
   async getVolumeOverTime(days: number | null, filters: ClimbingFilters = {}) {
-    const range = days ?? { endDate: formatDateYmdInTimeZone(new Date(), this.timezone) };
+    const endDate = formatDateYmdInTimeZone(new Date(), this.timezone);
+    const range = days ?? { endDate };
+    const hasFilters = Object.values(filters).some((value) => value !== undefined);
     const rows = await executeWithSchema(
       this.db,
       weeklyVolumeRowSchema,
@@ -360,14 +363,10 @@ export class ClimbingRepository extends BaseRepository {
           COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM canonical_logs logs WHERE logs.canonical_activity_id = a.id)) AS activities_without_logs
         FROM fitness.v_activity a
         WHERE a.user_id = ${this.userId} AND a.canonical_type = 'climbing'
-          ${days === null ? sql`` : sql`AND (a.started_at AT TIME ZONE ${this.timezone})::date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int`}
+          ${ChartRange.fromDays(days).postgresDateAfterEndDate(sql`(a.started_at AT TIME ZONE ${this.timezone})::date`, endDate)}
           AND (a.started_at AT TIME ZONE ${this.timezone})::date <= (NOW() AT TIME ZONE ${this.timezone})::date
           ${this.dateAccessPredicate(sql`(a.started_at AT TIME ZONE ${this.timezone})::date`)}
-          ${
-            Object.entries(filters).some(([key, value]) => key !== "days" && value !== undefined)
-              ? sql`AND a.id IN (SELECT canonical_activity_id FROM canonical_logs)`
-              : sql``
-          }
+          AND (NOT ${hasFilters} OR a.id IN (SELECT canonical_activity_id FROM canonical_logs))
         GROUP BY 1
       )
       SELECT COALESCE(weekly_attempts.week, weekly_time.week)::text AS week,
