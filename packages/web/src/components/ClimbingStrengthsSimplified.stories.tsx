@@ -134,3 +134,52 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Simplified: Story = {};
+
+function AllGradesStrengths() {
+  const [dimension, setDimension] = useState("wall_angle");
+  const panel = climbingStrengthsFixture.panels.find((item) => item.dimension === dimension);
+  if (!panel) return null;
+  return (
+    <main className="min-h-screen bg-bg p-6 text-foreground sm:p-10">
+      <section className="mx-auto max-w-4xl rounded-xl border border-border bg-surface p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-lg font-semibold">Climbing strengths</h1>
+          <span className="text-sm text-muted">Bouldering · Indoor</span>
+        </div>
+        <fieldset aria-label="Analyze" className="mb-5 flex gap-2">
+          {[
+            { value: "wall_angle", label: "Wall angle" },
+            { value: "hold_type", label: "Hold type" },
+          ].map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={dimension === item.value}
+              onClick={() => setDimension(item.value)}
+              className={`min-h-10 rounded-lg border px-4 text-sm ${dimension === item.value ? "border-accent bg-accent/10 text-accent" : "border-border text-muted"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </fieldset>
+        <h2 className="font-medium">Send rate across grades</h2>
+        <p className="mb-5 mt-1 text-sm text-muted">
+          Compare styles at every difficulty. Hover over a point for its recorded climbs.
+        </p>
+        <ClimbingStrengthsChart
+          panel={panel}
+          view="curves"
+          grade="All grades"
+          selectedRow={null}
+          onSelectCell={() => {}}
+        />
+        <p className="mt-3 text-xs text-muted">
+          Missing observations leave gaps. Hollow points indicate limited samples.
+        </p>
+      </section>
+      <p className="mx-auto mt-4 max-w-4xl text-xs text-muted">Layout preview · Example data</p>
+    </main>
+  );
+}
+
+export const GradeAsAxis: Story = { render: () => <AllGradesStrengths /> };
