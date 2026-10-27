@@ -18,20 +18,22 @@ export function isTransientNetworkErrorMessage(message: string): boolean {
   // the same class of transient failure two ways: a request timeout
   // (NSURLErrorTimedOut) and a dropped connection (NSURLErrorNetworkConnectionLost,
   // "The network connection was lost.").
-  return /fetch failed.*(the request timed out|the network connection was lost)/i.test(message);
+  if (message.includes(";")) return false;
+  return /fetch failed:\s*(?:UnexpectedException:\s*)?(?:the request timed out\.|the network connection was lost\.|the Internet connection appears to be offline\.|cancelled|canceled)(?: \(at [^)]+\))?$/i.test(
+    message,
+  );
 }
 
 export function isBackgroundHealthKitTransientNetworkError(error: unknown): boolean {
-  if (error instanceof Error) {
-    if (isTransientNetworkErrorMessage(error.message)) {
-      return true;
-    }
-    if (error.cause !== undefined) {
-      return isBackgroundHealthKitTransientNetworkError(error.cause);
-    }
-    return false;
+  const visited = new Set<unknown>();
+  let current = error;
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if (current instanceof SyntaxError) return false;
+    if (isTransientNetworkErrorMessage(current.message)) return true;
+    current = current.cause;
   }
-  return isTransientNetworkErrorMessage(String(error));
+  return typeof current === "string" && isTransientNetworkErrorMessage(current);
 }
 
 export const HEALTHKIT_BACKGROUND_SENTRY_SOURCE = "bg-healthkit-sync";
@@ -40,16 +42,15 @@ function isBackgroundSyncSource(source: string | undefined): boolean {
   return (
     source === HEALTHKIT_BACKGROUND_SENTRY_SOURCE ||
     source === "bg-accel-sync" ||
+    source === "whoop-ble-imu-upload" ||
+    source === "whoop-ble-realtime-upload" ||
     (source?.startsWith("health-kit-") ?? false)
   );
 }
 
 /**
- * A background sensor sync that fails on a transient network error (timeout or
- * dropped connection) is not actionable — the next foreground delivery retries and
- * succeeds. These must be dropped from every error-tracking destination (Sentry and
- * PostHog), not just Sentry, so the check lives here rather than in Sentry's
- * `beforeSend`.
+ * Known background transport outcomes belong in operational metrics and logs.
+ * This classification does not establish that a later delivery will succeed.
  */
 export function shouldSuppressBackgroundTransientNetworkError(
   error: unknown,

@@ -1006,6 +1006,9 @@ importers:
       '@dofek/stats':
         specifier: workspace:*
         version: link:../stats
+      '@dofek/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       '@dofek/training':
         specifier: workspace:*
         version: link:../training

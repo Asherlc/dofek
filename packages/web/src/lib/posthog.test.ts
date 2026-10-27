@@ -259,7 +259,7 @@ describe("initPostHog", () => {
     );
   });
 
-  it("enables exception autocapture", () => {
+  it("autocaptures unhandled failures without turning handled console messages into issues", () => {
     initPostHog();
     expect(posthog.init).toHaveBeenCalledWith(
       expect.any(String),
@@ -267,7 +267,7 @@ describe("initPostHog", () => {
         capture_exceptions: {
           capture_unhandled_errors: true,
           capture_unhandled_rejections: true,
-          capture_console_errors: true,
+          capture_console_errors: false,
         },
       }),
     );

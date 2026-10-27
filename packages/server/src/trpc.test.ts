@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { ProviderInvalidCredentialsError } from "dofek/providers/auth-errors";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -49,6 +50,17 @@ async function serializeTransportError(error: unknown) {
 }
 
 describe("tRPC error serialization", () => {
+  it("marks confirmed invalid credentials while preserving their actionable error", async () => {
+    const cause = new ProviderInvalidCredentialsError("Zepp");
+    const result = await serializeTransportError(
+      new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+    );
+    const body = JSON.parse(result.body);
+    expect(result.status).toBe(400);
+    expect(body.error.message).toBe(cause.message);
+    expect(body.error.data.handledFailure).toBe("invalid_credentials");
+  });
+
   it("serializes a configuration failure with the feature and support action", async () => {
     const diagnostic = new Error("CLICKHOUSE_URL environment variable is required");
     const testRouter = router({
