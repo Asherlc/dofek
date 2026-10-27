@@ -49,6 +49,7 @@ export function activity(overrides: Record<string, unknown> = {}) {
     id: "activity-1",
     name: "Trainer Ride",
     activityType: "indoor_cycling",
+    primaryActivityType: null,
     modality: null,
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",

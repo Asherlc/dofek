@@ -99,6 +99,6 @@ export const trainingRouter = router({
       );
       return repo.getActivityStats(range.days);
     },
-    { keyVersion: "training-activity-states-v1" },
+    { keyVersion: "training-activity-primary-title-v2" },
   ),
 });

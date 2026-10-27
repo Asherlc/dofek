@@ -14,6 +14,7 @@ import { ActivityHeader } from "./ActivityDetailPage.tsx";
 const baseActivity: ActivityDetail = {
   id: "abc-123",
   activityType: "cycling",
+  primaryActivityType: null,
   rawType: "cycling",
   modality: null,
   startedAt: "2026-03-31T08:00:00Z",
@@ -127,6 +128,25 @@ export const WalkingSourcesExpanded: HeaderStory = {
     await userEvent.click(canvas.getByRole("button", { name: "Asher’s Apple Watch Sources" }));
     await expect(canvas.getByText("Whoop")).toBeVisible();
     await expect(canvas.getByText("Apple Health")).toBeVisible();
+  },
+};
+
+export const PrimarySourceWithoutTitle: HeaderStory = {
+  ...WalkingSourcesCollapsed,
+  args: {
+    ...WalkingSourcesCollapsed.args,
+    activity: {
+      ...baseActivity,
+      ...WalkingSourcesCollapsed.args?.activity,
+      name: null,
+      activityType: "walking",
+      primaryActivityType: "running",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", { name: "Running" })).toBeVisible();
+    await expect(canvas.getByText("Walking")).toBeVisible();
   },
 };
 

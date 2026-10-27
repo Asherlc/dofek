@@ -13,6 +13,7 @@ const strengthActivity: ActivityCardData = {
   id: "strength-1",
   name: null,
   activityType: "strength",
+  primaryActivityType: null,
   modality: null,
   startedAt: "2026-07-14T08:46:00-07:00",
   localTimeContext: {
@@ -70,6 +71,7 @@ const mappedActivity: ActivityCardData = {
   id: "run-1",
   name: "Morning Run",
   activityType: "running",
+  primaryActivityType: null,
   modality: null,
   startedAt: "2026-07-14T07:38:00-07:00",
   localTimeContext: {
@@ -188,6 +190,20 @@ export const MappedActivity: Story = {
       </div>
     ),
   ],
+};
+
+export const PrimarySourceWithoutTitle: Story = {
+  ...NonMapActivity,
+  args: {
+    activity: {
+      ...strengthActivity,
+      activityType: "walking",
+      primaryActivityType: "running",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("heading", { name: "Running" })).toBeVisible();
+  },
 };
 
 export const IndoorCycling: Story = {

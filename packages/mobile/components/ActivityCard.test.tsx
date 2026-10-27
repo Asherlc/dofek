@@ -7,6 +7,7 @@ describe("ActivityCard", () => {
   const baseProps = {
     name: "Morning Run",
     activityType: "running",
+    primaryActivityType: null,
     startedAt: "2026-03-18T07:00:00Z",
     endedAt: "2026-03-18T07:45:00Z",
     avgHr: null,
@@ -22,8 +23,22 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Morning Run")).toBeTruthy();
   });
 
-  it("falls back to activityType when name is empty", () => {
-    render(<ActivityCard {...baseProps} name="" />);
+  it("uses the primary activity type when its name is missing", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        name={null}
+        activityType="walking"
+        primaryActivityType="running"
+      />,
+    );
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByLabelText("Walking activity")).toBeDefined();
+  });
+
+  it("falls back to activityType when name is missing", () => {
+    render(<ActivityCard {...baseProps} name={null} />);
     expect(screen.getByText("Running")).toBeTruthy();
   });
 

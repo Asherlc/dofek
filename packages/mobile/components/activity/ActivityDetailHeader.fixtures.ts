@@ -5,6 +5,7 @@ import type { ActivityDetailHeader } from "./ActivityDetailHeader";
 export const detailHeaderActivity: ComponentProps<typeof ActivityDetailHeader>["activity"] = {
   name: "Morning Ride",
   activityType: "cycling",
+  primaryActivityType: null,
   displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
   localTimeContext: {

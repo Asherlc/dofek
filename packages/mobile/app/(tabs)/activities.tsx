@@ -84,6 +84,7 @@ function formatActivityAccessibilityLabel(
   action: "Open" | "Select" | "Deselect",
   activity: {
     activityType: string;
+    primaryActivityType: string | null;
     modality: string | null;
     durationMin: number;
     localTimeContext: RecordLocalTimeContext;
@@ -100,7 +101,7 @@ function formatActivityAccessibilityLabel(
 ): string {
   const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
   const labelParts = [
-    activity.name ?? activityTypeLabel,
+    activity.name ?? formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType),
     displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
     formatDurationMinutes(activity.durationMin),
   ];
@@ -469,7 +470,10 @@ export default function ActivitiesScreen() {
                         importantForAccessibility="no-hide-descendants"
                       >
                         <Text style={styles.activityName} numberOfLines={1}>
-                          {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+                          {activity.name ??
+                            formatActivityTypeLabel(
+                              activity.primaryActivityType ?? activity.activityType,
+                            )}
                         </Text>
                         {selectMode ? (
                           <Text

@@ -351,33 +351,43 @@ current_deduped_activities AS (
     SELECT
         assumeNotNull(merged.group_id) AS activity_id,
         activity_origins.primary_activity_id AS primary_activity_id,
-        provider_id,
+        merged.provider_id AS provider_id,
         merged.user_id AS user_id,
-        canonical_type,
-        provider_type,
-        modality,
-        started_at,
-        ended_at,
-        source_name,
-        name,
-        notes,
-        timezone,
-        start_utc_offset_minutes,
-        end_utc_offset_minutes,
-        coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
-        raw,
-        source_synced_at,
-        source_providers,
-        source_external_ids,
-        absent_source_external_ids,
-        member_activity_ids,
+        merged.canonical_type AS canonical_type,
+        merged.provider_type AS provider_type,
+        merged.modality AS modality,
+        merged.started_at AS started_at,
+        merged.ended_at AS ended_at,
+        merged.source_name AS source_name,
+        if(
+            activity_origins.primary_activity_id IS NOT null,
+            if(nullIf(trim(BOTH ' ' FROM primary_member.name), '') IS null, null, primary_member.name),
+            merged.name
+        ) AS name,
+        merged.notes AS notes,
+        merged.timezone AS timezone,
+        merged.start_utc_offset_minutes AS start_utc_offset_minutes,
+        merged.end_utc_offset_minutes AS end_utc_offset_minutes,
+        coalesce(nullIf(merged.local_time_source, ''), 'unknown') AS local_time_source,
+        merged.raw AS raw,
+        merged.source_synced_at AS source_synced_at,
+        merged.source_providers AS source_providers,
+        merged.source_external_ids AS source_external_ids,
+        merged.absent_source_external_ids AS absent_source_external_ids,
+        merged.member_activity_ids AS member_activity_ids,
         merged.id AS representative_activity_id,
         activity_origins.primary_provider_id,
         activity_origins.primary_source_name,
+        primary_member.canonical_type AS primary_canonical_type,
         activity_origins.origin_candidate_member_ids,
         activity_origins.origin_evidence
     FROM merged
     INNER JOIN activity_origins ON activity_origins.group_id = merged.group_id AND activity_origins.user_id = merged.user_id
+    LEFT JOIN {{ ref('activity_source_records') }} AS primary_member FINAL
+        ON primary_member.activity_id = activity_origins.primary_activity_id
+        AND primary_member.group_id = merged.group_id
+        AND primary_member.user_id = merged.user_id
+        AND primary_member.is_deleted = 0
     WHERE merged.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
 ),
 
@@ -452,6 +462,7 @@ existing_deduped_activities AS (
         deduped.representative_activity_id,
         deduped.primary_provider_id,
         deduped.primary_source_name,
+        deduped.primary_canonical_type,
         deduped.origin_candidate_member_ids,
         deduped.origin_evidence,
         deduped.refresh_version,
@@ -522,6 +533,7 @@ current_deduped_activity_state AS (
                 AND isNotDistinctFrom(current_activities.representative_activity_id, existing_activities.representative_activity_id)
                 AND isNotDistinctFrom(current_activities.primary_provider_id, existing_activities.primary_provider_id)
                 AND isNotDistinctFrom(current_activities.primary_source_name, existing_activities.primary_source_name)
+                AND isNotDistinctFrom(current_activities.primary_canonical_type, existing_activities.primary_canonical_type)
                 AND isNotDistinctFrom(current_activities.origin_candidate_member_ids, existing_activities.origin_candidate_member_ids)
                 AND isNotDistinctFrom(current_activities.origin_evidence, existing_activities.origin_evidence)
             )
@@ -589,7 +601,8 @@ SELECT
     origin_evidence,
     lifecycle_refresh_version AS refresh_version,
     0 AS is_deleted,
-    lifecycle_refreshed_at AS refreshed_at
+    lifecycle_refreshed_at AS refreshed_at,
+    primary_canonical_type
 FROM versioned_current_deduped_activities
 {% if is_incremental() %}
 WHERE has_changed = 1
@@ -631,7 +644,8 @@ SELECT
         refresh_clock.refresh_version
     ) AS refresh_version,
     1 AS is_deleted,
-    refresh_clock.refreshed_at AS refreshed_at
+    refresh_clock.refreshed_at AS refreshed_at,
+    primary_canonical_type
 FROM stale_deduped_activities
 CROSS JOIN refresh_clock
 {% endif %}

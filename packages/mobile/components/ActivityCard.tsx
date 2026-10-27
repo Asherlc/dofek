@@ -12,8 +12,9 @@ import { colors } from "../theme";
 import { ActivityTypeIcon } from "./ActivityTypeIcon";
 
 interface ActivityCardProps {
-  name: string;
+  name: string | null;
   activityType: string;
+  primaryActivityType: string | null;
   startedAt: string;
   endedAt: string | null;
   avgHr: number | null;
@@ -55,6 +56,7 @@ function UnavailableStat({ metric }: { metric: ActivityMetric }) {
 export function ActivityCard({
   name,
   activityType,
+  primaryActivityType,
   startedAt,
   endedAt,
   avgHr,
@@ -74,7 +76,7 @@ export function ActivityCard({
         <ActivityTypeIcon activityType={activityType} size={40} />
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={2}>
-            {name || formatActivityTypeLabel(activityType)}
+            {name ?? formatActivityTypeLabel(primaryActivityType ?? activityType)}
           </Text>
           <Text style={styles.time}>
             {formatTimeOnly(startedAt)} · {formatDurationRange(startedAt, endedAt)}

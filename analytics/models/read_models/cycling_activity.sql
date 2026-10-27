@@ -63,7 +63,8 @@ active_cycling AS (
         assumeNotNull(summary.canonical_type) AS canonical_type,
         summary.provider_type AS provider_type,
         nullIf(summary.modality, '') AS modality,
-        summary.name AS activity_name,
+        identity.name AS activity_name,
+        identity.primary_canonical_type AS primary_canonical_type,
         assumeNotNull(summary.started_at) AS started_at,
         summary.ended_at AS ended_at,
         summary.total_distance AS distance_meters,
@@ -143,7 +144,8 @@ active_rows AS (
         active_cycling.zone_two_samples AS zone_two_samples,
         toUInt8(0) AS is_deleted,
         refresh_clock.refresh_version AS refresh_version,
-        refresh_clock.refreshed_at AS refreshed_at
+        refresh_clock.refreshed_at AS refreshed_at,
+        active_cycling.primary_canonical_type AS primary_canonical_type
     FROM active_cycling
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = active_cycling.activity_id
@@ -188,7 +190,8 @@ tombstone_rows AS (
         existing_rows.zone_two_samples AS zone_two_samples,
         toUInt8(1) AS is_deleted,
         refresh_clock.refresh_version AS refresh_version,
-        refresh_clock.refreshed_at AS refreshed_at
+        refresh_clock.refreshed_at AS refreshed_at,
+        existing_rows.primary_canonical_type AS primary_canonical_type
     FROM existing_rows
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = existing_rows.activity_id
@@ -229,7 +232,8 @@ SELECT
     zone_two_samples,
     is_deleted,
     refresh_version,
-    refreshed_at
+    refreshed_at,
+    primary_canonical_type
 FROM active_rows
 {% if is_incremental() %}
 UNION ALL
@@ -261,6 +265,7 @@ SELECT
     zone_two_samples,
     is_deleted,
     refresh_version,
-    refreshed_at
+    refreshed_at,
+    primary_canonical_type
 FROM tombstone_rows
 {% endif %}

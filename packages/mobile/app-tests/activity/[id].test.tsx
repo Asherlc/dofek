@@ -440,6 +440,7 @@ vi.mock("../../lib/trpc", () => ({
 const baseCyclingActivity = {
   id: "00000000-0000-0000-0000-000000000001",
   activityType: "cycling",
+  primaryActivityType: null,
   displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",

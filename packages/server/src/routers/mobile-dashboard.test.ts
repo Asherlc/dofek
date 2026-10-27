@@ -1277,7 +1277,7 @@ describe("mobileDashboard.training", () => {
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-climbing-lanes-v5",
+      keyVersion: "training-primary-title-v6",
     });
     const timingCall = vi
       .mocked(logger.info)

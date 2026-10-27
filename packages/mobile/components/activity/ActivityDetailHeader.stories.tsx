@@ -99,6 +99,23 @@ export const WalkingCollapsed: Story = {
     hardware: walkingActivitySourceHardware,
   },
 };
+export const PrimarySourceWithoutTitle: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      name: null,
+      activityType: "walking",
+      primaryActivityType: "running",
+      sourceTree: walkingActivitySourceTree,
+    },
+    hardware: walkingActivitySourceHardware,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Running")).toBeVisible();
+    await expect(canvas.getByText("Walking")).toBeVisible();
+  },
+};
 export const WalkingExpanded: Story = {
   args: {
     activity: {

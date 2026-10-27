@@ -107,6 +107,7 @@ const activityItemSchema = z.object({
   started_at: z.string(),
   ended_at: z.string().nullable(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),
@@ -209,6 +210,6 @@ export const cyclingRouter = router({
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
     activitiesOutputSchema,
-    { keyVersion: "cycling-activity-states-v1" },
+    { keyVersion: "cycling-activity-primary-title-v2" },
   ),
 });

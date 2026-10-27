@@ -36,6 +36,7 @@ const fullRow: ActivityRow = {
   origin_candidate_member_ids: [],
   id: "abc-123",
   canonical_type: "cycling",
+  primary_canonical_type: null,
   raw_type: "road_cycling",
   modality: null,
   started_at: "2026-03-01T10:00:00+00:00",
@@ -71,6 +72,21 @@ const fullRow: ActivityRow = {
 };
 
 describe("Activity", () => {
+  it("exposes the primary source type separately from the representative classification", () => {
+    const row = {
+      ...fullRow,
+      canonical_type: "walking",
+      primary_canonical_type: "running",
+      name: null,
+    };
+
+    expect(new Activity(row, mockLookup).toDetail()).toMatchObject({
+      activityType: "walking",
+      primaryActivityType: "running",
+      name: null,
+    });
+  });
+
   it("serializes the server-resolved displayed calendar date", () => {
     const row: ActivityRow = { ...fullRow, displayed_date: "2026-03-01" };
 
@@ -431,6 +447,7 @@ describe("Activity", () => {
         id: "abc-123",
         displayedDate: "2026-03-01",
         activityType: "cycling",
+        primaryActivityType: null,
         rawType: "road_cycling",
         modality: null,
         startedAt: "2026-03-01T10:00:00+00:00",

@@ -8,7 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
-import { within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList.tsx";
 
@@ -135,6 +135,7 @@ const activities: Activity[] = [
     started_at: "2026-03-18T07:00:00Z",
     ended_at: "2026-03-18T07:45:00Z",
     canonical_type: "running",
+    primary_canonical_type: null,
     name: "Morning Run",
     provider_id: "strava",
     source_providers: ["strava"],
@@ -154,6 +155,7 @@ const activities: Activity[] = [
     started_at: "2026-03-17T17:00:00Z",
     ended_at: "2026-03-17T18:00:00Z",
     canonical_type: "cycling",
+    primary_canonical_type: null,
     name: "Trainer Ride",
     provider_id: "wahoo",
     source_providers: ["wahoo"],
@@ -209,6 +211,22 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const PrimarySourceWithoutTitle: Story = {
+  args: {
+    activities: activities.slice(0, 1).map((activity) => ({
+      ...activity,
+      name: null,
+      canonical_type: "walking",
+      primary_canonical_type: "running",
+    })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Running")).toBeVisible();
+    await expect(canvas.getByText("Walking")).toBeVisible();
+  },
+};
+
 export const ProcessingMap: Story = {
   args: {
     activities: activities.map((activity) => ({ ...activity, location: { kind: "processing" } })),
@@ -223,6 +241,7 @@ export const Climbing: Story = {
         started_at: "2026-10-04T17:00:00Z",
         ended_at: "2026-10-04T20:30:00Z",
         canonical_type: "climbing",
+        primary_canonical_type: null,
         name: null,
         provider_id: "whoop",
         source_providers: ["apple_health", "whoop"],

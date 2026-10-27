@@ -327,7 +327,7 @@ describe("PostgreSQL provenance-only origin", () => {
     }
   });
 
-  it("changes provenance without changing selected fields, and changes field preference without changing origin", async () => {
+  it("keeps the primary title independent of field preferences and other merged fields", async () => {
     const groupId = "00000000-0000-4000-8000-000000000300";
     const originalId = "00000000-0000-4000-8000-000000000301";
     const copyId = "00000000-0000-4000-8000-000000000302";
@@ -356,19 +356,25 @@ describe("PostgreSQL provenance-only origin", () => {
           ([key]) =>
             !new Set([
               "primary_activity_id",
+              "primary_canonical_type",
               "primary_provider_id",
               "primary_source_name",
               "origin_candidate_member_ids",
               "origin_evidence",
+              "name",
               "raw",
             ]).has(key),
         ),
       );
     const before = await read();
     expect(before.primary_activity_id).toBeNull();
+    expect(before.primary_canonical_type).toBeNull();
+    expect(before.name).toBe("Original title");
     await context.db.execute(sql`UPDATE fitness.activity SET raw='{}' WHERE id=${copyId}`);
     const after = await read();
     expect(after.primary_activity_id).toBe(originalId);
+    expect(after.name).toBe("Original title");
+    expect(after.primary_canonical_type).toBe("cycling");
     expect(fields(after)).toEqual(fields(before));
     expect(before.raw).toMatchObject({ sourceBundle: "com.strava.strava", stable: true });
     expect(after.raw).toEqual({ stable: true });
@@ -376,7 +382,7 @@ describe("PostgreSQL provenance-only origin", () => {
       ('apple_health','activity.name',0),('garmin','activity.name',100)
       ON CONFLICT(provider_id,field_key) DO UPDATE SET priority=excluded.priority`);
     const preferredField = await read();
-    expect(preferredField.name).toBe("Edited title");
+    expect(preferredField.name).toBe("Original title");
     expect(preferredField.primary_activity_id).toBe(originalId);
   });
 

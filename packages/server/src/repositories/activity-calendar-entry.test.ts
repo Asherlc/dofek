@@ -9,6 +9,26 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
+  it("keeps the primary source type separate from the representative classification", () => {
+    const row = activityRowSchema.parse(
+      makeActivityRow({
+        canonical_type: "walking",
+        primary_canonical_type: "running",
+        name: null,
+      }),
+    );
+    const entry = createActiveCalendarEntry(row, {
+      baseline: { max_hr: null, resting_hr: null, ftp: null },
+      calculator: new TrainingStressCalculator(),
+    });
+
+    expect(entry).toMatchObject({
+      name: null,
+      activityType: "walking",
+      primaryActivityType: "running",
+    });
+  });
+
   it.each([
     ["processing", { kind: "processing" }, { kind: "processing" }],
     ["awaiting_summary", { kind: "processing" }, null],
@@ -548,6 +568,7 @@ describe("activity calendar entries", () => {
     expect(entries[0]).toEqual({
       id: "hidden-power",
       name: "Hidden Ride",
+      primaryActivityType: null,
       activityType: "cycling",
       modality: null,
       startedAt: "2026-03-18T07:00:00.000Z",

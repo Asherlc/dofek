@@ -306,7 +306,8 @@ function createDedupedActivitiesTableSql(targetSchema: string): string {
   origin_evidence Array(Map(String, String)),
   refresh_version UInt64,
   is_deleted UInt8,
-  refreshed_at DateTime64(9, 'UTC')
+  refreshed_at DateTime64(9, 'UTC'),
+  primary_canonical_type Nullable(String)
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`;

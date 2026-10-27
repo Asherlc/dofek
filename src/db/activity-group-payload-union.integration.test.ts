@@ -728,7 +728,8 @@ function createDedupedActivitiesSql(database: string): string {
   primary_source_name Nullable(String),
   origin_candidate_member_ids Array(UUID) DEFAULT member_activity_ids,
   origin_evidence Array(Map(String, String)),
-    refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'))
+    refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'),
+    primary_canonical_type Nullable(String))
     ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`;
 }
 

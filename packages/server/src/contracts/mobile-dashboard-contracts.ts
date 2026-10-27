@@ -348,6 +348,7 @@ export type MobileRecoveryTabResult = z.infer<typeof mobileRecoveryTabOutputSche
 const activitySchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   name: z.string().nullable(),
   started_at: z.iso.datetime(),
   ended_at: z.iso.datetime().nullable(),

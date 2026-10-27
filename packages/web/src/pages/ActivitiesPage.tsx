@@ -615,7 +615,8 @@ function ActivityCard({
     .filter(Boolean)
     .join(" ");
 
-  const activityLabel = activity.name ?? formatActivityTypeLabel(activity.activityType);
+  const activityLabel =
+    activity.name ?? formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType);
   const actionClassName =
     "text-left after:absolute after:inset-0 after:z-10 focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-accent";
   const headingAction = selectMode ? (

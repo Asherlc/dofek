@@ -12,6 +12,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     id: "activity-1",
     name: null,
     activityType: "strength",
+    primaryActivityType: null,
     modality: null,
     startedAt: "2026-07-14T08:46:00.000Z",
     localTimeContext: {
@@ -42,6 +43,20 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it("uses the primary activity type for an unnamed activity title and selection label", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({ activityType: "walking", primaryActivityType: "running" })}
+        units={units}
+        selectMode
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Running" })).toBeDefined();
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
+  });
+
   const photo = {
     id: "photo-1",
     url: "https://private.test/photo",

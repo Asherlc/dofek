@@ -156,12 +156,12 @@ export const activityRouter = router({
       }
     },
     undefined,
-    { keyVersion: "activity-list-locations-v1" },
+    { keyVersion: "activity-list-primary-title-v2" },
   ),
 
   byId: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-origin-source-tree-v3",
+    keyVersion: "activity-primary-title-v4",
   })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {

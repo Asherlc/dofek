@@ -693,6 +693,14 @@ Only retained origin evidence connects source records; metric priorities do not
 establish ancestry. Recording-app/device metadata can identify an earlier source
 without claiming its record is available.
 
+The [activity response decoder](types/api.ts) normalizes omitted primary-type
+metadata to `null`, using a [Zod default](https://zod.dev/api#defaults) while
+retaining a required nullable field in parsed records. Older responses during
+rolling deployments can therefore use the representative activity type for an
+unnamed activity. Supplied primary titles and types keep precedence in the
+[activity card](components/ActivityCard.tsx); unrelated required response fields
+remain validated.
+
 The [persisted query contract](lib/mobile-query-persistence.ts) invalidates older
 calendar and detail responses without source trees before restoring activity data, covered
 by the [upgrade regression](lib/mobile-query-persistence.test.tsx).

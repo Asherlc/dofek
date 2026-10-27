@@ -42,7 +42,10 @@ export type { ActivitySensorQueryOptions, ActivitySensorWindow } from "./activit
 
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
 
-type ActivityListItem = Record<string, unknown> & { location: ActivityLocation | null };
+type ActivityListItem = Record<string, unknown> & {
+  location: ActivityLocation | null;
+  primary_canonical_type: string | null;
+};
 
 function activityNotFoundError(): TRPCError {
   return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -326,6 +329,7 @@ export class ActivityRepository extends BaseRepository {
       distance_meters: number | null;
       elevation_gain_m: number | null;
       provider_type: string;
+      primary_canonical_type: string | null;
       total_count?: number;
       member_activity_ids?: string[];
       location: ActivityLocation | null;
@@ -514,6 +518,7 @@ export class ActivityRepository extends BaseRepository {
             a.perceived_exertion,
             a.provider_id,
             a.primary_activity_id::text AS primary_activity_id,
+            a.primary_canonical_type::text AS primary_canonical_type,
             a.primary_provider_id,
             a.primary_source_name,
             a.origin_candidate_member_ids::text[] AS origin_candidate_member_ids,
@@ -567,6 +572,7 @@ export class ActivityRepository extends BaseRepository {
             a.perceived_exertion,
             a.provider_id,
             NULL::text AS primary_activity_id,
+            NULL::text AS primary_canonical_type,
             NULL::text AS primary_provider_id,
             NULL::text AS primary_source_name,
             ARRAY(SELECT member.id::text FROM fitness.activity AS member

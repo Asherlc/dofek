@@ -47,9 +47,10 @@ provider's existing non-activity category priority fallbacks. The
 resolves matching source priorities before provider defaults.
 
 Priority remains below sensor richness and activity-type specificity in the
-[primary-record ordering](../../analytics/models/read_models/deduped_activities.sql),
-so denser recordings remain primary. Explicit field priorities still take
-precedence when selecting names and notes in that model.
+[representative ordering](../../analytics/models/read_models/deduped_activities.sql),
+so denser recordings remain the analytics representative. The resolved recording
+origin supplies the title and `primary_canonical_type` for its display fallback.
+Explicit field priorities select notes and titles of unresolved-origin groups.
 
 ## Migrations
 

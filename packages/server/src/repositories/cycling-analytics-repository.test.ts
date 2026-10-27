@@ -13,6 +13,7 @@ function cyclingActivityRow(overrides: Record<string, unknown> = {}) {
     started_at: "2026-07-10T10:00:00.000Z",
     ended_at: "2026-07-10T11:00:00.000Z",
     canonical_type: "cycling",
+    primary_canonical_type: null,
     modality: null,
     activity_name: "Steady Ride",
     provider_id: "wahoo",
@@ -631,6 +632,7 @@ describe("CyclingAnalyticsRepository", () => {
         started_at: "2026-07-10T10:00:00.000Z",
         ended_at: "2026-07-10T11:00:00.000Z",
         canonical_type: "cycling",
+        primary_canonical_type: "running",
         modality: null,
         activity_name: "Intervals",
         provider_id: "wahoo",
@@ -672,6 +674,7 @@ describe("CyclingAnalyticsRepository", () => {
           started_at: "2026-07-10T10:00:00.000Z",
           ended_at: "2026-07-10T11:00:00.000Z",
           canonical_type: "cycling",
+          primary_canonical_type: "running",
           name: "Intervals",
           provider_id: "wahoo",
           source_providers: ["wahoo"],
@@ -750,77 +753,90 @@ describe("CyclingAnalyticsRepository", () => {
     );
   });
 
-  it("filters, paginates, and orders the combined activity analytics", async () => {
-    const sensorStore = makeMockSensorStore([
-      cyclingActivityRow({
-        activity_name: null,
-        avg_power_z2: 180,
-        avg_hr_z2: 135,
-        efficiency_factor: 1.333,
-        z2_samples: 600,
-      }),
-      cyclingActivityRow({
-        id: "22222222-2222-4222-8222-222222222222",
-        activity_name: "Hill Repeats",
-        normalized_power: 300,
-        average_power: 250,
-        estimated_ftp: 320,
-        elevation_gain_meters: 500,
-        elapsed_seconds: 1800,
-        max_hr: 190,
-        avg_power_z2: 200,
-        avg_hr_z2: 140,
-        efficiency_factor: 1.429,
-        z2_samples: 700,
-      }),
-      cyclingActivityRow({
-        id: "33333333-3333-4333-8333-333333333333",
-        activity_name: "Incomplete Ride",
-        normalized_power: null,
-        average_power: null,
-        elevation_gain_meters: 100,
-        elapsed_seconds: 0,
-        max_hr: 200,
-        avg_power_z2: 100,
-        avg_hr_z2: 100,
-        efficiency_factor: 1,
-        z2_samples: null,
-      }),
-    ]);
-    const repository = new CyclingAnalyticsRepository(
-      { execute: vi.fn().mockResolvedValue([]) },
-      "11111111-1111-4111-8111-111111111111",
-      "UTC",
-      sensorStore,
-    );
+  it.each([
+    { primaryType: "running", expectedTitle: "Running" },
+    { primaryType: null, expectedTitle: "Cycling" },
+  ])(
+    "filters, paginates, and orders activity analytics with primary type $primaryType",
+    async ({ primaryType, expectedTitle }) => {
+      const sensorStore = makeMockSensorStore([
+        cyclingActivityRow({
+          activity_name: null,
+          primary_canonical_type: primaryType,
+          elevation_gain_meters: 120,
+          avg_power_z2: 180,
+          avg_hr_z2: 135,
+          efficiency_factor: 1.333,
+          z2_samples: 600,
+        }),
+        cyclingActivityRow({
+          id: "22222222-2222-4222-8222-222222222222",
+          activity_name: "Hill Repeats",
+          normalized_power: 300,
+          average_power: 250,
+          estimated_ftp: 320,
+          elevation_gain_meters: 500,
+          elapsed_seconds: 1800,
+          max_hr: 190,
+          avg_power_z2: 200,
+          avg_hr_z2: 140,
+          efficiency_factor: 1.429,
+          z2_samples: 700,
+        }),
+        cyclingActivityRow({
+          id: "33333333-3333-4333-8333-333333333333",
+          activity_name: "Incomplete Ride",
+          normalized_power: null,
+          average_power: null,
+          elevation_gain_meters: 100,
+          elapsed_seconds: 0,
+          max_hr: 200,
+          avg_power_z2: 100,
+          avg_hr_z2: 100,
+          efficiency_factor: 1,
+          z2_samples: null,
+        }),
+      ]);
+      const repository = new CyclingAnalyticsRepository(
+        { execute: vi.fn().mockResolvedValue([]) },
+        "11111111-1111-4111-8111-111111111111",
+        "UTC",
+        sensorStore,
+      );
 
-    const result = await repository.getActivities(ChartRange.fromDays(90), {
-      activityLimit: 1,
-      activityOffset: 1,
-      variabilityLimit: 2,
-      variabilityOffset: 0,
-    });
+      const result = await repository.getActivities(ChartRange.fromDays(90), {
+        activityLimit: 1,
+        activityOffset: 1,
+        variabilityLimit: 2,
+        variabilityOffset: 0,
+      });
 
-    expect(result.activities).toMatchObject({
-      totalCount: 3,
-      items: [{ id: "22222222-2222-4222-8222-222222222222", name: "Hill Repeats" }],
-    });
-    expect(result.variability.totalCount).toBe(2);
-    expect(result.variability.rows.map((row) => row.activityName)).toEqual([
-      "cycling",
-      "Hill Repeats",
-    ]);
-    expect(result.verticalAscent).toEqual([
-      expect.objectContaining({ activityName: "Hill Repeats", verticalAscentRate: 1000 }),
-    ]);
-    expect(result.aerobicEfficiency).toEqual({
-      maxHr: 190,
-      activities: [
-        expect.objectContaining({ name: "Hill Repeats", efficiencyFactor: 1.429 }),
-        expect.objectContaining({ name: "cycling", efficiencyFactor: 1.333 }),
-      ],
-    });
-  });
+      expect(result.activities).toMatchObject({
+        totalCount: 3,
+        items: [{ id: "22222222-2222-4222-8222-222222222222", name: "Hill Repeats" }],
+      });
+      expect(result.variability.totalCount).toBe(2);
+      expect(result.variability.rows.map((row) => row.activityName)).toEqual([
+        expectedTitle,
+        "Hill Repeats",
+      ]);
+      expect(result.verticalAscent).toEqual([
+        expect.objectContaining({
+          activityName: expectedTitle,
+          activityType: "cycling",
+          verticalAscentRate: 120,
+        }),
+        expect.objectContaining({ activityName: "Hill Repeats", verticalAscentRate: 1000 }),
+      ]);
+      expect(result.aerobicEfficiency).toEqual({
+        maxHr: 190,
+        activities: [
+          expect.objectContaining({ name: "Hill Repeats", efficiencyFactor: 1.429 }),
+          expect.objectContaining({ name: expectedTitle, efficiencyFactor: 1.333 }),
+        ],
+      });
+    },
+  );
 
   it("requires positive efficiency values and at least 300 zone 2 samples", async () => {
     const sensorStore = makeMockSensorStore([
@@ -896,6 +912,7 @@ describe("CyclingAnalyticsRepository", () => {
       cyclingActivityRow({
         activity_name: "Spin Class",
         canonical_type: "cycling",
+        primary_canonical_type: null,
         modality: "indoor",
         elevation_gain_meters: 500,
       }),
@@ -903,6 +920,7 @@ describe("CyclingAnalyticsRepository", () => {
         id: "22222222-2222-4222-8222-222222222222",
         activity_name: "Virtual Climb",
         canonical_type: "cycling",
+        primary_canonical_type: null,
         modality: "virtual",
         elevation_gain_meters: 1000,
       }),
@@ -910,6 +928,7 @@ describe("CyclingAnalyticsRepository", () => {
         id: "33333333-3333-4333-8333-333333333333",
         activity_name: "Outdoor Climb",
         canonical_type: "cycling",
+        primary_canonical_type: null,
         modality: "road",
         elevation_gain_meters: 750,
       }),
@@ -1062,6 +1081,7 @@ describe("CyclingAnalyticsRepository", () => {
         started_at: "2026-07-10T10:00:00.000Z",
         ended_at: "2026-07-10T11:00:00.000Z",
         canonical_type: "cycling",
+        primary_canonical_type: null,
         modality: null,
         activity_name: "Steady Ride",
         provider_id: "wahoo",

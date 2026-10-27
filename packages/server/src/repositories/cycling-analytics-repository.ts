@@ -6,6 +6,7 @@ import {
   fitCriticalPower,
   STANDARD_DURATIONS,
 } from "@dofek/training/power-analysis";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -50,6 +51,7 @@ const cyclingActivityRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   modality: z.preprocess(
     (value) => (value === "" ? null : value),
     z.enum(ACTIVITY_MODALITIES).nullable(),
@@ -519,6 +521,7 @@ export class CyclingAnalyticsRepository {
         started_at AS started_at,
         ended_at AS ended_at,
         canonical_type AS canonical_type,
+        primary_canonical_type AS primary_canonical_type,
         modality AS modality,
         activity_name AS activity_name,
         provider_id AS provider_id,
@@ -572,7 +575,9 @@ export class CyclingAnalyticsRepository {
           {
             activityId: row.id,
             date: row.date,
-            activityName: row.activity_name ?? row.canonical_type,
+            activityName:
+              row.activity_name ??
+              formatActivityTypeLabel(row.primary_canonical_type ?? row.canonical_type),
             normalizedPower: row.normalized_power,
             averagePower: row.average_power,
           },
@@ -589,7 +594,9 @@ export class CyclingAnalyticsRepository {
       .map((row) =>
         new VerticalAscentModel({
           date: row.date,
-          activityName: row.activity_name ?? row.canonical_type,
+          activityName:
+            row.activity_name ??
+            formatActivityTypeLabel(row.primary_canonical_type ?? row.canonical_type),
           activityType: row.canonical_type,
           modality: row.modality ?? null,
           elevationGainMeters: row.elevation_gain_meters ?? 0,
@@ -611,7 +618,9 @@ export class CyclingAnalyticsRepository {
       .map((row) => ({
         date: row.date,
         activityType: row.canonical_type,
-        name: row.activity_name ?? row.canonical_type,
+        name:
+          row.activity_name ??
+          formatActivityTypeLabel(row.primary_canonical_type ?? row.canonical_type),
         avgPowerZ2: row.avg_power_z2 ?? 0,
         avgHrZ2: row.avg_hr_z2 ?? 0,
         efficiencyFactor: row.efficiency_factor ?? 0,
@@ -625,6 +634,7 @@ export class CyclingAnalyticsRepository {
         started_at: row.started_at,
         ended_at: row.ended_at,
         canonical_type: row.canonical_type,
+        primary_canonical_type: row.primary_canonical_type,
         name: row.activity_name,
         provider_id: row.provider_id,
         source_providers: row.source_providers,

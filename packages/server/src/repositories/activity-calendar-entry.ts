@@ -42,6 +42,7 @@ export interface CalendarActivityEntry {
   id: string;
   name: string | null;
   activityType: string;
+  primaryActivityType: string | null;
   modality: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -80,6 +81,7 @@ export const activityRowSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   modality: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -249,6 +251,7 @@ function projectCalendarEntry(
     id: row.id,
     name: row.name,
     activityType: row.canonical_type,
+    primaryActivityType: row.primary_canonical_type,
     modality: row.modality,
     startedAt: row.started_at,
     endedAt: row.ended_at,

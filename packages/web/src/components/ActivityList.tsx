@@ -23,6 +23,7 @@ export interface Activity {
   started_at: string;
   ended_at: string | null;
   canonical_type: string;
+  primary_canonical_type: string | null;
   name: string | null;
   provider_id: string;
   source_providers: string[] | null;
@@ -140,7 +141,7 @@ export function ActivityList({
     renderCell: (activity) => (
       <input
         type="checkbox"
-        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.canonical_type)}`}
+        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.primary_canonical_type ?? activity.canonical_type)}`}
         checked={selectedActivityIds.has(activity.id)}
         onChange={() => toggleSelected(activity.id)}
         onClick={(event) => event.stopPropagation()}
@@ -181,7 +182,9 @@ export function ActivityList({
       label: "Name",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 text-foreground max-w-[200px] truncate",
-      renderCell: (activity) => activity.name ?? "—",
+      renderCell: (activity) =>
+        activity.name ??
+        formatActivityTypeLabel(activity.primary_canonical_type ?? activity.canonical_type),
     },
     {
       key: "duration",

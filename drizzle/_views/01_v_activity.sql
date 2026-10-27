@@ -431,7 +431,11 @@ SELECT
   m.started_at,
   m.ended_at,
   m.source_name,
-  m.name,
+  CASE
+    WHEN origin.primary_activity_id IS null THEN m.name
+    WHEN NULLIF(TRIM(primary_activity.name), '') IS null THEN null
+    ELSE primary_activity.name
+  END AS name,
   m.notes,
   m.timezone,
   m.raw,
@@ -447,7 +451,8 @@ SELECT
   origin.primary_provider_id,
   origin.primary_source_name,
   origin.origin_candidate_member_ids,
-  origin.origin_evidence
+  origin.origin_evidence,
+  primary_activity.canonical_type::text AS primary_canonical_type
 FROM merged AS m
 -- Build provenance only after the requested canonical groups have been selected.
 CROSS JOIN
@@ -467,4 +472,6 @@ CROSS JOIN
     WHERE r.id = ANY(m.member_activity_ids) AND r.user_id = m.user_id
   ) AS origin_group
 CROSS JOIN LATERAL fitness.resolve_activity_origin(origin_group.members) AS origin
+LEFT JOIN fitness.activity AS primary_activity
+  ON origin.primary_activity_id = primary_activity.id AND m.user_id = primary_activity.user_id
 ORDER BY m.started_at DESC;

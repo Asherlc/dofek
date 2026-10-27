@@ -52,6 +52,7 @@ describe("ActivityList", () => {
       started_at: "2026-03-18T07:00:00Z",
       ended_at: "2026-03-18T07:45:00Z",
       canonical_type: "running",
+      primary_canonical_type: null,
       name: "Morning Run",
       provider_id: "strava",
       source_providers: ["strava"],
@@ -73,6 +74,54 @@ describe("ActivityList", () => {
     expect(screen.getByText("Morning Run")).toBeDefined();
     expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("5.0 km")).toBeDefined();
+  });
+
+  it("uses the primary activity type for unnamed activity names and selection labels", () => {
+    const firstActivity = mockActivities[0];
+    if (!firstActivity) throw new Error("Expected an activity fixture");
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...firstActivity,
+            name: null,
+            canonical_type: "walking",
+            primary_canonical_type: "running",
+          },
+        ]}
+        onBulkDelete={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByText("Walking")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
+  });
+
+  it("uses the representative type for selection when an unnamed activity has no resolved primary", () => {
+    const firstActivity = mockActivities[0];
+    if (!firstActivity) throw new Error("Expected an activity fixture");
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...firstActivity,
+            name: null,
+            canonical_type: "walking",
+            primary_canonical_type: null,
+          },
+        ]}
+        onBulkDelete={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    const selection = screen.getByRole("checkbox", { name: "Select Walking" });
+    fireEvent.click(selection);
+
+    expect(selection).toBeChecked();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("appends activity-specific columns", () => {
@@ -187,6 +236,7 @@ describe("ActivityList", () => {
         started_at: "2026-03-18T09:00:00Z",
         ended_at: "2026-03-18T09:45:00Z",
         canonical_type: "cycling",
+        primary_canonical_type: null,
         name: "Trainer Ride",
         provider_id: "strava",
         source_providers: ["strava"],
@@ -299,6 +349,7 @@ describe("ActivityList", () => {
         started_at: "2026-03-18T08:00:00Z",
         ended_at: "2026-03-18T08:30:00Z",
         canonical_type: "walking",
+        primary_canonical_type: null,
         name: "Morning Walk",
         provider_id: "apple",
         source_providers: ["apple"],
@@ -319,6 +370,7 @@ describe("ActivityList", () => {
         started_at: "2026-03-18T08:00:00Z",
         ended_at: "2026-03-18T08:30:00Z",
         canonical_type: "walking",
+        primary_canonical_type: null,
         name: "Stationary Walk",
         provider_id: "apple",
         source_providers: ["apple"],
@@ -342,6 +394,7 @@ describe("ActivityList", () => {
         started_at: "not-a-date",
         ended_at: "still-not-a-date",
         canonical_type: "running",
+        primary_canonical_type: null,
         name: "Bad Timestamps",
         provider_id: "strava",
         source_providers: ["strava"],
@@ -385,7 +438,8 @@ describe("ActivityList", () => {
       />,
     );
 
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Running")).toHaveLength(3);
     expect(screen.getByRole("navigation", { name: "activities pagination" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
     expect(onPageChange).toHaveBeenCalledWith(1);

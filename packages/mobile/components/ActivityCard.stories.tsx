@@ -11,6 +11,7 @@ const meta = {
   args: {
     name: "Morning Run",
     activityType: "running",
+    primaryActivityType: null,
     startedAt: "2026-03-31T08:00:00Z",
     endedAt: "2026-03-31T08:45:00Z",
     avgHr: 145,
@@ -27,6 +28,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const RunningMetric: Story = {};
+
+export const PrimarySourceWithoutTitle: Story = {
+  args: { name: null, activityType: "walking", primaryActivityType: "running" },
+};
 
 export const RunningImperial: Story = {
   args: {
@@ -65,7 +70,7 @@ export const Strength: Story = {
 
 export const Minimal: Story = {
   args: {
-    name: "",
+    name: null,
     activityType: "yoga",
     startedAt: "2026-03-31T10:00:00Z",
     endedAt: null,

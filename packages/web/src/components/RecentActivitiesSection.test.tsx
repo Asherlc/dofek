@@ -7,11 +7,16 @@ import { RecentActivitiesSection } from "./RecentActivitiesSection.tsx";
 
 const mutate = vi.fn();
 const mutateAsync = vi.fn();
-let items: Activity[];
+type ActivityResponse = Omit<Activity, "primary_canonical_type"> & {
+  primary_canonical_type?: Activity["primary_canonical_type"];
+};
+let items: ActivityResponse[];
 let queryError: Error | null;
 let queryOptions:
   | {
-      refetchInterval?: (query: { state: { data?: { items: Activity[] } } }) => number | false;
+      refetchInterval?: (query: {
+        state: { data?: { items: ActivityResponse[] } };
+      }) => number | false;
     }
   | undefined;
 
@@ -43,6 +48,7 @@ beforeEach(() => {
       started_at: "2026-03-18T07:00:00Z",
       ended_at: "2026-03-18T07:45:00Z",
       canonical_type: "running",
+      primary_canonical_type: null,
       name: "Morning run",
       provider_id: "strava",
       source_providers: ["strava"],
@@ -56,6 +62,37 @@ beforeEach(() => {
 });
 
 describe("RecentActivitiesSection", () => {
+  it("keeps old-server activities visible when primary type metadata is missing", () => {
+    const firstActivity = items[0];
+    if (!firstActivity) throw new Error("Expected an activity fixture");
+    const { primary_canonical_type: _primaryActivityType, ...oldServerActivity } = firstActivity;
+    items = [{ ...oldServerActivity, name: null }];
+
+    render(<RecentActivitiesSection />);
+
+    expect(screen.getAllByText("Running")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeInTheDocument();
+  });
+
+  it("preserves the primary activity type for unnamed activity titles", () => {
+    const firstActivity = items[0];
+    if (!firstActivity) throw new Error("Expected an activity fixture");
+    items = [
+      {
+        ...firstActivity,
+        name: null,
+        canonical_type: "walking",
+        primary_canonical_type: "running",
+      },
+    ];
+
+    render(<RecentActivitiesSection />);
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByText("Walking")).toBeDefined();
+  });
+
   it("applies the distance-column preference", () => {
     render(<RecentActivitiesSection showDistance={false} />);
     expect(screen.queryByRole("columnheader", { name: "Distance" })).toBeNull();

@@ -108,6 +108,7 @@ describe("ActivityRepository", () => {
                     : row.activity_type,
             timezone: null,
             primary_activity_id: null,
+            primary_canonical_type: null,
             primary_provider_id: null,
             primary_source_name: null,
             origin_candidate_member_ids: [],
@@ -1141,6 +1142,7 @@ describe("ActivityRepository", () => {
             {
               id: "tombstoned-id",
               primary_activity_id: null,
+              primary_canonical_type: null,
               primary_provider_id: null,
               primary_source_name: null,
               origin_candidate_member_ids: [],

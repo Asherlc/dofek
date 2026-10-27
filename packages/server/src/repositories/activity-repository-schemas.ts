@@ -8,6 +8,7 @@ import { activitySourceSchema } from "../models/activity-source.ts";
 export const activityListRowSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   provider_type: z.string(),
   modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,
@@ -31,6 +32,7 @@ export const activityListRowSchema = z.object({
 export const activityListColumns = sql`
   a.id,
   a.canonical_type,
+  a.primary_canonical_type::text AS primary_canonical_type,
   a.provider_type,
   a.modality::text AS modality,
   a.started_at::text AS started_at,
@@ -64,6 +66,7 @@ export const activityDetailRowSchema = z.object({
   id: z.string(),
   displayed_date: dateStringSchema,
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   raw_type: z.string(),
   modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,

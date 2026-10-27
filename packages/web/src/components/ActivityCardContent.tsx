@@ -30,6 +30,7 @@ export interface ActivityCardData {
   id: string;
   name: string | null;
   activityType: string;
+  primaryActivityType: string | null;
   modality: string | null;
   startedAt: string;
   localTimeContext: RecordLocalTimeContext;
@@ -86,7 +87,9 @@ export function ActivityCardContent({
   const partialAbsenceSummary = formatProviderPartialAbsenceSummary(
     activity.partialAbsentSources ?? [],
   );
-  const activityLabel = formatActivityTypeLabel(activity.activityType);
+  const activityLabel = formatActivityTypeLabel(
+    activity.primaryActivityType ?? activity.activityType,
+  );
   const localStartTime = formatRecordLocalTime(
     activity.startedAt,
     activity.localTimeContext,

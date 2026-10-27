@@ -72,6 +72,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             toString(activity.activity_id) AS id,
             activity.name AS name,
             activity.canonical_type AS canonical_type,
+            activity.primary_canonical_type AS primary_canonical_type,
             activity.modality AS modality,
             toString(activity.started_at) AS started_at,
             toString(activity.ended_at) AS ended_at,

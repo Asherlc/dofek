@@ -29,6 +29,7 @@ interface SourceFixture {
   notes?: string | null;
   priority: number;
   sourceName?: string;
+  refreshVersion?: number;
 }
 
 describe("dbt merged activity field priorities", () => {
@@ -79,7 +80,7 @@ describe("dbt merged activity field priorities", () => {
         raw: "{}",
         source_synced_at: "2026-09-01 20:00:00",
         priority: source.priority,
-        refresh_version: 1,
+        refresh_version: source.refreshVersion ?? 1,
         is_deleted: 0,
         refreshed_at: "2026-09-01 20:00:00",
       })),
@@ -170,7 +171,8 @@ describe("dbt merged activity field priorities", () => {
   primary_source_name Nullable(String),
   origin_candidate_member_ids Array(UUID) DEFAULT member_activity_ids,
   origin_evidence Array(Map(String, String)),
-      refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'))
+      refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'),
+      primary_canonical_type Nullable(String))
       ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
     });
     await client.command({
@@ -263,28 +265,28 @@ describe("dbt merged activity field priorities", () => {
       sourceName: "Strong",
       canonicalType: "strength",
       name: null,
-      expected: "Peloton title",
+      expected: null,
     },
     {
       providerId: "apple_health",
       sourceName: "Strong",
       canonicalType: "strength",
       name: "",
-      expected: "Peloton title",
+      expected: null,
     },
     {
       providerId: "apple_health",
       sourceName: "Strong",
       canonicalType: "strength",
       name: "   ",
-      expected: "Peloton title",
+      expected: null,
     },
     {
       providerId: "apple_health",
       sourceName: "Strong",
       canonicalType: "cycling",
       name: "Strong ride",
-      expected: "Peloton title",
+      expected: "Strong ride",
     },
     {
       providerId: "apple_health",
@@ -780,5 +782,110 @@ describe("dbt merged activity field priorities", () => {
     expect((await mergedFields(id))[0]?.name).toBe("Peloton title");
     await refreshSummary(true);
     expect(await summaryName(id)).toEqual([{ name: "Peloton title" }]);
+  });
+
+  it("clears a previously materialized title when the primary source title becomes null", async () => {
+    const id = randomUUID();
+    const source = {
+      id: randomUUID(),
+      groupId: id,
+      providerId: "apple_health",
+      canonicalType: "running",
+      providerType: "HKWorkoutActivityTypeRunning",
+      sourceName: "Asher’s Apple Watch",
+      priority: 90,
+    };
+    await insertSources([{ ...source, name: "40 min 58 sec Walking" }]);
+    await refreshDeduped(true);
+    await client.insert({
+      table: `${database}.activity_sensor_summary_rows`,
+      format: "JSONEachRow",
+      values: [
+        {
+          activity_id: id,
+          user_id: userId,
+          avg_hr: 128,
+          max_hr: 167,
+          sample_count: 30,
+          source_refresh_version: 1,
+          refresh_version: 1,
+          is_deleted: 0,
+          refreshed_at: "2026-09-01 20:00:00",
+        },
+      ],
+    });
+    await refreshSummary(false);
+    expect(await summaryName(id)).toEqual([{ name: "40 min 58 sec Walking" }]);
+
+    await insertSources([{ ...source, name: null, refreshVersion: 2 }]);
+    await refreshDeduped(true);
+    expect((await mergedFields(id))[0]?.name).toBeNull();
+    await refreshSummary(true);
+
+    const result = await client.query({
+      query: `SELECT name, canonical_type, avg_hr, max_hr, sample_count, is_deleted
+        FROM ${database}.activity_summary_rows FINAL
+        WHERE activity_id = toUUID('${id}')`,
+      format: "JSONEachRow",
+    });
+    const rows = z
+      .array(
+        z.object({
+          name: z.string().nullable(),
+          canonical_type: z.string().nullable(),
+          avg_hr: z.number().nullable(),
+          max_hr: z.number().nullable(),
+          sample_count: z.coerce.number().nullable(),
+          is_deleted: z.number(),
+        }),
+      )
+      .parse(await result.json());
+    expect(rows).toEqual([
+      {
+        name: null,
+        canonical_type: "running",
+        avg_hr: 128,
+        max_hr: 167,
+        sample_count: 30,
+        is_deleted: 0,
+      },
+    ]);
+  });
+
+  it("retains the last title on a tombstone when current activity metadata is absent", async () => {
+    const id = randomUUID();
+    await insertSources([
+      {
+        id: randomUUID(),
+        groupId: id,
+        providerId: "apple_health",
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        sourceName: "Asher’s Apple Watch",
+        name: "Morning Run",
+        priority: 90,
+      },
+    ]);
+    await refreshDeduped(true);
+    await refreshSummary(false);
+    expect(await summaryName(id)).toEqual([{ name: "Morning Run" }]);
+
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_activities
+        SELECT * REPLACE (refresh_version + 1 AS refresh_version, 1 AS is_deleted)
+        FROM ${database}.deduped_activities FINAL
+        WHERE activity_id = toUUID('${id}')`,
+    });
+    await refreshSummary(true);
+
+    const result = await client.query({
+      query: `SELECT name, is_deleted FROM ${database}.activity_summary_rows FINAL
+        WHERE activity_id = toUUID('${id}')`,
+      format: "JSONEachRow",
+    });
+    const rows = z
+      .array(z.object({ name: z.string().nullable(), is_deleted: z.number() }))
+      .parse(await result.json());
+    expect(rows).toEqual([{ name: "Morning Run", is_deleted: 1 }]);
   });
 });

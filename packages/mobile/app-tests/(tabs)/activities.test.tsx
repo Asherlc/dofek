@@ -159,6 +159,19 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
+  it("uses the primary activity type for unnamed activity titles and accessible actions", () => {
+    mockQuery = activityListQuery([
+      activity({ name: null, activityType: "walking", primaryActivityType: "running" }),
+    ]);
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Open Running,/ })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("button", { name: /^Select Running,/ })).toBeDefined();
+  });
+
   it("shows one downloaded photo for activities without a map", () => {
     mockQuery = activityListQuery([activity({ location: null })]);
     mockImagesQuery.mockReturnValue({

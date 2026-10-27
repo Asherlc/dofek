@@ -30,6 +30,7 @@ export interface ActivityDetail {
   displayedDate: string;
   resolvedFrom?: string;
   activityType: string;
+  primaryActivityType: string | null;
   rawType: string | null;
   modality: string | null;
   startedAt: string;
@@ -75,6 +76,7 @@ export interface ActivityRow extends ActivityOriginColumns {
   displayed_date: string;
   resolved_from?: string | null;
   canonical_type: string;
+  primary_canonical_type: string | null;
   raw_type?: string;
   modality: string | null;
   started_at: string;
@@ -250,6 +252,7 @@ export class Activity {
       displayedDate: this.displayedDate,
       ...(this.resolvedFrom ? { resolvedFrom: this.resolvedFrom } : {}),
       activityType: this.activityType,
+      primaryActivityType: this.#row.primary_canonical_type,
       rawType: this.rawType,
       modality: this.modality,
       startedAt: this.startedAt,

@@ -384,7 +384,7 @@ function rewriteClickHouseTestCommand(
       throw new Error(`Missing ClickHouse test analytics SELECT for ${viewName}`);
     }
     const columns = viewName.endsWith(".deduped_activities")
-      ? "(activity_id,provider_id,user_id,primary_activity_id,canonical_type,provider_type,modality,started_at,ended_at,source_name,name,notes,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source,raw,source_synced_at,source_providers,source_external_ids,absent_source_external_ids,member_activity_ids,representative_activity_id,primary_provider_id,primary_source_name,origin_candidate_member_ids,origin_evidence,refresh_version,is_deleted,refreshed_at)"
+      ? "(activity_id,provider_id,user_id,primary_activity_id,canonical_type,provider_type,modality,started_at,ended_at,source_name,name,notes,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source,raw,source_synced_at,source_providers,source_external_ids,absent_source_external_ids,member_activity_ids,representative_activity_id,primary_provider_id,primary_source_name,origin_candidate_member_ids,origin_evidence,refresh_version,is_deleted,refreshed_at,primary_canonical_type)"
       : "";
     return [`TRUNCATE TABLE ${viewName}`, `INSERT INTO ${viewName}${columns}\n${selectSql}`];
   }

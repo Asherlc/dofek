@@ -69,6 +69,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           toString(activity.group_id) AS route_activity_id,
           activity.name AS name,
           activity.canonical_type AS canonical_type,
+          activity.canonical_type AS primary_canonical_type,
           activity.modality AS modality,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,

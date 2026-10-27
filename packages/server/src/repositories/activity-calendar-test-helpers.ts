@@ -88,6 +88,7 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
                   local_time_source: "unknown",
                   provider_id: "wahoo",
                   primary_activity_id: null,
+                  primary_canonical_type: null,
                   primary_provider_id: null,
                   primary_source_name: null,
                   origin_candidate_member_ids: [],
@@ -129,6 +130,7 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
 export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T) {
   return {
     primary_activity_id: null,
+    primary_canonical_type: null,
     primary_provider_id: null,
     primary_source_name: null,
     origin_candidate_member_ids: [],
@@ -196,6 +198,7 @@ export function makeCalendarEntry(
   return {
     name: overrides.name ?? overrides.id,
     activityType: overrides.activityType ?? "running",
+    primaryActivityType: overrides.primaryActivityType ?? null,
     modality: overrides.modality ?? null,
     endedAt: overrides.endedAt ?? overrides.startedAt,
     localTimeContext: overrides.localTimeContext ?? {

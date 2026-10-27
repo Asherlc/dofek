@@ -3,6 +3,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { buildActivityOriginViewSql } from "./clickhouse-activity-origin.ts";
+import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import {
   activityId,
   groupId,
@@ -60,6 +61,141 @@ describe("deduped_activities read model", () => {
     }
   });
 
+  it.each(["Afternoon run", " Afternoon run ", null, "", "   "])(
+    "uses primary title %s independently of representative fields",
+    async (primaryTitle) => {
+      const expectedTitle = primaryTitle?.trim() ? primaryTitle : null;
+      const activeClient = requireClient(client);
+      await seedSpecificActivityTypeFixture(activeClient, targetSchema, "running", "walking");
+      await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_sensor` });
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.deduped_sensor
+      (user_id, provider_id, recorded_at, channel)
+      VALUES ('${testUserId}', 'peloton', '2026-07-05 16:05:00', 'heart_rate')`,
+      });
+      await activeClient.command({
+        query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE
+      provider_id = if(activity_id = toUUID('${linkedActivityId}'), 'apple_health', provider_id),
+      canonical_type = if(activity_id = toUUID('${linkedActivityId}'), 'running', canonical_type),
+      source_name = if(activity_id = toUUID('${linkedActivityId}'), 'Asher’s Apple Watch', source_name),
+      name = if(activity_id = toUUID('${linkedActivityId}'), {primaryTitle:Nullable(String)}, '40 min 58 sec Walking')
+      WHERE 1 SETTINGS mutations_sync = 2`,
+        query_params: { primaryTitle },
+      });
+
+      const result = await activeClient.query({
+        query: renderDedupedActivitiesSelectSql(targetSchema),
+        format: "JSONEachRow",
+      });
+      const rows = z
+        .array(
+          z.object({
+            activity_id: z.string(),
+            representative_activity_id: z.string(),
+            primary_activity_id: z.string(),
+            primary_canonical_type: z.string(),
+            canonical_type: z.string(),
+            name: z.string().nullable(),
+          }),
+        )
+        .parse(await result.json());
+      expect(rows).toEqual([
+        {
+          activity_id: groupId,
+          representative_activity_id: activityId,
+          primary_activity_id: linkedActivityId,
+          primary_canonical_type: "running",
+          canonical_type: "walking",
+          name: expectedTitle,
+        },
+      ]);
+
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
+      });
+      const legacyFields = `SELECT * EXCEPT(primary_activity_id,name),activity_id AS id,
+      representative_activity_id AS primary_activity_id,'Secondary display title' AS name
+      FROM ${targetSchema}.deduped_activities FINAL WHERE is_deleted = 0`;
+      await activeClient.command({
+        query: buildActivityOriginViewSql(legacyFields, true).replaceAll(
+          "analytics.",
+          `${targetSchema}.`,
+        ),
+      });
+      const sourceTitle = await activeClient.query({
+        query: `SELECT name, primary_canonical_type FROM ${targetSchema}.v_activity`,
+        format: "JSONEachRow",
+      });
+      expect(
+        z
+          .array(z.object({ name: z.string().nullable(), primary_canonical_type: z.string() }))
+          .parse(await sourceTitle.json()),
+      ).toEqual([{ name: expectedTitle, primary_canonical_type: "running" }]);
+    },
+  );
+
+  it("keeps primary title and type in cycling rows while representative metrics remain cycling", async () => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "running", "cycling");
+    await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_sensor` });
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.deduped_sensor (user_id,provider_id,recorded_at,channel)
+      VALUES ('${testUserId}','peloton','2026-07-05 16:05:00','heart_rate')`,
+    });
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE
+      provider_id = if(activity_id = toUUID('${linkedActivityId}'),'apple_health',provider_id),
+      canonical_type = if(activity_id = toUUID('${linkedActivityId}'),'running',canonical_type),
+      source_name = if(activity_id = toUUID('${linkedActivityId}'),'Asher’s Apple Watch',source_name),
+      name = if(activity_id = toUUID('${linkedActivityId}'),NULL,'Secondary cycling title')
+      WHERE 1 SETTINGS mutations_sync = 2`,
+    });
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
+    });
+    await activeClient.command({
+      query: buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
+    });
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows
+      (activity_id,user_id,canonical_type,provider_type,name,started_at,ended_at,refresh_version,is_deleted,refreshed_at)
+      VALUES ('${groupId}','${testUserId}','cycling','cycling','Stale secondary title',
+        '2026-07-05 16:00:00','2026-07-05 17:00:00',1,0,now64(9))`,
+    });
+    await activeClient.command({
+      query: `CREATE TABLE ${targetSchema}.activity_aerobic_efficiency (
+      activity_id UUID,user_id UUID,max_hr Nullable(Int16),avg_power_z2 Nullable(Float64),
+      avg_hr_z2 Nullable(Float64),efficiency_factor Nullable(Float64),z2_samples Nullable(Int32),
+      is_deleted UInt8,refresh_version UInt64,refreshed_at DateTime64(9,'UTC')
+      ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id,activity_id)`,
+    });
+
+    const query = renderDbtModelSql(readModelSql("cycling_activity.sql"), {
+      isIncremental: false,
+    })
+      .replaceAll("{{ ref('activity_summary_rows') }}", `${targetSchema}.activity_summary_rows`)
+      .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.deduped_activities`)
+      .replaceAll(
+        "{{ ref('activity_aerobic_efficiency') }}",
+        `${targetSchema}.activity_aerobic_efficiency`,
+      )
+      .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1");
+    const result = await activeClient.query({ query, format: "JSONEachRow" });
+    expect(
+      z
+        .array(
+          z.object({
+            canonical_type: z.string(),
+            primary_canonical_type: z.string(),
+            activity_name: z.string().nullable(),
+          }),
+        )
+        .parse(await result.json()),
+    ).toEqual([
+      { canonical_type: "cycling", primary_canonical_type: "running", activity_name: null },
+    ]);
+  });
+
   it("updates origin attribution incrementally without changing merged fields or unchanged rebuild versions", async () => {
     const activeClient = requireClient(client);
     await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
@@ -92,6 +228,7 @@ describe("deduped_activities read model", () => {
               "primary_activity_id",
               "primary_provider_id",
               "primary_source_name",
+              "primary_canonical_type",
               "origin_candidate_member_ids",
               "origin_evidence",
               "refresh_version",
@@ -122,7 +259,7 @@ describe("deduped_activities read model", () => {
     await build();
     const fieldUpdate = await read();
     expect(fieldUpdate.primary_activity_id).toBe(activityId);
-    expect(fieldUpdate.name).toBe("Edited downstream title");
+    expect(fieldUpdate.name).toBe("Power Zone Ride");
     expect(fieldUpdate.activity_id).toBe(groupId);
   });
 

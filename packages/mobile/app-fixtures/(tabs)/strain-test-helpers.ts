@@ -50,6 +50,7 @@ export function recentCyclingActivityFixture() {
     id: 42,
     name: "Morning Ride",
     canonical_type: "cycling",
+    primary_canonical_type: null,
     started_at: "2026-03-28T07:00:00.000Z",
     ended_at: "2026-03-28T08:00:00.000Z",
     avg_hr: 150,

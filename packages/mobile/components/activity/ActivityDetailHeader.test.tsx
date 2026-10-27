@@ -37,6 +37,22 @@ describe("ActivityDetailHeader", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("uses the primary activity type as the title when its name is missing", () => {
+    render(
+      <ActivityDetailHeader
+        activity={{
+          ...detailHeaderActivity,
+          name: null,
+          activityType: "walking",
+          primaryActivityType: "running",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByText("Walking")).toBeDefined();
+  });
+
   it.each(["{Enter}", " "])("expands and collapses with the real RN-web %j key", async (key) => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);
     const trigger = screen.getByRole("button", { name: "Sources: Garmin Edge 530" });

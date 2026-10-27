@@ -17,6 +17,7 @@ export function ActivityDetailHeader({
     ActivityDetail,
     | "name"
     | "activityType"
+    | "primaryActivityType"
     | "displayedDate"
     | "startedAt"
     | "localTimeContext"
@@ -40,7 +41,8 @@ export function ActivityDetailHeader({
         <ActivityTypeIcon activityType={activity.activityType} size={48} />
         <View style={styles.headerText}>
           <Text style={styles.name}>
-            {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+            {activity.name ??
+              formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
           </Text>
           <View style={styles.typeBadge}>
             <Text style={styles.typeBadgeText}>

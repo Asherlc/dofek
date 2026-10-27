@@ -64,11 +64,14 @@ nullable `source_activity_id` equals that member's UUID and its timestamp lies
 within the inclusive normalized window; overlapping same-provider members do not
 share payload credit. The group's served sample union accepts unlinked ambient
 samples and samples linked to any current member, never only the representative.
-The [activity model](models/read_models/deduped_activities.sql) selects each
-nonblank display name and non-null note by the provider's field priority when present,
+The [activity model](models/read_models/deduped_activities.sql) takes a resolved
+recording origin's nullable title and exposes its `primary_canonical_type` for
+the client title fallback. This leaves the representative's classification intact.
+When origin is unresolved, it selects a nonblank display name by field priority.
+It selects each non-null note by the provider's field priority when present,
 then by the existing generic source priority and source activity ID. Canonical
 provider and type selection, and raw provenance, retain their separate rules.
-For strength source records, nonblank Strong titles take precedence over other
+For unresolved strength groups, nonblank Strong titles take precedence over other
 names: native strong-csv imports and Apple Health records with source name
 Strong qualify. Missing or blank Strong titles fall back to the normal name
 ordering. Notes and primary-record selection retain their own ordering. The
@@ -854,8 +857,9 @@ and provider IDs are nullable when origin is unresolved; candidate IDs and evide
 remain available. A singleton is primary without claiming that it is the original.
 
 The [activity model](models/read_models/deduped_activities.sql) retains the former
-field representative as representative_activity_id. Changing origin does not
-change merged fields, sensor selection, location selection, or stable group IDs.
+field representative as representative_activity_id. Changing origin changes the
+selected title and primary type fallback, while sensor selection, location
+selection, representative classification, and stable group IDs remain separate.
 The [legacy view projection](../src/db/clickhouse-activity-origin.ts) retains its
 existing field derivation and joins the same materialized origin result. Historical
 migration builders retain their inputs so fresh databases migrate in order.

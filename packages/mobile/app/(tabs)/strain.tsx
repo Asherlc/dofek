@@ -531,11 +531,12 @@ export default function StrainScreen() {
                     activeOpacity={0.7}
                     onPress={() => router.push(`/activity/${activity.id}`)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open ${activity.name ?? "activity"}`}
+                    accessibilityLabel={`Open ${activity.name ?? formatActivityTypeLabel(activity.primary_canonical_type ?? activity.canonical_type ?? "other")}`}
                   >
                     <ActivityCard
-                      name={activity.name ?? ""}
+                      name={activity.name ?? null}
                       activityType={activity.canonical_type ?? ""}
+                      primaryActivityType={activity.primary_canonical_type}
                       startedAt={activity.started_at}
                       endedAt={activity.ended_at ?? null}
                       avgHr={activity.avg_hr ?? null}

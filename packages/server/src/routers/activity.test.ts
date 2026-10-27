@@ -186,6 +186,7 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
   return {
     id: "00000000-0000-0000-0000-000000000001",
     canonical_type: "cycling",
+    primary_canonical_type: null,
     displayed_date: "2026-04-01",
     started_at: "2026-04-01T10:00:00Z",
     ended_at: "2026-04-01T11:00:00Z",

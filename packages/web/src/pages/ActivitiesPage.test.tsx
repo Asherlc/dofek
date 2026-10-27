@@ -204,6 +204,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     id: "activity-1",
     name: "Trainer Ride",
     activityType: "indoor_cycling",
+    primaryActivityType: null,
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
     localTimeContext: {
@@ -251,6 +252,32 @@ const mapPreview = {
 };
 
 describe("ActivitiesPage", () => {
+  it("uses the primary activity type for unnamed activity links and selection labels", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              name: null,
+              activityType: "walking",
+              primaryActivityType: "running",
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByRole("link", { name: "Running" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
+  });
+
   beforeEach(() => {
     mockImagesUseQuery.mockReset();
     mockImagesUseQuery.mockReturnValue({

@@ -252,6 +252,47 @@ vi.mock("../../lib/units", () => ({
 import { captureException } from "../../lib/telemetry";
 
 describe("StrainScreen recent activity navigation", () => {
+  it.each([
+    { name: "Morning Run", expectedTitle: "Morning Run" },
+    { name: null, expectedTitle: "Walking" },
+  ])(
+    "renders $expectedTitle from an older response without primary-type metadata",
+    async ({ name, expectedTitle }) => {
+      const { primary_canonical_type: _primaryType, ...olderActivity } =
+        recentCyclingActivityFixture();
+      mockTrainingState.data = {
+        ...defaultMockTrainingData(),
+        activities: [{ ...olderActivity, name, canonical_type: "walking" }],
+      };
+
+      const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+      render(<StrainScreen />);
+
+      expect(screen.getByText(expectedTitle)).toBeDefined();
+      expect(screen.getByRole("button", { name: `Open ${expectedTitle}` })).toBeDefined();
+    },
+  );
+
+  it("uses the primary activity type for missing recent-activity titles and accessible actions", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      activities: [
+        {
+          ...recentCyclingActivityFixture(),
+          name: null,
+          canonical_type: "walking",
+          primary_canonical_type: "running",
+        },
+      ],
+    };
+
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Open Running" })).toBeDefined();
+  });
+
   beforeEach(() => {
     mockRouterPush.mockReset();
     vi.mocked(captureException).mockReset();

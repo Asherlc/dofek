@@ -9,6 +9,7 @@ import {
   mobileRecoveryFixtureSchema,
   mobileRecoveryTabOutputSchema,
   mobileTrainingFixtureSchema,
+  mobileTrainingTabOutputSchema,
   type WorkloadRatioResult,
   workloadDisplayFixtureSchema,
 } from "./mobile-dashboard-contracts.ts";
@@ -280,6 +281,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
           id: "a1",
           name: "Morning Ride",
           canonical_type: "cycling",
+          primary_canonical_type: null,
           started_at: "2026-07-27T07:00:00.000Z",
           ended_at: "2026-07-27T08:30:00.000Z",
           avg_hr: 148,
@@ -296,6 +298,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
           id: "a2",
           name: "Evening Run",
           canonical_type: "running",
+          primary_canonical_type: null,
           started_at: "2026-07-26T18:00:00.000Z",
           ended_at: "2026-07-26T18:45:00.000Z",
           avg_hr: 155,
@@ -777,6 +780,30 @@ describe("mobileTrainingFixtureSchema", () => {
     expect(mobileTrainingFixtureSchema.parse(validTrainingFixture())).toBeTruthy();
   });
 
+  it("preserves the primary activity type through the public training tab output", () => {
+    const data = validTrainingFixture().data;
+    const unavailableChart = {
+      status: "insufficient_data",
+      sourceLabel: "Recorded training data",
+      observedCount: 0,
+      minimumCount: 1,
+      message: "No chart data is available.",
+    };
+    const parsed = mobileTrainingTabOutputSchema.parse({
+      ...data,
+      activities: data.activities.map((activity) => ({
+        ...activity,
+        primary_canonical_type: "running",
+      })),
+      chartAvailability: { strainTrend: unavailableChart, verticalAscent: unavailableChart },
+    });
+
+    expect(parsed.activities[0]).toMatchObject({
+      canonical_type: "cycling",
+      primary_canonical_type: "running",
+    });
+  });
+
   it("rejects a positive training story whose trend renders as no data", () => {
     const fixture = validTrainingFixture();
     fixture.data.workloadRatio.timeSeries = fixture.data.workloadRatio.timeSeries.slice(-1);
@@ -831,6 +858,7 @@ describe("mobileTrainingFixtureSchema", () => {
           id: "positive-activity",
           name: "Short walk",
           canonical_type: "walking",
+          primary_canonical_type: null,
           started_at: "2026-07-27T07:00:00.000Z",
           ended_at: null,
           avg_hr: null,
@@ -1109,6 +1137,7 @@ describe("mobileTrainingFixtureSchema", () => {
         id: "open-activity",
         name: "Open activity",
         canonical_type: "walking",
+        primary_canonical_type: null,
         started_at: "2026-07-27T07:00:00.000Z",
         ended_at: null,
         avg_hr: null,
@@ -1146,6 +1175,7 @@ describe("mobileTrainingFixtureSchema", () => {
       id: "walk-1",
       name: "Walk",
       canonical_type: "walking",
+      primary_canonical_type: null,
       started_at: "2026-07-27T09:00:00.000Z",
       ended_at: null,
       avg_hr: null,

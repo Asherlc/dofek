@@ -226,7 +226,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain(
-      "source_external_ids, absent_source_external_ids, member_activity_ids, representative_activity_id, primary_provider_id, primary_source_name, origin_candidate_member_ids, origin_evidence, lifecycle_refresh_version AS refresh_version, 0 AS is_deleted, lifecycle_refreshed_at AS refreshed_at FROM versioned_current_deduped_activities",
+      "source_external_ids, absent_source_external_ids, member_activity_ids, representative_activity_id, primary_provider_id, primary_source_name, origin_candidate_member_ids, origin_evidence, lifecycle_refresh_version AS refresh_version, 0 AS is_deleted, lifecycle_refreshed_at AS refreshed_at, primary_canonical_type FROM versioned_current_deduped_activities",
     );
     expect(normalizedSql).toContain(
       "greatest( stale_deduped_activities.refresh_version + 1, refresh_clock.refresh_version ) AS refresh_version, 1 AS is_deleted",

@@ -59,7 +59,7 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-source-tree-v7",
+      keyVersion: "activity-calendar-primary-title-v8",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
@@ -107,6 +107,7 @@ describe("calendarRouter", () => {
               id: "activity-1",
               name: "Trainer Ride",
               activityType: "cycling",
+              primaryActivityType: "running",
               modality,
               startedAt: new Date("2026-03-18T07:00:00.000Z"),
               endedAt: "2026-03-18 08:00:00+00",
@@ -156,6 +157,7 @@ describe("calendarRouter", () => {
           activities: [
             expect.objectContaining({
               activityType: "cycling",
+              primaryActivityType: "running",
               modality,
               startedAt: "2026-03-18T07:00:00.000Z",
               endedAt: "2026-03-18T08:00:00.000Z",
@@ -183,6 +185,7 @@ describe("calendarRouter", () => {
             id: "activity-1",
             name: "Trainer Ride",
             activityType: "indoor_cycling",
+            primaryActivityType: null,
             modality: "indoor",
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
@@ -254,6 +257,7 @@ describe("calendarRouter", () => {
             id: "activity-1",
             name: "Morning Run",
             activityType: "running",
+            primaryActivityType: null,
             modality: null,
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",

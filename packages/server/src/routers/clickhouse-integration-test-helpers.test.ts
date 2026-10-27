@@ -92,7 +92,7 @@ describe("clickhouse integration test helpers", () => {
     const activityInsert = commands.find((query) => /INSERT INTO .*\.v_activity\n/.test(query));
     expect(activityInsert).toContain("origin_labels AS");
     expect(activityInsert).toContain(
-      "legacy.* REPLACE(origins.primary_activity_id AS primary_activity_id)",
+      "legacy.* REPLACE(origins.primary_activity_id AS primary_activity_id,",
     );
     const dedupedInsert = commands.find((query) =>
       /INSERT INTO .*\.deduped_activities\(/.test(query),

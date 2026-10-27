@@ -26,7 +26,13 @@ describe("TrainingRepository", () => {
         if (queryText.includes("raw_activity_count")) {
           return [schema.parse({ raw_activity_count: rawActivityCount })];
         }
-        return rows.map((row) => schema.parse(row));
+        return rows.map((row) =>
+          schema.parse(
+            typeof row === "object" && row !== null && "id" in row
+              ? { primary_canonical_type: null, ...row }
+              : row,
+          ),
+        );
       });
     return {
       query,
@@ -342,6 +348,7 @@ describe("TrainingRepository", () => {
         {
           id: "act-1",
           canonical_type: "running",
+          primary_canonical_type: "walking",
           name: "Morning Run",
           started_at: "2024-01-15T08:00:00Z",
           ended_at: "2024-01-15T09:00:00Z",
@@ -358,6 +365,7 @@ describe("TrainingRepository", () => {
       const result = await repo.getActivityStats(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.canonical_type).toBe("running");
+      expect(result[0]?.primary_canonical_type).toBe("walking");
       expect(result[0]?.avg_hr).toBe(145.5);
       expect(result[0]?.distance_meters).toBe(10500);
     });
@@ -464,6 +472,7 @@ describe("TrainingRepository", () => {
                 schema.parse({
                   id: "act-1",
                   canonical_type: "running",
+                  primary_canonical_type: null,
                   name: "Morning Run",
                   started_at: "2024-01-15T08:00:00Z",
                   ended_at: "2024-01-15T09:00:00Z",
@@ -534,6 +543,7 @@ describe("TrainingRepository", () => {
                 schema.parse({
                   id: "act-in-window",
                   canonical_type: "running",
+                  primary_canonical_type: null,
                   name: "In Window Run",
                   started_at: "2024-01-03T08:00:00Z",
                   ended_at: "2024-01-03T09:00:00Z",

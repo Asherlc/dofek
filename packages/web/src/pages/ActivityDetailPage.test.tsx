@@ -101,6 +101,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   sampleCountState: { status: "missing", reason: "Sample Count not recorded" },
   name: "Morning Run",
   activityType: "running",
+  primaryActivityType: null,
   rawType: "running",
   modality: null,
   startedAt: "2026-03-18T07:00:00Z",
@@ -708,6 +709,47 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("uses the readable primary activity type for the title and breadcrumb when its name is missing", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        name: null,
+        activityType: "walking",
+        primaryActivityType: "running",
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Running" })).toBeDefined();
+    expect(screen.getAllByText("Running")).toHaveLength(2);
+    expect(screen.getByText("Walking")).toBeDefined();
+  });
+
+  it("uses the readable representative type for the title and breadcrumb when no primary is resolved", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        name: null,
+        activityType: "hiking",
+        primaryActivityType: null,
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Hiking" })).toBeDefined();
+    expect(screen.getAllByText("Hiking")).toHaveLength(3);
+  });
+
   it("requests downloaded photos for the current activity with signed-link renewal", async () => {
     const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
     renderWithUnits(<ActivityDetailPage />);
@@ -848,7 +890,7 @@ describe("ActivityDetailPage", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "running" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Running" })).toBeDefined();
     expect(screen.queryByRole("button", { name: /Sources/ })).toBeNull();
     expect(screen.getByText("10.0 km")).toBeVisible();
   });

@@ -356,7 +356,11 @@ SELECT
         'Nullable(String)'
     ) AS modality,
     CAST(
-        coalesce(activity_bounds.name, existing_activity_summary_for_dirty_keys.name),
+        if(
+            activity_bounds.activity_id IS null,
+            existing_activity_summary_for_dirty_keys.name,
+            activity_bounds.name
+        ),
         'Nullable(String)'
     ) AS name,
     CAST(

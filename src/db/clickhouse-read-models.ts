@@ -425,12 +425,13 @@ FROM merged`;
 }
 
 /** Current view; historical migration builders below retain their original inputs. */
-export function buildActivityOriginReadModelRefreshStatements(): string[] {
+export function buildActivityOriginReadModelRefreshStatements(primaryTitles = false): string[] {
   return [
     "DROP VIEW IF EXISTS analytics.v_activity_members",
     "DROP VIEW IF EXISTS analytics.v_activity",
     buildActivityOriginViewSql(
       buildActivityReadModelSql().slice(standardViewHeader("analytics.v_activity").length),
+      primaryTitles,
     ),
     buildActivityMembersReadModelSql(),
   ];

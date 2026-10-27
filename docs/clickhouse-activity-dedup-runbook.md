@@ -5,6 +5,16 @@ persisted activity groups. Do not build final activity rows directly from
 `postgres_fitness.activity`; that table intentionally stores raw provider rows,
 including overlapping duplicates from multiple providers or devices.
 
+Activity titles follow the recording origin resolved by the
+[origin selector](../analytics/macros/activity_origin.sql), separately from the
+analytics representative. Preserve a missing primary title as null and expose
+`primary_canonical_type` so web and mobile can display the primary activity type
+without borrowing another member's title or changing analytics classification.
+Unresolved groups retain their existing field-priority title selection. The
+[Postgres view](../drizzle/_views/01_v_activity.sql) and
+[ClickHouse model](../analytics/models/read_models/deduped_activities.sql) apply
+the same rule.
+
 ## Required Shape
 
 - PostgreSQL [group reconciliation](../src/db/activity-group-reconciliation.ts)
