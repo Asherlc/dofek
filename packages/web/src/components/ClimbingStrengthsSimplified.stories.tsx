@@ -1,29 +1,38 @@
+import { ALL_CLIMBING_GRADES } from "@dofek/training/climbing-strengths";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  seriesColor,
+} from "../lib/chartTheme.ts";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import { climbingStrengthsFixture } from "./climbing-strengths-fixtures.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 const views = [
   {
-    value: "gaps",
-    label: "Compare styles",
-    description: "See which styles you send more often at the same grade.",
+    value: "curves",
+    label: "Styles",
+    description: "Compare styles across every recorded grade.",
   },
   {
     value: "profile",
-    label: "Compare grades",
+    label: "Grades",
     description: "See how your send rate changes with grade for each style.",
   },
   {
     value: "progress",
-    label: "Track progress",
-    description: "See how your send rate changes over the selected period.",
+    label: "Progress",
+    description: "See how your send rate changes each month.",
   },
 ] as const;
 function SimplifiedStrengths() {
   const [dimension, setDimension] = useState("wall_angle");
-  const [view, setView] = useState<(typeof views)[number]["value"]>("gaps");
-  const [grade, setGrade] = useState("V4");
+  const [view, setView] = useState<(typeof views)[number]["value"]>("curves");
   const panel = climbingStrengthsFixture.panels.find((item) => item.dimension === dimension);
   if (!panel) return null;
   return (
@@ -66,22 +75,20 @@ function SimplifiedStrengths() {
           </fieldset>
         </div>
         <div className="mt-5 rounded-lg border border-border p-4">
+          <h2 className="mb-2 font-medium">
+            {view === "curves"
+              ? "Send rate across grades"
+              : view === "profile"
+                ? "Send rate by grade and style"
+                : "Monthly send rate"}
+          </h2>
           <p className="mb-4 text-sm text-muted">
             {views.find((item) => item.value === view)?.description}
           </p>
-          {view !== "profile" ? (
-            <label className="mb-5 flex flex-wrap items-center gap-3 text-sm text-foreground">
-              {view === "progress" ? "Track climbs at grade" : "Compare climbs at grade"}
-              <select
-                value={grade}
-                onChange={(event) => setGrade(event.target.value)}
-                className="min-h-10 rounded-lg border border-border bg-surface px-3 text-sm text-foreground"
-              >
-                {panel.grades.map((item) => (
-                  <option key={item.grade}>{item.grade}</option>
-                ))}
-              </select>
-            </label>
+          {view === "progress" ? (
+            <p className="mb-4 text-xs text-muted">
+              Combines all grades; changes can reflect the difficulty of climbs recorded each month.
+            </p>
           ) : null}
           {view === "profile" ? (
             <table className="w-full text-sm">
@@ -102,6 +109,14 @@ function SimplifiedStrengths() {
                     {row.cells.map((cell) => (
                       <td
                         key={cell.grade}
+                        title={`${cell.sends} sends / ${cell.climbs} climbs`}
+                        style={
+                          cell.successRate === null
+                            ? undefined
+                            : {
+                                backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${cell.successRate}% * 0.4), var(--color-surface-solid))`,
+                              }
+                        }
                         className="border-4 border-surface bg-accent/10 p-4 text-center"
                       >
                         {cell.successRate === null ? "No data" : `${cell.successRate}%`}
@@ -111,13 +126,42 @@ function SimplifiedStrengths() {
                 ))}
               </tbody>
             </table>
+          ) : view === "progress" ? (
+            <DofekChart
+              height={340}
+              option={{
+                animation: false,
+                grid: dofekGrid("single", {
+                  top: 50,
+                  bottom: 40,
+                  left: 40,
+                  right: 20,
+                  containLabel: true,
+                }),
+                legend: dofekLegend(true),
+                tooltip: dofekTooltip({ trigger: "axis" }),
+                xAxis: dofekAxis.category({ show: true, data: ["Aug", "Sep", "Oct"] }),
+                yAxis: dofekAxis.value({ name: "Send rate (%)", min: 0, max: 100 }),
+                series: panel.rows.map((row, index) =>
+                  dofekSeries.line(
+                    row.label,
+                    [
+                      [50, 62, 68],
+                      [35, 45, 55],
+                      [80, 75, 83],
+                    ][index] ?? [],
+                    { color: seriesColor(index), smooth: false, symbol: "circle", symbolSize: 8 },
+                  ),
+                ),
+              }}
+            />
           ) : (
             <ClimbingStrengthsChart
               panel={panel}
-              grade={grade}
-              view={view}
+              grade={ALL_CLIMBING_GRADES}
+              view="curves"
               selectedRow={null}
-              onSelectCell={(_row, value) => setGrade(value)}
+              onSelectCell={() => {}}
             />
           )}
         </div>
