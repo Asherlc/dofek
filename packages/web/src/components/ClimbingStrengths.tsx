@@ -178,7 +178,15 @@ function ClimbingStrengthsContext({
     gradeKey === ALL_CLIMBING_GRADES
       ? ALL_CLIMBING_GRADES
       : (grades.find((item) => item.grade === gradeKey)?.grade ??
-        grades[0]?.grade ??
+        grades.find((item) =>
+          selectedPanels.some((panel) =>
+            panel.rows.some((row) =>
+              row.cells.some(
+                (cell) => cell.grade === item.grade && cell.sampleStatus !== "no_data",
+              ),
+            ),
+          ),
+        )?.grade ??
         ALL_CLIMBING_GRADES);
   return (
     <section className="space-y-3" aria-label={label}>

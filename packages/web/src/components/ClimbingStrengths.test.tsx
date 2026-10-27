@@ -14,6 +14,23 @@ vi.mock("./DofekChart.tsx", () => ({
   ),
 }));
 
+it("defaults to an observed grade while preserving an explicitly selected empty grade", () => {
+  const panels = fixture.panels.map((panel) => ({
+    ...panel,
+    rows: panel.rows.map((row) => ({
+      ...row,
+      cells: row.cells.map((cell) =>
+        cell.grade === "V3" ? { ...cell, sampleStatus: "no_data" as const } : cell,
+      ),
+    })),
+  }));
+  render(<ClimbingStrengths data={{ ...fixture, panels }} />);
+  expect(screen.getByLabelText("Grade")).toHaveValue("V4");
+  fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "V3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+  expect(screen.getByLabelText("Grade")).toHaveValue("V3");
+});
+
 it("selects pooled All grades explicitly and filters supplied results on selection", () => {
   renderGradeProfile(<ClimbingStrengths data={fixture} />);
   fireEvent.change(screen.getByLabelText("View"), { target: { value: "gaps" } });

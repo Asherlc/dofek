@@ -115,7 +115,7 @@ export function ClimbingFilters({
             <label key={key} className="flex flex-col gap-1 text-xs text-muted">
               {climbingFilterLabels[key]}
               <select
-                className="min-h-11 rounded border border-border bg-surface px-2 text-sm text-foreground"
+                className="min-h-11 rounded border border-border bg-surface px-2 text-base text-foreground"
                 value={value[key] === undefined ? "" : String(value[key])}
                 onChange={(event) => {
                   const next = { ...value };

@@ -31,6 +31,36 @@ function renderWithOptions(element: Parameters<typeof render>[0]) {
   return result;
 }
 describe("ClimbingStrengths", () => {
+  it("defaults to an observed grade while preserving an explicitly selected empty grade", () => {
+    const panels = data.panels.map((panel) => ({
+      ...panel,
+      rows: panel.rows.map((row) => ({
+        ...row,
+        cells: row.cells.map((cell) =>
+          cell.grade === "V3" ? { ...cell, sampleStatus: "no_data" as const } : cell,
+        ),
+      })),
+    }));
+    render(<ClimbingStrengths data={{ ...data, panels }} />);
+    expect(screen.getByRole("button", { name: "V4" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "V3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+    expect(screen.getByRole("button", { name: "V3" }).getAttribute("aria-selected")).toBe("true");
+  });
+  it.each(["Success curves", "Grade pyramids"])(
+    "keeps the pooled warning specific to pooled views when switching to %s",
+    (view) => {
+      renderWithOptions(<ClimbingStrengths data={data} />);
+      const warning =
+        "All grades combines different difficulties; comparisons are not grade-adjusted.";
+      expect(screen.getByText(warning)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: /^View:/ }));
+      fireEvent.click(screen.getByRole("radio", { name: view }));
+      expect(screen.queryByText(warning)).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Styles" }));
+      expect(screen.getByText(warning)).toBeTruthy();
+    },
+  );
   it("shows all grade columns in Grades and opens the selected heatmap cell's source climbs", () => {
     render(<ClimbingStrengths data={data} />);
     fireEvent.click(screen.getByRole("button", { name: "Grades" }));
