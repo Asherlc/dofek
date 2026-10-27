@@ -69,6 +69,34 @@ If this returns many rows while Postgres `fitness.v_activity` groups the same
 IDs under one `member_activity_ids` array, the ClickHouse final summary is using
 raw activity identity somewhere.
 
+## Missing Primary Source Label
+
+When a card shows only “Sources,” inspect `source_providers`,
+`primary_activity_id`, `primary_provider_id`, `origin_candidate_member_ids`, and
+`origin_evidence` for the same group in PostgreSQL `fitness.v_activity` and
+ClickHouse `analytics.v_activity`. Compare those results with active raw member
+rows and their source/device metadata. A retained provider with null primary
+fields indicates unresolved origin; it does not by itself establish a sync
+failure. The [origin resolver](../drizzle/_views/00_activity_origin.sql),
+[dbt selector](../analytics/macros/activity_origin.sql), and
+[source disclosure](../packages/web/src/components/ActivitySourceDisclosure.tsx)
+define these fields and the collapsed label.
+
+Distinguish an exported copy from a parallel recording: transfer evidence can
+link one provider's record to another, while an independent WHOOP recording
+does not establish a transfer from the workout's initiating device. Check the
+shared [origin fixtures](../src/test-fixtures/activity-origin.json) before
+changing the policy. Agreement between both database projections helps
+separate origin policy from stale analytics; disagreement needs a CDC or
+read-model investigation using the [rollout runbook](clickhouse-read-model-deploy-runbook.md).
+
+Run the shared real-engine origin regressions through the
+[integration tier](testing.md#integration-dependencies):
+
+```bash
+pnpm test:integration -- src/db/activity-origin.integration.test.ts src/db/activity-origin-read-model.integration.test.ts --maxWorkers 1 --no-file-parallelism
+```
+
 ## Fix Pattern
 
 Update the read model so persisted group identity drives output. Keep raw
