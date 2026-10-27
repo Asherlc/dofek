@@ -6,6 +6,7 @@ import { loadTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { listUserExternalEffects } from "../db/user-external-effect.ts";
 import { getAllProviders } from "../providers/index.ts";
+import { isTheCragPublicProfileScope } from "../providers/thecrag/identity.ts";
 import { getProviderAuthTypeFromSetup, type Provider } from "../providers/types.ts";
 import {
   decryptCredentialValue,
@@ -249,6 +250,18 @@ async function loadProviderConnections(
         throw new ProviderRevocationPrerequisiteError(
           `Dofek cannot verify the ${connection.provider_id} connection for account deletion. Contact support before retrying.`,
         );
+      }
+      if (connection.provider_id === "thecrag") {
+        const tokens = await loadTokens(database, connection.provider_id, userId);
+        if (tokens && !isTheCragPublicProfileScope(tokens.scopes)) {
+          throw new ProviderRevocationPrerequisiteError(
+            "Revoke your old personal API key in theCrag Settings > API Keys, then disconnect and reconnect theCrag in Dofek before deleting your account.",
+          );
+        }
+        return {
+          disposition: "no_remote_authorization" as const,
+          providerId: connection.provider_id,
+        };
       }
       if (getProviderAuthTypeFromSetup(provider.authSetup?.()) === "public-profile") {
         return {

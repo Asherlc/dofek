@@ -31,7 +31,7 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Climbing tick removals
 
-Mountain Project, OpenBeta, Kaya, and theCrag reconcile their complete logbooks
+Mountain Project, OpenBeta, and Kaya reconcile their complete logbooks
 on each successful sync, including valid empty lists. The
 [snapshot writer](../db/climbing-log-snapshot.ts) marks missing source records
 with `providerAbsentAt`, preserves their raw payloads and attempts, and restores
@@ -40,6 +40,11 @@ absent records; the provider record browser retains them. See the
 [active-log projection](../../packages/server/src/repositories/climbing-rock-observations.ts)
 and [provider records](../../packages/server/src/repositories/provider-detail-repository.ts).
 Failed, malformed, or incomplete discovery never retires records.
+
+theCrag uses additive imports because its public ascent feed describes events
+and does not establish a complete current logbook; see the
+[provider guide](../../docs/thecrag.md) and
+[upstream feed discussion](https://github.com/theCrag/website/issues/1997).
 
 CSV uploads retain their existing session-scoped reconciliation because an
 upload need not contain the complete remote logbook; see the
@@ -148,21 +153,20 @@ partially unsupported, or failed responses do not retire existing rows.
 
 ## theCrag
 
-theCrag imports a connected user's climbing logbook through the personal-key
-read API. Users need active supporter status and generate their own key in
-Settings → API Keys; the same secure token form connects the provider on web
-and mobile. The API includes private notes and supports pagination and
-incremental reads by ascent update time
-([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
+theCrag connects a public username or profile URL on web and mobile and imports
+ticks from the public Atom feed and ascent pages. It needs no supporter key,
+account login or browser process. The provider-local HTTP client is Impit
+([documentation](https://apify.github.io/impit/js/)); the feed route is recorded
+in the [upstream discussion](https://github.com/theCrag/website/issues/1997).
 
-The [provider](thecrag/provider.ts) stores standalone climbing log entries and original
-source payloads without creating workouts. Every sync reads the complete
-paginated logbook so removed ascents can be marked absent. Dofek polls daily
-with one concurrent sync job. Full reads use more of the API's weekly account
-budget than its recommended incremental reads; the numeric budget is not
-published in the [personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
-See the [theCrag provider guide](../../docs/thecrag.md) for connection,
-storage, and the limits of published-contract testing.
+The [provider](thecrag/provider.ts) stores standalone climbing log entries without
+creating workouts. Daily polling upserts observed ascents and preserves
+unobserved entries and attachments. Feed history is not guaranteed complete;
+private notes are unavailable. Existing personal-key connections must reconnect
+and owners must revoke their old keys in theCrag's API settings
+([personal API guide](https://www.thecrag.com/en/article/logbookreadapi)).
+See the [theCrag provider guide](../../docs/thecrag.md) for source mapping,
+transport verification, upstream terms and feed limitations.
 
 ## OAuth authorization erasure
 

@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { persistClimbingLogSnapshot } from "../../db/climbing-log-snapshot.ts";
-import type { SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
+import {
+  persistClimbingLogEntries,
+  type SourceClimbingLogEntry,
+} from "../../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { MissingRouteMethodError } from "../../db/source-attempt-facts.ts";
 import { captureException } from "../../lib/error-reporting.ts";
@@ -12,7 +14,7 @@ export async function writeClimbingRecords(
   records: readonly SourceClimbingLogEntry[],
 ): Promise<number> {
   try {
-    const written = await persistClimbingLogSnapshot(database, {
+    const written = await persistClimbingLogEntries(database, {
       userId,
       providerId,
       entries: records,

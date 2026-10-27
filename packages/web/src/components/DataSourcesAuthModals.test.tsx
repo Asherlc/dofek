@@ -164,12 +164,13 @@ describe("data source auth dialogs", () => {
 describe("Data source authentication telemetry", () => {
   it.each([
     ["openbeta", "OpenBeta profile URL or username", "text"],
+    ["thecrag", "theCrag profile URL or username", "text"],
     ["wger", "JWT refresh token", "password"],
   ])("uses the appropriate input visibility for %s", async (providerId, label, inputType) => {
     const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
     render(
       <TokenAuthModal
-        kind={providerId === "openbeta" ? "public-profile" : "access-token"}
+        kind={providerId === "wger" ? "access-token" : "public-profile"}
         providerId={providerId}
         providerName={providerId}
         tokenLabel={label}

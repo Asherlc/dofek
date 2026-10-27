@@ -25,60 +25,6 @@ import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-produ
 
 export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
 
-/** Synthetic fixtures for the published personal-logbook contract; not live API captures. */
-export function theCragAscent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    id: "1001",
-    epoch: 1791676800,
-    date: "2026-10-10",
-    logDate: "2026-10-11",
-    climbedGearStyle: "sport",
-    tick: { label: "redpoint", name: "Redpoint" },
-    markdown: "Personal ascent notes",
-    historical: false,
-    cpr: null,
-    cprStyle: "sport",
-    tags: [],
-    pitch: [],
-    route: {
-      id: "2001",
-      name: "Sunset Arete",
-      grade: "5.10a",
-      gradeBand: 3,
-      gradeAtom: { grade: "5.10a", gradeBand: 3, type: "unverified-native-type" },
-      style: "Sport",
-      height: null,
-      displayHeight: null,
-      stars: 2,
-      bolts: 8,
-      urlAncestorStub: "/en/climbing/example-crag",
-      ancestors: {
-        country: { id: "3001", name: "United States", subType: "Country", depth: 1 },
-        TLC: { id: "3002", name: "Example Crag", subType: "Crag", depth: 4 },
-        parent: { id: "3003", name: "South Wall", subType: "Sector", depth: 5 },
-      },
-      tags: [],
-    },
-    ...overrides,
-  };
-}
-
-export function theCragPage(
-  ascents: Record<string, unknown>[],
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    data: {
-      account: { id: "123", name: "Climber", login: "climber" },
-      ascents,
-      numberAscents: ascents.length,
-      page: "1",
-      perPage: 250,
-      ...overrides,
-    },
-  };
-}
-
 export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     vscale: null,

@@ -195,10 +195,10 @@ describe("ensureProvidersRegistered failure path", () => {
     })?.[0];
     expect(theCrag?.validate()).toBeNull();
     const setup = theCrag?.authSetup?.();
-    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("public-profile");
     expect(setup?.manualToken).toMatchObject({
-      label: "Personal API key (active supporter required)",
-      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
+      label: "theCrag profile URL or username",
+      instructionsUrl: "https://www.thecrag.com/",
     });
   });
 });

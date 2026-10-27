@@ -4,11 +4,13 @@ import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
+import { THECRAG_PUBLIC_PROFILE_SCOPE } from "../providers/thecrag/identity.ts";
 import type { Provider } from "../providers/types.ts";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import {
   createEncryptedAccountErasureSnapshot,
   decryptAccountErasureSnapshot,
+  ProviderRevocationPrerequisiteError,
 } from "./remote-snapshot.ts";
 
 const userId = "10000000-0000-4000-8000-000000001995";
@@ -24,6 +26,16 @@ const legacyWithingsUserId = "a0000000-0000-4000-8000-000000001995";
 const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const zivaUserId = "c0000000-0000-4000-8000-000000001995";
 const publicProfileUserId = "d0000000-0000-4000-8000-000000001995";
+const legacyTheCragConnections = [
+  { userId: "e0000000-0000-4000-8000-000000001995", scopes: "logbook:read" },
+  { userId: "f0000000-0000-4000-8000-000000001995", scopes: null },
+  {
+    userId: "11000000-0000-4000-8000-000000001995",
+    scopes: "thecrag:public-profile logbook:read",
+  },
+];
+const publicTheCragUserId = "12000000-0000-4000-8000-000000001995";
+const disconnectedTheCragUserId = "13000000-0000-4000-8000-000000001995";
 const storedAccountRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
@@ -37,7 +49,7 @@ const authProviderDefinitions = [
   ["withings", "Withings"],
 ] as const;
 const providers: Provider[] = [
-  ...["mountain-project", "openbeta"].map(
+  ...["mountain-project", "openbeta", "thecrag"].map(
     (providerId): Provider => ({
       id: providerId,
       name: providerId,
@@ -103,6 +115,29 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
             (${publicProfileUserId}::uuid, 'Public Profile Snapshot User'),
             (${zivaUserId}::uuid, 'Ziva Snapshot User')`,
     );
+    for (const connection of [
+      ...legacyTheCragConnections,
+      { userId: publicTheCragUserId, scopes: THECRAG_PUBLIC_PROFILE_SCOPE },
+      { userId: disconnectedTheCragUserId, scopes: undefined },
+    ]) {
+      await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
+        VALUES (${connection.userId}::uuid, 'theCrag Snapshot User')`);
+      await ensureProvider(context.db, "thecrag", "theCrag", undefined, connection.userId);
+      if (connection.scopes !== undefined) {
+        await saveTokens(
+          context.db,
+          "thecrag",
+          {
+            accessToken:
+              connection.userId === publicTheCragUserId ? "public-climber" : "old-personal-key",
+            refreshToken: null,
+            expiresAt: new Date("2099-01-01T00:00:00Z"),
+            scopes: connection.scopes,
+          },
+          connection.userId,
+        );
+      }
+    }
     await ensureProvider(
       context.db,
       "polar",
@@ -291,6 +326,38 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
   afterAll(async () => {
     await context?.cleanup();
   });
+
+  it.each(legacyTheCragConnections)(
+    "blocks legacy theCrag authorization with scope $scopes before activation",
+    async ({ userId: theCragUserId }) => {
+      await expect(
+        context.db.transaction((transaction) =>
+          createEncryptedAccountErasureSnapshot(transaction, theCragUserId, providers),
+        ),
+      ).rejects.toMatchObject({
+        name: ProviderRevocationPrerequisiteError.name,
+        message: expect.stringMatching(
+          /revoke.*personal.*key.*theCrag.*Settings.*API Keys.*disconnect.*reconnect/i,
+        ),
+      });
+      expect(await loadTokens(context.db, "thecrag", theCragUserId)).toMatchObject({
+        accessToken: "old-personal-key",
+      });
+    },
+  );
+
+  it.each([publicTheCragUserId, disconnectedTheCragUserId])(
+    "snapshots a public theCrag connection or one without credentials as no remote authorization (%s)",
+    async (theCragUserId) => {
+      const encrypted = await context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, theCragUserId, providers),
+      );
+      const snapshot = await decryptAccountErasureSnapshot(encrypted, theCragUserId);
+      expect(snapshot.providerConnections).toEqual([
+        { providerId: "thecrag", disposition: "no_remote_authorization" },
+      ]);
+    },
+  );
 
   it("snapshots public profiles without remote authorization", async () => {
     const encrypted = await context.db.transaction((transaction) =>
