@@ -659,21 +659,109 @@ it("renders the server grade-adjusted radar scores around a zero baseline", () =
     null,
   );
   expect(option).toMatchObject({
+    aria: {
+      label: {
+        description:
+          "Bouldering · V scale. All grades. Grade-adjusted differences in percentage points; zero is the same-grade baseline; limited samples are marked. Exact values are available below.",
+      },
+    },
     radar: {
       indicator: [
         { name: "Vertical", min: -100, max: 100 },
         { name: "Overhang", min: -100, max: 100 },
         { name: "Slab", min: -100, max: 100 },
       ],
+      axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },
+      splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
     },
     series: [
       {
         type: "radar",
         data: [
-          { name: "Grade-adjusted strengths", value: [6, 1.8, -7] },
-          { name: "Same-grade baseline", value: [0, 0, 0] },
+          {
+            name: "Grade-adjusted strengths",
+            value: [6, 1.8, -7],
+            lineStyle: { color: expect.any(String) },
+            itemStyle: { color: expect.any(String) },
+            areaStyle: { opacity: 0.12 },
+          },
+          {
+            name: "Same-grade baseline",
+            value: [0, 0, 0],
+            tooltipText: "Same-grade baseline · 0 percentage points",
+            lineStyle: { type: "dashed", color: chartThemeColors.axisLabel },
+            itemStyle: { color: chartThemeColors.axisLabel },
+          },
         ],
       },
     ],
   });
+});
+
+it.each(["curves", "pyramids", "radar"] as const)(
+  "describes the displayed grade scope for %s",
+  (view) => {
+    const option = climbingStrengthsChartOption(panel, view, "V4", null);
+    expect(option.aria.label.description).toBe(
+      `Bouldering · V scale. ${view === "radar" ? "V4" : "All grades"}. Success per distinct climb; limited samples are marked. Exact values are available below.`,
+    );
+    if (view !== "radar") {
+      expect(
+        climbingStrengthsChartOption(panel, view, "All grades", null).aria.label.description,
+      ).toBe(
+        "Bouldering · V scale. All grades. Success per distinct climb; limited samples are marked. Exact values are available below.",
+      );
+    }
+  },
+);
+
+it("omits unscored radar axes and keeps zero scores with explicit sample qualifiers", () => {
+  const supplied = climbingStrengthsGradePanel(panel, "All grades");
+  const option = climbingStrengthsChartOption(
+    {
+      ...supplied,
+      gradeAdjustedStrengths: [
+        {
+          key: "vertical",
+          differencePercentagePoints: 0,
+          expectedSuccessRate: 50,
+          sampleStatus: "available",
+        },
+        {
+          key: "overhang",
+          differencePercentagePoints: -12,
+          expectedSuccessRate: 50,
+          sampleStatus: "limited",
+        },
+        {
+          key: "slab",
+          differencePercentagePoints: null,
+          expectedSuccessRate: null,
+          sampleStatus: "no_data",
+        },
+      ],
+    },
+    "radar",
+    "All grades",
+    null,
+  );
+  expect(option.radar?.indicator).toEqual([
+    { name: "Vertical", min: -100, max: 100 },
+    { name: "Overhang", min: -100, max: 100 },
+  ]);
+  const points = z
+    .array(z.object({ value: z.array(z.number()), tooltipText: z.string() }))
+    .parse(option.series[0]?.data);
+  expect(points[0]?.value).toEqual([0, -12]);
+  expect(points[0]?.tooltipText).toBe(
+    `Vertical · 0 percentage points vs same-grade baseline\n${supplied.rows[0]?.cells[0]?.sends} sends / ${supplied.rows[0]?.cells[0]?.climbs} climbs\nOverhang · -12 percentage points vs same-grade baseline\n${supplied.rows[1]?.cells[0]?.sends} sends / ${supplied.rows[1]?.cells[0]?.climbs} climbs · Limited sample`,
+  );
+  expect(points[1]?.value).toEqual([0, 0]);
+  const missing = climbingStrengthsChartOption(
+    { ...supplied, gradeAdjustedStrengths: [] },
+    "radar",
+    "All grades",
+    null,
+  );
+  expect(missing.radar?.indicator).toEqual([]);
 });
