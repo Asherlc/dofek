@@ -259,7 +259,7 @@ describe("initPostHog", () => {
     );
   });
 
-  it("autocaptures unhandled failures without turning handled console messages into issues", () => {
+  it("captures unhandled failures without turning handled console messages into issues", () => {
     initPostHog();
     expect(posthog.init).toHaveBeenCalledWith(
       expect.any(String),
