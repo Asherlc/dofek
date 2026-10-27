@@ -10,6 +10,8 @@ origin_labels AS (
         lowerUTF8(trim(BOTH ' ' FROM coalesce(source_name, ''))) AS source_label,
         lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'sourceBundle'))) AS source_bundle,
         lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'device_name'))) AS raw_device_label,
+        lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'platform'))) AS platform_label,
+        lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'deviceType'))) AS device_type_label,
         if(provider_id = 'peloton'
             AND lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'platform'))) = 'whoop'
             AND lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'deviceType'))) = 'whoop'
@@ -23,6 +25,8 @@ origin_hints AS (
         provider_id = 'apple_health'
         AND match(replaceAll(source_label, unhex('C2A0'), ' '), '(^|[[:space:]])apple[[:space:]]+watch[[:space:]]*$')
             AS is_watch_recording,
+        provider_id = 'peloton' AND platform_label = 'home_bike'
+        AND device_type_label IN ('bike', 'home_bike_plus') AS is_native_peloton_recording,
         multiIf(
             provider_id = 'apple_health',
             transform(source_label,
@@ -30,12 +34,14 @@ origin_hints AS (
                 ['strava', 'garmin', 'garmin', 'wahoo', 'zwift', 'peloton', 'trainerroad', 'whoop', 'strong-csv', 'hang-ten', 'hang-ten'], ''),
             provider_id = 'strava' AND match(source_label, '^garmin edge( |$)'), 'garmin',
             provider_id = 'strava' AND match(source_label, '^wahoo elemnt( |$)'), 'wahoo',
+            provider_id = 'strava' AND source_label = 'peloton bike', 'peloton',
             ''
         ) AS label_provider,
         if(provider_id = 'apple_health' AND source_bundle = 'com.strava.strava', 'strava', '') AS bundle_provider,
         multiIf(
             provider_id = 'strava' AND match(raw_device_label, '^garmin edge( |$)'), 'garmin',
             provider_id = 'strava' AND match(raw_device_label, '^wahoo elemnt( |$)'), 'wahoo',
+            provider_id = 'strava' AND raw_device_label = 'peloton bike', 'peloton',
             ''
         ) AS device_provider
     FROM origin_labels
@@ -92,6 +98,7 @@ origin_graphs AS (
         arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label = 'strong')) AS strong_health_ids,
         arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label IN ('hang ten', 'hang ten training'))) AS hang_ten_ids,
         arraySort(groupArrayIf(members.activity_id, members.is_watch_recording)) AS apple_watch_ids,
+        arraySort(groupArrayIf(members.activity_id, members.is_native_peloton_recording)) AS native_peloton_ids,
         max(members.conflicting) AS conflicting,
         coalesce(any(origin_group_edges.edges), CAST([], 'Array(Tuple(UUID, UUID, String, String))')) AS edges
     FROM origin_members AS members
@@ -123,14 +130,14 @@ origin_decisions AS (
         group_id,
         any(member_ids) AS group_member_ids,
         any(edges) AS group_edges,
-        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids, apple_watch_ids)) AS initiating_origins,
+        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids, apple_watch_ids, native_peloton_ids)) AS initiating_origins,
         max(conflicting) OR max(has(reached, member_id)) AS invalid,
         arraySort(groupArrayIf(member_id, length(arrayDistinct(arrayConcat([member_id], reached))) = length(member_ids))) AS roots
     FROM origin_reachability
     GROUP BY user_id, group_id
 ),
 origin_selections AS (
-    -- Strong, Hang Ten, and Apple Watch initiate by policy; copy edges remain evidence-only.
+    -- Strong, Hang Ten, Apple Watch, and native Peloton bikes initiate by policy; copy edges remain evidence-only.
     SELECT
         *,
         multiIf(

@@ -123,3 +123,12 @@ view. ClickHouse migration 0104_activity_origin adds the serving columns and the
 no proven primary provider until dbt recomputes origin; their former representative
 is retained. See the [selector](../../analytics/macros/activity_origin.sql) for
 supported evidence and the [rollout runbook](../../docs/clickhouse-read-model-deploy-runbook.md#recording-origin-rollout).
+
+The [Peloton origin migration](../../drizzle/0169_peloton_activity_origin.sql)
+extends initiating-origin policy to native Peloton bikes with normalized
+`platform=home_bike` and `deviceType=bike` or `home_bike_plus`. Strava's normalized
+`Peloton Bike` source/device label establishes a Peloton-to-Strava transfer;
+an independent WHOOP recording retains its own Apple Health transfer evidence.
+Incomplete or contradictory metadata and multiple initiating recordings remain
+unresolved. The [shared real-engine fixtures](../test-fixtures/activity-origin.json)
+define these cases for PostgreSQL and ClickHouse.
