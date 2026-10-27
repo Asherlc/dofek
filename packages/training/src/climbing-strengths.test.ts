@@ -13,6 +13,9 @@ describe("climbing strengths labels", () => {
     expect(climbingStrengthsRateLabel({ climbs: 5, successRate: 0 })).toBe("0%");
   });
   it("labels total climbs and recorded unknown-result counts", () => {
+    expect(climbingStrengthsCountLabel({ sends: 1, climbs: 2, unknownOutcomes: 0 })).toBe(
+      "1 send / 2 climbs",
+    );
     expect(climbingStrengthsCountLabel({ sends: 2, climbs: 3, unknownOutcomes: 0 })).toBe(
       "2 sends / 3 climbs",
     );

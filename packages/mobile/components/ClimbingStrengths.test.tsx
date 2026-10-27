@@ -188,7 +188,7 @@ describe("ClimbingStrengths", () => {
       "climbing-strengths-source",
     );
     fireEvent.click(screen.getByRole("button", { name: "V4" }));
-    expect(screen.getByText("Same-grade baseline · 20% · 1 sends / 5 climbs")).toBeTruthy();
+    expect(screen.getByText("Same-grade baseline · 20% · 1 send / 5 climbs")).toBeTruthy();
     expect(
       screen.getByRole("button", {
         name: "Slab · 0% · 0 sends / 2 climbs · -20 percentage points vs same-grade baseline",
@@ -196,7 +196,7 @@ describe("ClimbingStrengths", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "Vertical · 33% · 1 sends / 3 climbs · +13 percentage points vs same-grade baseline",
+        name: "Vertical · 33% · 1 send / 3 climbs · +13 percentage points vs same-grade baseline",
       }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
@@ -221,7 +221,7 @@ describe("ClimbingStrengths", () => {
     fireEvent.click(screen.getByRole("button", { name: "Indoor / outdoor" }));
     expect(
       screen.getByRole("button", {
-        name: "Indoor · 20% · 1 sends / 5 climbs · 0 percentage points vs same-grade baseline",
+        name: "Indoor · 20% · 1 send / 5 climbs · 0 percentage points vs same-grade baseline",
       }),
     ).toBeTruthy();
   });

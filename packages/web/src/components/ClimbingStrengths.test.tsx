@@ -148,7 +148,7 @@ it("renders both recorded settings as separate labeled panels across dimensions"
     fireEvent.click(screen.getByRole("button", { name: dimension }));
     for (const [setting, counts, name] of [
       ["Indoor", "3 sends / 6 climbs", "Evening Arete"],
-      ["Outdoor", "1 sends / 2 climbs", "Outdoor Evening Arete"],
+      ["Outdoor", "1 send / 2 climbs", "Outdoor Evening Arete"],
     ] as const) {
       const panel = screen.getByRole("heading", { name: setting }).parentElement;
       if (!panel) throw new Error("Missing setting panel");

@@ -185,7 +185,7 @@ describe("ClimbingStrengthsChart", () => {
         expect(Number(points[0]?.getAttribute("cy"))).toBeCloseTo(110.4);
       }
       fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
-      expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 sends \/ 3 climbs/)).toBeTruthy();
+      expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 send \/ 3 climbs/)).toBeTruthy();
       result.unmount();
     }
   });
