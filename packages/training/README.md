@@ -194,6 +194,9 @@ missing, and zero seconds, median sample interval, and largest gap independently
 
 Average power and work use covered power seconds only. Normalized power uses the package's canonical
 30-second rolling/fourth-power calculation and is withheld when any elapsed power second is missing.
+Summary-only callers can use `computeCyclingPowerWork`, which shares the
+[bucket calculation](src/cycling-workout-metrics.ts) and returns work and power coverage while
+allocating only buckets touched by native observations, independent of missing elapsed time.
 Intensity factor is normalized power divided by the FTP effective for that activity. Power TSS uses
 `duration_hours × intensity_factor² × 100`, following the package's documented power-stress model;
 both values are unavailable rather than manufactured when FTP or normalized power is missing.

@@ -212,7 +212,8 @@ vi.mock("@dofek/format/format", async (importOriginal) => {
     },
     formatDurationRange: () => "1:00:00",
     formatDurationSeconds: (value: number) => `${value}s`,
-    formatNumber: (value: number) => String(value),
+    formatNumber: (value: number, decimals?: number) =>
+      decimals === undefined ? String(value) : actual.formatNumber(value, decimals),
     formatTimeOnly: (value: string | number | Date) =>
       typeof value === "string" ? value : new Date(value).toISOString(),
   };
@@ -284,6 +285,7 @@ const mockStreamQuery = vi.fn();
 const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
+const mockPowerWorkQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
 const mockClimbingEntriesQuery = vi.fn();
 const mockHangboardDetailsQuery = vi.fn();
@@ -295,6 +297,7 @@ const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityPowerWorkInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHangboardDetailsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -353,6 +356,7 @@ vi.mock("../../lib/trpc", () => ({
       route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
+      powerWork: { useQuery: (...args: unknown[]) => mockPowerWorkQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
       hangboardDetails: { useQuery: (...args: unknown[]) => mockHangboardDetailsQuery(...args) },
       recompute: {
@@ -416,6 +420,7 @@ vi.mock("../../lib/trpc", () => ({
         stream: { invalidate: mockActivityStreamInvalidate },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
+        powerWork: { invalidate: mockActivityPowerWorkInvalidate },
         strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
         hangboardDetails: { invalidate: mockActivityHangboardDetailsInvalidate },
         list: { invalidate: mockActivityListInvalidate },
@@ -440,6 +445,7 @@ vi.mock("../../lib/trpc", () => ({
 const baseCyclingActivity = {
   id: "00000000-0000-0000-0000-000000000001",
   activityType: "cycling",
+  modality: null,
   primaryActivityType: null,
   displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
@@ -553,7 +559,11 @@ function getQueryEnabledFlag(value: unknown): boolean | undefined {
   return typeof enabled === "boolean" ? enabled : undefined;
 }
 
-function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown) | undefined {
+function getPlaceholderData(
+  value: unknown,
+):
+  | ((previousData: unknown, previousQuery?: { queryKey: readonly unknown[] }) => unknown)
+  | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -590,6 +600,13 @@ beforeEach(() => {
   mockRouteQuery.mockClear();
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
+  mockPowerWorkQuery.mockReset();
+  mockPowerWorkQuery.mockReturnValue({
+    data: { workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  });
   mockStrengthExercisesQuery.mockClear();
   mockClimbingEntriesQuery.mockClear();
   mockEntrySuggestionsQuery.mockReset();
@@ -611,6 +628,7 @@ beforeEach(() => {
   mockActivityStreamInvalidate.mockClear();
   mockActivityHrZonesInvalidate.mockClear();
   mockActivityPowerZonesInvalidate.mockClear();
+  mockActivityPowerWorkInvalidate.mockClear();
   mockActivityStrengthExercisesInvalidate.mockClear();
   mockActivityHangboardDetailsInvalidate.mockClear();
   mockActivityListInvalidate.mockClear();
@@ -1632,6 +1650,140 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Distance unavailable")).toBeNull();
   });
 
+  it.each([
+    { modality: "indoor", totalDistance: 0 },
+    { modality: "virtual", totalDistance: 25_000 },
+  ])("hides distance for $modality cycling details", async ({ modality, totalDistance }) => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, modality, totalDistance },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+
+    expect(screen.queryByText("Distance")).toBeNull();
+    expect(screen.getByText("Avg Power")).toBeTruthy();
+  });
+
+  it.each([
+    { activityType: "cycling", modality: "road" },
+    { activityType: "running", modality: "indoor" },
+  ])("keeps distance for $modality $activityType", async ({ activityType, modality }) => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType, modality },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("30 km")).toBeTruthy();
+  });
+
+  it.each([
+    { workKilojoules: 721.6, expected: "722 kJ" },
+    { workKilojoules: 0, expected: "0 kJ" },
+  ])("renders recorded mechanical output $expected", async ({ workKilojoules, expected }) => {
+    mockPowerWorkQuery.mockReturnValue({
+      data: { workKilojoules, coverage: { coveredSeconds: 3600, coveragePct: 100 } },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Energy Output")).toBeTruthy();
+    expect(screen.getByText(expected)).toBeTruthy();
+    expect(screen.queryByText("Partial power data")).toBeNull();
+  });
+
+  it.each([
+    { coveragePct: 98.9, partial: true },
+    { coveragePct: 99, partial: false },
+  ])(
+    "qualifies output with $coveragePct percent power coverage",
+    async ({ coveragePct, partial }) => {
+      mockPowerWorkQuery.mockReturnValue({
+        data: { workKilojoules: 400, coverage: { coveredSeconds: 3500, coveragePct } },
+        isLoading: false,
+        isFetching: false,
+        error: null,
+      });
+
+      const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+      render(<ActivityDetailScreen />);
+
+      expect(screen.getByText("400 kJ")).toBeTruthy();
+      expect(screen.queryByText("Partial power data") !== null).toBe(partial);
+    },
+  );
+
+  it("omits output when the server has no measured work", async () => {
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+
+    expect(screen.queryByText("Energy Output")).toBeNull();
+    expect(screen.queryByText("Partial power data")).toBeNull();
+  });
+
+  it("keeps recorded output visible while refreshing and shows the server error", async () => {
+    mockPowerWorkQuery.mockReturnValue({
+      data: { workKilojoules: 720, coverage: { coveredSeconds: 3600, coveragePct: 100 } },
+      isLoading: false,
+      isFetching: true,
+      error: new Error("Power data could not be read. Choose another source."),
+    });
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+
+    expect(screen.getByText("720 kJ")).toBeTruthy();
+    expect(screen.getByText("Power data could not be read. Choose another source.")).toBeTruthy();
+  });
+
+  it("does not show the previous ride's output after navigating to another activity", async () => {
+    const previousWork = {
+      workKilojoules: 720,
+      coverage: { coveredSeconds: 3600, coveragePct: 100 },
+    };
+    mockPowerWorkQuery.mockImplementation((input: { id: string }, options: unknown) => ({
+      data:
+        input.id === baseCyclingActivity.id
+          ? previousWork
+          : getPlaceholderData(options)?.(previousWork, {
+              queryKey: [
+                ["activity", "powerWork"],
+                { input: { id: baseCyclingActivity.id, powerSourceId: "wahoo" }, type: "query" },
+              ],
+            }),
+      isLoading: input.id !== baseCyclingActivity.id,
+      isFetching: input.id !== baseCyclingActivity.id,
+      error: null,
+    }));
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    const view = render(<ActivityDetailScreen />);
+    expect(screen.getByText("720 kJ")).toBeTruthy();
+
+    const nextActivityId = "00000000-0000-0000-0000-000000000002";
+    activityRouteParams.id = nextActivityId;
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, id: nextActivityId, name: "Evening Ride" },
+      isLoading: false,
+      error: null,
+    });
+    view.rerender(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Evening Ride")).toBeTruthy();
+    expect(screen.queryByText("720 kJ")).toBeNull();
+  });
+
   it("surfaces the activity detail server error", async () => {
     mockByIdQuery.mockReturnValue({
       data: undefined,
@@ -2316,6 +2468,15 @@ it("preselects the default HR source and switches mobile streams and zones", asy
 });
 
 it("keeps mobile metric choices independent and propagates power and elevation", async () => {
+  mockPowerWorkQuery.mockImplementation((input: { powerSourceId?: string }) => ({
+    data: {
+      workKilojoules: input.powerSourceId === "garmin" ? 810 : 720,
+      coverage: { coveredSeconds: 3600, coveragePct: 100 },
+    },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  }));
   mockMetricSourcesQuery.mockReturnValue({
     data: [
       {
@@ -2395,8 +2556,10 @@ it("keeps mobile metric choices independent and propagates power and elevation",
   });
   const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
   render(<ActivityDetailScreen />);
+  expect(screen.getByText("720 kJ")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  expect(screen.getByText("810 kJ")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Power source: Garmin" })).toBeTruthy();
   const elevationSource = screen.getByRole("button", { name: "Elevation source: Wahoo" });
   fireEvent.click(elevationSource);
@@ -2413,6 +2576,23 @@ it("keeps mobile metric choices independent and propagates power and elevation",
     expect.objectContaining({ powerSourceId: "garmin" }),
     expect.anything(),
   );
+  expect(mockPowerWorkQuery).toHaveBeenLastCalledWith(
+    expect.objectContaining({ powerSourceId: "garmin" }),
+    expect.anything(),
+  );
+  const previousWork = {
+    workKilojoules: 720,
+    coverage: { coveredSeconds: 3600, coveragePct: 100 },
+  };
+  const placeholderData = getPlaceholderData(mockPowerWorkQuery.mock.calls.at(-1)?.[1]);
+  expect(
+    placeholderData?.(previousWork, {
+      queryKey: [
+        ["activity", "powerWork"],
+        { input: { id: baseCyclingActivity.id, powerSourceId: "wahoo" }, type: "query" },
+      ],
+    }),
+  ).toBe(previousWork);
 });
 
 it("keeps mobile pickers available after a source read fails", async () => {

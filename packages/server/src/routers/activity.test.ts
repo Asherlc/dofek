@@ -217,6 +217,71 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("powerWork", () => {
+    it("returns work for the selected source after resolving a provider member to its canonical ride", async () => {
+      const id = "00000000-0000-4000-8000-000000000010";
+      const canonicalId = "00000000-0000-4000-8000-000000000020";
+      const resolution = {
+        requested_id: id,
+        resolved_group_id: canonicalId,
+        resolution_kind: "member",
+      };
+      const ride = makeActivityRow({ id: canonicalId, ended_at: "2026-04-01T10:00:02Z" });
+      const sensorStore = makeSensorStoreStub({
+        query: vi.fn(async (_schema: unknown, _sql: string, params?: Record<string, unknown>) =>
+          params?.powerSourceId === "wahoo" && params?.activityId === canonicalId
+            ? [
+                { elapsed_seconds: 0, power: 200 },
+                { elapsed_seconds: 1, power: 300 },
+              ]
+            : [],
+        ),
+      });
+      const { caller } = makeTestCaller(
+        createCaller,
+        [
+          [resolution],
+          [{ ...ride, member_activity_ids: [id] }],
+          [{ ...ride, user_id: "user-1", member_activity_ids: [id] }],
+        ],
+        (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
+      );
+
+      expect(await caller.powerWork({ id, powerSourceId: "wahoo" })).toEqual({
+        workKilojoules: 0.5,
+        coverage: { coveredSeconds: 2, coveragePct: 100 },
+      });
+    });
+
+    it("rejects inaccessible activities", async () => {
+      await expect(
+        makeCaller([]).powerWork({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+    });
+
+    it("returns unavailable work for activities other than cycling", async () => {
+      const id = "00000000-0000-0000-0000-000000000001";
+      const caller = makeResolvedCaller([
+        { ...makeActivityRow({ canonical_type: "running" }), member_activity_ids: [id] },
+      ]);
+      expect(await caller.powerWork({ id })).toEqual({
+        workKilojoules: null,
+        coverage: { coveredSeconds: 0, coveragePct: 0 },
+      });
+    });
+
+    it("explains how to restore a missing required analytics store", async () => {
+      await expect(
+        makeCallerWithoutSensorStore().powerWork({
+          id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "ClickHouse activity analytics store is required for energy output. Set CLICKHOUSE_URL and retry.",
+      });
+    });
+  });
   describe("hardware", () => {
     it("returns the normalized hardware contract through owned activity resolution", async () => {
       const id = "734b5d3e-df2b-4ee0-888e-55ea539d913a";

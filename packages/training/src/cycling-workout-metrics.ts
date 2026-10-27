@@ -108,6 +108,12 @@ interface ResampledStream {
   coverage: StreamCoverage;
 }
 
+interface CyclingStreamBucket {
+  value: number;
+  maximumValue: number;
+  coveredDuration: number;
+}
+
 function round(value: number, decimals = 1): number {
   const multiplier = 10 ** decimals;
   return Math.round(value * multiplier) / multiplier;
@@ -134,13 +140,13 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0 && lower != null ? (lower + upper) / 2 : upper;
 }
 
-export function resampleCyclingStream<T extends CyclingWorkoutSample>(
+function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
   samples: T[],
   durationSeconds: number,
   select: (sample: T) => number | null | undefined,
   minimumValue = 0,
   barriers: number[] = [],
-): ResampledStream {
+) {
   const byOffset = new Map<number, number | null>();
   for (const sample of samples) {
     const value = select(sample);
@@ -158,9 +164,8 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   const medianInterval = median(gaps);
   const nativeInterval = Math.min(10, medianInterval ?? 1);
   const continuityTolerance = Math.min(10, Math.max(5, nativeInterval * 2));
-  const totals = Array.from({ length: durationSeconds }, () => 0);
-  const peaks = Array.from<number | null>({ length: durationSeconds }).fill(null);
-  const coveredDurations = Array.from({ length: durationSeconds }, () => 0);
+  // Each native observation covers at most ten seconds; missing time needs no buckets.
+  const buckets = new Map<number, CyclingStreamBucket>();
 
   for (let index = 0; index < points.length; index++) {
     const point = points[index];
@@ -177,28 +182,33 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
       second++
     ) {
       const covered = Math.min(second + 1, intervalEnd) - Math.max(second, point.offset);
-      totals[second] = (totals[second] ?? 0) + point.value * covered;
-      peaks[second] = Math.max(peaks[second] ?? point.value, point.value);
-      coveredDurations[second] = (coveredDurations[second] ?? 0) + covered;
+      const bucket = buckets.get(second) ?? {
+        value: 0,
+        maximumValue: point.value,
+        coveredDuration: 0,
+      };
+      bucket.value += point.value * covered;
+      bucket.maximumValue = Math.max(bucket.maximumValue, point.value);
+      bucket.coveredDuration += covered;
+      buckets.set(second, bucket);
     }
   }
   // A partly invalid/missing bucket is unavailable, including sub-second conflicts.
-  const values = totals.map((total, second) =>
-    (coveredDurations[second] ?? 0) >= 1 - 1e-9 ? total : null,
-  );
-
-  const coveredSeconds = values.reduce<number>(
-    (count, value) => count + (value == null ? 0 : 1),
-    0,
-  );
-  const zeroSeconds = values.reduce<number>((count, value) => count + (value === 0 ? 1 : 0), 0);
-  return {
-    values,
+  let maximumValue: number | null = null;
+  let zeroSeconds = 0;
+  for (const [second, bucket] of buckets) {
+    if (bucket.coveredDuration < 1 - 1e-9) {
+      buckets.delete(second);
+      continue;
+    }
+    if (bucket.value === 0) zeroSeconds++;
     // Preserve native peaks only in buckets that satisfy the same coverage mask.
-    maximumValue: peaks.reduce<number | null>((maximum, peak, second) => {
-      if (values[second] == null || peak == null) return maximum;
-      return maximum == null ? peak : Math.max(maximum, peak);
-    }, null),
+    maximumValue = Math.max(maximumValue ?? bucket.maximumValue, bucket.maximumValue);
+  }
+  const coveredSeconds = buckets.size;
+  return {
+    buckets,
+    maximumValue,
     coverage: {
       observedSamples: points.filter((point) => point.value != null).length,
       coveredSeconds,
@@ -206,8 +216,50 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
       zeroSeconds,
       coveragePct: durationSeconds > 0 ? round((coveredSeconds / durationSeconds) * 100) : 0,
       medianSampleIntervalSeconds: medianInterval,
-      largestGapSeconds: gaps.length > 0 ? Math.max(...gaps) : null,
+      largestGapSeconds: gaps.reduce<number | null>(
+        (largest, gap) => Math.max(largest ?? gap, gap),
+        null,
+      ),
     },
+  };
+}
+
+export function resampleCyclingStream<T extends CyclingWorkoutSample>(
+  samples: T[],
+  durationSeconds: number,
+  select: (sample: T) => number | null | undefined,
+  minimumValue = 0,
+  barriers: number[] = [],
+): ResampledStream {
+  const stream = resampleCyclingBuckets(samples, durationSeconds, select, minimumValue, barriers);
+  return {
+    values: Array.from(
+      { length: durationSeconds },
+      (_, second) => stream.buckets.get(second)?.value ?? null,
+    ),
+    maximumValue: stream.maximumValue,
+    coverage: stream.coverage,
+  };
+}
+
+/** Sum covered power buckets without allocating or scanning missing elapsed seconds. */
+export function computeCyclingPowerWork(
+  samples: CyclingWorkoutSample[],
+  durationSeconds: number,
+  barriers: number[] = [],
+): { workKilojoules: number | null; coverage: StreamCoverage } {
+  const stream = resampleCyclingBuckets(
+    samples,
+    Math.max(0, Math.floor(durationSeconds)),
+    (sample) => sample.powerWatts,
+    0,
+    barriers,
+  );
+  let totalJoules = 0;
+  for (const bucket of stream.buckets.values()) totalJoules += bucket.value;
+  return {
+    workKilojoules: stream.coverage.coveredSeconds > 0 ? round(totalJoules / 1_000) : null,
+    coverage: stream.coverage,
   };
 }
 

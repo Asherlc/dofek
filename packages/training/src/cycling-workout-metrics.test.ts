@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type CyclingWorkoutSample,
+  computeCyclingPowerWork,
   computeCyclingWorkoutMetrics,
   resampleCyclingStream,
 } from "./cycling-workout-metrics.ts";
@@ -176,6 +177,155 @@ describe("resampleCyclingStream", () => {
     expect(result.maximumValue).toBe(100);
     expect(result.coverage.coveredSeconds).toBe(1);
   });
+
+  it("summarizes gaps without spreading a large native sample stream into arguments", () => {
+    const result = resampleCyclingStream(
+      Array.from({ length: 150_000 }, (_, index) => ({
+        elapsedSeconds: index / 150_000,
+        powerWatts: 100,
+      })),
+      1,
+      selectPower,
+    );
+
+    expect(result.values[0]).toBeCloseTo(100);
+    expect(result.coverage).toMatchObject({ observedSamples: 150_000, coveredSeconds: 1 });
+    expect(result.coverage.largestGapSeconds).toBeCloseTo(1 / 150_000);
+  });
+});
+
+describe("computeCyclingPowerWork", () => {
+  it("reports missing power across a huge empty activity window", () => {
+    expect(computeCyclingPowerWork([], 10_000_000_000)).toEqual({
+      workKilojoules: null,
+      coverage: {
+        observedSamples: 0,
+        coveredSeconds: 0,
+        missingSeconds: 10_000_000_000,
+        zeroSeconds: 0,
+        coveragePct: 0,
+        medianSampleIntervalSeconds: null,
+        largestGapSeconds: null,
+      },
+    });
+  });
+
+  it("preserves sparse observations at both ends of a huge activity window", () => {
+    const duration = 10_000_000_000;
+    const result = computeCyclingPowerWork(
+      [
+        { elapsedSeconds: 0, powerWatts: 200 },
+        { elapsedSeconds: 1, powerWatts: 0 },
+        { elapsedSeconds: duration - 2, powerWatts: 300 },
+        { elapsedSeconds: duration - 1, powerWatts: 100 },
+      ],
+      duration,
+    );
+
+    expect(result).toEqual({
+      workKilojoules: 0.6,
+      coverage: {
+        observedSamples: 4,
+        coveredSeconds: 4,
+        missingSeconds: duration - 4,
+        zeroSeconds: 1,
+        coveragePct: 0,
+        medianSampleIntervalSeconds: 1,
+        largestGapSeconds: duration - 3,
+      },
+    });
+  });
+
+  it("retains work for a sparse multi-day ride without bridging its dropouts", () => {
+    expect(
+      computeCyclingPowerWork(
+        [
+          { elapsedSeconds: 0, powerWatts: 200 },
+          { elapsedSeconds: 86_400, powerWatts: 300 },
+        ],
+        3 * 86_400,
+      ),
+    ).toEqual({
+      workKilojoules: 5,
+      coverage: {
+        observedSamples: 2,
+        coveredSeconds: 20,
+        missingSeconds: 3 * 86_400 - 20,
+        zeroSeconds: 0,
+        coveragePct: 0,
+        medianSampleIntervalSeconds: 86_400,
+        largestGapSeconds: 86_400,
+      },
+    });
+  });
+
+  it.each<{
+    name: string;
+    durationSeconds: number;
+    samples: CyclingWorkoutSample[];
+    barriers?: number[];
+  }>([
+    { name: "empty power", durationSeconds: 3, samples: [] },
+    {
+      name: "measured zero",
+      durationSeconds: 3,
+      samples: [0, 1, 2].map((elapsedSeconds) => ({ elapsedSeconds, powerWatts: 0 })),
+    },
+    {
+      name: "duplicates, invalid values, and activity bounds",
+      durationSeconds: 4.9,
+      samples: [
+        { elapsedSeconds: 3, powerWatts: 200 },
+        { elapsedSeconds: -1, powerWatts: 999 },
+        { elapsedSeconds: 0, powerWatts: 999 },
+        { elapsedSeconds: 0, powerWatts: 100 },
+        { elapsedSeconds: 1, powerWatts: -1 },
+        { elapsedSeconds: 2, powerWatts: Number.NaN },
+        { elapsedSeconds: 4, powerWatts: 999 },
+      ],
+    },
+    {
+      name: "sub-second power and a partially covered barrier bucket",
+      durationSeconds: 4,
+      samples: [
+        { elapsedSeconds: 0, powerWatts: 300 },
+        { elapsedSeconds: 0.5, powerWatts: 100 },
+        { elapsedSeconds: 1, powerWatts: 0 },
+        { elapsedSeconds: 2, powerWatts: 400 },
+        { elapsedSeconds: 3, powerWatts: 200 },
+      ],
+      barriers: [-1, 2.5, 4],
+    },
+    {
+      name: "gaps at and beyond continuity tolerance",
+      durationSeconds: 27,
+      samples: [0, 3, 6, 9, 15, 24].map((elapsedSeconds) => ({
+        elapsedSeconds,
+        powerWatts: 100,
+      })),
+    },
+    {
+      name: "full-second floating-point tolerance",
+      durationSeconds: 1,
+      samples: [{ elapsedSeconds: 1e-9, powerWatts: 100 }],
+    },
+  ])(
+    "matches full workout work and coverage for $name",
+    ({ durationSeconds, samples, barriers }) => {
+      const workout = computeCyclingWorkoutMetrics({
+        durationSeconds,
+        samples,
+        settings: null,
+        intervals: [],
+        streamBarriers: { power: barriers },
+      });
+
+      expect(computeCyclingPowerWork(samples, durationSeconds, barriers)).toEqual({
+        workKilojoules: workout.power.workKilojoules,
+        coverage: workout.coverage.power,
+      });
+    },
+  );
 });
 
 describe("computeCyclingWorkoutMetrics", () => {

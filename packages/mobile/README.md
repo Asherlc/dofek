@@ -47,6 +47,13 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 The [metric strip](components/ActivityMetricStrip.tsx) and activity accessibility
 labels use the [shared cycling classification](../training/src/endurance-types.ts).
 
+The [activity detail screen](<app/activity/[id].tsx>) also hides distance for
+indoor and virtual cycling. Cycling details display server-computed mechanical
+Energy Output in kJ from the selected power source, including measured zero.
+The [activity API](../server/src/routers/activity.ts) supplies work and power
+coverage; the screen labels coverage below 99% as “Partial power data” and
+keeps the previous output visible while the selected source refreshes.
+
 The [Activities list](<app/(tabs)/activities.tsx>) uses
 [ActivityMapTile](components/ActivityMapTile.tsx) to show a full-width 16:9 map
 below each activity's details when location data is available, matching the

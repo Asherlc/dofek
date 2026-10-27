@@ -15,6 +15,7 @@ import { z } from "zod";
 import {
   activityMetricSourceSelectionSchema,
   activityMetricSourcesSchema,
+  activityPowerWorkSchema,
 } from "../contracts/activity-metric-sources.ts";
 import {
   ChartRange,
@@ -28,6 +29,7 @@ import {
   getOwnedActivityImages,
   listActivityImages,
 } from "../repositories/activity-images-repository.ts";
+import { getActivityPowerWork } from "../repositories/activity-metric-sources-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
@@ -336,6 +338,34 @@ export const activityRouter = router({
 
       const zones = await activityRepo.getPowerZones(activity.id, currentEftp, input.powerSourceId);
       return { zones, ftp: currentEftp };
+    }),
+
+  powerWork: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
+    .output(activityPowerWorkSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for energy output. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repository = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      const activity = await repository.findById(input.id);
+      if (!activity) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      if (!isCyclingActivity(activity.canonical_type)) {
+        return { workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } };
+      }
+      const window = await repository.findSensorWindow(activity.id);
+      if (!window) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      return getActivityPowerWork(ctx.sensorStore, window, input.powerSourceId);
     }),
 
   strengthExercises: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })

@@ -185,6 +185,7 @@ interface MockQueryResult<T> {
   error: Error | null;
   isError: boolean;
   isLoading: boolean;
+  isFetching?: boolean;
 }
 
 const mockActivityByIdUseQuery = vi.fn<
@@ -329,6 +330,15 @@ const mockPowerZonesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const mockPowerWorkUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): MockQueryResult<{
+    workKilojoules: number | null;
+    coverage: { coveredSeconds: number; coveragePct: number };
+  }> => ({ data: undefined, error: null, isError: false, isLoading: false }),
+);
 const mockMetricSourcesUseQuery = vi.fn(
   (): MockQueryResult<ActivityMetricSources> => ({
     data: [],
@@ -358,6 +368,7 @@ const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityPowerWorkInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -374,6 +385,7 @@ vi.mock("../lib/trpc.ts", () => ({
       route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
+      powerWork: { useQuery: mockPowerWorkUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       hangboardDetails: { useQuery: mockHangboardDetailsUseQuery },
       recompute: {
@@ -433,6 +445,7 @@ vi.mock("../lib/trpc.ts", () => ({
         stream: { invalidate: mockActivityStreamInvalidate },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
+        powerWork: { invalidate: mockActivityPowerWorkInvalidate },
         strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
         list: { invalidate: mockActivityListInvalidate },
       },
@@ -539,6 +552,14 @@ afterEach(() => {
     isLoading: false,
   });
   mockPowerZonesUseQuery.mockReset();
+  mockPowerWorkUseQuery.mockReset();
+  mockPowerWorkUseQuery.mockReturnValue({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
+  mockActivityPowerWorkInvalidate.mockClear();
   mockPowerZonesUseQuery.mockReturnValue({
     data: undefined,
     error: null,
@@ -622,7 +643,11 @@ function getQueryEnabledFlag(value: unknown): boolean | undefined {
   return typeof enabled === "boolean" ? enabled : undefined;
 }
 
-function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown) | undefined {
+function getPlaceholderData(
+  value: unknown,
+):
+  | ((previousData: unknown, previousQuery?: { queryKey: readonly unknown[] }) => unknown)
+  | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -1508,6 +1533,7 @@ describe("ActivityDetailPage", () => {
     });
     expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+    expect(mockActivityPowerWorkInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     expect(mockActivityListInvalidate).toHaveBeenCalled();
     expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
@@ -1549,6 +1575,54 @@ describe("ActivityDetailPage", () => {
     );
   });
 
+  it.each([true, false])(
+    "shows a refresh status while power work is fetching (%s)",
+    async (isFetching) => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "cycling" },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockMetricSourcesUseQuery.mockReturnValue({
+        data: [
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "wahoo",
+            sources: [
+              {
+                id: "wahoo",
+                label: "Wahoo",
+                presentation: {
+                  displayName: "Wahoo",
+                  providerId: "wahoo",
+                  sourceName: null,
+                  attribution: null,
+                },
+              },
+            ],
+          },
+        ],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockPowerWorkUseQuery.mockReturnValue({
+        data: { workKilojoules: 478, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+        error: null,
+        isError: false,
+        isLoading: false,
+        isFetching,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.getByText("478 kJ")).toBeVisible();
+      if (isFetching) expect(screen.getByText("Updating metrics…")).toBeVisible();
+      else expect(screen.queryByText("Updating metrics…")).toBeNull();
+    },
+  );
+
   describe("provider tombstone status", () => {
     afterEach(() => {
       mockActivity.providerAbsentAt = null;
@@ -1572,6 +1646,161 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("ActivityHeader unit display", () => {
+    it.each(["indoor", "virtual"])("omits simulated distance for %s cycling", async (modality) => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{ ...mockActivity, activityType: "cycling", modality, totalDistance: 25000 }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+      expect(screen.queryByText("Distance")).toBeNull();
+      expect(screen.getByText("Duration")).toBeVisible();
+    });
+
+    it("retains a recorded zero distance for outdoor cycling", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{
+            ...mockActivity,
+            activityType: "cycling",
+            modality: "outdoor",
+            totalDistance: 0,
+          }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+      expect(screen.getByText("Distance")).toBeVisible();
+      expect(screen.getByText("0.0 km")).toBeVisible();
+    });
+
+    it.each(["metric", "imperial"] as const)(
+      "shows server-calculated energy output in kJ with %s units",
+      async (unitSystem) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType: "cycling" },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockPowerWorkUseQuery.mockReturnValue({
+          data: { workKilojoules: 477.8, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />, unitSystem);
+        expect(screen.getByText("Energy Output")).toBeVisible();
+        expect(screen.getByText("478 kJ")).toBeVisible();
+        expect(screen.queryByText("Partial power data")).toBeNull();
+        expect(mockPowerWorkUseQuery).toHaveBeenLastCalledWith(
+          { id: "test-123", powerSourceId: undefined },
+          expect.objectContaining({ enabled: true }),
+        );
+        const previous = {
+          workKilojoules: 477.8,
+          coverage: { coveredSeconds: 2700, coveragePct: 100 },
+        };
+        const placeholder = getPlaceholderData(mockPowerWorkUseQuery.mock.calls[0]?.[1]);
+        expect(
+          placeholder?.(previous, {
+            queryKey: [
+              ["activity", "powerWork"],
+              { input: { id: "test-123", powerSourceId: "old-source" }, type: "query" },
+            ],
+          }),
+        ).toBe(previous);
+        expect(
+          placeholder?.(previous, {
+            queryKey: [
+              ["activity", "powerWork"],
+              { input: { id: "different-ride" }, type: "query" },
+            ],
+          }),
+        ).toBeUndefined();
+        expect(placeholder?.(previous)).toBeUndefined();
+      },
+    );
+
+    it.each([0, null])(
+      "distinguishes zero output from missing power (%s)",
+      async (workKilojoules) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType: "cycling" },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockPowerWorkUseQuery.mockReturnValue({
+          data: {
+            workKilojoules,
+            coverage: {
+              coveredSeconds: workKilojoules == null ? 0 : 2700,
+              coveragePct: workKilojoules == null ? 0 : 100,
+            },
+          },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        if (workKilojoules == null) expect(screen.queryByText("Energy Output")).toBeNull();
+        else expect(screen.getByText("0 kJ")).toBeVisible();
+      },
+    );
+
+    it.each([98.9, 99])(
+      "qualifies incomplete power coverage at %s percent",
+      async (coveragePct) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType: "cycling" },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockPowerWorkUseQuery.mockReturnValue({
+          data: { workKilojoules: 400, coverage: { coveredSeconds: 2600, coveragePct } },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        expect(screen.getByText("400 kJ")).toBeVisible();
+        expect(screen.queryByText("Partial power data") !== null).toBe(coveragePct < 99);
+      },
+    );
+
+    it("keeps cached output visible alongside a power-work refresh error", async () => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "cycling" },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockPowerWorkUseQuery.mockReturnValue({
+        data: { workKilojoules: 478, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+        error: new Error("Power samples are unavailable. Retry this activity."),
+        isError: true,
+        isLoading: false,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.getByText("478 kJ")).toBeVisible();
+      expect(screen.getByText("Power samples are unavailable. Retry this activity.")).toBeVisible();
+    });
+
+    it("disables energy output for non-cycling activities", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(mockPowerWorkUseQuery).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false }),
+      );
+    });
     it("formats multi-hour activity durations", async () => {
       const ActivityHeader = await importActivityHeader();
       renderWithUnits(
@@ -3267,6 +3496,10 @@ it("selects independent metric sources and sends elevation and zone choices", as
     expect.anything(),
   );
   expect(mockPowerZonesUseQuery).toHaveBeenLastCalledWith(
+    { id: "test-123", powerSourceId: "garmin" },
+    expect.anything(),
+  );
+  expect(mockPowerWorkUseQuery).toHaveBeenLastCalledWith(
     { id: "test-123", powerSourceId: "garmin" },
     expect.anything(),
   );
