@@ -152,7 +152,8 @@ export function ClimbingStrengthsChart({
         <p className="text-xs text-muted">
           {adjustedRadar
             ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: your same-grade baseline at zero."
-            : `Success on a shared 0–100% scale. Dashed line: ${baselineLabel.toLowerCase()}. Groups without a success rate are omitted from the polygon.`}
+            : `Success on a shared 0–100% scale. Dashed line: ${baselineLabel.toLowerCase()}. Groups without a success rate are omitted from the polygon.`}{" "}
+          Select a style label to see its climbs.
         </p>
       ) : null}
       {sparseRadar ? (
@@ -173,6 +174,15 @@ export function ClimbingStrengthsChart({
             dataDisclosure={dataDisclosure}
             onEvents={{
               click: (event) => {
+                if (
+                  view === "radar" &&
+                  event.componentType === "radar" &&
+                  event.targetType === "axisName"
+                ) {
+                  const row = panel.rows.find((row) => row.label === event.name);
+                  if (row?.cells.some((cell) => cell.grade === grade)) onSelectCell(row.key, grade);
+                  return;
+                }
                 const data = event.data;
                 if (
                   !data ||

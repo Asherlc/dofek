@@ -379,6 +379,14 @@ export function ClimbingStrengthsChart({
                                 stroke={color(rowIndex)}
                                 strokeWidth={2}
                               />
+                              <SvgText
+                                {...svgText}
+                                x={xAxis(index, cells.length)}
+                                y={yRate(cell.successRate) - 9}
+                                textAnchor="middle"
+                              >
+                                {rowIndex + 1}
+                              </SvgText>
                             </G>
                           );
                         })}
@@ -547,7 +555,14 @@ export function ClimbingStrengthsChart({
                               y2={position.y}
                               stroke={colors.surfaceSecondary}
                             />
-                            <SvgText {...svgText} x={label.x} y={label.y} textAnchor="middle">
+                            <SvgText
+                              {...svgText}
+                              x={label.x}
+                              y={label.y}
+                              textAnchor="middle"
+                              onPress={() => onSelect(row.key, grade)}
+                              accessibilityLabel={`Open ${row.label} climbs`}
+                            >
                               {adjustedRadar ? row.label : index + 1}
                             </SvgText>
                           </G>
@@ -594,7 +609,9 @@ export function ClimbingStrengthsChart({
           {!adjustedRadar &&
             legendRows.map(({ row, index }, axis) => (
               <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
-                {view === "exposure" || view === "radar" ? `${axis + 1}. ` : ""}
+                {view === "exposure" || view === "radar" || view === "progress"
+                  ? `${axis + 1}. `
+                  : ""}
                 {row.label}
               </Text>
             ))}

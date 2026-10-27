@@ -370,10 +370,14 @@ describe("climbingRouter", () => {
       days: 30,
       endDate: "2025-02-05",
       climbKind: "boulder" as const,
-      setting: ["indoor" as const],
+      setting: "indoor" as const,
     };
     const result = await caller.strengths(input);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input, input.endDate);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(
+      30,
+      { ...input, setting: ["indoor"] },
+      input.endDate,
+    );
     expect(execute).toHaveBeenCalledOnce();
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");

@@ -18,9 +18,12 @@ export const climbingFiltersSchema = z.object({
   solo: z.boolean().nullable().optional(),
   protectionUsed: protectionStyleSchema.or(unknown).optional(),
   routeProtection: protectionStyleSchema.or(unknown).optional(),
-  types: z.array(z.enum(["bouldering", "lead", "top_rope"])).optional(),
+  types: z
+    .array(z.enum(["bouldering", "lead", "top_rope"]))
+    .max(3)
+    .optional(),
   setting: z
-    .union([settingSchema, z.array(settingSchema)])
+    .union([settingSchema, z.array(settingSchema).max(3)])
     .transform((value) => (Array.isArray(value) ? value : [value]))
     .optional(),
 });

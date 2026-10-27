@@ -44,6 +44,10 @@ describe("climbing filters", () => {
   it("rejects unsupported factual values", () => {
     expect(climbingFiltersSchema.safeParse({ attemptScope: "route" }).success).toBe(false);
     expect(climbingFiltersSchema.safeParse({ solo: "yes" }).success).toBe(false);
+    expect(climbingFiltersSchema.safeParse({ setting: Array(4).fill("indoor") }).success).toBe(
+      false,
+    );
+    expect(climbingFiltersSchema.safeParse({ types: Array(4).fill("lead") }).success).toBe(false);
   });
 });
 
@@ -75,4 +79,7 @@ it("toggles climbing types independently and summarizes both groups", () => {
     "Bouldering + Lead · Indoor",
   );
   expect(climbingFilterSummary({ types: [], setting: [] })).toBe("No climbing types · No settings");
+  expect(climbingFilterSummary({})).toBe("All climbing · All settings");
+  expect(climbingFilterSummary({ setting: ["outdoor"] })).toBe("All climbing · Outdoor");
+  expect(climbingFilterSummary({ types: ["lead"] })).toBe("Lead · All settings");
 });

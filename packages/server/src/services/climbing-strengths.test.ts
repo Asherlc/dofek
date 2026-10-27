@@ -1,40 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildClimbingStrengths, type ClimbingStrengthsObservation } from "./climbing-strengths.ts";
+import { buildClimbingStrengths } from "./climbing-strengths.ts";
+import {
+  analyze,
+  dated,
+  mixedSettingObservations,
+  observation,
+} from "./climbing-strengths-test-helpers.ts";
 
-const observation = (
-  patch: Partial<ClimbingStrengthsObservation> = {},
-): ClimbingStrengthsObservation => ({
-  identity: "climb",
-  contextKey: "boulder",
-  laneKey: "boulder",
-  gradeSystem: "v_scale",
-  contextLabel: "Bouldering · V scale",
-  setting: "indoor",
-  grade: "V4",
-  gradeSortValue: 4,
-  wallAngle: null,
-  holdTypes: null,
-  outcome: "not_sent",
-  example: {
-    logEntryId: "log",
-    activityId: null,
-    name: "Problem",
-    grade: "V4",
-    date: "2026-10-20",
-    providerId: "kaya",
-    sourceName: "KAYA",
-    sourceUrl: null,
-    outcome: "not_sent",
-  },
-  ...patch,
-});
-const window = { startDate: "2026-08-15", endDate: "2026-10-20" };
-const analyze = (observations: ClimbingStrengthsObservation[]) =>
-  buildClimbingStrengths(observations, window);
-const dated = (date: string, patch: Partial<ClimbingStrengthsObservation> = {}) => {
-  const entry = observation(patch);
-  return { ...entry, example: { ...entry.example, date } };
-};
 describe("climbing strengths", () => {
   it("counts each grip once while preserving distinct-climb grade baselines and monthly counts", () => {
     const result = analyze([
@@ -1016,22 +988,7 @@ describe("climbing strengths", () => {
 });
 
 it("builds one selected-cohort profile across the settings selected by the filter", () => {
-  const result = analyze([
-    observation({
-      identity: "indoor",
-      setting: "indoor",
-      outcome: "sent",
-      wallAngle: { category: "slab" },
-      holdTypes: ["crimp"],
-    }),
-    observation({
-      identity: "outdoor",
-      setting: "outdoor",
-      outcome: "not_sent",
-      wallAngle: { category: "slab" },
-      holdTypes: ["crimp"],
-    }),
-  ]);
+  const result = analyze(mixedSettingObservations());
   for (const dimension of ["wall_angle", "hold_type"]) {
     const panels = result.panels.filter((panel) => panel.dimension === dimension);
     expect(panels).toHaveLength(1);

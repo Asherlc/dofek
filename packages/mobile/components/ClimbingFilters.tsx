@@ -45,6 +45,24 @@ export function ClimbingFilters({
           <Text style={styles.text}>Filters ⌄</Text>
         </TouchableOpacity>
       </View>
+      <View style={styles.row}>
+        {chipKeys.map((key) => {
+          const label = climbingFilterOptions[key].find(([option]) => option === value[key])?.[1];
+          return label ? (
+            <TouchableOpacity
+              key={key}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${climbingFilterLabels[key]}: ${label} filter`}
+              style={styles.chip}
+              onPress={() => remove(key)}
+            >
+              <Text style={styles.text}>
+                {climbingFilterLabels[key]}: {label} ×
+              </Text>
+            </TouchableOpacity>
+          ) : null;
+        })}
+      </View>
       <Modal
         visible={visible}
         transparent
@@ -138,24 +156,6 @@ export function ClimbingFilters({
                     <Text style={styles.text}>Clear filters</Text>
                   </TouchableOpacity>
                 ) : null}
-                {chipKeys.map((key) => {
-                  const label = climbingFilterOptions[key].find(
-                    ([option]) => option === value[key],
-                  )?.[1];
-                  return label ? (
-                    <TouchableOpacity
-                      key={key}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${climbingFilterLabels[key]}: ${label} filter`}
-                      style={styles.chip}
-                      onPress={() => remove(key)}
-                    >
-                      <Text style={styles.text}>
-                        {climbingFilterLabels[key]}: {label} ×
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null;
-                })}
               </View>
               {open ? (
                 <View style={styles.container}>

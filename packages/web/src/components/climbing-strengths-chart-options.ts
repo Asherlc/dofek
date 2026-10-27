@@ -286,6 +286,11 @@ export function climbingStrengthsChartOption(
   if (view === "progress")
     return {
       ...base,
+      legend: {
+        ...dofekLegend(true, { type: "scroll" }),
+        formatter: (name: string) =>
+          `${panel.rows.findIndex((row) => row.label === name) + 1}. ${name}`,
+      },
       xAxis: dofekAxis.category({
         show: true,
         data: panel.progress.map((period) => period.startDate.slice(0, 7)),
@@ -297,8 +302,8 @@ export function climbingStrengthsChartOption(
         max: 100,
         axisLabel: { formatter: "{value}%" },
       }),
-      series: panel.rows.map((row, index) =>
-        dofekSeries.line(
+      series: panel.rows.map((row, index) => ({
+        ...dofekSeries.line(
           row.label,
           panel.progress.map((period) => {
             const cell = period.rows
@@ -314,9 +319,15 @@ export function climbingStrengthsChartOption(
                 )
               : null;
           }),
-          { color: seriesColor(index), smooth: false, symbol: "circle", symbolSize: 9 },
+          {
+            color: seriesColor(index),
+            smooth: false,
+            symbol: "circle",
+            symbolSize: 9,
+          },
         ),
-      ),
+        label: { show: true, position: "top", formatter: String(index + 1) },
+      })),
     };
   if (view === "radar" && grade === ALL_CLIMBING_GRADES) {
     const axes = selected.flatMap(({ row, cell }) => {
@@ -328,6 +339,7 @@ export function climbingStrengthsChartOption(
     return {
       ...base,
       radar: {
+        triggerEvent: true,
         indicator: axes.map(({ row }) => ({ name: row.label, min: -100, max: 100 })),
         radius: "62%",
         axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },
@@ -371,6 +383,7 @@ ${climbingStrengthsCountLabel(cell)}${strength.sampleStatus === "limited" ? " ·
   return {
     ...base,
     radar: {
+      triggerEvent: true,
       indicator: axes.map(({ row }) => ({ name: row.label, min: 0, max: 100 })),
       radius: "62%",
       axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },

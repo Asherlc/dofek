@@ -190,6 +190,9 @@ function ClimbingStrengthsPanelContent({
           {view === "profile" ? (
             <div className="overflow-x-auto">
               <table className="w-full border-separate border-spacing-1 text-sm">
+                <caption className="sr-only">
+                  Success by grade and {dimensions[panel.dimension].toLowerCase()}
+                </caption>
                 <thead>
                   <tr>
                     <th scope="col" className="text-left text-muted">

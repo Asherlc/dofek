@@ -152,6 +152,29 @@ it("preserves calendar bucket dates and missing-month gaps without smoothing", (
     ]),
   );
 });
+it("numbers progress markers and legend entries beyond a palette cycle", () => {
+  const template = panel.rows[0];
+  if (!template) throw new Error("Missing style fixture");
+  const dense = {
+    ...panel,
+    rows: Array.from({ length: 12 }, (_, index) => ({
+      ...template,
+      key: `style-${index}`,
+      label: `Style ${index}`,
+    })),
+  };
+  const option = climbingStrengthsChartOption(dense, "progress", "V4", null);
+  expect(option.legend).toMatchObject({ show: true, type: "scroll" });
+  option.series.forEach((series, index) => {
+    expect(series).toMatchObject({ label: { show: true, formatter: String(index + 1) } });
+  });
+  const legend = z
+    .object({
+      formatter: z.custom<(name: string) => string>((value) => typeof value === "function"),
+    })
+    .parse(option.legend);
+  expect(legend.formatter("Style 10")).toBe("11. Style 10");
+});
 it.each([320, 900])("keeps progress legend clear of axis labels at %ipx", (width) => {
   const chart = init(null, undefined, { renderer: "svg", ssr: true, width, height: 610 });
   try {
@@ -160,8 +183,8 @@ it.each([320, 900])("keeps progress legend clear of axis labels at %ipx", (width
       animation: false,
     });
     const labels = renderedText(chart);
-    for (const row of panel.rows) {
-      const heading = labels.find((label) => label.text === row.label);
+    for (const [index, row] of panel.rows.entries()) {
+      const heading = labels.find((label) => label.text === `${index + 1}. ${row.label}`);
       expect(heading).toBeDefined();
       if (!heading) throw new Error(`Missing heading: ${row.label}`);
       for (const label of labels.filter((label) => /^(\d+%|2026-|Send rate)/.test(label.text))) {
@@ -558,9 +581,9 @@ it("renders monthly style series together on shared success bounds", () => {
     const text = renderedText(chart).map((item) => item.text);
     expect(text).toEqual(
       expect.arrayContaining([
-        "Vertical",
-        "Overhang",
-        "Slab",
+        "1. Vertical",
+        "2. Overhang",
+        "3. Slab",
         "0%",
         "100%",
         "2026-08",
@@ -666,6 +689,7 @@ it("renders the server grade-adjusted radar scores around a zero baseline", () =
       },
     },
     radar: {
+      triggerEvent: true,
       indicator: [
         { name: "Vertical", min: -100, max: 100 },
         { name: "Overhang", min: -100, max: 100 },

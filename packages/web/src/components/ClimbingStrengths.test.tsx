@@ -15,6 +15,11 @@ vi.mock("./DofekChart.tsx", () => ({
 }));
 
 afterEach(cleanup);
+it("names the grade heatmap for assistive technology", () => {
+  render(<ClimbingStrengths data={fixture} />);
+  fireEvent.click(screen.getByRole("button", { name: "Grades" }));
+  expect(screen.getByRole("table", { name: "Success by grade and wall angle" })).toBeVisible();
+});
 function renderStrengths(element: Parameters<typeof render>[0]) {
   const result = render(element);
   const grades = screen.queryByRole("button", { name: "Grades" });

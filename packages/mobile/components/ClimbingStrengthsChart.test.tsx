@@ -17,6 +17,30 @@ const firstCell = firstRow?.cells[0];
 if (!firstRow || !secondRow || !firstCell) throw new Error("Missing row fixture");
 
 describe("ClimbingStrengthsChart", () => {
+  it("numbers progress markers and legend entries beyond a palette cycle", () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      ...firstRow,
+      key: `style-${index}`,
+      label: `Style ${index}`,
+    }));
+    const dense = {
+      ...panel,
+      rows,
+      progress: panel.progress.map((month) => ({
+        ...month,
+        rows: rows.map((row) => ({
+          ...row,
+          cells: [{ ...firstCell, grade: "V4", successRate: 50 }],
+        })),
+      })),
+    };
+    const result = render(
+      <ClimbingStrengthsChart panel={dense} view="progress" grade="V4" onSelect={() => {}} />,
+    );
+    expect(screen.getByText("8. Style 7")).toBeTruthy();
+    const series = result.container.querySelector('G[accessibilityLabel="Style 7 progress"]');
+    expect(series?.querySelector("SvgText")?.textContent).toBe("8");
+  });
   it("labels every style curve when All grades remains selected", () => {
     render(
       <ClimbingStrengthsChart panel={panel} view="curves" grade="All grades" onSelect={() => {}} />,
@@ -280,6 +304,15 @@ it("places grade-adjusted weaknesses inside and strengths outside the zero basel
   expect(baseline).toBeDefined();
   expect(observed?.[0]).toBe(baseline?.[0]);
   expect(observed?.[1]).toBeGreaterThan(baseline?.[1] ?? 0);
+  const vertices = result.container
+    .querySelector("Polygon[fill-opacity]")
+    ?.getAttribute("points")
+    ?.split(" ")
+    .map((point) => point.split(",").map(Number));
+  expect(vertices).toHaveLength(3);
+  vertices?.forEach(([x = 0, y = 0], index) => {
+    expect(Math.hypot(x - 150, y - 150)).toBeCloseTo([24, 40, 56][index] ?? 0);
+  });
   fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
   expect(
     screen.getByRole("button", { name: /-40 percentage points vs same-grade baseline/ }),

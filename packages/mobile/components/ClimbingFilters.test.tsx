@@ -106,3 +106,15 @@ it("keeps advanced facts independent of the primary selection and clears all fil
   fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
   expect(value()).toEqual({});
 });
+it("keeps active advanced filters visible and removable after closing the modal", () => {
+  render(<Harness initial={{ solo: false }} />);
+  expect(
+    screen.getByRole("button", { name: "Remove Solo status: With a belayer filter" }),
+  ).toBeTruthy();
+  open();
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Remove Solo status: With a belayer filter" }),
+  );
+  expect(value()).toEqual({});
+});

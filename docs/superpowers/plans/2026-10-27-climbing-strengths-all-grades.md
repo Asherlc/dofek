@@ -1,6 +1,6 @@
 # Climbing Strengths Across Grades Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+Work through each task in order: add the regression, run it, implement the change, run the listed checks, and review the result before continuing.
 
 **Goal:** Apply the approved fixed radar, heatmap and monthly views on both clients.
 

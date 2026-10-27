@@ -252,3 +252,14 @@ calculations are estimates and are not medical advice.
 [Dofek repository](https://github.com/Asherlc/dofek/tree/main/packages/training).
 Please [open an issue](https://github.com/Asherlc/dofek/issues) for bugs or API
 proposals, or [submit a pull request](https://github.com/Asherlc/dofek/pulls).
+
+### Climbing strengths view migration
+
+The `climbing-strengths-views` subpath now exports
+[`CLIMBING_STRENGTHS_TABS` and `ClimbingStrengthsTab`](src/climbing-strengths-views.ts)
+for fixed Styles (`radar`), Grades (`profile`), and Progress (`progress`) views.
+Replace `CLIMBING_STRENGTHS_PURPOSES`, `climbingStrengthsPurpose`, and
+`climbingStrengthsPurposeView` imports with the fixed tab values; there is no
+alternate-format selector. The renderer-level `CLIMBING_STRENGTHS_VIEWS` and
+`ClimbingStrengthsView` exports remain available. This is a breaking subpath API
+change for package consumers; both repository clients migrate together.

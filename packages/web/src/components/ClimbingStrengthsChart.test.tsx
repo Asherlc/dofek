@@ -226,3 +226,29 @@ it("labels limited adjusted scores and keeps their table columns aligned", () =>
   expect(within(row).getAllByRole("cell")).toHaveLength(1);
   expect(screen.getAllByRole("columnheader")).toHaveLength(2);
 });
+it("opens a radar style's climbs from its axis label without treating the baseline as a style", () => {
+  const pooled = { ...panel, ...panel.allGrades };
+  const onSelectCell = vi.fn();
+  render(
+    <ClimbingStrengthsChart
+      panel={pooled}
+      view="radar"
+      grade="All grades"
+      selectedRow={null}
+      onSelectCell={onSelectCell}
+    />,
+  );
+  captured.props?.onEvents?.click?.({
+    componentType: "radar",
+    targetType: "axisName",
+    name: "Overhang",
+  });
+  expect(onSelectCell).toHaveBeenCalledWith("overhang", "All grades");
+  captured.props?.onEvents?.click?.({
+    componentType: "radar",
+    targetType: "axisName",
+    name: "Unknown",
+  });
+  captured.props?.onEvents?.click?.({ data: { name: "Same-grade baseline", value: [0, 0, 0] } });
+  expect(onSelectCell).toHaveBeenCalledTimes(1);
+});
