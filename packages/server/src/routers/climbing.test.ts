@@ -24,6 +24,14 @@ vi.mock("dofek/activity-images/storage", () => ({
   readActivityImageObject: readActivityImage,
 }));
 
+const catalogue = vi.hoisted(() => ({ read: vi.fn(), requestRefresh: vi.fn() }));
+vi.mock("../repositories/climbing-catalogue-repository.ts", () => ({
+  ClimbingCatalogueRepository: class {
+    read = catalogue.read;
+    requestRefresh = catalogue.requestRefresh;
+  },
+}));
+
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 const { invalidateByPrefix } = vi.hoisted(() => ({ invalidateByPrefix: vi.fn() }));
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
@@ -711,5 +719,42 @@ describe("climbingRouter", () => {
       }),
     ]);
     expect(execute).toHaveBeenCalledOnce();
+  });
+});
+
+describe("climbing catalogue context", () => {
+  const id = "10000000-0000-4000-8000-000000000001";
+  const missing = { status: "missing", sources: [], fetchedAt: null, expiresAt: null, error: null };
+  it("reads the authorized disposable cache without wrapping its status in query caching", async () => {
+    catalogue.read.mockResolvedValue(missing);
+    const { caller } = makeCaller();
+    expect(await caller.catalogueContext({ id })).toEqual(missing);
+    expect(catalogue.read).toHaveBeenCalledWith(id);
+  });
+  it("returns the complete pending context after explicitly requesting refresh", async () => {
+    const pending = { ...missing, status: "pending", expiresAt: "2026-10-27T12:00:00Z" };
+    catalogue.requestRefresh.mockResolvedValue(pending);
+    const { caller } = makeCaller();
+    expect(await caller.refreshCatalogueContext({ id })).toEqual(pending);
+    expect(catalogue.requestRefresh).toHaveBeenCalledWith(id);
+  });
+  it("preserves catalogue authorization failures", async () => {
+    catalogue.read.mockRejectedValue(
+      new TRPCError({ code: "NOT_FOUND", message: "Climbing log not found" }),
+    );
+    await expect(makeCaller().caller.catalogueContext({ id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Climbing log not found",
+    });
+  });
+  it("reports and surfaces queue errors", async () => {
+    catalogue.requestRefresh.mockRejectedValue(
+      new Error("Catalogue refresh could not be queued. Try again."),
+    );
+    await expect(makeCaller().caller.refreshCatalogueContext({ id })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Catalogue refresh could not be queued. Try again.",
+    });
+    expect(captureException).toHaveBeenCalled();
   });
 });

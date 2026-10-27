@@ -11,8 +11,8 @@ import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
+import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
-
 import { ClimbingPhotos } from "./ClimbingPhotos";
 
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
@@ -129,6 +129,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           })}
         </View>
       )}
+      <ClimbingCatalogueContext id={entry.id} />
       {entry.photoLogEntryId !== null && <ClimbingPhotos id={entry.photoLogEntryId} />}
       {entry.notes && (
         <View style={styles.section}>

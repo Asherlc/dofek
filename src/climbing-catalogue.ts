@@ -66,21 +66,31 @@ export class ClimbingCatalogueService {
       : result;
   }
 
-  async markPending(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
+  async invalidate(seed: CatalogueSeed): Promise<void> {
+    await this.cache.invalidate(key(seed));
+  }
+
+  async markFailed(seed: CatalogueSeed, error: unknown): Promise<void> {
+    captureException(error, { tags: { phase: "climbing-catalogue-refresh" } });
     const previous = await this.read(seed);
-    const expiresAt = previous.expiresAt ?? new Date(Date.now() + 120_000).toISOString();
-    const result: ClimbingCatalogueContext = {
-      ...previous,
-      status: "pending",
-      error: null,
-      expiresAt,
-    };
-    await this.cache.set(key(seed), result, Date.parse(expiresAt) - Date.now());
-    return result;
+    const expiresAt =
+      previous.fetchedAt && previous.expiresAt
+        ? previous.expiresAt
+        : new Date(Date.now() + DAY).toISOString();
+    await this.cache.set(
+      key(seed),
+      {
+        ...previous,
+        status: "error",
+        expiresAt,
+        error:
+          error instanceof Error ? error.message : "Catalogue lookup failed. Try refreshing again.",
+      },
+      Math.max(1, Date.parse(expiresAt) - Date.now()),
+    );
   }
 
   async refresh(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
-    const previous = await this.read(seed);
     try {
       const sources = await Promise.all(
         this.adapters.map(async (adapter) => {
@@ -91,7 +101,12 @@ export class ClimbingCatalogueService {
           const candidates = [
             ...new Map(
               found.candidates
-                .filter((candidate) => normalized(candidate.name) === normalized(seed.name))
+                .filter(
+                  (candidate) =>
+                    (candidate.providerId === seed.providerId &&
+                      candidate.externalId === seed.externalId) ||
+                    normalized(candidate.name) === normalized(seed.name),
+                )
                 .map((candidate) => [candidate.externalId, candidate]),
             ).values(),
           ];
@@ -121,24 +136,7 @@ export class ClimbingCatalogueService {
       await this.cache.set(key(seed), result, ttl);
       return result;
     } catch (error) {
-      captureException(error, { tags: { phase: "climbing-catalogue-refresh" } });
-      const expiresAt =
-        previous.fetchedAt && previous.expiresAt
-          ? previous.expiresAt
-          : new Date(Date.now() + DAY).toISOString();
-      await this.cache.set(
-        key(seed),
-        {
-          ...previous,
-          status: "error",
-          expiresAt,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Catalogue lookup failed. Try refreshing again.",
-        },
-        Math.max(1, Date.parse(expiresAt) - Date.now()),
-      );
+      await this.markFailed(seed, error);
       throw error;
     }
   }

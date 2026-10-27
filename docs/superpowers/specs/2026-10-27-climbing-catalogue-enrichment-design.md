@@ -3,10 +3,18 @@
 Status: implementation authorized; revised to reflect the user's explicit
 cache-only clarification. Dofek is a personal training log, not a climb database.
 
+User-directed addition: retain Trad/Sport and other source climb classifications
+from every climbing catalogue, including OpenBeta. For KAYA, explicit
+`is_trad: true` means Trad; `lead: true` with explicit `is_trad: false` means
+Sport. Fetch those fields from the authenticated native Climb API using the
+existing user's connection, and cache the result only. See the
+[KAYA reader](../../../src/providers/kaya/catalogue.ts) and
+[verified source contracts](../../climbing-trait-coverage.md#informational-catalogue-cache).
+
 ## Intent and boundaries
 
-Show informative catalogue metadata for climbs logged in KAYA, Mountain Project
-and theCrag, using cross-references in either direction. Look up catalogue climbs
+Show informative catalogue metadata for climbs logged in KAYA, Mountain Project,
+theCrag and OpenBeta, using cross-references in either direction. Look up catalogue climbs
 even when the user has no tick in the other service. Preserve multiple steepness
 categories and distinguish direct route tags from inherited Area context.
 

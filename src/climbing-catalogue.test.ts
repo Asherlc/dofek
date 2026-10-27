@@ -69,12 +69,34 @@ describe("ClimbingCatalogueService", () => {
     expect((await service.read(seed)).status).toBe("missing");
     expect(search).not.toHaveBeenCalled();
   });
+  it("reports a rejected refresh request without leaving the cache pending", async () => {
+    const { service } = setup();
+    await service.markFailed(seed, new Error("Catalogue refresh could not be queued."));
+    expect((await service.read(seed)).status).toBe("error");
+    expect((await service.read(seed)).error).toBe("Catalogue refresh could not be queued.");
+  });
+  it("discards an obsolete source fingerprint after an in-flight refresh", async () => {
+    const { service } = setup();
+    await service.refresh(seed);
+    await service.invalidate(seed);
+    expect((await service.read(seed)).status).toBe("missing");
+  });
   it("corroborates a unique complete name/kind/location match and preserves all source facts", async () => {
     const { service } = setup();
     const result = await service.refresh(seed);
     expect(result.sources[0]?.matches).toEqual([{ confidence: "corroborated", candidate }]);
     expect(result.expiresAt).toBe("2026-11-03T12:00:00.000Z");
     expect(await service.read(seed)).toEqual(result);
+  });
+  it("retains the exact recorded source identity when its catalogue name changes", async () => {
+    const renamed = { ...candidate, name: "Renamed Crack" };
+    const { service } = setup([renamed]);
+    const result = await service.refresh({
+      ...seed,
+      providerId: "thecrag",
+      externalId: candidate.externalId,
+    });
+    expect(result.sources[0]?.matches).toEqual([{ confidence: "source", candidate: renamed }]);
   });
   it.each([false, true])(
     "does not establish identity from incomplete results or conflicting locations: complete=%s",

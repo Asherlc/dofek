@@ -183,6 +183,82 @@ documents route tags under its own access conditions, but the public route
 pages already demonstrate structured traits. This inventory does not change
 the existing public-feed integration or select a new enrichment strategy.
 
+## Informational catalogue cache
+
+Climb details on web and mobile also offer **Catalogue context**, an explicit
+lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
+information: the [cache service](../src/climbing-catalogue.ts) retains successful
+results for seven days and empty results for one day, with source URLs, search
+completeness, and source/corroborated/possible-match attribution. It does not
+write catalogue facts or inferred identities into the recorded climbing graph,
+create ticks, or change grades, outcomes, deduplication or training metrics.
+The [owned-log repository](../packages/server/src/repositories/climbing-catalogue-repository.ts)
+checks current visibility and the caller's access window before every cache
+read or refresh. Clearing the cache loses only this reference information.
+
+Live read-only checks on 2026-10-27 verified these discovery contracts:
+
+- KAYA's consumer [bundle](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js)
+  declares `webSearchForClimb(name, offset, count)`. Authenticated logbook fields
+  and public `WebClimb` fields are distinct: the public query accepts angle,
+  location and published-grade metadata, but rejects `tags`. The
+  [catalogue reader](../src/providers/kaya/catalogue.ts) uses the verified search
+  response for discovery. With an existing user connection, authenticated
+  `climb(id: ...)` reads fetch native Climb details, including `lead` and
+  `is_trad`; a read-only production request verified this shape on the audit
+  date. Explicit `is_trad: true` supplies Trad; `lead: true` with explicit
+  `is_trad: false` supplies Sport, as specified by the product mapping. A null
+  classification stays unknown. Known IDs bypass name search. Live requests
+  include the web application's Origin and Referer headers, and native reads
+  use the current user's Bearer token. No grips are inferred from descriptions.
+- Mountain Project's [search client](https://www.mountainproject.com/dist/search/block.js?v.5)
+  posts to `/api/v2/search?q=...&from=...`. The verified response includes total,
+  route IDs/URLs, grades, breadcrumbs and locations. The
+  [reader](../src/providers/mountain-project-catalogue.ts) retains all published
+  type labels, including Trad, Sport, TR, Mixed and Aid, as climb classifications
+  rather than relabeling them steepness, grips or personal ascent methods.
+- theCrag's [route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes)
+  exposes paginated route results. The
+  [reader](../src/providers/thecrag/catalogue.ts) fetches exact-name candidates
+  and retains route-page tags, including multiple inherited steepness entries.
+  A fresh [Cragmont Crack page](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/route/18589309)
+  returned Overhung, Slab (`#Ramp`) and Vertical inherited from Cragmont Park.
+  These remain Area context, not three claimed measurements of the route.
+  The route's own gear-style band supplies literal climb-type labels such as
+  Trad, Sport, Top rope and Mixed trad; personal ascent gear styles are separate.
+- OpenBeta uses its public browser's Typesense name-search contract, then the
+  GraphQL `climb(uuid: ...)` detail query. True `trad`, `sport`, `bouldering`,
+  `deepwatersolo`, `alpine`, `snow`, `ice`, `mixed`, `aid` and `tr` flags remain
+  independent source classifications. The verified Cragmont Crack detail has
+  both Trad and Top rope. Sources: the official
+  [Climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
+  [search client](https://github.com/OpenBeta/open-tacos/blob/develop/src/js/typesense/TypesenseClient.ts),
+  [public browser search configuration](https://github.com/OpenBeta/open-tacos/blob/develop/.env),
+  and [Dofek reader](../src/providers/openbeta-catalogue.ts). The browser search
+  credential is public and search-only; no new private credential or service is
+  provisioned. Upstream 502 responses remain actionable lookup errors.
+
+Searches are bounded to three pages. Capped or repeated pages remain explicitly
+incomplete and cannot establish a unique corroborated match. Indoor candidates
+are possible matches unless the exact recorded provider identity is found;
+matching names or recycled colors never establish the same gym set. Failed
+refreshes retain still-unexpired context with an actionable error instead of
+becoming an empty successful lookup. See the
+[shared response](../packages/training/src/climbing-catalogue.ts),
+[cache/matching tests](../src/climbing-catalogue.test.ts) and
+[database ownership tests](../src/db/climbing-catalogue-seed.integration.test.ts).
+
+Pending refresh status comes from the live job, independently of metadata TTL;
+concurrent refresh requests cannot replace a finished result with a long-lived
+pending cache entry. Both clients hide expired context and suppress retained
+data after access/ownership errors. The
+[worker tests](../src/jobs/climbing-catalogue-job.test.ts) and paired
+[web](../packages/web/src/components/ClimbingCatalogueContext.test.tsx)/[mobile](../packages/mobile/components/ClimbingCatalogueContext.test.tsx)
+tests cover these lifecycle boundaries. Recorded theCrag numeric route IDs use
+the verified `/en/climbing/world/route/<id>` detail path, so a rename does not
+force that source record through name search; see the
+[reader regression](../src/providers/thecrag/catalogue.test.ts).
+
 ## Serving the imported metadata
 
 Canonical records retain the full grip collection and numeric-or-category

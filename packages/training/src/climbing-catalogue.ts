@@ -2,7 +2,7 @@ import { z } from "zod";
 import { numericWallAngleSchema } from "./climbing-experience.ts";
 import { gpsCoordinatesSchema } from "./gps-coordinates.ts";
 
-export const catalogueProviderSchema = z.enum(["kaya", "mountain-project", "thecrag"]);
+export const catalogueProviderSchema = z.enum(["kaya", "mountain-project", "thecrag", "openbeta"]);
 export const catalogueLocationSchema = z.strictObject({
   externalId: z.string().nullable(),
   name: z.string(),
@@ -21,7 +21,7 @@ export const catalogueSeedSchema = z.strictObject({
   locations: z.array(catalogueLocationSchema),
 });
 export const catalogueTagSchema = z.strictObject({
-  kind: z.enum(["steepness", "hold", "other"]),
+  kind: z.enum(["steepness", "hold", "climb_type", "other"]),
   sourceKey: z.string(),
   label: z.string().min(1),
   category: z.string().nullable(),
@@ -32,6 +32,7 @@ const origins = {
   kaya: "https://kaya-app.kayaclimb.com",
   "mountain-project": "https://www.mountainproject.com",
   thecrag: "https://www.thecrag.com",
+  openbeta: "https://openbeta.io",
 };
 export const catalogueCandidateSchema = z
   .strictObject({

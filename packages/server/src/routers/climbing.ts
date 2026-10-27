@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { climbingCatalogueContextSchema } from "@dofek/training/climbing-catalogue";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
@@ -17,6 +18,7 @@ import {
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingCatalogueRepository } from "../repositories/climbing-catalogue-repository.ts";
 import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
@@ -97,6 +99,29 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  catalogueContext: protectedProcedure
+    .input(z.object({ id: z.guid() }))
+    .output(climbingCatalogueContextSchema)
+    .query(({ ctx, input }) =>
+      runClimbingQuery(() =>
+        new ClimbingCatalogueRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow).read(
+          input.id,
+        ),
+      ),
+    ),
+  refreshCatalogueContext: protectedProcedure
+    .input(z.object({ id: z.guid() }))
+    .output(climbingCatalogueContextSchema)
+    .mutation(({ ctx, input }) =>
+      runClimbingQuery(() =>
+        new ClimbingCatalogueRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).requestRefresh(input.id),
+      ),
+    ),
   images: protectedProcedure
     .input(z.object({ id: z.guid() }))
     .output(activityImagesOutputSchema)

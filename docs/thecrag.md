@@ -106,6 +106,16 @@ programmatic scraping; public visibility is not an API support guarantee.
 The official [personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)
 remains a separate supporter feature.
 
+## Informational catalogue context
+
+Separately from tick sync, climb details can request disposable catalogue context
+across providers. The [catalogue reader](../src/providers/thecrag/catalogue.ts)
+uses public route search and route-page tags, retaining direct/inherited scope
+and multiple steepness categories. Cached context never writes facts back to
+the tick or changes training metrics. See the
+[verified source contracts and cache lifecycle](climbing-trait-coverage.md#informational-catalogue-cache)
+and theCrag's [tag taxonomy](https://www.thecrag.com/en/article/tagging).
+
 ## Transport evidence — 2026-10-26
 
 Fresh logged-out Chrome retrieved a public account's feed, one ascent, its empty
