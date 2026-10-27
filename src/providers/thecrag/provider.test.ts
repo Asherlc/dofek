@@ -1,6 +1,8 @@
+import { inspect } from "node:util";
 import { ProviderRequestTimeoutError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
+import { authFailureReasonFromError } from "../auth-errors.ts";
 import { createMockDatabase } from "../test-helpers.ts";
 import { TheCragProvider } from "./provider.ts";
 import { lookupResponse, makeRun, publicAscent, publicFeed, tokens } from "./test-helpers.ts";
@@ -10,9 +12,11 @@ const mocks = vi.hoisted(() => ({
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
   captureException: vi.fn(),
+  createPublicFetch: vi.fn(),
   withSyncLog: vi.fn(async (_db, _id, _type, callback) => (await callback()).result),
 }));
 vi.mock("./persistence.ts", () => ({ writeClimbingRecords: mocks.write }));
+vi.mock("./public-transport.ts", () => ({ createTheCragPublicFetch: mocks.createPublicFetch }));
 vi.mock("../../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
@@ -35,6 +39,23 @@ function publicRequests(feed = publicFeed(), ascent = publicAscent()) {
 }
 
 describe("theCrag public profile", () => {
+  it("uses the provider-local transport factory when no fetch is injected", async () => {
+    const fetchFn = publicRequests();
+    mocks.createPublicFetch.mockReturnValueOnce(fetchFn);
+    const provider = new TheCragProvider();
+    await expect(
+      provider.authSetup().manualToken?.exchangeToken("sampleclimber"),
+    ).resolves.toMatchObject({
+      accessToken: "sampleclimber",
+      providerAccountId: "123",
+      scopes: "thecrag:public-profile",
+    });
+    expect(mocks.createPublicFetch).toHaveBeenCalledOnce();
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://www.thecrag.com/api/lookup/climber?search=sampleclimber",
+      expect.objectContaining({ method: "GET", redirect: "manual" }),
+    );
+  });
   it("advertises an available public-profile connection without provider credentials", () => {
     const provider = new TheCragProvider(publicRequests());
     expect(provider.validate()).toBeNull();
@@ -208,14 +229,24 @@ describe("theCrag public profile", () => {
     expect(result.errors[0]?.message).toMatch(/public profile.*reconnect/i);
     expect(fetchFn).not.toHaveBeenCalled();
   });
-  it.each(["logbook:read", null, "thecrag:public-profile logbook:read"])(
+  it.each(["logbook:read", null, undefined, "thecrag:public-profile logbook:read"])(
     "rejects legacy scope %j without requesting its secret",
     async (scopes) => {
       mocks.loadTokens.mockResolvedValue({ ...tokens(), accessToken: "private-secret", scopes });
       const fetchFn = publicRequests();
       const result = await new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db));
-      expect(result.errors[0]?.message).toMatch(/reconnect/i);
+      expect(result.errors[0]?.message).toBe(
+        "Revoke your old personal API key in theCrag Settings → API Keys, then reconnect using your public username/profile URL.",
+      );
+      expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
       expect(fetchFn).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(
+        inspect(
+          { errors: result.errors, telemetry: mocks.captureException.mock.calls },
+          { depth: null },
+        ),
+      ).not.toContain("private-secret");
     },
   );
   it("maps recorded climb date, top rope and reported count without manufacturing result facts", async () => {
@@ -373,6 +404,27 @@ describe("theCrag public profile", () => {
       expect.objectContaining({ name: "ProviderRequestTimeoutError", providerId: "thecrag" }),
       { tags: { provider: "thecrag", phase: "climbing_activity" } },
     );
+  });
+  it("preserves a streamed response TimeoutError as the sync failure cause without writing records", async () => {
+    const error = new DOMException("Public response stream timed out", "TimeoutError");
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(error);
+        },
+      }),
+    );
+    const result = await new TheCragProvider(async () => response).sync(
+      makeRun(createMockDatabase().db),
+    );
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.cause).toBe(error);
+    expect(result.errors[0]?.message).toBe("Public response stream timed out");
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalledWith(error, {
+      tags: { provider: "thecrag", phase: "climbing_activity" },
+    });
   });
   it.each([200, 403])(
     "reports elapsed sync duration for public response status %i",

@@ -313,6 +313,49 @@ describe("public ascent HTML", () => {
       expect(() => parse(publicAscent({ attempts }))).toThrow(/invalid reported attempt count/);
     },
   );
+  it.each([
+    ["route", {}],
+    ["boulder", { routeStyle: "Boulder", climbedStyle: "Boulder", routeGrade: "V4", tick: "Send" }],
+  ])("rejects a %s ascent above the reported attempt allocation budget", (_kind, overrides) => {
+    expect(() => parse(publicAscent({ ...overrides, attempts: "1001" }))).toThrow(
+      "theCrag ascent 1001 exceeds the import limit of 1000 reported attempts. Review the source count in theCrag or contact support before syncing.",
+    );
+  });
+  it.each([
+    ["route", { tick: "Redpoint: Top rope" }],
+    ["boulder", { routeStyle: "Boulder", climbedStyle: "Boulder", routeGrade: "V4", tick: "Send" }],
+  ])("preserves a %s ascent at the reported attempt allocation budget", (kind, overrides) => {
+    const record = parse(publicAscent({ ...overrides, attempts: "1000" }));
+    expect(record.reportedAttemptCounts).toEqual([{ scope: "climb", count: 1000 }]);
+    expect(record.attempts).toEqual(
+      kind === "route"
+        ? [
+            {
+              scope: "climb",
+              sourceResult: "Redpoint",
+              qualifier: "free-send",
+              ropeMethod: "top_rope",
+            },
+            ...Array.from({ length: 999 }, () => ({ scope: "climb", ropeMethod: "top_rope" })),
+          ]
+        : [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+    );
+  });
+  it("rejects a huge boulder count before it can reach canonical attempt expansion", () => {
+    expect(() =>
+      parse(
+        publicAscent({
+          routeStyle: "Boulder",
+          climbedStyle: "Boulder",
+          routeGrade: "V4",
+          tick: "Send",
+          attempts: "100000000",
+        }),
+      ),
+    ).toThrow(
+      "theCrag ascent 1001 exceeds the import limit of 1000 reported attempts. Review the source count in theCrag or contact support before syncing.",
+    );
+  });
   it.each(["1", "2", "12"])(
     "expands route attempt count %s without assigning outcomes to placeholders",
     (attempts) => {

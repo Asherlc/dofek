@@ -146,19 +146,26 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       await context.db.select().from(activity).where(eq(activity.providerId, "thecrag")),
     ).toHaveLength(0);
   });
-  it("stores a boulder result without a rope method", async () => {
+  it("stores four boulder attempts with only one described result and no rope method", async () => {
     serve(() => [
       {
         climbedStyle: "Boulder",
         routeStyle: "Boulder",
         routeGrade: "V4",
         tick: "Redpoint",
-        attempts: "1",
+        attempts: "4",
       },
     ]);
     expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(await context.db.select().from(climbingAttempt)).toEqual([
+    const attempts = await context.db.select().from(climbingAttempt);
+    expect(attempts).toHaveLength(4);
+    expect(attempts.filter((attempt) => attempt.sourceResult !== null)).toEqual([
       expect.objectContaining({ ropeMethod: null, fellOrHung: false, usedAid: false }),
+    ]);
+    expect(attempts.filter((attempt) => attempt.sourceResult === null)).toEqual([
+      expect.objectContaining({ ropeMethod: null, fellOrHung: null, usedAid: null, dabbed: null }),
+      expect.objectContaining({ ropeMethod: null, fellOrHung: null, usedAid: null, dabbed: null }),
+      expect.objectContaining({ ropeMethod: null, fellOrHung: null, usedAid: null, dabbed: null }),
     ]);
   });
 
@@ -225,6 +232,39 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     });
     expect(await entries()).toEqual(previous);
   });
+  it.each(["Top rope", "Boulder"])(
+    "preserves stored data when a %s ascent exceeds the allocation budget",
+    async (style) => {
+      let ascents: AscentFixture[] = [{}];
+      serve(() => ascents);
+      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+      const previous = await entries();
+      const previousAttempts = await context.db
+        .select()
+        .from(climbingAttempt)
+        .orderBy(climbingAttempt.id);
+      ascents = [
+        { comment: "This correction must not be saved" },
+        {
+          id: "1002",
+          routeId: "2002",
+          climbedStyle: style,
+          routeStyle: style,
+          routeGrade: style === "Boulder" ? "V4" : "5.10b",
+          tick: style === "Boulder" ? "Attempt" : "Attempt: Top rope",
+          attempts: "1001",
+        },
+      ];
+      const result = await run();
+      expect(result).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
+      expect(result.errors[0]?.message).toContain("1002");
+      expect(result.errors[0]?.message).toContain("1000");
+      expect(await entries()).toEqual(previous);
+      expect(await context.db.select().from(climbingAttempt).orderBy(climbingAttempt.id)).toEqual(
+        previousAttempts,
+      );
+    },
+  );
   it("updates a corrected day and preserves attachments, unseen entries and private notes", async () => {
     let ascents: AscentFixture[] = [{}, { id: "1002" }];
     serve(() => ascents);

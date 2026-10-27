@@ -27,6 +27,12 @@ account deletion while saved legacy key credentials remain connected. A new
 public identity has no remote authorization to revoke. Existing climbing data
 and user-selected workout attachments remain stored.
 
+This classification describes the currently saved connection. Reconnecting or
+disconnecting Dofek does not revoke an older owner-managed key or provide proof
+that it was revoked. The [token repository](../src/db/tokens.ts) stores current
+credentials rather than a historical revocation ledger; complete the manual
+theCrag revocation step before replacing or removing a legacy key connection.
+
 ## Public read path
 
 1. Resolve the username using `/api/lookup/climber?search=<username>`.
@@ -60,6 +66,12 @@ therefore [upserts observed entries](../src/providers/thecrag/persistence.ts)
 without marking unobserved records absent, including when the feed is empty.
 This path imports public ticks; it cannot fetch private notes or guarantee a
 complete historical backfill.
+
+The [parser](../src/providers/thecrag/public-parsing.ts) rejects more than 1,000
+reported attempts per ascent before expanding route placeholders or sending
+counts to persistence. This is Dofek's local memory/database allocation budget,
+not a published theCrag maximum. It applies to routes and boulders, and rejects
+the entire batch without truncating counts or changing previously stored logs.
 
 Stable ascent IDs retain the `thecrag:<ascent-id>` identity used by earlier
 imports. Route IDs identify shared climbs. The recorded ascent date supplies

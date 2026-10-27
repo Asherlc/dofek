@@ -5,7 +5,10 @@ import { ensureProvider, loadTokens } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { findProviderTransportError } from "../../lib/provider-transport-error.ts";
-import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
+import {
+  ProviderStoredIdentityInvalidError,
+  ProviderStoredIdentityMissingError,
+} from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult } from "../types.ts";
 import { isTheCragPublicProfileScope, THECRAG_PUBLIC_PROFILE_SCOPE } from "./identity.ts";
@@ -115,10 +118,14 @@ export class TheCragProvider implements SyncProvider {
       if (!userId) throw new Error("theCrag sync requires a user context.");
       await ensureProvider(db, this.id, this.name, API_BASE_URL, userId);
       const tokens = await loadTokens(db, this.id, userId);
-      if (!tokens || !isTheCragPublicProfileScope(tokens.scopes))
+      if (!tokens)
         throw new ProviderStoredIdentityMissingError(
           this.name,
           "public profile — reconnect in Data Sources using your username or profile URL",
+        );
+      if (!isTheCragPublicProfileScope(tokens.scopes))
+        throw new ProviderStoredIdentityInvalidError(
+          "Revoke your old personal API key in theCrag Settings → API Keys, then reconnect using your public username/profile URL.",
         );
       const accountId = tokens.providerAccountId;
       if (!accountId || !/^[1-9]\d*$/.test(accountId))

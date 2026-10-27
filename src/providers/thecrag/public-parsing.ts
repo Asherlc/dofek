@@ -12,6 +12,8 @@ import type { SourceClimbingAttempt, SourceClimbingLogEntry } from "../../db/cli
 import { captureException } from "../../lib/error-reporting.ts";
 
 const ORIGIN = "https://www.thecrag.com";
+// Provider-local allocation budget, not an upstream theCrag maximum.
+const MAX_ATTEMPTS_PER_ASCENT = 1_000;
 const numericId = z.string().regex(/^[1-9]\d*$/);
 const usernameSchema = z.string().regex(/^[a-zA-Z0-9_-]+$/);
 
@@ -288,6 +290,10 @@ export function parsePublicAscent(
   const count = text("Attempts");
   if (count && (!/^[1-9]\d*$/.test(count) || !Number.isSafeInteger(Number(count))))
     throw new Error(`theCrag ascent ${reference.id} has an invalid reported attempt count.`);
+  if (count && Number(count) > MAX_ATTEMPTS_PER_ASCENT)
+    throw new Error(
+      `theCrag ascent ${reference.id} exceeds the import limit of ${MAX_ATTEMPTS_PER_ASCENT} reported attempts. Review the source count in theCrag or contact support before syncing.`,
+    );
   const attempts: SourceClimbingAttempt[] = [attempt];
   if (!isBoulder && count && Number(count) > 1) {
     if (!climbedMethod)
