@@ -33461,3 +33461,30 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 - **Persisted mobile-cache review:** A replay through the actual TanStack restore path showed the unchanged `v14` cache buster restoring prior training rows that lack the newly required primary-type field. With five-minute staleness and mount refetch disabled, rejecting those rows can hide cached activities during an upgrade. Incremented the existing cache contract to `v15`; the behavioral upgrade regression failed before the bump and now discards that cache before hydration. All 33 related tests and the mobile typecheck pass. A separate mixed-revision web rollout concern remains an explicitly pending scope decision; no client compatibility bridge was added.
 
 - **2026-10-27 rolling-deployment follow-up:** Both client parsers rejected an older server response that omitted primary-type metadata, with `ZodError` / `Invalid input: expected string, received undefined` at `primary_canonical_type`. This was reproduced locally rather than observed as a production outage. The approved client normalization maps only omitted primary-type metadata to `null`; parsed activity output remains required and nullable, existing primary values remain intact, and other fields retain their validation. The mobile cache version stays at `v15` so an upgrade also removes stale titles. Regression coverage exercises old-response activity rendering and selection on web and accessible cards on mobile. All 61 affected web tests and 95 affected mobile tests pass, as do full lint and root/server/web/mobile typechecks; unrelated malformed fields remain rejected.
+
+## 2026-10-27 — Compressed activity photo copies appeared twice
+
+- **Symptoms / impact:** Activity `b6f8194f-9357-4a1b-a147-a35698342b69`
+  displayed the same instructor image twice. Both web and mobile render the
+  shared photo response; no source records or original files were lost.
+- **Evidence / root cause:** Read-only production queries found a 1920×1080
+  Peloton PNG and Strava JPEG with separate byte hashes. Running the existing
+  [gallery projection](../src/activity-images/gallery.ts) against the stored
+  originals returned two images: 1,670 of 147,456 normalized pixels exceeded its
+  0.05 color tolerance, above the permitted 0.01% mismatch count. At 0.07 only
+  one pixel exceeded the tolerance. The existing smooth test image did not
+  reproduce this compression difference. The new textured regression first
+  failed `pnpm exec vitest run --project unit src/activity-images/gallery.test.ts`
+  with `expected [ 'export.jpg', 'original.png' ] to deeply equal [ 'original.png' ]`.
+- **Direct fix / validation:** With user approval, changed only the per-pixel
+  tolerance to 0.07, retaining the 99.99% match requirement and existing provider,
+  aspect-ratio, and animation gates. [Pixelmatch documents these color and count
+  controls separately](https://github.com/mapbox/pixelmatch#api). All 33 gallery
+  and API tests pass, including distinct-image checks. The modified local code
+  returns one PNG with both sources for the exact production originals; private
+  diagnostic copies were removed afterward. No resilience settings were added.
+- **Remaining risk / follow-up:** Production deployment remains pending. Slight
+  brightness edits within the new color tolerance can consolidate. Retain the
+  textured regression alongside visible-difference cases. For future photo
+  investigations, compare the actual stored pair before tuning similarity;
+  document that diagnostic step in the activity-image guide.
