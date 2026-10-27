@@ -714,9 +714,11 @@ using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
 ## Activity metric sources
 
 Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
-for heart rate, power, speed, cadence, and elevation. Compact source names and
-attribution icons keep the controls concise; the chooser and accessible names
-retain the complete source wording. Each control preselects its existing priority winner
+for heart rate, power, speed, cadence, and elevation. Provider logos, short device
+names where needed, and attribution icons keep the controls and chooser concise.
+Unknown sources retain identifying text; accessible names retain the complete
+source wording using React Native's [accessibility labels](https://reactnative.dev/docs/accessibility#accessibilitylabel).
+Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.

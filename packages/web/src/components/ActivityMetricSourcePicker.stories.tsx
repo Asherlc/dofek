@@ -1,4 +1,7 @@
-import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
+import {
+  type ActivityMetricSource,
+  activityMetricSourcePresentation,
+} from "@dofek/providers/activity-metric-source";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, within } from "storybook/test";
@@ -78,6 +81,40 @@ export const Cloud: Story = { args: { selectedId: "whoop-cloud" } };
 export const Bluetooth: Story = { args: { selectedId: "whoop-bluetooth" } };
 export const RecorderDetails: Story = { args: { selectedId: "fit-file" } };
 export const UnknownAttribution: Story = { args: { selectedId: "unknown" } };
+
+export const ProviderLogos: Story = {
+  args: {
+    label: "Power",
+    selectedId: "peloton",
+    sources: [
+      {
+        id: "peloton",
+        label: "Peloton",
+        presentation: activityMetricSourcePresentation("peloton", null, "Peloton"),
+      },
+      {
+        id: "strava",
+        label: "Strava · recorded by Peloton Bike",
+        presentation: activityMetricSourcePresentation(
+          "strava",
+          null,
+          "Strava · recorded by Peloton Bike",
+          "Peloton Bike",
+        ),
+      },
+    ],
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const trigger = within(canvasElement).getByRole("button", { name: "Power source: Peloton" });
+    await expect(trigger).toHaveTextContent("");
+    await userEvent.click(trigger);
+    const dropdown = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Power source",
+    });
+    await expect(within(dropdown).getByRole("radio", { name: "Peloton" })).toBeChecked();
+    await expect(within(dropdown).getByText("Peloton Bike")).toBeVisible();
+  },
+};
 
 export const OpenDropdown: Story = {
   args: { selectedId: "whoop-cloud" },
