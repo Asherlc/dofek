@@ -25,7 +25,7 @@ failures carry an explicit tRPC marker to both clients.
   run GREEN. Keep existing background transport behavior and diagnostic logs.
 - [x] Add provider counter and tRPC marker regressions; run RED, implement, run
   GREEN. Remove synthetic lifecycle exceptions, retaining unknown HTTP diagnostics.
-- [ ] Review complete diff, run focused suites and affected type/lint checks,
+- [x] Review complete diff, run focused suites and affected type/lint checks,
   record incident follow-through, commit and push, then open the requested PR.
 
 ## Working notes
@@ -52,3 +52,12 @@ Full-suite checkpoint: initial run passed 21,994 assertions but one router suite
 failed setup because its OpenTelemetry mock replaced the complete API without
 `metrics`. Preserving the real exports and overriding only tracing restores all
 22 tests in that suite. No production-only testing branch was added.
+
+Final local verification: the complete unit/mobile tier passed 22,022 tests with
+19 existing skips, retries disabled. Full lint, root/server/web/mobile/telemetry
+typechecks, and Knip passed. Knip's Expo config needs a valid public DSN during
+static analysis; the read-only run used a fixture DSN without initializing an
+application. Hosted CI is tracked in [PR 3107](https://github.com/Asherlc/dofek/pull/3107).
+No production rollout or physical-device delivery was verified. The reviewer
+declined those deployment/device/historical-recovery judgments; they remain
+explicitly outside the local validation claim.
