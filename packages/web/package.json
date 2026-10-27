@@ -22,6 +22,7 @@
     "@dofek/providers": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
+    "@dofek/telemetry": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@radix-ui/react-dialog": "1.3.1",

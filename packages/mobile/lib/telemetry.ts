@@ -1,4 +1,5 @@
 import { AxiomLogExporter } from "@dofek/telemetry";
+import { classifyHandledFailure } from "@dofek/telemetry/handled-failure";
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -270,15 +271,18 @@ export function captureException(
       : context,
   );
   const source = typeof context.source === "string" ? context.source : undefined;
-  // Suppress non-actionable transient network failures from declared background
-  // sync sources at every error-tracking destination. Applying the check here
-  // (rather than only in Sentry's beforeSend) keeps Sentry and PostHog consistent
-  // — otherwise the PostHog capture path silently mints error-tracking issues for
-  // errors Sentry drops. Logs and breadcrumbs below still record the failure for
-  // observability.
-  const captureToErrorTracking =
-    options.reportToErrorTracking !== false &&
-    !shouldSuppressBackgroundTransientNetworkError(error, source);
+  const handledFailure =
+    classifyHandledFailure(error) ??
+    (shouldSuppressBackgroundTransientNetworkError(error, source) ? "background_transport" : null);
+  if (handledFailure) {
+    if (!retiredLifetime) posthogClient?.capture("handled_failure", { kind: handledFailure });
+    emitLog(SeverityNumber.INFO, "INFO", "handled-failure", "Handled operational failure", {
+      ...telemetryContext,
+      kind: handledFailure,
+    });
+    return;
+  }
+  const captureToErrorTracking = options.reportToErrorTracking !== false;
   if (captureToErrorTracking) {
     if (retiredLifetime) {
       Sentry.captureException(error, (scope) => {

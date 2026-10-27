@@ -1,9 +1,13 @@
+import { signInToKaya } from "@dofek/kaya-client";
+import { signInToZepp, ZEPP_REGISTRATION_REDIRECT_URI } from "@dofek/zepp-client";
 import { TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { ProviderInvalidCredentialsError } from "dofek/providers/auth-errors";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { InvalidCredentialsError } from "./auth/password-credential.ts";
 import {
   CacheTTL,
   type Context,
@@ -49,6 +53,60 @@ async function serializeTransportError(error: unknown) {
 }
 
 describe("tRPC error serialization", () => {
+  it("marks confirmed invalid credentials while preserving their actionable error", async () => {
+    const cause = new InvalidCredentialsError();
+    const result = await serializeTransportError(
+      new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+    );
+    const body = JSON.parse(result.body);
+    expect(result.status).toBe(400);
+    expect(body.error.message).toBe(cause.message);
+    expect(body.error.data.handledFailure).toBe("invalid_credentials");
+  });
+
+  it.each([503, 200])(
+    "retains Kaya HTTP/schema failure %s as reportable despite its legacy credential class",
+    async (status) => {
+      let upstream: unknown;
+      try {
+        await signInToKaya("fixture@example.test", "fixture", async () =>
+          Response.json({ message: "ok" }, { status }),
+        );
+      } catch (error) {
+        upstream = error;
+      }
+      expect(upstream).toBeDefined();
+      const cause = new ProviderInvalidCredentialsError("Kaya", { cause: upstream });
+      const result = await serializeTransportError(
+        new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+      );
+      expect(JSON.parse(result.body).error.data.handledFailure).toBeUndefined();
+    },
+  );
+
+  it("retains a malformed Zepp redirect as reportable despite its legacy credential class", async () => {
+    let upstream: unknown;
+    try {
+      await signInToZepp(
+        "fixture@example.test",
+        "fixture",
+        async () =>
+          new Response(null, {
+            status: 303,
+            headers: { location: ZEPP_REGISTRATION_REDIRECT_URI },
+          }),
+      );
+    } catch (error) {
+      upstream = error;
+    }
+    expect(upstream).toBeDefined();
+    const cause = new ProviderInvalidCredentialsError("Zepp", { cause: upstream });
+    const result = await serializeTransportError(
+      new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+    );
+    expect(JSON.parse(result.body).error.data.handledFailure).toBeUndefined();
+  });
+
   it("serializes a configuration failure with the feature and support action", async () => {
     const diagnostic = new Error("CLICKHOUSE_URL environment variable is required");
     const testRouter = router({

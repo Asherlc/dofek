@@ -8,6 +8,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import { ZodError, type ZodType } from "zod";
 import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
+import { InvalidCredentialsError } from "./auth/password-credential.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
 import {
   cacheHitsTotal,
@@ -61,6 +62,9 @@ function shouldSanitizeInternalError(error: TRPCError): boolean {
 
 const trpc = initTRPC.context<Context>().create({
   errorFormatter({ error, shape }) {
+    if (error.code === "BAD_REQUEST" && error.cause instanceof InvalidCredentialsError) {
+      return { ...shape, data: { ...shape.data, handledFailure: "invalid_credentials" as const } };
+    }
     if (error.code === "BAD_REQUEST" && error.cause instanceof ZodError) {
       const data = { ...shape.data };
       delete data.stack;

@@ -6,6 +6,47 @@ import {
 } from "./health-kit-errors";
 
 describe("health-kit-errors", () => {
+  it("keeps an underlying storage failure reportable under a cancellation wrapper", () => {
+    const error = new Error("fetch failed: cancelled", {
+      cause: new Error("Failed to write value."),
+    });
+    expect(shouldSuppressBackgroundTransientNetworkError(error, "bg-healthkit-sync")).toBe(false);
+  });
+  it("retains a wrapped parse failure even when its message was copied by tRPC", () => {
+    const cause = new SyntaxError("fetch failed: cancelled");
+    expect(
+      shouldSuppressBackgroundTransientNetworkError(
+        new Error(cause.message, { cause }),
+        "bg-healthkit-sync",
+      ),
+    ).toBe(false);
+  });
+  it("retains mixed sync failures and cyclic causes as unexpected", () => {
+    const mixed = new Error(
+      "HealthKit observer sync completed with 2 error(s): Invalid schema; Push workout routes: fetch failed: cancelled",
+    );
+    expect(shouldSuppressBackgroundTransientNetworkError(mixed, "bg-healthkit-sync")).toBe(false);
+    const cyclic = new Error("unknown");
+    cyclic.cause = cyclic;
+    expect(shouldSuppressBackgroundTransientNetworkError(cyclic, "bg-healthkit-sync")).toBe(false);
+  });
+  it.each(["bg-healthkit-sync", "whoop-ble-imu-upload", "whoop-ble-realtime-upload"])(
+    "classifies handled cancellation and offline delivery from %s",
+    (source) => {
+      for (const message of [
+        "HealthKit observer sync completed with 1 error(s): Push workout routes: fetch failed: cancelled",
+        "fetch failed: The Internet connection appears to be offline.",
+      ]) {
+        expect(shouldSuppressBackgroundTransientNetworkError(new Error(message), source)).toBe(
+          true,
+        );
+      }
+      expect(
+        shouldSuppressBackgroundTransientNetworkError(new SyntaxError("Invalid response"), source),
+      ).toBe(false);
+    },
+  );
+
   it("detects transient background fetch timeout messages", () => {
     expect(
       isTransientNetworkErrorMessage("fetch failed: UnexpectedException: The request timed out."),
