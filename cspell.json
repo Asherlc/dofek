@@ -776,9 +776,16 @@
     "recordset",
     "uiaa",
     "ewbank",
-    "vscale"
+    "vscale",
+    "deepwatersolo",
+    "routetable",
+    "typesense"
   ],
   "overrides": [
+    {
+      "filename": "src/providers/openbeta-catalogue.ts",
+      "words": ["bCGIB4sHsJRy06NFjZLtxKIMgr4aO0tX"]
+    },
     {
       "filename": "packages/providers-meta/src/garmin-device-catalog.ts",
       "words": ["Ballisitcs"]
