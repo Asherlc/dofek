@@ -55,7 +55,7 @@ describe("Activity primary-source titles", () => {
     {
       primaryName: "  Evening Run  ",
       expectedName: "  Evening Run  ",
-      description: "has a nonblank title with surrounding whitespace",
+      description: "has a title with surrounding whitespace",
     },
   ])(
     "follows the resolved primary source when it $description",

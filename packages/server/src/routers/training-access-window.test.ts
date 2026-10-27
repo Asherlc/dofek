@@ -51,7 +51,7 @@ describe("trainingRouter access window gating", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 3_600_000,
-      keyVersion: "training-activity-states-v1",
+      keyVersion: "training-activity-primary-title-v2",
     });
   });
 

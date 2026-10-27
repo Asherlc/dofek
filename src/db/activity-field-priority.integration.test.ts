@@ -80,28 +80,28 @@ describe("merged activity field priorities", () => {
       sourceName: "Strong",
       canonicalType: "strength",
       name: null,
-      expected: "Peloton title",
+      expected: null,
     },
     {
       providerId: "apple_health",
       sourceName: "Strong",
       canonicalType: "strength",
       name: "",
-      expected: "Peloton title",
+      expected: null,
     },
     {
       providerId: "apple_health",
       sourceName: "Strong",
       canonicalType: "strength",
       name: "   ",
-      expected: "Peloton title",
+      expected: null,
     },
     {
       providerId: "apple_health",
       sourceName: "Strong",
       canonicalType: "cycling",
       name: "Strong ride",
-      expected: "Peloton title",
+      expected: "Strong ride",
     },
     {
       providerId: "apple_health",
@@ -135,7 +135,7 @@ describe("merged activity field priorities", () => {
     },
   );
 
-  it("preserves blank-name priority outside Strong strength workouts", async () => {
+  it("keeps a primary Strong cycling title despite a blank secondary title", async () => {
     const id = randomUUID();
     await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
       VALUES (${id}, ${TEST_USER_ID})`);
@@ -152,7 +152,7 @@ describe("merged activity field priorities", () => {
       z.object({ name: z.string().nullable() }),
       sql`SELECT name FROM fitness.v_activity WHERE id = ${id}`,
     );
-    expect(rows).toEqual([{ name: "" }]);
+    expect(rows).toEqual([{ name: "Strong ride" }]);
   });
 
   afterAll(async () => {

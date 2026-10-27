@@ -34,7 +34,7 @@ describe("CyclingPerformanceRepository integration", () => {
         toDateTime64('2026-08-30 16:00:00', 6, 'UTC'),
         toDateTime64('2026-08-30 17:02:00', 6, 'UTC'),
         38066, 138.3, 170, 180, 1000, 1000, 220, 250, 736, 3720,
-        190, 180, 135, 1.333, 600, 0, 1, now64(9, 'UTC')
+        190, 180, 135, 1.333, 600, 0, 1, now64(9, 'UTC'), NULL
       ),
       (
         toUUID('${outOfRangeActivityId}'), toUUID('${userId}'), 'peloton', ['peloton'],
@@ -42,7 +42,7 @@ describe("CyclingPerformanceRepository integration", () => {
         toDateTime64('2026-09-02 16:00:00', 6, 'UTC'),
         toDateTime64('2026-09-02 17:00:00', 6, 'UTC'),
         0, 150, 175, 200, 1000, 1000, 240, 260, 0, 3600,
-        200, 190, 140, 1.263, 600, 0, 1, now64(9, 'UTC')
+        200, 190, 140, 1.263, 600, 0, 1, now64(9, 'UTC'), NULL
       )`,
     );
     await executeClickHouseTestCommand(

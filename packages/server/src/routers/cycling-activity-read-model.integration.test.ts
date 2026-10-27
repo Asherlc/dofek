@@ -63,6 +63,8 @@ describe("cycling_activity read model", () => {
         user_id UUID,
         provider_id Nullable(String),
         source_providers Array(String),
+        name Nullable(String),
+        primary_canonical_type Nullable(String),
         refreshed_at DateTime64(9, 'UTC'),
         is_deleted UInt8
       ) ENGINE = ReplacingMergeTree(refreshed_at) ORDER BY (user_id, activity_id)`,
@@ -90,9 +92,11 @@ describe("cycling_activity read model", () => {
     });
     await client.command({
       query: `INSERT INTO ${database}.deduped_activities
-        (activity_id, user_id, provider_id, source_providers, refreshed_at, is_deleted)
+        (activity_id, user_id, provider_id, source_providers, name, primary_canonical_type,
+         refreshed_at, is_deleted)
         VALUES
-        ('${activityId}', '${userId}', 'wahoo', ['wahoo'], now64(9, 'UTC'), 0)`,
+        ('${activityId}', '${userId}', 'wahoo', ['wahoo'], 'Outdoor Ride', 'cycling',
+         now64(9, 'UTC'), 0)`,
     });
   });
 
