@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { classifyHandledFailure } from "./handled-failure.ts";
 
 describe("classifyHandledFailure", () => {
+  it.each([new Error("Failed to write value."), new Error("HTTP 403"), "unknown failure"])(
+    "keeps an unexpected underlying cause reportable under a cancellation wrapper",
+    (cause) => {
+      expect(classifyHandledFailure(new Error("fetch failed: cancelled", { cause }))).toBeNull();
+    },
+  );
   it.each([
     new SyntaxError("fetch failed: cancelled"),
     Object.assign(new Error("fetch failed: cancelled"), { name: "ZodError" }),

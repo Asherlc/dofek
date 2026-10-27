@@ -26,15 +26,14 @@ export function isTransientNetworkErrorMessage(message: string): boolean {
 
 export function isBackgroundHealthKitTransientNetworkError(error: unknown): boolean {
   const visited = new Set<unknown>();
-  let matched = false;
   let current = error;
   while (current instanceof Error && !visited.has(current)) {
     visited.add(current);
     if (current instanceof SyntaxError || current.name === "ZodError") return false;
-    matched ||= isTransientNetworkErrorMessage(current.message);
+    if (current.cause === undefined) return isTransientNetworkErrorMessage(current.message);
     current = current.cause;
   }
-  return matched || (typeof current === "string" && isTransientNetworkErrorMessage(current));
+  return typeof current === "string" && isTransientNetworkErrorMessage(current);
 }
 
 export const HEALTHKIT_BACKGROUND_SENTRY_SOURCE = "bg-healthkit-sync";

@@ -121,6 +121,12 @@ messages do not independently create PostHog exception issues; explicit reports
 and genuine unhandled errors/rejections still do. See PostHog's
 [exception capture options](https://posthog.com/docs/error-tracking/installation/web).
 
+For wrapped errors, the underlying cause establishes the outcome. A cancellation
+message copied onto an outer wrapper does not make an underlying storage or
+authorization failure expected. Parse/schema evidence anywhere in the chain
+remains reportable; a generic wrapper around a genuine abort remains a handled
+cancellation. See the [shared classifier](../packages/telemetry/src/handled-failure.ts).
+
 ## Access failures
 
 - `403`: the token does not have read permissions for issues/events.

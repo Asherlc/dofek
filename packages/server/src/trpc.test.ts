@@ -75,6 +75,7 @@ describe("tRPC error serialization", () => {
       } catch (error) {
         upstream = error;
       }
+      expect(upstream).toBeDefined();
       const cause = new ProviderInvalidCredentialsError("Kaya", { cause: upstream });
       const result = await serializeTransportError(
         new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
@@ -98,6 +99,7 @@ describe("tRPC error serialization", () => {
     } catch (error) {
       upstream = error;
     }
+    expect(upstream).toBeDefined();
     const cause = new ProviderInvalidCredentialsError("Zepp", { cause: upstream });
     const result = await serializeTransportError(
       new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),

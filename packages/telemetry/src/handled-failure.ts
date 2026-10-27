@@ -3,12 +3,12 @@ type HandledFailure = "offline" | "cancelled" | "invalid_credentials";
 /** Classify handled outcomes only; unknown failures remain reportable. */
 export function classifyHandledFailure(error: unknown): HandledFailure | null {
   const visited = new Set<unknown>();
-  let kind: HandledFailure | null = null;
   let current = error;
   while (typeof current === "object" && current !== null && !visited.has(current)) {
     visited.add(current);
     if (current instanceof SyntaxError || (current instanceof Error && current.name === "ZodError"))
       return null;
+    let kind: HandledFailure | null = null;
     if (
       "data" in current &&
       typeof current.data === "object" &&
@@ -32,10 +32,11 @@ export function classifyHandledFailure(error: unknown): HandledFailure | null {
       ) {
         kind ??= "offline";
       }
+      if (current.cause === undefined) return kind;
       current = current.cause;
     } else {
-      break;
+      return kind;
     }
   }
-  return kind;
+  return null;
 }
