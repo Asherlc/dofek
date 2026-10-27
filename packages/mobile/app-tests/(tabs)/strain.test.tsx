@@ -421,12 +421,11 @@ describe("StrainScreen recent activity navigation", () => {
     mockStrengthsState.isFetching = true;
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
-    expect(
-      screen.getAllByRole("button", { name: /Slab · 40% · 2 sends \/ 5 climbs/ }),
-    ).toHaveLength(2);
+    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(2);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
@@ -456,6 +455,7 @@ describe("StrainScreen recent activity navigation", () => {
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
@@ -468,9 +468,7 @@ describe("StrainScreen recent activity navigation", () => {
       endDate: "2026-03-28",
       ropeMethod: "lead",
     });
-    expect(
-      screen.getAllByRole("button", { name: /Slab · 40% · 2 sends \/ 5 climbs/ }),
-    ).toHaveLength(2);
+    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(2);
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });

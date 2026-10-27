@@ -19,10 +19,21 @@ export function rockClimbingLogProjection(
   for (const [value, column] of [
     [filters.climbKind, sql`ce.climb_kind`],
     [filters.discipline, sql`ce.discipline`],
-    [filters.setting, sql`ce.setting`],
   ] as const) {
     if (value === "unknown") logPredicates.push(sql`${column} IS NULL`);
     else if (value !== undefined) logPredicates.push(sql`${column} = ${value}`);
+  }
+  if (filters.setting !== undefined) {
+    logPredicates.push(
+      filters.setting.length === 0
+        ? sql`false`
+        : sql`(${sql.join(
+            filters.setting.map((setting) =>
+              setting === "unknown" ? sql`ce.setting IS NULL` : sql`ce.setting = ${setting}`,
+            ),
+            sql` OR `,
+          )})`,
+    );
   }
   if (filters.routeProtection === "unknown") logPredicates.push(sql`ce.route_protection IS NULL`);
   else if (filters.routeProtection !== undefined)
@@ -31,6 +42,20 @@ export function rockClimbingLogProjection(
     sql`attempt.climbing_log_entry_id = ce.id`,
     sql`attempt.scope = ${filters.attemptScope ?? "climb"}`,
   ];
+  if (filters.types !== undefined) {
+    attemptPredicates.push(
+      filters.types.length === 0
+        ? sql`false`
+        : sql`(${sql.join(
+            filters.types.map((type) =>
+              type === "bouldering"
+                ? sql`ce.climb_kind = 'boulder'`
+                : sql`(ce.climb_kind = 'route' AND attempt.rope_method = ${type})`,
+            ),
+            sql` OR `,
+          )})`,
+    );
+  }
   if (filters.ropeMethod === "unknown") attemptPredicates.push(sql`attempt.rope_method IS NULL`);
   else if (filters.ropeMethod !== undefined)
     attemptPredicates.push(sql`attempt.rope_method = ${filters.ropeMethod}`);

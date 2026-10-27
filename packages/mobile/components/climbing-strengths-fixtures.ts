@@ -7,6 +7,7 @@ const angle: ClimbingStrengthsPanel = {
   contextLabel: "Bouldering · V scale · Free",
   dimension: "wall_angle",
   setting: "indoor",
+  gradeAdjustedStrengths: [],
   allGrades: {
     grades: [
       {
@@ -146,6 +147,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
         key: "boulder-setting",
         dimension: "setting",
         setting: null,
+        gradeAdjustedStrengths: [],
         allGrades: {
           grades: [
             {
@@ -288,6 +290,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
     ] satisfies ClimbingStrengthsPanel[]
   ).map((panel) => ({
     ...panel,
+    gradeAdjustedStrengths: [],
     allGrades: {
       ...panel.allGrades,
       rows: panel.allGrades.rows.map((row, index) => ({
@@ -620,6 +623,7 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
           rows: [{ key: "vertical", cells: unknownCells }],
         },
       ],
+      gradeAdjustedStrengths: [],
       allGrades: {
         grades: [{ ...unknownPooled, gradeSortValue: 0 }],
         rows: [{ key: "vertical", label: "Vertical", cells: [unknownPooled] }],
@@ -631,6 +635,330 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
           },
         ],
       },
+    },
+  ],
+};
+
+// Precomputed server response values; fixtures do not calculate metrics in the client.
+(
+  [
+    [
+      {
+        key: "angle-0",
+        expectedSuccessRate: 34.3,
+        differencePercentagePoints: -5.7,
+        sampleStatus: "available",
+      },
+      {
+        key: "angle-20",
+        expectedSuccessRate: 32.5,
+        differencePercentagePoints: 17.5,
+        sampleStatus: "available",
+      },
+      {
+        key: "angle-40",
+        expectedSuccessRate: 40,
+        differencePercentagePoints: -20,
+        sampleStatus: "available",
+      },
+    ],
+  ] satisfies ClimbingStrengthsPanel["gradeAdjustedStrengths"][]
+).forEach((summary, index) => {
+  const panel = climbingStrengthsComparisonFixture.panels[index];
+  if (!panel) throw new Error("Missing strengths fixture panel");
+  panel.gradeAdjustedStrengths = summary;
+});
+(
+  [
+    [
+      {
+        key: "slab",
+        expectedSuccessRate: 37.5,
+        differencePercentagePoints: -8.9,
+        sampleStatus: "available",
+      },
+      {
+        key: "vertical",
+        expectedSuccessRate: 20,
+        differencePercentagePoints: 13.3,
+        sampleStatus: "limited",
+      },
+    ],
+    [
+      {
+        key: "hold-slab",
+        expectedSuccessRate: 37.5,
+        differencePercentagePoints: -8.9,
+        sampleStatus: "available",
+      },
+      {
+        key: "hold-vertical",
+        expectedSuccessRate: 20,
+        differencePercentagePoints: 13.3,
+        sampleStatus: "limited",
+      },
+    ],
+    [
+      {
+        key: "indoor",
+        expectedSuccessRate: 36.8,
+        differencePercentagePoints: -1.1,
+        sampleStatus: "available",
+      },
+      {
+        key: "outdoor",
+        expectedSuccessRate: 46.2,
+        differencePercentagePoints: 3.8,
+        sampleStatus: "limited",
+      },
+    ],
+    [
+      {
+        key: "slab",
+        expectedSuccessRate: 37.5,
+        differencePercentagePoints: -8.9,
+        sampleStatus: "available",
+      },
+      {
+        key: "vertical",
+        expectedSuccessRate: 20,
+        differencePercentagePoints: 13.3,
+        sampleStatus: "limited",
+      },
+    ],
+  ] satisfies ClimbingStrengthsPanel["gradeAdjustedStrengths"][]
+).forEach((summary, index) => {
+  const panel = climbingStrengthsFixture.panels[index];
+  if (!panel) throw new Error("Missing strengths fixture panel");
+  panel.gradeAdjustedStrengths = summary;
+});
+(
+  [
+    [
+      {
+        key: "vertical",
+        expectedSuccessRate: 66.7,
+        differencePercentagePoints: 0,
+        sampleStatus: "limited",
+      },
+    ],
+  ] satisfies ClimbingStrengthsPanel["gradeAdjustedStrengths"][]
+).forEach((summary, index) => {
+  const panel = climbingStrengthsUnknownResultsFixture.panels[index];
+  if (!panel) throw new Error("Missing strengths fixture panel");
+  panel.gradeAdjustedStrengths = summary;
+});
+
+const pooledComparison = climbingStrengthsComparisonFixture.panels[0];
+if (!pooledComparison) throw new Error("Missing comparison fixture");
+pooledComparison.allGrades = {
+  grades: [
+    {
+      grade: "All grades",
+      sends: 7,
+      climbs: 20,
+      unknownOutcomes: 0,
+      successRate: 35,
+      gradeSortValue: 0,
+    },
+  ],
+  rows: [
+    {
+      key: "angle-0",
+      label: "0°",
+      cells: [
+        {
+          grade: "All grades",
+          sends: 2,
+          climbs: 7,
+          unknownOutcomes: 0,
+          successRate: 29,
+          sampleStatus: "available",
+          differencePercentagePoints: -6,
+          examples: [
+            {
+              logEntryId: "log-1",
+              activityId: "activity-1",
+              name: "Quiet Feet",
+              grade: "V3",
+              date: "2026-10-10",
+              providerId: "mountain_project",
+              sourceName: "Mountain Project",
+              sourceUrl: "https://www.mountainproject.com/route/1",
+              outcome: "sent",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      key: "angle-20",
+      label: "20°",
+      cells: [
+        {
+          grade: "All grades",
+          sends: 4,
+          climbs: 8,
+          unknownOutcomes: 0,
+          successRate: 50,
+          sampleStatus: "available",
+          differencePercentagePoints: 15,
+          examples: [],
+        },
+      ],
+    },
+    {
+      key: "angle-40",
+      label: "40°",
+      cells: [
+        {
+          grade: "All grades",
+          sends: 1,
+          climbs: 5,
+          unknownOutcomes: 0,
+          successRate: 20,
+          sampleStatus: "available",
+          differencePercentagePoints: -15,
+          examples: [],
+        },
+      ],
+    },
+  ],
+  progress: [
+    {
+      startDate: "2026-08-15",
+      endDate: "2026-08-31",
+      rows: [
+        {
+          key: "angle-0",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
+          ],
+        },
+        {
+          key: "angle-20",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
+          ],
+        },
+        {
+          key: "angle-40",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 0,
+              climbs: 0,
+              unknownOutcomes: 0,
+              successRate: null,
+              sampleStatus: "no_data",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+      rows: [
+        {
+          key: "angle-0",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 0,
+              climbs: 3,
+              unknownOutcomes: 0,
+              successRate: 0,
+              sampleStatus: "limited",
+            },
+          ],
+        },
+        {
+          key: "angle-20",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 1,
+              climbs: 3,
+              unknownOutcomes: 0,
+              successRate: 33,
+              sampleStatus: "limited",
+            },
+          ],
+        },
+        {
+          key: "angle-40",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 1,
+              climbs: 5,
+              unknownOutcomes: 0,
+              successRate: 20,
+              sampleStatus: "available",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      startDate: "2026-10-01",
+      endDate: "2026-10-26",
+      rows: [
+        {
+          key: "angle-0",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 2,
+              climbs: 7,
+              unknownOutcomes: 0,
+              successRate: 29,
+              sampleStatus: "available",
+            },
+          ],
+        },
+        {
+          key: "angle-20",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 4,
+              climbs: 8,
+              unknownOutcomes: 0,
+              successRate: 50,
+              sampleStatus: "available",
+            },
+          ],
+        },
+        {
+          key: "angle-40",
+          cells: [
+            {
+              grade: "All grades",
+              sends: 1,
+              climbs: 5,
+              unknownOutcomes: 0,
+              successRate: 20,
+              sampleStatus: "available",
+            },
+          ],
+        },
+      ],
     },
   ],
 };

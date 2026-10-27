@@ -71,6 +71,7 @@ with incomplete power coverage withheld from weekly totals.
   Its [repository](src/repositories/climbing-strengths-repository.ts) reuses the
   owned, dated canonical climbing projection while retaining all source trait
   evidence before [distinct-climb consolidation](src/services/climbing-strengths.ts).
+  The [strength profile](src/services/climbing-strength-profile.ts) compares each style’s observed sends with expected sends from its known-result grade mix. For each grade, the reference rate is the same selected-context baseline sends divided by known outcomes; expected sends are the sum of grade-specific known counts multiplied by those rates. The difference is 100 times (observed minus expected sends) divided by known style outcomes, rounded to one decimal point. This adapts the expected-event weighting described in [UKHSA standardisation guidance](https://fingertips.phe.org.uk/static-reports/public-health-technical-guidance/Standardisation/Overview_standardisation.html); it is a relative description of recorded results, not a causal estimate of ability. Unknown results contribute no score weight. Fewer than five known outcomes is limited, and no known outcomes leaves the score null. Values are computed at request time and never stored.
   Repeated attempts count once per identified climb and semantic context;
   known sends take precedence over failures. Unknown-only outcomes remain in
   total climb counts and grade lists; success rates use known outcomes only.

@@ -381,7 +381,11 @@ describe("climbingRouter", () => {
       setting: "indoor" as const,
     };
     const result = await caller.strengths(input);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input, input.endDate);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(
+      30,
+      { ...input, setting: ["indoor"] },
+      input.endDate,
+    );
     expect(execute).toHaveBeenCalledOnce();
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
@@ -398,7 +402,7 @@ describe("climbingRouter", () => {
     });
     expect(panel).toMatchObject({
       contextKey: "boulder-free-v",
-      setting: "indoor",
+      setting: null,
       grades: [{ grade: "V4", sends: 1, climbs: 3, unknownOutcomes: 1, successRate: 50 }],
       rows: [
         {
@@ -513,7 +517,7 @@ describe("climbingRouter", () => {
         },
       ],
     ]);
-    const map = await caller.locationMap({ days: 30, setting: "outdoor" });
+    const map = await caller.locationMap({ days: 30, setting: ["outdoor"] });
     expect(map.bounds).toEqual({ south: 0, north: 0, west: -122.25, east: -122.25 });
     expect(map.nodes).toEqual(
       expect.arrayContaining([

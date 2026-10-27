@@ -86,6 +86,40 @@ describe("activity gallery image copies", () => {
     expect(result[0]?.sources).toEqual([...original.sources, ...copy.sources]);
   });
 
+  it("recognizes a compressed JPEG copy of a textured full-size image", async () => {
+    const width = 1920;
+    const height = 1080;
+    const pixels = Buffer.alloc(width * height * 3);
+    let seed = 42;
+    for (let row = 0; row < height; row++) {
+      for (let column = 0; column < width; column++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const noise = (seed / 2 ** 32 - 0.5) * 80;
+        const offset = (row * width + column) * 3;
+        pixels[offset] = Math.max(0, Math.min(255, 105 + 65 * Math.sin(column / 72) + noise));
+        pixels[offset + 1] = Math.max(0, Math.min(255, 115 + 50 * Math.cos(row / 100) + noise));
+        pixels[offset + 2] = Math.max(
+          0,
+          Math.min(255, 125 + 50 * Math.sin((column + row) / 64) - noise),
+        );
+      }
+    }
+    const originalBytes = await sharp(pixels, { raw: { width, height, channels: 3 } })
+      .png()
+      .toBuffer();
+    const exportBytes = await sharp(originalBytes)
+      .jpeg({ quality: 85, chromaSubsampling: "4:2:0" })
+      .toBuffer();
+    const original = image("original.png", "peloton", width, height);
+    const copy = image("export.jpg", "strava", width, height);
+    const result = await consolidateActivityImageCopies([copy, original], async (key) =>
+      key === "original.png" ? originalBytes : exportBytes,
+    );
+
+    expect(result.map((entry) => entry.id)).toEqual(["original.png"]);
+    expect(result[0]?.sources).toEqual([...copy.sources, ...original.sources]);
+  });
+
   it.each([
     ["original.png", "copy.jpg", "image/png", "image/jpeg"],
     ["first.png", "second.png", "image/png", "image/png"],

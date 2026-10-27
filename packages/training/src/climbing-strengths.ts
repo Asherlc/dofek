@@ -64,6 +64,14 @@ const panel = profile.extend({
   dimension: z.enum(["wall_angle", "hold_type", "setting"]),
   setting: z.enum(["indoor", "outdoor", "unknown"]).nullable(),
   allGrades: profile,
+  gradeAdjustedStrengths: z.array(
+    z.object({
+      key: z.string(),
+      expectedSuccessRate: rate,
+      differencePercentagePoints: z.number().min(-100).max(100).nullable(),
+      sampleStatus: z.enum(["no_data", "limited", "available"]),
+    }),
+  ),
   coverage: z.object({ missingTraits: count, unknownOutcomes: count }),
 });
 export const climbingStrengthsSchema = z.object({
@@ -108,4 +116,17 @@ export function climbingStrengthsCountLabel(
 
 export function climbingStrengthsResultLabel(outcome: ClimbingStrengthsExample["outcome"]): string {
   return outcome === null ? "Result unknown" : outcome === "sent" ? "Sent" : "Not sent";
+}
+
+/** Presentation of the server-computed, grade-adjusted difference. */
+export function climbingStrengthsDifferenceLabel(value: number | null): string {
+  return value === null
+    ? "No comparable results"
+    : `${value > 0 ? "+" : ""}${value} percentage points vs same-grade baseline`;
+}
+
+export function climbingStrengthsAdjustedLabel(
+  strength: ClimbingStrengthsPanel["gradeAdjustedStrengths"][number] | undefined,
+): string {
+  return `${climbingStrengthsDifferenceLabel(strength?.differencePercentagePoints ?? null)}${strength?.expectedSuccessRate == null ? "" : ` · Expected send rate at these grades: ${strength.expectedSuccessRate}%`}${strength?.sampleStatus === "limited" ? " · Limited sample" : ""}`;
 }

@@ -150,7 +150,8 @@ and current acquisition states. Identical stored objects appear once. The
 copies from different providers when their aspect ratios match and their
 normalized pixels differ only within a narrow compression tolerance. It uses
 [Sharp](https://sharp.pixelplumbing.com/api-resize/) and
-[Pixelmatch](https://github.com/mapbox/pixelmatch), retains every source
+[Pixelmatch](https://github.com/mapbox/pixelmatch#api) with a per-pixel color
+tolerance of 0.07 and at least 99.99% matching pixels, retains every source
 association, and selects the larger representation, preferring PNG at equal
 resolution. Separate photos from the same provider and animated images remain
 separate. Original files are retained; comparison reads private originals only

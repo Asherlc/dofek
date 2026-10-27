@@ -198,7 +198,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(
       await repo().getMapEntries(30, {
         attemptScope: "pitch",
-        setting: "outdoor",
+        setting: ["outdoor"],
         climbKind: "route",
         ropeMethod: "lead",
         solo: false,
@@ -206,7 +206,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         protectionUsed: "sport",
       }),
     ).toEqual([expect.objectContaining({ id, grade: "5.10a" })]);
-    expect(await repo().getMapEntries(30, { attemptScope: "pitch", setting: "indoor" })).toEqual(
+    expect(await repo().getMapEntries(30, { attemptScope: "pitch", setting: ["indoor"] })).toEqual(
       [],
     );
     expect(
@@ -533,16 +533,16 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     "assumes missing %s catalogue settings are outdoor without changing raw facts",
     async (provider) => {
       await write({}, provider);
-      expect(await volume({ setting: "outdoor" })).toHaveLength(1);
-      expect(await volume({ setting: "unknown" })).toEqual([]);
+      expect(await volume({ setting: ["outdoor"] })).toHaveLength(1);
+      expect(await volume({ setting: ["unknown"] })).toEqual([]);
       const stored = await context.db.select({ setting: climb.setting }).from(climb);
       expect(stored).toEqual([{ setting: null }]);
     },
   );
   it("preserves an explicit indoor catalogue setting over the outdoor assumption", async () => {
     await write({ climb: { ...route, setting: "indoor" } }, "mountain-project");
-    expect(await volume({ setting: "indoor" })).toHaveLength(1);
-    expect(await volume({ setting: "outdoor" })).toEqual([]);
+    expect(await volume({ setting: ["indoor"] })).toHaveLength(1);
+    expect(await volume({ setting: ["outdoor"] })).toEqual([]);
   });
   it("uses verified settings for both attached and standalone filters", async () => {
     const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
@@ -551,13 +551,13 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       externalId: "outdoor",
       climb: { ...route, externalId: "outdoor-route", setting: "outdoor" },
     });
-    expect(await volume({ setting: "indoor" })).toEqual([
+    expect(await volume({ setting: ["indoor"] })).toEqual([
       expect.objectContaining({ recordedAttempts: 1 }),
     ]);
-    expect(await volume({ setting: "outdoor" })).toEqual([
+    expect(await volume({ setting: ["outdoor"] })).toEqual([
       expect.objectContaining({ recordedAttempts: 1 }),
     ]);
-    expect(await repo().getSessionSummaries(30, { setting: "outdoor" })).toEqual([]);
+    expect(await repo().getSessionSummaries(30, { setting: ["outdoor"] })).toEqual([]);
   });
   it("excludes absent source logs and restores them with unchanged attempts", async () => {
     const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");

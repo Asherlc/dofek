@@ -28,7 +28,7 @@ describe("climbing strengths PostgreSQL", () => {
       startDate: await climbingTestDate(context.db, 29),
       endDate: await climbingTestDate(context.db, 0),
     };
-    for (const id of ["mountain-project", "openbeta"])
+    for (const id of ["mountain-project", "openbeta", "wahoo"])
       await ensureProvider(context.db, id, id, undefined, TEST_USER_ID);
   });
   afterEach(async () => {
@@ -236,6 +236,61 @@ describe("climbing strengths PostgreSQL", () => {
       "Lead · Yosemite Decimal System",
     );
   });
+  it("combines bouldering and lead without including top rope", async () => {
+    for (const [kind, method] of [
+      ["boulder", "unroped"],
+      ["route", "lead"],
+      ["route", "top_rope"],
+    ] as const) {
+      await write(method, {
+        climb: {
+          externalId: method,
+          name: method,
+          kind,
+          setting: "indoor",
+          publishedGrades: [
+            {
+              value: kind === "boulder" ? "V3" : "5.10a",
+              system: kind === "boulder" ? "v_scale" : "yds",
+            },
+          ],
+        },
+        attempts: [
+          { scope: "climb", ropeMethod: method, sourceResult: "Send", qualifier: "free-send" },
+        ],
+      });
+    }
+    expect(
+      (await repo().getObservations(30, { types: ["bouldering", "lead"], setting: ["indoor"] }))
+        .map((entry) => entry.example.name)
+        .sort(),
+    ).toEqual(["lead", "unroped"]);
+    expect(await repo().getObservations(30, { types: [] })).toEqual([]);
+  });
+  it("filters multiple settings including unknown and an empty selection", async () => {
+    for (const setting of ["indoor", "outdoor", null] as const) {
+      await write(
+        String(setting),
+        {
+          climb: {
+            externalId: String(setting),
+            name: String(setting),
+            kind: "route",
+            setting,
+            publishedGrades: [{ value: "5.10a", system: "yds" }],
+          },
+        },
+        "wahoo",
+      );
+    }
+    const observations = await repo().getObservations(30, { setting: ["indoor", "unknown"] });
+    expect(observations.map((entry) => entry.setting)).toEqual(
+      expect.arrayContaining(["indoor", null]),
+    );
+    expect(observations).toHaveLength(2);
+    expect(await repo().getObservations(30, { setting: [] })).toEqual([]);
+    expect(await repo().getObservations(30)).toHaveLength(3);
+  });
   it("filters dates, settings, access windows and deleted attached activity", async () => {
     const old = await write("old", { climbedOn: await climbingTestDate(context.db, 40) });
     const visible = await write("visible");
@@ -243,7 +298,7 @@ describe("climbing strengths PostgreSQL", () => {
     await write("attached", { activityId: outing.id });
     expect((await repo().getObservations(30)).map((e) => e.example.logEntryId)).toContain(visible);
     expect((await repo().getObservations(30)).map((e) => e.example.logEntryId)).not.toContain(old);
-    expect(await repo().getObservations(30, { setting: "indoor" })).toEqual([]);
+    expect(await repo().getObservations(30, { setting: ["indoor"] })).toEqual([]);
     await context.db
       .update(activity)
       .set({ deletedAt: new Date() })

@@ -17,6 +17,30 @@ const firstCell = firstRow?.cells[0];
 if (!firstRow || !secondRow || !firstCell) throw new Error("Missing row fixture");
 
 describe("ClimbingStrengthsChart", () => {
+  it("numbers progress markers and legend entries beyond a palette cycle", () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      ...firstRow,
+      key: `style-${index}`,
+      label: `Style ${index}`,
+    }));
+    const dense = {
+      ...panel,
+      rows,
+      progress: panel.progress.map((month) => ({
+        ...month,
+        rows: rows.map((row) => ({
+          ...row,
+          cells: [{ ...firstCell, grade: "V4", successRate: 50 }],
+        })),
+      })),
+    };
+    const result = render(
+      <ClimbingStrengthsChart panel={dense} view="progress" grade="V4" onSelect={() => {}} />,
+    );
+    expect(screen.getByText("8. Style 7")).toBeTruthy();
+    const series = result.container.querySelector('G[accessibilityLabel="Style 7 progress"]');
+    expect(series?.querySelector("SvgText")?.textContent).toBe("8");
+  });
   it("labels every style curve when All grades remains selected", () => {
     render(
       <ClimbingStrengthsChart panel={panel} view="curves" grade="All grades" onSelect={() => {}} />,
@@ -102,7 +126,7 @@ describe("ClimbingStrengthsChart", () => {
       <ClimbingStrengthsChart panel={panel} view="progress" grade="V4" onSelect={() => {}} />,
     );
     expect(rendered.container.querySelectorAll("Circle")).toHaveLength(2);
-    expect(rendered.container.querySelectorAll("Line")).toHaveLength(6);
+    expect(rendered.container.querySelectorAll("Line")).toHaveLength(3);
   });
   it("explains insufficient radar axes while retaining exact values", () => {
     render(<ClimbingStrengthsChart panel={panel} view="radar" grade="V4" onSelect={() => {}} />);
@@ -145,7 +169,7 @@ describe("ClimbingStrengthsChart", () => {
   });
   it("keeps missing months as gaps and displays supplied zero months", () => {
     render(<ClimbingStrengthsChart panel={panel} view="progress" grade="V4" onSelect={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "View Progress data" }));
+    fireEvent.click(screen.getByRole("button", { name: "View Monthly send rate data" }));
     expect(screen.getByLabelText(/2026-08-15–2026-08-31 · Slab · V4.*No data/)).toBeTruthy();
     expect(
       screen.getByLabelText(/2026-10-01–2026-10-26 · Slab · V4.*0%.*0 sends \/ 2 climbs/),
@@ -182,7 +206,7 @@ describe("ClimbingStrengthsChart", () => {
         const points = result.container.querySelectorAll("Circle");
         expect(points).toHaveLength(20);
         expect(points[0]?.getAttribute("cx")).toBe("157");
-        expect(Number(points[0]?.getAttribute("cy"))).toBeCloseTo(110.4);
+        expect(Number(points[0]?.getAttribute("cy"))).toBeCloseTo(164.68);
       }
       fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
       expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 send \/ 3 climbs/)).toBeTruthy();
@@ -222,3 +246,93 @@ it.each(["gaps", "pyramids"] as const)(
     expect(plotLabels).toContain("Result unknown");
   },
 );
+
+it("draws the supplied same-grade baseline across all grades", () => {
+  const result = render(
+    <ClimbingStrengthsChart panel={panel} view="curves" grade="All grades" onSelect={() => {}} />,
+  );
+  expect(screen.getByText("Same-grade baseline")).toBeTruthy();
+  expect(result.container.querySelectorAll('Line[stroke-dasharray="5 4"]').length).toBeGreaterThan(
+    0,
+  );
+});
+
+it("identifies limited samples in curve data and marker labels", () => {
+  const result = render(
+    <ClimbingStrengthsChart panel={panel} view="curves" grade="All grades" onSelect={() => {}} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "View Send rate across grades data" }));
+  expect(screen.getByRole("button", { name: /Slab · V4: .*Limited sample/ })).toBeTruthy();
+  expect(
+    Array.from(result.container.querySelectorAll("Circle")).some((node) =>
+      node.getAttribute("accessibilityLabel")?.includes("Limited sample"),
+    ),
+  ).toBe(true);
+});
+
+it("places grade-adjusted weaknesses inside and strengths outside the zero baseline", () => {
+  const source = climbingStrengthsComparisonFixture.panels[0];
+  if (!source) throw new Error("Missing fixture");
+  const adjusted = {
+    ...source,
+    gradeAdjustedStrengths: source.gradeAdjustedStrengths.map((entry, index) => ({
+      ...entry,
+      differencePercentagePoints: [-40, 0, 40][index] ?? 0,
+    })),
+  };
+  const result = render(
+    <ClimbingStrengthsChart
+      panel={climbingStrengthsGradePanel(adjusted, "All grades")}
+      view="radar"
+      grade="All grades"
+      onSelect={() => {}}
+    />,
+  );
+  const observed = result.container
+    .querySelector("Polygon[fill-opacity]")
+    ?.getAttribute("points")
+    ?.split(" ")[0]
+    ?.split(",")
+    .map(Number);
+  const baseline = result.container
+    .querySelector("Polygon[stroke-dasharray]")
+    ?.getAttribute("points")
+    ?.split(" ")[0]
+    ?.split(",")
+    .map(Number);
+  expect(observed).toBeDefined();
+  expect(baseline).toBeDefined();
+  expect(observed?.[0]).toBe(baseline?.[0]);
+  expect(observed?.[1]).toBeGreaterThan(baseline?.[1] ?? 0);
+  const vertices = result.container
+    .querySelector("Polygon[fill-opacity]")
+    ?.getAttribute("points")
+    ?.split(" ")
+    .map((point) => point.split(",").map(Number));
+  expect(vertices).toHaveLength(3);
+  vertices?.forEach(([x = 0, y = 0], index) => {
+    expect(Math.hypot(x - 150, y - 150)).toBeCloseTo([24, 40, 56][index] ?? 0);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
+  expect(
+    screen.getByRole("button", { name: /-40 percentage points vs same-grade baseline/ }),
+  ).toBeTruthy();
+});
+
+it("announces the adjusted radar scale to assistive technology", () => {
+  const source = climbingStrengthsComparisonFixture.panels[0];
+  if (!source) throw new Error("Missing fixture");
+  render(
+    <ClimbingStrengthsChart
+      panel={climbingStrengthsGradePanel(source, "All grades")}
+      view="radar"
+      grade="All grades"
+      onSelect={() => {}}
+    />,
+  );
+  expect(
+    screen.getByRole("image", {
+      name: /Strengths and weaknesses.*Grade-adjusted difference on a −100 to \+100/,
+    }),
+  ).toBeTruthy();
+});

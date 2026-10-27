@@ -72,7 +72,7 @@ export async function consolidateActivityImageCopies<T extends GalleryImage>(
       if (!second || first.width !== second.width || first.height !== second.height) continue;
       // Allow export compression noise, while requiring 99.99% of pixels to match.
       const differences = pixelmatch(first.data, second.data, null, first.width, first.height, {
-        threshold: 0.05,
+        threshold: 0.07,
         includeAA: true,
       });
       // Cached comparisons still need to let other requests use the event loop.

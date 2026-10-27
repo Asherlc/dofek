@@ -6,16 +6,14 @@ import type {
 import {
   ALL_CLIMBING_GRADES,
   climbingStrengthsCountLabel,
+  climbingStrengthsDifferenceLabel,
   climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
 } from "@dofek/training/climbing-strengths";
 import {
-  CLIMBING_STRENGTHS_PURPOSES,
-  CLIMBING_STRENGTHS_VIEWS,
-  type ClimbingStrengthsView,
-  climbingStrengthsPurpose,
-  climbingStrengthsPurposeView,
+  CLIMBING_STRENGTHS_TABS,
+  type ClimbingStrengthsTab,
 } from "@dofek/training/climbing-strengths-views";
 import { useState } from "react";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
@@ -24,9 +22,8 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 const dimensions = {
   wall_angle: "Wall angle",
   hold_type: "Hold type",
-  setting: "Indoor & outdoor",
+  setting: "Setting",
 };
-const settings = { indoor: "Indoor", outdoor: "Outdoor", unknown: "Setting unknown" };
 function observed(panel: ClimbingStrengthsPanel) {
   return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
 }
@@ -48,10 +45,10 @@ export function ClimbingStrengths({
   data: Strengths | undefined;
   loading?: boolean;
 }) {
+  const [view, setView] = useState<ClimbingStrengthsTab>("radar");
   const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
     null,
   );
-  const [view, setView] = useState<ClimbingStrengthsView>("gaps");
   const panels = data?.panels ?? [];
   const dimension = selectedDimension ?? preferred(panels)?.dimension ?? "wall_angle";
   const contexts = [
@@ -61,22 +58,6 @@ export function ClimbingStrengths({
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   return (
     <div className="space-y-4">
-      <fieldset aria-label="Strengths view" className="flex flex-wrap gap-5 border-b border-border">
-        {CLIMBING_STRENGTHS_PURPOSES.map((purpose) => (
-          <button
-            key={purpose.value}
-            type="button"
-            aria-pressed={climbingStrengthsPurpose(view) === purpose.value}
-            onClick={() => {
-              if (climbingStrengthsPurpose(view) !== purpose.value)
-                setView(climbingStrengthsPurposeView(purpose.value));
-            }}
-            className={`min-h-11 border-b-2 pb-2 text-sm font-medium ${climbingStrengthsPurpose(view) === purpose.value ? "border-accent text-accent" : "border-transparent text-muted"}`}
-          >
-            {purpose.label}
-          </button>
-        ))}
-      </fieldset>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <fieldset className="flex flex-wrap gap-2">
           <legend className="mb-2 text-xs text-muted">Break down by</legend>
@@ -104,39 +85,20 @@ export function ClimbingStrengths({
               </button>
             ))}
         </fieldset>
-        <details className="text-xs text-muted">
-          <summary className="min-h-11 cursor-pointer py-3 text-foreground">Chart options</summary>
-          <div className="space-y-3 py-2">
-            <label className="block text-xs text-muted">
-              View
-              <select
-                className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-                value={view}
-                onChange={(event) => {
-                  const next = CLIMBING_STRENGTHS_VIEWS.find(
-                    (item) => item.value === event.target.value,
-                  );
-                  if (next) setView(next.value);
-                }}
-              >
-                {CLIMBING_STRENGTHS_VIEWS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex min-h-11 items-center gap-2">
-              <input
-                type="checkbox"
-                checked={dimension === "setting"}
-                onChange={(event) => setDimension(event.target.checked ? "setting" : null)}
-              />
-              Compare indoor/outdoor
-            </label>
-          </div>
-        </details>
       </div>
+      <fieldset aria-label="Strengths view" className="flex gap-6 border-b border-border">
+        {CLIMBING_STRENGTHS_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            aria-pressed={view === tab.value}
+            onClick={() => setView(tab.value)}
+            className={`min-h-11 border-b-2 pb-3 text-sm ${view === tab.value ? "border-accent font-medium text-accent" : "border-transparent text-muted"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </fieldset>
       {!panels.length ? (
         <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
       ) : null}
@@ -164,71 +126,17 @@ function ClimbingStrengthsContext({
 }: {
   panels: ClimbingStrengthsPanel[];
   dimension: ClimbingStrengthsPanel["dimension"];
-  view: ClimbingStrengthsView;
+  view: ClimbingStrengthsTab;
   label: string | undefined;
 }) {
-  const [gradeKey, setGradeKey] = useState<string | null>(null);
   const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
-  const grades = [
-    ...new Map(
-      selectedPanels.flatMap((panel) => panel.grades.map((grade) => [grade.grade, grade] as const)),
-    ).values(),
-  ].sort((first, second) => first.gradeSortValue - second.gradeSortValue);
-  const grade =
-    gradeKey === ALL_CLIMBING_GRADES
-      ? ALL_CLIMBING_GRADES
-      : (grades.find((item) => item.grade === gradeKey)?.grade ??
-        grades.find((item) =>
-          selectedPanels.some((panel) =>
-            panel.rows.some((row) =>
-              row.cells.some(
-                (cell) => cell.grade === item.grade && cell.sampleStatus !== "no_data",
-              ),
-            ),
-          ),
-        )?.grade ??
-        ALL_CLIMBING_GRADES);
   return (
     <section className="space-y-3" aria-label={label}>
       {label ? <h3 className="font-semibold">{label}</h3> : null}
-      {view !== "profile" && view !== "curves" && view !== "pyramids" && grades.length > 0 ? (
-        <label className="text-xs text-muted">
-          Grade
-          <select
-            className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-            value={grade}
-            onChange={(event) => setGradeKey(event.target.value)}
-          >
-            <option value={ALL_CLIMBING_GRADES}>{ALL_CLIMBING_GRADES}</option>
-            {grades.map((item) => (
-              <option key={item.grade} value={item.grade}>
-                {item.grade}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      {grade === ALL_CLIMBING_GRADES &&
-      view !== "profile" &&
-      view !== "curves" &&
-      view !== "pyramids" &&
-      grades.length > 0 ? (
-        <p className="text-xs text-muted">
-          All grades combines different difficulties; comparisons are not grade-adjusted.
-        </p>
-      ) : null}
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
           <div key={panel.key} className="space-y-3">
-            {dimension !== "setting" && panel.setting ? (
-              <h4 className="text-sm font-medium">{settings[panel.setting]}</h4>
-            ) : null}
-            <ClimbingStrengthsPanelContent
-              panel={panel}
-              view={view}
-              grade={grade}
-              onGradeChange={setGradeKey}
-            />
+            <ClimbingStrengthsPanelContent panel={panel} view={view} />
           </div>
         ))
       ) : (
@@ -244,106 +152,103 @@ function ClimbingStrengthsContext({
 function ClimbingStrengthsPanelContent({
   panel,
   view,
-  grade,
-  onGradeChange,
 }: {
   panel: ClimbingStrengthsPanel;
-  view: ClimbingStrengthsView;
-  grade: string;
-  onGradeChange: (grade: string) => void;
+  view: ClimbingStrengthsTab;
 }) {
   const [selected, setSelected] = useState<{ row: string; grade: string } | null>(null);
-  const row =
-    selected &&
-    (selected.grade === ALL_CLIMBING_GRADES ||
-      panel.grades.some((item) => item.grade === selected.grade))
-      ? (grade === ALL_CLIMBING_GRADES ? panel.allGrades.rows : panel.rows).find(
-          (item) => item.key === selected.row,
-        )
-      : undefined;
-  const cell = row?.cells.find((item) => item.grade === grade);
-  const gradePanel = climbingStrengthsGradePanel(panel, grade);
-  const selectCell = (rowKey: string, selectedGrade: string) => {
-    onGradeChange(selectedGrade);
-    setSelected({ row: rowKey, grade: selectedGrade });
-  };
+  const displayPanel =
+    view === "profile" ? panel : climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
+  const row = displayPanel.rows.find((item) => item.key === selected?.row);
+  const cell = row?.cells.find((item) => item.grade === selected?.grade);
   return (
     <div className="space-y-3">
       {!observed(panel) ? (
         <QueryStatePanel
           variant="empty"
-          message={
-            "No recorded " +
-            dimensions[panel.dimension].toLowerCase() +
-            " observations for this context."
-          }
-        />
-      ) : view !== "profile" ? (
-        <ClimbingStrengthsChart
-          panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
-          view={view}
-          grade={grade}
-          selectedRow={row?.key ?? null}
-          onSelectCell={selectCell}
+          message={`No recorded ${dimensions[panel.dimension].toLowerCase()} observations for this context.`}
         />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-separate border-spacing-1 text-sm">
-            <caption className="sr-only">
-              Success by grade and {dimensions[panel.dimension].toLowerCase()}
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" className="text-left text-muted">
-                  Style
-                </th>
-                {panel.grades.map((grade) => (
-                  <th key={grade.grade} scope="col" className="p-2 text-muted">
-                    {grade.grade}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {panel.rows.map((item) => (
-                <tr key={item.key}>
-                  <th scope="row" className="pr-3 text-left font-medium">
-                    {item.label}
-                  </th>
-                  {item.cells.map((value) => (
-                    <td key={value.grade}>
-                      <button
-                        type="button"
-                        aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}`}
-                        aria-pressed={row?.key === item.key && cell?.grade === value.grade}
-                        onClick={() => selectCell(item.key, value.grade)}
-                        className={`min-h-20 w-full min-w-24 rounded-lg border p-2 text-center focus-visible:outline-2 focus-visible:outline-accent ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent ring-offset-2 ring-offset-surface-solid" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
-                        style={
-                          value.successRate === null
-                            ? undefined
-                            : {
-                                backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${value.successRate}% * 0.35), var(--color-surface-solid))`,
-                                backgroundImage:
-                                  value.sampleStatus === "limited"
-                                    ? "repeating-linear-gradient(135deg, transparent, transparent 5px, var(--color-border) 5px, var(--color-border) 6px)"
-                                    : undefined,
-                              }
-                        }
-                      >
-                        <span className="block text-lg font-semibold">{rateLabel(value)}</span>
-                        <span className="block text-xs">
-                          {value.sampleStatus === "no_data"
-                            ? "No recorded climbs"
-                            : climbingStrengthsCountLabel(value)}
-                        </span>
-                      </button>
-                    </td>
+        <>
+          <h4 className="font-medium">
+            {view === "radar"
+              ? "Strengths and weaknesses"
+              : view === "profile"
+                ? "Send rate by grade and style"
+                : "Monthly send rate"}
+          </h4>
+          {view === "radar" ? (
+            <p className="text-sm text-muted">
+              Compared with your usual results at the same grades. Outside the dashed line is
+              stronger; inside is weaker.
+            </p>
+          ) : view === "progress" ? (
+            <p className="text-sm text-muted">
+              Combines all grades; changes can reflect the difficulty of climbs recorded each month.
+            </p>
+          ) : null}
+          {view === "profile" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full border-separate border-spacing-1 text-sm">
+                <caption className="sr-only">
+                  Success by grade and {dimensions[panel.dimension].toLowerCase()}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className="text-left text-muted">
+                      Style
+                    </th>
+                    {panel.grades.map((grade) => (
+                      <th scope="col" key={grade.grade} className="p-2 text-muted">
+                        {grade.grade}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {panel.rows.map((item) => (
+                    <tr key={item.key}>
+                      <th scope="row" className="pr-3 text-left font-medium">
+                        {item.label}
+                      </th>
+                      {item.cells.map((value) => (
+                        <td key={value.grade}>
+                          <button
+                            type="button"
+                            aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}${value.sampleStatus === "limited" ? " · Limited sample" : ""}`}
+                            aria-pressed={row?.key === item.key && cell?.grade === value.grade}
+                            onClick={() => setSelected({ row: item.key, grade: value.grade })}
+                            className={`min-h-14 w-full min-w-24 rounded-lg border p-2 text-center ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
+                            style={
+                              value.successRate === null
+                                ? undefined
+                                : {
+                                    backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${value.successRate}% * 0.4), var(--color-surface-solid))`,
+                                  }
+                            }
+                          >
+                            <span className="block text-lg font-semibold">{rateLabel(value)}</span>
+                            {value.sampleStatus === "limited" ? (
+                              <span className="block text-xs">Limited sample</span>
+                            ) : null}
+                          </button>
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <ClimbingStrengthsChart
+              panel={displayPanel}
+              view={view}
+              grade={ALL_CLIMBING_GRADES}
+              selectedRow={cell ? (row?.key ?? null) : null}
+              onSelectCell={(row, grade) => setSelected({ row, grade })}
+            />
+          )}
+        </>
       )}
       {cell && row ? (
         <section
@@ -355,13 +260,21 @@ function ClimbingStrengthsPanelContent({
           </h3>
           {view === "progress" ? (
             <p className="text-xs text-muted">
-              Across the selected period · counts and source climbs below apply to the whole period.
+              Across the selected period · counts and source climbs apply to the whole period.
             </p>
           ) : null}
           <p>
             {rateLabel(cell)} · {climbingStrengthsCountLabel(cell)}
           </p>
-          {cell.differencePercentagePoints !== null ? (
+          {view === "radar" ? (
+            <p className="text-xs text-muted">
+              {climbingStrengthsDifferenceLabel(
+                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key)
+                  ?.differencePercentagePoints ?? null,
+              )}
+            </p>
+          ) : null}
+          {view !== "radar" && cell.differencePercentagePoints !== null ? (
             <p className="text-xs text-muted">
               {cell.differencePercentagePoints > 0 ? "+" : ""}
               {cell.differencePercentagePoints} percentage points vs{" "}
