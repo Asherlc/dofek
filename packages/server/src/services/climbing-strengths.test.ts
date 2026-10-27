@@ -912,7 +912,7 @@ describe("climbing strengths", () => {
     ]);
     expect(result.coverage.missingGrades).toBe(0);
     const panel = result.panels.find((panel) => panel.dimension === "setting");
-    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Selected climbs" });
+    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Bouldering" });
     expect(panel?.grades[0]).toMatchObject({ grade: "V4", sends: 1, climbs: 1 });
     expect(panel?.rows[0]?.cells[0]?.examples[0]).toMatchObject({ grade: "V4", outcome: "sent" });
   });

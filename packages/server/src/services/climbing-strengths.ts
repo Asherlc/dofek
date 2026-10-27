@@ -1,6 +1,6 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { ClimbingWallAngle } from "@dofek/training/climbing-experience";
-import type { FreeRockGradeSystem } from "@dofek/training/climbing-grades";
+import { type FreeRockGradeSystem, gradeSystemLabel } from "@dofek/training/climbing-grades";
 import type {
   ClimbingStrengths,
   ClimbingStrengthsExample,
@@ -159,7 +159,17 @@ export function buildClimbingStrengths(
   const panels: ClimbingStrengthsPanel[] = [];
   const contexts = new Set(entries.map((entry) => entry.contextKey));
   const contextKey = contexts.size === 1 ? (entries[0]?.contextKey ?? "selected") : "selected";
-  const contextLabel = "Selected climbs";
+  const representative = entries[0];
+  const label = representative?.contextLabel ?? "Selected climbs";
+  const suffix = representative?.gradeSystem
+    ? ` · ${gradeSystemLabel(representative.gradeSystem)}`
+    : null;
+  const contextLabel =
+    contexts.size > 1
+      ? "Selected climbs"
+      : suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
+        ? label.slice(0, -suffix.length)
+        : label;
   // Keep same-grade baselines specific to each type and grading system.
   const selected = entries.map((entry) => ({
     ...entry,
