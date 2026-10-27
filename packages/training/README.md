@@ -63,7 +63,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), chart selection for recorded aid status and route methods, concise lane and setting labels, and period/exact-value formatting shared by web and mobile |
 | `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles with server-computed rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
-| `climbing-strengths-views` | [Selectable strengths view names and value union](src/climbing-strengths-views.ts), with Grade profile as the default presentation |
+| `climbing-strengths-views` | [Shared Styles / Grades / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with Styles opening the same-grade comparison by default |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
