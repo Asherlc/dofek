@@ -1274,7 +1274,8 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
-    expect(screen.getByText("Top rope · Fell/Hung")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getByText("Fell/Hung")).toBeTruthy();
     expect(screen.getByText("Attempts: 1")).toBeTruthy();
     const controls = within(climbsCard).getAllByRole("button", {
       name: /^Attach entry \d+, .* to this activity$/,

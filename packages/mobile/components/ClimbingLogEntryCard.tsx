@@ -1,5 +1,5 @@
 import {
-  formatClimbingAttemptStyles,
+  climbingAttemptStyleLabels,
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
@@ -12,13 +12,14 @@ import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 import { RouteMap } from "./RouteMap";
 
-function ResultBadge({ label }: { label: string }) {
-  const palette =
-    label === "Attempted"
-      ? operationalStatusColors.warning
-      : label === "Completed"
-        ? operationalStatusColors.info
-        : operationalStatusColors.success;
+function ClimbingBadge({
+  label,
+  tone = label === "Attempted" ? "warning" : label === "Completed" ? "info" : "success",
+}: {
+  label: string;
+  tone?: keyof typeof operationalStatusColors;
+}) {
+  const palette = operationalStatusColors[tone];
   return (
     <View
       style={[
@@ -53,7 +54,7 @@ export function ClimbingLogEntryCard({
 }) {
   const name = climbingLogEntryName(entry);
   const attachmentPending = attachmentState?.pending ?? false;
-  const ropeMethods = formatClimbingAttemptStyles(entry.attempts);
+  const attemptStyles = climbingAttemptStyleLabels(entry.attempts);
   const climbResultLabels = entry.attempts
     .filter((attempt) => attempt.scope === "climb")
     .flatMap((attempt) => attempt.rockResultLabels);
@@ -96,10 +97,20 @@ export function ClimbingLogEntryCard({
           />
         </View>
       )}
-      {ropeMethods && <Text style={styles.summary}>{ropeMethods}</Text>}
+      {attemptStyles.map((labels) => (
+        <View key={labels.join(":")} style={styles.resultRow}>
+          {labels.map((label) => (
+            <ClimbingBadge
+              key={label}
+              label={label}
+              tone={label === "Fell/Hung" ? "warning" : "neutral"}
+            />
+          ))}
+        </View>
+      ))}
       {(recordedOutcome || recordedResult) && (
         <View style={styles.resultRow}>
-          {recordedOutcome && <ResultBadge label={recordedOutcome} />}
+          {recordedOutcome && <ClimbingBadge label={recordedOutcome} />}
           {recordedResult && <Text style={styles.summary}>{recordedResult}</Text>}
         </View>
       )}
@@ -122,7 +133,7 @@ export function ClimbingLogEntryCard({
                 resultLabels,
               )}
             </Text>
-            {outcome && <ResultBadge label={outcome} />}
+            {outcome && <ClimbingBadge label={outcome} />}
           </View>
         );
       })}
@@ -133,7 +144,7 @@ export function ClimbingLogEntryCard({
               {attempt.rockResultLabels
                 .filter((label) => label !== "sent" || attempt.rockResultLabels.length === 1)
                 .map((label) => (
-                  <ResultBadge key={label} label={label === "sent" ? "Sent" : label} />
+                  <ClimbingBadge key={label} label={label === "sent" ? "Sent" : label} />
                 ))}
             </View>
           ),

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -23,7 +24,13 @@ it.each(["lead", "top_rope", "follow"] as const)(
       </ul>,
     );
     const method = { lead: "Lead", top_rope: "Top rope", follow: "Follow" }[ropeMethod];
-    expect(screen.getByText(`${method} · Fell/Hung`)).toBeInTheDocument();
+    const methodBadge = screen.getByText(method);
+    const fallBadge = screen.getByText("Fell/Hung");
+    expect(methodBadge).toHaveClass("rounded-full");
+    expect(methodBadge).toHaveStyle({ backgroundColor: operationalStatusColors.neutral.surface });
+    expect(fallBadge).toHaveClass("rounded-full");
+    expect(fallBadge).toHaveStyle({ backgroundColor: operationalStatusColors.warning.surface });
+    expect(methodBadge.parentElement).toBe(fallBadge.parentElement);
     expect(screen.queryByText(/Attempted|Completed|Sent/)).not.toBeInTheDocument();
   },
 );
@@ -190,7 +197,7 @@ it.each(["Onsight", "Flash"] as const)(
     );
     expect(screen.getByText("Blue boulder")).toBeInTheDocument();
     expect(screen.getByText("V5")).toBeInTheDocument();
-    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByText(label)).toHaveClass("rounded-full");
     expect(screen.queryByText(/Attempts:|completed/i)).not.toBeInTheDocument();
   },
 );
