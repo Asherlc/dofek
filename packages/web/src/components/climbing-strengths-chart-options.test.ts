@@ -745,10 +745,14 @@ it("omits unscored radar axes and keeps zero scores with explicit sample qualifi
     "All grades",
     null,
   );
-  expect(option.radar?.indicator).toEqual([
-    { name: "Vertical", min: -100, max: 100 },
-    { name: "Overhang", min: -100, max: 100 },
-  ]);
+  expect(option).toMatchObject({
+    radar: {
+      indicator: [
+        { name: "Vertical", min: -100, max: 100 },
+        { name: "Overhang", min: -100, max: 100 },
+      ],
+    },
+  });
   const points = z
     .array(z.object({ value: z.array(z.number()), tooltipText: z.string() }))
     .parse(option.series[0]?.data);
@@ -763,5 +767,5 @@ it("omits unscored radar axes and keeps zero scores with explicit sample qualifi
     "All grades",
     null,
   );
-  expect(missing.radar?.indicator).toEqual([]);
+  expect(missing).toMatchObject({ radar: { indicator: [] } });
 });
