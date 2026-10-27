@@ -579,6 +579,16 @@ The [source repository](src/repositories/activity-metric-sources-repository.ts) 
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
 
+`activity.powerWork` accepts the activity ID and optional `powerSourceId`, returning
+mechanical work in kJ plus recorded-power coverage. Its
+[loader](src/repositories/activity-metric-sources-repository.ts) resolves full samples
+within the owned canonical activity window and reuses the
+[cycling workout calculation](../training/src/cycling-workout-metrics.ts), including
+its gap policy. It keeps zero power distinct from missing power. Chart downsampling
+does not affect this calculation. Watts are joules per second
+([NIST](https://www.nist.gov/glossary-term/34606)); this endpoint does not estimate
+metabolic calorie expenditure.
+
 WHOOP Bluetooth uploads retain the strap's reported BPM independently of beat
 intervals through the [upload repository](src/repositories/whoop-ble-sync-repository.ts).
 Reported BPM takes precedence over an interval-derived reading at the same

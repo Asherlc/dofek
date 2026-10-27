@@ -18,6 +18,15 @@ export const activityMetricSourcesSchema = z.array(
 );
 export type ActivityMetricSources = z.infer<typeof activityMetricSourcesSchema>;
 
+export const activityPowerWorkSchema = z.object({
+  workKilojoules: z.number().nonnegative().nullable(),
+  coverage: z.object({
+    coveredSeconds: z.number().int().nonnegative(),
+    coveragePct: z.number().min(0).max(100),
+  }),
+});
+export type ActivityPowerWork = z.infer<typeof activityPowerWorkSchema>;
+
 export const ACTIVITY_CHART_METRICS = [
   { key: "heartRate", channel: "heart_rate", label: "Heart Rate" },
   { key: "power", channel: "power", label: "Power" },

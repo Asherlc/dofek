@@ -13,6 +13,7 @@ import {
 } from "../routers/clickhouse-integration-test-models.ts";
 import {
   getActivityMetricSources,
+  getActivityPowerWork,
   getActivitySourceHrZones,
 } from "./activity-metric-sources-repository.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
@@ -87,6 +88,7 @@ describe("activity metric source selection", () => {
       ...scalarSchemas,
       ...rawSchemas,
       buildTestAnalyticsTableStatement("analytics.activity_stream_points"),
+      buildTestAnalyticsTableStatement("analytics.activity_sensor_sample"),
       buildTestAnalyticsTableStatement("analytics.resting_heart_rate_sleep_window"),
     ]) {
       await executeCommand(query);
@@ -180,6 +182,69 @@ describe("activity metric source selection", () => {
     expect(wahoo.find((zone) => zone.zone === 1)?.seconds).toBe(0);
     const missing = await store.getPowerZoneSeconds(window, 200, "not-a-source");
     expect(missing.every((zone) => zone.seconds === 0)).toBe(true);
+  });
+  it("integrates the selected device's full power stream without crossing users, activities, or time windows", async () => {
+    const rideId = randomUUID();
+    const powerWindow = {
+      ...window,
+      activityId: rideId,
+      memberActivityIds: [rideId],
+      startedAt: "2026-10-20T19:00:00.000Z",
+      endedAt: "2026-10-20T19:00:12.000Z",
+    };
+    await executeCommand(`INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, device_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:00', '2026-10-20', 'power', 'wahoo', 'pedals', 200, 1, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:00', '2026-10-20', 'power', 'wahoo', 'pedals', 3000, 2, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:01', '2026-10-20', 'power', 'wahoo', 'pedals', 0, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 19:00:02', '2026-10-20', 'power', 'wahoo', 'pedals', 300, 1, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:10', '2026-10-20', 'power', 'wahoo', 'pedals', 100, 1, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:11', '2026-10-20', 'power', 'wahoo', 'pedals', 100, 1, 0, 1),
+      (generateUUIDv4(), '${randomUUID()}', '${userId}', '2026-10-20 19:00:00', '2026-10-20', 'power', 'wahoo', 'pedals', 5000, 0, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${randomUUID()}', '2026-10-20 19:00:00', '2026-10-20', 'power', 'wahoo', 'pedals', 5000, 0, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 18:59:59', '2026-10-20', 'power', 'wahoo', 'pedals', 5000, 0, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:13', '2026-10-20', 'power', 'wahoo', 'pedals', 5000, 0, 0, 1),
+      (generateUUIDv4(), '${rideId}', '${userId}', '2026-10-20 19:00:03', '2026-10-20', 'power', 'wahoo', 'pedals', 5000, 0, 1, 1)`);
+    await executeCommand(`INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, device_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      SELECT generateUUIDv4(), toUUID('${rideId}'), toUUID('${userId}'),
+        toDateTime64('2026-10-20 19:00:00', 6, 'UTC') + toIntervalSecond(number),
+        toDate('2026-10-20'), 'power', 'wahoo', 'trainer', 0, 0, 0, 1
+      FROM numbers(12)`);
+
+    expect(await getActivityPowerWork(store, powerWindow, '["wahoo","pedals"]')).toEqual({
+      workKilojoules: 0.7,
+      coverage: { coveredSeconds: 5, coveragePct: 41.7 },
+    });
+    expect(await getActivityPowerWork(store, powerWindow, '["wahoo","trainer"]')).toEqual({
+      workKilojoules: 0,
+      coverage: { coveredSeconds: 12, coveragePct: 100 },
+    });
+    expect(await getActivityPowerWork(store, powerWindow, "missing")).toEqual({
+      workKilojoules: null,
+      coverage: { coveredSeconds: 0, coveragePct: 0 },
+    });
+  });
+
+  it("uses canonical undownsampled power when no source is selected", async () => {
+    const rideId = randomUUID();
+    const powerWindow = {
+      ...window,
+      activityId: rideId,
+      memberActivityIds: [rideId],
+      startedAt: "2026-10-20T20:00:00.000Z",
+      endedAt: "2026-10-20T20:00:12.000Z",
+    };
+    await executeCommand(`INSERT INTO analytics.activity_sensor_sample
+      (activity_id, user_id, recorded_at, channel, scalar, refresh_version, is_deleted)
+      SELECT toUUID('${rideId}'), toUUID('${userId}'),
+        toDateTime64('2026-10-20 20:00:00', 6, 'UTC') + toIntervalSecond(number),
+        'power', 250, 1, 0 FROM numbers(12)`);
+    expect(await getActivityPowerWork(store, powerWindow)).toEqual({
+      workKilojoules: 3,
+      coverage: { coveredSeconds: 12, coveragePct: 100 },
+    });
   });
   it("calculates zones from the selected provider, excluding other providers", async () => {
     const zones = await getActivitySourceHrZones(store, window, "garmin");

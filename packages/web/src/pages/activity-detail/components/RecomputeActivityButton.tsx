@@ -19,6 +19,7 @@ export function RecomputeActivityButton({ activityId }: { activityId: string }) 
           trpcUtils.activity.stream.invalidate({ id: activityId, maxPoints: 500 }),
           trpcUtils.activity.hrZones.invalidate({ id: activityId }),
           trpcUtils.activity.powerZones.invalidate({ id: activityId }),
+          trpcUtils.activity.powerWork.invalidate({ id: activityId }),
           trpcUtils.activity.strengthExercises.invalidate({ id: activityId }),
           trpcUtils.activity.list.invalidate(),
           trpcUtils.calendar.weekList.invalidate(),

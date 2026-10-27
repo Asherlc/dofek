@@ -78,6 +78,14 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 See [the card](src/components/ActivityCardContent.tsx) and the
 [shared cycling classification](../training/src/endurance-types.ts).
 
+The [activity detail header](src/pages/ActivityDetailPage.tsx) also omits distance
+for indoor and virtual cycling. Rides show **Energy Output** in kJ from the
+server's full recorded power samples, following the selected power source.
+Incomplete coverage carries a **Partial power data** qualifier. This is mechanical
+work: a watt is a joule per second ([NIST](https://www.nist.gov/glossary-term/34606)).
+The [server query](../server/src/routers/activity.ts) reuses the
+[cycling workout calculation](../training/src/cycling-workout-metrics.ts).
+
 The [Activities cards](src/components/ActivityCardContent.tsx) show an inset map
 panel beside activity details on wider screens and below them on narrow screens.
 The [mobile Activities list](<../mobile/app/(tabs)/activities.tsx>) shows the same
