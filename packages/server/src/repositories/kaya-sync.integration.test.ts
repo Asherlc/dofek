@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { activity } from "../../../../src/db/schema/activity.ts";
+import { area, climbingLogEntry, climb as climbTable } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
@@ -11,7 +12,11 @@ import { KayaSyncProvider } from "../../../../src/providers/kaya-sync.ts";
 import { SyncRun } from "../../../../src/providers/sync-run.ts";
 import { SyncWindow } from "../../../../src/providers/sync-window.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
+import { buildClimbingStrengths } from "../services/climbing-strengths.ts";
+import { seedClimbingActivity, seedClimbingLog } from "./climbing-integration-test-helpers.ts";
+import { ClimbingLogEntryAssociator } from "./climbing-log-entry-associator.ts";
 import { ClimbingRepository } from "./climbing-repository.ts";
+import { ClimbingStrengthsRepository } from "./climbing-strengths-repository.ts";
 
 const server = setupServer();
 
@@ -41,6 +46,15 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
     );
   }, 60_000);
 
+  afterEach(async () => {
+    server.resetHandlers();
+    await context.db.delete(climbingLogEntry);
+    await context.db.delete(climbTable);
+    await context.db.update(area).set({ parentAreaId: null });
+    await context.db.delete(area);
+    await context.db.delete(activity);
+  });
+
   afterAll(async () => {
     server.close();
     await context?.cleanup();
@@ -63,6 +77,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       subarea: null,
       board: { id: "board-1", name: "Training Board" },
       angle: 0,
+      tags: [],
       climb_type: { id: "1", name: "Bouldering" },
       grade: { id: "6", name: "v4", climb_type_group: "6" },
       gym,
@@ -84,6 +99,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
         session_id: "1000",
         date: started.toISOString(),
         attempts: null,
+        grade: null,
         ascent_type: { id: "repeat", name: "Repeat" },
         climb,
       },
@@ -92,6 +108,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
         session_id: "1000",
         date: started.toISOString(),
         attempts: 1,
+        grade: null,
         ascent_type: { id: "onsight", name: "Onsight" },
         climb: { ...climb, id: "2004", grade: { id: "5", name: "v3", climb_type_group: "5" } },
       },
@@ -165,5 +182,155 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       sends: 2,
       hardestBoulderGrade: "V4",
     });
+  });
+
+  it("refreshes retained KAYA metadata without replacing identities or user attachments", async () => {
+    const started = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const day = started.toISOString().slice(0, 10);
+    await ensureProvider(context.db, "test-climbing", "Test Climbing", undefined, TEST_USER_ID);
+    const attachment = await seedClimbingActivity(
+      context.db,
+      "test-climbing",
+      "metadata-attachment",
+      started,
+    );
+    const entryId = await seedClimbingLog(context.db, "kaya", {
+      externalId: "kaya:ascent:3101",
+      climbedOn: day,
+      discipline: "rock_climbing",
+      sourceName: "Kaya",
+      wallAngle: { value: -20, unit: null },
+      holdTypes: null,
+      climb: {
+        externalId: "2101",
+        name: "Metadata boulder",
+        kind: "boulder",
+        setting: "outdoor",
+        publishedGrades: [{ value: "v4", system: "v_scale" }],
+      },
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+      raw: { id: "3101", climb: { id: "2101", angle: -20 } },
+    });
+    await new ClimbingLogEntryAssociator(context.db, TEST_USER_ID, "UTC").attachLogEntry({
+      climbingLogEntryId: entryId,
+      activityId: attachment.groupId,
+    });
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "UTC");
+    const [legacy] = (await repository.getActivityLogEntries(attachment.groupId)).map((entry) =>
+      entry.toDetail(),
+    );
+    expect(legacy).toMatchObject({
+      id: entryId,
+      activityId: attachment.id,
+      holdTypes: null,
+      wallAngle: { value: -20, unit: null },
+      attempts: [expect.objectContaining({ outcome: "completed" })],
+    });
+    if (!legacy) throw new Error("Expected retained KAYA log");
+
+    const tags = [
+      { id: "937", name: "Crimp", color: null, icon: null, tag_type_id: "3" },
+      { id: "939", name: "Jug", color: "#ffffff", icon: "jug", tag_type_id: "3" },
+      { id: "777", name: "Balance", color: null, icon: null, tag_type_id: "1" },
+    ];
+    const source = {
+      id: "3101",
+      session_id: null,
+      date: started.toISOString(),
+      attempts: 1,
+      grade: { id: "5", name: "v3", climb_type_group: "5" },
+      ascent_type: { id: "send", name: "Send" },
+      comment: "Kept the original log.",
+      photo: { photo_url: "https://cdn.test/climb.jpg", thumb_url: "https://cdn.test/thumb.jpg" },
+      video: { video_url: "https://cdn.test/climb.mp4", thumb_url: "https://cdn.test/video.jpg" },
+      climb: {
+        id: "2101",
+        name: "Metadata boulder",
+        lead: null,
+        gym: null,
+        destination: { id: "outdoor-1", name: "Outdoor crag", latitude: 37, longitude: -122 },
+        area: null,
+        subarea: null,
+        wallarea: null,
+        board: null,
+        angle: -20,
+        tags,
+        latitude: "0",
+        longitude: "0",
+        description: "An explicitly tagged slab.",
+        climb_type: { id: "1", name: "Bouldering" },
+        grade: { id: "6", name: "v4", climb_type_group: "6" },
+      },
+    };
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", async ({ request }) => {
+        const { query } = z.object({ query: z.string() }).parse(await request.json());
+        return HttpResponse.json({
+          data: query.includes("query sessionsForUser")
+            ? { sessionsForUser: [] }
+            : { ascentsForUser: [source] },
+        });
+      }),
+    );
+    const provider = new KayaSyncProvider();
+    const sync = () =>
+      provider.sync(
+        new SyncRun({ db: context.db, userId: TEST_USER_ID, window: SyncWindow.full() }),
+      );
+    await expect(sync()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+    await expect(sync()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+
+    const details = (await repository.getActivityLogEntries(attachment.groupId)).map((entry) =>
+      entry.toDetail(),
+    );
+    expect(details).toHaveLength(1);
+    const refreshed = details[0];
+    expect(refreshed).toMatchObject({
+      id: legacy.id,
+      climbId: legacy.climbId,
+      activityId: attachment.id,
+      holdTypes: ["crimp", "jug"],
+      wallAngle: { category: "slab" },
+      reportedGrades: [{ value: "v3", system: "v_scale" }],
+      displayGrade: "V4",
+      climb: {
+        publishedGrades: [{ value: "v4", system: "v_scale" }],
+        coordinates: { latitude: 0, longitude: 0 },
+        areaPath: [expect.objectContaining({ name: "Outdoor crag" })],
+      },
+      mapLocation: { scope: "climb", coordinates: { latitude: 0, longitude: 0 } },
+      raw: {
+        grade: source.grade,
+        video: source.video,
+        climb: { tags, angle: -20, description: source.climb.description },
+      },
+    });
+    const [stored] = await context.db
+      .select({ raw: climbingLogEntry.raw })
+      .from(climbingLogEntry)
+      .where(eq(climbingLogEntry.id, entryId));
+    expect(stored?.raw).toMatchObject({ photo: source.photo, video: source.video });
+    expect(refreshed?.attempts.map((attempt) => attempt.id)).toEqual(
+      legacy.attempts.map((attempt) => attempt.id),
+    );
+    const strengths = buildClimbingStrengths(
+      await new ClimbingStrengthsRepository(context.db, TEST_USER_ID, "UTC").getObservations(
+        30,
+        {},
+        day,
+      ),
+      { startDate: day, endDate: day },
+    );
+    const holds = strengths.panels.find((panel) => panel.dimension === "hold_type");
+    expect(holds?.grades).toMatchObject([{ grade: "V4", climbs: 1, sends: 1 }]);
+    expect(holds?.allGrades.grades).toMatchObject([{ climbs: 1, sends: 1 }]);
+    expect(holds?.rows.map((row) => ({ key: row.key, climbs: row.cells[0]?.climbs }))).toEqual([
+      { key: "crimp", climbs: 1 },
+      { key: "jug", climbs: 1 },
+    ]);
+    const angles = strengths.panels.find((panel) => panel.dimension === "wall_angle");
+    expect(angles?.rows).toMatchObject([
+      { key: "slab", label: "Slab", cells: [{ grade: "V4", climbs: 1, sends: 1 }] },
+    ]);
   });
 });

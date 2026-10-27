@@ -550,7 +550,7 @@ entity "climbing_log_entry" {
   notes : text
   board : jsonb
   wall_angle : jsonb
-  hold_type : climbing_hold_type
+  hold_types : climbing_hold_type[]
   source_name : text
   raw : jsonb
   provider_absent_at : timestamp

@@ -11,6 +11,7 @@ import {
 import {
   attemptScopeSchema,
   climbingAttemptSchema,
+  climbingHoldTypesSchema,
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import type { Database } from "dofek/db";
@@ -75,7 +76,7 @@ const climbingProgressionRowSchema = z.object({
   solo: z.boolean().nullable(),
   used_aid: z.boolean().nullable(),
   wall_angle_degrees: z.coerce.number().nullable(),
-  hold_type: z.string().nullable(),
+  hold_types: climbingHoldTypesSchema.nullable(),
   climb_name: z.string().nullable(),
   location_name: z.string().nullable(),
   source_name: z.string().nullable(),
@@ -171,7 +172,7 @@ function observationFingerprint(row: ClimbRow): string {
     row.unknown_outcomes,
     row.recorded_attempt_count,
     row.rock_result_labels,
-    row.hold_type,
+    row.hold_types === null ? null : unique(row.hold_types),
     row.attempts
       .map((attempt) => [
         attempt.scope,
@@ -570,7 +571,7 @@ export class ClimbingProgressionRepository {
             ce.rock_result_labels, ce.attempt_scope, ce.pitch_id, ce.pitch_number,
             ce.unknown_pitch_attempt_id, ce.rope_method, ce.solo, ce.used_aid,
             CASE WHEN ce.wall_angle ->> 'unit' = 'degrees' THEN (ce.wall_angle ->> 'value')::double precision END AS wall_angle_degrees,
-            ce.hold_type,
+            to_jsonb(ce.hold_types) AS hold_types,
             ce.climb_name,
             ce.location_name,
             ce.source_name
@@ -730,7 +731,7 @@ export class ClimbingProgressionRepository {
           attempts: climb.row.attempts,
           rock_result_labels: climb.row.rock_result_labels,
           wall_angle_degrees: climb.row.wall_angle_degrees,
-          hold_type: climb.row.hold_type,
+          hold_types: climb.row.hold_types,
           climb_name: climb.row.climb_name,
           location_name: climb.row.location_name,
           external_id: climb.row.external_id,

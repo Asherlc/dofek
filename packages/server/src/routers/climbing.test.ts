@@ -302,7 +302,7 @@ describe("climbingRouter", () => {
       grade: "V4",
       gradeSortValue: 4,
       wallAngle: null,
-      holdType: "crimp",
+      holdTypes: ["crimp"],
       outcome: "sent",
       example,
     };
@@ -398,7 +398,7 @@ describe("climbingRouter", () => {
             grade: "V4",
             gradeSortValue: 4,
             wallAngle: null,
-            holdType: "crimp",
+            holdTypes: ["crimp"],
             outcome: "not_sent",
             example: {
               logEntryId: "log",

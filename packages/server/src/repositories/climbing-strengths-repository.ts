@@ -7,7 +7,11 @@ import {
   FREE_ROCK_GRADE_SYSTEMS,
   gradeSystemLabel,
 } from "@dofek/training/climbing-grades";
-import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
+import {
+  attemptScopeSchema,
+  climbingHoldTypesSchema,
+  ropeMethodSchema,
+} from "@dofek/training/climbing-log";
 import { climbingProgressionLaneKey } from "@dofek/training/climbing-progression";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -37,7 +41,7 @@ const rowSchema = z.object({
   grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS).nullable(),
   setting: z.enum(["indoor", "outdoor"]).nullable(),
   wall_angle: climbingWallAngleSchema.nullable(),
-  hold_type: z.string().nullable(),
+  hold_types: climbingHoldTypesSchema.nullable(),
   attempt_observations: z.array(
     z.object({
       ropeMethod: ropeMethodSchema.nullable(),
@@ -68,7 +72,10 @@ export class ClimbingStrengthsRepository extends BaseRepository {
   ): Promise<ClimbingStrengthsObservation[]> {
     const rows = await this.query(
       rowSchema,
-      sql`WITH ${canonicalClimbingLogCtes(days === null ? { endDate: endDate ?? formatDateYmdInTimeZone(new Date(), this.timezone) } : endDate === undefined ? days : { startDate: dateWindowStartString(endDate, days - 1), endDate }, filters, this.#preference, this.userId, this.timezone, (date) => this.dateAccessPredicate(date))} SELECT * FROM dated_logs ORDER BY session_date DESC,id`,
+      sql`WITH ${canonicalClimbingLogCtes(days === null ? { endDate: endDate ?? formatDateYmdInTimeZone(new Date(), this.timezone) } : endDate === undefined ? days : { startDate: dateWindowStartString(endDate, days - 1), endDate }, filters, this.#preference, this.userId, this.timezone, (date) => this.dateAccessPredicate(date))} SELECT id, canonical_activity_id, session_date, provider_id, source_name, raw,
+        climb_id, climb_name, title, area_path, climb_kind, attempt_scope, pitch_id, pitch_number,
+        grade, grade_system, setting, wall_angle, to_jsonb(hold_types) AS hold_types,
+        attempt_observations FROM dated_logs ORDER BY session_date DESC,id`,
     );
     // A full recorded location/name match is the existing cross-source identity rule.
     // Ambiguous names within one provider retain their native catalogue identities.
@@ -143,7 +150,7 @@ export class ClimbingStrengthsRepository extends BaseRepository {
           grade: grade?.grade ?? null,
           gradeSortValue: grade?.gradeSortValue ?? 0,
           wallAngle: row.wall_angle,
-          holdType: row.hold_type,
+          holdTypes: row.hold_types,
           outcome,
           example: {
             logEntryId: row.id,

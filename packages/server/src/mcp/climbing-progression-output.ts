@@ -2,6 +2,7 @@ import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import {
   attemptScopeSchema,
   climbingAttemptSchema,
+  climbingHoldTypesSchema,
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import { z } from "zod";
@@ -190,7 +191,7 @@ export const climbingProgressionOutputSchema = z
                     attempts: z.array(climbingAttemptSchema),
                     rock_result_labels: rockResultLabelsSchema.nullable(),
                     wall_angle_degrees: nullableNumber,
-                    hold_type: z.string().nullable(),
+                    hold_types: climbingHoldTypesSchema.nullable(),
                     climb_name: z.string().nullable(),
                     location_name: z.string().nullable(),
                     external_id: z.string().nullable(),

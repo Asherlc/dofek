@@ -134,7 +134,7 @@ function fixture() {
             ],
             rock_result_labels: { onsight: null, flash: null },
             wall_angle_degrees: 30,
-            hold_type: null,
+            hold_types: null,
             climb_name: "Blue Arete",
             location_name: "Pacific Pipe",
             external_id: "problem-1",

@@ -8,39 +8,55 @@ const idSchema = z.union([z.string(), z.number()]).transform(String);
 const coordinateSchema = z
   .union([z.number(), z.string().trim().min(1).transform(Number)])
   .pipe(z.number().finite());
-const locationSchema = z.object({
-  id: idSchema,
-  name: z.string(),
-  latitude: coordinateSchema.nullable().optional(),
-  longitude: coordinateSchema.nullable().optional(),
-});
+const locationSchema = z
+  .object({
+    id: idSchema,
+    name: z.string(),
+    latitude: coordinateSchema.nullable().optional(),
+    longitude: coordinateSchema.nullable().optional(),
+  })
+  .catchall(z.json());
 const gymSchema = locationSchema.extend({
   address: z.string().nullable().optional(),
   city: z.string().nullable().optional(),
   region: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
 });
-const climbSchema = z.object({
-  id: idSchema,
-  name: z.string().nullable(),
-  color: z.object({ name: z.string().nullable() }).nullish(),
-  slug: z.string().nullish(),
-  lead: z.boolean().nullish(),
-  climb_type: z.object({ id: idSchema, name: z.string() }),
-  grade: z
-    .object({
-      id: idSchema,
-      name: z.string().refine((name) => name.trim().length > 0, "Grade must not be blank"),
-      climb_type_group: z.string(),
-    })
-    .nullable(),
-  gym: gymSchema.nullable(),
-  destination: locationSchema.nullable(),
-  area: locationSchema.nullable(),
-  subarea: locationSchema.nullable(),
-  board: locationSchema.pick({ id: true, name: true }).nullable(),
-  angle: z.number().int().nullable(),
-});
+const climbSchema = z
+  .object({
+    id: idSchema,
+    name: z.string().nullable(),
+    color: z.object({ name: z.string().nullable() }).nullish(),
+    slug: z.string().nullish(),
+    lead: z.boolean().nullish(),
+    climb_type: z.object({ id: idSchema, name: z.string() }),
+    grade: z
+      .object({
+        id: idSchema,
+        name: z.string().refine((name) => name.trim().length > 0, "Grade must not be blank"),
+        climb_type_group: z.string(),
+      })
+      .nullable(),
+    gym: gymSchema.nullable(),
+    destination: locationSchema.nullable(),
+    area: locationSchema.nullable(),
+    subarea: locationSchema.nullable(),
+    board: locationSchema.pick({ id: true, name: true }).nullable(),
+    angle: z.number().int().nullable(),
+    tags: z.array(
+      z.object({
+        id: idSchema,
+        name: z.string().trim().min(1),
+        color: z.string().nullable(),
+        icon: z.string().nullable(),
+        tag_type_id: idSchema,
+      }),
+    ),
+    latitude: coordinateSchema.nullish(),
+    longitude: coordinateSchema.nullish(),
+    wallarea: locationSchema.nullish(),
+  })
+  .catchall(z.json());
 const attemptCountSchema = z.number().int().positive().nullable();
 const sessionSchema = z.object({
   id: idSchema,
@@ -57,6 +73,7 @@ const sessionSchema = z.object({
 const ascentSchema = z.object({
   // Validate media independently so an unknown photo cannot invalidate the logbook.
   photo: z.json().optional(),
+  video: z.json().optional(),
   id: idSchema,
   session_id: idSchema.nullable(),
   date: z.string(),
@@ -64,6 +81,7 @@ const ascentSchema = z.object({
   rating: z.number().nullable().optional(),
   stiffness: z.number().nullable().optional(),
   attempts: attemptCountSchema,
+  grade: climbSchema.shape.grade,
   ascent_type: z.object({ id: idSchema, name: z.string() }),
   gym: gymSchema.nullable().optional(),
   climb: climbSchema,
@@ -189,6 +207,8 @@ function browserHeaders(): Record<string, string> {
   return { "content-type": "application/json", origin: KAYA_APP_URL, referer: `${KAYA_APP_URL}/` };
 }
 
-const CLIMB_FIELDS = `id name color { name } slug lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } destination { id name latitude longitude } area { id name latitude longitude } subarea { id name latitude longitude } board { id name } angle`;
-const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { id name address city region country latitude longitude } board { id name latitude longitude } destination { id name latitude longitude } attempted_climbs { attempts: session_attempts sent ${CLIMB_FIELDS} } } }`;
-const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts photo { photo_url thumb_url } ascent_type { id name } gym { id name address city region country latitude longitude } climb { ${CLIMB_FIELDS} } } }`;
+const LOCATION_FIELDS = `id name latitude longitude description access_description approach_minutes photo_url location_type { id name } parent_location { id name }`;
+const GYM_FIELDS = `id name address city region country latitude longitude slug website nickname postal_code photo_url thumbnail_url banner_photo_url is_official`;
+const CLIMB_FIELDS = `id name color { name } slug lead climb_type { id name } grade { id name climb_type_group } gym { ${GYM_FIELDS} } destination { ${LOCATION_FIELDS} } area { ${LOCATION_FIELDS} } subarea { ${LOCATION_FIELDS} } board { ${LOCATION_FIELDS} } angle tags { id name color icon tag_type_id } description access_description protection_description is_benchmark bolts pitches is_trad length latitude longitude fa date_set date_updated photo_url location risk intensity complexity gem anchor thumbnail_url video_url video_thumbnail_url wall_set_id wallarea { id name photo_url location_type { id name } climb_type_id }`;
+const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { ${GYM_FIELDS} } board { ${LOCATION_FIELDS} } destination { ${LOCATION_FIELDS} } attempted_climbs { attempts: session_attempts sent ${CLIMB_FIELDS} } } }`;
+const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts grade { id name climb_type_group } photo { photo_url thumb_url } video { video_url thumb_url } ascent_type { id name } gym { ${GYM_FIELDS} } climb { ${CLIMB_FIELDS} } } }`;

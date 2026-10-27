@@ -1,4 +1,5 @@
 import {
+  formatClimbingHoldTypes,
   formatClimbingLocationPath,
   formatClimbingWallAngle,
 } from "@dofek/format/climbing-context";
@@ -30,6 +31,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   const climb = entry.climb;
   const path = formatClimbingLocationPath(climb?.areaPath ?? []);
   const angle = formatClimbingWallAngle(entry.wallAngle);
+  const holds = formatClimbingHoldTypes(entry.holdTypes);
   const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
   return (
     <section className="space-y-4 text-sm" aria-label="Climbing log details">
@@ -49,7 +51,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {path && <p className="text-xs text-subtle">{path}</p>}
       {entry.board && <p className="text-xs">Board: {entry.board.name}</p>}
       {angle && <p className="text-xs">{angle}</p>}
-      {entry.holdType && <p className="text-xs">Hold type: {entry.holdType}</p>}
+      {holds && <p className="text-xs">{holds}</p>}
       {climb && (
         <>
           <Fields

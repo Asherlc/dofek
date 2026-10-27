@@ -65,28 +65,45 @@ See the [writer](../src/db/climbing-log-sync.ts) and
 
 ## Confirmed request coverage
 
-The following additional fields were verified in the authenticated API and the
-[Kaya application's GraphQL fragments](https://kaya-app.kayaclimb.com/static/js/main.5bd87165.chunk.js)
-on 2026-09-29. The import requests location, board, and angle on both feeds;
-the remaining omissions are shown below:
+The [client](../packages/kaya-client/src/client.ts) selects shared climb fields
+on both the session-attempt and ascent feeds. It preserves selected source
+metadata in raw provenance and the [adapter](../src/providers/kaya-sync.ts)
+normalizes supported facts into the canonical climbing model. The
+[field inventory](climbing-trait-coverage.md#kaya-field-inventory) distinguishes
+current requests, authenticated field checks, source-bundle observations and
+intentional exclusions. It is an inventory of inspected surfaces, not a complete
+upstream schema: the authenticated [GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql)
+rejected introspection during the 2026-10-27 audit.
 
-| Record | Fields |
+| Record | Current handling |
 | --- | --- |
-| Session attempted climb, requested | `session_attempts` (aliased as `attempts`), `sent` (send status verified 2026-10-26) |
-| Climb, not requested | `description` |
-| Climb, requested | `slug`, `color { name }`, `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
-| Ascent, requested | Its own `grade`, comments, ratings, stiffness, `photo { photo_url thumb_url }` |
-| Ascent, not requested | `video { video_url thumb_url }` |
+| Session | Dates, notes, gym and board/destination context; attempted climbs include `attempts: session_attempts` and `sent`. |
+| Shared climb | Identity, color, lead flag, catalogue grade, source locations including `wallarea`, native climb coordinates, board and angle; descriptions, source media references and other selected catalogue metadata remain raw on both feeds. See the [exact field inventory](climbing-trait-coverage.md#kaya-field-inventory). |
+| Climb tags | Request `tags { id name color icon tag_type_id }`; normalize explicit grip tags as a collection and retain all supplied tags raw. |
+| Ascent | Request its own grade separately from `climb.grade`, comments, rating, stiffness, attempts, result, photo and video metadata. The ascent grade belongs to the log's reported-grade collection. |
 
-For the reported session, climb colors and slugs were populated; the other
-listed metadata was null, and ascent grades matched the climb grades. Session
-notes, session board/destination details, and ascent comments/ratings/stiffness
-are already requested and preserved in raw payloads. The application fragments
-also contain access/moderation metadata and provider-computed aggregates; these
-are outside the current import. This is an observed field audit, not an
-exhaustive schema inventory: Kaya disables GraphQL introspection on this endpoint.
-Source: [Kaya application](https://kaya-app.kayaclimb.com/) and authenticated
-[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29.
+The tag contract comes from the [Plastick Tag fragment](https://set.plastick.rocks/tag-11950.js.map)
+and authenticated reads of both feeds on 2026-10-27. Plastick's
+[definitions](https://set.plastick.rocks/index-11950.js.map) identify
+`tag_type_id: "3"` as GRIP; its [gym-map filter](https://set.plastick.rocks/index-119504.js.map)
+uses that category to select grip tags. The authenticated `allTags` dictionary
+contained Crimp, Sloper, Pinch, Pocket, Jug, Volume, Jam and No Grips. Dofek maps
+these explicit grip tags to `holdTypes`, preserving multiple grips without
+choosing a predominant one. Tags of other categories and unfamiliar tags stay
+raw. See the [observed contract](kaya-api.openapi.yaml) and
+[source mapping](../src/providers/kaya-sync.ts).
+
+The 2026-10-27 authenticated sample covered 28 sessions, 91 attempted-climb
+records and 60 ascents. Neither feed supplied any climb tags; one ascent climb
+had an angle, one had native climb coordinates, and one had a description. All 60 ascents supplied their own grade,
+with one differing from its catalogue grade; none supplied a video. These are
+sample coverage counts, not guarantees about other accounts or future responses.
+The complete new client selections and runtime response parser also passed a
+read-only run across the 28 sessions and 60 ascents. Source: authenticated
+[Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql). Earlier versions
+of this document incorrectly described ascent grades as requested; the previous
+query omitted them. A normal successful sync fetches the newly selected facts
+for existing records through the complete feeds.
 
 ## Observed location and angle values
 
@@ -109,15 +126,29 @@ supplies the outdoor hierarchy above and `angle: -20`.
 [Kilter Board (Original)](https://kaya-app.kayaclimb.com/location/Kilter-Board-Original-281341)
 climbs returned angles `40`, `45`, and `50`; the
 [Homewall catalogue](https://kaya-app.kayaclimb.com/location/Kilter-Board-Homewall-962596)
-also returned `25`. Missing values remain `null`. The reviewed Kaya resources
-do not establish the angle's units, zero, or sign convention; retain the
-reported integer until those semantics are verified.
+also returned `25`. Missing values remain `null`. These public catalogue values
+were observed through the [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql)
+on 2026-09-29.
 
-The importer stores supplied nodes in destination/area/subarea order as an
+The 2026-10-27 review of Plastick's
+[outdoor editor source map](https://set.plastick.rocks/GuidebookView-11950.js.map),
+`src/container/Destination/GuidebookClimbsContainer.jsx`, established a distinct
+outdoor convention: its Angle dropdown maps Slab to `-20`, Vertical to `0`,
+Overhang to `20`, and Roof to `50`, then renders those values as category names.
+Dofek retains those explicit outdoor categories as `{ category: "slab" }` and
+the equivalent vertical/overhang/roof values. They are not measured degrees.
+Board values and unrecognized numeric values retain `unit: null`; their units
+and reference convention have not been independently established by this audit.
+
+The importer stores supplied nodes in destination/area/subarea/wallarea order as an
 Area parent chain with their Kaya IDs. When no such path is supplied, the gym
 fallback uses the climb, ascent, then session gym. Board metadata comes from
-the climb reference. Angles retain `unit: null`, including zero and negative
-values; degree analytics exclude them. Kaya CSV exports preserve their gym
+the climb reference. Shared strengths analytics use the recorded categories
+without converting them into numeric measurements; unknown-unit values remain
+excluded from degree comparisons. See the
+[angle and hold contracts](../packages/training/src/climbing-experience.ts)
+and [strengths service](../packages/server/src/services/climbing-strengths.ts).
+Kaya CSV exports preserve their gym
 name with unknown ID and normalize ascent labels and counts into Attempt facts.
 CSV grades are conservatively stored as separately reported grades because
 the row supplies no independently identified catalogue definition; this does

@@ -493,7 +493,7 @@ const attachedClimbingEntry = climbingLogEntryFixture({
   displayGrade: "V3",
   board: null,
   wallAngle: null,
-  holdType: null,
+  holdTypes: null,
   recordedClimbAttemptCount: 1,
   recordedClimbOutcome: "completed",
   climb: {
@@ -1129,7 +1129,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V4",
           board: null,
           wallAngle: null,
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 2,
           recordedClimbOutcome: "completed",
           climb: {
@@ -1180,7 +1180,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "5.10a",
           board: null,
           wallAngle: null,
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 1,
           recordedClimbOutcome: null,
           climb: {
@@ -1821,7 +1821,7 @@ describe("ActivityDetailScreen", () => {
         displayGrade: "5.6",
         board: null,
         wallAngle: null,
-        holdType: null,
+        holdTypes: null,
         recordedClimbAttemptCount: null,
         recordedClimbOutcome: "completed",
         climb: {
@@ -1910,7 +1910,7 @@ describe("ActivityDetailScreen", () => {
       displayGrade: "5.4",
       board: null,
       wallAngle: null,
-      holdType: null,
+      holdTypes: null,
       recordedClimbAttemptCount: null,
       recordedClimbOutcome: null,
       climb: {
@@ -2008,7 +2008,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V4",
           board: { name: "Training Board", externalId: "board-1" },
           wallAngle: { value: -20, unit: null },
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 7,
           recordedClimbOutcome: "completed",
           climb: {
@@ -2084,7 +2084,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V5",
           board: null,
           wallAngle: { value: 35, unit: "degrees" },
-          holdType: "crimp",
+          holdTypes: ["crimp"],
           recordedClimbAttemptCount: 1,
           recordedClimbOutcome: "failed",
           climb: {
@@ -2127,7 +2127,7 @@ describe("ActivityDetailScreen", () => {
           displayGrade: "V3",
           board: null,
           wallAngle: null,
-          holdType: null,
+          holdTypes: null,
           recordedClimbAttemptCount: 1,
           recordedClimbOutcome: null,
           climb: {

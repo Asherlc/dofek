@@ -2188,7 +2188,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V3",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2244,7 +2244,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V4",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 2,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2298,7 +2298,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "5.10a",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: null,
             climb: {
@@ -2407,7 +2407,7 @@ describe("ActivityDetailPage", () => {
               displayGrade: "5.10a",
               board: null,
               wallAngle: null,
-              holdType: null,
+              holdTypes: null,
               recordedClimbAttemptCount: 1,
               recordedClimbOutcome: "completed",
               climb: {
@@ -2488,7 +2488,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "5.10a",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2593,7 +2593,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V4",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 7,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2669,7 +2669,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V5",
             board: null,
             wallAngle: { value: 35, unit: "degrees" },
-            holdType: "crimp",
+            holdTypes: ["crimp"],
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "failed",
             climb: {
@@ -2712,7 +2712,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V3",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: null,
             climb: {

@@ -9,7 +9,7 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 | Area | Owner/provider, verified source identity, name, nullable parent Area and coordinates |
 | Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
 | Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
-| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold type, raw source record and retention metadata |
+| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold types, raw source record and retention metadata |
 | ClimbingAttempt | Required log, scope, optional Pitch/parent, nullable actual order and original source result label, independent method/solo/protection/aid/fall-or-hang/dab/beta/history facts and notes |
 
 Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
@@ -46,6 +46,18 @@ The server derives a free rock send from completion with known absence of aid an
 | GradeSystem | `v_scale`, `font`, `yds`, `french`, `uiaa`, `ewbank`, `saxon`, `norwegian`, `brazilian_crux`, `british_adjectival`, `british_technical`, `aid`, `water_ice`, `alpine_ice`, `mixed`, `ifas`, `nccs` |
 
 Nullable fields carry unknown state separately from these enum values. The [shared schemas](../packages/training/src/climbing-log.ts) and [grade library](../packages/training/src/climbing-grades.ts) are authoritative. The generated [UML](schema.puml) includes the database tables, enums, and ownership relationships.
+
+Recorded grips use nullable, nonempty `holdTypes` collections containing `crimp`,
+`sloper`, `pinch`, `pocket`, `jug`, `volume`, `jam`, or `no_grips`. A wall angle is
+either a numeric value with recorded or unknown units, or a source category
+(`slab`, `vertical`, `overhang`, `roof`); categories do not imply measured degrees.
+The [shared schemas](../packages/training/src/climbing-experience.ts),
+[log contract](../packages/training/src/climbing-log.ts), and
+[forward migration](../drizzle/0169_climbing_traits.sql) define these facts.
+Strengths count each distinct climb once in each recorded grip and once in its
+grade baseline. Missing metadata preserves an evidenced set; contradictory sets
+remain unknown, as implemented by the
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
 
 ## Browsing, attachment, and analytics
 

@@ -91,6 +91,9 @@ export const climbingHoldTypeEnum = fitness.enum("climbing_hold_type", [
   "pinch",
   "pocket",
   "jug",
+  "volume",
+  "jam",
+  "no_grips",
 ]);
 
 export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [

@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import type { ClimbingWallAngle } from "@dofek/training/climbing-experience";
 import { type FreeRockGradeSystem, gradeSystemLabel } from "@dofek/training/climbing-grades";
 import type {
   ClimbingStrengths,
@@ -15,8 +16,8 @@ export interface ClimbingStrengthsObservation {
   setting: "indoor" | "outdoor" | null;
   grade: string | null;
   gradeSortValue: number;
-  wallAngle: { value: number; unit: "degrees" | null } | null;
-  holdType: string | null;
+  wallAngle: ClimbingWallAngle | null;
+  holdTypes: string[] | null;
   outcome: "sent" | "not_sent" | null;
   example: ClimbingStrengthsExample;
 }
@@ -25,11 +26,12 @@ const percent = (sends: number, climbs: number) =>
 function trait(
   entry: ClimbingStrengthsObservation,
   dimension: ClimbingStrengthsPanel["dimension"],
-): string | null {
-  if (dimension === "setting") return entry.setting ?? "unknown";
-  if (dimension === "hold_type") return entry.holdType;
+): string[] {
+  if (dimension === "setting") return [entry.setting ?? "unknown"];
+  if (dimension === "hold_type") return entry.holdTypes ?? [];
   const angle = entry.wallAngle;
-  return angle?.unit === "degrees" ? `${angle.value}°` : null;
+  if (angle && "category" in angle) return [angle.category];
+  return angle?.unit === "degrees" ? [`${angle.value}°`] : [];
 }
 const sampleStatus = (climbs: number): "no_data" | "limited" | "available" =>
   climbs === 0 ? "no_data" : climbs < 5 ? "limited" : "available";
@@ -111,13 +113,25 @@ export function buildClimbingStrengths(
     if (preferred.outcome === null) coverage.unknownOutcomes++;
     // Missing facts do not erase known facts; conflicting facts remain unknown.
     const settings = [...new Set(group.flatMap((entry) => entry.setting ?? []))];
-    const holds = [...new Set(group.flatMap((entry) => entry.holdType ?? []))];
+    const holds = [
+      ...new Map(
+        group.flatMap((entry) => {
+          if (entry.holdTypes === null) return [];
+          const holds = [...new Set(entry.holdTypes)].sort();
+          return [[JSON.stringify(holds), holds] as const];
+        }),
+      ).values(),
+    ];
     const angles = [
-      ...new Set(
-        group.flatMap((entry) =>
-          entry.wallAngle?.unit === "degrees" ? [entry.wallAngle.value] : [],
-        ),
-      ),
+      ...new Map(
+        group.flatMap((entry) => {
+          const angle = entry.wallAngle;
+          if (angle && ("category" in angle || angle.unit === "degrees")) {
+            return [[trait(entry, "wall_angle")[0], angle] as const];
+          }
+          return [];
+        }),
+      ).values(),
     ];
     entries.push({
       ...preferred,
@@ -125,11 +139,8 @@ export function buildClimbingStrengths(
       grade: grade.grade,
       gradeSortValue: grade.gradeSortValue,
       setting: settings.length === 1 ? (settings[0] ?? null) : null,
-      holdType: holds.length === 1 ? (holds[0] ?? null) : null,
-      wallAngle:
-        angles.length === 1 && angles[0] !== undefined
-          ? { value: angles[0], unit: "degrees" }
-          : null,
+      holdTypes: holds.length === 1 ? (holds[0] ?? null) : null,
+      wallAngle: angles.length === 1 ? (angles[0] ?? null) : null,
       example: {
         ...preferred.example,
         grade: grade.grade ?? "",
@@ -205,7 +216,7 @@ export function buildClimbingStrengths(
                   "outdoor",
                   ...(selected.some((entry) => entry.setting === null) ? ["unknown"] : []),
                 ]
-              : [...new Set(selected.flatMap((e) => trait(e, dimension) ?? []))].sort();
+              : [...new Set(selected.flatMap((e) => trait(e, dimension)))].sort();
           return {
             grades,
             rows: keys.map((key) => ({
@@ -213,10 +224,10 @@ export function buildClimbingStrengths(
               label:
                 key === "unknown" && dimension === "setting"
                   ? "Unknown setting"
-                  : key.charAt(0).toUpperCase() + key.slice(1),
+                  : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
               cells: grades.map((g) => {
                 const matching = selected.filter(
-                  (e) => (allGrades || e.grade === g.grade) && trait(e, dimension) === key,
+                  (e) => (allGrades || e.grade === g.grade) && trait(e, dimension).includes(key),
                 );
                 const sends = matching.filter((e) => e.outcome === "sent").length;
                 const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
@@ -261,7 +272,8 @@ export function buildClimbingStrengths(
                   cells: grades.map(({ grade }) => {
                     const matching = monthly.filter(
                       (entry) =>
-                        (allGrades || entry.grade === grade) && trait(entry, dimension) === key,
+                        (allGrades || entry.grade === grade) &&
+                        trait(entry, dimension).includes(key),
                     );
                     const sends = matching.filter((entry) => entry.outcome === "sent").length;
                     const unknownOutcomes = matching.filter(
@@ -291,7 +303,9 @@ export function buildClimbingStrengths(
           allGrades: buildProfile(true),
           coverage: {
             missingTraits: selected.filter((entry) =>
-              dimension === "setting" ? entry.setting === null : trait(entry, dimension) === null,
+              dimension === "setting"
+                ? entry.setting === null
+                : trait(entry, dimension).length === 0,
             ).length,
             unknownOutcomes: selected.filter((e) => e.outcome === null).length,
           },
