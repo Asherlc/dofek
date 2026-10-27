@@ -123,6 +123,7 @@ describe("RecordsBrowser", () => {
       providerId: "openbeta",
       dataType: "climbingLogEntries",
       recordId: log.id,
+      responseVersion: 2,
     });
     expect(screen.getByRole("dialog")).toHaveTextContent("Grades");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));

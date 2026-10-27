@@ -134,7 +134,7 @@ function datesBetween(startDate: string, endDate: string): string[] {
   return result;
 }
 
-function unique(values: string[]): string[] {
+function unique(values: string[] | null): string[] {
   return [...new Set(values)].sort();
 }
 
@@ -172,7 +172,7 @@ function observationFingerprint(row: ClimbRow): string {
     row.unknown_outcomes,
     row.recorded_attempt_count,
     row.rock_result_labels,
-    row.hold_types === null ? null : unique(row.hold_types),
+    unique(row.hold_types),
     row.attempts
       .map((attempt) => [
         attempt.scope,

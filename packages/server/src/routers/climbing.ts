@@ -1,6 +1,7 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
+import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRPCError } from "@trpc/server";
 import { createActivityImageUrl, readActivityImageObject } from "dofek/activity-images/storage";
@@ -10,7 +11,8 @@ import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import {
   climbingAttachmentActivitySchema,
-  climbingLogEntryDetailSchema,
+  climbingLogEntryDetailResponseSchema,
+  serializeClimbingLogEntryDetailResponse,
 } from "../contracts/climbing-log-contracts.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
@@ -19,7 +21,6 @@ import { ClimbingImagesRepository } from "../repositories/climbing-images-reposi
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
   type ClimbingGradeProgressionRow,
-  type ClimbingLogEntryDetail,
   ClimbingRepository,
   type ClimbingSessionSummaryRow,
   type ClimbingVolumeByGradeRow,
@@ -42,7 +43,7 @@ import {
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const climbingInputSchema = daysInputSchema.extend(climbingFiltersSchema.shape);
-const climbingLogEntriesSchema = z.array(climbingLogEntryDetailSchema);
+const climbingLogEntriesSchema = z.array(climbingLogEntryDetailResponseSchema);
 const climbingGradeProgressionsSchema = z.array(climbingGradeProgressionSchema);
 const climbingVolumesSchema = z.array(climbingVolumeByGradeSchema);
 const climbingSessionSummariesSchema = z.array(climbingSessionSummarySchema);
@@ -156,11 +157,11 @@ export const climbingRouter = router({
   activityLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingLogEntriesSchema,
-    keyVersion: "climbing-activity-log-model-v6",
+    keyVersion: "climbing-activity-log-model-v7",
   })
-    .input(z.object({ activityId: z.guid() }))
+    .input(z.object({ activityId: z.guid(), responseVersion: climbingResponseVersionSchema }))
     .output(climbingLogEntriesSchema)
-    .query(async ({ ctx, input }): Promise<ClimbingLogEntryDetail[]> => {
+    .query(async ({ ctx, input }) => {
       return runClimbingQuery(async () => {
         const activity = await new ActivityRepository(
           ctx.db,
@@ -173,26 +174,31 @@ export const climbingRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
         }
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getActivityLogEntries(activity.id)).map((row) => row.toDetail());
+        return (await repository.getActivityLogEntries(activity.id)).map((row) =>
+          serializeClimbingLogEntryDetailResponse(row.toDetail(), input.responseVersion),
+        );
       });
     }),
 
   unattachedClimbingLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
     outputSchema: climbingLogEntriesSchema,
-    keyVersion: "climbing-log-suggestions-v6",
+    keyVersion: "climbing-log-suggestions-v7",
   })
-    .input(z.object({ activityId: z.guid() }))
+    .input(z.object({ activityId: z.guid(), responseVersion: climbingResponseVersionSchema }))
     .output(climbingLogEntriesSchema)
     .query(async ({ ctx, input }) =>
-      runClimbingQuery(() =>
-        new ClimbingLogEntryAssociator(
+      runClimbingQuery(async () => {
+        const entries = await new ClimbingLogEntryAssociator(
           ctx.db,
           ctx.userId,
           ctx.timezone,
           ctx.accessWindow,
-        ).getSuggestions(input.activityId),
-      ),
+        ).getSuggestions(input.activityId);
+        return entries.map((entry) =>
+          serializeClimbingLogEntryDetailResponse(entry, input.responseVersion),
+        );
+      }),
     ),
 
   attachmentActivities: protectedProcedure

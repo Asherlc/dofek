@@ -71,10 +71,14 @@ describe("ClimbingLogAttachment", () => {
     const keys = [
       getQueryKey(trpc.activity.images, { id: "22222222-2222-4222-8222-222222222222" }, "query"),
       getQueryKey(trpc.climbing.locationMap, { days: 90 }, "query"),
-      getQueryKey(trpc.climbing.activityLogEntries, { activityId: "activity-1" }, "query"),
+      getQueryKey(
+        trpc.climbing.activityLogEntries,
+        { activityId: "activity-1", responseVersion: 2 },
+        "query",
+      ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "activity-1" },
+        { activityId: "activity-1", responseVersion: 2 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary, { days: 90 }, "query"),

@@ -58,8 +58,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   total climb counts and grade lists; success rates use known outcomes only.
   Conflicting grades remain excluded.
   Coverage reports unidentified/missing-grade observation records separately from
-  distinct-climb trait and outcome coverage. Known degree values are shown literally;
-  missing units and contradictory traits remain unknown.
+  distinct-climb trait and outcome coverage. Recorded degree values are shown
+  literally and source categories retain their labels; missing units and
+  contradictory traits remain unknown. A climb contributes once to each recorded
+  grip and once to its grade baseline; see the
+  [shared trait contract](../../docs/climbing-context.md#enums).
   Gradeless source observations contribute only when the same identified climb and
   semantic lane have one recognized grade-system context; ambiguous contexts stay
   excluded. The optional `endDate` input anchors an inclusive calendar-day window,
@@ -92,6 +95,20 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)
   adds user/provider-scoped PostgreSQL log counts to existing provider statistics.
+- **Climbing response versions**: The existing `climbing.activityLogEntries`,
+  `climbing.unattachedClimbingLogEntries`, and `providerDetail.recordDetail`
+  procedures accept `responseVersion: 1 | 2`, defaulting to `1`. Version `1`
+  projects supported scalar grips and numeric angles; version `2` serves complete
+  plural grips and categorical angles. Canonical repositories remain plural.
+  Updated web/mobile clients request `2` and strictly decode either supported
+  wire shape, allowing independent API and client releases. Raw request inputs
+  separate server cache entries; mobile keeps persisted-cache contract `16` with
+  versioned query keys. See the
+  [serializers and decoders](src/contracts/climbing-log-contracts.ts),
+  [shared version policy](../training/src/climbing-log-response.ts), and
+  [full compatibility contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
+  tRPC documents [input and output validation](https://trpc.io/docs/server/validators),
+  and Zod documents [unknown-key handling](https://zod.dev/api#objects).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
@@ -444,6 +461,15 @@ Hardest send, flash and onsight evidence uses compatible published grades and re
 Progression lanes preserve independent kind, scope, rope method, solo and aid values, plus grade
 system. See the [progression repository](src/repositories/climbing-progression-repository.ts) and
 [wire contract](src/mcp/climbing-progression-output.ts).
+
+`get_activity_details`, `get_climbing_sessions`, and `get_climbing_progression`
+accept `response_version: 1 | 2`, defaulting to `1` for older consumers. Version
+projection happens before `jsonToolResult` builds text and structured content.
+Progression log entries use scalar `hold_type` for version `1` and plural
+`hold_types` for version `2`; numeric `wall_angle_degrees` retains its existing
+meaning. See the [activity](src/mcp/activity-details-tool.ts),
+[sessions](src/mcp/climbing-sessions-tool.ts), and
+[progression](src/mcp/climbing-progression-tool.ts) tool contracts.
 
 Canonical activity groups count as one session. Exact matching entry observations from different
 member activities/providers are consolidated once while retaining every contributing entry,

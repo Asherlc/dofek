@@ -183,6 +183,27 @@ documents route tags under its own access conditions, but the public route
 pages already demonstrate structured traits. This inventory does not change
 the existing public-feed integration or select a new enrichment strategy.
 
+## Serving the imported metadata
+
+Canonical records retain the full grip collection and numeric-or-category
+wall angle. The existing climbing-detail tRPC procedures support
+`responseVersion: 1 | 2`; omitted versions retain the scalar legacy response,
+and updated web/mobile clients explicitly request the full version `2`.
+Their strict decoders also accept the earlier server's version `1` response,
+so an independently published client does not assume that an older server
+honored a newly introduced input. The corresponding MCP tools use
+`response_version` and project the response before generating text and
+structured output. See the [response-version contract](climbing-context.md#response-versions-and-independent-releases),
+[shared policy](../packages/training/src/climbing-log-response.ts), and
+[tRPC validation](https://trpc.io/docs/server/validators).
+
+Version `1` cannot represent multiple grips, newer grip kinds, or a categorical
+angle; those traits remain unknown in that response rather than becoming an
+arbitrary scalar or a measured degree value. The canonical metadata remains
+available to version `2` and server analytics. See the
+[projection](../packages/training/src/climbing-log-response.ts) and
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
+
 ## Repeating the audit
 
 For a new source or changed upstream application, record the exact source
@@ -198,3 +219,13 @@ the authenticated feed. Preserve source record identities and user-selected
 Activity links. The [Kaya refresh tests](../packages/server/src/repositories/kaya-sync.integration.test.ts)
 exercise those Dofek contracts; a source field's existence alone is not proof
 that it reached storage or analysis.
+
+When a source change affects a shared response shape, verify old-client/new-API
+and new-client/old-API combinations, the requested input version, and cache-key
+separation. Run both the [source persistence suite](../src/providers/kaya-sync.integration.test.ts)
+and [server refresh suite](../packages/server/src/repositories/kaya-sync.integration.test.ts):
+their fixtures exercise the same live client contract at different consumers.
+The [response regressions](../packages/server/src/contracts/climbing-log-contracts.test.ts)
+cover strict decoding and version projection; the
+[testing guide](testing.md#integration-dependencies) describes the standalone
+`pnpm test:integration` command used for database verification.

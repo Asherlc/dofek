@@ -59,6 +59,52 @@ grade baseline. Missing metadata preserves an evidenced set; contradictory sets
 remain unknown, as implemented by the
 [strengths service](../packages/server/src/services/climbing-strengths.ts).
 
+## Response versions and independent releases
+
+Canonical storage and repositories always use plural `holdTypes` and the
+numeric-or-category wall-angle model above. The existing tRPC procedures
+`climbing.activityLogEntries`, `climbing.unattachedClimbingLogEntries`, and
+`providerDetail.recordDetail` accept `responseVersion: 1 | 2`, defaulting to
+`1`. For provider records, the version applies to climbing log entries only.
+The [response contract](../packages/server/src/contracts/climbing-log-contracts.ts)
+projects the canonical record at the API boundary; it does not create another
+storage path. Input and output validation follow
+[tRPC's validator contract](https://trpc.io/docs/server/validators).
+
+| Requested version | Recorded holds | Recorded wall angle |
+| --- | --- | --- |
+| Omitted or `1` | Scalar `holdType` only: one distinct `crimp`, `sloper`, `pinch`, `pocket`, or `jug` is retained. Multiple grips, newer grip kinds, and unknown grips produce null; no predominant grip is selected. | Numeric objects retain their values and units. Source categories produce null. |
+| `2` | Complete nullable `holdTypes` collection; no scalar alias. | Complete nullable numeric-or-category object. |
+
+The updated web and mobile clients request version `2` and strictly validate
+either supported response before rendering the canonical client model.
+An earlier server's original `z.object` input strips the unknown version
+option and still returns version `1`; the decoder promotes its scalar grip
+to a collection. This supports a newer client with an earlier API as well as
+an installed older client with the newer API. It does not accept malformed
+hybrid payloads or invent absent traits. See the
+[decoders](../packages/server/src/contracts/climbing-log-contracts.ts),
+[response tests](../packages/server/src/contracts/climbing-log-contracts.test.ts),
+and [Zod object behavior](https://zod.dev/api#objects).
+
+Versioned request inputs separate query keys, and the server cache includes
+the raw input and the procedure's cache version. Mobile keeps persisted-cache
+contract `16`; the new versioned keys and strict decoders handle mixed API/OTA
+release order. See the [server cache](../packages/server/src/trpc.ts),
+[mobile persistence](../packages/mobile/lib/mobile-query-persistence.ts), and
+[TanStack query-key guidance](https://tanstack.com/query/latest/docs/framework/react/guides/query-keys).
+
+MCP tools `get_activity_details`, `get_climbing_sessions`, and
+`get_climbing_progression` accept the equivalent `response_version`, also
+defaulting to `1`. Progression entries use `hold_type` in version `1` and
+`hold_types` in version `2`; their existing `wall_angle_degrees` remains a
+numeric-only field. The tools project the selected version before building
+both text and structured results, so the two representations agree. See the
+[shared version policy](../packages/training/src/climbing-log-response.ts),
+[activity tool](../packages/server/src/mcp/activity-details-tool.ts),
+[sessions tool](../packages/server/src/mcp/climbing-sessions-tool.ts), and
+[progression tool](../packages/server/src/mcp/climbing-progression-tool.ts).
+
 ## Browsing, attachment, and analytics
 
 Both clients render concise cards and expose full facts through details. Provider record details fetch the selected log's full owned graph. Cached records remain visible during refresh errors. Source date stays independent of Activity: attaching or deleting the Activity preserves it. The server suggests active, unattached logs with a matching known day for climbing or hiking Activities; attachment is explicit. See the [association service](../packages/server/src/repositories/climbing-log-entry-associator.ts) and [paired details](../packages/web/src/components/ClimbingLogEntryDetails.tsx).

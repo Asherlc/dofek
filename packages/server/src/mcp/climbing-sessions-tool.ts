@@ -1,7 +1,9 @@
 import type { FreeRockGradeSystem, RockClimbKind } from "@dofek/training/climbing-grades";
+import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
+import { serializeClimbingLogEntryDetailResponse } from "../contracts/climbing-log-contracts.ts";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
@@ -31,10 +33,16 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
       description:
         "Return exact-range climbing and logged hiking outings with shared climbs, pitches, recorded attempt facts and source attribution. Rock metrics use whole attempts and one compatible published grade; generic completion and pitch results remain separately scoped in each log.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: z.object({ start_date: dateSchema, end_date: dateSchema }),
+      inputSchema: z.object({
+        start_date: dateSchema,
+        end_date: dateSchema,
+        response_version: climbingResponseVersionSchema.describe(
+          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles.",
+        ),
+      }),
       outputSchema: climbingSessionsOutputSchema,
     },
-    async ({ start_date, end_date }) => {
+    async ({ start_date, end_date, response_version }) => {
       requireMcpScope(context.scopes, "activity:read");
       assertDateRange(start_date, end_date);
       const preference = await loadClimbingGradePreference(context.db, context.userId);
@@ -72,7 +80,9 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
           name: activity.name,
           location:
             logs.find((log) => log.climb?.areaPath.length)?.climb?.areaPath.at(-1)?.name ?? null,
-          climbing_log_entries: logs,
+          climbing_log_entries: logs.map((log) =>
+            serializeClimbingLogEntryDetailResponse(log, response_version),
+          ),
         });
       }
       const observations = await climbingRepository.getAttachedRockObservations(

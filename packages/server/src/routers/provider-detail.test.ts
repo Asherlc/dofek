@@ -2,6 +2,7 @@ import type { TokenSet } from "dofek/auth/oauth";
 import type { ProviderRevocationTokenPersistence } from "dofek/providers/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { climbingLogEntryFixture } from "../repositories/climbing-test-helpers.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -965,6 +966,35 @@ describe("providerDetailRouter", () => {
   // ── recordDetail ──
 
   describe("recordDetail", () => {
+    it.each([undefined, 1, 2] as const)(
+      "negotiates climbing detail version %s without changing unrelated records",
+      async (responseVersion) => {
+        const detail = climbingLogEntryFixture({
+          holdTypes: ["crimp", "jug"],
+          wallAngle: { category: "slab" },
+        });
+        const lookup = vi
+          .spyOn(ProviderDetailRepository.prototype, "getRecordDetail")
+          .mockResolvedValueOnce(detail);
+        const caller = createCaller({
+          db: { execute: vi.fn() },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+        const { holdTypes: _holds, ...legacy } = detail;
+        const result = await caller.recordDetail({
+          providerId: "kaya",
+          dataType: "climbingLogEntries",
+          recordId: detail.id,
+          ...(responseVersion === undefined ? {} : { responseVersion }),
+        });
+        expect(result).toEqual(
+          responseVersion === 2 ? detail : { ...legacy, holdType: null, wallAngle: null },
+        );
+        lookup.mockRestore();
+      },
+    );
+
     it("returns a single activity record with raw data", async () => {
       const caller = createCaller({
         db: {

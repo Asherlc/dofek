@@ -1,22 +1,29 @@
 -- dofek: deployment-mode=maintenance
 -- Replace the scalar in place; existing recorded grips and missing metadata are preserved.
 -- https://www.postgresql.org/docs/current/sql-altertable.html
-ALTER TYPE fitness.climbing_hold_type ADD VALUE 'volume';
+ALTER TYPE fitness.climbing_hold_type ADD VALUE 'volume' AFTER 'jug';
 --> statement-breakpoint
-ALTER TYPE fitness.climbing_hold_type ADD VALUE 'jam';
+ALTER TYPE fitness.climbing_hold_type ADD VALUE 'jam' AFTER 'volume';
 --> statement-breakpoint
-ALTER TYPE fitness.climbing_hold_type ADD VALUE 'no_grips';
+ALTER TYPE fitness.climbing_hold_type ADD VALUE 'no_grips' AFTER 'jam';
 --> statement-breakpoint
+-- Approved maintenance cutover: readers stop before this view is recreated in the same transaction.
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.v_climbing_log_entry;
 --> statement-breakpoint
-ALTER TABLE fitness.climbing_log_entry
-ALTER COLUMN hold_type TYPE fitness.climbing_hold_type[]
+-- Approved maintenance cutover: the blocking rewrite preserves every scalar as one array element.
+-- squawk-ignore changing-column-type
+ALTER TABLE fitness.climbing_log_entry ALTER COLUMN hold_type TYPE fitness.climbing_hold_type[]
 USING CASE WHEN hold_type IS NULL THEN NULL ELSE ARRAY[hold_type] END;
 --> statement-breakpoint
+-- Approved maintenance cutover: rename the one canonical column without duplicate storage.
+-- squawk-ignore renaming-column
 ALTER TABLE fitness.climbing_log_entry RENAME COLUMN hold_type TO hold_types;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry ADD CONSTRAINT climbing_log_entry_hold_types_valid
-CHECK (hold_types IS NULL OR (CARDINALITY(hold_types) > 0 AND ARRAY_NDIMS(hold_types) = 1 AND ARRAY_POSITION(hold_types, NULL) IS NULL));
+CHECK (hold_types IS NULL OR (CARDINALITY(hold_types) > 0 AND ARRAY_NDIMS(hold_types) = 1 AND ARRAY_POSITION(hold_types, NULL) IS NULL)) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.climbing_log_entry VALIDATE CONSTRAINT climbing_log_entry_hold_types_valid;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION fitness.climbing_wall_angle_valid(value jsonb)
 RETURNS boolean LANGUAGE sql IMMUTABLE AS $$

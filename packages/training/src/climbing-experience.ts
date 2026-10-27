@@ -5,7 +5,7 @@ export const climbingBoardSchema = z.strictObject({
   externalId: z.string().trim().min(1).nullable(),
 });
 
-const numericWallAngleSchema = z
+export const numericWallAngleSchema = z
   .strictObject({
     value: z.number().finite(),
     unit: z.literal("degrees").nullable(),

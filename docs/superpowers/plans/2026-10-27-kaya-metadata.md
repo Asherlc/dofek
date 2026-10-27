@@ -54,4 +54,17 @@ shared formatting. KAYA-specific decoding remains within the KAYA provider.
 - [ ] Commit and push; prepare a reviewable release and execute the authorized
   sync through the normal production path when the matching code is deployed.
 
-Release gate: installed mobile clients require an explicit versioned-response or supported-client rollout decision before deployment. The maintenance migration and new cache version do not upgrade old bundles.
+## Task 4: Approved response versions and CI repair
+
+- [x] Add failing V1/V2 contract and router tests, then implement version
+  negotiation on the existing three tRPC paths and affected MCP tools.
+- [x] Update both clients to request V2 and decode either strict wire version;
+  test known legacy facts and current categorical/multiple-grip rendering.
+- [x] Repair the hosted spelling, source-KAYA fixture and mutation failures;
+  apply only the three explicitly approved statement-level migration exceptions.
+- [ ] Run combined checks and fresh independent review, push the revision,
+  verify hosted CI, then follow the normal maintenance release and KAYA sync.
+
+The operator approved the versioned-response strategy and the three migration
+exceptions on 2026-10-27. Production rollout still requires passing checks and
+verification of both supported response versions.

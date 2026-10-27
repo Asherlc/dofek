@@ -27,6 +27,7 @@ import type {
   ActivityMetricSourceSelection,
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
+import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
@@ -410,12 +411,12 @@ export default function ActivityDetailScreen() {
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "" },
-    { enabled: !!id && isClimbingActivity },
+    { activityId: id ?? "", responseVersion: 2 },
+    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id },
-    { enabled: !!id && isClimbingActivity },
+    { activityId: id, responseVersion: 2 },
+    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
@@ -441,13 +442,17 @@ export default function ActivityDetailScreen() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
-        trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
+        trpcUtils.climbing.activityLogEntries.invalidate({
+          activityId: input.activityId,
+          responseVersion: 2,
+        }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
+          responseVersion: 2,
         }),
       ]);
     },

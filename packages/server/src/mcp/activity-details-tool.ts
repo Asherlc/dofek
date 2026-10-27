@@ -1,6 +1,8 @@
+import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
+import { serializeClimbingLogEntryDetailResponse } from "../contracts/climbing-log-contracts.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { readFingerLoadingActivity } from "../repositories/climbing-training-log-repository.ts";
@@ -22,10 +24,15 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       description:
         "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: z.object({ activity_id: z.uuid() }),
+      inputSchema: z.object({
+        activity_id: z.uuid(),
+        response_version: climbingResponseVersionSchema.describe(
+          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles.",
+        ),
+      }),
       outputSchema: activityDetailsOutputSchema,
     },
-    async ({ activity_id }) => {
+    async ({ activity_id, response_version }) => {
       requireMcpScope(context.scopes, "activity:read");
       const activityRepository = new ActivityRepository(
         context.db,
@@ -63,7 +70,9 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       ]);
       return jsonToolResult({
         activity,
-        climbing_log_entries: climbingLogEntries.map((entry) => entry.toDetail()),
+        climbing_log_entries: climbingLogEntries.map((entry) =>
+          serializeClimbingLogEntryDetailResponse(entry.toDetail(), response_version),
+        ),
         finger_loading: fingerLoading,
         strength_exercises: strengthExercises.map((exercise) => exercise.toDetail()),
       });

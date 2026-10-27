@@ -74,7 +74,7 @@ afterAll(async () => {
   }
 });
 
-it("migrates recorded scalar grips transactionally and serves categories and nonempty grip collections", async () => {
+it("migrates recorded scalar grips in one transaction and serves categories and nonempty grip collections", async () => {
   const known = randomUUID();
   const missing = randomUUID();
   const activity = randomUUID();

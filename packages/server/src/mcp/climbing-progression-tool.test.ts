@@ -183,6 +183,7 @@ describe("get_climbing_progression", () => {
     const result = await client.callTool({
       name: "get_climbing_progression",
       arguments: {
+        response_version: 2,
         start_date: "2026-07-01",
         end_date: "2026-07-31",
         providers: ["kaya"],
@@ -208,6 +209,42 @@ describe("get_climbing_progression", () => {
       result: fixture(),
     });
   });
+
+  it.each([undefined, 1, 2] as const)(
+    "negotiates grip responses for version %s",
+    async (version) => {
+      const source = fixture();
+      const first = source.sessions[0]?.climbing_log_entries[0];
+      if (!first) throw new Error("Expected progression fixture");
+      const holds = [["crimp"], ["jug", "crimp"], ["volume"], ["jam"], ["no_grips"], null];
+      mocks.listRange.mockResolvedValue({
+        ...source,
+        sessions: source.sessions.map((session) => ({
+          ...session,
+          climbing_log_entries: holds.map((hold_types) => ({ ...first, hold_types })),
+        })),
+      });
+      const result = await client.callTool({
+        name: "get_climbing_progression",
+        arguments: {
+          start_date: "2026-07-01",
+          end_date: "2026-07-31",
+          ...(version === undefined ? {} : { response_version: version }),
+        },
+      });
+      expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+      const parsed = climbingProgressionOutputSchema.parse(result.structuredContent);
+      const { hold_types: _holds, ...rest } = first;
+      expect(parsed.result.sessions[0]?.climbing_log_entries).toEqual(
+        version === 2
+          ? holds.map((hold_types) => ({ ...rest, hold_types }))
+          : ["crimp", null, null, null, null, null].map((hold_type) => ({ ...rest, hold_type })),
+      );
+      const text = result.content[0];
+      if (text?.type !== "text") throw new Error("Expected JSON text");
+      expect(JSON.parse(String(text.text))).toEqual(parsed.result);
+    },
+  );
 
   it("rejects reversed ranges before querying", async () => {
     const result = await client.callTool({

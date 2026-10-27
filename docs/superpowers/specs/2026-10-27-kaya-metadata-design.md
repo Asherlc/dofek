@@ -53,3 +53,32 @@ identities, activity links, and recorded attempts across refreshes. Review the
 whole diff before committing and push commits to the existing branch. Use the
 normal release/sync path for production; no runtime hot-patches or inferred
 hold facts. Record live source coverage after the eventual sync.
+
+## Approved response versioning follow-up
+
+The operator approved durable versioned API responses after an executable
+old-client formatter replay rendered a categorical angle as undefined. The
+existing OTA and API release workflows can complete independently, so keep the
+three existing tRPC paths and negotiate `responseVersion: 1 | 2`, defaulting to
+V1. MCP's three affected tools use `response_version` with the same default.
+
+V1 is a read-only projection: exactly one distinct original grip becomes the
+old `holdType`; multiple grips and the newer grip categories become null.
+Categorical angles become null, while recorded numeric angles retain their
+units. Omit `holdTypes` from V1. V2 serves the canonical collection and angle
+union. Storage and repository results remain canonical.
+
+Updated web/mobile clients request V2 and strictly decode either supported
+response into their canonical rendering model. An old server's existing
+[`z.object` input](https://zod.dev/api#objects) strips the added version field
+and returns V1, allowing either deployment order. This decodes response facts;
+it does not infer missing traits, compute metrics, retry requests, or swallow
+invalid responses. Both version inputs participate in existing cache keys;
+server key versions change to exclude pre-negotiation payloads. See tRPC's
+[input/output validation](https://trpc.io/docs/server/validators).
+
+Acceptance covers old/no-version callers on the new server, new clients
+reading the old response, V2 traits, malformed or mixed contracts, provider
+record details, and MCP text/structured output agreement. On 2026-10-27 the
+operator also approved only three statement-scoped Squawk exceptions for the
+maintenance view replacement, column type conversion and column rename.

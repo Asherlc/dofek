@@ -6,6 +6,7 @@ import {
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import { z } from "zod";
+import { legacyClimbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
 
 const nullableNumber = z.number().nullable();
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -47,7 +48,7 @@ const hardestSchema = z
   .strict();
 
 /** Strict MCP wire contract for longitudinal climbing progression. */
-export const climbingProgressionOutputSchema = z
+const canonicalClimbingProgressionOutputSchema = z
   .object({
     result: z
       .object({
@@ -225,3 +226,22 @@ export const climbingProgressionOutputSchema = z
       .strict(),
   })
   .strict();
+
+const progressionResultSchema = canonicalClimbingProgressionOutputSchema.shape.result;
+const progressionSessionSchema = progressionResultSchema.shape.sessions.element;
+const progressionEntrySchema = progressionSessionSchema.shape.climbing_log_entries.element;
+const legacyProgressionEntrySchema = progressionEntrySchema.omit({ hold_types: true }).extend({
+  hold_type: legacyClimbingLogEntryDetailSchema.shape.holdType,
+});
+
+export const climbingProgressionOutputSchema = canonicalClimbingProgressionOutputSchema.extend({
+  result: progressionResultSchema.extend({
+    sessions: z.array(
+      progressionSessionSchema.extend({
+        climbing_log_entries: z.array(
+          z.union([progressionEntrySchema, legacyProgressionEntrySchema]),
+        ),
+      }),
+    ),
+  }),
+});

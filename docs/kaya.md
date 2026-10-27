@@ -182,6 +182,32 @@ names alone do not identify a location. Source: the read-only
 [Kaya location search](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29.
 
 
+## Serving imported traits
+
+The canonical import retains plural grips and categorical wall angles. Updated
+web and mobile clients request `responseVersion: 2` on the existing climbing
+detail, attachment-suggestion and provider-record procedures. Version `1`
+remains the default for older clients: it returns a scalar only for one
+distinct grip supported by that contract, and returns null for categorical
+angles. Numeric values retain their supplied units. This response projection
+does not change the stored source facts or select a predominant grip. See the
+[shared version policy](../packages/training/src/climbing-log-response.ts) and
+[complete response contract](climbing-context.md#response-versions-and-independent-releases).
+
+Updated clients also validate the earlier response shape when deployed before
+the new API; the previous `z.object` input ignores the new version option.
+The supported versions are explicit strict schemas, following
+[Zod's object behavior](https://zod.dev/api#objects) and
+[tRPC input/output validation](https://trpc.io/docs/server/validators).
+MCP callers select the same policy with `response_version` on
+`get_activity_details`, `get_climbing_sessions`, and `get_climbing_progression`.
+The [maintenance migration](../drizzle/0169_climbing_traits.sql) still requires
+the normal [database/application deployment procedure](../deploy/README.md);
+response versions address client compatibility, not database rollout ordering.
+After that release, a normal sync refreshes existing records through both
+complete KAYA feeds; the [source and coverage audit](climbing-trait-coverage.md#repeating-the-audit)
+defines the checks before declaring production metadata recovered.
+
 ## Unnamed climb labels
 
 The [client](../packages/kaya-client/src/client.ts) requests `color { name }`
