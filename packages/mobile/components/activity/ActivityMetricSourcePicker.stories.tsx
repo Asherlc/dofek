@@ -1,4 +1,7 @@
-import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
+import {
+  type ActivityMetricSource,
+  activityMetricSourcePresentation,
+} from "@dofek/providers/activity-metric-source";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
 import { Platform, View } from "react-native";
@@ -64,6 +67,30 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const AppleHealth: Story = { args: { selectedId: watch.id } };
 export const Bluetooth: Story = { args: { selectedId: bluetooth.id } };
+export const PelotonAndStrava: Story = {
+  args: {
+    label: "Power",
+    showLabel: false,
+    selectedId: "peloton",
+    sources: [
+      {
+        id: "peloton",
+        label: "Peloton",
+        presentation: activityMetricSourcePresentation("peloton", null, "Peloton"),
+      },
+      {
+        id: "strava-bike",
+        label: "Strava · recorded by Peloton Bike",
+        presentation: activityMetricSourcePresentation(
+          "strava",
+          null,
+          "Strava · recorded by Peloton Bike",
+          "Peloton Bike",
+        ),
+      },
+    ],
+  },
+};
 export const Elevation: Story = {
   args: { label: "Elevation", showLabel: false, selectedId: watch.id },
 };
