@@ -3,6 +3,15 @@ import { classifyHandledFailure } from "./handled-failure.ts";
 
 describe("classifyHandledFailure", () => {
   it.each([
+    new SyntaxError("fetch failed: cancelled"),
+    Object.assign(new Error("fetch failed: cancelled"), { name: "ZodError" }),
+  ])(
+    "retains a wrapped parse/schema failure even when its copied message matches transport",
+    (cause) => {
+      expect(classifyHandledFailure(new Error(cause.message, { cause }))).toBeNull();
+    },
+  );
+  it.each([
     ["fetch failed: cancelled", "cancelled"],
     ["fetch failed: canceled", "cancelled"],
     ["The operation was aborted.", "cancelled"],

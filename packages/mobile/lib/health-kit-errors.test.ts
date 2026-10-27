@@ -6,6 +6,15 @@ import {
 } from "./health-kit-errors";
 
 describe("health-kit-errors", () => {
+  it("retains a wrapped parse failure even when its message was copied by tRPC", () => {
+    const cause = new SyntaxError("fetch failed: cancelled");
+    expect(
+      shouldSuppressBackgroundTransientNetworkError(
+        new Error(cause.message, { cause }),
+        "bg-healthkit-sync",
+      ),
+    ).toBe(false);
+  });
   it("retains mixed sync failures and cyclic causes as unexpected", () => {
     const mixed = new Error(
       "HealthKit observer sync completed with 2 error(s): Invalid schema; Push workout routes: fetch failed: cancelled",

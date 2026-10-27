@@ -20,8 +20,10 @@ PostHog supports [counting events](https://posthog.com/docs/product-analytics/in
 Remove synthetic credential lifecycle exceptions: callers retain responsibility
 for reporting unexpected failures. Preserve unknown HTTP authorization rejection
 diagnostics, malformed responses, storage failures, and unhandled exceptions.
-Serialize a confirmed invalid-credentials category through the existing tRPC
-error formatter so web and mobile can apply the same policy.
+Serialize Dofek's confirmed password-check rejection through the existing tRPC
+error formatter so web and mobile can apply the same policy. Vendor credential
+error classes also represent malformed responses and upstream outages, so those
+classes alone are insufficient evidence and remain reportable.
 
 Alternatives considered: changing only Sentry alert rules leaves duplicate
 PostHog issues; global message filtering can conceal unrelated defects. The

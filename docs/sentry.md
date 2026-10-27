@@ -113,8 +113,9 @@ exception; the caller still reports unexpected failures. OpenTelemetry describes
 [counter aggregation](https://opentelemetry.io/docs/specs/otel/metrics/api/#counter).
 
 Classification requires a known transport shape or an explicit credential
-marker from the server. A generic 401/403 or BAD_REQUEST does not establish
-invalid credentials. Unknown HTTP authorization diagnostics, malformed responses,
+marker from Dofek's own password-check rejection. A generic 401/403, BAD_REQUEST,
+or vendor credential error class does not establish invalid credentials: existing
+Kaya and Zepp classes also represent unexpected response failures. Unknown HTTP authorization diagnostics, malformed responses,
 storage failures, and unhandled exceptions remain reportable. Browser console
 messages do not independently create PostHog exception issues; explicit reports
 and genuine unhandled errors/rejections still do. See PostHog's
