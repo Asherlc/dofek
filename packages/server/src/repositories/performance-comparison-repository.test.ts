@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cyclingEffortMetricsSchema,
   performanceComparisonOutputSchema,
 } from "../mcp/performance-comparison-output.ts";
+import * as climbingObservations from "./climbing-rock-observations.ts";
 import type { ComparisonIdentityRow } from "./performance-comparison-identity.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
 
@@ -119,6 +120,54 @@ function indexedActivityId(index: number): string {
 }
 
 describe("PerformanceComparisonRepository", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    { attemptScope: "pitch", ropeMethod: "lead", solo: false },
+    { attemptScope: "climb", ropeMethod: null, solo: null },
+    { attemptScope: "climb", ropeMethod: "top_rope", solo: true },
+  ] as const)(
+    "preserves the $attemptScope/$ropeMethod/$solo identity in every climbing projection",
+    async ({ attemptScope, ropeMethod, solo }) => {
+      const projection = vi.spyOn(climbingObservations, "rockClimbingLogProjection");
+      const row = activityRow({ canonical_type: "climbing", source_raw_evidence: [] });
+      await new PerformanceComparisonRepository(
+        database(row, [row]),
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: null,
+        equivalence: {
+          kind: "climb",
+          climbKind: "route",
+          gradeSystem: "yds",
+          grade: "5.10a",
+          climbName: "Corner",
+          locationName: "Wall",
+          attemptScope,
+          ropeMethod,
+          solo,
+          pitchNumber: attemptScope === "pitch" ? 1 : null,
+        },
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 10,
+      });
+      const scopedCalls = projection.mock.calls.filter(([, filters]) => filters !== undefined);
+      expect(scopedCalls.length).toBeGreaterThan(0);
+      for (const [, filters] of scopedCalls) {
+        expect(filters).toEqual({
+          attemptScope: [attemptScope],
+          ropeMethod: ropeMethod ?? "unknown",
+          solo: [solo],
+        });
+      }
+    },
+  );
   it.each([
     {
       kind: "provider_workout",
