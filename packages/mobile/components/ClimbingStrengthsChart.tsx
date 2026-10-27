@@ -1,5 +1,9 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
-import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
+import {
+  climbingStrengthsBaselineLabel,
+  climbingStrengthsCountLabel,
+  climbingStrengthsRateLabel,
+} from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
@@ -16,11 +20,10 @@ const palette = [colors.accent, "#bb7944", "#7688bc", "#ad658e", "#5e9d9a", "#9b
 function color(index: number) {
   return palette[index % palette.length] ?? colors.accent;
 }
-function rate(value: number | null | undefined) {
-  return value == null ? "No data" : `${value}%`;
-}
-function facts(cell: Pick<Cell, "sends" | "climbs" | "successRate" | "sampleStatus">) {
-  return `${rate(cell.successRate)} · ${cell.sends} sends / ${cell.climbs} climbs${cell.sampleStatus === "limited" ? " · Limited data" : ""}`;
+function facts(
+  cell: Pick<Cell, "sends" | "climbs" | "unknownOutcomes" | "successRate" | "sampleStatus">,
+) {
+  return `${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`;
 }
 const explanations: Record<ViewKind, string> = {
   gaps: "Success gap in percentage points from the same-grade baseline. Zero is the baseline.",
@@ -72,7 +75,7 @@ export function ClimbingStrengthsChart({
       : panel.rows.flatMap((row) =>
           row.cells.map((cell) => ({
             label: `${row.label} · ${cell.grade}`,
-            value: `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${rate(panel.grades.find((entry) => entry.grade === cell.grade)?.successRate)}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
+            value: `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${climbingStrengthsRateLabel(panel.grades.find((entry) => entry.grade === cell.grade) ?? { climbs: 0, successRate: null })}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
           })),
         );
   const usable = selected.filter(({ cell }) => cell.successRate !== null);
@@ -184,7 +187,9 @@ export function ClimbingStrengthsChart({
                           </>
                         ) : (
                           <SvgText {...svgText} x={center + 4} y={pointY + 14}>
-                            No data
+                            {cell.successRate === null
+                              ? climbingStrengthsRateLabel(cell)
+                              : "No comparison"}
                           </SvgText>
                         )}
                       </G>
@@ -445,7 +450,7 @@ export function ClimbingStrengthsChart({
                                   y={pointY + 15}
                                   textAnchor="middle"
                                 >
-                                  No data
+                                  {climbingStrengthsRateLabel(cell)}
                                 </SvgText>
                               )}
                             </G>

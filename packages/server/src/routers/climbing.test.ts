@@ -13,6 +13,17 @@ import { HangboardingRepository } from "../repositories/hangboarding-repository.
 import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { signActivityImage, readActivityImage } = vi.hoisted(() => ({
+  signActivityImage: vi.fn(
+    async (key: string) => `https://private.example.test/${key}?signed=private`,
+  ),
+  readActivityImage: vi.fn(),
+}));
+vi.mock("dofek/activity-images/storage", () => ({
+  createActivityImageUrl: signActivityImage,
+  readActivityImageObject: readActivityImage,
+}));
+
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 const { invalidateByPrefix } = vi.hoisted(() => ({ invalidateByPrefix: vi.fn() }));
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
@@ -89,6 +100,64 @@ describe("climbingRouter", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+  it("serves authorized stored ascent photos through the private storage signer", async () => {
+    const source = {
+      activityId: null,
+      climbingLogEntryId: groupId,
+      providerId: "kaya",
+      sourceId: "ascent-photo",
+      kind: "photo",
+      caption: "Summit",
+      position: 0,
+    };
+    const stored = {
+      id: "stored-object",
+      objectKey: "images/owner/ascent-hash",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 2048,
+      sources: [source],
+    };
+    const coverage = {
+      activityId: null,
+      climbingLogEntryId: groupId,
+      providerId: "kaya",
+      coverage: "complete",
+      reason: null,
+      expectedCount: 1,
+    };
+    const { caller } = makeCallerWithResponses([[{ id: groupId }], [stored], [coverage], []]);
+    expect(await caller.images({ id: groupId })).toEqual({
+      images: [
+        {
+          id: "stored-object",
+          url: "https://private.example.test/images/owner/ascent-hash?signed=private",
+          width: 1200,
+          height: 800,
+          mimeType: "image/jpeg",
+          sizeBytes: 2048,
+          sources: [source],
+        },
+      ],
+      coverage: [coverage],
+      acquisition: [],
+    });
+    expect(signActivityImage).toHaveBeenCalledWith("images/owner/ascent-hash");
+  });
+  it("rejects an inaccessible climbing photo owner before reading or signing media", async () => {
+    const { caller, execute } = makeCaller();
+    await expect(caller.images({ id: groupId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Climbing log entry not found",
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+  it("validates climbing photo IDs before querying", async () => {
+    const { caller, execute } = makeCaller();
+    await expect(caller.images({ id: "invalid" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(execute).not.toHaveBeenCalled();
   });
   it.each([
     groupId,
@@ -277,14 +346,15 @@ describe("climbingRouter", () => {
     ]);
     expect(panel?.progress[0]?.rows[0]?.cells[0]).toMatchObject({ climbs: 0, successRate: null });
     expect(panel?.progress[1]?.rows[0]?.cells[0]).toMatchObject({
-      climbs: 2,
+      climbs: 3,
       sends: 1,
+      unknownOutcomes: 1,
       successRate: 50,
     });
     expect(panel).toMatchObject({
       contextKey: "boulder-free-v",
       setting: "indoor",
-      grades: [{ grade: "V4", sends: 1, climbs: 2, successRate: 50 }],
+      grades: [{ grade: "V4", sends: 1, climbs: 3, unknownOutcomes: 1, successRate: 50 }],
       rows: [
         {
           key: "crimp",
@@ -292,12 +362,14 @@ describe("climbingRouter", () => {
             {
               grade: "V4",
               sends: 1,
-              climbs: 2,
+              climbs: 3,
+              unknownOutcomes: 1,
               successRate: 50,
               sampleStatus: "limited",
               examples: [
                 example,
                 expect.objectContaining({ logEntryId: "project-log", outcome: "not_sent" }),
+                expect.objectContaining({ outcome: null }),
               ],
             },
           ],
@@ -356,7 +428,14 @@ describe("climbingRouter", () => {
             {
               key: "crimp",
               cells: [
-                { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+                {
+                  grade: "V4",
+                  sends: 0,
+                  climbs: 1,
+                  unknownOutcomes: 0,
+                  successRate: 0,
+                  sampleStatus: "limited",
+                },
               ],
             },
           ],

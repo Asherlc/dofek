@@ -33,6 +33,7 @@ export const climbingPitchResultSchema = z.strictObject({
   displayGrade: z.string().nullable(),
 });
 export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
+  photoLogEntryId: z.guid().nullable(),
   climb: climbingLogClimbDetailSchema.nullable(),
   mapLocation: climbingMapLocationSchema.nullable(),
   attempts: z.array(climbingLogAttemptDetailSchema),

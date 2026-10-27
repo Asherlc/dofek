@@ -11,12 +11,14 @@ export function ActivityPhotos({
   error,
   onRetry,
   retrying = false,
+  pendingMessage,
 }: {
   images: readonly ActivityImage[];
   loading: boolean;
   error: unknown;
   onRetry: () => void;
   retrying?: boolean;
+  pendingMessage?: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -24,7 +26,7 @@ export function ActivityPhotos({
   useEffect(() => {
     if (selectedId && !selected) setSelectedId(null);
   }, [selectedId, selected]);
-  if (!images.length && !loading && !error) return null;
+  if (!images.length && !loading && !error && !pendingMessage) return null;
 
   return (
     <section className="card p-4 sm:p-5" aria-label="Photos">
@@ -42,6 +44,11 @@ export function ActivityPhotos({
           {retrying ? "Refreshing photos…" : "Refresh photos"}
         </button>
       </div>
+      {pendingMessage ? (
+        <p role="status" className="text-sm text-muted">
+          {pendingMessage}
+        </p>
+      ) : null}
       {error ? <QueryStatePanel error={error} contextLabel="Photos" height={72} /> : null}
       {loading && !images.length && !error ? (
         <QueryStatePanel variant="loading" contextLabel="Photos" height={120} />

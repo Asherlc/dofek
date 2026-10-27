@@ -10,6 +10,7 @@ import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
+import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
   let context: TestContext;
@@ -49,6 +50,65 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it("retains private KAYA media provenance in Postgres while serving sanitized active and provider details", async () => {
+    await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
+    const raw = {
+      photo: {
+        photo_url: "https://upstream.test/private.jpg?token=secret",
+        thumb_url: "https://upstream.test/thumb.jpg",
+      },
+      climb: { slug: "corner", color: "blue" },
+      rating: 4,
+    };
+    const written = await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kaya",
+      entries: [
+        {
+          externalId: "kaya:ascent:private-photo",
+          climbedOn: "2026-10-02",
+          attempts: [{ scope: "climb" }],
+          raw,
+        },
+      ],
+    });
+    const id = written.logEntryIds[0];
+    if (!id) throw new Error("Expected KAYA log");
+    const [active] = await repo().getLogEntries([id]);
+    const provider = new ProviderDetailRepository(context.db, userId);
+    const detail = await provider.getRecordDetail("kaya", "climbingLogEntries", id);
+    expect(active?.toDetail().raw).toEqual({ climb: { slug: "corner", color: "blue" }, rating: 4 });
+    expect(detail?.raw).toEqual({ climb: { slug: "corner", color: "blue" }, rating: 4 });
+    const [retained] = await context.db
+      .select({ raw: climbingLogEntry.raw })
+      .from(climbingLogEntry)
+      .where(eq(climbingLogEntry.id, id));
+    expect(retained?.raw).toEqual(raw);
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, id));
+    const absent = await provider.getRecordDetail("kaya", "climbingLogEntries", id);
+    expect(absent?.raw).toEqual({ climb: { slug: "corner", color: "blue" }, rating: 4 });
+  });
+  it.each([null, "indoor", "outdoor"] as const)(
+    "uses the canonical catalogue setting when the source setting is %s",
+    async (setting) => {
+      const log = await write({
+        externalId: "catalogue-setting",
+        discipline: "rock_climbing",
+        climb: { ...route, setting },
+        attempts: [{ scope: "climb", ropeMethod: "lead" }],
+      });
+      expect(log.climb?.setting).toBe(setting ?? "outdoor");
+      if (!log.climbId) throw new Error("Expected a catalogue climb");
+      const [stored] = await context.db
+        .select({ setting: climb.setting })
+        .from(climb)
+        .where(eq(climb.id, log.climbId));
+      expect(stored?.setting).toBe(setting);
+    },
+  );
   it("uses the same selected source graph as activity detail for equivalent cross-provider logs", async () => {
     await ensureProvider(context.db, "mountain-project", "Mountain Project", undefined, userId);
     const [first] = await context.db
@@ -85,7 +145,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         coordinates: { latitude: 10, longitude: 10 },
         areas: [{ externalId: "crag", name: "Crag" }],
       },
-      attempts: [{ scope: "climb", ropeMethod: "lead" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Unrecognized result" }],
     });
     await persistClimbingLogEntries(context.db, {
       userId,
@@ -264,7 +324,8 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
   it.each([
     { sourceResult: "Redpoint", outcome: "completed", labels: ["sent"] },
     { sourceResult: "failed", outcome: "failed", labels: [] },
-    { sourceResult: null, outcome: null, labels: [] },
+    { sourceResult: null, outcome: "completed", labels: ["sent"] },
+    { sourceResult: "Unrecognized result", outcome: null, labels: [] },
   ])("computes $outcome from stored source evidence", async ({ sourceResult, outcome, labels }) => {
     const before = await write({
       externalId: "source-result",
@@ -322,10 +383,17 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     },
     {
       name: "unknown outcome",
-      sourceResult: null,
+      sourceResult: "Unrecognized result",
       fellOrHung: false,
       usedAid: false,
       freeSend: null,
+    },
+    {
+      name: "unlabeled OpenBeta completion",
+      sourceResult: null,
+      fellOrHung: null,
+      usedAid: null,
+      freeSend: true,
     },
   ])(
     "projects free-send evidence for $name",

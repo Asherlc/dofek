@@ -221,6 +221,11 @@ export const climbingLogEntry = fitness.table(
       columns: [table.userId, table.activityId],
       foreignColumns: [activity.userId, activity.id],
     }).onDelete("set null"),
+    uniqueIndex("climbing_log_entry_owner_provider_id_idx").on(
+      table.userId,
+      table.providerId,
+      table.id,
+    ),
     uniqueIndex("climbing_log_entry_source_external_id_idx")
       .on(table.userId, table.providerId, table.externalId)
       .where(sql`${table.externalId} IS NOT NULL`),

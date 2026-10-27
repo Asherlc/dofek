@@ -10,6 +10,8 @@ import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntrySources } from "../pages/activity-detail/components/ClimbingLogEntrySources.tsx";
 
+import { ClimbingPhotos } from "./ClimbingPhotos";
+
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
   if (values.length === 0) return null;
   return (
@@ -123,6 +125,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           })}
         </section>
       )}
+      {entry.photoLogEntryId !== null && <ClimbingPhotos id={entry.photoLogEntryId} />}
       {entry.notes && (
         <section>
           <h4 className="font-medium">Notes</h4>

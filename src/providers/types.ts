@@ -225,6 +225,11 @@ interface BaseProvider {
  * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
+  discoverClimbingImages?(
+    run: SyncRun,
+    climbingExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery>;
   discoverActivityImages?(
     run: SyncRun,
     activityExternalId: string,

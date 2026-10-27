@@ -126,13 +126,21 @@ components:
         gym: { type: [object, 'null'] }
         attempted_climbs:
           type: array
-          description: Unsuccessful climbs for the session, with composite session/climb IDs and potentially unknown attempt counts. Observed in Kaya's authenticated application API on 2026-09-29.
+          description: Attempted climbs for the session, with composite session/climb IDs, explicit send status, and potentially unknown attempt counts. Observed in Kaya's authenticated application API on 2026-10-26.
           items:
             allOf:
               - $ref: '#/components/schemas/KayaClimb'
               - type: object
-                required: [attempts]
+                required: [attempts, sent]
                 properties:
+                  sent:
+                    type: boolean
+                    description: >-
+                      Explicit send status on the session's attempted climb.
+                      Verified against the authenticated API on 2026-10-26.
+                    externalDocs:
+                      description: Observed authenticated Kaya GraphQL API
+                      url: https://kaya-beta.kayaclimb.com/graphql
                   attempts:
                     type: [integer, 'null']
                     minimum: 1

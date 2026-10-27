@@ -203,3 +203,48 @@ it("parses stored media, discovery coverage and acquisition state together", asy
   });
   expect(spies.execute).toHaveBeenCalledTimes(3);
 });
+
+it("reports an actionable ascent-photo signing failure", async () => {
+  const { signStoredImages } = await import("./activity-images-repository.ts");
+  const failure = new Error("Object storage is unavailable");
+  await expect(
+    signStoredImages(
+      {
+        images: [
+          {
+            id: "stored",
+            objectKey: "private/ascent",
+            width: 1,
+            height: 1,
+            mimeType: "image/png",
+            sizeBytes: 1,
+            sources: [
+              {
+                activityId: null,
+                climbingLogEntryId: "log",
+                providerId: "kaya",
+                sourceId: "photo",
+                kind: "photo",
+                caption: null,
+                position: 0,
+              },
+            ],
+          },
+        ],
+        coverage: [],
+        acquisition: [],
+      },
+      {
+        sign: async () => {
+          throw failure;
+        },
+        readImage: vi.fn(),
+      },
+      "climbing",
+    ),
+  ).rejects.toMatchObject({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Stored ascent photos could not be loaded. Refresh photos to retry.",
+  });
+  expect(captureException).toHaveBeenCalledWith(failure, { tags: { context: "climbing-photos" } });
+});

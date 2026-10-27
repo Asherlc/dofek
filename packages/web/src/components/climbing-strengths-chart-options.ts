@@ -2,7 +2,11 @@ import type {
   ClimbingStrengthsCell,
   ClimbingStrengthsPanel,
 } from "@dofek/training/climbing-strengths";
-import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
+import {
+  climbingStrengthsBaselineLabel,
+  climbingStrengthsCountLabel,
+  climbingStrengthsRateLabel,
+} from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import type { CustomSeriesRenderItem } from "echarts";
 import {
@@ -18,11 +22,11 @@ import {
 
 type Outcome = Pick<
   ClimbingStrengthsCell,
-  "grade" | "sends" | "climbs" | "successRate" | "sampleStatus"
+  "grade" | "sends" | "climbs" | "unknownOutcomes" | "successRate" | "sampleStatus"
 >;
 type OutcomeValues = Omit<Outcome, "sampleStatus"> & { sampleStatus?: Outcome["sampleStatus"] };
 export function climbingStrengthsValueLabel(cell: OutcomeValues) {
-  return `${cell.successRate === null ? "No data" : `${cell.successRate}%`} · ${cell.sends} sends / ${cell.climbs} climbs${cell.sampleStatus === "limited" ? " · Limited data" : ""}`;
+  return `${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`;
 }
 
 function tooltipText(label: string, cell: OutcomeValues, period?: string) {

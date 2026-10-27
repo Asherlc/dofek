@@ -35,6 +35,21 @@ const databaseRowSchema = z.object({
       .pipe(climbingAttemptSchema),
   ),
 });
+function climbingDetailRaw(
+  log: Pick<ClimbingLogEntryDetail, "providerId" | "externalId" | "raw">,
+): ClimbingLogEntryDetail["raw"] {
+  const raw = log.raw;
+  if (
+    log.providerId !== "kaya" ||
+    !log.externalId?.startsWith("kaya:ascent:") ||
+    raw === null ||
+    typeof raw !== "object" ||
+    Array.isArray(raw)
+  )
+    return raw;
+  return Object.fromEntries(Object.entries(raw).filter(([key]) => key !== "photo"));
+}
+
 function mapLocation(
   climb: ClimbingLogEntryDetail["climb"],
 ): ClimbingLogEntryDetail["mapLocation"] {
@@ -165,7 +180,9 @@ function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
         [...match.log.sourceLinks, ...log.sourceLinks].map((link) => [JSON.stringify(link), link]),
       ).values(),
     ];
+    const photoLogEntryId = match.log.photoLogEntryId ?? log.photoLogEntryId;
     Object.assign(match.log, preferred, {
+      photoLogEntryId,
       sourceName: [...match.sources].join(", ") || null,
       sourceLinks,
     });
@@ -298,7 +315,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       CASE WHEN catalogue.id IS NOT NULL THEN jsonb_build_object(
         'id',catalogue.id,'userId',catalogue.user_id,'providerId',catalogue.provider_id,
         'externalId',catalogue.external_id,'name',catalogue.name,'kind',catalogue.kind,'areaId',catalogue.area_id,
-        'publishedGrades',entry.published_grades,'setting',catalogue.setting,'routeProtection',catalogue.route_protection,
+        'publishedGrades',entry.published_grades,'setting',entry.setting,'routeProtection',catalogue.route_protection,
         'coordinates',CASE WHEN catalogue.coordinates IS NOT NULL THEN jsonb_build_object('latitude',catalogue.coordinates[1],'longitude',catalogue.coordinates[0]) END,
         'areaPath',entry.area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id',pitch.id,'climbId',pitch.climb_id,'externalId',pitch.external_id,'number',pitch.number,'name',pitch.name,
@@ -349,8 +366,13 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       });
       return climbingLogEntryDetailSchema.parse({
         ...row.log,
+        raw: climbingDetailRaw(row.log),
         climb: row.climb,
         mapLocation: mapLocation(row.climb),
+        photoLogEntryId:
+          row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")
+            ? row.log.id
+            : null,
         attempts: row.attempts.map((attempt) => ({
           ...attempt,
           rockResultLabels: resultLabels(row, attempt),

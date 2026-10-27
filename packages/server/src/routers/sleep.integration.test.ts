@@ -25,9 +25,18 @@ describe("sleep router integration", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
+  let fixtureDate: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+    // Keep fixture nights and request windows on one date even if the suite crosses midnight.
+    const [clock] = await executeWithSchema(
+      testCtx.db,
+      z.object({ date: z.string() }),
+      sql`SELECT CURRENT_DATE::text AS date`,
+    );
+    if (!clock) throw new Error("Database date is required for sleep fixtures");
+    fixtureDate = clock.date;
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -50,8 +59,8 @@ describe("sleep router integration", () => {
             efficiency_pct, staging_available, sleep_type
           ) VALUES (
             ${selectedSessionId}::uuid, 'test_provider', ${TEST_USER_ID},
-            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00',
-            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '05:00:00',
+            ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:00:00',
+            ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '05:00:00',
             360, 54, 79, 200, 27,
             92.5, true, 'sleep'
           )`,
@@ -64,8 +73,8 @@ describe("sleep router integration", () => {
             efficiency_pct, staging_available, sleep_type, source_name
           ) VALUES (
             ${overlappingSessionId}::uuid, 'overlap_provider', ${TEST_USER_ID},
-            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:30:00',
-            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '03:30:00',
+            ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:30:00',
+            ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '03:30:00',
             240, 40, 50, 130, 20,
             91, true, 'sleep', 'Overlap Device'
           )`,
@@ -195,8 +204,8 @@ describe("sleep router integration", () => {
         (
           'test_provider',
           ${TEST_USER_ID},
-          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '06:00:00',
-          CURRENT_DATE - INTERVAL '3 days' + INTERVAL '14:00:00',
+          ${fixtureDate}::date - INTERVAL '3 days' + INTERVAL '06:00:00',
+          ${fixtureDate}::date - INTERVAL '3 days' + INTERVAL '14:00:00',
           480,
           90,
           100,
@@ -209,8 +218,8 @@ describe("sleep router integration", () => {
         (
           'partial_provider',
           ${TEST_USER_ID},
-          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '06:00:00',
-          CURRENT_DATE - INTERVAL '4 days' + INTERVAL '14:00:00',
+          ${fixtureDate}::date - INTERVAL '4 days' + INTERVAL '06:00:00',
+          ${fixtureDate}::date - INTERVAL '4 days' + INTERVAL '14:00:00',
           480,
           NULL,
           NULL,
@@ -233,7 +242,7 @@ describe("sleep router integration", () => {
       averageEfficiencyPercent: number | null;
     }>("recovery.sleepAnalytics", {
       days: 30,
-      endDate: new Date().toISOString().slice(0, 10),
+      endDate: fixtureDate,
     });
 
     expect(result.averageEfficiencyPercent).toBe(86.3);
@@ -271,8 +280,8 @@ describe("sleep router integration", () => {
             sleep_type
           ) VALUES (
             'whoop', ${TEST_USER_ID},
-            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '22:30:00',
-            CURRENT_DATE - INTERVAL '1 day' + INTERVAL '04:30:00',
+            ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '22:30:00',
+            ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '04:30:00',
             390, 60, 90, 200, 40,
             'sleep'
           )`,
@@ -292,9 +301,9 @@ describe("sleep router integration", () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
           VALUES
-            (${sessionId}::uuid, 'light', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:00:00', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00'),
-            (${sessionId}::uuid, 'deep', CURRENT_DATE - INTERVAL '2 days' + INTERVAL '23:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00'),
-            (${sessionId}::uuid, 'rem', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '00:45:00', CURRENT_DATE - INTERVAL '1 day' + INTERVAL '01:45:00')`,
+            (${sessionId}::uuid, 'light', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:00:00', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:45:00'),
+            (${sessionId}::uuid, 'deep', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:45:00', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '00:45:00'),
+            (${sessionId}::uuid, 'rem', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '00:45:00', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '01:45:00')`,
     );
     await syncClickHouseTestActivitySensorStore(testCtx);
 

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ImageDownloadError } from "../activity-images/download.ts";
-import type { ActivityImageWork } from "../activity-images/types.ts";
+import type { ActivityImageWork, ProviderImageCandidate } from "../activity-images/types.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { processActivityImageJob } from "./process-activity-image-job.ts";
+
+vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
 const work: ActivityImageWork = {
   id: "work",
@@ -29,10 +32,12 @@ function dependencies() {
     claim: vi.fn(async () => true),
     acquire: vi.fn(async (_work: ActivityImageWork) => ({ stored: true })),
     fail: vi.fn(async () => {}),
-    refresh: vi.fn(async () => ({
-      ...work.candidate,
-      variants: [{ url: "https://cdn.test/new", width: 100, height: 100 }],
-    })),
+    refresh: vi.fn(
+      async (): Promise<ProviderImageCandidate> => ({
+        ...work.candidate,
+        variants: [{ url: "https://cdn.test/new", width: 100, height: 100 }],
+      }),
+    ),
     cleanup,
   };
 }
@@ -63,11 +68,23 @@ describe("durable image acquisition", () => {
     await processActivityImageJob({ workId: "work", userId: "owner" }, deps);
     expect(deps.fail).toHaveBeenCalledWith(work, true, "image_http_429", 900);
   });
+  it("does not store a replacement photo under the expired generation", async () => {
+    const deps = dependencies();
+    deps.acquire.mockRejectedValueOnce(new ImageDownloadError("image_http_403"));
+    deps.refresh.mockResolvedValueOnce({ ...work.candidate, revision: "replaced" });
+    await processActivityImageJob({ workId: "work", userId: "owner" }, deps);
+    expect(deps.acquire).toHaveBeenCalledTimes(1);
+    expect(deps.fail).toHaveBeenCalledWith(work, false, "image_revision_changed", 30);
+  });
   it("records generic download errors without leaking their URL", async () => {
     const deps = dependencies();
     deps.acquire.mockRejectedValue(Error("secret https://cdn.test/a?token=x"));
     await processActivityImageJob({ workId: "work", userId: "owner" }, deps);
     expect(deps.fail).toHaveBeenCalledWith(work, true, "image_acquisition_failed", 30);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Image acquisition failed" }),
+      { tags: { provider: work.providerId, context: "image-acquisition" } },
+    );
   });
   it("retires stale completion rather than leaving a processing lease", async () => {
     const deps = dependencies();

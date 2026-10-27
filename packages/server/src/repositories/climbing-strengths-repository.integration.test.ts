@@ -94,8 +94,65 @@ describe("climbing strengths PostgreSQL", () => {
     });
     const result = analyze(await repo().getObservations(30));
     expect(result.coverage.unknownOutcomes).toBe(1);
-    expect(result.panels.every((p) => p.grades.length === 0)).toBe(true);
+    expect(result.panels.every((panel) => panel.grades.length === 1)).toBe(true);
+    const setting = result.panels.find((panel) => panel.dimension === "setting");
+    expect(setting?.grades[0]).toMatchObject({
+      grade: "5.10a",
+      climbs: 1,
+      unknownOutcomes: 1,
+      successRate: null,
+    });
+    expect(setting?.rows[1]?.cells[0]?.examples[0]?.outcome).toBeNull();
   });
+  it.each([
+    {
+      provider: "mountain-project",
+      sends: 1,
+      unknownOutcomes: 0,
+      successRate: 100,
+      outcome: "sent",
+    },
+    { provider: "openbeta", sends: 1, unknownOutcomes: 0, successRate: 100, outcome: "sent" },
+  ])(
+    "retains top-rope grades with the recorded $provider result semantics",
+    async ({ provider, sends, unknownOutcomes, successRate, outcome }) => {
+      for (const grade of ["5.2", "5.9", "5.10b"]) {
+        await write(
+          `top-rope-${grade}`,
+          {
+            climb: {
+              externalId: `route-${grade}`,
+              name: `Route ${grade}`,
+              kind: "route",
+              publishedGrades: [{ value: grade, system: "yds" }],
+            },
+            attempts: [{ scope: "climb", ropeMethod: "top_rope" }],
+          },
+          provider,
+        );
+      }
+      const observations = await repo().getObservations(30);
+      expect(observations).toHaveLength(3);
+      expect(observations.every((entry) => entry.setting === "outdoor")).toBe(true);
+      const result = analyze(observations);
+      const setting = result.panels.find((panel) => panel.dimension === "setting");
+      expect(setting?.contextLabel).toBe("Top rope");
+      expect(setting?.grades).toMatchObject(
+        ["5.2", "5.9", "5.10b"].map((grade) => ({
+          grade,
+          climbs: 1,
+          sends,
+          unknownOutcomes,
+          successRate,
+        })),
+      );
+      expect(setting?.rows.find((row) => row.key === "outdoor")?.cells).toMatchObject([
+        { climbs: 1, unknownOutcomes, successRate, examples: [{ outcome }] },
+        { climbs: 1, unknownOutcomes, successRate, examples: [{ outcome }] },
+        { climbs: 1, unknownOutcomes, successRate, examples: [{ outcome }] },
+      ]);
+    },
+  );
   it("queries all accessible history through the selected end date", async () => {
     const old = await write("historical", { climbedOn: await climbingTestDate(context.db, 800) });
     const recent = await write("recent");
@@ -284,7 +341,12 @@ describe("climbing strengths PostgreSQL", () => {
       endDate: "2026-10-20",
     });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
-    expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 1, climbs: 1, successRate: 100 });
+    expect(panel?.rows[0]?.cells[0]).toMatchObject({
+      sends: 1,
+      climbs: 1,
+      unknownOutcomes: 0,
+      successRate: 100,
+    });
     expect(panel?.progress).toEqual([
       {
         startDate: "2026-08-15",
@@ -293,7 +355,14 @@ describe("climbing strengths PostgreSQL", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "5.10a", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+              {
+                grade: "5.10a",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 0,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -305,7 +374,14 @@ describe("climbing strengths PostgreSQL", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "5.10a", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+              {
+                grade: "5.10a",
+                sends: 1,
+                climbs: 1,
+                unknownOutcomes: 0,
+                successRate: 100,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -317,7 +393,14 @@ describe("climbing strengths PostgreSQL", () => {
           {
             key: "crimp",
             cells: [
-              { grade: "5.10a", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              {
+                grade: "5.10a",
+                sends: 0,
+                climbs: 1,
+                unknownOutcomes: 1,
+                successRate: null,
+                sampleStatus: "limited",
+              },
             ],
           },
         ],
@@ -355,13 +438,34 @@ describe("climbing strengths PostgreSQL", () => {
     expect(result.coverage.missingGrades).toBe(2);
     const panel = result.panels.find((panel) => panel.dimension === "setting");
     expect(panel?.progress[0]?.rows[1]?.cells).toEqual([
-      { grade: "5.10a", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+      {
+        grade: "5.10a",
+        sends: 0,
+        climbs: 0,
+        unknownOutcomes: 0,
+        successRate: null,
+        sampleStatus: "no_data",
+      },
     ]);
     expect(panel?.progress[1]?.rows[1]?.cells).toEqual([
-      { grade: "5.10a", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+      {
+        grade: "5.10a",
+        sends: 0,
+        climbs: 0,
+        unknownOutcomes: 0,
+        successRate: null,
+        sampleStatus: "no_data",
+      },
     ]);
     expect(panel?.progress[2]?.rows[1]?.cells).toEqual([
-      { grade: "5.10a", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+      {
+        grade: "5.10a",
+        sends: 1,
+        climbs: 1,
+        unknownOutcomes: 0,
+        successRate: 100,
+        sampleStatus: "limited",
+      },
     ]);
   });
   it("anchors a one-day historic window with exclusive lower and inclusive end dates", async () => {

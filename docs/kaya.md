@@ -32,9 +32,20 @@ client's typed `attempts` property. The separate ascent feed uses its own
 the reported positive count by creating that many whole-Climb Attempt rows.
 A route's explicit `lead` flag supplies the recorded method on every counted
 occurrence; source result, qualifier, and repeat facts describe only one try.
+The session query also requests the non-null `sent` Boolean. An explicit false
+records `Attempt` on every counted occurrence; true records one generic `Send`
+and leaves additional occurrence outcomes unknown. The original Boolean stays
+in raw provenance. This does not assign Onsight, Flash, or an attempt index.
+The field's Boolean contract and the Cave Route's three attempts with
+`sent: false` were verified through the authenticated
+[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql) on 2026-10-26.
+Kaya documents separate [attempt and send controls](https://kayaclimb.com/support-articles/logging-your-climbs-on-kaya)
+and [attempt logging with Send disabled](https://kayaclimb.com/blog/logging-attempts-on-kaya).
+Earlier imports did not request this field; sync Kaya again to acquire the
+recorded status. Existing unknown records are not rewritten without source evidence.
 The [adapter](../src/providers/kaya-sync.ts) supplies those method-bearing
 occurrences to the shared writer instead of creating methodless route rows.
-A missing total creates one partially described occurrence; it does not
+A missing total creates one occurrence; the count alone does not
 establish complete lifetime history or a failed attempt. Only supported source
 facts describe individual outcomes. Attempted-climb summaries and ascent
 records remain separate source observations until evidence establishes overlap.
@@ -61,10 +72,11 @@ the remaining omissions are shown below:
 
 | Record | Fields |
 | --- | --- |
+| Session attempted climb, requested | `session_attempts` (aliased as `attempts`), `sent` (send status verified 2026-10-26) |
 | Climb, not requested | `description` |
 | Climb, requested | `slug`, `color { name }`, `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
-| Ascent, requested | Its own `grade`, comments, ratings and stiffness |
-| Ascent, not requested | `photo { photo_url thumb_url }`, `video { video_url thumb_url }` |
+| Ascent, requested | Its own `grade`, comments, ratings, stiffness, `photo { photo_url thumb_url }` |
+| Ascent, not requested | `video { video_url thumb_url }` |
 
 For the reported session, climb colors and slugs were populated; the other
 listed metadata was null, and ascent grades matched the climb grades. Session
@@ -125,10 +137,9 @@ and retains the earlier records. Reappearing records recover their original IDs.
 The [shared database writer](../src/db/climbing-log-sync.ts) enforces source
 scope inside the import transaction; executable [API](../packages/server/src/repositories/kaya-sync.integration.test.ts)
 and [CSV](../src/providers/kaya/import.integration.test.ts) regressions cover
-refreshes, partial exports, and record preservation. The API fetches full
-feeds: sessions are filtered locally by `since`, while standalone ascents use
-both `since` and `until`. These are current client bounds rather than an
-upstream bounded-query guarantee. See the [sync implementation](../src/providers/kaya-sync.ts).
+refreshes, partial exports, and record preservation. The API fetches and
+reconciles complete session and ascent feeds on each sync, including history
+before the requested window. See the [sync implementation](../src/providers/kaya-sync.ts).
 
 Board names can describe a model/layout, such as
 [Moonboard (2016)](https://kaya-app.kayaclimb.com/location/Moonboard-2016-701910),
@@ -155,3 +166,32 @@ Climbing card summaries show Onsight or Flash without the redundant attempts
 count and omit the generic “Completed” wording. Other reported counts and
 failure results remain visible; the underlying attempts and outcomes are unchanged.
 See the [shared formatter](../packages/format/src/climbing-log.ts).
+
+## Ascent photographs
+
+The current [Kaya application fragment](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js)
+selects `photo { photo_url thumb_url }` on `WebAscentFields` (inspected
+2026-10-26). The authenticated ascent feed requests those same photo fields;
+photographs are retained in the source log payload and discovered after its
+ClimbingLogEntry is persisted. Both session-attached and standalone ascents
+use the existing private [image pipeline](../src/db/activity-images.ts).
+
+The next normal sync discovers photographs on historical ascents using its
+already complete feed; no separate historical scan or per-ascent sync request
+is needed. The [adapter](../src/providers/kaya-sync.ts) keeps one stable photo
+slot per ascent, prefers `photo_url`, and offers `thumb_url` as an alternative.
+The [media mapper](../src/providers/kaya-sync.ts) identifies revisions from
+the underlying URL after removing signing parameters, so rotating signatures
+do not replace an image while a changed source photograph does. Explicit
+`photo: null` establishes no photograph; omitted, malformed, or empty photo
+objects remain incomplete and cannot retire stored photographs. Video
+thumbnails and climb galleries are outside this import.
+
+Expired links refresh through the same verified authenticated
+`ascentsForUser` list and select the exact ascent ID. A single-ascent lookup
+was not established by the inspected application; see the existing
+[client query contract](../packages/kaya-client/src/client.ts). This means an
+expired-link refresh can read the complete paginated ascent feed. Inspection
+verified the current application fragment, and executable client/provider
+tests cover discovery and refresh; this change has not independently verified
+an authenticated account with a populated photo or downloaded its real bytes.

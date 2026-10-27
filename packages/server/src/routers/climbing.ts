@@ -3,6 +3,7 @@ import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRPCError } from "@trpc/server";
+import { createActivityImageUrl, readActivityImageObject } from "dofek/activity-images/storage";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
@@ -12,7 +13,9 @@ import {
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
+import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
   type ClimbingGradeProgressionRow,
@@ -93,10 +96,21 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  images: protectedProcedure
+    .input(z.object({ id: z.guid() }))
+    .output(activityImagesOutputSchema)
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(() =>
+        new ClimbingImagesRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow).getImages(
+          input.id,
+          { sign: createActivityImageUrl, readImage: readActivityImageObject },
+        ),
+      ),
+    ),
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v3",
+    keyVersion: "climbing-strengths-v7",
   })
     .input(
       climbingInputSchema.extend({
@@ -142,7 +156,7 @@ export const climbingRouter = router({
   activityLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingLogEntriesSchema,
-    keyVersion: "climbing-activity-log-model-v3",
+    keyVersion: "climbing-activity-log-model-v5",
   })
     .input(z.object({ activityId: z.guid() }))
     .output(climbingLogEntriesSchema)
@@ -166,7 +180,7 @@ export const climbingRouter = router({
   unattachedClimbingLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
     outputSchema: climbingLogEntriesSchema,
-    keyVersion: "climbing-log-suggestions-v3",
+    keyVersion: "climbing-log-suggestions-v5",
   })
     .input(z.object({ activityId: z.guid() }))
     .output(climbingLogEntriesSchema)
@@ -223,7 +237,7 @@ export const climbingRouter = router({
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingGradeProgressionsSchema,
-    keyVersion: "climbing-scoped-grade-lanes-v1",
+    keyVersion: "climbing-scoped-grade-lanes-v4",
   })
     .input(climbingInputSchema)
     .output(climbingGradeProgressionsSchema)
@@ -239,7 +253,7 @@ export const climbingRouter = router({
   volumeByGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingVolumesSchema,
-    keyVersion: "climbing-canonical-log-observations-v1",
+    keyVersion: "climbing-canonical-log-observations-v4",
   })
     .input(climbingInputSchema)
     .output(climbingVolumesSchema)
@@ -253,7 +267,7 @@ export const climbingRouter = router({
   sessionSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingSessionSummariesSchema,
-    keyVersion: "climbing-canonical-log-sessions-v1",
+    keyVersion: "climbing-canonical-log-sessions-v4",
   })
     .input(climbingInputSchema)
     .output(climbingSessionSummariesSchema)
@@ -269,7 +283,7 @@ export const climbingRouter = router({
   locationMap: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingLocationMapSchema,
-    keyVersion: "climbing-location-map-v1",
+    keyVersion: "climbing-location-map-v4",
   })
     .input(climbingInputSchema)
     .output(climbingLocationMapSchema)
