@@ -1,5 +1,5 @@
 -- Interpret unlabeled OpenBeta ticks as completion, including already-synced records.
--- Recover explicit failure labels discarded by older adapters from retained raw facts.
+-- Recover source labels discarded by older adapters from retained raw facts.
 -- https://www.postgresql.org/docs/current/sql-createview.html
 CREATE OR REPLACE VIEW fitness.v_climbing_attempt AS
 WITH projected_attempts AS (
@@ -16,10 +16,10 @@ WITH projected_attempts AS (
     AND attempt.scope = 'climb'
     AND attempt.source_result IS NULL
     AND entry.raw ->> 'attemptType' IS NULL AS openbeta_unlabeled,
-    entry.provider_id = 'openbeta'
-    AND attempt.scope = 'climb'
-    AND attempt.source_result IS NULL
-    AND fitness.climbing_attempt_outcome(entry.raw ->> 'attemptType') = 'failed' AS openbeta_failed
+    CASE
+      WHEN entry.provider_id = 'openbeta' AND attempt.scope = 'climb'
+        THEN entry.raw ->> 'attemptType'
+    END AS openbeta_source_result
   FROM fitness.climbing_attempt AS attempt
   LEFT JOIN fitness.climbing_log_entry AS entry ON attempt.climbing_log_entry_id = entry.id
   LEFT JOIN fitness.climb AS climb ON entry.climb_id = climb.id
@@ -33,9 +33,8 @@ SELECT
   attempt.parent_attempt_id,
   attempt.attempt_index,
   CASE
-    WHEN attempt.openbeta_failed THEN 'failed'
     WHEN attempt.mountain_project_top_rope OR attempt.openbeta_unlabeled THEN 'completed'
-    ELSE fitness.climbing_attempt_outcome(attempt.source_result)
+    ELSE fitness.climbing_attempt_outcome(coalesce(attempt.source_result, attempt.openbeta_source_result))
   END AS outcome,
   attempt.rope_method,
   attempt.solo,

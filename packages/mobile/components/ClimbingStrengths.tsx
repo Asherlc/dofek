@@ -68,7 +68,7 @@ export function ClimbingStrengths({
       <Text style={styles.title}>Climbing strengths</Text>
       {rangeControl}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
-      {panels.length ? (
+      {data != null || !loading ? (
         <>
           <ClimbingStrengthsViewPicker value={view} onChange={setView} />
           <View style={styles.controls}>
@@ -87,6 +87,10 @@ export function ClimbingStrengths({
               </Pressable>
             ))}
           </View>
+        </>
+      ) : null}
+      {panels.length ? (
+        <>
           {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
             <Text style={styles.meta}>Success rates use climbs with known results.</Text>
           ) : null}
@@ -153,7 +157,9 @@ function ClimbingStrengthsContext({
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
           <View key={panel.key} style={{ gap: spacing.md }}>
-            {dimension !== "setting" && selectedPanels.length > 1 && panel.setting ? (
+            {dimension !== "setting" &&
+            (selectedPanels.length > 1 || panel.setting === "unknown") &&
+            panel.setting ? (
               <Text accessibilityRole="header" style={styles.text}>
                 {panel.setting === "indoor"
                   ? "Indoor"

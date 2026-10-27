@@ -315,7 +315,7 @@ it("keeps missing comparisons out of tooltip text and includes full monthly scop
   expect(missing).toBe("Slab · V4<br/>No data · 0 sends / 0 climbs");
   const progress = climbingStrengthsChartOption(panel, "progress", "V4", null);
   expect(formatter({ data: progress.series[0]?.data[0] })).toBe(
-    "Vertical · V4 · 2026-08-15 – 2026-08-31<br/>0% · 0 sends / 1 climbs",
+    "Vertical · V4 · 2026-08-15 – 2026-08-31<br/>0% · 0 sends / 1 climb",
   );
 });
 

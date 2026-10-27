@@ -567,7 +567,15 @@ const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
     successRate: null,
     differencePercentagePoints: null,
     sampleStatus: "limited",
-    examples: [{ ...unknownExample, name: "Unknown ascent", grade: "V3", outcome: null }],
+    examples: [
+      {
+        ...unknownExample,
+        logEntryId: "log-unknown-v3",
+        name: "Unknown ascent",
+        grade: "V3",
+        outcome: null,
+      },
+    ],
   },
   {
     grade: "V4",
@@ -577,7 +585,15 @@ const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
     successRate: 67,
     differencePercentagePoints: 0,
     sampleStatus: "available",
-    examples: [{ ...unknownExample, name: "Known ascent", grade: "V4", outcome: "sent" }],
+    examples: [
+      {
+        ...unknownExample,
+        logEntryId: "log-known-v4",
+        name: "Known ascent",
+        grade: "V4",
+        outcome: "sent",
+      },
+    ],
   },
 ];
 const unknownPooled = {

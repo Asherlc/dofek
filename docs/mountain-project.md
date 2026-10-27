@@ -95,9 +95,9 @@ while retaining explicit result labels and raw stored fields unchanged.
 
 The export supplies no attempt total, so each tick records one whole-Climb
 occurrence. `Pitches` describes the tick's pitch extent and creates neither
-additional tries nor catalogue Pitch objects. A top-rope method alone proves
-no completion or free send. Advertised sport/trad route types belong to the
-Climb and do not prove which protection the person used. These are Dofek's
+additional tries nor catalogue Pitch objects. Outside the blank-qualifier rule
+above, a top-rope method alone proves no completion or free send. Advertised
+sport/trad route types belong to the Climb and do not prove which protection the person used. These are Dofek's
 [normalization rules](climbing-context.md), based on the observed
 [tick export](https://www.mountainproject.com/user/200232920/cole-schmidt/tick-export).
 

@@ -68,29 +68,97 @@ it("offers seven views and retains selected source details through refreshes", (
 });
 
 afterEach(cleanup);
+it("keeps grouping and view controls usable when the period has no panels", () => {
+  render(<ClimbingStrengths data={{ ...fixture, panels: [] }} />);
+  for (const name of ["Wall angle", "Hold type", "Indoor & outdoor"]) {
+    fireEvent.click(screen.getByRole("button", { name }));
+    expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+  }
+  fireEvent.change(screen.getByLabelText("View"), { target: { value: "curves" } });
+  expect(screen.getByLabelText("View")).toHaveValue("curves");
+  expect(screen.getByText("No recorded climbing strengths in this period.")).toBeVisible();
+});
+it.each(["wall_angle", "hold_type"] as const)(
+  "labels a single %s panel when its setting is unknown",
+  (dimension) => {
+    const panel = fixture.panels[0];
+    if (!panel) throw new Error("Missing fixture");
+    render(
+      <ClimbingStrengths
+        data={{ ...fixture, panels: [{ ...panel, dimension, setting: "unknown" }] }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Setting unknown" })).toBeVisible();
+  },
+);
+it("renders both pooled unknown-result examples with stable distinct identities", () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
+    fireEvent.change(screen.getByLabelText("View"), { target: { value: "gaps" } });
+    fireEvent.click(screen.getByText("Exact values"));
+    fireEvent.click(screen.getByRole("button", { name: /Vertical · All grades/ }));
+    expect(screen.getByText("Unknown ascent")).toBeVisible();
+    expect(screen.getByText("Known ascent")).toBeVisible();
+    expect(error).not.toHaveBeenCalled();
+  } finally {
+    error.mockRestore();
+  }
+});
 it("renders both recorded settings as separate labeled panels across dimensions", () => {
   const angle = fixture.panels[0];
   if (!angle) throw new Error("Missing fixture");
+  const outdoor = {
+    ...angle,
+    key: "outdoor",
+    setting: "outdoor" as const,
+    rows: angle.rows.map((row) => ({
+      ...row,
+      cells: row.cells.map((cell) =>
+        row.key === "vertical" && cell.grade === "V4"
+          ? {
+              ...cell,
+              sends: 1,
+              climbs: 2,
+              successRate: 50,
+              examples: cell.examples.map((example) => ({
+                ...example,
+                logEntryId: `outdoor-${example.logEntryId}`,
+                name: `Outdoor ${example.name}`,
+              })),
+            }
+          : cell,
+      ),
+    })),
+  };
   render(
     <ClimbingStrengths
       data={{
         ...fixture,
         panels: [
           angle,
-          { ...angle, key: "outdoor", setting: "outdoor" },
+          outdoor,
           { ...angle, key: "holds", dimension: "hold_type" },
-          { ...angle, key: "holds-outdoor", dimension: "hold_type", setting: "outdoor" },
+          { ...outdoor, key: "holds-outdoor", dimension: "hold_type" },
         ],
       }}
     />,
   );
-  expect(screen.getByRole("heading", { name: "Indoor" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Outdoor" })).toBeVisible();
-  expect(screen.getAllByRole("button", { name: /Vertical · V4/ })).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
-  expect(screen.getByRole("heading", { name: "Indoor" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Outdoor" })).toBeVisible();
-  expect(screen.getAllByRole("button", { name: /Vertical · V4/ })).toHaveLength(2);
+  for (const dimension of ["Wall angle", "Hold type"]) {
+    fireEvent.click(screen.getByRole("button", { name: dimension }));
+    for (const [setting, counts, name] of [
+      ["Indoor", "3 sends / 6 climbs", "Evening Arete"],
+      ["Outdoor", "1 sends / 2 climbs", "Outdoor Evening Arete"],
+    ] as const) {
+      const panel = screen.getByRole("heading", { name: setting }).parentElement;
+      if (!panel) throw new Error("Missing setting panel");
+      const scope = within(panel);
+      const cell = scope.getByRole("button", { name: /Vertical · V4/ });
+      expect(cell).toHaveAccessibleName(expect.stringContaining(counts));
+      fireEvent.click(cell);
+      expect(scope.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(name);
+    }
+  }
 });
 it("distinguishes zero and missing data and exposes actual examples", () => {
   render(<ClimbingStrengths data={fixture} />);
@@ -141,6 +209,7 @@ it("renders each context separately and preserves its selected climbs on refresh
     "aria-pressed",
     "true",
   );
+  expect(route.getByRole("region", { name: "Selected climbs" })).toHaveTextContent("Evening Arete");
 });
 it("selects hold types without mixing observations from different settings", () => {
   const angle = fixture.panels[0];

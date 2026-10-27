@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
@@ -21,6 +21,44 @@ function renderAtV3(element: Parameters<typeof render>[0]) {
   return result;
 }
 describe("ClimbingStrengths", () => {
+  it("keeps grouping and view controls usable when the period has no panels", () => {
+    render(<ClimbingStrengths data={{ ...data, panels: [] }} />);
+    for (const name of ["Wall angle", "Hold type", "Indoor / outdoor"]) {
+      fireEvent.click(screen.getByRole("button", { name }));
+      expect(screen.getByRole("button", { name }).getAttribute("aria-selected")).toBe("true");
+    }
+    fireEvent.click(screen.getByRole("button", { name: /^View:/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "Success curves" }));
+    expect(screen.getByRole("button", { name: "View: Success curves" })).toBeTruthy();
+    expect(screen.getByText("No recorded climbing outcomes in this period")).toBeTruthy();
+  });
+  it.each(["wall_angle", "hold_type"] as const)(
+    "labels a single %s panel when its setting is unknown",
+    (dimension) => {
+      const panel = data.panels[0];
+      if (!panel) throw new Error("Missing fixture");
+      render(
+        <ClimbingStrengths
+          data={{ ...data, panels: [{ ...panel, dimension, setting: "unknown" }] }}
+        />,
+      );
+      expect(screen.getByText("Setting unknown").getAttribute("role")).toBe("header");
+    },
+  );
+  it("renders both pooled unknown-result examples with stable distinct identities", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
+      fireEvent.click(screen.getByRole("button", { name: /^Vertical · 67%/ }));
+      expect(screen.getByText("Unknown ascent")).toBeTruthy();
+      expect(screen.getByText("Known ascent")).toBeTruthy();
+      expect(error.mock.calls.some(([message]) => String(message).includes("same key"))).toBe(
+        false,
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
   it("shows pooled All grades by default and switches to individual grade results", () => {
     render(<ClimbingStrengths data={data} />);
     expect(screen.getByRole("button", { name: "All grades" }).getAttribute("aria-selected")).toBe(
@@ -280,6 +318,13 @@ it.each(["Success curves", "Grade pyramids"])(
     fireEvent.click(screen.getByRole("button", { name: /^View:/ }));
     fireEvent.click(screen.getByRole("radio", { name: view }));
     expect(screen.getAllByRole("button", { name: `View ${view} data` })).toHaveLength(2);
+    for (const button of screen.getAllByRole("button", { name: `View ${view} data` })) {
+      fireEvent.click(button);
+    }
+    const [indoor, outdoor] = screen.getAllByRole("list");
+    if (!indoor || !outdoor) throw new Error("Missing chart values");
+    expect(within(indoor).getByText("Slab · V3")).toBeTruthy();
+    expect(within(outdoor).getByText("Slab · V4")).toBeTruthy();
   },
 );
 

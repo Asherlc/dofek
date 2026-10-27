@@ -103,7 +103,7 @@ export function climbingStrengthsRateLabel(
 export function climbingStrengthsCountLabel(
   value: Pick<ClimbingStrengthsCell, "sends" | "climbs" | "unknownOutcomes">,
 ): string {
-  return `${value.sends} sends / ${value.climbs} climbs${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
+  return `${value.sends} sends / ${value.climbs} ${value.climbs === 1 ? "climb" : "climbs"}${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
 }
 
 export function climbingStrengthsResultLabel(outcome: ClimbingStrengthsExample["outcome"]): string {

@@ -145,7 +145,7 @@ it("uses data-scoped monthly dates and resolves chart clicks to whole-period det
   fireEvent.click(screen.getByText("Exact values"));
   expect(
     screen.getByRole("button", {
-      name: /Vertical · V4 · 2026-08-15 – 2026-08-31 · 0% · 0 sends \/ 1 climbs/,
+      name: /Vertical · V4 · 2026-08-15 – 2026-08-31 · 0% · 0 sends \/ 1 climb/,
     }),
   ).toBeVisible();
   expect(

@@ -20,7 +20,7 @@ describe("climbing strengths labels", () => {
       "2 sends / 5 climbs · 2 results unknown",
     );
     expect(climbingStrengthsCountLabel({ sends: 0, climbs: 1, unknownOutcomes: 1 })).toBe(
-      "0 sends / 1 climbs · 1 result unknown",
+      "0 sends / 1 climb · 1 result unknown",
     );
   });
   it("preserves unknown outcomes in source examples", () => {

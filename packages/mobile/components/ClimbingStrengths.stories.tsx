@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { expect, within } from "storybook/test";
 import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
   climbingStrengthsComparisonFixture,
@@ -66,6 +67,25 @@ export const MissingDimensions: Story = {
       panels: climbingStrengthsFixture.panels.filter((panel) => panel.dimension === "setting"),
     },
   },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Wall angle" }));
+    await expect(canvas.getByRole("button", { name: "Wall angle" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(
+      canvas.getAllByText("No recorded wall angle observations in this context.").length,
+    ).toBeGreaterThan(0);
+  },
 };
 
-export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownResultsFixture } };
+export const UnknownResults: Story = {
+  args: { data: climbingStrengthsUnknownResultsFixture },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "V3" }));
+    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · Result unknown/ }));
+    await expect(canvas.getByText(/V3 · .* · Result unknown/)).toBeVisible();
+  },
+};

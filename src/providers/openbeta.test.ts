@@ -145,17 +145,17 @@ describe("OpenBetaProvider", () => {
     {
       style: "Aid",
       label: "Redpoint",
-      expected: { scope: "climb", ropeMethod: null, usedAid: true },
+      expected: { scope: "climb", ropeMethod: null, usedAid: true, sourceResult: "Redpoint" },
     },
     {
       style: "Lead",
       label: "Frenchfree",
-      expected: { scope: "climb", ropeMethod: "lead", usedAid: true },
+      expected: { scope: "climb", ropeMethod: "lead", usedAid: true, sourceResult: "Frenchfree" },
     },
     {
       style: "Lead",
       label: " Frenchfree ",
-      expected: { scope: "climb", ropeMethod: "lead", usedAid: true },
+      expected: { scope: "climb", ropeMethod: "lead", usedAid: true, sourceResult: " Frenchfree " },
     },
     {
       style: "Lead",
@@ -179,7 +179,21 @@ describe("OpenBetaProvider", () => {
         sourceResult: " Pinkpoint ",
       },
     },
-    { style: null, label: "Unknown", expected: { scope: "climb", ropeMethod: null } },
+    {
+      style: null,
+      label: "Unknown",
+      expected: { scope: "climb", ropeMethod: null, sourceResult: "Unknown" },
+    },
+    {
+      style: "TR",
+      label: "completed",
+      expected: { scope: "climb", ropeMethod: "top_rope", sourceResult: "completed" },
+    },
+    {
+      style: "Lead",
+      label: " Sent ",
+      expected: { scope: "climb", ropeMethod: "lead", sourceResult: " Sent " },
+    },
     {
       style: "Lead",
       label: "Attempt",

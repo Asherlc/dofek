@@ -463,6 +463,20 @@ describe("computed climbing attempt results (integration)", () => {
       { raw: { attemptType: null }, expectedOutcome: "completed", expectedFreeSend: true },
       { raw: { attemptType: "Attempt" }, expectedOutcome: "failed", expectedFreeSend: false },
       { raw: { attemptType: " aTtEmPt " }, expectedOutcome: "failed", expectedFreeSend: false },
+      { raw: { attemptType: "completed" }, expectedOutcome: "completed", expectedFreeSend: null },
+      { raw: { attemptType: " Sent " }, expectedOutcome: "completed", expectedFreeSend: null },
+      {
+        raw: { attemptType: "Send" },
+        usedAid: true,
+        expectedOutcome: "completed",
+        expectedFreeSend: false,
+      },
+      {
+        raw: { attemptType: "Send" },
+        sourceResult: "Attempt",
+        expectedOutcome: "failed",
+        expectedFreeSend: false,
+      },
       {
         raw: { attemptType: "Flash" },
         sourceResult: "Flash",

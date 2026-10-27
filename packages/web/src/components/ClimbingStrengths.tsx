@@ -57,10 +57,6 @@ export function ClimbingStrengths({
   ];
   if (!data && loading)
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
-  if (!panels.length)
-    return (
-      <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
-    );
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -107,6 +103,9 @@ export function ClimbingStrengths({
           </select>
         </label>
       </div>
+      {!panels.length ? (
+        <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
+      ) : null}
       {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
         <p className="text-xs text-muted">Success rates use climbs with known results.</p>
       ) : null}
@@ -165,7 +164,9 @@ function ClimbingStrengthsContext({
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
           <div key={panel.key} className="space-y-3">
-            {dimension !== "setting" && selectedPanels.length > 1 && panel.setting ? (
+            {dimension !== "setting" &&
+            (selectedPanels.length > 1 || panel.setting === "unknown") &&
+            panel.setting ? (
               <h4 className="text-sm font-medium">{settings[panel.setting]}</h4>
             ) : null}
             <ClimbingStrengthsPanelContent
