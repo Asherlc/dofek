@@ -465,10 +465,10 @@ require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set uses Expo 58.0.19, Expo Router 58.0.26, Expo Updates
+native dependency set uses Expo 58.0.20, Expo Router 58.0.27, Expo Updates
 58.0.18, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.19/packages/expo/bundledNativeModules.json)
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.20/packages/expo/bundledNativeModules.json)
 and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
 versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with

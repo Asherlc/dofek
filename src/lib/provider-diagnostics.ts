@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { metrics } from "@opentelemetry/api";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
@@ -9,6 +10,13 @@ import {
   getProviderTokenDiagnostic,
   setProviderTokenDiagnostic,
 } from "./provider-token-diagnostic-context.ts";
+
+const providerAuthEvents = metrics
+  .getMeter("dofek-providers")
+  .createCounter("provider.auth.events", {
+    description: "Provider credential lifecycle outcomes",
+    unit: "{events}",
+  });
 
 type ProviderAuthEvent =
   | "tokens_loaded"
@@ -177,6 +185,11 @@ export function reportProviderAuthDiagnostic(
   };
   const failed = event === "sign_in_failed" || event === "refresh_failed";
   const message = `[provider-diagnostics] ${JSON.stringify(diagnostic)}`;
+  const recordDiagnostic = () => {
+    providerAuthEvents.add(1, { provider: providerId, event });
+    if (failed) logger.warn(message);
+    else logger.debug(message);
+  };
   const updateTokenDiagnostic = () => {
     const scopedUserId = userId ?? getTokenUserId();
     if (tokens) {
@@ -189,12 +202,7 @@ export function reportProviderAuthDiagnostic(
     }
   };
   if (failed) {
-    logger.warn(message);
-    captureException(new Error(`Provider ${providerId} ${event}`), {
-      tags: { provider: providerId, operation: event },
-      extra: diagnostic,
-      level: "warning",
-    });
+    recordDiagnostic();
   } else {
     if (
       event === "tokens_saved" ||
@@ -204,11 +212,11 @@ export function reportProviderAuthDiagnostic(
     ) {
       afterCommit(() => {
         updateTokenDiagnostic();
-        logger.debug(message);
+        recordDiagnostic();
       });
     } else {
       updateTokenDiagnostic();
-      logger.debug(message);
+      recordDiagnostic();
     }
   }
 }

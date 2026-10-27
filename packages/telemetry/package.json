@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/axiom-log-exporter.ts"
+    ".": "./src/axiom-log-exporter.ts",
+    "./handled-failure": "./src/handled-failure.ts"
   },
   "peerDependencies": {
     "@opentelemetry/sdk-logs": "0.221.0"
