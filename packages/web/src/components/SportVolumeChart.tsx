@@ -70,11 +70,10 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
             </select>
           </label>
         ) : null}
-        <label className="text-sm text-muted">
-          Metric{" "}
+        <div>
           <select
             aria-label="Volume metric"
-            className="rounded border border-border bg-surface px-2 py-2"
+            className="min-h-11 cursor-pointer rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground hover:border-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             value={metric}
             onChange={(event) => {
               if (sport === undefined && selectedSport === undefined && data?.sport)
@@ -88,7 +87,7 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
               </option>
             ))}
           </select>
-        </label>
+        </div>
       </div>
       {query.isFetching && data ? (
         <p role="status" className="text-xs text-muted">
