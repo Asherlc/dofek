@@ -9,6 +9,7 @@ import {
 } from "./climbing-log.ts";
 
 const unknown = z.literal("unknown");
+const settingSchema = climbSettingSchema.or(unknown);
 export const climbingFiltersSchema = z.object({
   climbKind: climbKindSchema.or(unknown).optional(),
   discipline: climbingDisciplineSchema.or(unknown).optional(),
@@ -18,7 +19,10 @@ export const climbingFiltersSchema = z.object({
   protectionUsed: protectionStyleSchema.or(unknown).optional(),
   routeProtection: protectionStyleSchema.or(unknown).optional(),
   types: z.array(z.enum(["bouldering", "lead", "top_rope"])).optional(),
-  setting: z.array(climbSettingSchema.or(unknown)).optional(),
+  setting: z
+    .union([settingSchema, z.array(settingSchema)])
+    .transform((value) => (Array.isArray(value) ? value : [value]))
+    .optional(),
 });
 export type ClimbingFilters = z.infer<typeof climbingFiltersSchema>;
 export type ClimbingFilterKey = Exclude<keyof ClimbingFilters, "types">;

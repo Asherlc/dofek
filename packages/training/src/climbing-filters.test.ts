@@ -7,6 +7,12 @@ import {
 } from "./climbing-filters.ts";
 
 describe("climbing filters", () => {
+  it.each(["indoor", "outdoor", "unknown"])(
+    "normalizes a single %s setting from existing clients",
+    (setting) => {
+      expect(climbingFiltersSchema.parse({ setting })).toEqual({ setting: [setting] });
+    },
+  );
   it("retains independent target discipline scope and attempt facts", () => {
     const filters = {
       climbKind: "route",
