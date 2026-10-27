@@ -33462,6 +33462,33 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 
 - **2026-10-27 rolling-deployment follow-up:** Both client parsers rejected an older server response that omitted primary-type metadata, with `ZodError` / `Invalid input: expected string, received undefined` at `primary_canonical_type`. This was reproduced locally rather than observed as a production outage. The approved client normalization maps only omitted primary-type metadata to `null`; parsed activity output remains required and nullable, existing primary values remain intact, and other fields retain their validation. The mobile cache version stays at `v15` so an upgrade also removes stale titles. Regression coverage exercises old-response activity rendering and selection on web and accessible cards on mobile. All 61 affected web tests and 95 affected mobile tests pass, as do full lint and root/server/web/mobile typechecks; unrelated malformed fields remain rejected.
 
+## 2026-10-27 — Compressed activity photo copies appeared twice
+
+- **Symptoms / impact:** Activity `b6f8194f-9357-4a1b-a147-a35698342b69`
+  displayed the same instructor image twice. Both web and mobile render the
+  shared photo response; no source records or original files were lost.
+- **Evidence / root cause:** Read-only production queries found a 1920×1080
+  Peloton PNG and Strava JPEG with separate byte hashes. Running the existing
+  [gallery projection](../src/activity-images/gallery.ts) against the stored
+  originals returned two images: 1,670 of 147,456 normalized pixels exceeded its
+  0.05 color tolerance, above the permitted 0.01% mismatch count. At 0.07 only
+  one pixel exceeded the tolerance. The existing smooth test image did not
+  reproduce this compression difference. The new textured regression first
+  failed `pnpm exec vitest run --project unit src/activity-images/gallery.test.ts`
+  with `expected [ 'export.jpg', 'original.png' ] to deeply equal [ 'original.png' ]`.
+- **Direct fix / validation:** With user approval, changed only the per-pixel
+  tolerance to 0.07, retaining the 99.99% match requirement and existing provider,
+  aspect-ratio, and animation gates. [Pixelmatch documents these color and count
+  controls separately](https://github.com/mapbox/pixelmatch#api). All 33 gallery
+  and API tests pass, including distinct-image checks. The modified local code
+  returns one PNG with both sources for the exact production originals; private
+  diagnostic copies were removed afterward. No resilience settings were added.
+- **Remaining risk / follow-up:** Production deployment remains pending. Slight
+  brightness edits within the new color tolerance can consolidate. Retain the
+  textured regression alongside visible-difference cases. For future photo
+  investigations, compare the actual stored pair before tuning similarity;
+  document that diagnostic step in the activity-image guide.
+
 ## 2026-10-27 — Climbing strengths lack imported hold and verified angle metadata
 
 - **Symptoms / impact:** The climbing training page reports no hold-type or wall-angle observations. Production web logs show successful `climbing.strengths` requests, and application services are running; no request failure was found for this report.
@@ -33552,6 +33579,15 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 
 - **Hosted validation / patch coverage:** The [rerun on `6ed5c61`](https://github.com/Asherlc/dofek/actions/runs/40565008480) passes Metro bundling, every mutation shard, all four integration shards, unit/mobile tests, lint, and typechecks. Codecov's `codecov/patch` check reported `89.74% of diff hit (target 90.00%)`; its [patch report](https://app.codecov.io/gh/Asherlc/dofek/pull/3109) identified unexecuted strength chart tooltip and missing-measurement rendering lines. Added chart tests exercising null values and the rendered tooltip for weight, sets, and time, plus numeric axis labels. The focused coverage command now passes with 100% statements, lines, and functions, and 94.59% branches. The final hosted rerun remains pending; no coverage thresholds, retries, or exclusions changed.
 
+## 2026-10-27 — Climbing strengths PR mutation coverage
+
+- **Symptoms / impact:** [PR #3110](https://github.com/Asherlc/dofek/pull/3110) was blocked by mutation tests; no production impact was observed.
+- **Evidence / root cause:** `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"` failed with `Final mutation score 60.32 under breaking threshold 75` in [shard 1](https://github.com/Asherlc/dofek/actions/runs/40584283345/job/122473215877), and `Final mutation score 0.00 under breaking threshold 75` in [shard 3](https://github.com/Asherlc/dofek/actions/runs/40584283345/job/122473216105). Shared adjusted-label functions lacked direct unit coverage; radar option tests omitted accessibility text, tooltip contents, missing axes, and visual series distinctions. Passing rendering tests did not exercise these contracts precisely enough.
+- **Direct fix / validation:** Added focused label and chart-option assertions for signed and zero values, absent observations, expected rates, sample qualifiers, accessible units, omitted unscored axes, and baseline styling. The two suites pass 44 tests. The full-file local mutation run passes at 89.23% (323 killed), including 100% of covered shared-label mutations. Hosted validation remains pending; no thresholds, exclusions, retries, or timeouts changed.
+- **Retrospective / follow-up:** Reuse the CI diagnosis workflow and run targeted mutation checks for new shared presentation functions before opening a PR. Keep these assertions next to the source they exercise; no new framework or runbook is needed.
+
+- **Climbing review follow-through:** All six hosted mutation shards pass on [commit 0d9aa3d](https://github.com/Asherlc/dofek/actions/runs/40587212743). Subsequent review corrections retain active mobile filters outside the modal, give Progress numbered series identifiers on both platforms, restore the grade heatmap caption, enable supported radar axis-label selection, and cap filter arrays at three entries. The final local lint and root/server/web/mobile typechecks pass; the full unit/mobile run passes 22,085 tests, and the focused filter/chart mutation run passes at 95.24% with no uncovered mutants. A web assertion briefly failed typechecking because it accessed a chart-specific property on a union; matching the returned object shape fixes the test without changing production types. Final hosted validation remains pending. No resilience knobs were added.
+
 ## 2026-10-27 — Climbing catalogue PR spelling gate
 
 - **Impact / evidence:** PR #3111 was blocked by [Test / Spell Check](https://github.com/Asherlc/dofek/actions/runs/40585668504/job/122476757309), running `pnpm exec cspell --no-progress`. The first diagnostic was `src/providers/openbeta-catalogue.test.ts:139:7 - Unknown word (deepwatersolo)`; nine diagnostics covered literal upstream identifiers, the search service name, and a fragment of its published browser search key. No production impact.
@@ -33563,3 +33599,5 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 - **CodeQL follow-up:** [Alert 399](https://github.com/Asherlc/dofek/security/code-scanning/399) reported `Incomplete URL substring sanitization` in the new test fixture's `responseUrl.startsWith(origin)` branch. Replaced the prefix comparison with parsed URL origin equality, matching the production validation contract. No production code or security-check configuration changed; hosted validation remains pending.
 
 - **SDK discovery follow-up:** [Integration shard 1](https://github.com/Asherlc/dofek/actions/runs/40589223176/job/122490135225) failed with `expected ... to have a length of 37 but got 38` at `sdk-write-rediscovery.integration.test.ts:180`. The new read-only catalogue tool legitimately adds one discovery result, while two SDK test assertions retained the old count. Reproduced the failure locally through `pnpm test:integration -- packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts --retry 0`; updated both initial and fresh-client discovery counts to 38. The same command now passes all three tests without retries, and source lint passes. No application behavior changed. Include SDK discovery integration coverage when changing the registered MCP tool set.
+
+- **Hosted validation:** [Run 40591362800](https://github.com/Asherlc/dofek/actions/runs/40591362800) on `25d4f2b64` passes all 110 reported checks, including mutation testing, all integration shards, CodeQL, web end-to-end tests, and native iOS/watchOS builds. The CodeQL thread is resolved. Concurrent incident-log additions on main were retained alongside this record to resolve the documentation-only merge conflict.
