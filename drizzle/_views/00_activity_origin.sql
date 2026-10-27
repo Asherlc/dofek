@@ -18,7 +18,9 @@ WITH RECURSIVE labels AS (
     member ->> 'sourceName' AS source_name,
     LOWER(TRIM(COALESCE(member ->> 'sourceName', ''))) AS source_label,
     LOWER(TRIM(COALESCE(member -> 'raw' ->> 'sourceBundle', ''))) AS source_bundle,
-    LOWER(TRIM(COALESCE(member -> 'raw' ->> 'device_name', ''))) AS raw_device_label
+    LOWER(TRIM(COALESCE(member -> 'raw' ->> 'device_name', ''))) AS raw_device_label,
+    LOWER(TRIM(COALESCE(member -> 'raw' ->> 'platform', ''))) AS platform_label,
+    LOWER(TRIM(COALESCE(member -> 'raw' ->> 'deviceType', ''))) AS device_type_label
   FROM JSONB_ARRAY_ELEMENTS(input_members) AS member
   LEFT JOIN LATERAL fitness.activity_copy_identity(
     member ->> 'providerId', member ->> 'externalId', member -> 'raw'
@@ -28,6 +30,8 @@ WITH RECURSIVE labels AS (
     provider_id = 'apple_health'
       AND REPLACE(source_label, CHR(160), ' ') ~ '(^|[[:space:]])apple[[:space:]]+watch[[:space:]]*$'
       AS is_watch_recording,
+    provider_id = 'peloton' AND platform_label = 'home_bike'
+      AND device_type_label IN ('bike', 'home_bike_plus') AS is_native_peloton_recording,
     CASE
       WHEN provider_id = 'apple_health' THEN
         CASE source_label
@@ -46,12 +50,14 @@ WITH RECURSIVE labels AS (
         END
       WHEN provider_id = 'strava' AND source_label ~ '^garmin edge( |$)' THEN 'garmin'
       WHEN provider_id = 'strava' AND source_label ~ '^wahoo elemnt( |$)' THEN 'wahoo'
+      WHEN provider_id = 'strava' AND source_label = 'peloton bike' THEN 'peloton'
       ELSE NULL
     END AS label_provider,
     CASE WHEN provider_id = 'apple_health' AND source_bundle = 'com.strava.strava' THEN 'strava' END AS bundle_provider,
     CASE
       WHEN provider_id = 'strava' AND raw_device_label ~ '^garmin edge( |$)' THEN 'garmin'
       WHEN provider_id = 'strava' AND raw_device_label ~ '^wahoo elemnt( |$)' THEN 'wahoo'
+      WHEN provider_id = 'strava' AND raw_device_label = 'peloton bike' THEN 'peloton'
     END AS device_provider
   FROM labels
 ), members AS (
@@ -96,11 +102,12 @@ WITH RECURSIVE labels AS (
         WHERE reached.upstream_id = member.member_id AND reached.downstream_id = other.member_id)
   )
 ), initiating_origins AS (
-  -- Strong, Hang Ten, and Apple Watch initiate the workout by policy. Prefer a direct export over
+  -- Strong, Hang Ten, Apple Watch, and native Peloton bikes initiate by policy. Prefer a direct export over
   -- its Apple Health copy, without inventing transfer edges to other providers.
   SELECT member_id FROM members
   WHERE provider_id = 'strong-csv'
     OR is_watch_recording
+    OR is_native_peloton_recording
     OR (provider_id = 'apple_health' AND source_label IN ('hang ten', 'hang ten training'))
     OR (provider_id = 'apple_health' AND source_label = 'strong'
       AND NOT EXISTS (SELECT 1 FROM members WHERE provider_id = 'strong-csv'))

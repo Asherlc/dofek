@@ -19,6 +19,7 @@ const fixtureSchema = z.object({
   ),
   expectedPrimaryMemberId: z.string().nullable(),
   expectedCandidateMemberIds: z.array(z.string()),
+  expectedEvidence: z.array(z.record(z.string(), z.string())).optional(),
 });
 const fixtures = z
   .array(fixtureSchema)
@@ -125,7 +126,7 @@ describe("ClickHouse provenance-only origin", () => {
     }));
     const data = JSON.stringify(rows);
     const query = originQuery(
-      "toString(primary_activity_id) AS primary, primary_provider_id, primary_source_name, arrayMap(member -> toString(member), origin_candidate_member_ids) AS candidates FROM activity_origins",
+      "toString(primary_activity_id) AS primary, primary_provider_id, primary_source_name, arrayMap(member -> toString(member), origin_candidate_member_ids) AS candidates, origin_evidence FROM activity_origins",
     );
     const result = await client.query({
       query,
@@ -140,6 +141,7 @@ describe("ClickHouse provenance-only origin", () => {
             primary_provider_id: z.string().nullable(),
             primary_source_name: z.string().nullable(),
             candidates: z.array(z.string()),
+            origin_evidence: z.array(z.record(z.string(), z.string())),
           }),
         )
         .parse(await result.json()),
@@ -153,6 +155,7 @@ describe("ClickHouse provenance-only origin", () => {
           fixture.members.find((member) => member.id === fixture.expectedPrimaryMemberId)
             ?.sourceName ?? null,
         candidates: fixture.expectedCandidateMemberIds,
+        origin_evidence: fixture.expectedEvidence ?? expect.any(Array),
       },
     ]);
   });

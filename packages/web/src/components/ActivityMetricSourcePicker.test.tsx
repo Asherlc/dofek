@@ -64,7 +64,9 @@ describe("ActivityMetricSourcePicker", () => {
     expect(dropdown).not.toHaveAttribute("aria-modal", "true");
     for (const source of sources) {
       const option = screen.getByRole("radio", { name: source.label }).closest("label");
-      expect(option).toHaveTextContent(source.presentation.displayName);
+      expect(option?.textContent).toBe(
+        source.id === "watch-recording" ? "Asher’s Apple Watch" : "",
+      );
       expect(
         option?.querySelector(`[title="${source.presentation.attribution?.label}"]`),
       ).not.toBeNull();
@@ -117,7 +119,7 @@ describe("ActivityMetricSourcePicker", () => {
     await waitFor(() => expect(cloud).toHaveFocus());
     fireEvent.click(bluetooth);
     expect(screen.getByLabelText("Selected recording")).toHaveTextContent("bluetooth-recording");
-    expect(screen.getByRole("button", { name: /WHOOP \(Bluetooth\)/ })).toHaveTextContent("WHOOP");
+    expect(screen.getByRole("button", { name: /WHOOP \(Bluetooth\)/ }).textContent).toBe("");
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
@@ -182,5 +184,65 @@ describe("ActivityMetricSourcePicker", () => {
       "Garmin Edge 1050 · Recorded by Garmin Edge 1050 · FIT file creator Garmin",
     );
     expect(option.closest("label")?.textContent).toBe("Garmin Edge 1050");
+  });
+
+  it("uses provider logos with device names and keeps complete source descriptions accessible", () => {
+    const pelotonSources: ActivityMetricSource[] = [
+      {
+        id: "peloton",
+        label: "Peloton",
+        presentation: {
+          displayName: "Peloton",
+          providerId: "peloton",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+      {
+        id: "strava",
+        label: "Strava · recorded by Peloton Bike",
+        presentation: {
+          displayName: "Peloton Bike",
+          providerId: "strava",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+      {
+        id: "unknown",
+        label: "Imported recording",
+        presentation: {
+          displayName: "Imported recording",
+          providerId: "unknown-recorder",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+    ];
+    render(
+      <ActivityMetricSourcePicker
+        label="Power"
+        sources={pelotonSources}
+        selectedId="peloton"
+        onChange={() => {}}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Power source: Peloton" });
+    expect(trigger.textContent).toBe("");
+    expect(trigger).toHaveAttribute("title", "Peloton");
+    expect(trigger.querySelector('img[src="/logos/peloton.svg"]')).not.toBeNull();
+    fireEvent.click(trigger);
+    const peloton = screen.getByRole("radio", { name: "Peloton" }).closest("label");
+    expect(peloton?.textContent).toBe("");
+    expect(peloton?.querySelector('img[src="/logos/peloton.svg"]')).not.toBeNull();
+    const strava = screen
+      .getByRole("radio", { name: "Strava · recorded by Peloton Bike" })
+      .closest("label");
+    expect(strava?.textContent).toBe("Peloton Bike");
+    expect(strava).toHaveAttribute("title", "Strava · recorded by Peloton Bike");
+    expect(strava?.querySelector('img[src="/logos/strava.svg"]')).not.toBeNull();
+    expect(
+      screen.getByRole("radio", { name: "Imported recording" }).closest("label"),
+    ).toHaveTextContent("Imported recording");
   });
 });

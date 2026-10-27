@@ -856,6 +856,14 @@ activity group. It never consults field priorities or sensor counts. Primary mem
 and provider IDs are nullable when origin is unresolved; candidate IDs and evidence
 remain available. A singleton is primary without claiming that it is the original.
 
+The [selector](macros/activity_origin.sql) treats native Peloton bikes with
+normalized `platform=home_bike` and `deviceType=bike` or `home_bike_plus` as
+initiating recordings. Strava's normalized `Peloton Bike` source/device label
+adds a Peloton-to-Strava evidence edge; independent WHOOP-to-Apple Health
+evidence remains separate. Incomplete or contradictory metadata and competing
+initiating recordings remain unresolved, as exercised by the
+[shared real-engine fixtures](../src/test-fixtures/activity-origin.json).
+
 The [activity model](models/read_models/deduped_activities.sql) retains the former
 field representative as representative_activity_id. Changing origin changes the
 selected title and primary type fallback, while sensor selection, location

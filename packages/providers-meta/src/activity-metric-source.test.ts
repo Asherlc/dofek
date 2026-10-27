@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activityMetricSourcePresentation,
   activityMetricSourceSchema,
+  activityMetricSourceText,
 } from "./activity-metric-source.ts";
 
 describe("activityMetricSourcePresentation", () => {
@@ -110,21 +111,48 @@ describe("activityMetricSourcePresentation", () => {
   );
 
   it.each([
-    ["unknown", "WHOOP (Cloud)", "WHOOP (Cloud) · recorded by Apple Watch"],
-    ["garmin", "Edge 530", "Garmin · recorded by Edge 530"],
-    ["fit-file", "Export platform", "FIT File · file created by Export platform"],
-    ["strava", null, "Strava · recorded by Edge 530"],
+    [
+      "unknown",
+      "WHOOP (Cloud)",
+      "WHOOP (Cloud) · recorded by Apple Watch",
+      "WHOOP (Cloud) · recorded by Apple Watch",
+    ],
+    ["garmin", "Edge 530", "Garmin · recorded by Edge 530", "Edge 530"],
+    [
+      "fit-file",
+      "Export platform",
+      "FIT File · file created by Export platform",
+      "Export platform",
+    ],
+    ["strava", null, "Strava", "Strava"],
+    ["peloton", null, "Peloton", "Peloton"],
   ])(
-    "retains the full qualified label for %s without inferring transport",
-    (providerId, sourceName, label) => {
+    "uses a compact name for %s without inferring transport",
+    (providerId, sourceName, label, displayName) => {
       expect(activityMetricSourcePresentation(providerId ?? "", sourceName, label ?? "")).toEqual({
-        displayName: label,
+        displayName,
         providerId,
         sourceName,
         attribution: null,
       });
     },
   );
+
+  it("uses the structured recorder name instead of parsing qualified label text", () => {
+    expect(
+      activityMetricSourcePresentation(
+        "strava",
+        null,
+        "Strava · recorded by Peloton Bike",
+        "Peloton Bike",
+      ),
+    ).toEqual({
+      displayName: "Peloton Bike",
+      providerId: "strava",
+      sourceName: null,
+      attribution: null,
+    });
+  });
 
   it("validates a source with required structured presentation and retains its full label", () => {
     const source = {
@@ -141,5 +169,43 @@ describe("activityMetricSourcePresentation", () => {
     expect(
       activityMetricSourceSchema.safeParse({ id: source.id, label: source.label }).success,
     ).toBe(false);
+  });
+});
+
+describe("activityMetricSourceText", () => {
+  it.each([
+    ["peloton", null, "Peloton", null],
+    ["strava", null, "Strava", null],
+    ["whoop", null, "WHOOP (Cloud)", null],
+    ["whoop_ble", "opaque-strap", "WHOOP (Bluetooth)", null],
+    ["apple_health", "Peloton", "Peloton (via Apple Health)", null],
+    ["apple_health", " peloton ", "peloton (via Apple Health)", null],
+    ["apple_health", null, "Apple Health", null],
+    [
+      "apple_health",
+      "Asher’s Apple Watch",
+      "Asher’s Apple Watch (via Apple Health)",
+      "Asher’s Apple Watch",
+    ],
+    ["garmin", "Edge 530", "Garmin · Edge 530", "Edge 530"],
+    ["fit-file", null, "FIT File", "FIT File"],
+    ["unknown", null, "Imported recording", "Imported recording"],
+  ])("shows only distinguishing text beside the %s logo", (providerId, sourceName, label, text) => {
+    const presentation = activityMetricSourcePresentation(
+      providerId ?? "",
+      sourceName,
+      label ?? "",
+    );
+    expect(activityMetricSourceText(presentation)).toBe(text);
+  });
+
+  it("keeps the recorder name beside a different provider's logo", () => {
+    const presentation = activityMetricSourcePresentation(
+      "strava",
+      null,
+      "Strava · recorded by Peloton Bike",
+      "Peloton Bike",
+    );
+    expect(activityMetricSourceText(presentation)).toBe("Peloton Bike");
   });
 });

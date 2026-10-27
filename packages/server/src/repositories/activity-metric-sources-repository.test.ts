@@ -34,6 +34,45 @@ function storeWithRows(rows: unknown[]) {
 }
 
 describe("activity heart-rate sources", () => {
+  it("keeps Peloton and Strava provenance while supplying only the reported device name", async () => {
+    const hardware: ActivityHardware = {
+      items: [
+        {
+          id: "strava-recorder",
+          activityId: window.activityId,
+          providerId: "strava",
+          sourceName: null,
+          role: "recorder",
+          label: "Peloton Bike",
+          model: null,
+          manufacturer: null,
+          evidence: "Reported",
+          details: [],
+        },
+      ],
+      power: [],
+    };
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        { channel: "power", provider_id: "peloton", device_id: null, source_id: "peloton" },
+        { channel: "power", provider_id: "strava", device_id: null, source_id: "strava" },
+      ]),
+      window,
+      hardware,
+    );
+    expect(result[0]).toMatchObject({
+      defaultSourceId: "peloton",
+      sources: [
+        { id: "peloton", label: "Peloton", presentation: { displayName: "Peloton" } },
+        {
+          id: "strava",
+          label: "Strava · recorded by Peloton Bike",
+          presentation: { displayName: "Peloton Bike", providerId: "strava" },
+        },
+      ],
+    });
+  });
+
   it("keeps distinct source identifiers separate when their display names are identical", async () => {
     const hardware = normalizeActivityHardware([
       {
@@ -61,7 +100,7 @@ describe("activity heart-rate sources", () => {
         id: "distinct-watch",
         label: "Garmin · Forerunner 955",
         presentation: {
-          displayName: "Garmin · Forerunner 955",
+          displayName: "Forerunner 955",
           providerId: "garmin",
           sourceName: "forerunner955",
           attribution: null,
@@ -115,7 +154,7 @@ describe("activity heart-rate sources", () => {
         id: "raw-id",
         label: "Garmin · Forerunner 955 · recorded by My custom watch",
         presentation: {
-          displayName: "Garmin · Forerunner 955 · recorded by My custom watch",
+          displayName: "My custom watch",
           providerId: "garmin",
           sourceName: "fr955",
           attribution: null,
@@ -290,7 +329,7 @@ it("enriches recorder labels without changing identities, order, defaults, or at
     id: "strava",
     label: "Strava · recorded by Edge 530",
     presentation: {
-      displayName: "Strava · recorded by Edge 530",
+      displayName: "Edge 530",
       providerId: "strava",
       sourceName: null,
       attribution: null,
@@ -384,7 +423,7 @@ it("qualifies a creator name even when it already appears in the original source
     id: sourceId,
     label: "FIT File · file created by Export platform",
     presentation: {
-      displayName: "FIT File · file created by Export platform",
+      displayName: "Export platform",
       providerId: "fit-file",
       sourceName: "Export platform",
       attribution: null,

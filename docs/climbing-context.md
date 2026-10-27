@@ -53,7 +53,7 @@ either a numeric value with recorded or unknown units, or a source category
 (`slab`, `vertical`, `overhang`, `roof`); categories do not imply measured degrees.
 The [shared schemas](../packages/training/src/climbing-experience.ts),
 [log contract](../packages/training/src/climbing-log.ts), and
-[forward migration](../drizzle/0169_climbing_traits.sql) define these facts.
+[forward migration](../drizzle/0170_climbing_traits.sql) define these facts.
 Strengths count each distinct climb once in each recorded grip and once in its
 grade baseline. Missing metadata preserves an evidenced set; contradictory sets
 remain unknown, as implemented by the

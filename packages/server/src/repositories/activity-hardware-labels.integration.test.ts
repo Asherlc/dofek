@@ -255,7 +255,7 @@ describe("activity hardware source labels in ClickHouse", () => {
         id: "fit-file",
         label: "FIT File · file created by Export platform",
         presentation: {
-          displayName: "FIT File · file created by Export platform",
+          displayName: "Export platform",
           providerId: "fit-file",
           sourceName: null,
           attribution: null,
@@ -265,7 +265,7 @@ describe("activity hardware source labels in ClickHouse", () => {
         id: "garmin",
         label: "Garmin · recorded by Edge 530",
         presentation: {
-          displayName: "Garmin · recorded by Edge 530",
+          displayName: "Edge 530",
           providerId: "garmin",
           sourceName: null,
           attribution: null,

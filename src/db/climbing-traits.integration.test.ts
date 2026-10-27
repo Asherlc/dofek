@@ -89,7 +89,7 @@ it("migrates recorded scalar grips in one transaction and serves categories and 
   );
   await client.query("BEGIN");
   try {
-    const migration = readFileSync(resolve(migrationDirectory, "0169_climbing_traits.sql"), "utf8");
+    const migration = readFileSync(resolve(migrationDirectory, "0170_climbing_traits.sql"), "utf8");
     for (const statement of migration.split("--> statement-breakpoint")) {
       if (statement.trim()) await client.query(statement);
     }

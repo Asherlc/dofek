@@ -63,11 +63,21 @@ describe("climbing strengths PostgreSQL", () => {
       ...patch,
     });
   it("serves multiple grips and categorical angles without duplicating baseline climbs", async () => {
-    await write("multi", { holdTypes: ["crimp", "jam"], wallAngle: { category: "overhang" } });
-    await write("repeat", { holdTypes: ["jam", "crimp"], wallAngle: { category: "overhang" } });
-    const observations = await repo().getObservations(30);
-    expect(observations[0]).toMatchObject({
+    const originalId = await write("multi", {
       holdTypes: ["crimp", "jam"],
+      wallAngle: { category: "overhang" },
+    });
+    const repeatId = await write("repeat", {
+      holdTypes: ["jam", "crimp"],
+      wallAngle: { category: "overhang" },
+    });
+    const observations = await repo().getObservations(30);
+    expect(observations.find((entry) => entry.example.logEntryId === originalId)).toMatchObject({
+      holdTypes: ["crimp", "jam"],
+      wallAngle: { category: "overhang" },
+    });
+    expect(observations.find((entry) => entry.example.logEntryId === repeatId)).toMatchObject({
+      holdTypes: ["jam", "crimp"],
       wallAngle: { category: "overhang" },
     });
     const result = analyze(observations);

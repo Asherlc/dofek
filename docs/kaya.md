@@ -201,7 +201,7 @@ The supported versions are explicit strict schemas, following
 [tRPC input/output validation](https://trpc.io/docs/server/validators).
 MCP callers select the same policy with `response_version` on
 `get_activity_details`, `get_climbing_sessions`, and `get_climbing_progression`.
-The [maintenance migration](../drizzle/0169_climbing_traits.sql) still requires
+The [maintenance migration](../drizzle/0170_climbing_traits.sql) still requires
 the normal [database/application deployment procedure](../deploy/README.md);
 response versions address client compatibility, not database rollout ordering.
 After that release, a normal sync refreshes existing records through both
