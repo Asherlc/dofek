@@ -303,7 +303,7 @@ describe("TheCragCatalogueAdapter", () => {
         vi.fn<typeof fetch>().mockResolvedValue(response),
       );
       const operation = adapter.search({ ...seed, providerId: "thecrag", externalId: "123" });
-      if (responseUrl.startsWith(origin))
+      if (new URL(responseUrl).origin === origin)
         expect((await operation).candidates[0]?.externalId).toBe("123");
       else await expect(operation).rejects.toThrow(/response URL/);
     }
