@@ -6,17 +6,17 @@ import { climbingStrengthsFixture } from "./climbing-strengths-fixtures.ts";
 const views = [
   {
     value: "gaps",
-    label: "Style comparison",
+    label: "Compare styles",
     description: "See which styles you send more often at the same grade.",
   },
   {
     value: "profile",
-    label: "Success by grade",
+    label: "Compare grades",
     description: "See how your send rate changes with grade for each style.",
   },
   {
     value: "progress",
-    label: "Over time",
+    label: "Track progress",
     description: "See how your send rate changes over the selected period.",
   },
 ] as const;
@@ -64,9 +64,14 @@ function SimplifiedStrengths() {
               </button>
             ))}
           </fieldset>
+        </div>
+        <div className="mt-5 rounded-lg border border-border p-4">
+          <p className="mb-4 text-sm text-muted">
+            {views.find((item) => item.value === view)?.description}
+          </p>
           {view !== "profile" ? (
-            <label className="mb-2 flex items-center gap-2 text-xs text-muted">
-              Grade
+            <label className="mb-5 flex flex-wrap items-center gap-3 text-sm text-foreground">
+              {view === "progress" ? "Track climbs at grade" : "Compare climbs at grade"}
               <select
                 value={grade}
                 onChange={(event) => setGrade(event.target.value)}
@@ -78,47 +83,44 @@ function SimplifiedStrengths() {
               </select>
             </label>
           ) : null}
-        </div>
-        <p className="mb-5 mt-4 text-sm text-muted">
-          {views.find((item) => item.value === view)?.description}
-        </p>
-        {view === "profile" ? (
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th className="p-3 text-left font-normal text-muted">Style</th>
-                {panel.grades.map((item) => (
-                  <th key={item.grade} className="p-3 font-normal text-muted">
-                    {item.grade}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {panel.rows.map((row) => (
-                <tr key={row.key}>
-                  <th className="p-3 text-left font-normal">{row.label}</th>
-                  {row.cells.map((cell) => (
-                    <td
-                      key={cell.grade}
-                      className="border-4 border-surface bg-accent/10 p-4 text-center"
-                    >
-                      {cell.successRate === null ? "No data" : `${cell.successRate}%`}
-                    </td>
+          {view === "profile" ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="p-3 text-left font-normal text-muted">Style</th>
+                  {panel.grades.map((item) => (
+                    <th key={item.grade} className="p-3 font-normal text-muted">
+                      {item.grade}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <ClimbingStrengthsChart
-            panel={panel}
-            grade={grade}
-            view={view}
-            selectedRow={null}
-            onSelectCell={(_row, value) => setGrade(value)}
-          />
-        )}
+              </thead>
+              <tbody>
+                {panel.rows.map((row) => (
+                  <tr key={row.key}>
+                    <th className="p-3 text-left font-normal">{row.label}</th>
+                    {row.cells.map((cell) => (
+                      <td
+                        key={cell.grade}
+                        className="border-4 border-surface bg-accent/10 p-4 text-center"
+                      >
+                        {cell.successRate === null ? "No data" : `${cell.successRate}%`}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <ClimbingStrengthsChart
+              panel={panel}
+              grade={grade}
+              view={view}
+              selectedRow={null}
+              onSelectCell={(_row, value) => setGrade(value)}
+            />
+          )}
+        </div>
       </section>
       <p className="mx-auto mt-4 max-w-4xl text-xs text-muted">Layout preview · Example data</p>
     </main>
