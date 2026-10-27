@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { VolumeOverTimeRow } from "dofek-server/types";
+import { expect, within } from "storybook/test";
 import { StrengthVolumeChart } from "./StrengthVolumeChart.tsx";
 
 const volumeData: VolumeOverTimeRow[] = [
@@ -68,5 +69,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const TimeSelected: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const metric = within(canvasElement).getByRole("combobox", { name: "Strength volume metric" });
+    await userEvent.selectOptions(metric, "time");
+    await expect(metric).toHaveValue("time");
+  },
+};
 export const Loading: Story = { args: { data: [], loading: true } };
 export const Empty: Story = { args: { data: [] } };
