@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures.ts";
@@ -126,9 +126,10 @@ describe("ClimbingTab", () => {
     expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-26", ropeMethod: "lead" },
+      { days: 90, endDate: "2026-10-26", types: ["lead"] },
       expect.any(Object),
     );
   });
@@ -198,7 +199,8 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByText("Loading data.")).toBeTruthy();
   });
   it("keeps cached session rows visible while a filtered request fails", async () => {
@@ -221,7 +223,8 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByRole("link", { name: "Cached climbing" })).toBeTruthy();
     expect(screen.getByText("Error: Climbing query unavailable")).toBeTruthy();
   });
@@ -231,7 +234,7 @@ describe("ClimbingTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const toggle = screen.getByRole("button", { name: "More filters" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByLabelText("Protection used")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Protection used" })).toBeNull();
     fireEvent.click(toggle);
     sessionSummaryQuery.mockReturnValue({
       data: [
@@ -248,24 +251,27 @@ describe("ClimbingTab", () => {
       isLoading: false,
       error: null,
     });
-    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByRole("link", { name: "Trad session" }).getAttribute("href")).toBe(
       "/activity/matched",
     );
-    fireEvent.change(screen.getByLabelText("Protection used"), { target: { value: "trad" } });
+    const protection = within(screen.getByRole("group", { name: "Protection used" }));
+    fireEvent.click(protection.getByRole("checkbox", { name: "All" }));
+    fireEvent.click(protection.getByRole("checkbox", { name: "Trad" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Indoor" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Unknown setting" }));
     expect(volumeByGradeQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead", protectionUsed: "trad", setting: ["outdoor"] },
+      { days: 90, types: ["lead"], protectionUsed: ["trad"], setting: ["outdoor"] },
       expect.any(Object),
     );
     expect(locationMapQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead", protectionUsed: "trad", setting: ["outdoor"] },
+      { days: 90, types: ["lead"], protectionUsed: ["trad"], setting: ["outdoor"] },
       expect.any(Object),
     );
     fireEvent.click(screen.getByRole("button", { name: "Remove Protection used: Trad filter" }));
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead", setting: ["outdoor"] },
+      { days: 90, types: ["lead"], setting: ["outdoor"] },
       expect.any(Object),
     );
   });
@@ -274,37 +280,25 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
-    fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "false" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    const solo = within(screen.getByRole("group", { name: "Solo status" }));
+    fireEvent.click(solo.getByRole("checkbox", { name: "All" }));
+    fireEvent.click(solo.getByRole("checkbox", { name: "With a belayer" }));
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead", solo: false },
+      { days: 90, types: ["lead"], solo: [false] },
       expect.any(Object),
     );
-    fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "null" } });
-    expect(
-      screen.getByLabelText("Solo status").getAttribute("value") ??
-        Reflect.get(screen.getByLabelText("Solo status"), "value"),
-    ).toBe("null");
+    fireEvent.click(solo.getByRole("checkbox", { name: "Unknown" }));
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead", solo: null },
+      { days: 90, types: ["lead"], solo: [false, null] },
       expect.any(Object),
     );
-    fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "" } });
+    fireEvent.click(solo.getByRole("checkbox", { name: "All" }));
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead" },
+      { days: 90, types: ["lead"] },
       expect.any(Object),
     );
-    for (const name of [
-      "Climb kind",
-      "Discipline",
-      "Attempt scope",
-      "Rope method",
-      "Solo status",
-      "Protection used",
-      "Route protection",
-      "Setting",
-    ])
-      expect(screen.getByLabelText(name)).toBeTruthy();
   });
   beforeEach(() => {
     strengthsQuery.mockReset();

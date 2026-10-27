@@ -423,13 +423,14 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-    fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
     expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(2);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
-      ropeMethod: "lead",
+      types: ["lead"],
     });
   });
 
@@ -457,16 +458,17 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-    fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
-      climbingFilters: { ropeMethod: "lead" },
+      climbingFilters: { types: ["lead"] },
     });
-    expect(mockRangeQueryCalls.locationMap.at(-1)?.input).toEqual({ days: 90, ropeMethod: "lead" });
+    expect(mockRangeQueryCalls.locationMap.at(-1)?.input).toEqual({ days: 90, types: ["lead"] });
     expect(mockRangeQueryCalls.locationMap.at(-1)?.options.placeholderData).toBeTypeOf("function");
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
-      ropeMethod: "lead",
+      types: ["lead"],
     });
     expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(2);
     expect(screen.getByText("Climbing strengths")).toBeTruthy();

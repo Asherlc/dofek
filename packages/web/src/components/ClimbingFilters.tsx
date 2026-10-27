@@ -1,12 +1,13 @@
 import {
   type ClimbingFilterKey,
-  climbingFilterKeys,
+  climbingAdvancedFilterKeys,
   climbingFilterLabels,
   climbingFilterOptions,
+  climbingFilterSelection,
   climbingFilterSummary,
-  climbingFiltersSchema,
   climbingTypeOptions,
   type ClimbingFilters as Filters,
+  toggleClimbingFilter,
   toggleClimbingSetting,
   toggleClimbingType,
 } from "@dofek/training/climbing-filters";
@@ -23,7 +24,7 @@ export function ClimbingFilters({
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const id = useId();
-  const advancedKeys = climbingFilterKeys.filter((key) => key !== "setting");
+  const advancedKeys = climbingAdvancedFilterKeys;
   function remove(key: ClimbingFilterKey) {
     const next = { ...value };
     delete next[key];
@@ -31,40 +32,46 @@ export function ClimbingFilters({
   }
   function checkboxes(
     label: string,
-    options: ReadonlyArray<readonly [string, string]>,
-    selected: string[],
-    toggle: (option: string) => void,
+    options: ReadonlyArray<readonly [string | boolean | null, string]>,
+    selected: ReadonlyArray<string | boolean | null>,
+    toggle: (option: string | boolean | null) => void,
   ) {
     const all = selected.length === options.length;
     return (
       <fieldset aria-label={label}>
         <legend className="mb-2 text-xs font-medium text-muted">{label}</legend>
         <div className="flex flex-wrap gap-x-5 gap-y-1">
-          {[["all", `All ${label === "Type" ? "climbing" : "settings"}`], ...options].map(
-            ([option, text]) => (
-              <label
-                key={option}
-                className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-accent"
-                  checked={option === "all" ? all : selected.includes(option ?? "")}
-                  ref={
-                    option === "all"
-                      ? (input) => {
-                          if (input) input.indeterminate = !all && selected.length > 0;
-                        }
-                      : undefined
-                  }
-                  onChange={() => {
-                    if (option) toggle(option);
-                  }}
-                />
-                {text}
-              </label>
-            ),
-          )}
+          {(
+            [
+              [
+                "all",
+                label === "Type" ? "All climbing" : label === "Setting" ? "All settings" : "All",
+              ],
+              ...options,
+            ] satisfies ReadonlyArray<readonly [string | boolean | null, string]>
+          ).map(([option, text]) => (
+            <label
+              key={String(option)}
+              className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-accent"
+                checked={option === "all" ? all : selected.includes(option)}
+                ref={
+                  option === "all"
+                    ? (input) => {
+                        if (input) input.indeterminate = !all && selected.length > 0;
+                      }
+                    : undefined
+                }
+                onChange={() => {
+                  toggle(option);
+                }}
+              />
+              {text}
+            </label>
+          ))}
         </div>
       </fieldset>
     );
@@ -90,7 +97,8 @@ export function ClimbingFilters({
               aria-label="Climbing filters"
               align="end"
               sideOffset={8}
-              className="z-50 max-h-[80vh] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto space-y-4 rounded-xl border border-border bg-surface p-5 text-foreground shadow-xl"
+              collisionPadding={16}
+              className="z-50 max-h-[min(80vh,var(--radix-popover-content-available-height))] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto space-y-4 rounded-xl border border-border bg-surface p-5 text-foreground shadow-xl"
             >
               {checkboxes(
                 "Type",
@@ -126,32 +134,14 @@ export function ClimbingFilters({
               {advanced ? (
                 <div id={id} className="flex flex-wrap gap-4 border-t border-border pt-4">
                   {advancedKeys.map((key) => (
-                    <label key={key} className="flex flex-col gap-1 text-xs text-muted">
-                      {climbingFilterLabels[key]}
-                      <select
-                        className="min-h-11 rounded border border-border bg-surface px-2 text-base text-foreground"
-                        value={value[key] === undefined ? "" : String(value[key])}
-                        onChange={(event) => {
-                          const next = { ...value };
-                          delete next[key];
-                          const selected = climbingFilterOptions[key].find(
-                            ([option]) => String(option) === event.target.value,
-                          );
-                          onChange(
-                            climbingFiltersSchema.parse(
-                              selected ? { ...next, [key]: selected[0] } : next,
-                            ),
-                          );
-                        }}
-                      >
-                        <option value="">All</option>
-                        {climbingFilterOptions[key].map(([option, label]) => (
-                          <option key={String(option)} value={String(option)}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div key={key} className="w-full">
+                      {checkboxes(
+                        climbingFilterLabels[key],
+                        climbingFilterOptions[key],
+                        climbingFilterSelection(value, key),
+                        (option) => onChange(toggleClimbingFilter(value, key, option)),
+                      )}
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -179,7 +169,13 @@ export function ClimbingFilters({
       {advancedKeys.some((key) => value[key] !== undefined) ? (
         <div className="flex flex-wrap gap-2">
           {advancedKeys.map((key) => {
-            const label = climbingFilterOptions[key].find(([option]) => option === value[key])?.[1];
+            const label =
+              value[key]
+                ?.map(
+                  (selected) =>
+                    climbingFilterOptions[key].find(([option]) => option === selected)?.[1],
+                )
+                .join(" + ") || (value[key]?.length === 0 ? "None" : undefined);
             return label ? (
               <button
                 key={key}

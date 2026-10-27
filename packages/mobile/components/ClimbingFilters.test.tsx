@@ -49,6 +49,23 @@ vi.mock("react-native", () => ({
 import { ClimbingFilters } from "./ClimbingFilters";
 
 afterEach(cleanup);
+
+it("combines protection choices using the same mixed checkbox behavior as settings", () => {
+  render(<Harness />);
+  open();
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Protection used: Unknown" }));
+  expect(value()).toEqual({ protectionUsed: ["sport", "trad"] });
+  expect(
+    screen.getByRole("checkbox", { name: "All Protection used" }).getAttribute("aria-checked"),
+  ).toBe("mixed");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Protection used: Sport" }));
+  expect(value()).toEqual({ protectionUsed: ["trad"] });
+  fireEvent.click(screen.getByRole("checkbox", { name: "All Protection used" }));
+  expect(value()).toEqual({});
+  fireEvent.click(screen.getByRole("checkbox", { name: "All Protection used" }));
+  expect(value()).toEqual({ protectionUsed: [] });
+});
 function Harness({ initial = {} }: { initial?: Filters }) {
   const [value, onChange] = useState(initial);
   return (
@@ -65,7 +82,7 @@ function value() {
   return JSON.parse(screen.getByRole("status").textContent ?? "");
 }
 it("combines types and settings and retains them after closing", () => {
-  render(<Harness />);
+  render(<Harness initial={{ types: ["bouldering", "lead", "top_rope"] }} />);
   expect(screen.queryByRole("checkbox", { name: "Bouldering" })).toBeNull();
   open();
   fireEvent.click(screen.getByRole("checkbox", { name: "Top rope" }));
@@ -97,8 +114,9 @@ it("keeps advanced facts independent of the primary selection and clears all fil
   render(<Harness initial={{ types: ["lead"], setting: ["outdoor"] }} />);
   open();
   fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-  fireEvent.click(screen.getByRole("button", { name: "Solo status: With a belayer" }));
-  expect(value()).toEqual({ types: ["lead"], setting: ["outdoor"], solo: false });
+  fireEvent.click(screen.getByRole("checkbox", { name: "All Solo status" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Solo status: With a belayer" }));
+  expect(value()).toEqual({ types: ["lead"], setting: ["outdoor"], solo: [false] });
   fireEvent.click(
     screen.getByRole("button", { name: "Remove Solo status: With a belayer filter" }),
   );
@@ -107,7 +125,7 @@ it("keeps advanced facts independent of the primary selection and clears all fil
   expect(value()).toEqual({});
 });
 it("keeps active advanced filters visible and removable after closing the modal", () => {
-  render(<Harness initial={{ solo: false }} />);
+  render(<Harness initial={{ solo: [false] }} />);
   expect(
     screen.getByRole("button", { name: "Remove Solo status: With a belayer filter" }),
   ).toBeTruthy();

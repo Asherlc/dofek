@@ -24,7 +24,9 @@ export const OutdoorLead: Story = {
   args: { value: { types: ["lead"], setting: ["outdoor"] } },
 };
 export const CustomSelection: Story = {
-  args: { value: { climbKind: "route", ropeMethod: "follow", solo: false, setting: ["unknown"] } },
+  args: {
+    value: { types: ["follow"], solo: [false], setting: ["unknown"] },
+  },
 };
 export const Narrow: Story = {
   decorators: [
@@ -36,6 +38,7 @@ export const Narrow: Story = {
   ],
 };
 export const ContextInteraction: Story = {
+  args: { value: { types: ["bouldering", "lead", "top_rope"] } },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Filters" }));
@@ -51,5 +54,22 @@ export const OpenPopover: Story = {
   args: { value: { types: ["bouldering", "lead"], setting: ["indoor", "outdoor"] } },
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Filters" }));
+  },
+};
+
+export const MultipleAdvancedChoices: Story = {
+  args: {
+    value: {
+      types: ["lead", "follow"],
+      solo: [false, null],
+      protectionUsed: ["sport", "trad"],
+      routeProtection: ["sport", "unknown"],
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Filters" }));
+    await userEvent.click(
+      within(canvasElement.ownerDocument.body).getByRole("button", { name: "More filters" }),
+    );
   },
 };

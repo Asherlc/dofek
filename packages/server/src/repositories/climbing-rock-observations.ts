@@ -4,7 +4,13 @@ import {
   type ClimbingGradePreference,
   ROUTE_GRADE_SYSTEMS,
 } from "@dofek/training/climbing-grades";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
+
+function anySelected<T>(values: readonly T[], predicate: (value: T) => SQL): SQL {
+  const predicates = values.map(predicate);
+  if (predicates.length === 0) return sql`false`;
+  return predicates.length === 1 ? sql.join(predicates) : sql`(${sql.join(predicates, sql` OR `)})`;
+}
 
 /** Select recorded rock attempts and one published grade before aggregation. */
 export function rockClimbingLogProjection(
@@ -35,12 +41,19 @@ export function rockClimbingLogProjection(
           )})`,
     );
   }
-  if (filters.routeProtection === "unknown") logPredicates.push(sql`ce.route_protection IS NULL`);
-  else if (filters.routeProtection !== undefined)
-    logPredicates.push(sql`${filters.routeProtection} = ANY(ce.route_protection)`);
+  if (filters.routeProtection !== undefined)
+    logPredicates.push(
+      anySelected(filters.routeProtection, (value) =>
+        value === "unknown"
+          ? sql`ce.route_protection IS NULL`
+          : sql`${value} = ANY(ce.route_protection)`,
+      ),
+    );
   const attemptPredicates = [
     sql`attempt.climbing_log_entry_id = ce.id`,
-    sql`attempt.scope = ${filters.attemptScope ?? "climb"}`,
+    filters.attemptScope === undefined
+      ? sql`attempt.scope = ${"climb"}`
+      : anySelected(filters.attemptScope, (value) => sql`attempt.scope = ${value}`),
   ];
   if (filters.types !== undefined) {
     attemptPredicates.push(
@@ -59,12 +72,20 @@ export function rockClimbingLogProjection(
   if (filters.ropeMethod === "unknown") attemptPredicates.push(sql`attempt.rope_method IS NULL`);
   else if (filters.ropeMethod !== undefined)
     attemptPredicates.push(sql`attempt.rope_method = ${filters.ropeMethod}`);
-  if (filters.solo === null) attemptPredicates.push(sql`attempt.solo IS NULL`);
-  else if (filters.solo !== undefined) attemptPredicates.push(sql`attempt.solo = ${filters.solo}`);
-  if (filters.protectionUsed === "unknown")
-    attemptPredicates.push(sql`attempt.protection_used IS NULL`);
-  else if (filters.protectionUsed !== undefined)
-    attemptPredicates.push(sql`${filters.protectionUsed} = ANY(attempt.protection_used)`);
+  if (filters.solo !== undefined)
+    attemptPredicates.push(
+      anySelected(filters.solo, (value) =>
+        value === null ? sql`attempt.solo IS NULL` : sql`attempt.solo = ${value}`,
+      ),
+    );
+  if (filters.protectionUsed !== undefined)
+    attemptPredicates.push(
+      anySelected(filters.protectionUsed, (value) =>
+        value === "unknown"
+          ? sql`attempt.protection_used IS NULL`
+          : sql`${value} = ANY(attempt.protection_used)`,
+      ),
+    );
   return sql`
     SELECT ce.*, target.scope AS attempt_scope, target.pitch_id, target.unknown_pitch_attempt_id,
       pitch.number AS pitch_number, selected_grade.value AS grade, selected_grade.system AS grade_system,

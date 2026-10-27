@@ -364,12 +364,12 @@ describe("ClimbingProgressionRepository database semantics", () => {
     expect(whole.grade_distribution).toHaveLength(2);
     const mismatched = await repository.listRange({
       ...input,
-      filters: { ropeMethod: "lead", solo: false },
+      filters: { ropeMethod: "lead", solo: [false] },
     });
     expect(mismatched.sessions).toEqual([]);
     const pitch = await repository.listRange({
       ...input,
-      filters: { attemptScope: "pitch", ropeMethod: "follow" },
+      filters: { attemptScope: ["pitch"], ropeMethod: "follow" },
     });
     expect(pitch.daily[0]).toMatchObject({ attempts: 1, sends: 1 });
     expect(pitch.grade_distribution).toEqual([
