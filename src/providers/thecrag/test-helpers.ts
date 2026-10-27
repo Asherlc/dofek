@@ -1,23 +1,83 @@
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
-import { type createMockDatabase, theCragPage } from "../test-helpers.ts";
+import type { createMockDatabase } from "../test-helpers.ts";
 
-export function response(
-  ascents: Record<string, unknown>[] = [],
-  overrides: Record<string, unknown> = {},
-): Response {
-  return new Response(JSON.stringify(theCragPage(ascents, overrides)), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+export function publicFeed(
+  items: { id?: string; accountId?: string; routeId?: string }[] = [{}],
+  options: { accountId?: string; next?: string } = {},
+): string {
+  const base = `https://www.thecrag.com/feed/ascents/climber/${options.accountId ?? "123"}`;
+  return `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+  <id>${base}</id><link rel="self" href="${base}"/>
+  ${options.next ? `<link rel="next" href="${options.next.replaceAll("&", "&amp;")}"/>` : ""}
+  ${items
+    .map(
+      (
+        item,
+        index,
+      ) => `<entry><id>thecrag.com:${9000 + index}</id><updated>2026-10-11T00:00:00Z</updated><content type="html"><![CDATA[
+  <div class="event-item" data-ascent-id="${item.id ?? "1001"}" data-ascent-uid="${item.accountId ?? "123"}" data-node-id="${item.routeId ?? "2001"}" data-route-url="/en/climbing/test/route/${item.routeId ?? "2001"}">Public event</div>
+  ]]></content></entry>`,
+    )
+    .join("")}</feed>`;
+}
+
+export function publicAscent(
+  overrides: {
+    id?: string;
+    username?: string;
+    routeId?: string;
+    routeName?: string;
+    date?: string;
+    tick?: string;
+    climbedStyle?: string;
+    routeStyle?: string;
+    routeGrade?: string;
+    ascentGrade?: string;
+    attempts?: string;
+    comment?: string;
+  } = {},
+): string {
+  const value = {
+    id: "1001",
+    username: "sampleclimber",
+    routeId: "2001",
+    routeName: "Sample route",
+    date: "2026-10-10",
+    tick: "Attempt: Top rope",
+    climbedStyle: "Top rope",
+    routeStyle: "Top rope",
+    routeGrade: "5.10b",
+    ascentGrade: "-- Inherits from route --",
+    attempts: "4",
+    comment: "",
+    ...overrides,
+  };
+  return `<!doctype html><html><head><link rel="canonical" href="https://www.thecrag.com/en/ascent/${value.id}"></head><body><form><fieldset><legend>Ascent details</legend><dl>
+  <dt><label>Account</label></dt><dd><span class="climber"><a href="/climber/${value.username}">Sample climber</a></span></dd>
+  <dt><label>Route</label></dt><dd><span class="route"><a href="/en/climbing/test/route/${value.routeId}"><span class="star">★</span> ${value.routeName}</a></span></dd>
+  <dt><label>Route gear style</label></dt><dd><span class="tags">${value.routeStyle}</span><span class="attr">15m</span></dd>
+  <dt><label>Climbed gear style</label></dt><dd><span class="tags">${value.climbedStyle}</span></dd>
+  <dt><label>Tick</label></dt><dd><span class="tick_attempt" title="${value.tick}"></span></dd>
+  <dt><label>Ascent date</label></dt><dd>${value.date}</dd>
+  <dt><label>Log date</label></dt><dd>2026-10-11</dd>
+  <dt><label>Route grade</label></dt><dd><span>${value.routeGrade}</span></dd>
+  <dt><label>Ascent grade</label></dt><dd>${value.ascentGrade}</dd>
+  <dt><label>Attempts</label></dt><dd>${value.attempts}</dd>
+  <dt><label>Comment</label></dt><dd><div class="markdown">${value.comment}</div></dd>
+  </dl></fieldset></form></body></html>`;
+}
+
+export function lookupResponse(username = "sampleclimber", accountId = "123"): Response {
+  return Response.json({ data: [{ id: accountId, login: username }] });
 }
 
 export function tokens(accountId = "123") {
   return {
-    accessToken: "personal-key",
+    accessToken: "sampleclimber",
     refreshToken: null,
     expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-    scopes: "logbook:read",
+    scopes: "thecrag:public-profile",
     providerAccountId: accountId,
   };
 }
