@@ -94,6 +94,7 @@ best_per_group AS (
     r.started_at,
     r.ended_at,
     r.source_name,
+    r.name,
     r.prio
   FROM final_groups fg
   JOIN ranked r ON r.id = fg.activity_id
@@ -124,9 +125,7 @@ merged AS (
     b.started_at,
     b.ended_at,
     b.source_name,
-    (SELECT r.name FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id AND r.name IS NOT NULL
-     ORDER BY r.prio ASC LIMIT 1) AS name,
+    b.name,
     (SELECT r.notes FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.notes IS NOT NULL
      ORDER BY r.prio ASC LIMIT 1) AS notes,

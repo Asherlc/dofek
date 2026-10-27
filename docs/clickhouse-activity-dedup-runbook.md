@@ -5,6 +5,12 @@ bounded activity graph. Do not build final activity rows directly from
 `postgres_fitness.activity`; that table intentionally stores raw provider rows,
 including overlapping duplicates from multiple providers or devices.
 
+Activity titles follow the primary activity selected by provider/device priority,
+with activity ID breaking priority ties. Preserve a missing primary title as null
+so web and mobile display the primary activity type; do not borrow another
+member's title. Postgres `fitness.v_activity` and ClickHouse
+`analytics.deduped_activities` apply the same title rule.
+
 ## Required Shape
 
 - `analytics/macros/bounded_activity_graph.sql` is the canonical ClickHouse

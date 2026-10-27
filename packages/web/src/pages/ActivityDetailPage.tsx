@@ -147,7 +147,9 @@ export function ActivityDetailPage() {
             Dashboard
           </Link>
           <span>/</span>
-          <span className="text-foreground">{activity.name ?? activity.activityType}</span>
+          <span className="text-foreground">
+            {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <ActivityExportDropdown activityId={id} hasGps={hasGps} />
@@ -388,7 +390,7 @@ export function ActivityHeader({
     <div>
       <div className="flex items-baseline gap-3 mb-1">
         <h1 className="text-xl font-semibold text-foreground">
-          {activity.name ?? activity.activityType}
+          {activity.name ?? formatActivityTypeLabel(activity.activityType)}
         </h1>
         <span className="text-xs text-subtle">
           {formatActivityTypeLabel(activity.activityType)}

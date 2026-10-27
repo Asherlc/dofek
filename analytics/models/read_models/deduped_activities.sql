@@ -70,6 +70,7 @@ best AS (
             ranked.started_at AS started_at,
             ranked.ended_at AS ended_at,
             ranked.source_name AS source_name,
+            ranked.name AS name,
             ranked.priority AS priority,
             row_number() OVER (
                 PARTITION BY final_groups.group_id
@@ -92,7 +93,7 @@ merged AS (
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
         maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
-        argMinIf(ranked.name, ranked.priority, ranked.name IS NOT null) AS name,
+        any(best.name) AS name,
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
         argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT null) AS timezone,
         argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,

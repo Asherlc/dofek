@@ -163,11 +163,16 @@ vi.mock("@dofek/scoring/colors", () => ({
 
 vi.mock("@dofek/training/muscle-groups", () => ({}));
 
-vi.mock("@dofek/training/training", () => ({
-  formatActivityTypeLabel: (type: string) => type,
-  isCyclingActivity: (type: string) => type === "cycling",
-  cadenceUnit: (type: string) => (type === "cycling" ? "rpm" : "steps/min"),
-}));
+vi.mock("@dofek/training/training", async () => {
+  const actual = await vi.importActual<typeof import("@dofek/training/training")>(
+    "@dofek/training/training",
+  );
+  return {
+    formatActivityTypeLabel: actual.formatActivityTypeLabel,
+    isCyclingActivity: (type: string) => type === "cycling",
+    cadenceUnit: (type: string) => (type === "cycling" ? "rpm" : "steps/min"),
+  };
+});
 
 vi.mock("@dofek/zones/zones", async () => {
   const actual = await vi.importActual<typeof import("@dofek/zones/zones")>("@dofek/zones/zones");
@@ -268,6 +273,26 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("uses the primary activity type as the title when its name is missing", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        name: null,
+        activityType: "running",
+        providerId: "apple_health",
+        subsource: "Asher’s Apple Watch",
+        sourceProviders: ["apple_health", "whoop"],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getAllByText("Running")).toHaveLength(2);
   });
 
   it("renders heart rate and power chart labels for cycling with stream data", async () => {

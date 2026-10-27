@@ -292,6 +292,22 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  describe("activity title", () => {
+    afterEach(() => {
+      mockActivity.name = "Morning Run";
+    });
+
+    it("uses the readable primary activity type for the title and breadcrumb when its name is missing", async () => {
+      mockActivity.name = null;
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByRole("heading", { level: 1, name: "Running" })).toBeDefined();
+      expect(screen.getAllByText("Running")).toHaveLength(3);
+    });
+  });
+
   describe("provider tombstone status", () => {
     afterEach(() => {
       mockActivity.providerAbsentAt = null;

@@ -234,6 +234,63 @@ describe("Activity summary deduplication", () => {
     expect(Number(result[0]?.count)).toBe(2);
   });
 
+  it.each([
+    { primaryName: null, description: "has no title" },
+    { primaryName: "Evening Run", description: "has its own title" },
+  ])("keeps the primary source title when it $description", async ({ primaryName }) => {
+    const primaryActivityId = "00000000-0000-4000-8000-000000000201";
+    const secondaryActivityId = "00000000-0000-4000-8000-000000000202";
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('strava', 'Strava', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, activity_type, started_at, ended_at,
+            name, source_name, raw
+          ) VALUES
+          (
+            ${primaryActivityId}::uuid,
+            'apple_health', ${TEST_USER_ID}, 'running',
+            TIMESTAMPTZ '2026-01-12 10:00:00+00',
+            TIMESTAMPTZ '2026-01-12 10:41:00+00',
+            ${primaryName}, 'Apple Watch', '{"sourceName":"Apple Watch"}'::jsonb
+          ),
+          (
+            ${secondaryActivityId}::uuid,
+            'strava', ${TEST_USER_ID}, 'walking',
+            TIMESTAMPTZ '2026-01-12 10:00:10+00',
+            TIMESTAMPTZ '2026-01-12 10:40:58+00',
+            '40 min 58 sec Walking', NULL, '{}'::jsonb
+          )`,
+    );
+
+    try {
+      await queryCache.invalidateAll();
+
+      for (const activityId of [primaryActivityId, secondaryActivityId]) {
+        const { status, result } = await query("activity.byId", { id: activityId });
+        expect(status).toBe(200);
+        expect(result.result.data).toMatchObject({
+          id: primaryActivityId,
+          providerId: "apple_health",
+          activityType: "running",
+          subsource: "Apple Watch",
+          name: primaryName,
+          sourceProviders: ["apple_health", "strava"],
+        });
+      }
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity
+            WHERE id IN (${primaryActivityId}::uuid, ${secondaryActivityId}::uuid)`,
+      );
+      await queryCache.invalidateAll();
+    }
+  });
+
   it("does not collapse long overlap chains into one canonical activity", async () => {
     const chainActivityIds = [
       "00000000-0000-4000-8000-000000000101",
