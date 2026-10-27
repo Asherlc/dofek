@@ -1,5 +1,7 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
 import {
+  ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsBaselineLabel,
   climbingStrengthsCountLabel,
   climbingStrengthsRateLabel,
@@ -23,17 +25,17 @@ function color(index: number) {
 function facts(
   cell: Pick<Cell, "sends" | "climbs" | "unknownOutcomes" | "successRate" | "sampleStatus">,
 ) {
-  return `${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`;
+  return `${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`;
 }
 const explanations: Record<ViewKind, string> = {
   gaps: "Success gap in percentage points from the same-grade baseline. Zero is the baseline.",
-  curves: "Success rate by grade, from 0 to 100%. Missing observations leave gaps.",
+  curves: "Success rate by grade, from 0 to 100%.",
   exposure:
     "Distinct climbs on the horizontal axis; success gap in percentage points from the same-grade baseline on the vertical axis.",
   pyramids:
     "Sent climbs overlaid on centered total-climb tracks, grouped by style from harder to easier grades. All tracks use the same count scale.",
   progress:
-    "Success rate by calendar month in separate style charts on the same 0–100% scale. Missing months leave gaps. Monthly distinct climbs need not sum to the selected period.",
+    "Success rate by calendar month on a shared 0–100% scale. Missing months leave gaps. Monthly distinct climbs need not sum to the selected period.",
   radar:
     "Success rate from 0 to 100% on every axis. The dashed outline is the same-grade baseline.",
 };
@@ -50,13 +52,17 @@ export function ClimbingStrengthsChart({
   onSelect: (rowKey: string, grade: string) => void;
 }) {
   const [width, setWidth] = useState(300);
-  const baselineLabel = climbingStrengthsBaselineLabel(grade);
-  const explanation = explanations[view].replaceAll(
-    "same-grade baseline",
-    baselineLabel.toLowerCase(),
-  );
-  const title =
-    CLIMBING_STRENGTHS_VIEWS.find((entry) => entry.value === view)?.label ?? "Climbing strengths";
+  const adjustedRadar = view === "radar" && grade === ALL_CLIMBING_GRADES;
+  const baselineLabel = adjustedRadar
+    ? "Same-grade baseline"
+    : climbingStrengthsBaselineLabel(grade);
+  const explanation = adjustedRadar
+    ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: same-grade baseline at zero."
+    : explanations[view].replaceAll("same-grade baseline", baselineLabel.toLowerCase());
+  const title = adjustedRadar
+    ? "Strengths and weaknesses"
+    : (CLIMBING_STRENGTHS_VIEWS.find((entry) => entry.value === view)?.label ??
+      "Climbing strengths");
   const baseline = panel.grades.find((entry) => entry.grade === grade);
   const selected = panel.rows.flatMap((row, index) => {
     const cell = row.cells.find((entry) => entry.grade === grade);
@@ -69,23 +75,35 @@ export function ClimbingStrengthsChart({
             row.cells.map((cell) => ({
               label: `${month.startDate}–${month.endDate} · ${panel.rows.find((entry) => entry.key === row.key)?.label ?? row.key} · ${cell.grade}`,
               value: facts(cell),
+              onPress: () => onSelect(row.key, cell.grade),
             })),
           ),
         )
       : panel.rows.flatMap((row) =>
           row.cells.map((cell) => ({
             label: `${row.label} · ${cell.grade}`,
-            value: `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${climbingStrengthsRateLabel(panel.grades.find((entry) => entry.grade === cell.grade) ?? { climbs: 0, successRate: null })}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
+            onPress: () => onSelect(row.key, cell.grade),
+            value: adjustedRadar
+              ? `${climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key))} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`
+              : `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${climbingStrengthsRateLabel(panel.grades.find((entry) => entry.grade === cell.grade) ?? { climbs: 0, successRate: null })}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
           })),
         );
   const usable = selected.filter(({ cell }) => cell.successRate !== null);
+  const radarAxes = adjustedRadar
+    ? selected.flatMap((entry) => {
+        const strength = panel.gradeAdjustedStrengths.find((item) => item.key === entry.row.key);
+        return strength && strength.differencePercentagePoints !== null
+          ? [{ ...entry, value: strength.differencePercentagePoints }]
+          : [];
+      })
+    : usable.map((entry) => ({ ...entry, value: entry.cell.successRate ?? 0 }));
   const legendRows =
     view === "curves"
       ? panel.rows.map((row, index) => ({ row, index }))
       : view === "radar"
-        ? usable
+        ? radarAxes
         : selected;
-  const insufficientRadar = view === "radar" && usable.length < 3;
+  const insufficientRadar = view === "radar" && radarAxes.length < 3;
   const chartWidth = Math.max(
     width,
     (view === "curves" ? panel.grades.length : view === "progress" ? panel.progress.length : 0) *
@@ -94,13 +112,11 @@ export function ClimbingStrengthsChart({
   const height =
     view === "pyramids"
       ? Math.max(180, panel.rows.length * (panel.grades.length * 32 + 36) + 32)
-      : view === "progress"
-        ? Math.max(190, panel.rows.length * 190)
-        : view === "gaps"
-          ? Math.max(180, selected.length * 44 + 48)
-          : view === "radar"
-            ? Math.max(300, selected.length * 20)
-            : 270;
+      : view === "gaps"
+        ? Math.max(180, selected.length * 44 + 48)
+        : view === "radar"
+          ? Math.max(300, selected.length * 20)
+          : 270;
   const left = view === "gaps" ? 112 : 38;
   const right = chartWidth - 24;
   const top = 28;
@@ -127,7 +143,9 @@ export function ClimbingStrengthsChart({
       <Text style={styles.meta}>{explanation}</Text>
       {insufficientRadar && (
         <Text style={styles.meta}>
-          Radar needs at least three styles with recorded success rates for this grade.
+          {adjustedRadar
+            ? "Radar needs at least three styles with known results. Explore the recorded values below."
+            : "Radar needs at least three styles with recorded success rates for this grade."}
         </Text>
       )}
       {(view === "gaps" || view === "exposure") && (
@@ -224,6 +242,30 @@ export function ClimbingStrengthsChart({
                       {entry.grade}
                     </SvgText>
                   ))}
+                  {panel.grades.map((entry, index) => {
+                    if (entry.successRate === null) return null;
+                    const previous = panel.grades[index - 1];
+                    return (
+                      <G key={entry.grade}>
+                        {previous?.successRate != null ? (
+                          <Line
+                            x1={xAxis(index - 1, panel.grades.length)}
+                            y1={yRate(previous.successRate)}
+                            x2={xAxis(index, panel.grades.length)}
+                            y2={yRate(entry.successRate)}
+                            stroke={colors.textSecondary}
+                            strokeDasharray="5 4"
+                          />
+                        ) : null}
+                        <Circle
+                          cx={xAxis(index, panel.grades.length)}
+                          cy={yRate(entry.successRate)}
+                          r={2}
+                          fill={colors.textSecondary}
+                        />
+                      </G>
+                    );
+                  })}
                   {panel.rows.map((row, rowIndex) => {
                     const cells = panel.grades.map((entry) =>
                       row.cells.find((cell) => cell.grade === entry.grade),
@@ -267,85 +309,92 @@ export function ClimbingStrengthsChart({
                   })}
                 </>
               )}
-              {view === "progress" &&
-                panel.rows.map((row, rowIndex) => {
-                  const chartTop = rowIndex * 190 + 30;
-                  const chartBottom = chartTop + 120;
-                  const monthY = (value: number) => chartBottom - (value / 100) * 120;
-                  const cells = panel.progress.map((month) =>
-                    month.rows
-                      .find((entry) => entry.key === row.key)
-                      ?.cells.find((cell) => cell.grade === grade),
-                  );
-                  return (
-                    <G key={row.key} accessibilityLabel={`${row.label} progress`}>
-                      <SvgText
-                        fill={colors.text}
-                        fontSize={12}
-                        fontWeight="600"
-                        x={left}
-                        y={chartTop - 12}
-                      >
-                        {row.label}
+              {view === "progress" && (
+                <>
+                  {[0, 50, 100].map((value) => (
+                    <G key={value}>
+                      <Line
+                        x1={left}
+                        x2={right}
+                        y1={yRate(value)}
+                        y2={yRate(value)}
+                        stroke={colors.surfaceSecondary}
+                      />
+                      <SvgText {...svgText} x={2} y={yRate(value) + 4}>
+                        {value}%
                       </SvgText>
-                      {[0, 50, 100].map((value) => (
-                        <G key={value}>
-                          <Line
-                            x1={left}
-                            x2={right}
-                            y1={monthY(value)}
-                            y2={monthY(value)}
-                            stroke={colors.surfaceSecondary}
-                          />
-                          <SvgText {...svgText} x={2} y={monthY(value) + 4}>
-                            {value}%
-                          </SvgText>
-                        </G>
-                      ))}
-                      {panel.progress.map((month, index) => (
-                        <SvgText
-                          {...svgText}
-                          key={month.startDate}
-                          x={xAxis(index, panel.progress.length)}
-                          y={chartBottom + 19}
-                          textAnchor="middle"
-                        >
-                          {month.startDate.slice(0, 7)}
-                        </SvgText>
-                      ))}
-                      {cells.map((cell, index) => {
-                        if (cell?.successRate == null) return null;
-                        const previous = cells[index - 1];
-                        return (
-                          <G key={panel.progress[index]?.startDate}>
-                            {previous?.successRate != null && (
-                              <Line
-                                x1={xAxis(index - 1, cells.length)}
-                                y1={monthY(previous.successRate)}
-                                x2={xAxis(index, cells.length)}
-                                y2={monthY(cell.successRate)}
+                    </G>
+                  ))}
+                  {panel.progress.map((month, index) => (
+                    <SvgText
+                      {...svgText}
+                      key={month.startDate}
+                      x={xAxis(index, panel.progress.length)}
+                      y={height - 13}
+                      textAnchor="middle"
+                    >
+                      {month.startDate.slice(0, 7)}
+                    </SvgText>
+                  ))}
+                  {panel.rows.map((row, rowIndex) => {
+                    const cells = panel.progress.map((month) =>
+                      month.rows
+                        .find((item) => item.key === row.key)
+                        ?.cells.find((cell) => cell.grade === grade),
+                    );
+                    return (
+                      <G key={row.key} accessibilityLabel={`${row.label} progress`}>
+                        {cells.map((cell, index) => {
+                          if (cell?.successRate == null) return null;
+                          const previous = cells[index - 1];
+                          return (
+                            <G key={panel.progress[index]?.startDate}>
+                              {previous?.successRate != null ? (
+                                <Line
+                                  x1={xAxis(index - 1, cells.length)}
+                                  y1={yRate(previous.successRate)}
+                                  x2={xAxis(index, cells.length)}
+                                  y2={yRate(cell.successRate)}
+                                  stroke={color(rowIndex)}
+                                  strokeWidth={2}
+                                />
+                              ) : null}
+                              <Circle
+                                onPress={() => onSelect(row.key, cell.grade)}
+                                accessibilityLabel={
+                                  panel.progress[index]?.startDate +
+                                  " · " +
+                                  row.label +
+                                  " · " +
+                                  cell.grade +
+                                  " · " +
+                                  facts(cell)
+                                }
+                                cx={xAxis(index, cells.length)}
+                                cy={yRate(cell.successRate)}
+                                r={cell.sampleStatus === "limited" ? 4 : 3}
+                                fill={
+                                  cell.sampleStatus === "limited" ? colors.surface : color(rowIndex)
+                                }
                                 stroke={color(rowIndex)}
                                 strokeWidth={2}
                               />
-                            )}
-                            <Circle
-                              onPress={() => onSelect(row.key, cell.grade)}
-                              accessibilityLabel={`${panel.progress[index]?.startDate} · ${row.label} · ${cell.grade} · ${facts(cell)}`}
-                              cx={xAxis(index, cells.length)}
-                              cy={monthY(cell.successRate)}
-                              r={cell.sampleStatus === "limited" ? 4 : 3}
-                              fill={
-                                cell.sampleStatus === "limited" ? colors.surface : color(rowIndex)
-                              }
-                              stroke={color(rowIndex)}
-                              strokeWidth={2}
-                            />
-                          </G>
-                        );
-                      })}
-                    </G>
-                  );
-                })}
+                              <SvgText
+                                {...svgText}
+                                x={xAxis(index, cells.length)}
+                                y={yRate(cell.successRate) - 9}
+                                textAnchor="middle"
+                              >
+                                {rowIndex + 1}
+                              </SvgText>
+                            </G>
+                          );
+                        })}
+                      </G>
+                    );
+                  })}
+                </>
+              )}
               {view === "exposure" && (
                 <>
                   {[-100, 0, 100].map((value) => {
@@ -465,16 +514,20 @@ export function ClimbingStrengthsChart({
                 (() => {
                   const cx = chartWidth / 2;
                   const cy = height / 2;
-                  const radius = Math.max(30, Math.min(chartWidth, height) / 2 - 45);
+                  const radius = Math.max(
+                    30,
+                    Math.min(chartWidth, height) / 2 - (adjustedRadar ? 70 : 45),
+                  );
                   const point = (index: number, value: number) => {
-                    const angle = (index / usable.length) * Math.PI * 2 - Math.PI / 2;
+                    const angle = (index / radarAxes.length) * Math.PI * 2 - Math.PI / 2;
+                    const position = adjustedRadar ? (value + 100) / 200 : value / 100;
                     return {
-                      x: cx + (Math.cos(angle) * radius * value) / 100,
-                      y: cy + (Math.sin(angle) * radius * value) / 100,
+                      x: cx + Math.cos(angle) * radius * position,
+                      y: cy + Math.sin(angle) * radius * position,
                     };
                   };
                   const points = (value: (index: number) => number) =>
-                    usable
+                    radarAxes
                       .map((_, index) => {
                         const position = point(index, value(index));
                         return `${position.x},${position.y}`;
@@ -490,7 +543,7 @@ export function ClimbingStrengthsChart({
                           stroke={colors.surfaceSecondary}
                         />
                       ))}
-                      {usable.map(({ row }, index) => {
+                      {radarAxes.map(({ row }, index) => {
                         const position = point(index, 100);
                         const label = point(index, 114);
                         return (
@@ -502,32 +555,39 @@ export function ClimbingStrengthsChart({
                               y2={position.y}
                               stroke={colors.surfaceSecondary}
                             />
-                            <SvgText {...svgText} x={label.x} y={label.y} textAnchor="middle">
-                              {index + 1}
+                            <SvgText
+                              {...svgText}
+                              x={label.x}
+                              y={label.y}
+                              textAnchor="middle"
+                              onPress={() => onSelect(row.key, grade)}
+                              accessibilityLabel={`Open ${row.label} climbs`}
+                            >
+                              {adjustedRadar ? row.label : index + 1}
                             </SvgText>
                           </G>
                         );
                       })}
-                      {baseline?.successRate != null && (
+                      {(adjustedRadar || baseline?.successRate != null) && (
                         <Polygon
-                          points={points(() => baseline.successRate ?? 0)}
+                          points={points(() => (adjustedRadar ? 0 : (baseline?.successRate ?? 0)))}
                           fill="none"
                           stroke={colors.textSecondary}
                           strokeDasharray="5 4"
                         />
                       )}
                       <Polygon
-                        points={points((index) => usable[index]?.cell.successRate ?? 0)}
+                        points={points((index) => radarAxes[index]?.value ?? 0)}
                         fill={colors.accent}
                         fillOpacity={0.2}
                         stroke={colors.accent}
                         strokeWidth={2}
                       />
                       <SvgText {...svgText} x={cx + 3} y={cy + 12}>
-                        0%
+                        {adjustedRadar ? "−100 pp" : "0%"}
                       </SvgText>
                       <SvgText {...svgText} x={cx + 10} y={cy - radius + 14}>
-                        100%
+                        {adjustedRadar ? "+100 pp" : "100%"}
                       </SvgText>
                     </>
                   );
@@ -536,14 +596,25 @@ export function ClimbingStrengthsChart({
           </ScrollView>
         )}
       </AccessibleChart>
-      {(view === "curves" || view === "exposure" || view === "radar") && (
+      {(view === "curves" || view === "exposure" || view === "radar" || view === "progress") && (
         <View style={styles.legend}>
-          {legendRows.map(({ row, index }, axis) => (
-            <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
-              {view === "exposure" || view === "radar" ? `${axis + 1}. ` : ""}
-              {row.label}
-            </Text>
-          ))}
+          {adjustedRadar ? (
+            <>
+              <Text style={[styles.meta, { color: colors.accent }]}>Grade-adjusted strengths</Text>
+              <Text style={styles.meta}>Same-grade baseline</Text>
+            </>
+          ) : view === "curves" ? (
+            <Text style={styles.meta}>Same-grade baseline</Text>
+          ) : null}
+          {!adjustedRadar &&
+            legendRows.map(({ row, index }, axis) => (
+              <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
+                {view === "exposure" || view === "radar" || view === "progress"
+                  ? `${axis + 1}. `
+                  : ""}
+                {row.label}
+              </Text>
+            ))}
         </View>
       )}
     </View>

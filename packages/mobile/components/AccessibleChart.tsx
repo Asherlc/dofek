@@ -5,6 +5,7 @@ import { colors } from "../theme";
 export interface AccessibleChartRow {
   label: string;
   value: string;
+  onPress?: () => void;
 }
 
 interface AccessibleChartProps {
@@ -42,17 +43,22 @@ export function AccessibleChart({ title, summary, rows, children }: AccessibleCh
           </Pressable>
           {expanded && (
             <View accessibilityRole="list" style={styles.list}>
-              {rows.map((row) => (
-                <View
-                  key={`${row.label}-${row.value}`}
-                  accessible
-                  accessibilityLabel={`${row.label}: ${row.value}`}
-                  style={styles.row}
-                >
-                  <Text style={styles.rowLabel}>{row.label}</Text>
-                  <Text style={styles.rowValue}>{row.value}</Text>
-                </View>
-              ))}
+              {rows.map((row) => {
+                const Row = row.onPress ? Pressable : View;
+                return (
+                  <Row
+                    key={`${row.label}-${row.value}`}
+                    accessible
+                    accessibilityRole={row.onPress ? "button" : undefined}
+                    onPress={row.onPress}
+                    accessibilityLabel={`${row.label}: ${row.value}`}
+                    style={styles.row}
+                  >
+                    <Text style={styles.rowLabel}>{row.label}</Text>
+                    <Text style={styles.rowValue}>{row.value}</Text>
+                  </Row>
+                );
+              })}
             </View>
           )}
         </>

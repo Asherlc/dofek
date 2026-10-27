@@ -62,8 +62,8 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), chart selection for recorded aid status and route methods, concise lane and setting labels, and period/exact-value formatting shared by web and mobile |
-| `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles with server-computed rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
-| `climbing-strengths-views` | [Shared Styles / Grades / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with Styles opening the same-grade comparison by default |
+| `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles plus server-computed grade-adjusted strength differences, with rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
+| `climbing-strengths-views` | [Shared Styles / Grades / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with fixed Styles radar, Grades heatmap and Progress views |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
@@ -252,3 +252,14 @@ calculations are estimates and are not medical advice.
 [Dofek repository](https://github.com/Asherlc/dofek/tree/main/packages/training).
 Please [open an issue](https://github.com/Asherlc/dofek/issues) for bugs or API
 proposals, or [submit a pull request](https://github.com/Asherlc/dofek/pulls).
+
+### Climbing strengths view migration
+
+The `climbing-strengths-views` subpath now exports
+[`CLIMBING_STRENGTHS_TABS` and `ClimbingStrengthsTab`](src/climbing-strengths-views.ts)
+for fixed Styles (`radar`), Grades (`profile`), and Progress (`progress`) views.
+Replace `CLIMBING_STRENGTHS_PURPOSES`, `climbingStrengthsPurpose`, and
+`climbingStrengthsPurposeView` imports with the fixed tab values; there is no
+alternate-format selector. The renderer-level `CLIMBING_STRENGTHS_VIEWS` and
+`ClimbingStrengthsView` exports remain available. This is a breaking subpath API
+change for package consumers; both repository clients migrate together.

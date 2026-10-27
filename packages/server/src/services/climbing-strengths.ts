@@ -7,6 +7,7 @@ import type {
   ClimbingStrengthsPanel,
 } from "@dofek/training/climbing-strengths";
 import { ALL_CLIMBING_GRADES } from "@dofek/training/climbing-strengths";
+import { buildClimbingStrengthProfile } from "./climbing-strength-profile.ts";
 export interface ClimbingStrengthsObservation {
   identity: string | null;
   contextKey: string;
@@ -174,143 +175,128 @@ export function buildClimbingStrengths(
         ? label.slice(0, -suffix.length)
         : label;
     for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
-      const settings =
-        dimension === "setting"
-          ? [null]
-          : (["indoor", "outdoor", "unknown"] as const).filter((setting) =>
-              context.some((entry) => (entry.setting ?? "unknown") === setting),
-            );
-      for (const setting of settings) {
-        const selected = context.filter(
-          (entry) => setting === null || (entry.setting ?? "unknown") === setting,
-        );
-        const buildProfile = (allGrades: boolean) => {
-          const gradeGroups = allGrades
-            ? [{ grade: ALL_CLIMBING_GRADES, gradeSortValue: 0 }]
-            : [
-                ...new Map(
-                  selected.map((e) => [
-                    e.grade,
-                    { grade: e.grade ?? "", gradeSortValue: e.gradeSortValue },
-                  ]),
-                ).values(),
-              ].sort(
-                (a, b) => a.gradeSortValue - b.gradeSortValue || a.grade.localeCompare(b.grade),
-              );
-          const grades = gradeGroups.map((g) => {
-            const matching = selected.filter((e) => allGrades || e.grade === g.grade);
-            const sends = matching.filter((e) => e.outcome === "sent").length;
-            const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
-            return {
-              ...g,
-              sends,
-              climbs: matching.length,
-              unknownOutcomes,
-              successRate: percent(sends, matching.length - unknownOutcomes),
-            };
-          });
-          const keys =
-            dimension === "setting"
-              ? [
-                  "indoor",
-                  "outdoor",
-                  ...(selected.some((entry) => entry.setting === null) ? ["unknown"] : []),
-                ]
-              : [...new Set(selected.flatMap((e) => trait(e, dimension)))].sort();
+      const selected = context;
+      const buildProfile = (allGrades: boolean) => {
+        const gradeGroups = allGrades
+          ? [{ grade: ALL_CLIMBING_GRADES, gradeSortValue: 0 }]
+          : [
+              ...new Map(
+                selected.map((e) => [
+                  e.grade,
+                  { grade: e.grade ?? "", gradeSortValue: e.gradeSortValue },
+                ]),
+              ).values(),
+            ].sort((a, b) => a.gradeSortValue - b.gradeSortValue || a.grade.localeCompare(b.grade));
+        const grades = gradeGroups.map((g) => {
+          const matching = selected.filter((e) => allGrades || e.grade === g.grade);
+          const sends = matching.filter((e) => e.outcome === "sent").length;
+          const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
           return {
-            grades,
-            rows: keys.map((key) => ({
-              key,
-              label:
-                key === "unknown" && dimension === "setting"
-                  ? "Unknown setting"
-                  : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
-              cells: grades.map((g) => {
-                const matching = selected.filter(
-                  (e) => (allGrades || e.grade === g.grade) && trait(e, dimension).includes(key),
-                );
-                const sends = matching.filter((e) => e.outcome === "sent").length;
-                const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
-                const successRate = percent(sends, matching.length - unknownOutcomes);
-                return {
-                  grade: g.grade,
-                  sends,
-                  climbs: matching.length,
-                  unknownOutcomes,
-                  successRate,
-                  differencePercentagePoints:
-                    successRate === null || g.successRate === null
-                      ? null
-                      : successRate - g.successRate,
-                  sampleStatus: sampleStatus(matching.length),
-                  examples: matching.slice(0, 3).map((e) => e.example),
-                };
-              }),
-            })),
-            progress: months.map(({ startDate, endDate }) => {
-              // Resolve identity, grade and traits across the complete window;
-              // only outcomes are re-evaluated from this month's original logs.
-              const monthly = selected.flatMap((entry) => {
-                const attempts = entry.observations.filter(
-                  (observation) =>
-                    observation.example.date >= startDate && observation.example.date <= endDate,
-                );
-                const outcome: ClimbingStrengthsObservation["outcome"] = attempts.some(
-                  (attempt) => attempt.outcome === "sent",
-                )
-                  ? "sent"
-                  : attempts.some((attempt) => attempt.outcome === "not_sent")
-                    ? "not_sent"
-                    : null;
-                return attempts.length === 0 ? [] : [{ ...entry, outcome }];
-              });
+            ...g,
+            sends,
+            climbs: matching.length,
+            unknownOutcomes,
+            successRate: percent(sends, matching.length - unknownOutcomes),
+          };
+        });
+        const keys =
+          dimension === "setting"
+            ? [
+                "indoor",
+                "outdoor",
+                ...(selected.some((entry) => entry.setting === null) ? ["unknown"] : []),
+              ]
+            : [...new Set(selected.flatMap((e) => trait(e, dimension)))].sort();
+        return {
+          grades,
+          rows: keys.map((key) => ({
+            key,
+            label:
+              key === "unknown" && dimension === "setting"
+                ? "Unknown setting"
+                : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
+            cells: grades.map((g) => {
+              const matching = selected.filter(
+                (e) => (allGrades || e.grade === g.grade) && trait(e, dimension).includes(key),
+              );
+              const sends = matching.filter((e) => e.outcome === "sent").length;
+              const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
+              const successRate = percent(sends, matching.length - unknownOutcomes);
               return {
-                startDate,
-                endDate,
-                rows: keys.map((key) => ({
-                  key,
-                  cells: grades.map(({ grade }) => {
-                    const matching = monthly.filter(
-                      (entry) =>
-                        (allGrades || entry.grade === grade) &&
-                        trait(entry, dimension).includes(key),
-                    );
-                    const sends = matching.filter((entry) => entry.outcome === "sent").length;
-                    const unknownOutcomes = matching.filter(
-                      (entry) => entry.outcome === null,
-                    ).length;
-                    return {
-                      grade,
-                      sends,
-                      climbs: matching.length,
-                      unknownOutcomes,
-                      successRate: percent(sends, matching.length - unknownOutcomes),
-                      sampleStatus: sampleStatus(matching.length),
-                    };
-                  }),
-                })),
+                grade: g.grade,
+                sends,
+                climbs: matching.length,
+                unknownOutcomes,
+                successRate,
+                differencePercentagePoints:
+                  successRate === null || g.successRate === null
+                    ? null
+                    : successRate - g.successRate,
+                sampleStatus: sampleStatus(matching.length),
+                examples: matching.slice(0, 3).map((e) => e.example),
               };
             }),
-          };
+          })),
+          progress: months.map(({ startDate, endDate }) => {
+            // Resolve identity, grade and traits across the complete window;
+            // only outcomes are re-evaluated from this month's original logs.
+            const monthly = selected.flatMap((entry) => {
+              const attempts = entry.observations.filter(
+                (observation) =>
+                  observation.example.date >= startDate && observation.example.date <= endDate,
+              );
+              const outcome: ClimbingStrengthsObservation["outcome"] = attempts.some(
+                (attempt) => attempt.outcome === "sent",
+              )
+                ? "sent"
+                : attempts.some((attempt) => attempt.outcome === "not_sent")
+                  ? "not_sent"
+                  : null;
+              return attempts.length === 0 ? [] : [{ ...entry, outcome }];
+            });
+            return {
+              startDate,
+              endDate,
+              rows: keys.map((key) => ({
+                key,
+                cells: grades.map(({ grade }) => {
+                  const matching = monthly.filter(
+                    (entry) =>
+                      (allGrades || entry.grade === grade) && trait(entry, dimension).includes(key),
+                  );
+                  const sends = matching.filter((entry) => entry.outcome === "sent").length;
+                  const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
+                  return {
+                    grade,
+                    sends,
+                    climbs: matching.length,
+                    unknownOutcomes,
+                    successRate: percent(sends, matching.length - unknownOutcomes),
+                    sampleStatus: sampleStatus(matching.length),
+                  };
+                }),
+              })),
+            };
+          }),
         };
-        panels.push({
-          key: JSON.stringify([contextKey, dimension, setting]),
-          contextKey,
-          contextLabel,
-          dimension,
-          setting,
-          ...buildProfile(false),
-          allGrades: buildProfile(true),
-          coverage: {
-            missingTraits: selected.filter((entry) =>
-              dimension === "setting"
-                ? entry.setting === null
-                : trait(entry, dimension).length === 0,
-            ).length,
-            unknownOutcomes: selected.filter((e) => e.outcome === null).length,
-          },
-        });
-      }
+      };
+      const profile = buildProfile(false);
+      panels.push({
+        key: JSON.stringify([contextKey, dimension]),
+        contextKey,
+        contextLabel,
+        dimension,
+        setting: null,
+        ...profile,
+        gradeAdjustedStrengths: buildClimbingStrengthProfile(profile),
+        allGrades: buildProfile(true),
+        coverage: {
+          missingTraits: selected.filter((entry) =>
+            dimension === "setting" ? entry.setting === null : trait(entry, dimension).length === 0,
+          ).length,
+          unknownOutcomes: selected.filter((e) => e.outcome === null).length,
+        },
+      });
     }
   }
   return { panels, coverage };

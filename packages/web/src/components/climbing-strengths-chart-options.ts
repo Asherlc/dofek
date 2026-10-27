@@ -3,8 +3,10 @@ import type {
   ClimbingStrengthsPanel,
 } from "@dofek/training/climbing-strengths";
 import {
+  ALL_CLIMBING_GRADES,
   climbingStrengthsBaselineLabel,
   climbingStrengthsCountLabel,
+  climbingStrengthsDifferenceLabel,
   climbingStrengthsRateLabel,
 } from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
@@ -83,13 +85,14 @@ export function climbingStrengthsChartOption(
       return escapeTooltipHtml(params.data.tooltipText).replaceAll("\n", "<br/>");
     },
   });
+  const chartGrade = view === "curves" || view === "pyramids" ? ALL_CLIMBING_GRADES : grade;
   const base = {
     grid: dofekGrid("single", { top: 50, bottom: 70, left: 24, right: 24, containLabel: true }),
     tooltip,
     legend: dofekLegend(true, { type: "scroll" }),
     aria: {
       label: {
-        description: `${panel.contextLabel}. ${grade}. Success per distinct climb; limited samples are marked. Exact values are available below.`,
+        description: `${panel.contextLabel}. ${chartGrade}. ${view === "radar" && grade === ALL_CLIMBING_GRADES ? "Grade-adjusted differences in percentage points; zero is the same-grade baseline" : "Success per distinct climb"}; limited samples are marked. Exact values are available below.`,
       },
     },
   };
@@ -283,31 +286,22 @@ export function climbingStrengthsChartOption(
   if (view === "progress")
     return {
       ...base,
-      legend: dofekLegend(false),
-      title: panel.rows.map((row, index) => ({
-        text: row.label,
-        top: 20 + index * 190,
-        left: 24,
-        textStyle: { color: seriesColor(index), fontSize: 13, width: 250, overflow: "truncate" },
-      })),
-      grid: panel.rows.map((_, index) => ({
-        ...dofekGrid("single", { top: 50 + index * 190, left: 24, right: 24, containLabel: true }),
-        height: 110,
-        bottom: undefined,
-      })),
-      xAxis: panel.rows.map((_, index) => ({
-        ...dofekAxis.category({
-          show: true,
-          data: panel.progress.map((period) => `${period.startDate} – ${period.endDate}`),
-          axisLabel: { hideOverlap: true },
-        }),
-        gridIndex: index,
-      })),
-      yAxis: panel.rows.map((_, index) => ({
-        ...dofekAxis.value({ min: 0, max: 100, axisLabel: { formatter: "{value}%" } }),
-        gridIndex: index,
-        interval: 50,
-      })),
+      legend: {
+        ...dofekLegend(true, { type: "scroll" }),
+        formatter: (name: string) =>
+          `${panel.rows.findIndex((row) => row.label === name) + 1}. ${name}`,
+      },
+      xAxis: dofekAxis.category({
+        show: true,
+        data: panel.progress.map((period) => period.startDate.slice(0, 7)),
+        axisLabel: { hideOverlap: true },
+      }),
+      yAxis: dofekAxis.value({
+        name: "Send rate (%)",
+        min: 0,
+        max: 100,
+        axisLabel: { formatter: "{value}%" },
+      }),
       series: panel.rows.map((row, index) => ({
         ...dofekSeries.line(
           row.label,
@@ -325,16 +319,71 @@ export function climbingStrengthsChartOption(
                 )
               : null;
           }),
-          { color: seriesColor(index), smooth: false, symbol: "circle", symbolSize: 9 },
+          {
+            color: seriesColor(index),
+            smooth: false,
+            symbol: "circle",
+            symbolSize: 9,
+          },
         ),
-        xAxisIndex: index,
-        yAxisIndex: index,
+        label: { show: true, position: "top", formatter: String(index + 1) },
       })),
     };
+  if (view === "radar" && grade === ALL_CLIMBING_GRADES) {
+    const axes = selected.flatMap(({ row, cell }) => {
+      const strength = panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key);
+      return strength && strength.differencePercentagePoints !== null
+        ? [{ row, cell, strength, value: strength.differencePercentagePoints }]
+        : [];
+    });
+    return {
+      ...base,
+      radar: {
+        triggerEvent: true,
+        indicator: axes.map(({ row }) => ({ name: row.label, min: -100, max: 100 })),
+        radius: "62%",
+        axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },
+        splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
+      },
+      series: [
+        {
+          type: "radar",
+          data: [
+            {
+              name: "Grade-adjusted strengths",
+              value: axes.map((axis) => axis.value),
+              tooltipText: axes
+                .map(
+                  ({
+                    row,
+                    cell,
+                    strength,
+                    value,
+                  }) => `${row.label} · ${climbingStrengthsDifferenceLabel(value)}
+${climbingStrengthsCountLabel(cell)}${strength.sampleStatus === "limited" ? " · Limited sample" : ""}`,
+                )
+                .join("\n"),
+              lineStyle: { color: seriesColor(0) },
+              itemStyle: { color: seriesColor(0) },
+              areaStyle: { opacity: 0.12 },
+            },
+            {
+              name: "Same-grade baseline",
+              value: axes.map(() => 0),
+              tooltipText: "Same-grade baseline · 0 percentage points",
+              lineStyle: { type: "dashed", color: chartThemeColors.axisLabel },
+              itemStyle: { color: chartThemeColors.axisLabel },
+            },
+          ],
+        },
+      ],
+    };
+  }
   const axes = selected.filter(({ cell }) => cell.successRate !== null);
   return {
     ...base,
     radar: {
+      triggerEvent: true,
       indicator: axes.map(({ row }) => ({ name: row.label, min: 0, max: 100 })),
       radius: "62%",
       axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },

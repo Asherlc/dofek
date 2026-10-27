@@ -21,10 +21,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const OutdoorLead: Story = {
-  args: { value: { climbKind: "route", ropeMethod: "lead", setting: "outdoor" } },
+  args: { value: { types: ["lead"], setting: ["outdoor"] } },
 };
 export const CustomSelection: Story = {
-  args: { value: { climbKind: "route", ropeMethod: "follow", solo: false, setting: "unknown" } },
+  args: { value: { climbKind: "route", ropeMethod: "follow", solo: false, setting: ["unknown"] } },
 };
 export const Narrow: Story = {
   decorators: [
@@ -38,16 +38,18 @@ export const Narrow: Story = {
 export const ContextInteraction: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Bouldering" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Outdoor" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Lead" }));
-    await expect(canvas.getByRole("button", { name: "Lead" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect(canvas.getByRole("button", { name: "Outdoor" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await userEvent.click(canvas.getByRole("button", { name: "Filters" }));
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(page.getByRole("checkbox", { name: "Top rope" }));
+    await userEvent.click(page.getByRole("checkbox", { name: "Unknown setting" }));
+    await expect(page.getByRole("checkbox", { name: "All settings" })).toBePartiallyChecked();
+    await userEvent.click(page.getByRole("button", { name: "Done" }));
+    await expect(canvas.getByText("Bouldering + Lead · Indoor + Outdoor")).toBeVisible();
+  },
+};
+export const OpenPopover: Story = {
+  args: { value: { types: ["bouldering", "lead"], setting: ["indoor", "outdoor"] } },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Filters" }));
   },
 };

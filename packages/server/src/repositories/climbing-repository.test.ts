@@ -1,3 +1,4 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
@@ -28,15 +29,18 @@ describe("ClimbingRepository weekly volume", () => {
   it.each([
     [{}, false],
     [{ setting: undefined }, false],
-    [{ setting: "outdoor" }, true],
-    [{ setting: "outdoor", climbKind: undefined }, true],
-  ] as const)("binds the recorded-activity filter gate for %j", async (filters, expected) => {
-    const execute = vi.fn().mockResolvedValue([]);
-    const repo = new ClimbingRepository({ execute }, "user", "UTC");
-    await repo.getVolumeOverTime(30, filters);
-    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
-    expect(query.params.at(-1)).toBe(expected);
-  });
+    [{ setting: ["outdoor"] }, true],
+    [{ setting: ["outdoor"], climbKind: undefined }, true],
+  ] satisfies [ClimbingFilters, boolean][])(
+    "binds the recorded-activity filter gate for %j",
+    async (filters, expected) => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const repo = new ClimbingRepository({ execute }, "user", "UTC");
+      await repo.getVolumeOverTime(30, filters);
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params.at(-1)).toBe(expected);
+    },
+  );
   it("binds a caller-local end date for an all-time query", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-27T01:00:00Z"));

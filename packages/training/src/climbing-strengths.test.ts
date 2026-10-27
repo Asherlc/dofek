@@ -1,11 +1,52 @@
 import { describe, expect, it } from "vitest";
 import {
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
+  climbingStrengthsDifferenceLabel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
 } from "./climbing-strengths.ts";
 
 describe("climbing strengths labels", () => {
+  it.each([
+    [null, "No comparable results"],
+    [0, "0 percentage points vs same-grade baseline"],
+    [12.5, "+12.5 percentage points vs same-grade baseline"],
+    [-7.2, "-7.2 percentage points vs same-grade baseline"],
+  ] as const)("formats a supplied adjusted difference of %s", (value, label) => {
+    expect(climbingStrengthsDifferenceLabel(value)).toBe(label);
+  });
+  it("labels unavailable, zero, limited and available adjusted observations", () => {
+    expect(climbingStrengthsAdjustedLabel(undefined)).toBe("No comparable results");
+    expect(
+      climbingStrengthsAdjustedLabel({
+        key: "slab",
+        differencePercentagePoints: null,
+        expectedSuccessRate: null,
+        sampleStatus: "no_data",
+      }),
+    ).toBe("No comparable results");
+    expect(
+      climbingStrengthsAdjustedLabel({
+        key: "slab",
+        differencePercentagePoints: 0,
+        expectedSuccessRate: 0,
+        sampleStatus: "limited",
+      }),
+    ).toBe(
+      "0 percentage points vs same-grade baseline · Expected send rate at these grades: 0% · Limited sample",
+    );
+    expect(
+      climbingStrengthsAdjustedLabel({
+        key: "slab",
+        differencePercentagePoints: -7.2,
+        expectedSuccessRate: 62.8,
+        sampleStatus: "available",
+      }),
+    ).toBe(
+      "-7.2 percentage points vs same-grade baseline · Expected send rate at these grades: 62.8%",
+    );
+  });
   it("distinguishes missing climbs, unknown results and recorded rates", () => {
     expect(climbingStrengthsRateLabel({ climbs: 0, successRate: null })).toBe("No data");
     expect(climbingStrengthsRateLabel({ climbs: 4, successRate: null })).toBe("Result unknown");
