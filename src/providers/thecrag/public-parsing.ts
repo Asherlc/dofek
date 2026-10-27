@@ -87,6 +87,9 @@ export function parsePublicFeed(
 ): { items: PublicAscentReference[]; next: string | null } {
   try {
     const parser = sax.parser(true, { xmlns: true });
+    parser.onerror = (error) => {
+      throw error;
+    };
     parser.ondoctype = () => {
       throw new Error("DTD not supported");
     };

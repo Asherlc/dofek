@@ -2,8 +2,10 @@ import {
   PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
   ProviderRequestTimeoutError,
 } from "@dofek/provider-http/rate-limit";
-import { Impit, TimeoutError } from "impit";
+import impit from "impit";
 import { captureException } from "../../lib/error-reporting.ts";
+
+const { Impit, TimeoutError } = impit;
 
 export function createTheCragPublicFetch(): typeof globalThis.fetch {
   const client = new Impit({
@@ -35,7 +37,6 @@ export function createTheCragPublicFetch(): typeof globalThis.fetch {
       headers: response.headers,
     });
     Object.defineProperty(normalized, "url", { value: response.url });
-    Object.defineProperty(normalized, "redirected", { value: response.url !== String(input) });
     return normalized;
   };
 }

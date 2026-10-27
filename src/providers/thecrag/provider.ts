@@ -41,11 +41,10 @@ async function publicResponse(
   if (response.url) {
     const requested = new URL(url);
     const received = new URL(response.url);
-    const expectedPath = requested.pathname.replace(/^\/en\//, "/");
     const receivedPath = received.pathname.replace(/^\/en\//, "/");
     if (
       received.origin !== ORIGIN ||
-      receivedPath !== expectedPath ||
+      receivedPath !== requested.pathname ||
       received.search !== requested.search ||
       received.username ||
       received.password ||
