@@ -15,15 +15,64 @@ vi.mock("../lib/open-external-url", () => ({ openExternalUrl }));
 const push = vi.hoisted(() => vi.fn());
 vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
 function renderAtV3(element: Parameters<typeof render>[0]) {
-  const result = render(element);
+  const result = renderWithOptions(element);
   const grade = screen.queryByRole("button", { name: "V3" });
   if (grade) fireEvent.click(grade);
   return result;
 }
+function renderWithOptions(element: Parameters<typeof render>[0]) {
+  const result = render(element);
+  const grades = screen.queryByRole("button", { name: "Styles" });
+  if (grades) fireEvent.click(grades);
+  const options = screen.queryByRole("button", { name: "Chart options" });
+  if (options) fireEvent.click(options);
+  const pooled = screen.queryByRole("button", { name: "All grades" });
+  if (pooled) fireEvent.click(pooled);
+  return result;
+}
 describe("ClimbingStrengths", () => {
+  it("shows all grade columns in Grades and opens the selected heatmap cell's source climbs", () => {
+    render(<ClimbingStrengths data={data} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grades" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Slab · V3 · 40%/ }));
+    expect(screen.getByRole("button", { name: /^Slab · V4 · 0%.*Limited sample$/ })).toBeTruthy();
+    expect(screen.getByText("Quiet Feet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Slab · V4 · 0%/ }));
+    expect(screen.getByText("No examples available for this selection.")).toBeTruthy();
+  });
+  it("opens Styles at an individual grade and preserves grade across purpose changes", () => {
+    render(<ClimbingStrengths data={data} />);
+    expect(screen.getByRole("button", { name: "Styles" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "V3" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Grades" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Slab · V4 · 0%/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+    expect(screen.getByRole("button", { name: "V4" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "All grades" }));
+    expect(
+      screen.getByText(
+        "All grades combines different difficulties; comparisons are not grade-adjusted.",
+      ),
+    ).toBeTruthy();
+  });
+  it("discloses comparison and chart formats separately from breakdown controls", () => {
+    render(<ClimbingStrengths data={data} />);
+    fireEvent.click(screen.getByRole("button", { name: "Chart options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
+    expect(
+      screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+    expect(
+      screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
+    ).toBe("false");
+  });
+
   it("keeps grouping and view controls usable when the period has no panels", () => {
-    render(<ClimbingStrengths data={{ ...data, panels: [] }} />);
-    for (const name of ["Wall angle", "Hold type", "Indoor / outdoor"]) {
+    renderWithOptions(<ClimbingStrengths data={{ ...data, panels: [] }} />);
+    for (const name of ["Wall angle", "Hold type"]) {
       fireEvent.click(screen.getByRole("button", { name }));
       expect(screen.getByRole("button", { name }).getAttribute("aria-selected")).toBe("true");
     }
@@ -37,7 +86,7 @@ describe("ClimbingStrengths", () => {
     (dimension) => {
       const panel = data.panels[0];
       if (!panel) throw new Error("Missing fixture");
-      render(
+      renderWithOptions(
         <ClimbingStrengths
           data={{ ...data, panels: [{ ...panel, dimension, setting: "unknown" }] }}
         />,
@@ -48,7 +97,7 @@ describe("ClimbingStrengths", () => {
   it("renders both pooled unknown-result examples with stable distinct identities", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
+      renderWithOptions(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
       fireEvent.click(screen.getByRole("button", { name: /^Vertical · 67%/ }));
       expect(screen.getByText("Unknown ascent")).toBeTruthy();
       expect(screen.getByText("Known ascent")).toBeTruthy();
@@ -59,8 +108,8 @@ describe("ClimbingStrengths", () => {
       error.mockRestore();
     }
   });
-  it("shows pooled All grades by default and switches to individual grade results", () => {
-    render(<ClimbingStrengths data={data} />);
+  it("selects pooled All grades and switches to individual grade results", () => {
+    renderWithOptions(<ClimbingStrengths data={data} />);
     expect(screen.getByRole("button", { name: "All grades" }).getAttribute("aria-selected")).toBe(
       "true",
     );
@@ -88,7 +137,11 @@ describe("ClimbingStrengths", () => {
       expect(screen.queryByRole("radio")).toBeNull();
       expect(screen.getByRole("button", { name: `View: ${label}` })).toBeTruthy();
       expect(screen.getByText("Quiet Feet")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "V3" }).getAttribute("aria-selected")).toBe("true");
+      if (label === "Grade profile") expect(screen.getByText("V3")).toBeTruthy();
+      else
+        expect(screen.getByRole("button", { name: "V3" }).getAttribute("aria-selected")).toBe(
+          "true",
+        );
     }
     rendered.rerender(<ClimbingStrengths data={structuredClone(data)} loading />);
     expect(screen.getByText("Quiet Feet")).toBeTruthy();
@@ -132,12 +185,10 @@ describe("ClimbingStrengths", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "View: Success curves" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "All grades" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "V3" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText("Quiet Feet")).toBeNull();
     expect(screen.queryByText("Recorded climbs")).toBeNull();
-    expect(screen.getByRole("button", { name: /^Slab · 29%/ }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("button", { name: /^Slab · 40%/ }).getAttribute("aria-selected")).toBe(
       "false",
     );
   });
@@ -168,12 +219,6 @@ describe("ClimbingStrengths", () => {
   it("renders server values and selects grade, dimension and context", () => {
     renderAtV3(<ClimbingStrengths data={data} />);
     expect(screen.getByText("Same-grade baseline · 44% · 4 sends / 9 climbs")).toBeTruthy();
-    expect(document.querySelector('[testID="strength-bar-slab"]')?.getAttribute("width")).toBe(
-      "40%",
-    );
-    expect(document.querySelector('[testID="strength-baseline-slab"]')?.getAttribute("x")).toBe(
-      "44%",
-    );
     fireEvent.click(
       screen.getByRole("button", {
         name: "Slab · 40% · 2 sends / 5 climbs · -4 percentage points vs same-grade baseline",
@@ -206,19 +251,20 @@ describe("ClimbingStrengths", () => {
       }),
     ).toBeTruthy();
   });
-  it("uses setting observations when angle traits are missing and keeps the grade across dimensions", () => {
+  it("explicitly compares settings when angle traits are missing and keeps the grade across dimensions", () => {
     const panels = data.panels.map((panel) =>
       panel.dimension === "setting" ? panel : { ...panel, rows: [] },
     );
     renderAtV3(<ClimbingStrengths data={{ ...data, panels }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
     expect(
-      screen.getByRole("button", { name: "Indoor / outdoor" }).getAttribute("aria-selected"),
+      screen.getByRole("button", { name: "Compare indoor/outdoor" }).getAttribute("aria-selected"),
     ).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "V4" }));
     fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
     expect(screen.getByRole("button", { name: "V4" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Indoor / outdoor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
     expect(
       screen.getByRole("button", {
         name: "Indoor · 20% · 1 send / 5 climbs · 0 percentage points vs same-grade baseline",
@@ -239,7 +285,7 @@ describe("ClimbingStrengths", () => {
     );
     expect(screen.getByText("Indoor")).toBeTruthy();
     expect(screen.getByText("Outdoor")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Indoor / outdoor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare indoor/outdoor" }));
     fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
     expect(screen.getByText("Indoor")).toBeTruthy();
     expect(screen.getByText("Outdoor")).toBeTruthy();
@@ -279,7 +325,7 @@ describe("ClimbingStrengths", () => {
     view.rerender(
       <ClimbingStrengths data={data} loading error={{ message: "Reconnect your account." }} />,
     );
-    expect(screen.getByText("Overall baseline · 36% · 5 sends / 14 climbs")).toBeTruthy();
+    expect(screen.getByText("Same-grade baseline · 44% · 4 sends / 9 climbs")).toBeTruthy();
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
   });
 });
@@ -287,8 +333,8 @@ describe("ClimbingStrengths", () => {
 it("selects missing dimensions and shows their empty state while preserving navigation", () => {
   const panel = data.panels[0];
   if (!panel) throw new Error("Missing fixture");
-  render(<ClimbingStrengths data={{ ...data, panels: [panel] }} />);
-  for (const label of ["Hold type", "Indoor / outdoor"]) {
+  renderWithOptions(<ClimbingStrengths data={{ ...data, panels: [panel] }} />);
+  for (const label of ["Hold type"]) {
     fireEvent.click(screen.getByRole("button", { name: label }));
     expect(screen.getByRole("button", { name: label }).getAttribute("aria-selected")).toBe("true");
     expect(
@@ -331,7 +377,7 @@ it.each(["Success curves", "Grade pyramids"])(
 it("uses an empty state for missing traits even when the panel has graded climbs", () => {
   const original = data.panels[0];
   if (!original) throw new Error("Missing fixture");
-  render(
+  renderWithOptions(
     <ClimbingStrengths
       data={{
         ...data,
@@ -348,7 +394,7 @@ it("uses an empty state for missing traits even when the panel has graded climbs
 });
 
 it("shows unknown results and explains known-only rates for mixed climbs", () => {
-  render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
+  renderWithOptions(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
   fireEvent.click(screen.getByRole("button", { name: "V3" }));
   fireEvent.click(
     screen.getByRole("button", {

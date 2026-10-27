@@ -11,8 +11,11 @@ import {
   climbingStrengthsResultLabel,
 } from "@dofek/training/climbing-strengths";
 import {
+  CLIMBING_STRENGTHS_PURPOSES,
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
+  climbingStrengthsPurpose,
+  climbingStrengthsPurposeView,
 } from "@dofek/training/climbing-strengths-views";
 import { useState } from "react";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
@@ -30,9 +33,8 @@ function observed(panel: ClimbingStrengthsPanel) {
 function preferred(panels: ClimbingStrengthsPanel[]) {
   return (
     panels.find((panel) => panel.dimension === "wall_angle" && observed(panel)) ??
-    panels.find((panel) => panel.dimension === "setting" && observed(panel)) ??
-    panels.find(observed) ??
-    panels[0]
+    panels.find((panel) => panel.dimension === "hold_type" && observed(panel)) ??
+    panels.find((panel) => panel.dimension !== "setting")
   );
 }
 function rateLabel(cell: ClimbingStrengthsCell) {
@@ -49,7 +51,7 @@ export function ClimbingStrengths({
   const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
     null,
   );
-  const [view, setView] = useState<ClimbingStrengthsView>("profile");
+  const [view, setView] = useState<ClimbingStrengthsView>("gaps");
   const panels = data?.panels ?? [];
   const dimension = selectedDimension ?? preferred(panels)?.dimension ?? "wall_angle";
   const contexts = [
@@ -59,49 +61,81 @@ export function ClimbingStrengths({
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(dimensions).map(([item, label]) => (
-            <button
-              key={item}
-              type="button"
-              aria-pressed={dimension === item}
-              className={
-                "min-h-10 rounded-lg border px-3 text-sm " +
-                (dimension === item
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-border text-muted")
-              }
-              onClick={() => {
-                const next = panels.find((panel) => panel.dimension === item)?.dimension;
-                if (next) setDimension(next);
-                else if (item === "wall_angle" || item === "hold_type" || item === "setting")
-                  setDimension(item);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="text-xs text-muted">
-          View
-          <select
-            className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-            value={view}
-            onChange={(event) => {
-              const next = CLIMBING_STRENGTHS_VIEWS.find(
-                (item) => item.value === event.target.value,
-              );
-              if (next) setView(next.value);
+      <fieldset aria-label="Strengths view" className="flex flex-wrap gap-5 border-b border-border">
+        {CLIMBING_STRENGTHS_PURPOSES.map((purpose) => (
+          <button
+            key={purpose.value}
+            type="button"
+            aria-pressed={climbingStrengthsPurpose(view) === purpose.value}
+            onClick={() => {
+              if (climbingStrengthsPurpose(view) !== purpose.value)
+                setView(climbingStrengthsPurposeView(purpose.value));
             }}
+            className={`min-h-11 border-b-2 pb-2 text-sm font-medium ${climbingStrengthsPurpose(view) === purpose.value ? "border-accent text-accent" : "border-transparent text-muted"}`}
           >
-            {CLIMBING_STRENGTHS_VIEWS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
+            {purpose.label}
+          </button>
+        ))}
+      </fieldset>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <fieldset className="flex flex-wrap gap-2">
+          <legend className="mb-2 text-xs text-muted">Break down by</legend>
+          {Object.entries(dimensions)
+            .filter(([item]) => item !== "setting")
+            .map(([item, label]) => (
+              <button
+                key={item}
+                type="button"
+                aria-pressed={dimension === item}
+                className={
+                  "min-h-10 rounded-lg border px-3 text-sm " +
+                  (dimension === item
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border text-muted")
+                }
+                onClick={() => {
+                  const next = panels.find((panel) => panel.dimension === item)?.dimension;
+                  if (next) setDimension(next);
+                  else if (item === "wall_angle" || item === "hold_type" || item === "setting")
+                    setDimension(item);
+                }}
+              >
+                {label}
+              </button>
             ))}
-          </select>
-        </label>
+        </fieldset>
+        <details className="text-xs text-muted">
+          <summary className="min-h-11 cursor-pointer py-3 text-foreground">Chart options</summary>
+          <div className="space-y-3 py-2">
+            <label className="block text-xs text-muted">
+              View
+              <select
+                className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+                value={view}
+                onChange={(event) => {
+                  const next = CLIMBING_STRENGTHS_VIEWS.find(
+                    (item) => item.value === event.target.value,
+                  );
+                  if (next) setView(next.value);
+                }}
+              >
+                {CLIMBING_STRENGTHS_VIEWS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex min-h-11 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={dimension === "setting"}
+                onChange={(event) => setDimension(event.target.checked ? "setting" : null)}
+              />
+              Compare indoor/outdoor
+            </label>
+          </div>
+        </details>
       </div>
       {!panels.length ? (
         <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
@@ -140,7 +174,12 @@ function ClimbingStrengthsContext({
       selectedPanels.flatMap((panel) => panel.grades.map((grade) => [grade.grade, grade] as const)),
     ).values(),
   ].sort((first, second) => first.gradeSortValue - second.gradeSortValue);
-  const grade = grades.find((item) => item.grade === gradeKey)?.grade ?? ALL_CLIMBING_GRADES;
+  const grade =
+    gradeKey === ALL_CLIMBING_GRADES
+      ? ALL_CLIMBING_GRADES
+      : (grades.find((item) => item.grade === gradeKey)?.grade ??
+        grades[0]?.grade ??
+        ALL_CLIMBING_GRADES);
   return (
     <section className="space-y-3" aria-label={label}>
       {label ? <h3 className="font-semibold">{label}</h3> : null}
@@ -161,12 +200,19 @@ function ClimbingStrengthsContext({
           </select>
         </label>
       ) : null}
+      {grade === ALL_CLIMBING_GRADES &&
+      view !== "profile" &&
+      view !== "curves" &&
+      view !== "pyramids" &&
+      grades.length > 0 ? (
+        <p className="text-xs text-muted">
+          All grades combines different difficulties; comparisons are not grade-adjusted.
+        </p>
+      ) : null}
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
           <div key={panel.key} className="space-y-3">
-            {dimension !== "setting" &&
-            (selectedPanels.length > 1 || panel.setting === "unknown") &&
-            panel.setting ? (
+            {dimension !== "setting" && panel.setting ? (
               <h4 className="text-sm font-medium">{settings[panel.setting]}</h4>
             ) : null}
             <ClimbingStrengthsPanelContent
