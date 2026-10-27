@@ -1,3 +1,4 @@
+import { classifyHandledFailure } from "@dofek/telemetry/handled-failure";
 import * as Sentry from "@sentry/react";
 import posthog from "posthog-js";
 
@@ -33,6 +34,12 @@ export function initTelemetry() {
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
+  const kind = classifyHandledFailure(error);
+  if (kind) {
+    posthog.capture("handled_failure", { kind });
+    Sentry.addBreadcrumb({ category: "handled-failure", level: "info", data: { kind } });
+    return;
+  }
   Sentry.captureException(error, { extra: context });
   posthog.captureException(error, context);
 }

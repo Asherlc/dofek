@@ -71,6 +71,7 @@ const runtimeContext = {
 
 const posthogMocks = vi.hoisted(() => {
   const captureException = vi.fn();
+  const capture = vi.fn();
   const registeredProperties: Record<string, unknown> = {};
   const register = vi.fn((properties: Record<string, unknown>) => {
     Object.assign(registeredProperties, properties);
@@ -85,6 +86,7 @@ const posthogMocks = vi.hoisted(() => {
   ) {
     return {
       captureException,
+      capture,
       register,
       identify,
       reset,
@@ -92,6 +94,7 @@ const posthogMocks = vi.hoisted(() => {
   });
   return {
     captureException,
+    capture,
     register,
     registeredProperties,
     identify,
@@ -136,6 +139,51 @@ vi.mock("@opentelemetry/semantic-conventions", () => ({
 }));
 
 describe("ios telemetry", () => {
+  it.each([
+    new Error("HTTP 403"),
+    new SyntaxError("Invalid JSON"),
+    new Error("Failed to write value."),
+  ])("reports unexpected outcome %# to both error trackers", async (error) => {
+    vi.stubGlobal("__DEV__", false);
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.captureException(error, { source: "whoop-ble-realtime-upload" });
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, expect.any(Object));
+    expect(posthogMocks.captureException).toHaveBeenCalledWith(error, expect.any(Object));
+    expect(posthogMocks.capture).not.toHaveBeenCalled();
+  });
+  it.each([
+    [new Error("fetch failed: cancelled"), "cancelled"],
+    [new Error("fetch failed: The Internet connection appears to be offline."), "offline"],
+    [
+      Object.assign(new Error("Check credentials"), {
+        data: { handledFailure: "invalid_credentials" },
+      }),
+      "invalid_credentials",
+    ],
+  ])(
+    "counts handled outcome %# and retains a log without an exception issue",
+    async (error, kind) => {
+      vi.stubGlobal("__DEV__", false);
+      process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+      process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+      const mod = await import("./telemetry");
+      mod.initTelemetry();
+      mod.captureException(error, { source: "whoop-ble-realtime-upload" });
+      expect(posthogMocks.capture).toHaveBeenCalledWith("handled_failure", { kind });
+      expect(mocks.mockCaptureException).not.toHaveBeenCalled();
+      expect(posthogMocks.captureException).not.toHaveBeenCalled();
+      expect(mocks.mockEmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severityText: "INFO",
+          body: "[handled-failure] Handled operational failure",
+          attributes: expect.objectContaining({ kind }),
+        }),
+      );
+    },
+  );
+
   let originalDsn: string | undefined;
   let originalRelease: string | undefined;
   let originalDist: string | undefined;
@@ -642,8 +690,8 @@ describe("ios telemetry", () => {
     // ...but the failure is still logged for observability.
     expect(mocks.mockEmit).toHaveBeenCalledWith(
       expect.objectContaining({
-        severityText: "ERROR",
-        body: "[exception] fetch failed: UnexpectedException: The network connection was lost.",
+        severityText: "INFO",
+        body: "[handled-failure] Handled operational failure",
       }),
     );
   });

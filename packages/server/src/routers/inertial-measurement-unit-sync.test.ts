@@ -29,8 +29,8 @@ vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("@opentelemetry/api", () => ({
-  SpanStatusCode: { OK: 1, ERROR: 2 },
+vi.mock("@opentelemetry/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@opentelemetry/api")>()),
   trace: {
     getTracer: vi.fn(() => ({
       startActiveSpan: mockStartActiveSpan,
