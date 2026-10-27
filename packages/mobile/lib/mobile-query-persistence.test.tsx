@@ -147,6 +147,48 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
+  it("discards v14 training activities without primary-title metadata during restoration", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "training-upgrade-owner";
+    const queryKey = [
+      ["mobileDashboard", "training"],
+      { input: { days: 90, endDate: "2026-10-26" }, type: "query" },
+    ];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, {
+      activities: [
+        {
+          id: "activity-1",
+          name: "40 min 58 sec Walking",
+          canonical_type: "running",
+          started_at: "2026-10-26T22:11:00.000Z",
+          ended_at: "2026-10-26T22:52:00.000Z",
+          distance_meters: 3000,
+          distance_state: { status: "available" },
+        },
+      ],
+    });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v14`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
+  });
+
   it("discards strengths from v13 without unknown result counts", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "strengths-owner";
