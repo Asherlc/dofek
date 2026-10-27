@@ -353,7 +353,10 @@ export function ActivityDetailPage() {
         sourceControls.some((metric) => metric.key !== "altitude")) && (
         <Section title="Performance">
           {sourceControls.length > 0 &&
-            (stream.isFetching || hrZones.isFetching || powerZones.isFetching) && (
+            (stream.isFetching ||
+              hrZones.isFetching ||
+              powerZones.isFetching ||
+              powerWork.isFetching) && (
               <p role="status" className="mb-2 text-xs text-muted">
                 Updating metrics…
               </p>

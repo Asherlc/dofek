@@ -185,6 +185,7 @@ interface MockQueryResult<T> {
   error: Error | null;
   isError: boolean;
   isLoading: boolean;
+  isFetching?: boolean;
 }
 
 const mockActivityByIdUseQuery = vi.fn<
@@ -1573,6 +1574,54 @@ describe("ActivityDetailPage", () => {
       previousZones,
     );
   });
+
+  it.each([true, false])(
+    "shows a refresh status while power work is fetching (%s)",
+    async (isFetching) => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "cycling" },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockMetricSourcesUseQuery.mockReturnValue({
+        data: [
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "wahoo",
+            sources: [
+              {
+                id: "wahoo",
+                label: "Wahoo",
+                presentation: {
+                  displayName: "Wahoo",
+                  providerId: "wahoo",
+                  sourceName: null,
+                  attribution: null,
+                },
+              },
+            ],
+          },
+        ],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockPowerWorkUseQuery.mockReturnValue({
+        data: { workKilojoules: 478, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+        error: null,
+        isError: false,
+        isLoading: false,
+        isFetching,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.getByText("478 kJ")).toBeVisible();
+      if (isFetching) expect(screen.getByText("Updating metrics…")).toBeVisible();
+      else expect(screen.queryByText("Updating metrics…")).toBeNull();
+    },
+  );
 
   describe("provider tombstone status", () => {
     afterEach(() => {
