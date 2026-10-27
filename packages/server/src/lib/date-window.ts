@@ -125,6 +125,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "training.hrZones": { defaultDays: 90, routerFile: "training.ts", input: "days" },
   "training.activityStats": { defaultDays: 90, routerFile: "training.ts", input: "days" },
   "training.weeklyVolume": { defaultDays: 90, routerFile: "training.ts", input: "days" },
+  "training.sportVolume": { defaultDays: 90, routerFile: "training.ts", input: "custom" },
 } as const;
 
 export type SelectedChartRangeEndpoint = keyof typeof SELECTED_CHART_RANGE_ENDPOINTS;

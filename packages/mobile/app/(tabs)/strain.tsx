@@ -39,6 +39,7 @@ import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { SportVolumeChart } from "../../components/SportVolumeChart";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { TrainingVolumeChart } from "../../components/TrainingVolumeChart";
@@ -235,6 +236,7 @@ export default function StrainScreen() {
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
+        utils.training.sportVolume.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
@@ -408,6 +410,7 @@ export default function StrainScreen() {
         </>
       )}
 
+      <SportVolumeChart days={days} enabled={isHydrated} />
       <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
       {climbingVolumeQuery.error ? (
         <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />

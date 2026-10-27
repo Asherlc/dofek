@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useUnitConverter } from "../lib/units";
 import { colors } from "../theme";
+import { WeeklyVolumeBars } from "./WeeklyVolumeBars";
 
 type ClimbingRow = { week: string; attempts: number | null; minutes: number | null };
 type StrengthRow = {
@@ -14,6 +16,7 @@ type Props =
   | { sport: "strength"; data: StrengthRow[] };
 
 export function TrainingVolumeChart(props: Props) {
+  const units = useUnitConverter();
   const [metric, setMetric] = useState("primary");
   const options =
     props.sport === "climbing"
@@ -34,17 +37,18 @@ export function TrainingVolumeChart(props: Props) {
             ? row.durationMinutes
             : metric === "sets"
               ? row.recordedSetCount
-              : row.recordedVolumeKg,
+              : row.recordedVolumeKg == null
+                ? null
+                : units.convertWeight(row.recordedVolumeKg),
         );
   const unit =
     metric === "time"
       ? "minutes"
       : props.sport === "strength" && metric === "primary"
-        ? "kg"
+        ? units.weightLabel
         : metric === "sets"
           ? "sets"
           : "attempts";
-  const max = Math.max(0, ...values.filter((value): value is number => value !== null));
   return (
     <View style={styles.card}>
       <Text style={styles.title}>
@@ -73,24 +77,13 @@ export function TrainingVolumeChart(props: Props) {
       {props.data.length ? (
         <>
           <Text style={styles.text}>{unit} per week</Text>
-          {props.data.map((row, index) => (
-            <View
-              key={row.week}
-              style={styles.row}
-              accessibilityLabel={`${row.week}: ${values[index] == null ? "Not recorded" : `${values[index]} ${unit}`}`}
-            >
-              <Text style={styles.text}>{row.week}</Text>
-              <View style={styles.track}>
-                <View
-                  style={[
-                    styles.bar,
-                    { width: `${max === 0 ? 0 : ((values[index] ?? 0) / max) * 100}%` },
-                  ]}
-                />
-              </View>
-              <Text style={styles.text}>{values[index] == null ? "—" : values[index]}</Text>
-            </View>
-          ))}
+          <WeeklyVolumeBars
+            weeks={props.data.map((row, index) => ({
+              week: row.week,
+              value: values[index] ?? null,
+            }))}
+            unit={unit}
+          />
         </>
       ) : (
         <Text style={styles.text}>No volume data for this period</Text>
@@ -104,7 +97,4 @@ const styles = StyleSheet.create({
   options: { flexDirection: "row", gap: 8 },
   option: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
   text: { color: colors.textSecondary },
-  row: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
-  track: { flex: 1, height: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 4 },
-  bar: { height: 8, backgroundColor: colors.accent, borderRadius: 4 },
 });

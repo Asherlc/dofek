@@ -180,6 +180,9 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     training: {
+      sportVolume: {
+        useQuery: () => ({ data: undefined, isLoading: false, isFetching: false, error: null }),
+      },
       hrZones: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.hrZones.push({ input, options });
@@ -222,6 +225,7 @@ vi.mock("../../lib/trpc", () => ({
         training: { invalidate: mockTrainingInvalidate },
       },
       training: {
+        sportVolume: { invalidate: vi.fn() },
         hrZones: { invalidate: mockHrZonesInvalidate },
       },
       efficiency: {
@@ -952,7 +956,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
     expect(screen.queryByText("Training Load")).toBeNull();
     expect(screen.queryByText("Climbing")).toBeNull();
-    expect(screen.queryByText("Weekly Volume")).toBeNull();
+    expect(screen.getByText("Weekly Volume")).toBeTruthy();
     expect(screen.queryByText("Recent Activities")).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });

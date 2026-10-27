@@ -31,7 +31,7 @@ export function ClimbingVolumeOverTimeChart({
         option={{
           grid: dofekGrid("single"),
           tooltip: dofekTooltip(),
-          xAxis: dofekAxis.time(),
+          xAxis: dofekAxis.time({ show: true }),
           yAxis: dofekAxis.value({ name: label }),
           series: [
             dofekSeries.bar(

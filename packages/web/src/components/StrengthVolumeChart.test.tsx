@@ -1,6 +1,9 @@
 /** @vitest-environment jsdom */
+
+import { UnitConverter } from "@dofek/format/units";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 import { StrengthVolumeChart } from "./StrengthVolumeChart.tsx";
 
 vi.mock("./DofekChart.tsx", () => ({
@@ -30,4 +33,26 @@ it("switches among weight, sets and time", () => {
   expect(screen.getByTestId("chart").textContent).toContain(",5]");
   fireEvent.change(screen.getByLabelText("Strength volume metric"), { target: { value: "time" } });
   expect(screen.getByTestId("chart").textContent).toContain(",60]");
+});
+it("formats lifted weight using the selected unit system", () => {
+  render(
+    <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
+      <StrengthVolumeChart
+        data={[
+          {
+            week: "2026-01-05",
+            totalVolumeKg: 400,
+            setCount: 5,
+            workoutCount: 1,
+            durationMinutes: 60,
+            recordedVolumeKg: 400,
+            recordedSetCount: 5,
+          },
+        ]}
+      />
+    </UnitContext.Provider>,
+  );
+  expect(screen.getByTestId("chart").textContent).toContain(
+    String(new UnitConverter("imperial").convertWeight(400)),
+  );
 });

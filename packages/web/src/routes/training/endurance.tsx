@@ -5,6 +5,7 @@ import { PolarizationTrendChart } from "../../components/PolarizationTrendChart.
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RampRateChart } from "../../components/RampRateChart.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { TrainingMonotonyChart } from "../../components/TrainingMonotonyChart.tsx";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -27,6 +28,9 @@ function EnduranceTab() {
 
   return (
     <>
+      <div className="card p-4">
+        <SportVolumeChart days={days} />
+      </div>
       <Section title={TRAINING_TERMINOLOGY.polarization.plainLabel}>
         {polarization.error ? (
           <QueryStatePanel error={polarization.error} />

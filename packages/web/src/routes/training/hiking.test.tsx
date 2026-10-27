@@ -131,3 +131,5 @@ describe("HikingTab", () => {
     expect(screen.getByRole("heading", { name: /Effort-adjusted pace for grade/i })).toBeDefined();
   });
 });
+
+vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));

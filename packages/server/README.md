@@ -15,6 +15,16 @@ filters and retains unknown attempt counts; the
 [strength repository](src/repositories/strength-repository.ts) reports unknown
 set or weight totals when a workout or a working set lacks the required data.
 
+The [`training.sportVolume` query](src/routers/training.ts) extends weekly volume
+to the other recorded sports. Its [shared metric definitions](../training/src/sport-volume.ts)
+offer time for every sport, distance and elevation for applicable sports, and
+power-derived mechanical work for cycling. The
+[repository](src/repositories/sport-volume-repository.ts) reads existing activity
+and sensor projections, respects local weeks and activity access limits, excludes
+indoor/virtual cycling distance, and retains missing totals as unknown. Cycling
+work uses the [shared power integration and coverage calculation](../training/src/cycling-workout-metrics.ts),
+with incomplete power coverage withheld from weekly totals.
+
 ## Architecture
 
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.

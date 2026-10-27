@@ -9,6 +9,7 @@ import {
   dofekTooltip,
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StrengthVolumeChartProps {
@@ -17,9 +18,14 @@ interface StrengthVolumeChartProps {
 }
 
 export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps) {
+  const units = useUnitConverter();
   const [metric, setMetric] = useState<"weight" | "sets" | "time">("weight");
   const label =
-    metric === "weight" ? "Weight lifted (kg)" : metric === "sets" ? "Sets" : "Time (minutes)";
+    metric === "weight"
+      ? `Weight lifted (${units.weightLabel})`
+      : metric === "sets"
+        ? "Sets"
+        : "Time (minutes)";
   const option = {
     grid: dofekGrid("single", { top: 30, bottom: 40, left: 60 }),
     tooltip: dofekTooltip({
@@ -32,7 +38,9 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
         const dateLabel = formatDateMedium(dataPoint.week);
         const selectedValue =
           metric === "weight"
-            ? dataPoint.recordedVolumeKg
+            ? dataPoint.recordedVolumeKg == null
+              ? null
+              : units.convertWeight(dataPoint.recordedVolumeKg)
             : metric === "sets"
               ? dataPoint.recordedSetCount
               : dataPoint.durationMinutes;
@@ -40,7 +48,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
           ${escapeTooltipHtml(label)}: ${selectedValue == null ? "Not recorded" : selectedValue.toLocaleString()}`;
       },
     }),
-    xAxis: dofekAxis.time(),
+    xAxis: dofekAxis.time({ show: true }),
     yAxis: dofekAxis.value({
       name: label,
       axisLabel: {
@@ -56,7 +64,9 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
           data.map((d) => [
             d.week,
             metric === "weight"
-              ? d.recordedVolumeKg
+              ? d.recordedVolumeKg == null
+                ? null
+                : units.convertWeight(d.recordedVolumeKg)
               : metric === "sets"
                 ? d.recordedSetCount
                 : d.durationMinutes,
