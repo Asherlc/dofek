@@ -54,7 +54,7 @@ export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
 
 export const legacyClimbingLogEntryDetailSchema = climbingLogEntryDetailSchema
-  .omit({ holdTypes: true, wallAngle: true })
+  .omit({ holdTypes: true })
   .extend(climbingLogTraitsV1Schema.shape);
 export const climbingLogEntryDetailResponseSchema = z.union([
   climbingLogEntryDetailSchema,
