@@ -1,6 +1,6 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { ClimbingWallAngle } from "@dofek/training/climbing-experience";
-import { type FreeRockGradeSystem, gradeSystemLabel } from "@dofek/training/climbing-grades";
+import type { FreeRockGradeSystem } from "@dofek/training/climbing-grades";
 import type {
   ClimbingStrengths,
   ClimbingStrengthsExample,
@@ -157,38 +157,29 @@ export function buildClimbingStrengths(
     );
   const months = monthlyWindows({ startDate, endDate: window.endDate });
   const panels: ClimbingStrengthsPanel[] = [];
-  const contexts = [...new Set(entries.map((e) => e.contextKey))].sort();
-  for (const contextKey of contexts) {
-    const context = entries.filter((e) => e.contextKey === contextKey);
-    const representative = context[0];
-    const systems = new Set(
-      entries
-        .filter((entry) => entry.laneKey === representative?.laneKey)
-        .map((entry) => entry.gradeSystem),
-    );
-    const label = representative?.contextLabel ?? contextKey;
-    const suffix = representative?.gradeSystem
-      ? ` · ${gradeSystemLabel(representative.gradeSystem)}`
-      : null;
-    const contextLabel =
-      systems.size === 1 && suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
-        ? label.slice(0, -suffix.length)
-        : label;
+  const contexts = new Set(entries.map((entry) => entry.contextKey));
+  const contextKey = contexts.size === 1 ? (entries[0]?.contextKey ?? "selected") : "selected";
+  const contextLabel = "Selected climbs";
+  // Keep same-grade baselines specific to each type and grading system.
+  const selected = entries.map((entry) => ({
+    ...entry,
+    grade: contexts.size > 1 ? `${entry.grade} · ${entry.contextLabel}` : entry.grade,
+  }));
+  if (selected.length > 0) {
     for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
-      const selected = context;
-      const buildProfile = (allGrades: boolean) => {
+      const buildProfile = (allGrades: boolean, cohort: typeof selected) => {
         const gradeGroups = allGrades
           ? [{ grade: ALL_CLIMBING_GRADES, gradeSortValue: 0 }]
           : [
               ...new Map(
-                selected.map((e) => [
+                cohort.map((e) => [
                   e.grade,
                   { grade: e.grade ?? "", gradeSortValue: e.gradeSortValue },
                 ]),
               ).values(),
             ].sort((a, b) => a.gradeSortValue - b.gradeSortValue || a.grade.localeCompare(b.grade));
         const grades = gradeGroups.map((g) => {
-          const matching = selected.filter((e) => allGrades || e.grade === g.grade);
+          const matching = cohort.filter((e) => allGrades || e.grade === g.grade);
           const sends = matching.filter((e) => e.outcome === "sent").length;
           const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
           return {
@@ -204,9 +195,9 @@ export function buildClimbingStrengths(
             ? [
                 "indoor",
                 "outdoor",
-                ...(selected.some((entry) => entry.setting === null) ? ["unknown"] : []),
+                ...(cohort.some((entry) => entry.setting === null) ? ["unknown"] : []),
               ]
-            : [...new Set(selected.flatMap((e) => trait(e, dimension)))].sort();
+            : [...new Set(cohort.flatMap((e) => trait(e, dimension)))].sort();
         return {
           grades,
           rows: keys.map((key) => ({
@@ -216,7 +207,7 @@ export function buildClimbingStrengths(
                 ? "Unknown setting"
                 : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
             cells: grades.map((g) => {
-              const matching = selected.filter(
+              const matching = cohort.filter(
                 (e) => (allGrades || e.grade === g.grade) && trait(e, dimension).includes(key),
               );
               const sends = matching.filter((e) => e.outcome === "sent").length;
@@ -240,7 +231,7 @@ export function buildClimbingStrengths(
           progress: months.map(({ startDate, endDate }) => {
             // Resolve identity, grade and traits across the complete window;
             // only outcomes are re-evaluated from this month's original logs.
-            const monthly = selected.flatMap((entry) => {
+            const monthly = cohort.flatMap((entry) => {
               const attempts = entry.observations.filter(
                 (observation) =>
                   observation.example.date >= startDate && observation.example.date <= endDate,
@@ -280,7 +271,14 @@ export function buildClimbingStrengths(
           }),
         };
       };
-      const profile = buildProfile(false);
+      const profile = buildProfile(false, selected);
+      const baselineProfile = buildProfile(
+        false,
+        selected.map((entry) => ({
+          ...entry,
+          grade: JSON.stringify([entry.contextKey, entry.grade]),
+        })),
+      );
       panels.push({
         key: JSON.stringify([contextKey, dimension]),
         contextKey,
@@ -288,8 +286,8 @@ export function buildClimbingStrengths(
         dimension,
         setting: null,
         ...profile,
-        gradeAdjustedStrengths: buildClimbingStrengthProfile(profile),
-        allGrades: buildProfile(true),
+        gradeAdjustedStrengths: buildClimbingStrengthProfile(baselineProfile),
+        allGrades: buildProfile(true, selected),
         coverage: {
           missingTraits: selected.filter((entry) =>
             dimension === "setting" ? entry.setting === null : trait(entry, dimension).length === 0,

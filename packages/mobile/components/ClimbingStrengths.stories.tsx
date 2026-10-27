@@ -52,15 +52,11 @@ export const Sparse: Story = {
     },
   },
 };
-export const MixedUnknownOnlyContext: Story = {
+export const MissingObservations: Story = {
   args: {
     data: {
       ...climbingStrengthsFixture,
-      panels: climbingStrengthsFixture.panels.map((panel) =>
-        panel.contextKey === "route-yds-lead"
-          ? { ...panel, grades: [], rows: [], coverage: { missingTraits: 0, unknownOutcomes: 3 } }
-          : panel,
-      ),
+      panels: climbingStrengthsFixture.panels.map((panel) => ({ ...panel, rows: [] })),
     },
   },
 };

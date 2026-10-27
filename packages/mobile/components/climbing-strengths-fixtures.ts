@@ -268,25 +268,6 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
           },
         ],
       },
-      {
-        ...angle,
-        key: "route-outdoor-angle",
-        contextKey: "route-yds-lead",
-        contextLabel: "Routes · YDS · Lead · Free",
-        setting: "outdoor",
-        grades: angle.grades.map((grade) => ({
-          ...grade,
-          grade: grade.grade === "V3" ? "5.10a" : "5.10b",
-        })),
-        rows: angle.rows.map((row) => ({
-          ...row,
-          cells: row.cells.map((cell) => ({
-            ...cell,
-            grade: cell.grade === "V3" ? "5.10a" : "5.10b",
-            examples: [],
-          })),
-        })),
-      },
     ] satisfies ClimbingStrengthsPanel[]
   ).map((panel) => ({
     ...panel,
@@ -709,20 +690,6 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
         key: "outdoor",
         expectedSuccessRate: 46.2,
         differencePercentagePoints: 3.8,
-        sampleStatus: "limited",
-      },
-    ],
-    [
-      {
-        key: "slab",
-        expectedSuccessRate: 37.5,
-        differencePercentagePoints: -8.9,
-        sampleStatus: "available",
-      },
-      {
-        key: "vertical",
-        expectedSuccessRate: 20,
-        differencePercentagePoints: 13.3,
         sampleStatus: "limited",
       },
     ],
