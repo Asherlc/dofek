@@ -7,6 +7,7 @@ import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState.tsx";
 import {
   chartColors,
@@ -42,6 +43,9 @@ export function RunningTab() {
 
   return (
     <>
+      <div className="card p-4">
+        <SportVolumeChart days={days} sport="running" />
+      </div>
       {/* Pace Duration Curve */}
       <Section title="Pace Duration Curve">
         {paceCurve.error && !paceCurve.data ? (

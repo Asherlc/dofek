@@ -563,3 +563,5 @@ describe("CyclingTab", () => {
     });
   });
 });
+
+vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));

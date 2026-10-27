@@ -80,6 +80,9 @@ vi.mock("../../lib/trpc.ts", () => ({
     climbing: {
       gradeProgression: { useQuery: gradeProgressionQuery },
       volumeByGrade: { useQuery: volumeByGradeQuery },
+      volumeOverTime: {
+        useQuery: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
+      },
       sessionSummary: { useQuery: sessionSummaryQuery },
       hangboardingSummary: { useQuery: hangboardingSummaryQuery },
       locationMap: { useQuery: locationMapQuery },

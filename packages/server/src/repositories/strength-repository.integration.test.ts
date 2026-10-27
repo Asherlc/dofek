@@ -132,6 +132,41 @@ describe("StrengthRepository activity scope", () => {
     );
   });
 
+  it("reports strength training time once per workout", async () => {
+    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
+    const volume = await repository.getVolumeOverTime(30);
+    expect(
+      volume.reduce((total, week) => total + (week.toDetail().durationMinutes ?? 0), 0),
+    ).toBeGreaterThanOrEqual(60);
+  });
+
+  it("limits weekly strength volume to the allowed activity window", async () => {
+    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2000-01-01",
+      endDateExclusive: "2000-02-01",
+    });
+    expect(await repository.getVolumeOverTime(null)).toEqual([]);
+  });
+  it("keeps a week with a workout but no sets as unknown set and weight volume", async () => {
+    await testContext.db.execute(sql`INSERT INTO fitness.activity (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+      VALUES ('strength_scope_test', ${TEST_USER_ID}, 'no-sets', 'strength', 'strength',
+        date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week', date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week' + interval '1 hour', 'No sets')`);
+    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
+    const volume = (await repository.getVolumeOverTime(30)).map((week) => week.toDetail());
+    expect(volume).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordedSetCount: null,
+          recordedVolumeKg: null,
+          durationMinutes: 60,
+        }),
+      ]),
+    );
+  });
+
   it("preserves observed week labels and fits slope across calendar gaps", async () => {
     const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
 

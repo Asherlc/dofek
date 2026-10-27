@@ -214,6 +214,24 @@ describe("climbing log router PostgreSQL integration", () => {
       }),
     ]);
   });
+  it("groups climbing attempts by week", async () => {
+    const outing = await seedClimbingActivity(context.db, "kaya-export", "weekly-volume");
+    await log("weekly-v2", "V2", 2, outing.id);
+    await log("weekly-v4", "V4", 3, outing.id);
+    expect(await caller().volumeOverTime({ days: 30 })).toEqual([
+      expect.objectContaining({ attempts: 5 }),
+    ]);
+    expect(await caller().volumeOverTime({ days: null })).toEqual([
+      expect.objectContaining({ attempts: 5 }),
+    ]);
+    expect(await caller().volumeOverTime({ days: 30, setting: "outdoor" })).toEqual([]);
+  });
+  it("shows time but leaves attempts unknown when an activity has no climbing logs", async () => {
+    await seedClimbingActivity(context.db, "kaya-export", "weekly-no-logs");
+    expect(await caller().volumeOverTime({ days: 30 })).toEqual([
+      expect.objectContaining({ attempts: null, minutes: expect.any(Number) }),
+    ]);
+  });
   it("serves the canonical attempt graph through group and member activity identities", async () => {
     const outing = await seedClimbingActivity(context.db, "kaya-export", "session");
     const id = await log("v4", "V4", 3, outing.id);

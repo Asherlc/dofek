@@ -48,6 +48,30 @@ import { trainingRouter } from "./training.ts";
 const createCaller = createTestCallerFactory(trainingRouter);
 
 describe("trainingRouter access window gating", () => {
+  it("rejects volume metrics that do not apply to the selected sport", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeMockSensorStore([]),
+    });
+    await expect(
+      caller.sportVolume({ days: 30, sport: "yoga", metric: "distance" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.sportVolume({ days: null, metric: "work" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+  it("requires the analytics store for sport volume", async () => {
+    const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-1", timezone: "UTC" });
+    await expect(
+      caller.sportVolume({ days: null, sport: "running", metric: "time" }),
+    ).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message:
+        "Sport volume requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+    });
+  });
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 3_600_000,

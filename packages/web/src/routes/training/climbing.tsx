@@ -10,6 +10,7 @@ import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradePro
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
 import { ClimbingStrengths } from "../../components/ClimbingStrengths.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
+import { ClimbingVolumeOverTimeChart } from "../../components/ClimbingVolumeOverTimeChart.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
@@ -88,6 +89,10 @@ export function ClimbingTab() {
     climbingQueryOptions,
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
+  const volumeOverTime = trpc.climbing.volumeOverTime.useQuery(
+    { ...rangeInput, days },
+    climbingQueryOptions,
+  );
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
   const strengths = trpc.climbing.strengths.useQuery(
     { ...rangeInput, days, endDate },
@@ -106,6 +111,7 @@ export function ClimbingTab() {
       </div>
       {gradeProgression.isFetching ||
       volumeByGrade.isFetching ||
+      volumeOverTime.isFetching ||
       sessionSummary.isFetching ||
       strengths.isFetching ||
       locationMap.isFetching ? (
@@ -114,6 +120,17 @@ export function ClimbingTab() {
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-6">
+        <Section title="Climbing Volume">
+          {volumeOverTime.error ? (
+            <QueryStatePanel error={volumeOverTime.error} height={0} />
+          ) : null}
+          {volumeOverTime.error && !volumeOverTime.data ? null : (
+            <ClimbingVolumeOverTimeChart
+              data={volumeOverTime.data ?? []}
+              loading={volumeOverTime.isLoading}
+            />
+          )}
+        </Section>
         <Section title="Climbing Strengths">
           {strengths.error ? <QueryStatePanel error={strengths.error} height={0} /> : null}
           {strengths.error && !strengths.data ? null : (

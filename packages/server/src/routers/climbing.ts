@@ -230,6 +230,7 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeOverTime:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.locationMap:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.strengths:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingLogEntries:`),
@@ -269,6 +270,27 @@ export const climbingRouter = router({
         return (await repository.getVolumeByGrade(input.days, input)).map((row) => row.toDetail());
       });
     }),
+
+  volumeOverTime: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+    .input(
+      climbingInputSchema.extend({ days: z.number().int().min(1).max(365).nullable().default(90) }),
+    )
+    .output(
+      z.array(
+        z.object({
+          week: z.string(),
+          attempts: z.number().nullable(),
+          minutes: z.number().nullable(),
+        }),
+      ),
+    )
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        const { days, ...filters } = input;
+        return repository.getVolumeOverTime(days, filters);
+      }),
+    ),
 
   sessionSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,

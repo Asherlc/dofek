@@ -271,6 +271,7 @@ describe("climbingRouter", () => {
       "unattachedClimbingLogEntries",
       "gradeProgression",
       "volumeByGrade",
+      "volumeOverTime",
       "sessionSummary",
       "locationMap",
     ])
@@ -300,6 +301,11 @@ describe("climbingRouter", () => {
         sends: 2,
       },
     ]);
+  });
+  it.each([30, null])("serves weekly attempts and time for a %s-day range", async (days) => {
+    const weeks = [{ week: "2026-10-19", attempts: null, minutes: 90 }];
+    const { caller } = makeCaller(weeks);
+    expect(await caller.volumeOverTime({ days })).toEqual(weeks);
   });
   it("accepts an all-time strengths range with an explicit end date", async () => {
     const lookup = vi

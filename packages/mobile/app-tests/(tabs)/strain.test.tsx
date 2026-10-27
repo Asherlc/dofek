@@ -129,6 +129,15 @@ vi.mock("expo-router", () => ({
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     climbing: {
+      volumeOverTime: {
+        useQuery: () => ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+        }),
+      },
       strengths: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.strengths.push({ input, options });
@@ -140,6 +149,17 @@ vi.mock("../../lib/trpc", () => ({
           mockRangeQueryCalls.locationMap.push({ input, options });
           return { ...mockLocationMapState };
         },
+      },
+    },
+    strength: {
+      volumeOverTime: {
+        useQuery: () => ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+        }),
       },
     },
     mobileDashboard: {
@@ -160,6 +180,9 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     training: {
+      sportVolume: {
+        useQuery: () => ({ data: undefined, isLoading: false, isFetching: false, error: null }),
+      },
       hrZones: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.hrZones.push({ input, options });
@@ -193,13 +216,16 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       climbing: {
+        volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
+      strength: { volumeOverTime: { invalidate: vi.fn() } },
       mobileDashboard: {
         training: { invalidate: mockTrainingInvalidate },
       },
       training: {
+        sportVolume: { invalidate: vi.fn() },
         hrZones: { invalidate: mockHrZonesInvalidate },
       },
       efficiency: {
@@ -930,7 +956,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
     expect(screen.queryByText("Training Load")).toBeNull();
     expect(screen.queryByText("Climbing")).toBeNull();
-    expect(screen.queryByText("Weekly Volume")).toBeNull();
+    expect(screen.getByText("Weekly Volume")).toBeTruthy();
     expect(screen.queryByText("Recent Activities")).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
