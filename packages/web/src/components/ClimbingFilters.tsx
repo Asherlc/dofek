@@ -98,7 +98,7 @@ export function ClimbingFilters({
               align="end"
               sideOffset={8}
               collisionPadding={16}
-              className="z-50 max-h-[min(80vh,var(--radix-popover-content-available-height))] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto space-y-4 rounded-xl border border-border bg-surface p-5 text-foreground shadow-xl"
+              className="z-50 max-h-[min(80vh,var(--radix-popover-content-available-height))] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto space-y-4 rounded-xl border border-border bg-surface-solid p-5 text-foreground shadow-xl"
             >
               {checkboxes(
                 "Type",

@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, within } from "storybook/test";
 import { ClimbingFilters } from "./ClimbingFilters.tsx";
+import { ClimbingVolumeOverTimeChart } from "./ClimbingVolumeOverTimeChart.tsx";
 
 const meta = {
   title: "Training/ClimbingFilters",
@@ -71,5 +72,29 @@ export const MultipleAdvancedChoices: Story = {
     await userEvent.click(
       within(canvasElement.ownerDocument.body).getByRole("button", { name: "More filters" }),
     );
+  },
+};
+
+export const OverChart: Story = {
+  render: function OverChart(args) {
+    const [value, onChange] = useState<Filters>(args.value);
+    return (
+      <div className="w-full max-w-3xl space-y-4 p-4">
+        <ClimbingFilters value={value} onChange={onChange} />
+        <ClimbingVolumeOverTimeChart
+          data={[
+            { week: "2026-10-05", attempts: 12, minutes: 120 },
+            { week: "2026-10-12", attempts: 24, minutes: 90 },
+          ]}
+        />
+      </div>
+    );
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Filters" }));
+    const page = within(canvasElement.ownerDocument.body);
+    const panel = page.getByRole("dialog", { name: "Climbing filters" });
+    await expect(panel).toBeVisible();
+    await expect(getComputedStyle(panel).backgroundColor).toMatch(/^rgb\(/);
   },
 };
