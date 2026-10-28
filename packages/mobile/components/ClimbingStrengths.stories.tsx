@@ -136,6 +136,43 @@ export const Grades: Story = {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
   },
 };
+export const ManyGradesAndStyles: Story = {
+  ...Narrow,
+  args: {
+    data: {
+      ...climbingStrengthsComparisonFixture,
+      panels: climbingStrengthsComparisonFixture.panels.map((panel) => ({
+        ...panel,
+        dimension: "hold_type",
+        grades: ["V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7"].map((grade, index) => ({
+          ...panel.grades[0],
+          grade,
+          gradeSortValue: index,
+        })),
+        rows: ["Crimps", "Slopers", "Pinches", "Jugs", "Pockets", "Edges", "Volumes"].map(
+          (label) => ({
+            key: label.toLowerCase(),
+            label,
+            cells: ["V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7"].flatMap(
+              (grade) =>
+                panel.rows[0]?.cells.slice(0, 1).map((cell) => ({
+                  ...cell,
+                  grade,
+                  examples: cell.examples.map((example) => ({ ...example, grade })),
+                })) ?? [],
+            ),
+          }),
+        ),
+      })),
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
+    await userEvent.click(canvas.getByRole("button", { name: /^Crimps · V7/ }));
+    await expect(canvas.getByText("Quiet Feet")).toBeVisible();
+  },
+};
 export const Progress: Story = {
   ...Narrow,
   play: async ({ canvasElement, userEvent }) => {

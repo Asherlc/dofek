@@ -1,3 +1,4 @@
+import { climbingProgressionSettingLabels } from "@dofek/training/climbing-progression";
 import type {
   ClimbingStrengthsCell,
   ClimbingStrengthsPanel,
@@ -123,9 +124,16 @@ function ClimbingStrengthsBreakdown({
     <section className="space-y-3">
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
-          <div key={panel.key} className="space-y-3">
+          <section
+            key={panel.key}
+            aria-label={`${panel.contextLabel} · ${climbingProgressionSettingLabels[panel.setting ?? "unknown"]}`}
+            className="min-w-0 space-y-3 border-t border-border pt-4"
+          >
+            <h3 className="font-semibold">
+              {panel.contextLabel} · {climbingProgressionSettingLabels[panel.setting ?? "unknown"]}
+            </h3>
             <ClimbingStrengthsPanelContent panel={panel} view={view} />
-          </div>
+          </section>
         ))
       ) : (
         <QueryStatePanel
@@ -176,56 +184,44 @@ function ClimbingStrengthsPanelContent({
             </p>
           ) : null}
           {view === "profile" ? (
-            <div className="overflow-x-auto">
-              <table className="w-full border-separate border-spacing-1 text-sm">
-                <caption className="sr-only">
-                  Success by grade and {dimensions[panel.dimension].toLowerCase()}
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col" className="text-left text-muted">
-                      Style
-                    </th>
-                    {panel.grades.map((grade) => (
-                      <th scope="col" key={grade.grade} className="p-2 text-muted">
-                        {grade.grade}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {panel.rows.map((item) => (
-                    <tr key={item.key}>
-                      <th scope="row" className="pr-3 text-left font-medium">
-                        {item.label}
-                      </th>
-                      {item.cells.map((value) => (
-                        <td key={value.grade}>
-                          <button
-                            type="button"
-                            aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}${value.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                            aria-pressed={row?.key === item.key && cell?.grade === value.grade}
-                            onClick={() => setSelected({ row: item.key, grade: value.grade })}
-                            className={`min-h-14 w-full min-w-24 rounded-lg border p-2 text-center ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
-                            style={
-                              value.successRate === null
-                                ? undefined
-                                : {
-                                    backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${value.successRate}% * 0.4), var(--color-surface-solid))`,
-                                  }
-                            }
-                          >
-                            <span className="block text-lg font-semibold">{rateLabel(value)}</span>
-                            {value.sampleStatus === "limited" ? (
-                              <span className="block text-xs">Limited sample</span>
-                            ) : null}
-                          </button>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-4">
+              {panel.grades.map((grade) => (
+                <fieldset
+                  key={grade.grade}
+                  aria-label={`${grade.grade} send rates`}
+                  className="min-w-0 space-y-2"
+                >
+                  <h5 className="text-sm font-semibold">{grade.grade}</h5>
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,7rem),1fr))] gap-2">
+                    {panel.rows.map((item) => {
+                      const value = item.cells.find((value) => value.grade === grade.grade);
+                      return value ? (
+                        <button
+                          key={item.key}
+                          type="button"
+                          aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}${value.sampleStatus === "limited" ? " · Limited sample" : ""}`}
+                          aria-pressed={row?.key === item.key && cell?.grade === value.grade}
+                          onClick={() => setSelected({ row: item.key, grade: value.grade })}
+                          className={`min-h-20 min-w-0 rounded-lg border p-2 text-center ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
+                          style={
+                            value.successRate === null
+                              ? undefined
+                              : {
+                                  backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${value.successRate}% * 0.4), var(--color-surface-solid))`,
+                                }
+                          }
+                        >
+                          <span className="block break-words text-xs">{item.label}</span>
+                          <span className="block text-lg font-semibold">{rateLabel(value)}</span>
+                          {value.sampleStatus === "limited" ? (
+                            <span className="block text-xs">Limited sample</span>
+                          ) : null}
+                        </button>
+                      ) : null;
+                    })}
+                  </div>
+                </fieldset>
+              ))}
             </div>
           ) : (
             <ClimbingStrengthsChart

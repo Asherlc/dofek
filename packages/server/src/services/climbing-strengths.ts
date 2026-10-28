@@ -157,25 +157,24 @@ export function buildClimbingStrengths(
     );
   const months = monthlyWindows({ startDate, endDate: window.endDate });
   const panels: ClimbingStrengthsPanel[] = [];
-  const contexts = new Set(entries.map((entry) => entry.contextKey));
-  const contextKey = contexts.size === 1 ? (entries[0]?.contextKey ?? "selected") : "selected";
-  const representative = entries[0];
-  const label = representative?.contextLabel ?? "Selected climbs";
-  const suffix = representative?.gradeSystem
-    ? ` · ${gradeSystemLabel(representative.gradeSystem)}`
-    : null;
-  const contextLabel =
-    contexts.size > 1
-      ? "Selected climbs"
-      : suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
+  const cohorts = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    const key = JSON.stringify([entry.contextKey, entry.setting ?? "unknown"]);
+    const cohort = cohorts.get(key) ?? [];
+    cohort.push(entry);
+    cohorts.set(key, cohort);
+  }
+  // Compare only climbs sharing their semantic lane, grade system and setting.
+  for (const selected of cohorts.values()) {
+    const representative = selected[0];
+    if (!representative) continue;
+    const { contextKey, contextLabel: label, gradeSystem } = representative;
+    const setting = representative.setting ?? "unknown";
+    const suffix = gradeSystem ? ` · ${gradeSystemLabel(gradeSystem)}` : null;
+    const contextLabel =
+      suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
         ? label.slice(0, -suffix.length)
         : label;
-  // Keep same-grade baselines specific to each type and grading system.
-  const selected = entries.map((entry) => ({
-    ...entry,
-    grade: contexts.size > 1 ? `${entry.grade} · ${entry.contextLabel}` : entry.grade,
-  }));
-  if (selected.length > 0) {
     for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
       const buildProfile = (allGrades: boolean, cohort: typeof selected) => {
         const gradeGroups = allGrades
@@ -282,21 +281,14 @@ export function buildClimbingStrengths(
         };
       };
       const profile = buildProfile(false, selected);
-      const baselineProfile = buildProfile(
-        false,
-        selected.map((entry) => ({
-          ...entry,
-          grade: JSON.stringify([entry.contextKey, entry.grade]),
-        })),
-      );
       panels.push({
-        key: JSON.stringify([contextKey, dimension]),
+        key: JSON.stringify([contextKey, setting, dimension]),
         contextKey,
         contextLabel,
         dimension,
-        setting: null,
+        setting,
         ...profile,
-        gradeAdjustedStrengths: buildClimbingStrengthProfile(baselineProfile),
+        gradeAdjustedStrengths: buildClimbingStrengthProfile(profile),
         allGrades: buildProfile(true, selected),
         coverage: {
           missingTraits: selected.filter((entry) =>

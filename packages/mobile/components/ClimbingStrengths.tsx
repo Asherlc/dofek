@@ -1,3 +1,4 @@
+import { climbingProgressionSettingLabels } from "@dofek/training/climbing-progression";
 import type {
   ClimbingStrengthsPanel,
   ClimbingStrengths as Strengths,
@@ -16,7 +17,7 @@ import {
 } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
 import { type ReactNode, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors, radius, spacing } from "../theme";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
@@ -126,7 +127,14 @@ function ClimbingStrengthsBreakdown({
     <View style={{ gap: spacing.md }}>
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
-          <View key={panel.key} style={{ gap: spacing.md }}>
+          <View
+            key={panel.key}
+            accessibilityLabel={`${panel.contextLabel} · ${climbingProgressionSettingLabels[panel.setting ?? "unknown"]}`}
+            style={{ gap: spacing.md }}
+          >
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              {panel.contextLabel} · {climbingProgressionSettingLabels[panel.setting ?? "unknown"]}
+            </Text>
             <ClimbingStrengthsPanelContent panel={panel} view={view} />
           </View>
         ))
@@ -165,57 +173,62 @@ function ClimbingStrengthsPanelContent({
       {view === "profile" ? (
         <>
           <Text style={styles.text}>Send rate by grade and style</Text>
-          <ScrollView horizontal accessibilityLabel="Send rate by grade and style">
-            <View style={{ gap: spacing.xs }}>
-              <View style={styles.heatmapRow}>
-                <Text style={[styles.meta, styles.heatmapLabel]}>Style</Text>
-                {panel.grades.map((grade) => (
-                  <Text key={grade.grade} style={styles.heatmapCell}>
-                    {grade.grade}
-                  </Text>
-                ))}
-              </View>
-              {panel.rows.map((row) => (
-                <View key={row.key} style={styles.heatmapRow}>
-                  <Text style={[styles.text, styles.heatmapLabel]}>{row.label}</Text>
-                  {row.cells.map((cell) => (
-                    <Pressable
-                      key={cell.grade}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${row.label} · ${cell.grade} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                      accessibilityState={{
-                        selected:
-                          selectedRow?.key === row.key && selectedCell?.grade === cell.grade,
-                      }}
-                      onPress={() => setSelectedDetail({ rowKey: row.key, grade: cell.grade })}
-                      style={[
-                        styles.heatmapCell,
-                        styles.heatmapValue,
-                        selectedRow?.key === row.key &&
-                          selectedCell?.grade === cell.grade &&
-                          styles.selected,
-                      ]}
-                    >
-                      <View
-                        pointerEvents="none"
-                        style={[
-                          StyleSheet.absoluteFill,
-                          {
-                            backgroundColor: colors.accent,
-                            opacity: cell.successRate === null ? 0 : cell.successRate * 0.004,
-                          },
-                        ]}
-                      />
-                      <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
-                      {cell.sampleStatus === "limited" ? (
-                        <Text style={styles.meta}>Limited sample</Text>
-                      ) : null}
-                    </Pressable>
-                  ))}
+          <View style={{ gap: spacing.md }}>
+            {panel.grades.map((grade) => (
+              <View
+                key={grade.grade}
+                accessibilityLabel={`${grade.grade} send rates`}
+                style={{ gap: spacing.xs }}
+              >
+                <Text accessibilityRole="header" style={styles.sectionTitle}>
+                  {grade.grade}
+                </Text>
+                <View style={styles.gradeStyles}>
+                  {panel.rows.flatMap((row) => {
+                    const cell = row.cells.find((cell) => cell.grade === grade.grade);
+                    return cell
+                      ? [
+                          <Pressable
+                            key={row.key}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${row.label} · ${cell.grade} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`}
+                            accessibilityState={{
+                              selected:
+                                selectedRow?.key === row.key && selectedCell?.grade === cell.grade,
+                            }}
+                            onPress={() =>
+                              setSelectedDetail({ rowKey: row.key, grade: cell.grade })
+                            }
+                            style={[
+                              styles.gradeCell,
+                              selectedRow?.key === row.key &&
+                                selectedCell?.grade === cell.grade &&
+                                styles.selected,
+                            ]}
+                          >
+                            <View
+                              pointerEvents="none"
+                              style={[
+                                StyleSheet.absoluteFill,
+                                {
+                                  backgroundColor: colors.accent,
+                                  opacity: cell.successRate === null ? 0 : cell.successRate * 0.004,
+                                },
+                              ]}
+                            />
+                            <Text style={styles.meta}>{row.label}</Text>
+                            <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
+                            {cell.sampleStatus === "limited" ? (
+                              <Text style={styles.meta}>Limited sample</Text>
+                            ) : null}
+                          </Pressable>,
+                        ]
+                      : [];
+                  })}
                 </View>
-              ))}
-            </View>
-          </ScrollView>
+              </View>
+            ))}
+          </View>
         </>
       ) : (
         <>
@@ -307,10 +320,12 @@ function ClimbingStrengthsPanelContent({
   );
 }
 const styles = StyleSheet.create({
-  heatmapRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.xs },
-  heatmapLabel: { width: 90, alignSelf: "center" },
-  heatmapCell: { width: 116, color: colors.text, textAlign: "center", padding: spacing.xs },
-  heatmapValue: {
+  gradeStyles: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  gradeCell: {
+    flexGrow: 1,
+    flexBasis: 108,
+    minWidth: 0,
+    padding: spacing.sm,
     minHeight: 64,
     justifyContent: "center",
     gap: spacing.xs,
@@ -325,6 +340,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   title: { color: colors.text, fontSize: 18, fontWeight: "600" },
+  sectionTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
   controls: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   chip: {
     minHeight: 44,

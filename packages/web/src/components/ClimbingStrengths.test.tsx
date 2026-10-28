@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
@@ -15,10 +15,39 @@ vi.mock("./DofekChart.tsx", () => ({
 }));
 
 afterEach(cleanup);
-it("names the grade heatmap for assistive technology", () => {
+it("groups style comparisons vertically by grade for assistive technology", () => {
   render(<ClimbingStrengths data={fixture} />);
   fireEvent.click(screen.getByRole("button", { name: "Grades" }));
-  expect(screen.getByRole("table", { name: "Success by grade and wall angle" })).toBeVisible();
+  const grade = screen.getByRole("group", { name: "V4 send rates" });
+  expect(within(grade).getByRole("heading", { name: "V4" })).toBeVisible();
+  fireEvent.click(within(grade).getByRole("button", { name: /Vertical · V4/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Evening Arete",
+  );
+});
+it("keeps the same grade selectable within each type and setting", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          { ...panel, contextLabel: "Bouldering" },
+          { ...panel, key: "outdoor", contextLabel: "Bouldering", setting: "outdoor" },
+          { ...panel, key: "lead", contextKey: "lead", contextLabel: "Lead", setting: "outdoor" },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Grades" }));
+  const outdoor = screen.getByRole("region", { name: "Bouldering · Outdoor" });
+  expect(screen.getByRole("region", { name: "Bouldering · Indoor" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Lead · Outdoor" })).toBeVisible();
+  fireEvent.click(within(outdoor).getByRole("button", { name: /Vertical · V4/ }));
+  expect(within(outdoor).getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Evening Arete",
+  );
 });
 function renderStrengths(element: Parameters<typeof render>[0]) {
   const result = render(element);
@@ -145,7 +174,7 @@ it("shows the server grade-adjusted radar summary and keeps all styles after sel
   );
   expect(screen.getByRole("button", { name: /Overhang · All grades/ })).toBeVisible();
 });
-it("uses a fixed heatmap and monthly chart for Grades and Progress across both breakdowns", () => {
+it("uses grade groups and a monthly chart across both breakdowns", () => {
   const angle = fixture.panels[0];
   if (!angle) throw new Error("Missing fixture");
   render(
@@ -154,13 +183,13 @@ it("uses a fixed heatmap and monthly chart for Grades and Progress across both b
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Grades" }));
-  expect(screen.getByRole("columnheader", { name: "V3" })).toBeVisible();
+  expect(screen.getByRole("group", { name: "V3 send rates" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
     "Evening Arete",
   );
   fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
-  expect(screen.getByRole("columnheader", { name: "V4" })).toBeVisible();
+  expect(screen.getByRole("group", { name: "V4 send rates" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByText("Monthly send rate")).toBeVisible();
   expect(screen.getByText(/Combines all grades/)).toBeVisible();

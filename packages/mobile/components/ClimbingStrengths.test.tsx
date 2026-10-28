@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
@@ -24,6 +24,35 @@ it("shows all grades together and opens recorded climbs from accessible chart da
   fireEvent.click(screen.getByRole("button", { name: /Slab · V3 · 40%/ }));
   expect(screen.getByText("Quiet Feet")).toBeTruthy();
   expect(screen.getByRole("button", { name: /Slab · V4 · 0%/ })).toBeTruthy();
+});
+it("keeps same-grade selection inside its type and setting section", () => {
+  const indoor = data.panels.find((panel) => panel.dimension === "wall_angle");
+  if (!indoor) throw new Error("Missing indoor angle fixture");
+  const outdoor = {
+    ...indoor,
+    key: "boulder-outdoor-angle",
+    setting: "outdoor" as const,
+    rows: indoor.rows.map((row) => ({
+      ...row,
+      cells: row.cells.map((cell) => ({
+        ...cell,
+        examples: cell.examples.map((example) => ({
+          ...example,
+          logEntryId: "outdoor-log",
+          name: "Outdoor slab",
+        })),
+      })),
+    })),
+  };
+  render(<ClimbingStrengths data={{ ...data, panels: [indoor, outdoor] }} />);
+  openData();
+  const outdoorSection = within(screen.getByLabelText("Bouldering · Outdoor"));
+  const grade = within(outdoorSection.getByLabelText("V3 send rates"));
+  fireEvent.click(grade.getByRole("button", { name: /Slab · V3 · 40%/ }));
+  expect(outdoorSection.getByText("Outdoor slab")).toBeTruthy();
+  expect(
+    within(screen.getByLabelText("Bouldering · Indoor")).queryByText("Outdoor slab"),
+  ).toBeNull();
 });
 it("keeps source-climb selection after a refreshed response and opens its source and activity", async () => {
   const result = render(<ClimbingStrengths data={data} />);

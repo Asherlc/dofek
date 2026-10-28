@@ -97,11 +97,14 @@ with incomplete power coverage withheld from weekly totals.
   no recorded attempts retain zero counts. All view metrics
   are supplied by this server response, as defined in the
   [shared strengths contract](../training/src/climbing-strengths.ts).
-  Context labels omit the grading-system suffix when that semantic lane uses
-  one system; distinct systems retain their labels in the
-  [aggregation](src/services/climbing-strengths.ts).
+  The [aggregation](src/services/climbing-strengths.ts) partitions consolidated
+  climbs by semantic context, display grade system, and resolved setting before
+  computing panels, monthly counts, and grade baselines. Conflicting or absent
+  settings occupy an Unknown setting panel. Context labels omit grading-system
+  names, and grade labels contain only the grade; distinct systems remain
+  separate through their context identities.
   The same contract supplies a separate `allGrades` profile with pooled counts,
-  rates, comparisons and monthly outcomes from the consolidated climbs. Missing
+  rates, comparisons and monthly outcomes from the consolidated climbs within that panel. Missing
   aid use joins free climbing; explicit aid stays separate. `days: null` queries
   accessible history through `endDate`, and progress starts at its earliest
   observation. See the [repository](src/repositories/climbing-strengths-repository.ts)

@@ -7,8 +7,8 @@ import {
   observation,
 } from "./climbing-strengths-test-helpers.ts";
 
-it.each(["Lead", "Bouldering · V scale"])(
-  "combines selected types while retaining their same-grade baselines (%s)",
+it.each(["Lead", "Bouldering · Pitch · V scale"])(
+  "keeps selected semantic contexts and their baselines separate (%s)",
   (contextLabel) => {
     const result = analyze([
       ...["b1", "b2", "b3"].map((identity, index) =>
@@ -26,17 +26,26 @@ it.each(["Lead", "Bouldering · V scale"])(
       ),
     ]);
     const panels = result.panels.filter((panel) => panel.dimension === "hold_type");
-    expect(panels).toHaveLength(1);
+    expect(panels).toHaveLength(2);
     expect(panels[0]?.allGrades.rows.find((row) => row.key === "crimp")?.cells[0]).toMatchObject({
-      climbs: 3,
+      climbs: 2,
       sends: 2,
-      successRate: 67,
+      successRate: 100,
     });
     expect(
       panels[0]?.allGrades.progress.at(-1)?.rows.find((row) => row.key === "crimp")?.cells[0],
-    ).toMatchObject({ climbs: 3, sends: 2, successRate: 67 });
+    ).toMatchObject({ climbs: 2, sends: 2, successRate: 100 });
     expect(panels[0]?.gradeAdjustedStrengths.find((row) => row.key === "crimp")).toMatchObject({
-      expectedSuccessRate: 66.7,
+      expectedSuccessRate: 100,
+      differencePercentagePoints: 0,
+    });
+    expect(panels[1]?.allGrades.rows.find((row) => row.key === "crimp")?.cells[0]).toMatchObject({
+      climbs: 1,
+      sends: 0,
+      successRate: 0,
+    });
+    expect(panels[1]?.gradeAdjustedStrengths.find((row) => row.key === "crimp")).toMatchObject({
+      expectedSuccessRate: 0,
       differencePercentagePoints: 0,
     });
   },
@@ -407,7 +416,7 @@ describe("climbing strengths", () => {
       successRate: 0,
     });
   });
-  it("keeps monthly styles and grades independent across the selected cohort while deduplicating known outcomes", () => {
+  it("keeps monthly styles and grades independent within each setting while deduplicating known outcomes", () => {
     const result = analyze([
       dated("2026-08-16", {
         identity: "sloper-high",
@@ -455,7 +464,9 @@ describe("climbing strengths", () => {
         outcome: "sent",
       }),
     ]);
-    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    const panel = result.panels.find(
+      (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
+    );
     expect(panel?.rows).toEqual([
       {
         key: "crimp",
@@ -463,10 +474,10 @@ describe("climbing strengths", () => {
         cells: [
           expect.objectContaining({
             grade: "V4",
-            sends: 3,
-            climbs: 6,
+            sends: 2,
+            climbs: 5,
             unknownOutcomes: 0,
-            successRate: 50,
+            successRate: 40,
             sampleStatus: "available",
           }),
           expect.objectContaining({
@@ -530,10 +541,10 @@ describe("climbing strengths", () => {
             cells: [
               {
                 grade: "V4",
-                sends: 3,
-                climbs: 6,
+                sends: 2,
+                climbs: 5,
                 unknownOutcomes: 0,
-                successRate: 50,
+                successRate: 40,
                 sampleStatus: "available",
               },
               {
@@ -715,7 +726,7 @@ describe("climbing strengths", () => {
       },
     ]);
   });
-  it("keeps observations with conflicting setting facts in the selected cohort", () => {
+  it("isolates conflicting setting facts in the unknown-setting cohort", () => {
     const result = analyze([
       dated("2026-08-16", {
         identity: "conflict",
@@ -726,19 +737,21 @@ describe("climbing strengths", () => {
       dated("2026-09-16", { identity: "conflict", setting: "outdoor", holdTypes: ["crimp"] }),
       dated("2026-08-20", { identity: "kept", holdTypes: ["crimp"] }),
     ]);
-    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    const panel = result.panels.find(
+      (panel) => panel.dimension === "hold_type" && panel.setting === "unknown",
+    );
     expect(panel?.rows[0]?.cells[0]).toMatchObject({
       sends: 1,
-      climbs: 2,
+      climbs: 1,
       unknownOutcomes: 0,
-      successRate: 50,
+      successRate: 100,
     });
     expect(panel?.progress[0]?.rows[0]?.cells[0]).toEqual({
       grade: "V4",
       sends: 1,
-      climbs: 2,
+      climbs: 1,
       unknownOutcomes: 0,
-      successRate: 50,
+      successRate: 100,
       sampleStatus: "limited",
     });
     expect(panel?.progress[1]?.rows[0]?.cells[0]).toEqual({
@@ -749,10 +762,10 @@ describe("climbing strengths", () => {
       successRate: 0,
       sampleStatus: "limited",
     });
-    expect(result.panels.find((panel) => panel.dimension === "setting")?.grades[0]).toMatchObject({
-      sends: 1,
-      climbs: 2,
-    });
+    expect(result.panels.filter((panel) => panel.dimension === "setting")).toMatchObject([
+      { setting: "unknown", grades: [{ sends: 1, climbs: 1 }] },
+      { setting: "indoor", grades: [{ sends: 0, climbs: 1 }] },
+    ]);
   });
   it("returns empty coverage without inventing panels for an empty response", () => {
     expect(analyze([])).toEqual({
@@ -811,18 +824,21 @@ describe("climbing strengths", () => {
       }),
     ]);
     const indoor = result.panels.find(
-      (candidatePanel) => candidatePanel.dimension === "wall_angle",
+      (candidatePanel) =>
+        candidatePanel.dimension === "wall_angle" && candidatePanel.setting === "indoor",
     );
-    expect(indoor?.coverage.missingTraits).toBe(2);
+    expect(indoor?.coverage.missingTraits).toBe(1);
     const settings = result.panels.find((candidatePanel) => candidatePanel.dimension === "setting");
     expect(settings?.rows[0]?.cells[0]).toMatchObject({ successRate: 0, sampleStatus: "limited" });
-    expect(settings?.rows[0]?.cells[1]).toMatchObject({
+    expect(settings?.rows[1]?.cells[0]).toMatchObject({
       successRate: null,
       sampleStatus: "no_data",
     });
     expect(
-      result.panels.find((candidatePanel) => candidatePanel.dimension === "hold_type")?.rows[0]
-        ?.label,
+      result.panels.find(
+        (candidatePanel) =>
+          candidatePanel.dimension === "hold_type" && candidatePanel.setting === "outdoor",
+      )?.rows[0]?.label,
     ).toBe("Crimp");
   });
   it("marks five climbs available, computes same-grade differences and caps examples", () => {
@@ -854,13 +870,45 @@ describe("climbing strengths", () => {
       observation({ contextKey: "pitch", contextLabel: "Pitch", outcome: "sent" }),
       observation({ identity: "other", grade: "V5", gradeSortValue: 5, outcome: "sent" }),
     ]);
-    const panel = result.panels.find((panel) => panel.dimension === "setting");
-    expect(panel?.grades).toMatchObject([
-      { grade: "V4 · Bouldering · V scale", sends: 0, climbs: 1 },
-      { grade: "V4 · Pitch", sends: 1, climbs: 1 },
-      { grade: "V5 · Bouldering · V scale", sends: 1, climbs: 1 },
+    const panels = result.panels.filter((panel) => panel.dimension === "setting");
+    expect(panels).toMatchObject([
+      {
+        contextKey: "boulder",
+        grades: [
+          { grade: "V4", sends: 0, climbs: 1 },
+          { grade: "V5", sends: 1, climbs: 1 },
+        ],
+      },
+      { contextKey: "pitch", grades: [{ grade: "V4", sends: 1, climbs: 1 }] },
     ]);
     expect(result.coverage.unknownOutcomes).toBe(0);
+  });
+  it("uses concise grades while preserving recorded rope and attempt styles", () => {
+    const result = analyze([
+      observation({ grade: "V0", gradeSortValue: 0 }),
+      observation({
+        identity: "top-rope",
+        contextKey: "top-rope",
+        laneKey: "top-rope",
+        contextLabel: "Top rope · Yosemite Decimal System",
+        gradeSystem: "yds",
+        grade: "5.2",
+        gradeSortValue: 2,
+      }),
+      observation({
+        identity: "aided-pitch",
+        contextKey: "aided-pitch",
+        laneKey: "aided-pitch",
+        contextLabel: "Bouldering · Pitch · Solo · Aid · V Scale",
+        grade: "V0",
+        gradeSortValue: 0,
+      }),
+    ]);
+    expect(result.panels.filter((panel) => panel.dimension === "setting")).toMatchObject([
+      { contextLabel: "Bouldering", grades: [{ grade: "V0", climbs: 1 }] },
+      { contextLabel: "Top rope", grades: [{ grade: "5.2", climbs: 1 }] },
+      { contextLabel: "Bouldering · Pitch · Solo · Aid", grades: [{ grade: "V0", climbs: 1 }] },
+    ]);
   });
   it("merges known setting and traits across observations without duplicating the climb", () => {
     const result = analyze([
@@ -986,12 +1034,63 @@ describe("climbing strengths", () => {
   });
 });
 
-it("builds one selected-cohort profile across the settings selected by the filter", () => {
+it("builds separate profiles and monthly outcomes for each selected setting", () => {
   const result = analyze(mixedSettingObservations());
   for (const dimension of ["wall_angle", "hold_type"]) {
     const panels = result.panels.filter((panel) => panel.dimension === dimension);
-    expect(panels).toHaveLength(1);
-    expect(panels[0]?.rows[0]?.cells[0]).toMatchObject({ climbs: 2, sends: 1, successRate: 50 });
-    expect(panels[0]?.gradeAdjustedStrengths[0]).toMatchObject({ differencePercentagePoints: 0 });
+    expect(panels).toMatchObject([
+      { contextKey: "boulder", setting: "indoor", grades: [{ grade: "V4", climbs: 1, sends: 1 }] },
+      { contextKey: "boulder", setting: "outdoor", grades: [{ grade: "V4", climbs: 1, sends: 0 }] },
+    ]);
+    expect(new Set(panels.map((panel) => panel.key)).size).toBe(2);
+    for (const panel of panels) {
+      const sends = panel.setting === "indoor" ? 1 : 0;
+      expect(panel.rows[0]?.cells[0]).toMatchObject({ climbs: 1, sends, successRate: sends * 100 });
+      expect(panel.allGrades.rows[0]?.cells[0]).toMatchObject({ climbs: 1, sends });
+      expect(panel.allGrades.progress.at(-1)?.rows[0]?.cells[0]).toMatchObject({
+        climbs: 1,
+        sends,
+      });
+      expect(panel.gradeAdjustedStrengths[0]).toMatchObject({
+        expectedSuccessRate: sends * 100,
+        differencePercentagePoints: 0,
+      });
+    }
   }
+});
+
+it("keeps identical grade labels in distinct grade-system contexts", () => {
+  const result = analyze([
+    observation({
+      laneKey: "lead",
+      contextKey: "brazilian",
+      contextLabel: "Lead · Brazilian Crux",
+      gradeSystem: "brazilian_crux",
+      grade: "6a",
+      outcome: "sent",
+      holdTypes: ["crimp"],
+    }),
+    observation({
+      laneKey: "lead",
+      contextKey: "french",
+      contextLabel: "Lead · French",
+      gradeSystem: "french",
+      grade: "6a",
+      holdTypes: ["crimp"],
+    }),
+  ]);
+  expect(result.panels.filter((panel) => panel.dimension === "hold_type")).toMatchObject([
+    {
+      contextKey: "brazilian",
+      contextLabel: "Lead",
+      grades: [{ grade: "6a", climbs: 1, sends: 1, successRate: 100 }],
+      gradeAdjustedStrengths: [{ expectedSuccessRate: 100, differencePercentagePoints: 0 }],
+    },
+    {
+      contextKey: "french",
+      contextLabel: "Lead",
+      grades: [{ grade: "6a", climbs: 1, sends: 0, successRate: 0 }],
+      gradeAdjustedStrengths: [{ expectedSuccessRate: 0, differencePercentagePoints: 0 }],
+    },
+  ]);
 });

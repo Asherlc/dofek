@@ -30,7 +30,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
     {
       key: "boulder-angle-indoor",
       contextKey: "boulder",
-      contextLabel: "Bouldering · V scale",
+      contextLabel: "Bouldering",
       dimension: "wall_angle",
       setting: "indoor",
       gradeAdjustedStrengths: [],

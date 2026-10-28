@@ -172,7 +172,7 @@ export const SettingsAndContexts: Story = {
           ...panel,
           key: "routes",
           contextKey: "routes",
-          contextLabel: "Routes · Lead · French",
+          contextLabel: "Lead",
           progress: panel.progress.map((period) => ({
             ...period,
             rows: period.rows.map((row) => ({
@@ -218,7 +218,7 @@ export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownRes
 export const Narrow: Story = {
   decorators: [
     (Story) => (
-      <div style={{ width: 320 }}>
+      <div style={{ width: 320, maxWidth: "100%" }}>
         <Story />
       </div>
     ),
@@ -273,6 +273,41 @@ export const Grades: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
   },
+};
+export const NarrowGrades: Story = {
+  ...Narrow,
+  play: Grades.play,
+};
+export const GradesByTypeAndSetting: Story = {
+  args: {
+    data: {
+      ...fixture,
+      panels: fixture.panels.flatMap((panel) => [
+        panel,
+        { ...panel, key: "boulder-outdoor", setting: "outdoor" as const },
+        {
+          ...panel,
+          key: "top-rope-outdoor",
+          contextKey: "top-rope",
+          contextLabel: "Top rope",
+          setting: "outdoor" as const,
+          grades: panel.grades.map((grade, index) => ({
+            ...grade,
+            grade: ["5.8", "5.9", "5.10a", "5.10b"][index] ?? grade.grade,
+          })),
+          rows: panel.rows.map((row) => ({
+            ...row,
+            cells: row.cells.map((cell, index) => ({
+              ...cell,
+              grade: ["5.8", "5.9", "5.10a", "5.10b"][index] ?? cell.grade,
+              examples: [],
+            })),
+          })),
+        },
+      ]),
+    },
+  },
+  play: Grades.play,
 };
 export const Progress: Story = {
   play: async ({ canvasElement, userEvent }) => {
