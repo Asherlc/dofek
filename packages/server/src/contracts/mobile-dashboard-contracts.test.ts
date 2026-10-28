@@ -780,6 +780,16 @@ describe("mobileTrainingFixtureSchema", () => {
     expect(mobileTrainingFixtureSchema.parse(validTrainingFixture())).toBeTruthy();
   });
 
+  it("accepts null grade progression while retaining other training data", () => {
+    const fixture = validTrainingFixture();
+    fixture.data.climbing.gradeProgression = null;
+
+    const parsed = mobileTrainingFixtureSchema.parse(fixture);
+
+    expect(parsed.data.climbing.gradeProgression).toBeNull();
+    expect(parsed.data.workloadRatio).toEqual(fixture.data.workloadRatio);
+  });
+
   it("preserves the primary activity type through the public training tab output", () => {
     const data = validTrainingFixture().data;
     const unavailableChart = {
