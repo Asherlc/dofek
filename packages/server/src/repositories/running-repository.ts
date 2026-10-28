@@ -1,3 +1,4 @@
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import {
@@ -148,7 +149,7 @@ export class PaceTrendActivity {
 const dynamicsRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
-  name: z.string(),
+  name: z.string().nullable(),
   avg_cadence: z.coerce.number(),
   avg_stride_length: z.coerce.number().nullable(),
   avg_stance_time: z.coerce.number().nullable(),
@@ -160,7 +161,7 @@ const dynamicsRowSchema = z.object({
 const paceTrendRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
-  name: z.string(),
+  name: z.string().nullable(),
   avg_speed: z.coerce.number(),
   total_distance: z.coerce.number(),
   duration_seconds: z.coerce.number(),
@@ -233,7 +234,7 @@ export class RunningRepository {
         new RunningDynamicsActivity({
           activityId: row.activity_id,
           date: row.date,
-          activityName: row.name,
+          activityName: row.name ?? formatActivityTypeLabel("running"),
           avgCadence: row.avg_cadence,
           avgStrideLengthMeters: row.avg_stride_length,
           avgStanceTimeMs: row.avg_stance_time,
@@ -280,7 +281,7 @@ export class RunningRepository {
       (row) =>
         new PaceTrendActivity({
           date: row.date,
-          activityName: row.name,
+          activityName: row.name ?? formatActivityTypeLabel("running"),
           avgSpeed: row.avg_speed,
           totalDistance: row.total_distance,
           durationSeconds: row.duration_seconds,

@@ -8,7 +8,7 @@ export function hikingComparisonRow(overrides: Record<string, unknown> = {}) {
     canonical_type: "hiking",
     modality: null,
     activity_name: "Trail Loop",
-    started_at: "2026-10-27T08:00:00Z",
+    started_at: "2026-10-27T08:00:00.000Z",
     date: "2026-10-27",
     distance_m: 5000,
     duration_minutes: 60,

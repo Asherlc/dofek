@@ -442,7 +442,7 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
-    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
@@ -466,7 +466,7 @@ describe("StrainScreen recent activity navigation", () => {
     );
     rerender(<StrainScreen />);
     expect(captureException).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: /Slab · 40%/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Slab:/ })).toBeNull();
   });
 
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
@@ -486,7 +486,7 @@ describe("StrainScreen recent activity navigation", () => {
       endDate: "2026-03-28",
       types: ["lead"],
     });
-    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
