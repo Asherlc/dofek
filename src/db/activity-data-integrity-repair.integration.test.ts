@@ -6,6 +6,7 @@ import { createClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { buildIngestMetricStreamCreateTableSql } from "../metric-stream/clickhouse-table.ts";
 import { queryClickHouseRows } from "./activity-data-integrity-clickhouse.ts";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
@@ -13,7 +14,10 @@ import {
   repairActivityDataIntegrity,
   rollbackActivityDataIntegrity,
 } from "./activity-data-integrity-repair.ts";
-import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
+import {
+  buildPostgresFitnessProviderFieldPriorityRawTableStatement,
+  buildPostgresFitnessRawTableStatements,
+} from "./clickhouse-raw-tables.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -247,6 +251,13 @@ async function seedProductionDbtFixture(
       "postgres_fitness.",
       `${database}.`,
     ),
+    ...buildPostgresFitnessRawTableStatements()
+      .filter((statement) =>
+        /^CREATE TABLE IF NOT EXISTS postgres_fitness\.sensor_(provider|device)_priority \(/.test(
+          statement,
+        ),
+      )
+      .map((statement) => statement.replaceAll("postgres_fitness.", `${database}.`)),
     `CREATE TABLE ${database}.activity (
       id UUID,
       provider_id String,
@@ -306,24 +317,16 @@ async function seedProductionDbtFixture(
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
-    `CREATE TABLE ${database}.metric_stream (
-      id UUID,
-      activity_id Nullable(UUID),
+    buildIngestMetricStreamCreateTableSql().replaceAll(
+      "ingest.metric_stream",
+      `${database}.metric_stream`,
+    ),
+    `CREATE TABLE ${database}.metric_stream_day_change (
       user_id UUID,
-      recorded_at DateTime64(9, 'UTC'),
       provider_id String,
-      channel String,
-      point Point,
-      external_id Nullable(String),
-      device_id Nullable(String),
-      source_type Nullable(String),
-      metadata String,
-      ingested_at DateTime64(9, 'UTC'),
-      version UInt64,
-      is_deleted UInt8
-    ) ENGINE = ReplacingMergeTree()
-      ORDER BY (user_id, activity_id)
-      SETTINGS allow_nullable_key = 1`,
+      recorded_date Date,
+      changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+    ) ENGINE = AggregatingMergeTree ORDER BY (user_id, provider_id, recorded_date)`,
     `CREATE TABLE ${database}.activity_location_summary_rows (
       activity_id UUID,
       user_id UUID,
