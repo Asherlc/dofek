@@ -469,7 +469,7 @@ export default function ActivityDetailScreen() {
           responseVersion: 2,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
-        trpcUtils.climbing.gradeProgression.invalidate(),
+        trpcUtils.mobileDashboard.trainingV2.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({

@@ -215,8 +215,9 @@ describe("climbing log router PostgreSQL integration", () => {
     await log("v5", "V5", 4, outing.id, false);
     const oldKey = requestCacheKey(TEST_USER_ID, "volumeByGrade", { days: 30 }, "UTC");
     await queryCache.set(oldKey, [{ attempts: 99, sends: 99 }], CacheTTL.LONG);
-    const [volume, progression, summaries] = await Promise.all([
+    const [volume, progression, legacyProgression, summaries] = await Promise.all([
       caller().volumeByGrade({ days: 30 }),
+      caller().gradeProgressionV2({ days: 30 }),
       caller().gradeProgression({ days: 30 }),
       caller().sessionSummary({ days: 30 }),
     ]);
@@ -232,14 +233,39 @@ describe("climbing log router PostgreSQL integration", () => {
         expect.objectContaining({ grade: "V5", recordedAttempts: 4, sends: 0 }),
       ]),
     );
-    expect(progression).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          climbKind: "boulder",
-          grades: expect.arrayContaining([expect.objectContaining({ grade: "V4" })]),
-        }),
+    expect(progression).toMatchObject({
+      grades: expect.arrayContaining([
+        expect.objectContaining({ climbKind: "boulder", grade: "V4" }),
       ]),
-    );
+    });
+    expect(legacyProgression.find((lane) => lane.usedAid === false)).toMatchObject({
+      climbKind: "boulder",
+      attemptScope: "climb",
+      ropeMethod: null,
+      solo: null,
+      usedAid: false,
+      gradeSystem: "v_scale",
+      settings: ["indoor"],
+      grades: expect.arrayContaining([expect.objectContaining({ grade: "V4" })]),
+      periods: [
+        {
+          settings: [
+            {
+              setting: "indoor",
+              sends: 2,
+              climbingDays: 1,
+              sendsPerDay: 2,
+              segments: expect.arrayContaining([
+                expect.objectContaining({ grade: "V4", sends: 1, sendsPerDay: 1 }),
+              ]),
+            },
+          ],
+        },
+      ],
+    });
+    expect(legacyProgression.find((lane) => lane.usedAid === null)).toMatchObject({
+      periods: [{ settings: [{ unknownOutcomes: 6, sends: 0, climbingDays: 1 }] }],
+    });
     expect(summaries).toEqual([
       expect.objectContaining({
         activityId: outing.groupId,

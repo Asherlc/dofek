@@ -17,10 +17,14 @@ import {
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import {
-  type ClimbingGradeProgressionLane,
+  type ClimbingGradeProgressionData,
   climbingGradeProgressionSchema,
   climbingProgressionSettings,
 } from "@dofek/training/climbing-progression";
+import {
+  type ClimbingGradeProgressionV1Lane,
+  climbingGradeProgressionV1Schema,
+} from "@dofek/training/climbing-progression-v1";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
@@ -37,10 +41,12 @@ import {
   buildClimbingGradeProgression,
   type ClimbingProgressionEntry,
 } from "./climbing-grade-progression.ts";
+import { buildClimbingGradeProgressionV1 } from "./climbing-grade-progression-v1.ts";
 
 export type { ClimbingLogEntryDetail, FreeRockGradeSystem, RockClimbKind };
-export { climbingGradeProgressionSchema };
-export type ClimbingGradeProgressionRow = ClimbingGradeProgressionLane;
+export { climbingGradeProgressionSchema, climbingGradeProgressionV1Schema };
+export type ClimbingGradeProgressionRow = ClimbingGradeProgressionV1Lane;
+export type ClimbingGradeProgressionV2Row = ClimbingGradeProgressionData;
 export interface AttachedRockClimbingObservation {
   activityId: string;
   date: string;
@@ -55,6 +61,15 @@ export interface AttachedRockClimbingObservation {
 export class ClimbingGradeProgression {
   readonly #row: ClimbingGradeProgressionRow;
   constructor(row: ClimbingGradeProgressionRow) {
+    this.#row = row;
+  }
+  toDetail() {
+    return this.#row;
+  }
+}
+export class ClimbingGradeProgressionV2 {
+  readonly #row: ClimbingGradeProgressionV2Row;
+  constructor(row: ClimbingGradeProgressionV2Row) {
     this.#row = row;
   }
   toDetail() {
@@ -220,6 +235,23 @@ export class ClimbingRepository extends BaseRepository {
     days: number,
     filters: ClimbingFilters = {},
   ): Promise<ClimbingGradeProgression[]> {
+    const entries = await this.#getGradeProgressionEntries(days, filters);
+    return buildClimbingGradeProgressionV1(entries).map(
+      (lane) => new ClimbingGradeProgression(lane),
+    );
+  }
+  async getGradeProgressionV2(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingGradeProgressionV2 | null> {
+    const entries = await this.#getGradeProgressionEntries(days, filters);
+    const chart = buildClimbingGradeProgression(entries);
+    return chart === null ? null : new ClimbingGradeProgressionV2(chart);
+  }
+  async #getGradeProgressionEntries(
+    days: number,
+    filters: ClimbingFilters,
+  ): Promise<ClimbingProgressionEntry[]> {
     const rows = await executeWithSchema(
       this.db,
       progressionRowSchema,
@@ -227,7 +259,7 @@ export class ClimbingRepository extends BaseRepository {
       SELECT session_date, climb_kind, attempt_scope, COALESCE(setting::text, 'unknown') AS setting,
         grade_system, grade, attempt_observations FROM canonical_logs WHERE grade IS NOT NULL`,
     );
-    const entries = rows.flatMap((row): ClimbingProgressionEntry[] => {
+    return rows.flatMap((row): ClimbingProgressionEntry[] => {
       const display = displayClimbingGrade(
         this.#gradePreference,
         row.climb_kind,
@@ -245,7 +277,6 @@ export class ClimbingRepository extends BaseRepository {
           }))
         : [];
     });
-    return buildClimbingGradeProgression(entries).map((row) => new ClimbingGradeProgression(row));
   }
   async getMapEntries(
     days: number,

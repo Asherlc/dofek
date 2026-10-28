@@ -69,6 +69,18 @@ with incomplete power coverage withheld from weekly totals.
   failures retained only in raw JSON by older adapters remain unsuccessful.
   Explicit aid/fall/dab facts still prevent a clean free send. See the
   [OpenBeta interpretation](../../docs/openbeta.md#stored-records).
+- **Climbing grade progression**: The [builder](src/repositories/climbing-grade-progression.ts)
+  pools the graded observations selected by page filters into one stack per
+  period. A recorded date counts once across climbing types, rope methods, and
+  settings. The server computes grade counts, sends per recorded day, stack
+  positions, and axes; both clients render the [shared contract](../training/src/climbing-progression.ts).
+  The permanent `climbing.gradeProgressionV2` and `mobileDashboard.trainingV2`
+  procedures serve this combined chart. The original procedures retain their
+  complete [V1 lane contract](../training/src/climbing-progression-v1.ts), projected
+  from the same raw observations by the [V1 builder](src/repositories/climbing-grade-progression-v1.ts).
+  Each request runs one observation query for its selected version; the
+  [climbing router](src/routers/climbing.ts) and [mobile router](src/routers/mobile-dashboard.ts)
+  keep the response schemas and caches separate.
 - **Climbing strengths**: The protected cached `climbing.strengths` query serves
   [display-ready panels](../training/src/climbing-strengths.ts) for both clients.
   Its [repository](src/repositories/climbing-strengths-repository.ts) reuses the

@@ -163,7 +163,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     mobileDashboard: {
-      training: {
+      trainingV2: {
         useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.training.push({ input, options });
           return {
@@ -222,7 +222,7 @@ vi.mock("../../lib/trpc", () => ({
       },
       strength: { volumeOverTime: { invalidate: vi.fn() } },
       mobileDashboard: {
-        training: { invalidate: mockTrainingInvalidate },
+        trainingV2: { invalidate: mockTrainingInvalidate },
       },
       training: {
         sportVolume: { invalidate: vi.fn() },
@@ -1009,7 +1009,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [],
         sessionSummary: [],
       },

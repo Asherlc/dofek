@@ -152,7 +152,7 @@ describe("ClimbingLogAttachment", () => {
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary),
-      getQueryKey(trpc.climbing.gradeProgression),
+      getQueryKey(trpc.mobileDashboard.trainingV2),
       getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade),
       getQueryKey(trpc.activity.list),

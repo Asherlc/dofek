@@ -5,6 +5,7 @@ import {
   isGradeSystemForClimbKind,
 } from "@dofek/training/climbing-grades";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
+import { climbingGradeProgressionV1Schema } from "@dofek/training/climbing-progression-v1";
 import { z } from "zod";
 import {
   baselineComparisonDirectionSchema,
@@ -363,7 +364,7 @@ const activitySchema = z.object({
   distance_state: activityDataStateSchema,
 });
 
-export const mobileTrainingTabOutputSchema = z.object({
+export const mobileTrainingTabV2OutputSchema = z.object({
   workloadRatio: workloadRatioResultSchema,
   strainTarget: strainTargetResultSchema.optional(),
   activities: z.array(activitySchema),
@@ -392,7 +393,7 @@ export const mobileTrainingTabOutputSchema = z.object({
     verticalAscent: trainingChartAvailabilitySchema,
   }),
   climbing: z.object({
-    gradeProgression: z.array(climbingGradeProgressionSchema),
+    gradeProgression: climbingGradeProgressionSchema.nullable(),
     volumeByGrade: z.array(
       climbingGradeDisplaySchema.extend({
         attempts: z.number().int().nonnegative().nullable(),
@@ -445,7 +446,13 @@ export const mobileTrainingTabOutputSchema = z.object({
   }),
 });
 
+export const mobileTrainingTabOutputSchema = mobileTrainingTabV2OutputSchema.extend({
+  climbing: mobileTrainingTabV2OutputSchema.shape.climbing.extend({
+    gradeProgression: z.array(climbingGradeProgressionV1Schema),
+  }),
+});
 export type MobileTrainingTabResult = z.infer<typeof mobileTrainingTabOutputSchema>;
+export type MobileTrainingTabV2Result = z.infer<typeof mobileTrainingTabV2OutputSchema>;
 
 const fixtureInputSchema = z.object({
   days: z.number().int().positive(),
@@ -604,133 +611,167 @@ export const mobileRecoveryFixtureSchema = z
     }
   });
 
+type MobileTrainingFixtureChecks = Pick<
+  MobileTrainingTabV2Result,
+  "workloadRatio" | "strainTarget" | "activities" | "verticalAscent" | "weeklyVolume"
+> & {
+  climbing: Pick<MobileTrainingTabV2Result["climbing"], "sessionSummary">;
+};
+
+function validateMobileTrainingFixture(
+  {
+    input,
+    data,
+  }: {
+    input: z.infer<typeof fixtureInputSchema>;
+    data: MobileTrainingFixtureChecks;
+  },
+  periods: ReadonlyArray<{ startDate: string; endDate: string }>,
+  context: z.RefinementCtx,
+) {
+  validateDatesInWindow(
+    input,
+    [
+      ...data.workloadRatio.timeSeries.map((row) => row.date),
+      ...data.activities.map((row) => row.started_at.slice(0, 10)),
+      ...data.verticalAscent.map((row) => row.date),
+      ...data.climbing.sessionSummary.map((row) => row.date),
+    ],
+    context,
+  );
+  const windowStart = fixtureWindowStart(input);
+  for (const period of periods) {
+    if (period.startDate > input.endDate || period.endDate < windowStart) {
+      context.addIssue({
+        code: "custom",
+        message: `Fixture climbing period ${period.startDate}..${period.endDate} does not overlap ${windowStart}..${input.endDate}`,
+      });
+    }
+  }
+  validateWeeksOverlappingWindow(
+    input,
+    data.weeklyVolume.map((row) => row.week),
+    context,
+  );
+
+  const hasPositiveTrainingClaim =
+    data.workloadRatio.displayedStrain > 0 ||
+    (data.strainTarget?.currentStrain ?? 0) > 0 ||
+    data.activities.length > 0 ||
+    data.weeklyVolume.some((row) => row.count > 0 || row.hours > 0);
+  if (hasPositiveTrainingClaim && data.workloadRatio.timeSeries.length < 2) {
+    context.addIssue({
+      code: "custom",
+      path: ["data", "workloadRatio", "timeSeries"],
+      message: "Positive training claims require enough trend points to avoid a no-data chart",
+    });
+  }
+
+  const displayedRow =
+    data.workloadRatio.displayedDate == null
+      ? undefined
+      : data.workloadRatio.timeSeries.find((row) => row.date === data.workloadRatio.displayedDate);
+  if (
+    data.workloadRatio.displayedDate != null &&
+    (!displayedRow || !nearlyEqual(displayedRow.strain, data.workloadRatio.displayedStrain))
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["data", "workloadRatio", "displayedStrain"],
+      message: "Displayed strain and date must identify a matching time-series point",
+    });
+  }
+
+  const target = data.strainTarget;
+  if (target && data.workloadRatio.displayedDate === input.endDate) {
+    const targetChecks = [
+      ["currentStrain", target.currentStrain, data.workloadRatio.displayedStrain],
+      ["dailyLoad", target.dailyLoad, displayedRow?.dailyLoad],
+      ["acuteLoad", target.acuteLoad, displayedRow?.acuteLoad],
+      ["chronicLoad", target.chronicLoad, displayedRow?.chronicLoad],
+      ["workloadRatio", target.workloadRatio, displayedRow?.workloadRatio],
+    ] as const;
+    for (const [field, targetValue, workloadValue] of targetChecks) {
+      if (!nearlyEqual(targetValue, workloadValue)) {
+        context.addIssue({
+          code: "custom",
+          path: ["data", "strainTarget", field],
+          message: `${field} must match the displayed workload point`,
+        });
+      }
+    }
+  }
+
+  const activityCounts = new Map<string, number>();
+  const activityHours = new Map<string, number>();
+  for (const activity of data.activities) {
+    activityCounts.set(
+      activity.canonical_type,
+      (activityCounts.get(activity.canonical_type) ?? 0) + 1,
+    );
+    if (activity.ended_at != null) {
+      const hours =
+        (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
+        3_600_000;
+      activityHours.set(
+        activity.canonical_type,
+        (activityHours.get(activity.canonical_type) ?? 0) + hours,
+      );
+    }
+  }
+
+  const weeklyCounts = new Map<string, number>();
+  const weeklyHours = new Map<string, number>();
+  for (const row of data.weeklyVolume) {
+    weeklyCounts.set(row.canonical_type, (weeklyCounts.get(row.canonical_type) ?? 0) + row.count);
+    weeklyHours.set(row.canonical_type, (weeklyHours.get(row.canonical_type) ?? 0) + row.hours);
+  }
+
+  const activityTypes = new Set([...activityCounts.keys(), ...weeklyCounts.keys()]);
+  for (const activityType of activityTypes) {
+    if ((activityCounts.get(activityType) ?? 0) !== (weeklyCounts.get(activityType) ?? 0)) {
+      context.addIssue({
+        code: "custom",
+        path: ["data", "weeklyVolume"],
+        message: `Weekly ${activityType} count must match the fixture activities`,
+      });
+    }
+    if (!nearlyEqual(activityHours.get(activityType) ?? 0, weeklyHours.get(activityType) ?? 0)) {
+      context.addIssue({
+        code: "custom",
+        path: ["data", "weeklyVolume"],
+        message: `Weekly ${activityType} hours must match the fixture activity durations`,
+      });
+    }
+  }
+}
+
 export const mobileTrainingFixtureSchema = z
   .object({
     input: fixtureInputSchema,
     data: mobileTrainingTabOutputSchema.extend({
-      // Historical fixture snapshots predate server-authored chart availability.
-      // Runtime mobile dashboard responses remain strict via mobileTrainingTabOutputSchema.
       chartAvailability: mobileTrainingTabOutputSchema.shape.chartAvailability.optional(),
     }),
   })
-  .superRefine(({ input, data }, context) => {
-    validateDatesInWindow(
-      input,
-      [
-        ...data.workloadRatio.timeSeries.map((row) => row.date),
-        ...data.activities.map((row) => row.started_at.slice(0, 10)),
-        ...data.verticalAscent.map((row) => row.date),
-        ...data.climbing.sessionSummary.map((row) => row.date),
-      ],
+  .superRefine((fixture, context) => {
+    validateMobileTrainingFixture(
+      fixture,
+      fixture.data.climbing.gradeProgression.flatMap((lane) => lane.periods),
       context,
     );
-    const windowStart = fixtureWindowStart(input);
-    for (const lane of data.climbing.gradeProgression) {
-      for (const period of lane.periods) {
-        if (period.startDate > input.endDate || period.endDate < windowStart) {
-          context.addIssue({
-            code: "custom",
-            message: `Fixture climbing period ${period.startDate}..${period.endDate} does not overlap ${windowStart}..${input.endDate}`,
-          });
-        }
-      }
-    }
-    validateWeeksOverlappingWindow(
-      input,
-      data.weeklyVolume.map((row) => row.week),
+  });
+
+export const mobileTrainingV2FixtureSchema = z
+  .object({
+    input: fixtureInputSchema,
+    data: mobileTrainingTabV2OutputSchema.extend({
+      chartAvailability: mobileTrainingTabV2OutputSchema.shape.chartAvailability.optional(),
+    }),
+  })
+  .superRefine((fixture, context) => {
+    validateMobileTrainingFixture(
+      fixture,
+      fixture.data.climbing.gradeProgression?.periods ?? [],
       context,
     );
-
-    const hasPositiveTrainingClaim =
-      data.workloadRatio.displayedStrain > 0 ||
-      (data.strainTarget?.currentStrain ?? 0) > 0 ||
-      data.activities.length > 0 ||
-      data.weeklyVolume.some((row) => row.count > 0 || row.hours > 0);
-    if (hasPositiveTrainingClaim && data.workloadRatio.timeSeries.length < 2) {
-      context.addIssue({
-        code: "custom",
-        path: ["data", "workloadRatio", "timeSeries"],
-        message: "Positive training claims require enough trend points to avoid a no-data chart",
-      });
-    }
-
-    const displayedRow =
-      data.workloadRatio.displayedDate == null
-        ? undefined
-        : data.workloadRatio.timeSeries.find(
-            (row) => row.date === data.workloadRatio.displayedDate,
-          );
-    if (
-      data.workloadRatio.displayedDate != null &&
-      (!displayedRow || !nearlyEqual(displayedRow.strain, data.workloadRatio.displayedStrain))
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["data", "workloadRatio", "displayedStrain"],
-        message: "Displayed strain and date must identify a matching time-series point",
-      });
-    }
-
-    const target = data.strainTarget;
-    if (target && data.workloadRatio.displayedDate === input.endDate) {
-      const targetChecks = [
-        ["currentStrain", target.currentStrain, data.workloadRatio.displayedStrain],
-        ["dailyLoad", target.dailyLoad, displayedRow?.dailyLoad],
-        ["acuteLoad", target.acuteLoad, displayedRow?.acuteLoad],
-        ["chronicLoad", target.chronicLoad, displayedRow?.chronicLoad],
-        ["workloadRatio", target.workloadRatio, displayedRow?.workloadRatio],
-      ] as const;
-      for (const [field, targetValue, workloadValue] of targetChecks) {
-        if (!nearlyEqual(targetValue, workloadValue)) {
-          context.addIssue({
-            code: "custom",
-            path: ["data", "strainTarget", field],
-            message: `${field} must match the displayed workload point`,
-          });
-        }
-      }
-    }
-
-    const activityCounts = new Map<string, number>();
-    const activityHours = new Map<string, number>();
-    for (const activity of data.activities) {
-      activityCounts.set(
-        activity.canonical_type,
-        (activityCounts.get(activity.canonical_type) ?? 0) + 1,
-      );
-      if (activity.ended_at != null) {
-        const hours =
-          (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
-          3_600_000;
-        activityHours.set(
-          activity.canonical_type,
-          (activityHours.get(activity.canonical_type) ?? 0) + hours,
-        );
-      }
-    }
-
-    const weeklyCounts = new Map<string, number>();
-    const weeklyHours = new Map<string, number>();
-    for (const row of data.weeklyVolume) {
-      weeklyCounts.set(row.canonical_type, (weeklyCounts.get(row.canonical_type) ?? 0) + row.count);
-      weeklyHours.set(row.canonical_type, (weeklyHours.get(row.canonical_type) ?? 0) + row.hours);
-    }
-
-    const activityTypes = new Set([...activityCounts.keys(), ...weeklyCounts.keys()]);
-    for (const activityType of activityTypes) {
-      if ((activityCounts.get(activityType) ?? 0) !== (weeklyCounts.get(activityType) ?? 0)) {
-        context.addIssue({
-          code: "custom",
-          path: ["data", "weeklyVolume"],
-          message: `Weekly ${activityType} count must match the fixture activities`,
-        });
-      }
-      if (!nearlyEqual(activityHours.get(activityType) ?? 0, weeklyHours.get(activityType) ?? 0)) {
-        context.addIssue({
-          code: "custom",
-          path: ["data", "weeklyVolume"],
-          message: `Weekly ${activityType} hours must match the fixture activity durations`,
-        });
-      }
-    }
   });

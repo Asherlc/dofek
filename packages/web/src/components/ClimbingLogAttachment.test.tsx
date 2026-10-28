@@ -82,7 +82,7 @@ describe("ClimbingLogAttachment", () => {
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary, { days: 90 }, "query"),
-      getQueryKey(trpc.climbing.gradeProgression, { days: 90 }, "query"),
+      getQueryKey(trpc.climbing.gradeProgressionV2, { days: 90 }, "query"),
       getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade, { days: 90 }, "query"),
       getQueryKey(trpc.activity.list, { limit: 10 }, "query"),

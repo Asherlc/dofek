@@ -2,14 +2,18 @@ import { StrainScore } from "@dofek/scoring/scoring";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ClimbingGradeProgression,
+  ClimbingGradeProgressionV2,
   ClimbingSessionSummary,
   ClimbingVolumeByGrade,
 } from "../repositories/climbing-repository.ts";
 import { VerticalAscentModel } from "../repositories/cycling-advanced-models.ts";
 import type { HangboardingSummary } from "../repositories/hangboarding-repository.ts";
 import { ProgressiveOverload } from "../repositories/progressive-overload.ts";
-import { loadMobileTrainingTab } from "./mobile-training-tab.ts";
-import { climbingProgressionFixture } from "./mobile-training-tab-test-helpers.ts";
+import { loadMobileTrainingTab, loadMobileTrainingTabV2 } from "./mobile-training-tab.ts";
+import {
+  climbingProgressionFixture,
+  climbingProgressionV1Fixture,
+} from "./mobile-training-tab-test-helpers.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn(async () => null),
@@ -23,7 +27,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe("loadMobileTrainingTab", () => {
+describe("loadMobileTrainingTabV2", () => {
   const defaultReadinessRows = [
     {
       date: "2026-03-28",
@@ -122,8 +126,8 @@ describe("loadMobileTrainingTab", () => {
     const repository = (await import("../repositories/climbing-repository.ts")).ClimbingRepository
       .prototype;
     const gradeProgressionSpy = vi
-      .spyOn(repository, "getGradeProgression")
-      .mockResolvedValue([new ClimbingGradeProgression(climbingProgressionFixture)]);
+      .spyOn(repository, "getGradeProgressionV2")
+      .mockResolvedValue(new ClimbingGradeProgressionV2(climbingProgressionFixture));
     const volumeByGradeSpy = vi.spyOn(repository, "getVolumeByGrade").mockResolvedValue([
       new ClimbingVolumeByGrade({
         climbKind: "route",
@@ -151,6 +155,22 @@ describe("loadMobileTrainingTab", () => {
     ]);
     return { gradeProgressionSpy, volumeByGradeSpy, sessionSummarySpy };
   }
+
+  it("retains complete legacy grade lanes for the original training loader", async () => {
+    await mockTrainingRepos();
+    const { gradeProgressionSpy } = await mockClimbingRepos();
+    const repository = (await import("../repositories/climbing-repository.ts")).ClimbingRepository
+      .prototype;
+    const legacySpy = vi
+      .spyOn(repository, "getGradeProgression")
+      .mockResolvedValue([new ClimbingGradeProgression(climbingProgressionV1Fixture)]);
+
+    const result = await loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
+
+    expect(result.climbing.gradeProgression).toEqual([climbingProgressionV1Fixture]);
+    expect(legacySpy).toHaveBeenCalledWith(30, {});
+    expect(gradeProgressionSpy).not.toHaveBeenCalled();
+  });
 
   it("caps how many repository reads run at the same time so the pool is never over-demanded", async () => {
     let active = 0;
@@ -192,11 +212,11 @@ describe("loadMobileTrainingTab", () => {
         daily: [],
       }),
     );
-    gradeProgressionSpy.mockImplementation(track([]));
+    gradeProgressionSpy.mockImplementation(track(null));
     volumeByGradeSpy.mockImplementation(track([]));
     sessionSummarySpy.mockImplementation(track([]));
 
-    const resultPromise = loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
+    const resultPromise = loadMobileTrainingTabV2(makeCtx(makeQuery()), 30, "2026-03-28");
     // Let every read that is allowed to start reach its running slot before any finish.
     for (let microtaskTurn = 0; microtaskTurn < 20; microtaskTurn += 1) {
       await new Promise((resolve) => setImmediate(resolve));
@@ -286,7 +306,7 @@ describe("loadMobileTrainingTab", () => {
     );
     await mockClimbingRepos();
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.workloadRatio.timeSeries).toHaveLength(1);
     expect(result.workloadRatio.timeSeries[0]?.dailyLoad).toBe(50);
@@ -311,7 +331,7 @@ describe("loadMobileTrainingTab", () => {
       variabilityOffset: 0,
     });
     expect(result.climbing).toEqual({
-      gradeProgression: [climbingProgressionFixture],
+      gradeProgression: climbingProgressionFixture,
       volumeByGrade: [
         {
           climbKind: "route",
@@ -355,7 +375,7 @@ describe("loadMobileTrainingTab", () => {
   it("returns empty workload ratio defaults when no strain rows exist", async () => {
     await mockTrainingRepos();
 
-    const result = await loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(makeQuery()), 30, "2026-03-28");
 
     expect(result.workloadRatio.timeSeries).toEqual([]);
     expect(result.workloadRatio.displayedStrain).toBe(0);
@@ -367,7 +387,7 @@ describe("loadMobileTrainingTab", () => {
   it("reports insufficient chart availability from server-owned observations", async () => {
     await mockTrainingRepos();
 
-    const result = await loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(makeQuery()), 30, "2026-03-28");
 
     expect(result.chartAvailability).toEqual({
       strainTrend: {
@@ -421,7 +441,7 @@ describe("loadMobileTrainingTab", () => {
       ],
     );
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.chartAvailability).toEqual({
       strainTrend: {
@@ -454,7 +474,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     const row = result.workloadRatio.timeSeries[0];
     expect(row?.dailyLoad).toBe(125.7);
@@ -476,7 +496,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.workloadRatio.timeSeries[0]?.workloadRatio).toBeNull();
   });
@@ -496,7 +516,7 @@ describe("loadMobileTrainingTab", () => {
       [],
     );
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget).toBeUndefined();
   });
@@ -513,7 +533,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.workloadRatio).toBeNull();
   });
@@ -529,7 +549,7 @@ describe("loadMobileTrainingTab", () => {
       endDateExclusive: "2026-03-20",
     };
 
-    await loadMobileTrainingTab(makeCtx(query, accessWindow), 30, "2026-03-28");
+    await loadMobileTrainingTabV2(makeCtx(query, accessWindow), 30, "2026-03-28");
 
     const strainQuery = query.mock.calls.find((call) =>
       String(call[1]).includes("analytics.daily_strain"),
@@ -565,7 +585,7 @@ describe("loadMobileTrainingTab", () => {
     const query = makeQuery();
     await mockTrainingRepos();
 
-    await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     const dashboardQueryCalls = query.mock.calls.filter((call) =>
       ["analytics.daily_strain", "analytics.daily_recovery"].some((readModelName) =>
@@ -597,7 +617,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.workloadRatio.displayedDate).toBe("2026-03-28");
     expect(result.strainTarget.progressPercent).toBeGreaterThan(0);
@@ -607,7 +627,7 @@ describe("loadMobileTrainingTab", () => {
     const query = makeQuery();
     await mockTrainingRepos();
 
-    await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     const strainQuery = query.mock.calls.find((call) =>
       String(call[1]).includes("analytics.daily_strain"),
@@ -643,7 +663,7 @@ describe("loadMobileTrainingTab", () => {
       ],
     );
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.readinessScore).toBeGreaterThan(62);
   });
@@ -674,7 +694,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.dailyLoad).toBe(70);
     expect(result.strainTarget.acuteLoad).toBe(20);
@@ -701,7 +721,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.dailyLoad).toBe(42);
     expect(result.strainTarget.currentStrain).toBe(StrainScore.fromRawLoad(42).value);
@@ -719,7 +739,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.progressPercent).toBeGreaterThan(0);
     expect(result.strainTarget.progressPercent).toBeLessThanOrEqual(200);
@@ -737,7 +757,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.acuteLoad).toBe(0);
     expect(result.strainTarget.chronicLoad).toBe(2.5);
@@ -755,7 +775,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.acuteLoad).toBe(10);
   });
@@ -779,7 +799,7 @@ describe("loadMobileTrainingTab", () => {
       },
     ]);
 
-    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+    const result = await loadMobileTrainingTabV2(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.dailyLoad).toBe(125.7);
     expect(result.strainTarget.currentStrain).toBe(StrainScore.fromRawLoad(125.7).value);

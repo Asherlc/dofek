@@ -342,7 +342,7 @@ const mockActivityImagesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
-const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockMobileTrainingInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingStrengthsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
 
@@ -415,6 +415,9 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      mobileDashboard: {
+        trainingV2: { invalidate: mockMobileTrainingInvalidate },
+      },
       activity: {
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
@@ -435,7 +438,6 @@ vi.mock("../../lib/trpc", () => ({
         activityLogEntries: { invalidate: mockClimbingEntriesInvalidate },
         unattachedClimbingLogEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
-        gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
         strengths: { invalidate: mockClimbingStrengthsInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
       },
@@ -617,7 +619,7 @@ beforeEach(() => {
   mockClimbingEntriesInvalidate.mockClear();
   mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
-  mockClimbingGradeProgressionInvalidate.mockClear();
+  mockMobileTrainingInvalidate.mockClear();
   mockClimbingStrengthsInvalidate.mockClear();
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
@@ -1322,7 +1324,7 @@ describe("ActivityDetailScreen", () => {
       });
       expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
-      expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
+      expect(mockMobileTrainingInvalidate).toHaveBeenCalledWith();
       expect(mockClimbingStrengthsInvalidate).toHaveBeenCalledWith();
       expect(mockClimbingVolumeByGradeInvalidate).toHaveBeenCalledWith();
     });

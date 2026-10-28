@@ -85,7 +85,7 @@ export default function StrainScreen() {
     hasCommittedHydratedRange.current = isHydrated;
   }, [isHydrated]);
 
-  const trainingQuery = trpc.mobileDashboard.training.useQuery(
+  const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
       enabled: isHydrated,
@@ -230,7 +230,7 @@ export default function StrainScreen() {
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
-        utils.mobileDashboard.training.invalidate(),
+        utils.mobileDashboard.trainingV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),

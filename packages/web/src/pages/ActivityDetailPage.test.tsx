@@ -458,7 +458,7 @@ vi.mock("../lib/trpc.ts", () => ({
         activityLogEntries: { invalidate: mockClimbingEntriesInvalidate },
         unattachedClimbingLogEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
-        gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
+        gradeProgressionV2: { invalidate: mockClimbingGradeProgressionInvalidate },
         strengths: { invalidate: mockClimbingStrengthsInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
       },
