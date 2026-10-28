@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers.ts";
 
@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe("ClimbingGradeProgressionChart", () => {
-  it("focuses a solo pitch lane independently of another lane with the same method and grade system", () => {
+  it("labels a solo pitch lane independently of another lane with the same method and grade system", () => {
     render(
       <ClimbingGradeProgressionChart
         data={[
@@ -61,11 +61,10 @@ describe("ClimbingGradeProgressionChart", () => {
         ]}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Focus Lead · Solo · Pitch" }));
-    expect(screen.getByText("Lead · Solo · Pitch")).toBeTruthy();
-    expect(screen.queryByText("Lead")).toBeNull();
+    expect(screen.getByRole("region", { name: "Lead · Solo · Pitch" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Lead" })).toBeTruthy();
   });
-  it("distinguishes retained grade scales in style and focus labels", () => {
+  it("distinguishes retained grade scales in style labels", () => {
     const french = climbingProgressionFixture("route", { ropeMethod: "lead" });
     french.gradeSystem = "french";
     french.grades = french.grades.map((grade, index) => ({
@@ -87,10 +86,8 @@ describe("ClimbingGradeProgressionChart", () => {
         data={[climbingProgressionFixture("route", { ropeMethod: "lead" }), french]}
       />,
     );
-    expect(screen.getByRole("button", { name: "Focus Lead · French" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Focus Lead · Yosemite Decimal System" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Lead · French" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Lead · Yosemite Decimal System" })).toBeTruthy();
   });
   it("retains loading and empty states", () => {
     const { rerender } = render(<ClimbingGradeProgressionChart data={[]} loading />);
@@ -119,10 +116,10 @@ describe("ClimbingGradeProgressionChart", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("button", { name: "Focus Bouldering" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus Top rope" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus Lead · Aid" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Bouldering" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Top rope" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Lead" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Lead · Aid" })).toBeTruthy();
     const option = boulderOption();
     expect(option.xAxis).toMatchObject({ show: true, data: ["Jun", "Jul", "Aug"] });
     expect(option.yAxis).toMatchObject({ min: 0, max: 6, interval: 2 });
@@ -154,26 +151,6 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(tooltip).toContain("0.0 sends/day");
     expect(option.tooltip.formatter([{ dataIndex: 2 }])).toContain("No recorded days");
   });
-  it("focuses a style, compares or isolates settings, and returns to the overview", () => {
-    render(
-      <ClimbingGradeProgressionChart
-        data={[
-          climbingProgressionFixture(),
-          climbingProgressionFixture("route", { ropeMethod: "lead" }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Focus Bouldering" }));
-    expect(screen.queryByRole("button", { name: "Focus Lead" })).toBeNull();
-    fireEvent.change(screen.getByRole("combobox", { name: "Setting" }), {
-      target: { value: "outdoor" },
-    });
-    expect(boulderOption().series.every((series) => series.stack === "outdoor")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "All climbs" }));
-    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
-    expect(boulderOption().series.map((series) => series.stack)).toContain("indoor");
-  });
-
   it("marks a known zero differently from an unrecorded period", () => {
     render(<ClimbingGradeProgressionChart data={[climbingProgressionFixture()]} />);
     const outdoor = boulderOption().series.find(
@@ -200,7 +177,7 @@ describe("ClimbingGradeProgressionChart", () => {
       })),
     }));
     render(<ClimbingGradeProgressionChart data={[lane]} />);
-    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Lead" })).toBeTruthy();
     expect(screen.getByText("Unknown setting")).toBeTruthy();
     const tooltip = charts.get("Lead")?.tooltip.formatter([{ dataIndex: 0 }]);
     expect(tooltip).toContain("&lt;test&gt;");

@@ -9,7 +9,6 @@ import {
   climbingProgressionSettings,
   climbingProgressionValueLabel,
 } from "@dofek/training/climbing-progression";
-import { useState } from "react";
 import {
   chartThemeColors,
   dofekAxis,
@@ -55,14 +54,8 @@ function settingSwatch(setting: ClimbingGradeProgressionLane["settings"][number]
   };
 }
 
-function laneOption(
-  lane: ClimbingGradeProgressionLane,
-  selectedSetting: string,
-  laneLabel: string,
-) {
-  const settings = lane.settings.filter(
-    (setting) => selectedSetting === "all" || setting === selectedSetting,
-  );
+function laneOption(lane: ClimbingGradeProgressionLane, laneLabel: string) {
+  const settings = lane.settings;
   return {
     aria: {
       label: {
@@ -157,16 +150,9 @@ export function ClimbingGradeProgressionChart({
   data,
   loading,
 }: ClimbingGradeProgressionChartProps) {
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const [selectedSetting, setSelectedSetting] = useState("all");
   const lanes = climbingProgressionChartLanes(data);
-  const focused = lanes.find((lane) => laneKey(lane) === focusedKey);
-  const visible = focused ? [focused] : lanes;
-  const setting = focused?.settings.some((value) => value === selectedSetting)
-    ? selectedSetting
-    : "all";
   const availableSettings = climbingProgressionSettings.filter((setting) =>
-    visible.some((lane) => lane.settings.includes(setting)),
+    lanes.some((lane) => lane.settings.includes(setting)),
   );
 
   if (lanes.length === 0)
@@ -184,50 +170,20 @@ export function ClimbingGradeProgressionChart({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
         <span>Sends per climbing day</span>
-        {focused ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="min-h-10 rounded border border-border px-3 text-foreground"
-              onClick={() => {
-                setFocusedKey(null);
-                setSelectedSetting("all");
-              }}
-            >
-              All climbs
-            </button>
-            <label className="flex items-center gap-2">
-              Setting
-              <select
-                value={setting}
-                className="min-h-10 rounded border border-border bg-surface px-2 text-foreground"
-                onChange={(event) => setSelectedSetting(event.target.value)}
-              >
-                <option value="all">All</option>
-                {focused.settings.map((setting) => (
-                  <option key={setting} value={setting}>
-                    {climbingProgressionSettingLabels[setting]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            {availableSettings.map((setting) => (
-              <span key={setting} className="inline-flex items-center gap-1.5">
-                <span
-                  className="inline-block h-3 w-3 rounded-sm"
-                  style={settingSwatch(setting)}
-                  aria-hidden="true"
-                />
-                {climbingProgressionSettingLabels[setting]}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {availableSettings.map((setting) => (
+            <span key={setting} className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-block h-3 w-3 rounded-sm"
+                style={settingSwatch(setting)}
+                aria-hidden="true"
+              />
+              {climbingProgressionSettingLabels[setting]}
+            </span>
+          ))}
+        </div>
       </div>
-      {visible.map((lane) => (
+      {lanes.map((lane) => (
         <section
           key={laneKey(lane)}
           aria-label={climbingProgressionLaneLabel(lane, lanes)}
@@ -251,23 +207,10 @@ export function ClimbingGradeProgressionChart({
                 </span>
               ))}
             </div>
-            {!focused && (
-              <button
-                type="button"
-                aria-label={`Focus ${climbingProgressionLaneLabel(lane, lanes)}`}
-                className="min-h-10 rounded px-3 text-xs font-medium text-accent hover:bg-surface-hover"
-                onClick={() => {
-                  setFocusedKey(laneKey(lane));
-                  setSelectedSetting("all");
-                }}
-              >
-                Focus ↗
-              </button>
-            )}
           </div>
           <DofekChart
-            option={laneOption(lane, setting, climbingProgressionLaneLabel(lane, lanes))}
-            height={focused ? 300 : 170}
+            option={laneOption(lane, climbingProgressionLaneLabel(lane, lanes))}
+            height={170}
           />
         </section>
       ))}

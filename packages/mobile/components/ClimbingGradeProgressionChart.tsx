@@ -25,16 +25,9 @@ function laneKey(lane: ClimbingGradeProgressionLane) {
 }
 
 export function ClimbingGradeProgressionChart({ data, loading }: Props) {
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const [selectedSetting, setSelectedSetting] = useState("all");
   const lanes = climbingProgressionChartLanes(data);
-  const focused = lanes.find((lane) => laneKey(lane) === focusedKey);
-  const visible = focused ? [focused] : lanes;
-  const setting = focused?.settings.some((value) => value === selectedSetting)
-    ? selectedSetting
-    : "all";
   const availableSettings = climbingProgressionSettings.filter((setting) =>
-    visible.some((lane) => lane.settings.includes(setting)),
+    lanes.some((lane) => lane.settings.includes(setting)),
   );
   if (lanes.length === 0)
     return (
@@ -46,85 +39,32 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
   return (
     <View style={styles.stack}>
       <Text style={styles.caption}>Sends per climbing day</Text>
-      {focused ? (
-        <View style={styles.controls}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="All climbs"
-            style={styles.button}
-            onPress={() => {
-              setFocusedKey(null);
-              setSelectedSetting("all");
-            }}
-          >
-            <Text style={styles.buttonText}>All climbs</Text>
-          </Pressable>
-          {[
-            { value: "all", label: "All settings", accessibilityLabel: "All settings" },
-            ...focused.settings.map((value) => ({
-              value,
-              label: climbingProgressionSettingLabels[value],
-              accessibilityLabel: climbingProgressionSettingLabels[value],
-            })),
-          ].map(({ value, label, accessibilityLabel }) => (
-            <Pressable
-              key={value}
-              accessibilityRole="button"
-              accessibilityLabel={accessibilityLabel}
-              accessibilityState={{ selected: setting === value }}
-              style={[styles.button, setting === value && styles.selectedButton]}
-              onPress={() => setSelectedSetting(value)}
-            >
-              <Text style={styles.buttonText}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.legend}>
-          {availableSettings.map((setting) => (
-            <Text key={setting} style={styles.caption}>
-              {setting === "indoor" ? "■" : setting === "outdoor" ? "▨" : "▦"}{" "}
-              {climbingProgressionSettingLabels[setting]}
-            </Text>
-          ))}
-        </View>
-      )}
-      {visible.map((lane) => (
+      <View style={styles.legend}>
+        {availableSettings.map((setting) => (
+          <Text key={setting} style={styles.caption}>
+            {setting === "indoor" ? "■" : setting === "outdoor" ? "▨" : "▦"}{" "}
+            {climbingProgressionSettingLabels[setting]}
+          </Text>
+        ))}
+      </View>
+      {lanes.map((lane) => (
         <ClimbingLane
           key={laneKey(lane)}
           lane={lane}
           label={climbingProgressionLaneLabel(lane, lanes)}
-          setting={setting}
-          focused={Boolean(focused)}
-          onFocus={() => {
-            setFocusedKey(laneKey(lane));
-            setSelectedSetting("all");
-          }}
         />
       ))}
     </View>
   );
 }
 
-function ClimbingLane({
-  lane,
-  label,
-  setting,
-  focused,
-  onFocus,
-}: {
-  lane: ClimbingGradeProgressionLane;
-  label: string;
-  setting: string;
-  focused: boolean;
-  onFocus: () => void;
-}) {
+function ClimbingLane({ lane, label }: { lane: ClimbingGradeProgressionLane; label: string }) {
   const [width, setWidth] = useState(0);
   const [selectedPeriodStart, setSelectedPeriodStart] = useState<string | null>(null);
   const selectedPeriod = lane.periods.find((period) => period.startDate === selectedPeriodStart);
   const patternId = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const settings = lane.settings.filter((value) => setting === "all" || value === setting);
-  const plotHeight = focused ? 210 : 125;
+  const settings = lane.settings;
+  const plotHeight = 125;
   const left = 28;
   const top = 12;
   const baseline = top + plotHeight;
@@ -154,16 +94,6 @@ function ClimbingLane({
     <View style={styles.lane}>
       <View style={styles.laneHeader}>
         <Text style={styles.title}>{label}</Text>
-        {!focused && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Focus ${label}`}
-            onPress={onFocus}
-            style={styles.focusButton}
-          >
-            <Text style={styles.buttonText}>Focus ↗</Text>
-          </Pressable>
-        )}
       </View>
       <View style={styles.legend}>
         {lane.grades.map(({ grade }, index) => (
@@ -309,7 +239,7 @@ function ClimbingLane({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close period details"
-              style={styles.focusButton}
+              style={styles.closeButton}
               onPress={() => setSelectedPeriodStart(null)}
             >
               <Text style={styles.buttonText}>Close</Text>
@@ -341,21 +271,11 @@ const styles = StyleSheet.create({
   caption: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
   title: { color: colors.text, fontSize: 14, fontWeight: "600", flexShrink: 1 },
   empty: { color: colors.textTertiary, fontSize: 13, paddingVertical: 24, textAlign: "center" },
-  controls: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   legend: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   gradeLegend: { flexDirection: "row", alignItems: "center", gap: 4 },
   swatch: { width: 10, height: 10, borderRadius: 2 },
-  button: {
-    minHeight: 44,
-    paddingHorizontal: 10,
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-    borderRadius: 8,
-  },
-  selectedButton: { borderColor: colors.accent },
   buttonText: { color: colors.accent, fontSize: 12, fontWeight: "600" },
-  focusButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: "center" },
+  closeButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: "center" },
   lane: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.surfaceSecondary,

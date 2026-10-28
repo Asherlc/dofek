@@ -5,7 +5,7 @@ import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 describe("ClimbingGradeProgressionChart", () => {
-  it("focuses a solo pitch lane independently of another lane with the same method and grade system", () => {
+  it("distinguishes solo pitch lanes with the same method and grade system", () => {
     render(
       <ClimbingGradeProgressionChart
         data={[
@@ -18,11 +18,10 @@ describe("ClimbingGradeProgressionChart", () => {
         ]}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Focus Lead · Solo · Pitch" }));
     expect(screen.getByText("Lead · Solo · Pitch")).toBeTruthy();
-    expect(screen.queryByText("Lead")).toBeNull();
+    expect(screen.getByText("Lead")).toBeTruthy();
   });
-  it("distinguishes retained grade scales in style and focus labels", () => {
+  it("distinguishes retained grade scales in style labels", () => {
     const french = climbingProgressionFixture("route", { ropeMethod: "lead" });
     french.gradeSystem = "french";
     french.grades = [{ grade: "6c", gradeSortValue: 65 }];
@@ -38,10 +37,8 @@ describe("ClimbingGradeProgressionChart", () => {
         data={[climbingProgressionFixture("route", { ropeMethod: "lead" }), french]}
       />,
     );
-    expect(screen.getByRole("button", { name: "Focus Lead · French" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Focus Lead · Yosemite Decimal System" }),
-    ).toBeTruthy();
+    expect(screen.getByText("Lead · French")).toBeTruthy();
+    expect(screen.getByText("Lead · Yosemite Decimal System")).toBeTruthy();
   });
   it("keeps selected period details current after a refresh and hides removed periods", () => {
     const { rerender } = render(
@@ -84,32 +81,14 @@ describe("ClimbingGradeProgressionChart", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("button", { name: "Focus Bouldering" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus Top rope" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus Lead · Aid" })).toBeTruthy();
+    expect(screen.getByText("Bouldering")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getByText("Lead")).toBeTruthy();
+    expect(screen.getByText("Lead · Aid")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "View Bouldering data" }));
     expect(screen.getByText("2.0 sends/day · 4 sends · 2 recorded days")).toBeTruthy();
     expect(screen.getByText("0.0 sends/day · 0 sends · 1 recorded day")).toBeTruthy();
     expect(screen.getAllByText("No recorded days")).toHaveLength(2);
-  });
-  it("focuses a style and isolates outdoor records without changing the server values", () => {
-    render(
-      <ClimbingGradeProgressionChart
-        data={[
-          climbingProgressionFixture(),
-          climbingProgressionFixture("route", { ropeMethod: "lead" }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Focus Bouldering" }));
-    expect(screen.queryByRole("button", { name: "Focus Lead" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Outdoor" }));
-    fireEvent.click(screen.getByRole("button", { name: "View Bouldering data" }));
-    expect(screen.getByText("0.0 sends/day · 0 sends · 1 recorded day")).toBeTruthy();
-    expect(screen.queryByText("2.0 sends/day · 4 sends · 2 recorded days")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "All climbs" }));
-    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
   });
   it("preserves unknown settings and explains unrecorded outcomes", () => {
     const lane = climbingProgressionFixture("route", { ropeMethod: "lead" });
@@ -123,7 +102,7 @@ describe("ClimbingGradeProgressionChart", () => {
       })),
     }));
     render(<ClimbingGradeProgressionChart data={[lane]} />);
-    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
+    expect(screen.getByText("Lead")).toBeTruthy();
     expect(screen.getByText(/Unknown setting/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "View Lead data" }));
     expect(screen.getByText(/1 outcome unrecorded/)).toBeTruthy();
