@@ -9,6 +9,8 @@ import {
   queryClinicalRecords,
   queryDailyStatistics,
   queryQuantitySamples,
+  queryRunningStepChanges,
+  queryRunningStepSamples,
   querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
@@ -429,6 +431,8 @@ export const defaultAppleHealthAdapter: HealthKitAdapter = {
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,
+  queryRunningStepSamples,
+  queryRunningStepChanges,
   querySleepSamples,
   queryWorkoutRoutes,
 };

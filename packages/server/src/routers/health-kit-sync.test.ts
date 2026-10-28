@@ -64,9 +64,12 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   ProviderActivityListSync: class {
     upsert = providerActivitySyncMocks.upsert;
     reconcile = providerActivitySyncMocks.reconcile;
+    trackPresent = vi.fn();
   },
   finishProviderActivityListSync: vi.fn(),
-  upsertProviderActivity: vi.fn(),
+  upsertProviderActivity: (db: unknown, values: unknown, update: unknown) =>
+    providerActivitySyncMocks.upsert(values, update, db),
+  markProviderActivityPresent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -147,6 +150,86 @@ describe("healthKitSyncRouter", () => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
       return publishedRows;
+    });
+  });
+
+  describe("pushRunningStepSamples", () => {
+    const userId = "00000000-0000-0000-0000-000000000001";
+    const workout = {
+      uuid: "00000000-0000-4000-8000-000000000201",
+      workoutType: "37",
+      startDate: "2024-01-15T10:00:00Z",
+      endDate: "2024-01-15T11:00:00Z",
+      duration: 3600,
+      totalDistance: null,
+      sourceName: "Watch",
+      sourceBundle: "watch",
+    };
+    const sample = {
+      ...makeSample({
+        uuid: "00000000-0000-4000-8000-000000000202",
+        value: 3.5,
+        endDate: "2024-01-15T10:00:01.250Z",
+      }),
+      workoutUuids: [workout.uuid],
+    };
+    it("publishes raw intervals once with merged associations and parent deletion identity", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      const result = await caller.pushRunningStepSamples({
+        workouts: [workout],
+        samples: [sample, sample],
+      });
+      expect(result).toEqual({ inserted: 1 });
+      expect(publishedMetricStreamRows()).toEqual([
+        expect.objectContaining({
+          userId,
+          providerId: "apple_health",
+          externalId: `hk:${sample.uuid}`,
+          channel: "step_count",
+          scalar: 3.5,
+          recordedAt: sample.startDate,
+          metadata: {
+            interval_end: "2024-01-15T10:00:01.250Z",
+            source_bundle: sample.sourceBundle,
+            workout_uuids: [workout.uuid],
+          },
+        }),
+      ]);
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+    it.each([
+      { value: -1 },
+      { value: Infinity },
+      { unit: "statistics" },
+      { endDate: sample.startDate },
+      { workoutUuids: [] },
+      { workoutUuids: ["00000000-0000-4000-8000-000000000999"] },
+    ])("rejects malformed raw observation %j", async (overrides) => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      await expect(
+        caller.pushRunningStepSamples({
+          workouts: [workout],
+          samples: [{ ...sample, ...overrides }],
+        }),
+      ).rejects.toThrow();
+      expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    });
+    it("rejects non-running contexts", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      await expect(
+        caller.pushRunningStepSamples({
+          workouts: [{ ...workout, workoutType: "52" }],
+          samples: [sample],
+        }),
+      ).rejects.toThrow(/running/i);
+    });
+    it("reports publisher failures and fails the mutation for retry", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      mockMetricStreamPublishRows.mockRejectedValue(new Error("broker unavailable"));
+      await expect(
+        caller.pushRunningStepSamples({ workouts: [workout], samples: [sample] }),
+      ).rejects.toThrow(/retry/i);
+      expect(mockSentryCaptureException).toHaveBeenCalled();
     });
   });
 

@@ -411,6 +411,14 @@ vi.mock("../../modules/health-kit", async () => {
     queryQuantitySamples: vi.fn(),
     querySleepSamples: vi.fn(),
     queryWorkoutRoutes: vi.fn(),
+    queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+    queryRunningStepChanges: vi.fn().mockResolvedValue({
+      hasMore: false,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: null,
+    }),
     queryWorkouts: vi.fn(),
     requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   };

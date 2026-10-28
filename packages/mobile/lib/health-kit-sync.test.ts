@@ -72,6 +72,7 @@ describe("syncHealthKitToServer", () => {
         deleteQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ deleted: 1 }),
         },
+        pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
         pushWorkouts: {
           mutate: vi.fn().mockResolvedValue({ inserted: 2 }),
         },
@@ -108,6 +109,14 @@ describe("syncHealthKitToServer", () => {
         deletedUUIDs: [],
       }),
       completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+      queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+      queryRunningStepChanges: vi.fn().mockResolvedValue({
+        hasMore: false,
+        workouts: [],
+        samples: [],
+        deletedUUIDs: [],
+        queryId: null,
+      }),
       queryWorkouts: vi.fn().mockResolvedValue([
         {
           uuid: "workout-1",
@@ -150,6 +159,175 @@ describe("syncHealthKitToServer", () => {
       }),
     );
   });
+
+  it("syncs raw running snapshots and historical deltas separately from daily totals", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const workout = {
+      uuid: "run",
+      workoutType: "37",
+      startDate: "2020-01-01T10:00:00Z",
+      endDate: "2020-01-01T11:00:00Z",
+      duration: 3600,
+      totalDistance: null,
+      sourceName: "Watch",
+      sourceBundle: "watch",
+    };
+    const raw = {
+      uuid: "steps",
+      type: "HKQuantityTypeIdentifierStepCount",
+      value: 3,
+      unit: "count",
+      startDate: "2020-01-01T10:00:00Z",
+      endDate: "2020-01-01T10:00:01Z",
+      sourceName: "Watch",
+      sourceBundle: "watch",
+      workoutUuids: ["run"],
+    };
+    healthKit.queryRunningStepSamples.mockResolvedValue({ workouts: [workout], samples: [raw] });
+    healthKit.queryRunningStepChanges.mockResolvedValue({
+      hasMore: false,
+      workouts: [workout],
+      samples: [raw],
+      deletedUUIDs: ["old-parent"],
+      queryId: "steps-anchor",
+    });
+    client.healthKitSync.deleteQuantitySamples.mutate.mockResolvedValue({ deleted: 1 });
+    const result = await syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: 7 });
+    expect(healthKit.queryRunningStepSamples).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushRunningStepSamples.mutate).toHaveBeenCalledWith({
+      workouts: [workout],
+      samples: [raw],
+    });
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledWith({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      deletedUUIDs: ["old-parent"],
+    });
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "steps-anchor",
+      true,
+    );
+    expect(result.deleted).toBe(1);
+    expect(
+      client.healthKitSync.pushQuantitySamples.mutate.mock.calls
+        .flatMap(([input]) => input.samples)
+        .every((sample) => sample.uuid !== "steps"),
+    ).toBe(true);
+  });
+
+  it("rejects incomplete raw workout context before committing a step cursor", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryRunningStepChanges.mockResolvedValue({
+      hasMore: false,
+      workouts: [],
+      samples: [{ uuid: "missing-context", workoutUuids: ["run"] }],
+      deletedUUIDs: [],
+      queryId: "pending",
+    });
+    await expect(
+      syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: ["HKQuantityTypeIdentifierStepCount"],
+      }),
+    ).rejects.toThrow(/workout context/i);
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "pending",
+      false,
+    );
+  });
+
+  it("applies device erasure cutoff to raw contexts and child intervals", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cutoff = "2026-03-21T07:00:00Z";
+    const workouts = [
+      { uuid: "old", startDate: cutoff },
+      { uuid: "new", startDate: "2026-03-21T08:00:00Z" },
+    ];
+    const samples = [
+      { uuid: "old-child", startDate: cutoff, workoutUuids: ["new"] },
+      { uuid: "erased-workout-child", startDate: "2026-03-21T08:00:01Z", workoutUuids: ["old"] },
+      { uuid: "kept", startDate: "2026-03-21T08:00:01Z", workoutUuids: ["new"] },
+    ];
+    healthKit.queryRunningStepSamples.mockResolvedValue({ workouts, samples });
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierStepCount"],
+      minimumSampleDate: cutoff,
+    });
+    expect(client.healthKitSync.pushRunningStepSamples.mutate).toHaveBeenCalledWith({
+      workouts: [{ ...workouts[1], totalDistance: null }],
+      samples: [samples[2]],
+    });
+    expect(healthKit.queryRunningStepChanges).toHaveBeenCalledWith(cutoff);
+  });
+
+  it.each(["HKWorkoutTypeIdentifier", "HKQuantityTypeIdentifierStepCount"])(
+    "refreshes associated raw steps on %s observer delivery",
+    async (typeIdentifier) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      await syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: [typeIdentifier],
+      });
+      expect(healthKit.queryRunningStepSamples).toHaveBeenCalledTimes(1);
+      expect(healthKit.queryRunningStepChanges).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["upload", "delete", "read"])(
+    "does not commit step anchor on %s failure",
+    async (stage) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const error = new Error("raw steps failed");
+      healthKit.queryRunningStepChanges.mockResolvedValue({
+        hasMore: false,
+        workouts: [],
+        samples: [],
+        deletedUUIDs: ["old"],
+        queryId: "pending",
+      });
+      if (stage === "upload") {
+        healthKit.queryRunningStepChanges.mockResolvedValue({
+          hasMore: false,
+          workouts: [{ uuid: "run", startDate: "2026-03-21T07:00:00Z" }],
+          samples: [{ uuid: "steps", workoutUuids: ["run"], startDate: "2026-03-21T07:00:00Z" }],
+          deletedUUIDs: [],
+          queryId: "pending",
+        });
+        client.healthKitSync.pushRunningStepSamples.mutate.mockRejectedValue(error);
+      }
+      if (stage === "delete")
+        client.healthKitSync.deleteQuantitySamples.mutate.mockRejectedValue(error);
+      if (stage === "read") healthKit.queryRunningStepChanges.mockRejectedValue(error);
+      await expect(
+        syncHealthKitObserverChanges({
+          trpcClient: client,
+          healthKit,
+          typeIdentifiers: ["HKQuantityTypeIdentifierStepCount"],
+        }),
+      ).rejects.toBe(error);
+      expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalledWith(
+        "HKQuantityTypeIdentifierStepCount",
+        "pending",
+        true,
+      );
+      if (stage !== "read")
+        expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+          "HKQuantityTypeIdentifierStepCount",
+          "pending",
+          false,
+        );
+    },
+  );
 
   it("queries all quantity types and pushes to server", async () => {
     const client = createMockClient();
@@ -1034,6 +1212,7 @@ describe("syncHealthKitObserverChanges", () => {
         deleteQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ deleted: 1 }),
         },
+        pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
         pushWorkouts: {
           mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
         },
@@ -1070,6 +1249,14 @@ describe("syncHealthKitObserverChanges", () => {
         deletedUUIDs: ["heart-rate-deleted"],
       }),
       completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+      queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+      queryRunningStepChanges: vi.fn().mockResolvedValue({
+        hasMore: false,
+        workouts: [],
+        samples: [],
+        deletedUUIDs: [],
+        queryId: null,
+      }),
       queryWorkouts: vi.fn().mockResolvedValue([]),
       querySleepSamples: vi.fn().mockResolvedValue([]),
       queryWorkoutRoutes: vi.fn().mockResolvedValue([]),

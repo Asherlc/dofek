@@ -80,6 +80,47 @@ without revealing a denied read permission, so a successful sync does not prove
 that the watch recorded these measurements
 ([Apple authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
 
+## Associated Running Step Intervals
+
+`queryRunningStepSamples(startDate, endDate)` returns `{ workouts, samples }`.
+Each `RunningStepSample` retains a real count, exact start/end interval, parent
+UUID, source name/bundle, and `workoutUuids`. Collection uses only steps explicitly
+associated with running workouts through Apple's
+[workout association predicate](https://developer.apple.com/documentation/healthkit/hkquery/predicateforobjects(from:)-5irg9),
+then enumerates their original quantities with the
+[quantity series descriptor](https://developer.apple.com/documentation/healthkit/hkquantityseriessamplequerydescriptor).
+Associations are merged per child, including adjacent running contexts outside
+the initial range; discovering these contexts does not expand the selected raw
+parent set. All-day deduplicated statistics retain their existing daily upload
+route, since associated running steps cover a different subset of observations.
+
+`queryRunningStepChanges(initialStartDate)` also returns `deletedUUIDs` and a
+pending `queryId` and required `hasMore`. Discovery pages contain at most 500
+added/deleted parents. The client acknowledges each successful page and continues
+while `hasMore` is true, including pages with no associated running observations.
+A later failure preserves the last committed page cursor. Added parents discover
+associated historical running workouts;
+range snapshots on full, workout and step observer sync recover associations
+that arrive after the parent. The StepCount anchor commits only after snapshot,
+addition uploads and parent deletions succeed, following Apple's
+[anchored-query lifecycle](https://developer.apple.com/documentation/healthkit/hkanchoredobjectquery).
+The device erasure cutoff applies to contexts and raw observations.
+
+The dedicated `healthKitSync.pushRunningStepSamples` mutation accepts the original
+workout contexts additively and preserves manual activity deletions. It publishes
+raw `step_count` events with parent `hk:<UUID>` identity and metadata
+`interval_end`, `source_bundle`, `workout_uuids`; it computes no cadence or workout
+step total. Parent deletions tombstone only the raw step channel. Context upserts
+and user ownership follow the existing
+[provider activity upsert](../../../../src/db/provider-activity-sync.ts) and
+[guarded presence restoration](../../../../src/db/provider-activity-absence.ts).
+
+Previously omitted observations still require an updated native release,
+HealthKit authorization and an explicit history sync. An OTA update cannot add
+native methods ([Expo runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)),
+and empty HealthKit results do not establish whether read access was denied
+([Apple authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
+
 ## Background Observer Completion
 
 Each native observer delivery receives a unique update ID and retains its

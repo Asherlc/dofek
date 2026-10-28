@@ -3,6 +3,9 @@ import type {
   DailyStatistic,
   HealthKitSample,
   RouteLocation,
+  RunningStepChanges,
+  RunningStepSample,
+  RunningStepSnapshot,
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
@@ -11,6 +14,7 @@ import {
   isBackgroundHealthKitTransientNetworkError,
   isHealthKitDatabaseInaccessible,
 } from "./health-kit-errors";
+import { syncRunningSteps } from "./health-kit-running-steps-sync";
 import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
@@ -166,6 +170,8 @@ function isAuthorizationNotDetermined(error: unknown): boolean {
 
 /** Abstraction over HealthKit native module for testability */
 export interface HealthKitAdapter {
+  queryRunningStepSamples(startDate: string, endDate: string): Promise<RunningStepSnapshot>;
+  queryRunningStepChanges(initialStartDate: string): Promise<RunningStepChanges>;
   completeAnchoredQuery(typeId: string, queryId: string, succeeded: boolean): Promise<boolean>;
   queryAnchoredSamples(
     typeId: string,
@@ -237,6 +243,12 @@ export interface SyncTrpcClient {
         typeIdentifier: string;
       }): Promise<{ deleted: number }>;
     };
+    pushRunningStepSamples: {
+      mutate(input: {
+        workouts: WorkoutSample[];
+        samples: RunningStepSample[];
+      }): Promise<{ inserted: number }>;
+    };
     pushWorkouts: {
       mutate(input: {
         workouts: WorkoutSample[];
@@ -279,6 +291,9 @@ export interface HealthKitSyncStage {
     | "queryCategorySamples"
     | "queryQuantitySamples"
     | "pushQuantitySamples"
+    | "queryRunningStepSamples"
+    | "queryRunningStepChanges"
+    | "pushRunningStepSamples"
     | "queryWorkouts"
     | "pushWorkouts"
     | "queryWorkoutRoutes"
@@ -530,6 +545,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     }
   }
 
+  const runningSteps = await syncRunningSteps(
+    { trpcClient, healthKit, minimumSampleDate, onStage },
+    startDate,
+    endDate,
+  );
+  totalInserted += runningSteps.inserted;
+
   // Sync sleep
   onProgress?.("Querying sleep...");
   onStage?.({ operation: "querySleepSamples" });
@@ -583,7 +605,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     }
   }
 
-  return { deleted: 0, inserted: totalInserted, errors };
+  return { deleted: runningSteps.deleted, inserted: totalInserted, errors };
 }
 
 export interface ObserverSyncOptions {
@@ -865,6 +887,16 @@ export async function syncHealthKitObserverChanges(
     const result = await syncObserverWorkouts(options, startDate, endDate);
     inserted += result.inserted;
     errors.push(...result.errors);
+  }
+
+  if (
+    typeIdentifiers.has("HKQuantityTypeIdentifierStepCount") ||
+    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
+    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
+  ) {
+    const result = await syncRunningSteps(options, startDate, endDate);
+    inserted += result.inserted;
+    deleted += result.deleted;
   }
 
   if (typeIdentifiers.has(SLEEP_TYPE_IDENTIFIER)) {

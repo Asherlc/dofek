@@ -38,9 +38,11 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
     }
     upsert = providerActivitySyncMocks.upsert;
     reconcile = providerActivitySyncMocks.reconcile;
+    trackPresent = vi.fn();
   },
   finishProviderActivityListSync: vi.fn(),
-  upsertProviderActivity: vi.fn(),
+  upsertProviderActivity: (db: unknown, values: unknown, update: unknown) =>
+    providerActivitySyncMocks.upsert(values, update, db),
 }));
 
 vi.mock("../../../../src/providers/apple-health/hang-ten-intervals.ts", () => ({

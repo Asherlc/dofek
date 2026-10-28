@@ -342,6 +342,72 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        AsyncFunction("queryRunningStepSamples") { (startDateStr: String, endDateStr: String, promise: Promise) in
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                self.rejectPromise(promise, code: "INVALID_DATE", reason: "Invalid running step snapshot date")
+                return
+            }
+            Task {
+                do {
+                    let queryStart = self.effectiveStartDate(startDate)
+                    if queryStart >= endDate {
+                        promise.resolve(["workouts": [], "samples": []])
+                        return
+                    }
+                    let workouts = try await self.runningWorkouts(
+                        predicate: HealthKitQueries.datePredicate(start: queryStart, end: endDate))
+                    let snapshot = try await HealthKitRunningStepTransport.read(workouts: workouts,
+                        shouldInclude: { self.accountStateStore.shouldInclude(sampleDate: $0) }, store: self.healthStore)
+                    promise.resolve(["workouts": snapshot.workouts, "samples": snapshot.samples])
+                } catch {
+                    self.rejectHealthKitError(promise, operation: "queryRunningStepSamples", fallbackCode: "QUERY_ERROR", error: error)
+                }
+            }
+        }
+
+        AsyncFunction("queryRunningStepChanges") { (initialStartDateStr: String, promise: Promise) in
+            guard let initialStart = HealthKitQueries.parseDate(initialStartDateStr) else {
+                self.rejectPromise(promise, code: "INVALID_DATE", reason: "Invalid running step initial date")
+                return
+            }
+            Task {
+                do {
+                    let typeIdentifier = HKQuantityTypeIdentifier.stepCount.rawValue
+                    let pending: HealthKitPendingAnchoredQuery<HealthKitRunningStepDeltaPayload> =
+                        try await self.anchoredQueryCoordinator.run(typeIdentifier: typeIdentifier) { anchor in
+                            let (objects, nextAnchor) = try await self.runningStepObjects(initialStart: initialStart, anchor: anchor)
+                            let parents = objects.added.compactMap { $0 as? HKQuantitySample }.filter {
+                                self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                            }
+                            let snapshot: HealthKitRunningStepSnapshot
+                            if let start = parents.map(\.startDate).min(), let end = parents.map(\.endDate).max() {
+                                // Overlap only discovers candidates; association + parent UUID predicates prove membership.
+                                let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+                                let workouts = try await self.runningWorkouts(predicate: predicate)
+                                snapshot = try await HealthKitRunningStepTransport.read(workouts: workouts,
+                                    parentIds: Set(parents.map(\.uuid)),
+                                    shouldInclude: { self.accountStateStore.shouldInclude(sampleDate: $0) }, store: self.healthStore)
+                            } else {
+                                snapshot = HealthKitRunningStepSnapshot(workouts: [], samples: [])
+                            }
+                            return (HealthKitRunningStepDeltaPayload(snapshot: snapshot,
+                                deletedUUIDs: objects.deleted.map { $0.uuid.uuidString },
+                                addedParentCount: objects.added.count, deletedParentCount: objects.deleted.count), nextAnchor)
+                        }
+                    promise.resolve([
+                        "hasMore": pending.result.hasMore,
+                        "workouts": pending.result.snapshot.workouts,
+                        "samples": pending.result.snapshot.samples,
+                        "deletedUUIDs": pending.result.deletedUUIDs,
+                        "queryId": pending.queryId ?? NSNull(),
+                    ] as [String: Any])
+                } catch {
+                    self.rejectHealthKitError(promise, operation: "queryRunningStepChanges", fallbackCode: "QUERY_ERROR", error: error)
+                }
+            }
+        }
+
         AsyncFunction("queryWorkouts") { (startDateStr: String, endDateStr: String, promise: Promise) in
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
@@ -1337,6 +1403,31 @@ public class HealthKitModule: Module {
             } else {
                 promise.resolve([])
             }
+        }
+    }
+    private func runningWorkouts(predicate: NSPredicate) async throws -> [HKWorkout] {
+        let running = HKQuery.predicateForWorkouts(with: .running)
+        return try await HealthKitRunningStepTransport.querySamples(type: HKWorkoutType.workoutType(),
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [running, predicate]),
+            store: healthStore).compactMap { $0 as? HKWorkout }
+    }
+
+    private func runningStepObjects(initialStart: Date, anchor: HKQueryAnchor?) async throws -> (HealthKitAnchoredObjects, HKQueryAnchor?) {
+        try await withCheckedThrowingContinuation { continuation in
+            let cutoff = accountStateStore.deviceErasureCutoff
+            let predicate: NSPredicate?
+            if anchor == nil {
+                predicate = HealthKitQueries.datePredicate(start: max(initialStart, cutoff ?? initialStart), end: Date())
+            } else {
+                predicate = cutoff.map { HKQuery.predicateForSamples(withStart: $0, end: nil, options: .strictStartDate) }
+            }
+            let query = HKAnchoredObjectQuery(type: HKQuantityType.quantityType(forIdentifier: .stepCount)!,
+                predicate: predicate, anchor: anchor, limit: HealthKitRunningStepTransport.anchoredPageSize
+            ) { _, added, deleted, nextAnchor, error in
+                    if let error { continuation.resume(throwing: error); return }
+                    continuation.resume(returning: (HealthKitAnchoredObjects(added: added ?? [], deleted: deleted ?? []), nextAnchor))
+                }
+            healthStore.execute(query)
         }
     }
 }

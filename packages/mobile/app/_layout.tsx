@@ -382,6 +382,9 @@ function AuthGate() {
         pushQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
         },
+        pushRunningStepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushRunningStepSamples.mutate(input),
+        },
         pushWorkouts: {
           mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
         },

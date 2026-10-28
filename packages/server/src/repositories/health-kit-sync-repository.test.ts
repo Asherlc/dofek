@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
+import { createMetricStreamDeletedEvent } from "../../../../src/metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import {
   HealthKitDeletionTombstonesUnsupportedError,
@@ -58,6 +59,36 @@ describe("HealthKitSyncRepository", () => {
       ).resolves.toBe(1);
       expect(publisher.replaceRows).toHaveBeenCalledWith(
         { userId: "user-1", providerId: "apple_health", externalId: "hk:parent-uuid" },
+        [],
+        "1000000000000000",
+      );
+    });
+
+    it("tombstones only raw step children under the authenticated parent's identity", async () => {
+      const publisher: MetricStreamEventPublisher = {
+        publishRows: vi.fn(async () => []),
+        replaceRows: vi.fn(async (scope, _rows, revision) => ({
+          deleted: createMetricStreamDeletedEvent(scope, revision),
+          rows: [],
+        })),
+      };
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute: vi.fn(async () => []) }),
+        "00000000-0000-0000-0000-000000000001",
+        publisher,
+      );
+      expect(
+        await repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierStepCount", [
+          "parent",
+        ]),
+      ).toBe(1);
+      expect(publisher.replaceRows).toHaveBeenCalledWith(
+        {
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "apple_health",
+          externalId: "hk:parent",
+          channel: "step_count",
+        },
         [],
         "1000000000000000",
       );

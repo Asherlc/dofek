@@ -62,7 +62,10 @@ export class HealthKitSyncRepository {
       return 0;
     }
 
-    if (metricStreamTypes.has(typeIdentifier)) {
+    if (
+      metricStreamTypes.has(typeIdentifier) ||
+      typeIdentifier === "HKQuantityTypeIdentifierStepCount"
+    ) {
       const publisher = await this.#publisher();
       const replaceRows = publisher.replaceRows?.bind(publisher);
       if (!replaceRows) {
@@ -78,6 +81,9 @@ export class HealthKitSyncRepository {
               userId: this.#userId,
               providerId: PROVIDER_ID,
               externalId: `hk:${uuid}`,
+              ...(typeIdentifier === "HKQuantityTypeIdentifierStepCount"
+                ? { channel: "step_count" }
+                : {}),
             },
             [],
             context.operationRevision,

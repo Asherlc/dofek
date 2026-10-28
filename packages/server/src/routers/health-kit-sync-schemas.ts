@@ -43,6 +43,21 @@ export const healthKitSampleSchema = z.object({
   metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
+export const runningStepSampleSchema = healthKitSampleSchema
+  .extend({
+    type: z.literal("HKQuantityTypeIdentifierStepCount"),
+    uuid: z.uuid(),
+    value: z.number().finite().nonnegative(),
+    unit: z.literal("count"),
+    startDate: z.iso.datetime({ offset: true }),
+    endDate: z.iso.datetime({ offset: true }),
+    workoutUuids: z.array(z.uuid()).min(1),
+  })
+  .refine((sample) => Date.parse(sample.endDate) > Date.parse(sample.startDate), {
+    message: "Running step intervals must end after they start. Resync Apple Health steps.",
+  });
+export type RunningStepSample = z.infer<typeof runningStepSampleSchema>;
+
 export const workoutActivitySchema = z.object({
   uuid: z.string(),
   activityType: z.number(),
