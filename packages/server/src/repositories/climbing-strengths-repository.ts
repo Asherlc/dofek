@@ -13,6 +13,7 @@ import {
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import { climbingProgressionLaneKey } from "@dofek/training/climbing-progression";
+import { recordedClimbingTags } from "dofek/climbing-tags";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -151,6 +152,7 @@ export class ClimbingStrengthsRepository extends BaseRepository {
           gradeSortValue: grade?.gradeSortValue ?? 0,
           wallAngle: row.wall_angle,
           holdTypes: row.hold_types,
+          tags: recordedClimbingTags(row.provider_id, row.raw),
           outcome,
           example: {
             logEntryId: row.id,

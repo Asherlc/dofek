@@ -16,7 +16,7 @@ it("requests current traits while rendering a valid old-server climbing response
     recordId: entry.id,
   };
   render(<ProviderRecordDetail input={input} onClose={() => {}} />);
-  expect(useQuery).toHaveBeenCalledWith({ ...input, responseVersion: 2 });
+  expect(useQuery).toHaveBeenCalledWith({ ...input, responseVersion: 3 });
   expect(screen.getByText("Hold types: jug")).toBeInTheDocument();
 });
 

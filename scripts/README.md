@@ -177,6 +177,44 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
   and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
   - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
+- `testflight-deployment.ts`: Detects signed iOS native changes against the
+  latest successful upload receipt, prepares a pending intent immediately before
+  Xcode upload, and finalizes that same deployment after upload succeeds. Uses one GitHub deployment
+  history with environment `testflight` and task `testflight-upload`, independent
+  of the caller workflow's commit or job name. Empty successful history requires
+  a first build; API or malformed-history failures stop the release. A newer
+  unresolved intent blocks publication, including `--force`, and is rechecked
+  inside every uploader attempt. Failed/cancelled uploads stay unresolved because
+  Apple may already have accepted the binary. Only a confirmed success or an
+  operator's `INACTIVE` reconciliation clears that guard; mark an intent inactive
+  only after verifying Apple has no upload or that the upload command never began.
+  Explicit manual publication uses `--force`; automatic releases compare the uploaded and
+  requested source trees, including rollback differences. Git's
+  [NUL-terminated diff output and disabled rename detection](https://git-scm.com/docs/git-diff)
+  preserve unusual filenames and native deletions moved outside native paths.
+  History reads one newest-first page of 100 deployments at a time with each
+  deployment's latest status, continuing by cursor only when needed; GitHub
+  documents the [ordered deployment connection](https://docs.github.com/en/graphql/reference/repos#repository)
+  and [latest-status projection](https://docs.github.com/en/graphql/reference/deployments#deployment).
+  Intent and receipt writes use [exact deployment refs](https://docs.github.com/en/rest/deployments/deployments)
+  and [pending/success statuses](https://docs.github.com/en/rest/deployments/statuses).
+  The receipt records upload success, while Apple separately
+  [processes uploaded builds](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+  before they appear in App Store Connect.
+  `testflight-deployment-cli.ts` supplies the workflow command interface. The
+  finalizer validates the original deployment ID, source SHA, build number and
+  upload-attempt run URL. It checks that deployment's authoritative latest status
+  using the REST response's [global node ID](https://docs.github.com/en/graphql/guides/using-global-node-ids),
+  preserves `INACTIVE` reconciliation, and completes an already `SUCCESS` receipt
+  without another status write. The history read and intent creation are separate
+  API operations; publisher attempts rely on the caller's `deploy-web-production`
+  and reusable `deploy-ios` [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+  rather than an atomic API lock.
+  Rerun only a failed receipt job to finalize the original
+  successful upload without reuploading; the workflow retains those original outputs.
+  - Detection: `pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-source-sha> [--force]`
+  - Prepare, immediately before upload: `pnpm tsx scripts/testflight-deployment-cli.ts prepare <owner/repo> <full-source-sha> <build-number> <upload-attempt-run-url>`
+  - Finalize the same intent, only after a successful upload: `pnpm tsx scripts/testflight-deployment-cli.ts record <owner/repo> <deployment-id> <full-source-sha> <build-number> <upload-attempt-run-url>`
 - `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
   using the same user-bound discovery, comparison, trend, and cycling-performance
   repositories as MCP. It makes no provider network requests and computes no

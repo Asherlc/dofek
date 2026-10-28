@@ -69,6 +69,22 @@ const ready: Context = {
                 scope: "inherited",
                 inheritedFrom: "The Valley",
               },
+              {
+                kind: "other",
+                sourceKey: "movement-1",
+                label: "Source movement",
+                category: "Movement",
+                scope: "direct",
+                inheritedFrom: null,
+              },
+              {
+                kind: "other",
+                sourceKey: "arete",
+                label: "Arête",
+                category: null,
+                scope: "inherited",
+                inheritedFrom: "The Valley",
+              },
             ],
           },
         },
@@ -118,6 +134,8 @@ it("qualifies possible matches, inherited tags, multiple steepness and unknown a
   expect(screen.getByText(/Slab/)).toBeTruthy();
   expect(screen.getByText(/Overhang/)).toBeTruthy();
   expect(screen.getByText(/Crimps \(inherited from The Valley\)/)).toBeTruthy();
+  expect(screen.getByText("Movement: Source movement")).toBeTruthy();
+  expect(screen.getByText("Tag: Arête (inherited from The Valley)")).toBeTruthy();
   expect(screen.getByText("Source angle: 25 (units not supplied)")).toBeTruthy();
   expect(screen.getByText(/Search incomplete/)).toBeTruthy();
 });

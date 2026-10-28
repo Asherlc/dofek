@@ -73,12 +73,12 @@ describe("ClimbingLogAttachment", () => {
       getQueryKey(trpc.climbing.locationMap, { days: 90 }, "query"),
       getQueryKey(
         trpc.climbing.activityLogEntries,
-        { activityId: "activity-1", responseVersion: 2 },
+        { activityId: "activity-1", responseVersion: 3 },
         "query",
       ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "activity-1", responseVersion: 2 },
+        { activityId: "activity-1", responseVersion: 3 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary, { days: 90 }, "query"),

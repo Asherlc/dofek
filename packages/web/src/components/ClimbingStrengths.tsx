@@ -1,6 +1,7 @@
+import { providerLabel } from "@dofek/providers/providers";
 import type {
   ClimbingStrengthsCell,
-  ClimbingStrengthsPanel,
+  ClimbingStrengthsDisplayPanel,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
 import {
@@ -13,6 +14,13 @@ import {
   climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import {
+  climbingStrengthsBreakdownKey,
+  climbingStrengthsBreakdownOptions,
+  climbingStrengthsDefaultBreakdown,
+  climbingStrengthsPanelLabel,
+  climbingStrengthsObserved as observed,
+} from "@dofek/training/climbing-strengths-presentation";
+import {
   CLIMBING_STRENGTHS_TABS,
   type ClimbingStrengthsTab,
 } from "@dofek/training/climbing-strengths-views";
@@ -20,21 +28,6 @@ import { useState } from "react";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
-const dimensions = {
-  wall_angle: "Wall angle",
-  hold_type: "Hold type",
-  setting: "Setting",
-};
-function observed(panel: ClimbingStrengthsPanel) {
-  return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
-}
-function preferred(panels: ClimbingStrengthsPanel[]) {
-  return (
-    panels.find((panel) => panel.dimension === "wall_angle" && observed(panel)) ??
-    panels.find((panel) => panel.dimension === "hold_type" && observed(panel)) ??
-    panels.find((panel) => panel.dimension !== "setting")
-  );
-}
 function rateLabel(cell: ClimbingStrengthsCell) {
   return climbingStrengthsRateLabel(cell);
 }
@@ -47,11 +40,13 @@ export function ClimbingStrengths({
   loading?: boolean;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
-  const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
-    null,
-  );
-  const panels = data?.panels ?? [];
-  const dimension = selectedDimension ?? preferred(panels)?.dimension ?? "wall_angle";
+  const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
+  const options = climbingStrengthsBreakdownOptions(panels);
+  const breakdown = options.some((option) => option.key === selectedBreakdown)
+    ? (selectedBreakdown ?? "wall_angle")
+    : climbingStrengthsDefaultBreakdown(panels);
+  const breakdownLabel = options.find((option) => option.key === breakdown)?.label ?? "Wall angle";
   if (!data && loading)
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   return (
@@ -59,29 +54,23 @@ export function ClimbingStrengths({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <fieldset className="flex flex-wrap gap-2">
           <legend className="mb-2 text-xs text-muted">Break down by</legend>
-          {Object.entries(dimensions)
-            .filter(([item]) => item !== "setting")
-            .map(([item, label]) => (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={dimension === item}
-                className={
-                  "min-h-10 rounded-lg border px-3 text-sm " +
-                  (dimension === item
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border text-muted")
-                }
-                onClick={() => {
-                  const next = panels.find((panel) => panel.dimension === item)?.dimension;
-                  if (next) setDimension(next);
-                  else if (item === "wall_angle" || item === "hold_type" || item === "setting")
-                    setDimension(item);
-                }}
-              >
-                {label}
-              </button>
-            ))}
+          {options.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={breakdown === option.key}
+              className={
+                "min-h-10 rounded-lg border px-3 text-sm " +
+                (breakdown === option.key
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border text-muted")
+              }
+              onClick={() => setBreakdown(option.key)}
+            >
+              {option.providerId ? `${providerLabel(option.providerId)} · ` : ""}
+              {option.label}
+            </button>
+          ))}
         </fieldset>
       </div>
       <fieldset aria-label="Strengths view" className="flex gap-6 border-b border-border">
@@ -104,7 +93,12 @@ export function ClimbingStrengths({
         <p className="text-xs text-muted">Success rates use climbs with known results.</p>
       ) : null}
       {panels.length > 0 ? (
-        <ClimbingStrengthsBreakdown panels={panels} dimension={dimension} view={view} />
+        <ClimbingStrengthsBreakdown
+          panels={panels}
+          breakdown={breakdown}
+          label={breakdownLabel}
+          view={view}
+        />
       ) : null}
     </div>
   );
@@ -112,14 +106,18 @@ export function ClimbingStrengths({
 
 function ClimbingStrengthsBreakdown({
   panels,
-  dimension,
+  breakdown,
+  label,
   view,
 }: {
-  panels: ClimbingStrengthsPanel[];
-  dimension: ClimbingStrengthsPanel["dimension"];
+  panels: ClimbingStrengthsDisplayPanel[];
+  breakdown: string;
+  label: string;
   view: ClimbingStrengthsTab;
 }) {
-  const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
+  const selectedPanels = panels.filter(
+    (panel) => climbingStrengthsBreakdownKey(panel) === breakdown,
+  );
   return (
     <section className="space-y-3">
       {selectedPanels.length ? (
@@ -131,7 +129,7 @@ function ClimbingStrengthsBreakdown({
       ) : (
         <QueryStatePanel
           variant="empty"
-          message={`No recorded ${dimensions[dimension].toLowerCase()} observations for this context.`}
+          message={`No recorded ${label.toLowerCase()} observations for this context.`}
         />
       )}
     </section>
@@ -142,7 +140,7 @@ function ClimbingStrengthsPanelContent({
   panel,
   view,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ClimbingStrengthsTab;
 }) {
   const [selected, setSelected] = useState<{ row: string; grade: string } | null>(null);
@@ -156,8 +154,8 @@ function ClimbingStrengthsPanelContent({
           variant="empty"
           message={
             panel.coverage.missingTraits > 0
-              ? `${dimensions[panel.dimension]} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
-              : `No recorded ${dimensions[panel.dimension].toLowerCase()} observations for this context.`
+              ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
+              : `No recorded ${climbingStrengthsPanelLabel(panel).toLowerCase()} observations for this context.`
           }
         />
       ) : (

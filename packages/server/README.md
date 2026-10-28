@@ -112,6 +112,11 @@ with incomplete power coverage withheld from weekly totals.
   no recorded attempts retain zero counts. All view metrics
   are supplied by this server response, as defined in the
   [shared strengths contract](../training/src/climbing-strengths.ts).
+  Its additive `tagPanels` collection exposes every observed recorded tag
+  category while leaving the original `panels` dimensions unchanged. Tags keep
+  provider/category/source identity; repeated observations contribute one climb
+  per tag. The [source decoder](../../src/climbing-tags.ts) reads existing raw
+  payloads without a migration. Catalogue tags remain reference information.
   The [aggregation](src/services/climbing-strengths.ts) supplies one panel per
   breakdown dimension for the selection made by the existing page filters.
   It retains semantic context and display grade system in same-grade radar
@@ -134,12 +139,14 @@ with incomplete power coverage withheld from weekly totals.
   adds user/provider-scoped PostgreSQL log counts to existing provider statistics.
 - **Climbing response versions**: The existing `climbing.activityLogEntries`,
   `climbing.unattachedClimbingLogEntries`, and `providerDetail.recordDetail`
-  procedures accept `responseVersion: 1 | 2`, defaulting to `1`. Version `1`
+  procedures accept `responseVersion: 1 | 2 | 3`, defaulting to `1`. Version `1`
   projects supported scalar grips and numeric angles; version `2` serves complete
-  plural grips and categorical angles. Canonical repositories remain plural.
-  Updated web/mobile clients request `2` and strictly decode either supported
-  wire shape, allowing independent API and client releases. Raw request inputs
-  separate server cache entries; mobile keeps persisted-cache contract `16` with
+  plural grips and categorical angles. Version `3` adds attributed recorded
+  source tags; earlier versions omit that field. Canonical repositories remain plural.
+  Updated web/mobile clients request `3` and strictly decode all supported
+  wire shapes. Publish the version-3 API before these clients because a server
+  accepting only versions `1` and `2` rejects version `3`. Raw request inputs
+  separate server cache entries; mobile keeps persisted-cache contract `20` with
   versioned query keys. See the
   [serializers and decoders](src/contracts/climbing-log-contracts.ts),
   [shared version policy](../training/src/climbing-log-response.ts), and
@@ -500,10 +507,11 @@ system. See the [progression repository](src/repositories/climbing-progression-r
 [wire contract](src/mcp/climbing-progression-output.ts).
 
 `get_activity_details`, `get_climbing_sessions`, and `get_climbing_progression`
-accept `response_version: 1 | 2`, defaulting to `1` for older consumers. Version
+accept `response_version: 1 | 2 | 3`, defaulting to `1` for older consumers. Version
 projection happens before `jsonToolResult` builds text and structured content.
 Progression log entries use scalar `hold_type` for version `1` and plural
-`hold_types` for version `2`; numeric `wall_angle_degrees` retains its existing
+`hold_types` for versions `2` and `3`; activity/session version `3` also includes
+recorded source tags. Numeric `wall_angle_degrees` retains its existing
 meaning. See the [activity](src/mcp/activity-details-tool.ts),
 [sessions](src/mcp/climbing-sessions-tool.ts), and
 [progression](src/mcp/climbing-progression-tool.ts) tool contracts.

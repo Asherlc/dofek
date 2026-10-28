@@ -258,3 +258,31 @@ it("keeps the monthly chart available across both breakdowns", () => {
     "Evening Arete",
   );
 });
+
+it("selects source categories independently across Styles and Progress", async () => {
+  const { climbingStrengthsTagsFixture: tagged } = await import("./climbing-strengths-fixtures");
+  render(<ClimbingStrengths data={tagged} />);
+  const category = screen.getByRole("button", { name: "Kaya · Movement" });
+  fireEvent.click(category);
+  expect(category.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByText("Exact values"));
+  expect(screen.getAllByText(/Custom movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+  fireEvent.click(screen.getByText("Exact values"));
+  expect(screen.getAllByText(/Custom movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "custom-source · Movement" }));
+  expect(screen.getAllByText(/Other movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Kaya · Session mood" }));
+  expect(screen.getAllByText(/Unfamiliar/).length).toBeGreaterThan(0);
+});
+it("prefers observed tags when wall and hold observations are missing", async () => {
+  const { climbingStrengthsTagsFixture: tagged } = await import("./climbing-strengths-fixtures");
+  render(
+    <ClimbingStrengths
+      data={{ ...tagged, panels: tagged.panels.map((panel) => ({ ...panel, rows: [] })) }}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Kaya · Movement" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+});

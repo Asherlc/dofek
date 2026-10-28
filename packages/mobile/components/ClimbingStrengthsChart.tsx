@@ -1,4 +1,4 @@
-import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import type { ClimbingStrengthsDisplayPanel } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
   climbingStrengthsAdjustedLabel,
@@ -7,6 +7,7 @@ import {
   climbingStrengthsRateLabel,
   climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsPanelLabel } from "@dofek/training/climbing-strengths-presentation";
 import {
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
@@ -18,7 +19,7 @@ import { colors } from "../theme";
 import { AccessibleChart } from "./AccessibleChart";
 
 type ViewKind = ClimbingStrengthsView;
-type Cell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
+type Cell = ClimbingStrengthsDisplayPanel["rows"][number]["cells"][number];
 const palette = [colors.accent, "#bb7944", "#7688bc", "#ad658e", "#5e9d9a", "#9b8b44"];
 function color(index: number) {
   return palette[index % palette.length] ?? colors.accent;
@@ -46,7 +47,7 @@ export function ClimbingStrengthsChart({
   grade,
   onSelect,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ViewKind;
   grade: string;
   onSelect: (rowKey: string, grade: string) => void;
@@ -73,6 +74,7 @@ export function ClimbingStrengthsChart({
       ? panel.progress.flatMap((month) =>
           month.rows.flatMap((row) =>
             row.cells.map((cell) => ({
+              key: JSON.stringify([month.startDate, row.key, cell.grade]),
               label: `${month.startDate}–${month.endDate} · ${panel.rows.find((entry) => entry.key === row.key)?.label ?? row.key} · ${cell.grade}`,
               value: facts(cell),
               onPress: () => onSelect(row.key, cell.grade),
@@ -81,6 +83,7 @@ export function ClimbingStrengthsChart({
         )
       : panel.rows.flatMap((row) =>
           row.cells.map((cell) => ({
+            key: JSON.stringify([row.key, cell.grade]),
             label: adjustedRadar ? row.label : `${row.label} · ${cell.grade}`,
             onPress: () => onSelect(row.key, cell.grade),
             value: adjustedRadar
@@ -148,7 +151,7 @@ export function ClimbingStrengthsChart({
         <>
           <Text style={styles.meta}>
             {panel.coverage.missingTraits > 0
-              ? `${panel.dimension === "wall_angle" ? "Wall angle" : panel.dimension === "hold_type" ? "Hold type" : "Setting"} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
+              ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
               : ""}
             {adjustedRadar
               ? "Log results in at least three styles to see this chart. Your recorded climbs are listed below."
@@ -157,7 +160,7 @@ export function ClimbingStrengthsChart({
           <View accessibilityRole="list" style={styles.container}>
             {exactRows.map((row) => (
               <Pressable
-                key={row.label}
+                key={row.key}
                 accessibilityRole="button"
                 accessibilityLabel={`${row.label}: ${row.value}`}
                 onPress={row.onPress}

@@ -64,7 +64,7 @@ remain unknown, as implemented by the
 Canonical storage and repositories always use plural `holdTypes` and the
 numeric-or-category wall-angle model above. The existing tRPC procedures
 `climbing.activityLogEntries`, `climbing.unattachedClimbingLogEntries`, and
-`providerDetail.recordDetail` accept `responseVersion: 1 | 2`, defaulting to
+`providerDetail.recordDetail` accept `responseVersion: 1 | 2 | 3`, defaulting to
 `1`. For provider records, the version applies to climbing log entries only.
 The [response contract](../packages/server/src/contracts/climbing-log-contracts.ts)
 projects the canonical record at the API boundary; it does not create another
@@ -75,9 +75,16 @@ storage path. Input and output validation follow
 | --- | --- | --- |
 | Omitted or `1` | Scalar `holdType` only: one distinct `crimp`, `sloper`, `pinch`, `pocket`, or `jug` is retained. Multiple grips, newer grip kinds, and unknown grips produce null; no predominant grip is selected. | Numeric objects retain their values and units. Source categories produce null. |
 | `2` | Complete nullable `holdTypes` collection; no scalar alias. | Complete nullable numeric-or-category object. |
+| `3` | Same complete grip collection as `2`, plus attributed recorded `tags`. | Complete nullable numeric-or-category object. |
 
-The updated web and mobile clients request version `2` and strictly validate
-either supported response before rendering the canonical client model.
+The updated web and mobile clients request version `3` and strictly validate
+all three supported responses before rendering the canonical client model.
+Versions `1` and `2` omit the new `tags` field, preserving their strict client
+contracts. Deploy the version-3 API before publishing these updated clients:
+an intermediate API that explicitly accepts only versions `1` and `2` rejects
+a version-3 request during input validation. The
+[shared input schema](../packages/training/src/climbing-log-response.ts)
+defines that supported-version boundary.
 An earlier server's original `z.object` input strips the unknown version
 option and still returns version `1`; the decoder promotes its scalar grip
 to a collection. This supports a newer client with an earlier API as well as
@@ -89,7 +96,7 @@ and [Zod object behavior](https://zod.dev/api#objects).
 
 Versioned request inputs separate query keys, and the server cache includes
 the raw input and the procedure's cache version. Mobile keeps persisted-cache
-contract `16`; the new versioned keys and strict decoders handle mixed API/OTA
+contract `20`; the new versioned keys and strict decoders handle mixed API/OTA
 release order. See the [server cache](../packages/server/src/trpc.ts),
 [mobile persistence](../packages/mobile/lib/mobile-query-persistence.ts), and
 [TanStack query-key guidance](https://tanstack.com/query/latest/docs/framework/react/guides/query-keys).
@@ -97,13 +104,27 @@ release order. See the [server cache](../packages/server/src/trpc.ts),
 MCP tools `get_activity_details`, `get_climbing_sessions`, and
 `get_climbing_progression` accept the equivalent `response_version`, also
 defaulting to `1`. Progression entries use `hold_type` in version `1` and
-`hold_types` in version `2`; their existing `wall_angle_degrees` remains a
+`hold_types` in versions `2` and `3`; their existing `wall_angle_degrees` remains a
 numeric-only field. The tools project the selected version before building
 both text and structured results, so the two representations agree. See the
 [shared version policy](../packages/training/src/climbing-log-response.ts),
 [activity tool](../packages/server/src/mcp/activity-details-tool.ts),
 [sessions tool](../packages/server/src/mcp/climbing-sessions-tool.ts), and
 [progression tool](../packages/server/src/mcp/climbing-progression-tool.ts).
+
+Version `3` activity and session tools also expose recorded tags. Their labels,
+provider IDs and source category keys come from retained log payloads through
+the [tag decoder](../src/climbing-tags.ts); catalogue enrichment remains
+separate from recorded tags and strengths metrics. See the
+[detail contract](../packages/server/src/contracts/climbing-log-contracts.ts) and
+[strengths contract](../packages/training/src/climbing-strengths.ts).
+
+When a recorded source tag is renamed, strengths display the name from the latest
+recorded calendar date among the included observations. Source record identity
+breaks equal-date ties deterministically; older observations still contribute to
+that same source-tag cohort. Climb details preserve each record's original name.
+Category names follow the same latest-observation rule in the
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
 
 ## Browsing, attachment, and analytics
 

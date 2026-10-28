@@ -407,6 +407,74 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
   panel.gradeAdjustedStrengths = summary;
 });
 
+// Source categories preserve their provider and category identities in every view.
+const tagBase = climbingStrengthsFixture.panels[0];
+if (!tagBase) throw new Error("Missing tag panel fixture");
+export const climbingStrengthsTagsFixture = {
+  ...climbingStrengthsFixture,
+  tagPanels: [
+    {
+      ...tagBase,
+      key: "kaya-movement",
+      dimension: "tag" as const,
+      category: { providerId: "kaya", key: "2", label: "Movement" },
+      rows: tagBase.rows.map((row) => ({ ...row, label: `Custom movement ${row.label}` })),
+      allGrades: {
+        ...tagBase.allGrades,
+        rows: tagBase.allGrades.rows.map((row) => ({
+          ...row,
+          label: `Custom movement ${row.label}`,
+        })),
+      },
+    },
+    {
+      ...tagBase,
+      key: "other-movement",
+      dimension: "tag" as const,
+      category: { providerId: "custom-source", key: "2", label: "Movement" },
+      rows: tagBase.rows.map((row) => ({ ...row, label: `Other movement ${row.label}` })),
+      allGrades: {
+        ...tagBase.allGrades,
+        rows: tagBase.allGrades.rows.map((row) => ({
+          ...row,
+          label: `Other movement ${row.label}`,
+        })),
+      },
+    },
+    {
+      ...tagBase,
+      key: "kaya-custom",
+      dimension: "tag" as const,
+      category: { providerId: "kaya", key: "new-category", label: "Session mood" },
+      rows: tagBase.rows.map((row) => ({ ...row, label: `Unfamiliar ${row.label}` })),
+      allGrades: {
+        ...tagBase.allGrades,
+        rows: tagBase.allGrades.rows.map((row) => ({ ...row, label: `Unfamiliar ${row.label}` })),
+      },
+    },
+  ],
+};
+
+const sparseTagBase = climbingStrengthsUnknownResultsFixture.panels[0];
+if (!sparseTagBase) throw new Error("Missing sparse tag panel fixture");
+export const climbingStrengthsSparseTagsFixture = {
+  ...climbingStrengthsUnknownResultsFixture,
+  panels: [],
+  tagPanels: [
+    {
+      ...sparseTagBase,
+      key: "unknown-category",
+      dimension: "tag" as const,
+      category: { providerId: "custom-source", key: null, label: "Uncategorized tags" },
+      rows: sparseTagBase.rows.map((row) => ({ ...row, label: "Unknown source tag" })),
+      allGrades: {
+        ...sparseTagBase.allGrades,
+        rows: sparseTagBase.allGrades.rows.map((row) => ({ ...row, label: "Unknown source tag" })),
+      },
+    },
+  ],
+};
+
 const singleClimb = cell("All grades", 1, 1, 100, 0, "limited");
 export const climbingStrengthsSingleClimbFixture: ClimbingStrengths = {
   coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },

@@ -7,7 +7,9 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
+import { providerLabel } from "@dofek/providers/providers";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntrySources } from "../pages/activity-detail/components/ClimbingLogEntrySources.tsx";
 
@@ -33,6 +35,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   const path = formatClimbingLocationPath(climb?.areaPath ?? []);
   const angle = formatClimbingWallAngle(entry.wallAngle);
   const holds = formatClimbingHoldTypes(entry.holdTypes);
+  const tagGroups = climbingTagGroups(entry.tags ?? [], entry.holdTypes);
   const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
   return (
     <section className="space-y-4 text-sm" aria-label="Climbing log details">
@@ -53,6 +56,18 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.board && <p className="text-xs">Board: {entry.board.name}</p>}
       {angle && <p className="text-xs">{angle}</p>}
       {holds && <p className="text-xs">{holds}</p>}
+      {tagGroups.map((group) => (
+        <section key={group.key}>
+          <h4 className="font-medium">
+            {providerLabel(group.providerId)} · {group.categoryLabel}
+          </h4>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {group.tags.map((tag) => (
+              <li key={tag.sourceKey}>{tag.label}</li>
+            ))}
+          </ul>
+        </section>
+      ))}
       {climb && (
         <>
           <Fields

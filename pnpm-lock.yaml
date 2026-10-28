@@ -261,9 +261,6 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
-      '@actions/expressions':
-        specifier: 0.3.61
-        version: 0.3.61
       '@biomejs/biome':
         specifier: 2.5.10
         version: 2.5.10
@@ -1239,10 +1236,6 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
-
-  '@actions/expressions@0.3.61':
-    resolution: {integrity: sha512-Ig+tXELvTjlqxQAWBQnLNn2dPpNraLMdSnT+vDzDPmJtbNUhIAH/Z9kVT8pZ8UtJi9vUGs8hwHE8JFJmbOnLEA==}
-    engines: {node: '>= 20'}
 
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
@@ -17187,8 +17180,6 @@ snapshots:
   2g@1.0.1(typescript@6.0.3):
     optionalDependencies:
       typescript: 6.0.3
-
-  '@actions/expressions@0.3.61': {}
 
   '@adobe/css-tools@4.5.0': {}
 

@@ -1,5 +1,6 @@
+import { providerLabel } from "@dofek/providers/providers";
 import type {
-  ClimbingStrengthsPanel,
+  ClimbingStrengthsDisplayPanel,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
 import {
@@ -12,6 +13,13 @@ import {
   climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import {
+  climbingStrengthsBreakdownKey,
+  climbingStrengthsBreakdownOptions,
+  climbingStrengthsDefaultBreakdown,
+  climbingStrengthsPanelLabel,
+  climbingStrengthsObserved as observed,
+} from "@dofek/training/climbing-strengths-presentation";
+import {
   CLIMBING_STRENGTHS_TABS,
   type ClimbingStrengthsTab,
 } from "@dofek/training/climbing-strengths-views";
@@ -23,21 +31,6 @@ import { colors, radius, spacing } from "../theme";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
 import { QueryStatePanel } from "./QueryStatePanel";
 
-const dimensions = {
-  wall_angle: "Wall angle",
-  hold_type: "Hold type",
-  setting: "Setting",
-} as const;
-function observed(panel: ClimbingStrengthsPanel) {
-  return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
-}
-function defaultPanel(panels: ClimbingStrengthsPanel[]) {
-  return (
-    panels.find((panel) => panel.dimension === "wall_angle" && observed(panel)) ??
-    panels.find((panel) => panel.dimension === "hold_type" && observed(panel)) ??
-    panels.find((panel) => panel.dimension !== "setting")
-  );
-}
 export function ClimbingStrengths({
   data,
   loading = false,
@@ -50,11 +43,13 @@ export function ClimbingStrengths({
   rangeControl?: ReactNode;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
-  const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
-    null,
-  );
-  const panels = data?.panels ?? [];
-  const dimension = selectedDimension ?? defaultPanel(panels)?.dimension ?? "wall_angle";
+  const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
+  const options = climbingStrengthsBreakdownOptions(panels);
+  const breakdown = options.some((option) => option.key === selectedBreakdown)
+    ? (selectedBreakdown ?? "wall_angle")
+    : climbingStrengthsDefaultBreakdown(panels);
+  const breakdownLabel = options.find((option) => option.key === breakdown)?.label ?? "Wall angle";
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
@@ -65,22 +60,20 @@ export function ClimbingStrengths({
         <>
           <Text style={styles.meta}>Break down by</Text>
           <View style={styles.controls}>
-            {Object.entries(dimensions)
-              .filter(([item]) => item !== "setting")
-              .map(([item, label]) => (
-                <Pressable
-                  key={item}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: dimension === item }}
-                  style={[styles.chip, dimension === item && styles.selected]}
-                  onPress={() => {
-                    if (item === "wall_angle" || item === "hold_type" || item === "setting")
-                      setDimension(item);
-                  }}
-                >
-                  <Text style={styles.text}>{label}</Text>
-                </Pressable>
-              ))}
+            {options.map((option) => (
+              <Pressable
+                key={option.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: breakdown === option.key }}
+                style={[styles.chip, breakdown === option.key && styles.selected]}
+                onPress={() => setBreakdown(option.key)}
+              >
+                <Text style={styles.text}>
+                  {option.providerId ? `${providerLabel(option.providerId)} · ` : ""}
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
           <View style={styles.controls}>
             {CLIMBING_STRENGTHS_TABS.map((tab) => (
@@ -102,7 +95,12 @@ export function ClimbingStrengths({
           {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
             <Text style={styles.meta}>Success rates use climbs with known results.</Text>
           ) : null}
-          <ClimbingStrengthsBreakdown panels={panels} dimension={dimension} view={view} />
+          <ClimbingStrengthsBreakdown
+            panels={panels}
+            breakdown={breakdown}
+            label={breakdownLabel}
+            view={view}
+          />
         </>
       ) : loading && data == null ? (
         <QueryStatePanel variant="loading" />
@@ -115,14 +113,18 @@ export function ClimbingStrengths({
 
 function ClimbingStrengthsBreakdown({
   panels,
-  dimension,
+  breakdown,
+  label,
   view,
 }: {
-  panels: ClimbingStrengthsPanel[];
-  dimension: ClimbingStrengthsPanel["dimension"];
+  panels: ClimbingStrengthsDisplayPanel[];
+  breakdown: string;
+  label: string;
   view: ClimbingStrengthsTab;
 }) {
-  const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
+  const selectedPanels = panels.filter(
+    (panel) => climbingStrengthsBreakdownKey(panel) === breakdown,
+  );
   return (
     <View style={{ gap: spacing.md }}>
       {selectedPanels.length ? (
@@ -134,7 +136,7 @@ function ClimbingStrengthsBreakdown({
       ) : (
         <Text
           style={styles.meta}
-        >{`No recorded ${dimensions[dimension].toLowerCase()} observations in this context.`}</Text>
+        >{`No recorded ${label.toLowerCase()} observations in this context.`}</Text>
       )}
     </View>
   );
@@ -144,7 +146,7 @@ function ClimbingStrengthsPanelContent({
   panel,
   view,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ClimbingStrengthsTab;
 }) {
   const router = useRouter();
@@ -158,8 +160,8 @@ function ClimbingStrengthsPanelContent({
     return (
       <Text style={styles.meta}>
         {panel.coverage.missingTraits > 0
-          ? `${dimensions[panel.dimension]} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
-          : `No recorded ${dimensions[panel.dimension].toLowerCase()} observations in this context.`}
+          ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
+          : `No recorded ${climbingStrengthsPanelLabel(panel).toLowerCase()} observations in this context.`}
       </Text>
     );
   return (

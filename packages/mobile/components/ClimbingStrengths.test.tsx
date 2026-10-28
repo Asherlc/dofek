@@ -197,3 +197,40 @@ it("opens the recorded climb with a clear small-sample explanation", () => {
   expect(screen.getByText("Too few climbs to judge strengths yet")).toBeTruthy();
   expect(screen.getByText("Quiet Feet")).toBeTruthy();
 });
+
+it("selects source categories independently across Styles and Progress", async () => {
+  const { climbingStrengthsTagsFixture: tagged } = await import("./climbing-strengths-fixtures");
+  render(<ClimbingStrengths data={tagged} />);
+  const category = screen.getByRole("button", { name: "Kaya · Movement" });
+  fireEvent.click(category);
+  expect(category.getAttribute("aria-selected")).toBe("true");
+
+  openData();
+  expect(screen.getAllByText(/Custom movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+
+  expect(screen.getAllByText(/Custom movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "custom-source · Movement" }));
+  {
+    const disclosure = screen.queryByRole("button", { name: /View .* data/ });
+    if (disclosure) fireEvent.click(disclosure);
+  }
+  expect(screen.getAllByText(/Other movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Kaya · Session mood" }));
+  {
+    const disclosure = screen.queryByRole("button", { name: /View .* data/ });
+    if (disclosure) fireEvent.click(disclosure);
+  }
+  expect(screen.getAllByText(/Unfamiliar/).length).toBeGreaterThan(0);
+});
+it("prefers observed tags when wall and hold observations are missing", async () => {
+  const { climbingStrengthsTagsFixture: tagged } = await import("./climbing-strengths-fixtures");
+  render(
+    <ClimbingStrengths
+      data={{ ...tagged, panels: tagged.panels.map((panel) => ({ ...panel, rows: [] })) }}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Kaya · Movement" }).getAttribute("aria-selected"),
+  ).toBe("true");
+});

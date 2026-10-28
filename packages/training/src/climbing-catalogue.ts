@@ -81,6 +81,22 @@ export type CatalogueSeed = z.infer<typeof catalogueSeedSchema>;
 export type CatalogueCandidate = z.infer<typeof catalogueCandidateSchema>;
 export type CatalogueSearchResult = z.infer<typeof catalogueSearchResultSchema>;
 export type ClimbingCatalogueContext = z.infer<typeof climbingCatalogueContextSchema>;
+
+/** Label literal catalogue tags without assigning unknown tags a wall or hold meaning. */
+export function climbingCatalogueTagLabel(tag: z.infer<typeof catalogueTagSchema>): string {
+  const prefix =
+    tag.kind === "hold"
+      ? "Holds"
+      : tag.kind === "climb_type"
+        ? "Climb type"
+        : tag.kind === "steepness"
+          ? "Wall"
+          : tag.category && !/^\d+$/.test(tag.category)
+            ? tag.category
+            : "Tag";
+  return `${prefix}: ${tag.label}${tag.scope === "inherited" ? ` (inherited${tag.inheritedFrom ? ` from ${tag.inheritedFrom}` : ""})` : ""}`;
+}
+
 export interface ClimbingCatalogueAdapter {
   readonly providerId: CatalogueProviderId;
   search(seed: CatalogueSeed): Promise<CatalogueSearchResult>;

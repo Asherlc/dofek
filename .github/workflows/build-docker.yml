@@ -62,12 +62,8 @@ jobs:
             REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-          cache-from: |
-            type=gha,scope=server
-            type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache
-          cache-to: |
-            type=gha,mode=max,scope=server
-            type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache,mode=max
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache
+          cache-to: type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache,mode=max
 
   e2e-cache:
     name: E2E Docker Cache
@@ -104,9 +100,6 @@ jobs:
           platforms: linux/amd64
           push: false
           tags: e2e-server-cache:latest
-          cache-from: |
-            type=gha,scope=e2e
-            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
-          cache-to: |
-            type=gha,mode=max,scope=e2e
-            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache,mode=max
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
+          cache-to: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache,mode=max

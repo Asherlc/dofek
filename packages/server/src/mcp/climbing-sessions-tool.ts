@@ -37,7 +37,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
         start_date: dateSchema,
         end_date: dateSchema,
         response_version: climbingResponseVersionSchema.describe(
-          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles.",
+          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles, or 3 to also include recorded source tags.",
         ),
       }),
       outputSchema: climbingSessionsOutputSchema,

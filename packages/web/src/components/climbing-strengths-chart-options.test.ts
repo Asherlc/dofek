@@ -67,7 +67,7 @@ it("retains ordered grades, real zero and null gaps in curves with a supplied ba
   expect(option.series).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        name: "Vertical",
+        name: "vertical",
         connectNulls: false,
         data: [
           expect.objectContaining({ value: 80 }),
@@ -140,7 +140,7 @@ it("preserves calendar bucket dates and missing-month gaps without smoothing", (
   expect(option.series).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        name: "Vertical",
+        name: "vertical",
         connectNulls: false,
         smooth: false,
         data: [
@@ -173,7 +173,7 @@ it("numbers progress markers and legend entries beyond a palette cycle", () => {
       formatter: z.custom<(name: string) => string>((value) => typeof value === "function"),
     })
     .parse(option.legend);
-  expect(legend.formatter("Style 10")).toBe("11. Style 10");
+  expect(legend.formatter("style-10")).toBe("11. Style 10");
 });
 it.each([320, 900])("keeps progress legend clear of axis labels at %ipx", (width) => {
   const chart = init(null, undefined, { renderer: "svg", ssr: true, width, height: 610 });
@@ -251,9 +251,9 @@ it("uses a 0–100 radar scale with explicit supplied same-grade baseline", () =
   expect(option).toMatchObject({
     radar: {
       indicator: [
-        { name: "Vertical", min: 0, max: 100 },
-        { name: "Overhang", min: 0, max: 100 },
-        { name: "Slab", min: 0, max: 100 },
+        { name: "vertical", min: 0, max: 100 },
+        { name: "overhang", min: 0, max: 100 },
+        { name: "slab", min: 0, max: 100 },
       ],
     },
   });
@@ -405,8 +405,8 @@ it("filters missing radar axes while retaining zero outcomes and the server's ba
   expect(radar).toMatchObject({
     radar: {
       indicator: [
-        { name: "Vertical", min: 0, max: 100 },
-        { name: "Overhang", min: 0, max: 100 },
+        { name: "vertical", min: 0, max: 100 },
+        { name: "overhang", min: 0, max: 100 },
       ],
       axisName: { overflow: "break" },
     },
@@ -691,9 +691,9 @@ it("renders the server grade-adjusted radar scores around a zero baseline", () =
     radar: {
       triggerEvent: true,
       indicator: [
-        { name: "Vertical", min: -100, max: 100 },
-        { name: "Overhang", min: -100, max: 100 },
-        { name: "Slab", min: -100, max: 100 },
+        { name: "vertical", min: -100, max: 100 },
+        { name: "overhang", min: -100, max: 100 },
+        { name: "slab", min: -100, max: 100 },
       ],
       axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },
       splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
@@ -772,8 +772,8 @@ it("omits unscored radar axes and keeps zero scores with explicit sample qualifi
   expect(option).toMatchObject({
     radar: {
       indicator: [
-        { name: "Vertical", min: -100, max: 100 },
-        { name: "Overhang", min: -100, max: 100 },
+        { name: "vertical", min: -100, max: 100 },
+        { name: "overhang", min: -100, max: 100 },
       ],
     },
   });
@@ -792,4 +792,105 @@ it("omits unscored radar axes and keeps zero scores with explicit sample qualifi
     null,
   );
   expect(missing).toMatchObject({ radar: { indicator: [] } });
+});
+
+it("keeps equal tag labels independently selectable in the progress legend", () => {
+  const duplicateTags = {
+    ...panel,
+    dimension: "tag" as const,
+    category: { providerId: "source", key: "grips", label: "Grip" },
+    rows: panel.rows.map((row, index) => ({ ...row, label: index < 2 ? "Crimp" : "Sloper" })),
+  };
+  const option = climbingStrengthsChartOption(duplicateTags, "progress", "V3", null);
+  withRenderedChart(option, (chart) => {
+    const text = renderedText(chart).map((item) => item.text);
+    expect(text).toEqual(expect.arrayContaining(["1. Crimp", "2. Crimp", "3. Sloper"]));
+    expect(text.filter((label) => label === "2").length).toBeGreaterThan(0);
+    chart.dispatchAction({ type: "legendUnSelect", name: "overhang" });
+    const state = z
+      .object({ legend: z.array(z.object({ selected: z.record(z.string(), z.boolean()) })) })
+      .parse(chart.getOption());
+    expect(state.legend[0]?.selected).toMatchObject({
+      vertical: true,
+      overhang: false,
+      slab: true,
+    });
+    chart.getZr().storage.getDisplayList(true);
+    const visible = renderedText(chart).map((item) => item.text);
+    expect(visible.filter((label) => label === "2")).toHaveLength(0);
+    expect(visible.filter((label) => label === "1").length).toBeGreaterThan(0);
+  });
+});
+it.each(["V3", "All grades"])(
+  "renders literal duplicate tag labels on keyed radar axes at %s",
+  (grade) => {
+    const source = climbingStrengthsGradePanel(panel, grade);
+    const duplicateTags = {
+      ...source,
+      dimension: "tag" as const,
+      category: { providerId: "source", key: "grips", label: "Grip" },
+      rows: source.rows.map((row, index) => ({ ...row, label: index < 2 ? "Crimp" : "Crimp · 1" })),
+    };
+    const option = climbingStrengthsChartOption(duplicateTags, "radar", grade, null);
+    withRenderedChart(option, (chart) => {
+      const labels = renderedText(chart).map((item) => item.text);
+      expect(labels).toEqual(expect.arrayContaining(["1. Crimp", "2. Crimp", "3. Crimp · 1"]));
+      const clickedNames: unknown[] = [];
+      chart.on("click", (event) => {
+        clickedNames.push(event.name);
+      });
+      for (const name of ["1. Crimp", "2. Crimp", "3. Crimp · 1"]) {
+        const target = chart
+          .getZr()
+          .storage.getDisplayList()
+          .find(
+            (element) =>
+              z.object({ text: z.literal(name) }).safeParse(Reflect.get(element, "style")).success,
+          );
+        if (!target) throw new Error("Missing rendered radar label");
+        chart.getZr().trigger("click", { target });
+      }
+      expect(clickedNames).toEqual(["1. Crimp", "2. Crimp", "3. Crimp · 1"]);
+    });
+  },
+);
+
+it("keeps equal tag labels independently selectable in the curves legend", () => {
+  const tagged = {
+    ...panel,
+    dimension: "tag" as const,
+    category: { providerId: "source", key: "grips", label: "Grip" },
+    rows: panel.rows.map((row, index) => ({ ...row, label: index < 2 ? "Crimp" : "2. Crimp" })),
+  };
+  const option = climbingStrengthsChartOption(tagged, "curves", "V3", null);
+  const first = z.object({ lineStyle: z.object({ color: z.string() }) }).parse(option.series[0]);
+  const second = z.object({ lineStyle: z.object({ color: z.string() }) }).parse(option.series[1]);
+  withRenderedChart(option, (chart) => {
+    const labels = renderedText(chart).map((item) => item.text);
+    expect(labels).toEqual(
+      expect.arrayContaining(["1. Crimp", "2. Crimp", "3. 2. Crimp", "Same-grade baseline"]),
+    );
+    const coloredElements = (color: string) =>
+      chart
+        .getZr()
+        .storage.getDisplayList(true)
+        .filter(
+          (element) =>
+            z.object({ stroke: z.literal(color) }).safeParse(Reflect.get(element, "style")).success,
+        );
+    expect(coloredElements(first.lineStyle.color).length).toBeGreaterThan(0);
+    expect(coloredElements(second.lineStyle.color).length).toBeGreaterThan(0);
+    chart.dispatchAction({ type: "legendUnSelect", name: "overhang" });
+    const state = z
+      .object({ legend: z.array(z.object({ selected: z.record(z.string(), z.boolean()) })) })
+      .parse(chart.getOption());
+    expect(state.legend[0]?.selected).toMatchObject({
+      vertical: true,
+      overhang: false,
+      slab: true,
+      "Same-grade baseline": true,
+    });
+    expect(coloredElements(second.lineStyle.color)).toHaveLength(0);
+    expect(coloredElements(first.lineStyle.color).length).toBeGreaterThan(0);
+  });
 });

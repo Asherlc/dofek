@@ -57,6 +57,7 @@ const sharedTestConfig = {
 };
 
 const nodeTestIncludes = [
+  "scripts/**/*.test.ts",
   "analytics/models/**/*.test.ts",
   "src/**/*.test.ts",
   "packages/format/src/**/*.test.ts",
