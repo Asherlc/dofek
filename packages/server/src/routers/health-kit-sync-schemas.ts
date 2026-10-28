@@ -1,5 +1,6 @@
 import type { LegacyActivityType } from "@dofek/training/activity-types";
 import { z } from "zod";
+import { RUNNING_QUANTITY_TYPES } from "../../../../src/providers/apple-health/running-quantities.ts";
 import type { protectedProcedure } from "../trpc.ts";
 
 export const PROVIDER_ID = "apple_health";
@@ -158,6 +159,12 @@ export const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
 
 /** Metric stream types and their column names */
 export const metricStreamTypes: Record<string, { column: string }> = {
+  ...Object.fromEntries(
+    Object.entries(RUNNING_QUANTITY_TYPES).map(([type, mapping]) => [
+      type,
+      { column: mapping.channel },
+    ]),
+  ),
   HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
   HKQuantityTypeIdentifierOxygenSaturation: { column: "spo2" },
   HKQuantityTypeIdentifierRespiratoryRate: { column: "respiratory_rate" },

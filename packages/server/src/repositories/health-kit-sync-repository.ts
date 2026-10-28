@@ -6,11 +6,13 @@ import {
   getDefaultMetricStreamEventPublisher,
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
+import { RUNNING_QUANTITY_TYPES } from "../../../../src/providers/apple-health/running-quantities.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 const PROVIDER_ID = "apple_health";
 
 const metricStreamTypes = new Set([
+  ...Object.keys(RUNNING_QUANTITY_TYPES),
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",
   "HKQuantityTypeIdentifierBodyMassIndex",

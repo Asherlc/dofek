@@ -621,6 +621,56 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).not.toContain("5552.349998360692");
     });
 
+    it("routes all running quantities into the metric stream", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId: "user-1", timezone: "UTC" });
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({ type: "HKQuantityTypeIdentifierRunningSpeed", unit: "m/s", value: 4 }),
+          makeSample({ type: "HKQuantityTypeIdentifierRunningPower", unit: "W", value: 250.5 }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningStrideLength",
+            unit: "m",
+            value: 1.2,
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningGroundContactTime",
+            unit: "ms",
+            value: 240,
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningVerticalOscillation",
+            unit: "mm",
+            value: 75,
+          }),
+        ],
+      });
+      expect(publishedMetricStreamRows()).toEqual([
+        expect.objectContaining({ channel: "speed", scalar: 4 }),
+        expect.objectContaining({ channel: "power", scalar: 250.5 }),
+        expect.objectContaining({ channel: "stride_length", scalar: 1.2 }),
+        expect.objectContaining({ channel: "ground_contact_time", scalar: 240 }),
+        expect.objectContaining({ channel: "vertical_oscillation", scalar: 75 }),
+      ]);
+    });
+
+    it("reports incompatible running units through the existing error boundary", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId: "user-1", timezone: "UTC" });
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningSpeed",
+            unit: "kg",
+            value: 4,
+          }),
+        ],
+      });
+      expect(result.errors).toEqual([
+        expect.stringMatching(/Unsupported.*kg.*RunningSpeed.*Expected/),
+      ]);
+      expect(mockSentryCaptureException).toHaveBeenCalled();
+      expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    });
+
     it("rounds float heart rate before publishing metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({

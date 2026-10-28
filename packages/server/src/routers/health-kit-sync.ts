@@ -231,6 +231,7 @@ export const healthKitSyncRouter = router({
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        captureException(error, { tags: { healthKitSyncStep: "metricStream" } });
         errors.push(`Metric stream: ${message}`);
       }
 

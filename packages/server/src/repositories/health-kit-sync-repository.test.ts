@@ -24,6 +24,45 @@ describe("HealthKitSyncRepository", () => {
     return { repository, execute, publisher };
   }
   describe("processDeletedQuantitySamples", () => {
+    it.each([
+      "RunningSpeed",
+      "RunningPower",
+      "RunningStrideLength",
+      "RunningGroundContactTime",
+      "RunningVerticalOscillation",
+    ])("deletes every series point under the %s parent UUID", async (suffix) => {
+      const publisher: MetricStreamEventPublisher = {
+        publishRows: vi.fn(async () => []),
+        replaceRows: vi.fn(async (scope, rows, operationRevision) => ({
+          deleted: {
+            version: 3 as const,
+            eventType: "metric_stream_deleted" as const,
+            eventId: "00000000-0000-4000-8000-000000000001",
+            operationRevision,
+            scope,
+            partitionKey: "test",
+          },
+          rows: [...rows],
+        })),
+      };
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute: vi.fn(async () => []) }),
+        "user-1",
+        publisher,
+      );
+      await expect(
+        repository.processDeletedQuantitySamples(`HKQuantityTypeIdentifier${suffix}`, [
+          "parent-uuid",
+          "parent-uuid",
+        ]),
+      ).resolves.toBe(1);
+      expect(publisher.replaceRows).toHaveBeenCalledWith(
+        { userId: "user-1", providerId: "apple_health", externalId: "hk:parent-uuid" },
+        [],
+        "1000000000000000",
+      );
+    });
+
     it("does nothing when the anchored query has no deleted UUIDs", async () => {
       vi.mocked(getProviderDataGenerations).mockClear();
       const { repository, execute } = makeRepository();

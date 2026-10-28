@@ -19,6 +19,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { replaceHangTenIntervals } from "../../../../src/providers/apple-health/hang-ten-intervals.ts";
+import { normalizeRunningQuantity } from "../../../../src/providers/apple-health/running-quantities.ts";
 import {
   buildAppleHealthWorkoutIdentity,
   collectAppleHealthWorkoutIdentities,
@@ -326,9 +327,11 @@ export async function processMetricStream(
       const mapping = metricStreamTypes[sample.type];
       if (!mapping) continue;
 
-      const metricValue = INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
-        ? Math.round(sample.value)
-        : sample.value;
+      const metricValue =
+        normalizeRunningQuantity(sample.type, sample.value, sample.unit) ??
+        (INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
+          ? Math.round(sample.value)
+          : sample.value);
       const externalId = `hk:${sample.uuid}`;
       rows.push({
         recordedAt: sample.startDate,

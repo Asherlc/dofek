@@ -10,17 +10,20 @@ vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
   return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
 });
 
-const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls } = vi.hoisted<{
-  metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
-  replaceMetricStreamBatchCalls: Array<{
-    scope: unknown;
-    metricRows: unknown[];
-    sourceType: unknown;
-  }>;
-}>(() => ({
-  metricStreamReplacementCalls: [],
-  replaceMetricStreamBatchCalls: [],
-}));
+const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls, publishedMetricRows } =
+  vi.hoisted<{
+    publishedMetricRows: unknown[];
+    metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
+    replaceMetricStreamBatchCalls: Array<{
+      scope: unknown;
+      metricRows: unknown[];
+      sourceType: unknown;
+    }>;
+  }>(() => ({
+    publishedMetricRows: [],
+    metricStreamReplacementCalls: [],
+    replaceMetricStreamBatchCalls: [],
+  }));
 
 vi.mock("../../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
@@ -29,7 +32,10 @@ vi.mock("../../db/token-user-context.ts", () => ({
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly unknown[]) => rows,
+    publishRows: async (rows: readonly unknown[]) => {
+      publishedMetricRows.push(...rows);
+      return rows;
+    },
     replaceRows: async (_scope: unknown, rows: readonly unknown[]) => {
       metricStreamReplacementCalls.push({ scope: _scope, rows: [...rows] });
       return {
@@ -63,6 +69,7 @@ vi.mock("../../db/metric-stream-writer.ts", async (importOriginal) => {
 });
 
 afterEach(() => {
+  publishedMetricRows.length = 0;
   metricStreamReplacementCalls.length = 0;
   replaceMetricStreamBatchCalls.length = 0;
 });
@@ -1000,6 +1007,42 @@ describe("runImport", () => {
     expect(result.duration).toBeGreaterThanOrEqual(0);
     // Should still delete existing rows
     expect(spies.deleteFn).toHaveBeenCalled();
+  });
+
+  it("routes all running quantities from XML through file stream replacement", async () => {
+    const xmlPath = join(tmpDir, "running-import.xml");
+    const quantities = [
+      ["RunningSpeed", "km/hr", "18"],
+      ["RunningPower", "W", "250.5"],
+      ["RunningStrideLength", "cm", "125"],
+      ["RunningGroundContactTime", "s", "0.245"],
+      ["RunningVerticalOscillation", "cm", "7.5"],
+    ];
+    writeFileSync(
+      xmlPath,
+      `<HealthData>${quantities
+        .map(
+          ([suffix, unit, value]) =>
+            `<Record type="HKQuantityTypeIdentifier${suffix}" sourceName="Apple Watch" unit="${unit}" value="${value}" startDate="2026-10-28 10:00:00 +0000" endDate="2026-10-28 10:00:01 +0000"/>`,
+        )
+        .join("")}</HealthData>`,
+    );
+    const { db } = createRunImportMockDb();
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(5);
+    expect(publishedMetricRows).toEqual([
+      expect.objectContaining({
+        channel: "speed",
+        scalar: 5,
+        deviceId: "Apple Watch",
+        sourceType: "file",
+      }),
+      expect.objectContaining({ channel: "power", scalar: 250.5 }),
+      expect.objectContaining({ channel: "stride_length", scalar: 1.25 }),
+      expect.objectContaining({ channel: "ground_contact_time", scalar: 245 }),
+      expect.objectContaining({ channel: "vertical_oscillation", scalar: 75 }),
+    ]);
   });
 
   it("imports heart rate records from XML", async () => {
