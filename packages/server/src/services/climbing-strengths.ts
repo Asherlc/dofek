@@ -22,6 +22,12 @@ export interface ClimbingStrengthsObservation {
   outcome: "sent" | "not_sent" | null;
   example: ClimbingStrengthsExample;
 }
+function contextLabelWithoutSystem(entry: ClimbingStrengthsObservation): string {
+  const suffix = entry.gradeSystem ? ` · ${gradeSystemLabel(entry.gradeSystem)}` : null;
+  return suffix && entry.contextLabel.toLowerCase().endsWith(suffix.toLowerCase())
+    ? entry.contextLabel.slice(0, -suffix.length)
+    : entry.contextLabel;
+}
 const percent = (sends: number, climbs: number) =>
   climbs ? Math.round((sends / climbs) * 100) : null;
 function trait(
@@ -157,24 +163,24 @@ export function buildClimbingStrengths(
     );
   const months = monthlyWindows({ startDate, endDate: window.endDate });
   const panels: ClimbingStrengthsPanel[] = [];
-  const cohorts = new Map<string, typeof entries>();
-  for (const entry of entries) {
-    const key = JSON.stringify([entry.contextKey, entry.setting ?? "unknown"]);
-    const cohort = cohorts.get(key) ?? [];
-    cohort.push(entry);
-    cohorts.set(key, cohort);
-  }
-  // Compare only climbs sharing their semantic lane, grade system and setting.
-  for (const selected of cohorts.values()) {
-    const representative = selected[0];
-    if (!representative) continue;
-    const { contextKey, contextLabel: label, gradeSystem } = representative;
-    const setting = representative.setting ?? "unknown";
-    const suffix = gradeSystem ? ` · ${gradeSystemLabel(gradeSystem)}` : null;
-    const contextLabel =
-      suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
-        ? label.slice(0, -suffix.length)
-        : label;
+  const contexts = new Set(entries.map((entry) => entry.contextKey));
+  const contextKey = contexts.size === 1 ? (entries[0]?.contextKey ?? "selected") : "selected";
+  const representative = entries[0];
+  const contextLabel =
+    contexts.size === 1 && representative
+      ? contextLabelWithoutSystem(representative)
+      : "Selected climbs";
+  // Keep same-grade baselines specific to each type and grading system.
+  const selected = entries.map((entry) => {
+    const labels = contextLabelWithoutSystem(entry)
+      .split(" · ")
+      .filter((label) => entry.gradeSystem !== "v_scale" || label !== "Bouldering");
+    return {
+      ...entry,
+      grade: contexts.size > 1 ? [entry.grade, ...labels].join(" · ") : entry.grade,
+    };
+  });
+  if (selected.length > 0) {
     for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
       const buildProfile = (allGrades: boolean, cohort: typeof selected) => {
         const gradeGroups = allGrades
@@ -281,14 +287,21 @@ export function buildClimbingStrengths(
         };
       };
       const profile = buildProfile(false, selected);
+      const baselineProfile = buildProfile(
+        false,
+        selected.map((entry) => ({
+          ...entry,
+          grade: JSON.stringify([entry.contextKey, entry.grade]),
+        })),
+      );
       panels.push({
-        key: JSON.stringify([contextKey, setting, dimension]),
+        key: JSON.stringify([contextKey, dimension]),
         contextKey,
         contextLabel,
         dimension,
-        setting,
+        setting: null,
         ...profile,
-        gradeAdjustedStrengths: buildClimbingStrengthProfile(profile),
+        gradeAdjustedStrengths: buildClimbingStrengthProfile(baselineProfile),
         allGrades: buildProfile(true, selected),
         coverage: {
           missingTraits: selected.filter((entry) =>

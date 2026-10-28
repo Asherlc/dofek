@@ -37,21 +37,6 @@ export const Empty: Story = {
     data: { panels: [], coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 } },
   },
 };
-export const Sparse: Story = {
-  args: {
-    data: {
-      ...climbingStrengthsFixture,
-      panels: climbingStrengthsFixture.panels.map((panel) => ({
-        ...panel,
-        grades: panel.grades.filter((grade) => grade.grade === "V4"),
-        rows: panel.rows.map((row) => ({
-          ...row,
-          cells: row.cells.filter((cell) => cell.grade === "V4"),
-        })),
-      })),
-    },
-  },
-};
 export const MissingObservations: Story = {
   args: {
     data: {
@@ -87,8 +72,10 @@ export const UnknownResults: Story = {
   args: { data: climbingStrengthsUnknownResultsFixture },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · V3 · Result unknown/ }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "View Strengths and weaknesses data" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · All grades:/ }));
     await expect(canvas.getByText(/V3 · .* · Result unknown/)).toBeVisible();
   },
 };
@@ -130,49 +117,6 @@ export const HoldTypes: Story = {
   },
 };
 
-export const Grades: Story = {
-  ...Narrow,
-  play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
-  },
-};
-export const ManyGradesAndStyles: Story = {
-  ...Narrow,
-  args: {
-    data: {
-      ...climbingStrengthsComparisonFixture,
-      panels: climbingStrengthsComparisonFixture.panels.map((panel) => ({
-        ...panel,
-        dimension: "hold_type",
-        grades: ["V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7"].map((grade, index) => ({
-          ...panel.grades[0],
-          grade,
-          gradeSortValue: index,
-        })),
-        rows: ["Crimps", "Slopers", "Pinches", "Jugs", "Pockets", "Edges", "Volumes"].map(
-          (label) => ({
-            key: label.toLowerCase(),
-            label,
-            cells: ["V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7"].flatMap(
-              (grade) =>
-                panel.rows[0]?.cells.slice(0, 1).map((cell) => ({
-                  ...cell,
-                  grade,
-                  examples: cell.examples.map((example) => ({ ...example, grade })),
-                })) ?? [],
-            ),
-          }),
-        ),
-      })),
-    },
-  },
-  play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(canvas.getByRole("button", { name: /^Crimps · V7/ }));
-    await expect(canvas.getByText("Quiet Feet")).toBeVisible();
-  },
-};
 export const Progress: Story = {
   ...Narrow,
   play: async ({ canvasElement, userEvent }) => {

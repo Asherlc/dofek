@@ -1,4 +1,3 @@
-import { climbingProgressionSettingLabels } from "@dofek/training/climbing-progression";
 import type {
   ClimbingStrengthsPanel,
   ClimbingStrengths as Strengths,
@@ -127,14 +126,7 @@ function ClimbingStrengthsBreakdown({
     <View style={{ gap: spacing.md }}>
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
-          <View
-            key={panel.key}
-            accessibilityLabel={`${panel.contextLabel} · ${climbingProgressionSettingLabels[panel.setting ?? "unknown"]}`}
-            style={{ gap: spacing.md }}
-          >
-            <Text accessibilityRole="header" style={styles.sectionTitle}>
-              {panel.contextLabel} · {climbingProgressionSettingLabels[panel.setting ?? "unknown"]}
-            </Text>
+          <View key={panel.key} style={{ gap: spacing.md }}>
             <ClimbingStrengthsPanelContent panel={panel} view={view} />
           </View>
         ))
@@ -158,8 +150,7 @@ function ClimbingStrengthsPanelContent({
   const [selectedDetail, setSelectedDetail] = useState<{ rowKey: string; grade: string } | null>(
     null,
   );
-  const displayPanel =
-    view === "profile" ? panel : climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
+  const displayPanel = climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
   const selectedRow = displayPanel.rows.find((row) => row.key === selectedDetail?.rowKey);
   const selectedCell = selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade);
   if (!observed(panel))
@@ -170,86 +161,22 @@ function ClimbingStrengthsPanelContent({
     );
   return (
     <View style={{ gap: spacing.md }}>
-      {view === "profile" ? (
-        <>
-          <Text style={styles.text}>Send rate by grade and style</Text>
-          <View style={{ gap: spacing.md }}>
-            {panel.grades.map((grade) => (
-              <View
-                key={grade.grade}
-                accessibilityLabel={`${grade.grade} send rates`}
-                style={{ gap: spacing.xs }}
-              >
-                <Text accessibilityRole="header" style={styles.sectionTitle}>
-                  {grade.grade}
-                </Text>
-                <View style={styles.gradeStyles}>
-                  {panel.rows.flatMap((row) => {
-                    const cell = row.cells.find((cell) => cell.grade === grade.grade);
-                    return cell
-                      ? [
-                          <Pressable
-                            key={row.key}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${row.label} · ${cell.grade} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                            accessibilityState={{
-                              selected:
-                                selectedRow?.key === row.key && selectedCell?.grade === cell.grade,
-                            }}
-                            onPress={() =>
-                              setSelectedDetail({ rowKey: row.key, grade: cell.grade })
-                            }
-                            style={[
-                              styles.gradeCell,
-                              selectedRow?.key === row.key &&
-                                selectedCell?.grade === cell.grade &&
-                                styles.selected,
-                            ]}
-                          >
-                            <View
-                              pointerEvents="none"
-                              style={[
-                                StyleSheet.absoluteFill,
-                                {
-                                  backgroundColor: colors.accent,
-                                  opacity: cell.successRate === null ? 0 : cell.successRate * 0.004,
-                                },
-                              ]}
-                            />
-                            <Text style={styles.meta}>{row.label}</Text>
-                            <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
-                            {cell.sampleStatus === "limited" ? (
-                              <Text style={styles.meta}>Limited sample</Text>
-                            ) : null}
-                          </Pressable>,
-                        ]
-                      : [];
-                  })}
-                </View>
-              </View>
-            ))}
-          </View>
-        </>
+      {view === "radar" ? (
+        <Text style={styles.meta}>
+          Compared with your usual results at the same grades. Outside the dashed line is stronger;
+          inside is weaker.
+        </Text>
       ) : (
-        <>
-          {view === "radar" ? (
-            <Text style={styles.meta}>
-              Compared with your usual results at the same grades. Outside the dashed line is
-              stronger; inside is weaker.
-            </Text>
-          ) : (
-            <Text style={styles.meta}>
-              Combines all grades; changes can reflect the difficulty of climbs recorded each month.
-            </Text>
-          )}
-          <ClimbingStrengthsChart
-            panel={displayPanel}
-            view={view}
-            grade={ALL_CLIMBING_GRADES}
-            onSelect={(rowKey, grade) => setSelectedDetail({ rowKey, grade })}
-          />
-        </>
+        <Text style={styles.meta}>
+          Combines all grades; changes can reflect the difficulty of climbs recorded each month.
+        </Text>
       )}
+      <ClimbingStrengthsChart
+        panel={displayPanel}
+        view={view}
+        grade={ALL_CLIMBING_GRADES}
+        onSelect={(rowKey, grade) => setSelectedDetail({ rowKey, grade })}
+      />
       {selectedCell && (
         <View style={styles.examples}>
           <Text style={styles.text}>
@@ -320,19 +247,6 @@ function ClimbingStrengthsPanelContent({
   );
 }
 const styles = StyleSheet.create({
-  gradeStyles: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-  gradeCell: {
-    flexGrow: 1,
-    flexBasis: 108,
-    minWidth: 0,
-    padding: spacing.sm,
-    minHeight: 64,
-    justifyContent: "center",
-    gap: spacing.xs,
-    borderRadius: radius.md,
-    overflow: "hidden",
-    backgroundColor: colors.surfaceSecondary,
-  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
@@ -340,7 +254,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   title: { color: colors.text, fontSize: 18, fontWeight: "600" },
-  sectionTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
   controls: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   chip: {
     minHeight: 44,

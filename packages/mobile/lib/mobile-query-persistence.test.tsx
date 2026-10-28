@@ -219,7 +219,7 @@ describe("mobile query persistence", () => {
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
 
-  it("discards pooled strengths from v17 before restoring comparable panels", async () => {
+  it("discards sectioned strengths from v18 before restoring the selected view", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "strengths-owner";
     const queryKey = [["climbing", "strengths"], { input: { days: 90 }, type: "query" }];
@@ -227,25 +227,27 @@ describe("mobile query persistence", () => {
     seedClient.setQueryData(queryKey, {
       panels: [
         {
-          contextKey: "selected",
-          contextLabel: "Selected climbs",
-          setting: null,
+          contextKey: "boulder",
+          contextLabel: "Bouldering",
+          setting: "indoor",
           grades: [
             {
-              grade: "V4 · Bouldering · V Scale",
+              grade: "V4",
               climbs: 1,
               sends: 1,
               unknownOutcomes: 0,
               successRate: 100,
             },
-            {
-              grade: "5.9 · Top rope · Yosemite Decimal System",
-              climbs: 1,
-              sends: 0,
-              unknownOutcomes: 0,
-              successRate: 0,
-            },
           ],
+          rows: [],
+          progress: [],
+          allGrades: { grades: [], rows: [], progress: [] },
+        },
+        {
+          contextKey: "top-rope",
+          contextLabel: "Top rope",
+          setting: "outdoor",
+          grades: [{ grade: "5.9", climbs: 1, sends: 0, unknownOutcomes: 0, successRate: 0 }],
           rows: [],
           progress: [],
           allGrades: { grades: [], rows: [], progress: [] },
@@ -256,7 +258,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v17`,
+        buster: `${userId}:v18`,
         clientState: dehydrate(seedClient),
       }),
     );

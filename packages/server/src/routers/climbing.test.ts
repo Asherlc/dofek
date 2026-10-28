@@ -402,7 +402,7 @@ describe("climbingRouter", () => {
     });
     expect(panel).toMatchObject({
       contextKey: "boulder-free-v",
-      setting: "indoor",
+      setting: null,
       grades: [{ grade: "V4", sends: 1, climbs: 3, unknownOutcomes: 1, successRate: 50 }],
       rows: [
         {

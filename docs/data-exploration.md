@@ -71,15 +71,12 @@ presets while retaining independent factual facets. Setting narrows all climbing
 queries; it is separate from Wall angle and Hold type breakdowns.
 
 The [shared strengths navigation](../packages/training/src/climbing-strengths-views.ts)
-offers Styles, Grades and Progress. Styles shows grade-adjusted strengths,
-Grades stacks grades vertically with wrapping style/send-rate cells, and Progress
+offers Styles and Progress. Styles shows grade-adjusted strengths, and Progress
 shows monthly send rates with a mixed-difficulty qualifier. The
 [server aggregation](../packages/server/src/services/climbing-strengths.ts)
-keeps each selected type, attempt context, grade system, and setting in a separate
-panel with its own baselines. Existing page filters apply to every panel; the
-strengths section does not add type or setting filters. Section headings name
-each type and setting once, following [WAI heading guidance](https://www.w3.org/WAI/tutorials/page-structure/headings/),
-and each grade group contains comparable style results. The existing strengths-only
+supplies one selected view per breakdown dimension from the existing page
+filters. Same-grade radar baselines retain each climbing context
+and grading system. The existing strengths-only
 All time override on mobile is labeled locally; the training date selector still
 controls the other charts. Values and counts come from the
 [server response contract](../packages/training/src/climbing-strengths.ts).

@@ -1,4 +1,3 @@
-import { climbingProgressionSettingLabels } from "@dofek/training/climbing-progression";
 import type {
   ClimbingStrengthsCell,
   ClimbingStrengthsPanel,
@@ -124,16 +123,9 @@ function ClimbingStrengthsBreakdown({
     <section className="space-y-3">
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
-          <section
-            key={panel.key}
-            aria-label={`${panel.contextLabel} · ${climbingProgressionSettingLabels[panel.setting ?? "unknown"]}`}
-            className="min-w-0 space-y-3 border-t border-border pt-4"
-          >
-            <h3 className="font-semibold">
-              {panel.contextLabel} · {climbingProgressionSettingLabels[panel.setting ?? "unknown"]}
-            </h3>
+          <div key={panel.key} className="min-w-0 space-y-3">
             <ClimbingStrengthsPanelContent panel={panel} view={view} />
-          </section>
+          </div>
         ))
       ) : (
         <QueryStatePanel
@@ -153,8 +145,7 @@ function ClimbingStrengthsPanelContent({
   view: ClimbingStrengthsTab;
 }) {
   const [selected, setSelected] = useState<{ row: string; grade: string } | null>(null);
-  const displayPanel =
-    view === "profile" ? panel : climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
+  const displayPanel = climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
   const row = displayPanel.rows.find((item) => item.key === selected?.row);
   const cell = row?.cells.find((item) => item.grade === selected?.grade);
   return (
@@ -166,72 +157,26 @@ function ClimbingStrengthsPanelContent({
         />
       ) : (
         <>
-          <h4 className="font-medium">
-            {view === "radar"
-              ? "Strengths and weaknesses"
-              : view === "profile"
-                ? "Send rate by grade and style"
-                : "Monthly send rate"}
-          </h4>
+          <h3 className="font-medium">
+            {view === "radar" ? "Strengths and weaknesses" : "Monthly send rate"}
+          </h3>
           {view === "radar" ? (
             <p className="text-sm text-muted">
               Compared with your usual results at the same grades. Outside the dashed line is
               stronger; inside is weaker.
             </p>
-          ) : view === "progress" ? (
+          ) : (
             <p className="text-sm text-muted">
               Combines all grades; changes can reflect the difficulty of climbs recorded each month.
             </p>
-          ) : null}
-          {view === "profile" ? (
-            <div className="space-y-4">
-              {panel.grades.map((grade) => (
-                <fieldset
-                  key={grade.grade}
-                  aria-label={`${grade.grade} send rates`}
-                  className="min-w-0 space-y-2"
-                >
-                  <h5 className="text-sm font-semibold">{grade.grade}</h5>
-                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,7rem),1fr))] gap-2">
-                    {panel.rows.map((item) => {
-                      const value = item.cells.find((value) => value.grade === grade.grade);
-                      return value ? (
-                        <button
-                          key={item.key}
-                          type="button"
-                          aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}${value.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                          aria-pressed={row?.key === item.key && cell?.grade === value.grade}
-                          onClick={() => setSelected({ row: item.key, grade: value.grade })}
-                          className={`min-h-20 min-w-0 rounded-lg border p-2 text-center ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
-                          style={
-                            value.successRate === null
-                              ? undefined
-                              : {
-                                  backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${value.successRate}% * 0.4), var(--color-surface-solid))`,
-                                }
-                          }
-                        >
-                          <span className="block break-words text-xs">{item.label}</span>
-                          <span className="block text-lg font-semibold">{rateLabel(value)}</span>
-                          {value.sampleStatus === "limited" ? (
-                            <span className="block text-xs">Limited sample</span>
-                          ) : null}
-                        </button>
-                      ) : null;
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-          ) : (
-            <ClimbingStrengthsChart
-              panel={displayPanel}
-              view={view}
-              grade={ALL_CLIMBING_GRADES}
-              selectedRow={cell ? (row?.key ?? null) : null}
-              onSelectCell={(row, grade) => setSelected({ row, grade })}
-            />
           )}
+          <ClimbingStrengthsChart
+            panel={displayPanel}
+            view={view}
+            grade={ALL_CLIMBING_GRADES}
+            selectedRow={cell ? (row?.key ?? null) : null}
+            onSelectCell={(row, grade) => setSelected({ row, grade })}
+          />
         </>
       )}
       {cell && row ? (

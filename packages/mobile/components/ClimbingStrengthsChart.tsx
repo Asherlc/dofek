@@ -16,7 +16,7 @@ import Svg, { Circle, G, Line, Polygon, Rect, Text as SvgText } from "react-nati
 import { colors } from "../theme";
 import { AccessibleChart } from "./AccessibleChart";
 
-type ViewKind = Exclude<ClimbingStrengthsView, "profile">;
+type ViewKind = ClimbingStrengthsView;
 type Cell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
 const palette = [colors.accent, "#bb7944", "#7688bc", "#ad658e", "#5e9d9a", "#9b8b44"];
 function color(index: number) {

@@ -1,6 +1,5 @@
 /** Available presentations of the server-computed climbing strengths. */
 export const CLIMBING_STRENGTHS_VIEWS = [
-  { value: "profile", label: "Grade profile" },
   { value: "gaps", label: "Style gaps" },
   { value: "curves", label: "Send rate across grades" },
   { value: "exposure", label: "Exposure map" },
@@ -12,7 +11,6 @@ export type ClimbingStrengthsView = (typeof CLIMBING_STRENGTHS_VIEWS)[number]["v
 
 export const CLIMBING_STRENGTHS_TABS = [
   { value: "radar", label: "Styles" },
-  { value: "profile", label: "Grades" },
   { value: "progress", label: "Progress" },
 ] as const;
 export type ClimbingStrengthsTab = (typeof CLIMBING_STRENGTHS_TABS)[number]["value"];
