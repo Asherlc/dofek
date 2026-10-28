@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingVolumeOverTimeChart } from "./ClimbingVolumeOverTimeChart.tsx";
+import { buildChartTable } from "./chart-accessibility.ts";
 
 interface ChartOption {
   series: { data: unknown[] }[];
@@ -66,21 +67,35 @@ it("formats time tooltips and accessible exact values as hours:minutes", () => {
     />,
   );
   fireEvent.change(screen.getByLabelText("Climbing volume metric"), { target: { value: "time" } });
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toContain("1:30");
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 1 }])).toContain("0:45");
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 2 }])).toContain("0:00");
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 3 }])).toContain("Not recorded");
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe(
+    "2026-01-05<br/>Time (h:mm): 1:30",
+  );
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 1 }])).toBe(
+    "2026-01-12<br/>Time (h:mm): 0:45",
+  );
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 2 }])).toBe(
+    "2026-01-19<br/>Time (h:mm): 0:00",
+  );
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 3 }])).toBe(
+    "2026-01-26<br/>Time (h:mm): Not recorded",
+  );
   expect(chart.option.series[0]?.data).toContainEqual({
     value: ["2026-01-05", 90],
     displayValue: "1:30",
   });
+  expect(buildChartTable({ ...chart.option }).rows).toEqual([
+    { series: "Time (h:mm)", category: "2026-01-05", value: "1:30" },
+    { series: "Time (h:mm)", category: "2026-01-12", value: "0:45" },
+    { series: "Time (h:mm)", category: "2026-01-19", value: "0:00" },
+    { series: "Time (h:mm)", category: "2026-01-26", value: "Not recorded" },
+  ]);
 
   fireEvent.change(screen.getByLabelText("Climbing volume metric"), {
     target: { value: "attempts" },
   });
   expect(chart.option.yAxis.name).toBe("Attempts");
   expect(chart.option.yAxis.interval).toBeUndefined();
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toContain("Attempts: 5");
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe("2026-01-05<br/>Attempts: 5");
 });
 
 it("keeps sub-hour time charts in minutes", () => {
@@ -88,5 +103,7 @@ it("keeps sub-hour time charts in minutes", () => {
   fireEvent.change(screen.getByLabelText("Climbing volume metric"), { target: { value: "time" } });
   expect(chart.option.yAxis.name).toBe("Time (minutes)");
   expect(chart.option.yAxis.interval).toBeUndefined();
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toContain("Time (minutes): 59");
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe(
+    "2026-01-05<br/>Time (minutes): 59",
+  );
 });
