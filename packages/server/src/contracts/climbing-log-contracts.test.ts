@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -84,6 +84,29 @@ describe("versioned climbing detail responses", () => {
       holdTypes: null,
       wallAngle: null,
     });
+  });
+
+  it.each([
+    { holdTypes: ["crimp"] },
+    {
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "937",
+          label: "Crimp",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+      ],
+    },
+  ])("rejects newer trait fields in the strict original contract: %j", async (newerFields) => {
+    vi.resetModules();
+    const { legacyClimbingLogEntryDetailSchema: legacySchema } = await import(
+      "./climbing-log-contracts.ts"
+    );
+    const legacy = serializeClimbingLogEntryDetailResponse(climbingLogEntryFixture(), 1);
+    expect(legacySchema.parse(legacy)).toEqual(legacy);
+    expect(legacySchema.safeParse({ ...legacy, ...newerFields }).success).toBe(false);
   });
 
   it.each([1, 2] as const)("preserves the owned graph through a V%s response", (version) => {

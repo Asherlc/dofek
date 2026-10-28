@@ -66,13 +66,15 @@ describe("ClimbingActivityLogEntryRepository", () => {
     expect(active?.toDetail()).toHaveProperty("tags", []);
   });
   it.each([false, true])(
-    "retains tags from the nonpreferred source during consolidation (KAYA first: %s)",
+    "retains tags from the secondary source during consolidation (KAYA first: %s)",
     async (kayaFirst) => {
       const kaya = named("kaya");
       kaya.raw = {
         tags: [
           { id: "937", name: "Crimp", tag_type_id: "3" },
           { id: "937", name: "Crimp", tag_type_id: "3" },
+          { id: "937", name: "Technical", tag_type_id: "6" },
+          { id: "custom", name: "Funky", tag_type_id: "81" },
         ],
       };
       const richer = named("openbeta", "20000000-0000-4000-8000-000000000011", true);
@@ -90,6 +92,20 @@ describe("ClimbingActivityLogEntryRepository", () => {
           label: "Crimp",
           categoryKey: "3",
           categoryLabel: "Grip",
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "937",
+          label: "Technical",
+          categoryKey: "6",
+          categoryLabel: "Style",
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "custom",
+          label: "Funky",
+          categoryKey: "81",
+          categoryLabel: null,
         },
       ]);
     },

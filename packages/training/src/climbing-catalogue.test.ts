@@ -1,5 +1,56 @@
 import { describe, expect, it } from "vitest";
-import { catalogueCandidateSchema } from "./climbing-catalogue.ts";
+import { catalogueCandidateSchema, climbingCatalogueTagLabel } from "./climbing-catalogue.ts";
+
+describe("catalogue tag labels", () => {
+  it.each([
+    { kind: "hold", category: "Movement", expected: "Holds: Source label?!" },
+    { kind: "climb_type", category: "Movement", expected: "Climb type: Source label?!" },
+    { kind: "steepness", category: "Movement", expected: "Wall: Source label?!" },
+    { kind: "other", category: "Movement", expected: "Movement: Source label?!" },
+    { kind: "other", category: null, expected: "Tag: Source label?!" },
+    { kind: "other", category: "", expected: "Tag: Source label?!" },
+    { kind: "other", category: "3", expected: "Tag: Source label?!" },
+    { kind: "other", category: "81", expected: "Tag: Source label?!" },
+    { kind: "other", category: "Movement 2", expected: "Movement 2: Source label?!" },
+    { kind: "other", category: "2 movement", expected: "2 movement: Source label?!" },
+  ] as const)("labels $kind tags with category $category", ({ kind, category, expected }) => {
+    expect(
+      climbingCatalogueTagLabel({
+        kind,
+        category,
+        sourceKey: "source-tag",
+        label: "Source label?!",
+        scope: "direct",
+        inheritedFrom: null,
+      }),
+    ).toBe(expected);
+  });
+
+  it.each([
+    { scope: "direct", inheritedFrom: "Cragmont Park", expected: "Wall: Slab" },
+    {
+      scope: "inherited",
+      inheritedFrom: "Cragmont Park",
+      expected: "Wall: Slab (inherited from Cragmont Park)",
+    },
+    { scope: "inherited", inheritedFrom: null, expected: "Wall: Slab (inherited)" },
+    { scope: "inherited", inheritedFrom: "", expected: "Wall: Slab (inherited)" },
+  ] as const)(
+    "attributes $scope tags from $inheritedFrom",
+    ({ scope, inheritedFrom, expected }) => {
+      expect(
+        climbingCatalogueTagLabel({
+          kind: "steepness",
+          category: null,
+          sourceKey: "slab",
+          label: "Slab",
+          scope,
+          inheritedFrom,
+        }),
+      ).toBe(expected);
+    },
+  );
+});
 
 describe("informational catalogue observations", () => {
   it("retains OpenBeta's independent sport and trad classifications as source types", () => {

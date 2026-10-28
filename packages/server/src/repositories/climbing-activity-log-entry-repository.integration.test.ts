@@ -100,7 +100,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       expect(stored?.raw).toEqual(raw);
     },
   );
-  it("unions retained tags from a nonpreferred KAYA activity member", async () => {
+  it("unions retained tags from a secondary KAYA activity member", async () => {
     await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
     const [preferred] = await context.db
       .insert(activity)
