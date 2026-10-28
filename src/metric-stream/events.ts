@@ -216,7 +216,6 @@ function createDeterministicMetricStreamId(
     typeof metadata.interval_end === "string"
   ) {
     hash.update("\0interval_end:").update(new Date(metadata.interval_end).toISOString());
-    hash.update("\0device:").update(row.deviceId ?? "");
     hash.update("\0source_type:").update(row.sourceType);
     hash
       .update("\0source_bundle:")

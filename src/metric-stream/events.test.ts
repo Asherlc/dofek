@@ -27,7 +27,7 @@ const baseMetricStreamRow = {
 };
 
 describe("createMetricStreamEvent", () => {
-  it("distinguishes interval end and recording source while preserving generation fences", () => {
+  it("keeps interval identity stable across display renames and distinguishes stable source facts", () => {
     const row = {
       ...baseMetricStreamRow,
       externalId: "hk:steps",
@@ -42,7 +42,10 @@ describe("createMetricStreamEvent", () => {
         metadata: { ...row.metadata, interval_end: "2026-06-06T19:00:02.000Z" },
       }).id,
     ).not.toBe(first.id);
-    expect(createCurrentMetricStreamEvent({ ...row, deviceId: "Phone" }).id).not.toBe(first.id);
+    const renamed = createCurrentMetricStreamEvent({ ...row, deviceId: "Localized Watch" });
+    expect(renamed.id).toBe(first.id);
+    expect(renamed.deviceId).toBe("Localized Watch");
+    expect(createCurrentMetricStreamEvent({ ...row, sourceType: "file" }).id).not.toBe(first.id);
     expect(
       createCurrentMetricStreamEvent({
         ...row,

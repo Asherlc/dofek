@@ -42,7 +42,6 @@ export async function processRunningStepSamples(
   for (const sample of samples) {
     const key = JSON.stringify([
       sample.uuid,
-      sample.sourceName,
       sample.sourceBundle,
       new Date(sample.startDate).toISOString(),
       new Date(sample.endDate).toISOString(),

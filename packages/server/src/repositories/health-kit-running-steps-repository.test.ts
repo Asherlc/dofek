@@ -78,7 +78,7 @@ describe("processRunningStepSamples", () => {
       [run, secondRun],
       [
         sample,
-        { ...sample, workoutUuids: [secondRun.uuid] },
+        { ...sample, sourceName: "Localized Watch", workoutUuids: [secondRun.uuid] },
         { ...sample, endDate: "2026-10-20T10:00:02.375Z" },
         { ...sample, sourceBundle: "phone" },
       ],
@@ -88,6 +88,7 @@ describe("processRunningStepSamples", () => {
     expect(new Set(events.map((event) => event.id)).size).toBe(3);
     expect(events[0]).toMatchObject({
       scalar: 3.5,
+      deviceId: "Localized Watch",
       channel: "step_count",
       externalId: `hk:${sample.uuid}`,
       generation: 2,
@@ -98,6 +99,44 @@ describe("processRunningStepSamples", () => {
       },
     });
   });
+  it("publishes the same observation identity after a source display rename", async () => {
+    const secondRun = { ...run, uuid: "00000000-0000-4000-8000-000000000203" };
+    const versions: MetricStreamEventV2[] = [];
+    const publisher: MetricStreamEventPublisher = {
+      publishRows: async (rows, options) => {
+        const events = rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
+        versions.push(...events);
+        return events;
+      },
+    };
+    const associatedChild = { ...sample, workoutUuids: [run.uuid, secondRun.uuid] };
+    expect(
+      await processRunningStepSamples(
+        database(),
+        userId,
+        [run, secondRun],
+        [associatedChild],
+        publisher,
+      ),
+    ).toBe(1);
+    expect(
+      await processRunningStepSamples(
+        database(),
+        userId,
+        [run, secondRun],
+        [{ ...associatedChild, sourceName: "Localized Watch" }],
+        publisher,
+      ),
+    ).toBe(1);
+    expect(versions).toHaveLength(2);
+    expect(versions[1]?.id).toBe(versions[0]?.id);
+    expect(versions[1]).toMatchObject({
+      deviceId: "Localized Watch",
+      scalar: 3.5,
+      metadata: { source_bundle: "watch", workout_uuids: [run.uuid, secondRun.uuid] },
+    });
+  });
+
   it("rejects conflicting values for one child before changing workout presence", async () => {
     const publisher: MetricStreamEventPublisher = { publishRows: vi.fn() };
     await expect(
