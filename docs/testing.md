@@ -107,6 +107,48 @@ Sources:
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
 - Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
 
+### Hosted ClickHouse Failure Diagnostics
+
+On an integration-test failure, CI runs the
+[ClickHouse diagnostics collector](../scripts/collect-clickhouse-ci-diagnostics.ts)
+before GitHub removes the job's [service containers](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
+The `clickhouse-diagnostics-<shard>` artifact uploads even if the collector fails;
+the original test failure remains a failure. Inspect `manifest.json` first for
+capture failures and collection bounds, then correlate query IDs and timestamps
+across the snapshots and actual server log tails. ClickHouse's
+[query log](https://clickhouse.com/docs/reference/system-tables/query_log) records
+query starts, finishes and exceptions; [dropped tables](https://clickhouse.com/docs/reference/system-tables/dropped_tables)
+identifies Atomic tables awaiting physical removal. A synchronous drop can wait
+for table users, as described by the [Atomic engine](https://clickhouse.com/docs/reference/engines/database-engines/atomic#dropdetach-table);
+a client timeout alone does not establish that cause.
+
+The collector uses Docker's [formatted inspection](https://docs.docker.com/reference/cli/docker/container/inspect/)
+to select identity, image, state, health status and resource limits without Env,
+health commands or health output. It collects resource stats, the last 4,000
+lines of Docker/server/error logs, and bounded read-only process, query-log,
+drop, merge, mutation, active-DROP raw-stack and settings snapshots. The stack
+query selects at most 100 active DROP thread IDs before sampling, retaining raw
+addresses without enabling symbolization settings; see the
+[pinned stack-table implementation](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Storages/System/StorageSystemStackTrace.cpp).
+An empty snapshot can mean the query finished before capture. Each subprocess is capped at 15
+seconds and 8 MiB per output stream; native queries additionally have execution,
+memory, row and connection bounds. The query-log window covers 20 minutes, with
+separate drop/error records so a busy shard's recent queries do not crowd out
+the drop evidence. Capture errors remain explicit and do not suppress the
+test failure. These are diagnostic bounds; test and cleanup timeouts are unchanged.
+
+Before artifact writes, known credential values from the existing URL,
+credential URLs, authorization values, labeled secrets and recognized SQL log
+payloads are redacted at their structural boundaries, including leading dbt
+comments and `EXPLAIN`. Query-text columns are omitted, while structured query
+IDs, timestamps, error codes and stack fields remain available. Redaction can
+remove context and cannot guarantee detection of unknown sensitive free text;
+the manifest records this limitation. Use these artifacts for CI diagnosis,
+and do not add raw environment/config dumps or unredacted SQL to extend them.
+Known prerequisite failures identify usage, container ID or `CLICKHOUSE_URL`
+without echoing supplied values; unexpected errors keep a generic message and
+safe telemetry.
+
 ### Isolated browser end-to-end stack
 
 Use the repository Compose wrapper with the `e2e` project suffix for every

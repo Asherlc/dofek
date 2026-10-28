@@ -2,6 +2,17 @@
 
 Utility and maintenance scripts for development, infrastructure, and reverse engineering.
 
+`collect-clickhouse-ci-diagnostics.ts <container-id> <output-directory>` captures
+bounded, read-only ClickHouse CI failure evidence before the service is removed.
+It writes a manifest, allowlisted container state, resource usage, redacted log
+tails and system-table snapshots. Run it with `pnpm tsx`; the existing
+`CLICKHOUSE_URL`, when present, supplies only an in-memory password redaction
+value. Query authentication uses the container's existing password internally.
+Failed captures retain partial artifacts and make the command exit nonzero.
+See [integration failure diagnostics](../docs/testing.md#hosted-clickhouse-failure-diagnostics).
+Docker supports [formatted inspection](https://docs.docker.com/reference/cli/docker/container/inspect/),
+and GitHub removes [service containers at job completion](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
+
 `pnpm check:dependency-security` runs `check-node-forge-security.ts` and
 `check-braces-security.ts` against the installed Expo/Metro dependencies before
 the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)

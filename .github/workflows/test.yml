@@ -829,10 +829,21 @@ jobs:
           path: .build/fit-decoder/bin
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
-      - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
+      - id: integration-tests
+        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - name: Capture ClickHouse failure diagnostics
+        if: ${{ failure() && steps.integration-tests.outcome == 'failure' }}
+        run: pnpm tsx scripts/collect-clickhouse-ci-diagnostics.ts '${{ job.services.clickhouse.id }}' '${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}'
+      - name: Upload ClickHouse failure diagnostics
+        if: ${{ always() && steps.integration-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clickhouse-diagnostics-${{ matrix.shard }}
+          path: ${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}/
+          if-no-files-found: error
       - name: Upload integration coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
