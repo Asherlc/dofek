@@ -1,6 +1,6 @@
 import type { RunningStepSnapshot } from "../modules/health-kit";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
-import type { ObserverSyncOptions, SyncResult } from "./health-kit-sync";
+import type { ObserverSyncOptions, SyncResult } from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 const BATCH_SIZE = 500;

@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncResult } from "./health-kit-sync";
+import type { SyncResult } from "./health-kit-sync-types";
 
 vi.mock("../modules/health-kit", () => ({
   completeAnchoredQuery: vi.fn(async () => true),

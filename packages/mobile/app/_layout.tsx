@@ -32,7 +32,7 @@ import {
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
-import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import type { SyncTrpcClient } from "../lib/health-kit-sync-types";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";

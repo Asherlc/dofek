@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { syncRunningSteps } from "./health-kit-running-steps-sync";
-import type { ObserverSyncOptions } from "./health-kit-sync";
+import type { ObserverSyncOptions } from "./health-kit-sync-types";
 
 vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 
