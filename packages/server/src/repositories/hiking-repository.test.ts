@@ -1,6 +1,7 @@
 import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
 import {
   ElevationWeek,
   HikingActivity,
@@ -197,7 +198,13 @@ describe("HikingRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
-    const sensorQuery = vi.fn().mockResolvedValue(rows);
+    const sensorQuery = vi.fn(
+      async <TSchema extends z.ZodType>(
+        schema: TSchema,
+        _query: string,
+        _params: Record<string, unknown> = {},
+      ) => rows.map((row) => schema.parse(row)),
+    );
     const sensorStore = {
       query: sensorQuery,
       getActivitySummaries: vi.fn(),
@@ -239,6 +246,32 @@ describe("HikingRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(HikingActivity);
       expect(result[0]?.distanceKm).toBeCloseTo(5.0, 2);
+    });
+
+    it.each([
+      { name: null, type: "hiking", label: "Hiking" },
+      { name: null, type: "walking", label: "Walking" },
+      { name: null, type: "running", label: "Running" },
+      { name: "Trail Loop", type: "hiking", label: "Trail Loop" },
+      { name: "", type: "hiking", label: "" },
+    ])("renders $type named $name as $label", async ({ name, type, label }) => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "hike-1",
+          date: "2024-01-15",
+          activity_name: name,
+          canonical_type: type,
+          distance_m: 5000,
+          duration_seconds: 3600,
+          elevation_gain_m: 300,
+          elevation_loss_m: 100,
+          avg_grade: 4,
+        },
+      ]);
+
+      const result = await repo.getGradeAdjustedPaces(null);
+
+      expect(result[0]?.toDetail().activityName).toBe(label);
     });
 
     it("passes days parameter to query", async () => {
