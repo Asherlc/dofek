@@ -543,6 +543,90 @@ describe("HealthKit sync router", () => {
       expect(activeRecords[0]?.group_id).not.toBe(activeRecords[1]?.group_id);
     });
 
+    it("rolls back workout absence when grouping fails while retaining independently committed uploads", async () => {
+      const userId = "00000000-0000-0000-0000-000000000001";
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name) VALUES ('whoop', 'WHOOP')
+            ON CONFLICT (id) DO NOTHING`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.activity
+              (user_id, provider_id, external_id, canonical_type, provider_type, started_at, ended_at)
+            VALUES
+              (${userId}, 'whoop', 'atomic-healthkit-native-first', 'walking', 'walking',
+                '2025-06-28T10:00:00Z', '2025-06-28T11:00:00Z'),
+              (${userId}, 'whoop', 'atomic-healthkit-native-second', 'walking', 'walking',
+                '2025-06-28T12:00:00Z', '2025-06-28T13:00:00Z')`,
+      );
+      const bridge = {
+        uuid: "atomic-healthkit-bridge",
+        workoutType: "52",
+        startDate: "2025-06-28T10:00:00Z",
+        endDate: "2025-06-28T13:00:00Z",
+        duration: 10800,
+        totalDistance: null,
+        sourceName: "WHOOP",
+        sourceBundle: "com.whoop.app",
+      };
+      const initial = await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [bridge],
+      });
+      expect(initial.result.data.inserted).toBe(1);
+
+      await testCtx.db.execute(sql`CREATE FUNCTION fitness.reject_healthkit_group_split()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.external_id IN ('atomic-healthkit-native-first', 'atomic-healthkit-native-second') THEN
+            RAISE EXCEPTION 'Fixture activity grouping failure';
+          END IF;
+          RETURN NEW;
+        END
+        $$`);
+      try {
+        await testCtx.db.execute(sql`CREATE TRIGGER reject_healthkit_group_split
+          BEFORE UPDATE OF group_id ON fitness.activity
+          FOR EACH ROW WHEN (OLD.group_id IS DISTINCT FROM NEW.group_id)
+          EXECUTE FUNCTION fitness.reject_healthkit_group_split()`);
+        const result = await mutate("healthKitSync.pushWorkouts", {
+          ...WORKOUT_SYNC_WINDOW,
+          workouts: [
+            {
+              ...bridge,
+              uuid: "atomic-healthkit-new-workout",
+              startDate: "2025-06-29T10:00:00Z",
+              endDate: "2025-06-29T11:00:00Z",
+              duration: 3600,
+            },
+          ],
+        });
+        expect(result.error?.data.code).toBe("INTERNAL_SERVER_ERROR");
+
+        const [retainedBridge] = await testCtx.db.execute(
+          sql`SELECT provider_absent_at FROM fitness.activity
+              WHERE user_id = ${userId} AND external_id = 'hk:workout:atomic-healthkit-bridge'`,
+        );
+        expect(retainedBridge).toBeDefined();
+        expect(retainedBridge?.provider_absent_at).toBeNull();
+        const uploads = await testCtx.db.execute(
+          sql`SELECT external_id, provider_absent_at, deleted_at FROM fitness.activity
+              WHERE user_id = ${userId} AND external_id = 'hk:workout:atomic-healthkit-new-workout'`,
+        );
+        expect(uploads).toEqual([
+          {
+            external_id: "hk:workout:atomic-healthkit-new-workout",
+            provider_absent_at: null,
+            deleted_at: null,
+          },
+        ]);
+      } finally {
+        await testCtx.db.execute(
+          sql`DROP TRIGGER IF EXISTS reject_healthkit_group_split ON fitness.activity`,
+        );
+        await testCtx.db.execute(sql`DROP FUNCTION fitness.reject_healthkit_group_split()`);
+      }
+    });
+
     it("stores Hang Ten HealthKit workouts as hangboard sessions with intervals", async () => {
       const result = await mutate("healthKitSync.pushWorkouts", {
         ...WORKOUT_SYNC_WINDOW,

@@ -306,9 +306,7 @@ export const healthKitSyncRouter = router({
         windowEnd: input.windowEnd,
       });
 
-      if (inserted > 0) {
-        await invalidateAllUserQueries(ctx.userId);
-      }
+      await invalidateAllUserQueries(ctx.userId);
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
       healthKitRecordsTotal.add(input.workouts.length, {

@@ -32,10 +32,12 @@ const hangTenIntervalMocks = vi.hoisted(() => ({
 }));
 
 const activityGroupMocks = vi.hoisted(() => ({
+  lock: vi.fn().mockResolvedValue(undefined),
   reconcile: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../../../src/db/activity-group-reconciliation.ts", () => ({
+  lockActivityGroups: activityGroupMocks.lock,
   reconcileActivityGroups: activityGroupMocks.reconcile,
 }));
 
@@ -422,6 +424,40 @@ describe("processWorkouts", () => {
     );
 
     expect(hangTenIntervalMocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("reconciles workout presence and groups through the same transaction", async () => {
+    providerActivitySyncMocks.reconcile.mockClear();
+    activityGroupMocks.lock.mockClear();
+    activityGroupMocks.reconcile.mockClear();
+    const db = makeTransactionalTestDatabase({ execute: vi.fn(async () => []) });
+    const transaction = makeTransactionalTestDatabase({ execute: vi.fn(async () => []) });
+    vi.spyOn(db, "transaction").mockImplementation(async (work) => work(transaction));
+
+    await processWorkouts(db, "00000000-0000-0000-0000-000000000001", [], {
+      windowStart: "2026-06-13T00:00:00.000Z",
+      windowEnd: "2026-06-21T00:00:00.000Z",
+    });
+
+    expect(activityGroupMocks.lock).toHaveBeenCalledWith(
+      transaction,
+      "00000000-0000-0000-0000-000000000001",
+    );
+    expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledWith(
+      undefined,
+      { presentAppleHealthIdentities: [] },
+      transaction,
+    );
+    expect(activityGroupMocks.reconcile).toHaveBeenCalledWith(
+      transaction,
+      "00000000-0000-0000-0000-000000000001",
+    );
+    expect(activityGroupMocks.lock.mock.invocationCallOrder[0]).toBeLessThan(
+      providerActivitySyncMocks.reconcile.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(providerActivitySyncMocks.reconcile.mock.invocationCallOrder[0]).toBeLessThan(
+      activityGroupMocks.reconcile.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("rejects workout processing when activity grouping fails", async () => {

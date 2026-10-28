@@ -69,21 +69,93 @@ If this returns many rows while Postgres `fitness.v_activity` groups the same
 IDs under one `member_activity_ids` array, the ClickHouse final summary is using
 raw activity identity somewhere.
 
+### Late HealthKit Copies
+
 For late HealthKit copies, compare raw `provider_id`, `source_name`, workout
 UUIDs, and `group_id` before investigating analytics freshness. A WHOOP workout
 can arrive directly and through Apple Health with a different UUID while still
 reporting WHOOP as its source. The [HealthKit workout processor](../packages/server/src/routers/health-kit-sync-processors.ts)
-runs shared group reconciliation in a transaction after reconciling provider
-presence, before returning success and invalidating user queries. All raw
+runs provider presence and shared group reconciliation in one transaction,
+acquiring the per-user grouping lock before updating presence. User queries are
+invalidated after commit, including empty uploads. All raw
 source records remain stored. The [router integration tests](../packages/server/src/routers/health-kit-sync.integration.test.ts)
 cover a late WHOOP-sourced copy joining the original group. If both database
 projections expose separate groups, inspect this ingestion boundary before
 changing overlap thresholds or rebuilding ClickHouse models.
 
+Run this comparison in a read-only transaction with the affected account and
+workout window supplied privately. It reports whether the direct WHOOP record
+and its HealthKit copies share a persisted group, alongside their overlap:
+
+```sql
+BEGIN READ ONLY;
+SET LOCAL statement_timeout = '10s';
+WITH records AS (
+  SELECT id, group_id, provider_id, source_name, started_at, ended_at
+  FROM fitness.activity
+  WHERE user_id = '<user-uuid>'::uuid
+    AND started_at >= '<window-start>'::timestamptz
+    AND started_at < '<window-end>'::timestamptz
+    AND deleted_at IS NULL AND provider_absent_at IS NULL
+)
+SELECT origin.provider_id AS origin_provider,
+       copy.provider_id AS copy_provider,
+       origin.group_id = copy.group_id AS same_group,
+       round(
+         extract(epoch FROM least(origin.ended_at, copy.ended_at)
+                            - greatest(origin.started_at, copy.started_at))
+         / nullif(extract(epoch FROM greatest(origin.ended_at, copy.ended_at)
+                                    - least(origin.started_at, copy.started_at)), 0),
+         3
+       ) AS overlap_iou
+FROM records AS origin
+JOIN records AS copy ON origin.provider_id = 'whoop'
+  AND copy.provider_id = 'apple_health' AND copy.source_name = 'WHOOP'
+  AND origin.started_at < copy.ended_at AND copy.started_at < origin.ended_at;
+ROLLBACK;
+```
+
+The incident comparison found both an already-grouped pair and later ungrouped
+pairs with overlap rounding to `1.000`. Compare the corresponding raw and
+canonical groups using the queries below, and check successful upload requests
+with `docker service logs --raw --timestamps --since 30m --tail 2000 dofek_web`.
+Follow the [deployment diagnostics](../deploy/README.md) to select the live
+service before reading logs. The [workout processor](../packages/server/src/routers/health-kit-sync-processors.ts)
+and [synthetic router regressions](../packages/server/src/routers/health-kit-sync.integration.test.ts)
+define the write path and executable reproduction.
+
+The grouping lock is acquired before row updates to preserve consistent lock
+ordering with normal canonical commits. The [shared lock helper](../src/db/activity-group-reconciliation.ts)
+uses a transaction-level advisory lock; acquiring that lock again from the same
+transaction succeeds, and commit or rollback releases it. PostgreSQL documents
+[consistent lock ordering and advisory lock ownership](https://www.postgresql.org/docs/current/explicit-locking.html).
+
 After a provider removal, inspect persisted membership separately from visible
 activity counts: the [canonical view](../drizzle/_views/01_v_activity.sql)
 excludes groups containing an effective tombstone, even when reconciliation
 has separated the remaining active records into different groups.
+
+### Grouping Query Cost
+
+Before changing reconciliation scope, inspect measured query cost with
+[PostgreSQL statement diagnostics](../deploy/README.md#postgres-statement-diagnostics):
+
+```sql
+SELECT calls,
+       round(mean_exec_time::numeric, 2) AS mean_ms,
+       round(max_exec_time::numeric, 2) AS max_ms
+FROM pg_stat_statements
+WHERE query ILIKE '%overlap_edges%'
+  AND query ILIKE '%manual_merge_anchor_id%'
+ORDER BY calls DESC;
+```
+
+The incident review found two matching query shapes with cumulative mean times
+of about 2.5 and 3.2 seconds and maxima below 6.8 seconds. These statement times
+do not bound the entire HTTP request or prove an upload timeout. Preserve
+transitive group edges, splits, and alias ownership from the [shared resolver](../src/db/activity-group-reconciliation.ts)
+when considering any measured optimization; an upload-window filter alone does
+not establish a complete affected component.
 
 ## Missing Primary Source Label
 
