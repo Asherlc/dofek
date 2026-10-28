@@ -58,7 +58,7 @@ export function VerticalAscentChart({ data, loading, availability }: VerticalAsc
   }
 
   // Scale bubble size by elevation gain
-  const maxGain = Math.max(...data.map((d) => units.convertElevation(d.elevationGainMeters)));
+  const maxGain = Math.max(...data.map((point) => point.elevationGainMeters));
   const minSize = 8;
   const maxSize = 40;
 
