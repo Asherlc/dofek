@@ -125,7 +125,9 @@ describe("ClimbingTab", () => {
     const section = screen.getByRole("heading", { name: "Climbing Strengths" }).closest("section");
     if (!section) throw new Error("Missing strengths section");
     fireEvent.click(within(section).getByText("Exact values"));
-    expect(within(section).getByRole("button", { name: /Vertical · All grades/ })).toBeVisible();
+    expect(
+      within(section).getByRole("button", { name: /^Vertical · Sent 13 of 21 climbs/ }),
+    ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
