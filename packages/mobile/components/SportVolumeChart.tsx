@@ -51,7 +51,11 @@ export function SportVolumeChart({ days, enabled }: { days: number | null; enabl
         {data?.sport ? `${formatActivityTypeLabel(data.sport)} Volume` : "Weekly Volume"}
       </Text>
       {data?.sports.length ? (
-        <ScrollView horizontal accessibilityRole="radiogroup" accessibilityLabel="Volume sport">
+        <ScrollView
+          horizontal
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Volume activity type"
+        >
           {data.sports.map((entry) => (
             <TouchableOpacity
               key={entry}

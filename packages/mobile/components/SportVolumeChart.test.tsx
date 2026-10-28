@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SportVolumeChart } from "./SportVolumeChart";
 
@@ -14,7 +14,7 @@ vi.mock("../lib/trpc", () => ({
         useQuery: (input: { sport?: string; metric: string }) => ({
           data: {
             sport: input.sport ?? "running",
-            sports: ["running", "swimming", "yoga"],
+            sports: ["cardio", "running", "swimming", "yoga"],
             metric: input.metric,
             unit: input.metric === "distance" ? "km" : "min",
             weeks: [{ week: "2026-10-19", value: input.metric === "distance" ? null : 90 }],
@@ -36,4 +36,13 @@ it("offers sport-specific metrics and leaves missing distance unknown", () => {
   fireEvent.click(screen.getByRole("radio", { name: "Yoga" }));
   expect(screen.getByLabelText("2026-10-19: 90 min")).toBeTruthy();
   expect(screen.queryByRole("radio", { name: "Distance" })).toBeNull();
+});
+it("shows recorded cardio volume through the activity type selector", () => {
+  render(<SportVolumeChart days={30} enabled />);
+  const activityTypes = screen.getByRole("radiogroup", { name: "Volume activity type" });
+  const cardio = within(activityTypes).getByRole("radio", { name: "Cardio" });
+  fireEvent.click(cardio);
+  expect(cardio.getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByText("Cardio Volume")).toBeTruthy();
+  expect(screen.getByLabelText("2026-10-19: 90 min")).toBeTruthy();
 });
