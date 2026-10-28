@@ -82,7 +82,6 @@ jobs:
     with:
       commit_sha: ${{ needs.production.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
 
   ios:
     name: Deploy Matching iOS
@@ -98,4 +97,3 @@ jobs:
       commit_sha: ${{ needs.production.outputs.commit_sha }}
       ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit

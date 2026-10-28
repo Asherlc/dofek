@@ -301,6 +301,11 @@ publishing. Manually dispatched `Deploy Web` runs deploy only the server. GitHub
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
+Mobile publisher calls do not inherit repository secrets. Runtime credentials
+come from the existing [Infisical OIDC action](../.github/actions/load-infisical-secrets/action.yml);
+GitHub automatically supplies the scoped `GITHUB_TOKEN` to reusable workflows,
+as documented in its [reusable workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
+
 For a manual mobile release, dispatch **Deploy** (`deploy.yml`) with target `ota`
 or `ios` from the desired source ref. Without an `image_tag`, the workflow builds
 and deploys that commit's server image before publishing the selected mobile

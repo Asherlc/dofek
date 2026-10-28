@@ -191,7 +191,6 @@ jobs:
     with:
       commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
 
   ota:
     name: Deploy OTA
@@ -205,5 +204,4 @@ jobs:
     with:
       commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).
