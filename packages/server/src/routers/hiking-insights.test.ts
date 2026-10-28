@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  firstHikingActivityId,
+  hikingComparisonRow,
+  secondHikingActivityId,
+} from "../repositories/hiking-test-helpers.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -194,57 +199,22 @@ describe("hikingRouter", () => {
   });
 
   describe("activityComparison", () => {
-    it("groups repeated activities", async () => {
-      const rows = [
-        {
-          activity_name: "Trail Loop",
-          date: "2024-01-01",
-          duration_minutes: 60,
-          average_pace_min_per_km: 8.5,
-          avg_heart_rate: 145,
-          elevation_gain_m: 200,
-        },
-        {
-          activity_name: "Trail Loop",
-          date: "2024-01-15",
-          duration_minutes: 55,
-          average_pace_min_per_km: 8.2,
-          avg_heart_rate: 140,
-          elevation_gain_m: 200,
-        },
-      ];
-      const caller = makeCaller(rows);
+    it("returns schema-validated GPS route groups with unavailable pace", async () => {
+      const caller = makeCaller([
+        hikingComparisonRow({ distance_m: 0, average_pace_min_per_km: 0, avg_heart_rate: null }),
+        hikingComparisonRow({
+          canonical_activity_id: secondHikingActivityId,
+          activity_name: "Afternoon Hike",
+        }),
+      ]);
       const result = await caller.activityComparison({ days: 365 });
-
       expect(result).toHaveLength(1);
-      expect(result[0]?.activityName).toBe("Trail Loop");
-      expect(result[0]?.instances).toHaveLength(2);
-    });
-
-    it("handles null heart rate", async () => {
-      const rows = [
-        {
-          activity_name: "Walk",
-          date: "2024-01-01",
-          duration_minutes: 30,
-          average_pace_min_per_km: 10,
-          avg_heart_rate: null,
-          elevation_gain_m: 50,
-        },
-        {
-          activity_name: "Walk",
-          date: "2024-01-02",
-          duration_minutes: 35,
-          average_pace_min_per_km: 9.5,
-          avg_heart_rate: 130,
-          elevation_gain_m: 55,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.activityComparison({ days: 365 });
-
-      expect(result[0]?.instances[0]?.avgHeartRate).toBeNull();
-      expect(result[0]?.instances[1]?.avgHeartRate).toBe(130);
+      expect(result[0]).toMatchObject({ routeId: firstHikingActivityId, attemptCount: 2 });
+      expect(result[0]?.instances[0]).toMatchObject({
+        activityId: firstHikingActivityId,
+        averagePaceMinPerKm: null,
+        avgHeartRate: null,
+      });
     });
   });
 });

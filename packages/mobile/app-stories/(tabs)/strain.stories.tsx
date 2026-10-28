@@ -20,9 +20,11 @@ import {
   climbingAttachmentSafeAreaMetrics,
 } from "../../components/climbing-log-attachment-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
+  "hiking.activityComparison": routeComparisonFixture,
   "climbing.attachmentActivities": climbingAttachmentActivities,
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,

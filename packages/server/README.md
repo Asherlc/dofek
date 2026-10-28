@@ -603,6 +603,16 @@ also removes that table's indexes and constraints.
 
 ## Activity metric sources
 
+`hiking.activityComparison` groups complete recorded GPS routes with the existing
+[bounded route matcher](src/repositories/route-equivalence.ts), keeping activity
+type and modality separate. Names label groups rather than establish identity.
+The [repository](src/repositories/hiking-repository.ts) returns chronological,
+identified attempts and nullable pace through the
+[shared response schema](../training/src/route-comparison.ts). Insufficient GPS
+cannot establish a repeated route, and route identity alone does not establish
+equivalent effort or conditions. The endpoint versions its response cache when
+replacing the former name-based contract; see [the router](src/routers/hiking.ts).
+
 The [source contract](../providers-meta/src/activity-metric-source.ts) separates
 the complete source label from its compact display name, provider identity, and
 known Apple Health, cloud, or Bluetooth attribution. Clients render these fields

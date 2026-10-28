@@ -69,6 +69,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
+| `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
 | `pmc` | TRIMP, heart-rate/power stress, FTP estimate, learned stress model, and performance-management calculations |
 | `power-analysis` | Power curves, normalized power, critical-power fit, regression, and duration constants |

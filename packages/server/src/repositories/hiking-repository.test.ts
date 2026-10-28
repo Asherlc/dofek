@@ -5,9 +5,13 @@ import {
   ElevationWeek,
   HikingActivity,
   HikingRepository,
-  RepeatedRoute,
   WalkingBiomechanicsSnapshot,
 } from "./hiking-repository.ts";
+import {
+  firstHikingActivityId,
+  hikingComparisonRow,
+  secondHikingActivityId,
+} from "./hiking-test-helpers.ts";
 import {
   expectClickHouseFiniteDaysFilter,
   expectClickHouseUnboundedDaysFilter,
@@ -147,43 +151,6 @@ describe("WalkingBiomechanicsSnapshot", () => {
     expect(detail.doubleSupportPct).toBeNull();
     expect(detail.asymmetryPct).toBeNull();
     expect(detail.steadiness).toBeNull();
-  });
-});
-
-describe("RepeatedRoute", () => {
-  it("groups instances under a route name", () => {
-    const route = new RepeatedRoute("Trail Loop", [
-      {
-        date: "2024-01-01",
-        durationMinutes: 60,
-        averagePaceMinPerKm: 8.5,
-        avgHeartRate: 145,
-        elevationGainMeters: 200,
-      },
-      {
-        date: "2024-01-15",
-        durationMinutes: 55,
-        averagePaceMinPerKm: 8.2,
-        avgHeartRate: 140,
-        elevationGainMeters: 200,
-      },
-    ]);
-    const detail = route.toDetail();
-    expect(detail.activityName).toBe("Trail Loop");
-    expect(detail.instances).toHaveLength(2);
-  });
-
-  it("handles null heart rate in instances", () => {
-    const route = new RepeatedRoute("Walk", [
-      {
-        date: "2024-01-01",
-        durationMinutes: 30,
-        averagePaceMinPerKm: 10,
-        avgHeartRate: null,
-        elevationGainMeters: 50,
-      },
-    ]);
-    expect(route.toDetail().instances[0]?.avgHeartRate).toBeNull();
   });
 });
 
@@ -380,65 +347,69 @@ describe("HikingRepository", () => {
   });
 
   describe("getRepeatedRoutes", () => {
-    it("returns RepeatedRoute instances grouped by name", async () => {
+    it("matches GPS routes across different activity names and preserves attempt identity", async () => {
       const { repo } = makeRepository([
-        {
-          activity_name: "Trail Loop",
-          date: "2024-01-01",
-          duration_minutes: 60,
-          average_pace_min_per_km: 8.5,
-          avg_heart_rate: 145,
-          elevation_gain_m: 200,
-        },
-        {
-          activity_name: "Trail Loop",
-          date: "2024-01-15",
-          duration_minutes: 55,
-          average_pace_min_per_km: 8.2,
-          avg_heart_rate: 140,
-          elevation_gain_m: 200,
-        },
+        hikingComparisonRow({
+          canonical_activity_id: secondHikingActivityId,
+          activity_name: "Afternoon Hike",
+          started_at: "2026-10-27T15:00:00Z",
+        }),
+        hikingComparisonRow(),
       ]);
-      const result = await repo.getRepeatedRoutes(365);
+      const result = await repo.getRepeatedRoutes(null);
       expect(result).toHaveLength(1);
-      expect(result[0]).toBeInstanceOf(RepeatedRoute);
-      expect(result[0]?.toDetail().activityName).toBe("Trail Loop");
-      expect(result[0]?.toDetail().instances).toHaveLength(2);
+      expect(result[0]).toMatchObject({
+        routeId: firstHikingActivityId,
+        activityName: "Trail Loop",
+        activityType: "hiking",
+        attemptCount: 2,
+        instances: [
+          {
+            activityId: firstHikingActivityId,
+            startedAt: "2026-10-27T08:00:00Z",
+            distanceKm: 5,
+            averagePaceMinPerKm: 12,
+          },
+          {
+            activityId: secondHikingActivityId,
+            activityName: "Afternoon Hike",
+            startedAt: "2026-10-27T15:00:00Z",
+          },
+        ],
+      });
     });
 
-    it("handles null heart rate", async () => {
+    it("keeps unrelated GPS tracks separate even when their activity names match", async () => {
       const { repo } = makeRepository([
-        {
-          activity_name: "Walk",
-          date: "2024-01-01",
-          duration_minutes: 30,
-          average_pace_min_per_km: 10,
-          avg_heart_rate: null,
-          elevation_gain_m: 50,
-        },
-        {
-          activity_name: "Walk",
-          date: "2024-01-02",
-          duration_minutes: 35,
-          average_pace_min_per_km: 9.5,
-          avg_heart_rate: 130,
-          elevation_gain_m: 55,
-        },
+        hikingComparisonRow(),
+        hikingComparisonRow({
+          canonical_activity_id: secondHikingActivityId,
+          points: [
+            [38.77, -121.42],
+            [38.8, -121.42],
+          ],
+        }),
       ]);
-      const result = await repo.getRepeatedRoutes(365);
-      expect(result[0]?.toDetail().instances[0]?.avgHeartRate).toBeNull();
-      expect(result[0]?.toDetail().instances[1]?.avgHeartRate).toBe(130);
+      expect(await repo.getRepeatedRoutes(null)).toEqual([]);
     });
 
-    it("reads from the hiking activity read model", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("retains unavailable pace as null and keeps its attempt in the route", async () => {
+      const { repo } = makeRepository([
+        hikingComparisonRow({ distance_m: 0, average_pace_min_per_km: 0, avg_heart_rate: null }),
+        hikingComparisonRow({ canonical_activity_id: secondHikingActivityId }),
+      ]);
+      const result = await repo.getRepeatedRoutes(null);
+      expect(result[0]?.instances[0]).toMatchObject({
+        distanceKm: null,
+        averagePaceMinPerKm: null,
+        avgHeartRate: null,
+      });
+      expect(result[0]?.attemptCount).toBe(2);
+    });
 
-      await repo.getRepeatedRoutes(365);
-
-      const query = execute.mock.calls[0]?.[1];
-      expect(query).toContain("FROM analytics.hiking_activity");
-      expect(query).toContain("hiking.duration_seconds > 0");
-      expect(query).not.toContain("FROM analytics.activity_summary");
+    it("rejects excessive route candidates with an actionable error", async () => {
+      const { repo } = makeRepository(Array.from({ length: 251 }, () => hikingComparisonRow()));
+      await expect(repo.getRepeatedRoutes(null)).rejects.toThrow("Choose a shorter date range");
     });
 
     it("applies finite selected-range lower-bound filters", async () => {

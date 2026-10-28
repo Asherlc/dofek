@@ -142,6 +142,15 @@ log and attempt graph follows the [canonical response contract](../server/src/co
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
+Training also compares one repeated GPS route at a time through
+[RouteComparisonCard](./components/RouteComparisonCard.tsx). The
+[shared response contract](../training/src/route-comparison.ts) supplies pace,
+attempt counts, and activity timestamps; the [SVG chart](./components/RouteComparisonChart.tsx)
+shows faster pace higher and preserves same-day attempts as separate observations.
+Its [accessible data disclosure](./components/AccessibleChart.tsx) lists exact
+attempt values and opens each activity, following the
+[WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+
 The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 `climbing.strengths` query using the current training dates and climbing filters.
 The [strengths chart](components/ClimbingStrengthsChart.tsx) keeps one visualization per tab: Styles uses the server-computed grade-adjusted radar, Grades uses a grade/style heatmap, and Progress shows monthly send rates on one shared plot. Wall angle / Hold type apply to all tabs, with no grade picker or format menu. The radar places the same-grade baseline at zero; results outside its dashed outline are stronger and those inside weaker. It needs three scored styles; smaller samples remain accessible through the exact-value disclosure. Progress combines grades and says that changes may reflect difficulty mix. Types and settings are controlled by the page-wide filter; all selected types and settings feed one chart. The server retains type-specific grade baselines and qualifies grade labels when multiple contexts are selected. Selecting a heatmap cell or exact-value row reveals source climbs, with zeros, unknown outcomes, missing observations and limited known-result samples distinct. Exact-value controls use [React Native accessibility roles and state](https://reactnative.dev/docs/accessibility) through [AccessibleChart](components/AccessibleChart.tsx).
