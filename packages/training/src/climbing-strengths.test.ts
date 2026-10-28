@@ -5,6 +5,7 @@ import {
   climbingStrengthsDifferenceLabel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSendLabel,
 } from "./climbing-strengths.ts";
 
 describe("climbing strengths labels", () => {
@@ -17,7 +18,7 @@ describe("climbing strengths labels", () => {
     expect(climbingStrengthsDifferenceLabel(value)).toBe(label);
   });
   it("labels unavailable, zero, limited and available adjusted observations", () => {
-    expect(climbingStrengthsAdjustedLabel(undefined)).toBe("No comparable results");
+    expect(climbingStrengthsAdjustedLabel(undefined)).toBe("No results to compare yet");
     expect(
       climbingStrengthsAdjustedLabel({
         key: "slab",
@@ -25,7 +26,7 @@ describe("climbing strengths labels", () => {
         expectedSuccessRate: null,
         sampleStatus: "no_data",
       }),
-    ).toBe("No comparable results");
+    ).toBe("No results to compare yet");
     expect(
       climbingStrengthsAdjustedLabel({
         key: "slab",
@@ -33,9 +34,7 @@ describe("climbing strengths labels", () => {
         expectedSuccessRate: 0,
         sampleStatus: "limited",
       }),
-    ).toBe(
-      "0 percentage points vs same-grade baseline · Expected send rate at these grades: 0% · Limited sample",
-    );
+    ).toBe("Too few climbs to judge strengths yet");
     expect(
       climbingStrengthsAdjustedLabel({
         key: "slab",
@@ -43,9 +42,20 @@ describe("climbing strengths labels", () => {
         expectedSuccessRate: 62.8,
         sampleStatus: "available",
       }),
-    ).toBe(
-      "-7.2 percentage points vs same-grade baseline · Expected send rate at these grades: 62.8%",
-    );
+    ).toBe("Sending less often than usual at these grades (-7.2 percentage points)");
+  });
+  it.each([
+    [0, "Sending as often as usual at these grades"],
+    [12.5, "Sending more often than usual at these grades (+12.5 percentage points)"],
+  ] as const)("explains an available adjusted difference of %s", (difference, label) => {
+    expect(
+      climbingStrengthsAdjustedLabel({
+        key: "slab",
+        differencePercentagePoints: difference,
+        expectedSuccessRate: 50,
+        sampleStatus: "available",
+      }),
+    ).toBe(label);
   });
   it("distinguishes missing climbs, unknown results and recorded rates", () => {
     expect(climbingStrengthsRateLabel({ climbs: 0, successRate: null })).toBe("No data");
@@ -66,6 +76,13 @@ describe("climbing strengths labels", () => {
     expect(climbingStrengthsCountLabel({ sends: 0, climbs: 1, unknownOutcomes: 1 })).toBe(
       "0 sends / 1 climb · 1 result unknown",
     );
+  });
+  it.each([
+    [{ sends: 1, climbs: 1, unknownOutcomes: 0 }, "Sent 1 of 1 climb"],
+    [{ sends: 2, climbs: 5, unknownOutcomes: 2 }, "Sent 2 of 5 climbs · 2 results unknown"],
+    [{ sends: 0, climbs: 1, unknownOutcomes: 1 }, "Sent 0 of 1 climb · 1 result unknown"],
+  ])("describes recorded sends with their result coverage", (value, label) => {
+    expect(climbingStrengthsSendLabel(value)).toBe(label);
   });
   it("preserves unknown outcomes in source examples", () => {
     expect(climbingStrengthsResultLabel(null)).toBe("Result unknown");

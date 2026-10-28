@@ -136,7 +136,7 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v9",
+    keyVersion: "climbing-strengths-v11",
   })
     .input(
       climbingInputSchema.extend({
@@ -296,7 +296,10 @@ export const climbingRouter = router({
       });
     }),
 
-  volumeOverTime: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  volumeOverTime: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-recorded-weekly-attempts-v1",
+  })
     .input(
       climbingInputSchema.extend({ days: z.number().int().min(1).max(365).nullable().default(90) }),
     )
@@ -350,6 +353,7 @@ export const climbingRouter = router({
   hangboardingSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: hangboardingSummarySchema,
+    keyVersion: "hangboarding-sensor-heart-rate-v1",
   })
     .input(daysInputSchema)
     .output(hangboardingSummarySchema)
@@ -358,6 +362,7 @@ export const climbingRouter = router({
         ctx.db,
         ctx.userId,
         ctx.timezone,
+        ctx.sensorStore,
         ctx.accessWindow,
       );
       return runClimbingQuery(() => repository.getSummary(input.days));

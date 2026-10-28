@@ -122,8 +122,12 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
     expect(screen.getByText("Error: Reconnect strengths provider")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Grades" }));
-    expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
+    const section = screen.getByRole("heading", { name: "Climbing Strengths" }).closest("section");
+    if (!section) throw new Error("Missing strengths section");
+    fireEvent.click(within(section).getByText("Exact values"));
+    expect(
+      within(section).getByRole("button", { name: /^Vertical · Sent 13 of 21 climbs/ }),
+    ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));

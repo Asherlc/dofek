@@ -75,132 +75,35 @@ export const Sparse: Story = {
       ...fixture,
       panels: fixture.panels.map((panel) => ({
         ...panel,
-        grades: panel.grades.filter((grade) => grade.grade === "V6"),
-        rows: panel.rows.map((row) => ({
-          ...row,
-          cells: row.cells.filter((cell) => cell.grade === "V6"),
-        })),
+        coverage: { ...panel.coverage, missingTraits: 40 },
+        rows: panel.rows.filter((row) => row.key === "slab"),
+        gradeAdjustedStrengths: panel.gradeAdjustedStrengths.filter((row) => row.key === "slab"),
+        allGrades: {
+          ...panel.allGrades,
+          rows: panel.allGrades.rows.filter((row) => row.key === "slab"),
+        },
         progress: panel.progress.map((period) => ({
           ...period,
-          rows: period.rows.map((row) => ({
-            ...row,
-            cells: row.cells.filter((cell) => cell.grade === "V6"),
-          })),
+          rows: period.rows.filter((row) => row.key === "slab"),
         })),
       })),
     },
   },
 };
-export const SettingsAndContexts: Story = {
+export const MissingHoldTypes: Story = {
   args: {
     data: {
       ...fixture,
-      panels: fixture.panels.flatMap((panel) => [
-        panel,
-        {
-          ...panel,
-          key: "hold-indoor",
-          dimension: "hold_type" as const,
-          rows: panel.rows.map((row) => ({
-            ...row,
-            label: row.key === "vertical" ? "Crimp" : row.key === "overhang" ? "Sloper" : "Jug",
-          })),
-        },
-        { ...panel, key: "angle-outdoor", setting: "outdoor" as const },
-        {
-          ...panel,
-          key: "setting",
-          dimension: "setting" as const,
-          setting: null,
-          progress: panel.progress.map((period) => ({
-            ...period,
-            rows: period.rows
-              .map((row) => (row.key === "overhang" ? { ...row, key: "outdoor" } : row))
-              .filter((row) => row.key !== "slab"),
-          })),
-          rows: [
-            ...panel.rows.slice(0, 1).map((row) => ({ ...row, label: "Indoor" })),
-            {
-              key: "outdoor",
-              label: "Outdoor",
-              cells: [
-                {
-                  grade: "V3",
-                  unknownOutcomes: 0,
-                  sends: 16,
-                  climbs: 20,
-                  successRate: 80,
-                  differencePercentagePoints: 0,
-                  sampleStatus: "available" as const,
-                  examples: [],
-                },
-                {
-                  grade: "V4",
-                  unknownOutcomes: 0,
-                  sends: 0,
-                  climbs: 2,
-                  successRate: 0,
-                  differencePercentagePoints: -37.5,
-                  sampleStatus: "limited" as const,
-                  examples: [],
-                },
-                {
-                  grade: "V5",
-                  unknownOutcomes: 0,
-                  sends: 4,
-                  climbs: 15,
-                  successRate: 26.7,
-                  differencePercentagePoints: -3.3,
-                  sampleStatus: "available" as const,
-                  examples: [],
-                },
-                {
-                  grade: "V6",
-                  unknownOutcomes: 0,
-                  sends: 1,
-                  climbs: 5,
-                  successRate: 20,
-                  differencePercentagePoints: 0,
-                  sampleStatus: "available" as const,
-                  examples: [],
-                },
-              ],
-            },
-          ],
-        },
-        {
-          ...panel,
-          key: "routes",
-          contextKey: "routes",
-          contextLabel: "Routes · Lead · French",
-          progress: panel.progress.map((period) => ({
-            ...period,
-            rows: period.rows.map((row) => ({
-              ...row,
-              cells: row.cells.map((cell, index) => ({
-                ...cell,
-                grade: ["6a", "6b", "6c", "7a"][index] ?? cell.grade,
-              })),
-            })),
-          })),
-          grades: panel.grades.map((grade, index) => ({
-            ...grade,
-            grade: ["6a", "6b", "6c", "7a"][index] ?? grade.grade,
-          })),
-          rows: panel.rows.map((row) => ({
-            ...row,
-            cells: row.cells.map((cell, index) => ({
-              ...cell,
-              grade: ["6a", "6b", "6c", "7a"][index] ?? cell.grade,
-              examples: cell.examples.map((example) => ({ ...example, grade: "6b" })),
-            })),
-          })),
-        },
-      ]),
+      panels: fixture.panels.map((panel) => ({
+        ...panel,
+        dimension: "hold_type",
+        coverage: { ...panel.coverage, missingTraits: 63 },
+        rows: [],
+        allGrades: { ...panel.allGrades, rows: [] },
+      })),
     },
   },
 };
-
 export const MissingDimension: Story = {
   args: {
     data: {
@@ -218,7 +121,7 @@ export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownRes
 export const Narrow: Story = {
   decorators: [
     (Story) => (
-      <div style={{ width: 320 }}>
+      <div style={{ width: 320, maxWidth: "100%" }}>
         <Story />
       </div>
     ),
@@ -228,8 +131,8 @@ export const Narrow: Story = {
 export const SelectedPoint: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(canvas.getByRole("button", { name: /Vertical · V4/ }));
+    await userEvent.click(canvas.getByText("Exact values"));
+    await userEvent.click(canvas.getByRole("button", { name: /Vertical · All grades/ }));
   },
 };
 
@@ -269,11 +172,6 @@ export const HoldTypes: Story = {
   },
 };
 
-export const Grades: Story = {
-  play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
-  },
-};
 export const Progress: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Progress" }));
