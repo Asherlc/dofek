@@ -38,6 +38,62 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it.each([false, true])(
+    "hydrates historical retained source tags (ascent: %s)",
+    async (ascent) => {
+      const log = named("kaya");
+      const tags = [{ id: "custom", name: "Funky", tag_type_id: "81" }];
+      log.raw = ascent ? { climb: { tags } } : { tags };
+      const repo = repository([log]);
+      const [active] = await repo.getLogEntries([log.id]);
+      const retained = await repo.getProviderLogEntry("kaya", log.id);
+      for (const detail of [active?.toDetail(), retained]) {
+        expect(detail).toHaveProperty("tags", [
+          {
+            providerId: "kaya",
+            sourceKey: "custom",
+            label: "Funky",
+            categoryKey: "81",
+            categoryLabel: null,
+          },
+        ]);
+      }
+    },
+  );
+  it("hydrates missing tags as an empty collection", async () => {
+    const log = named("openbeta");
+    const [active] = await repository([log]).getLogEntries([log.id]);
+    expect(active?.toDetail()).toHaveProperty("tags", []);
+  });
+  it.each([false, true])(
+    "retains tags from the nonpreferred source during consolidation (KAYA first: %s)",
+    async (kayaFirst) => {
+      const kaya = named("kaya");
+      kaya.raw = {
+        tags: [
+          { id: "937", name: "Crimp", tag_type_id: "3" },
+          { id: "937", name: "Crimp", tag_type_id: "3" },
+        ],
+      };
+      const richer = named("openbeta", "20000000-0000-4000-8000-000000000011", true);
+      const logs = (
+        await repository(kayaFirst ? [kaya, richer] : [richer, kaya]).getActivityLogEntries(
+          "20000000-0000-4000-8000-000000000012",
+        )
+      ).map((log) => log.toDetail());
+      expect(logs).toHaveLength(1);
+      expect(logs[0]?.providerId).toBe("openbeta");
+      expect(logs[0]).toHaveProperty("tags", [
+        {
+          providerId: "kaya",
+          sourceKey: "937",
+          label: "Crimp",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+      ]);
+    },
+  );
   it("keeps KAYA photo URLs out of active and retained details while preserving raw climb facts", async () => {
     const log = named("kaya");
     log.externalId = "kaya:ascent:photo-ascent";

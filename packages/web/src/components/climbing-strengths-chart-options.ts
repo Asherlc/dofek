@@ -1,6 +1,6 @@
 import type {
   ClimbingStrengthsCell,
-  ClimbingStrengthsPanel,
+  ClimbingStrengthsDisplayPanel,
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
@@ -35,12 +35,22 @@ function tooltipText(label: string, cell: OutcomeValues, period?: string) {
   return `${label} · ${cell.grade}${period ? ` · ${period}` : ""}\n${climbingStrengthsValueLabel(cell)}`;
 }
 
+function radarAxisFormatter(rows: ClimbingStrengthsDisplayPanel["rows"]) {
+  const numbered = new Set(rows.map((row) => row.label)).size < rows.length;
+  return (key: string) => {
+    const index = rows.findIndex((row) => row.key === key);
+    const row = rows[index];
+    return row ? (numbered ? `${index + 1}. ${row.label}` : row.label) : key;
+  };
+}
+
 export function climbingStrengthsChartOption(
-  panel: ClimbingStrengthsPanel,
+  panel: ClimbingStrengthsDisplayPanel,
   view: Exclude<ClimbingStrengthsView, "profile">,
   grade: string,
   selectedRow: string | null,
 ) {
+  const rowLabel = (key: string) => panel.rows.find((row) => row.key === key)?.label ?? key;
   const baseline = panel.grades.find((item) => item.grade === grade);
   const baselineLabel = climbingStrengthsBaselineLabel(grade);
   const selected = panel.rows.flatMap((row, index) => {
@@ -48,7 +58,7 @@ export function climbingStrengthsChartOption(
     return cell ? [{ row, cell, color: seriesColor(index) }] : [];
   });
   const point = (
-    row: ClimbingStrengthsPanel["rows"][number],
+    row: ClimbingStrengthsDisplayPanel["rows"][number],
     cell: Outcome,
     value: unknown,
     color: string,
@@ -289,7 +299,7 @@ export function climbingStrengthsChartOption(
       legend: {
         ...dofekLegend(true, { type: "scroll" }),
         formatter: (name: string) =>
-          `${panel.rows.findIndex((row) => row.label === name) + 1}. ${name}`,
+          `${panel.rows.findIndex((row) => row.key === name) + 1}. ${rowLabel(name)}`,
       },
       xAxis: dofekAxis.category({
         show: true,
@@ -304,7 +314,7 @@ export function climbingStrengthsChartOption(
       }),
       series: panel.rows.map((row, index) => ({
         ...dofekSeries.line(
-          row.label,
+          row.key,
           panel.progress.map((period) => {
             const cell = period.rows
               .find((item) => item.key === row.key)
@@ -340,9 +350,14 @@ export function climbingStrengthsChartOption(
       ...base,
       radar: {
         triggerEvent: true,
-        indicator: axes.map(({ row }) => ({ name: row.label, min: -100, max: 100 })),
+        indicator: axes.map(({ row }) => ({ name: row.key, min: -100, max: 100 })),
         radius: "62%",
-        axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },
+        axisName: {
+          formatter: radarAxisFormatter(axes.map(({ row }) => row)),
+          color: chartThemeColors.axisLabel,
+          width: 110,
+          overflow: "break",
+        },
         splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
       },
       series: [
@@ -384,9 +399,14 @@ ${climbingStrengthsCountLabel(cell)}${strength.sampleStatus === "limited" ? " ·
     ...base,
     radar: {
       triggerEvent: true,
-      indicator: axes.map(({ row }) => ({ name: row.label, min: 0, max: 100 })),
+      indicator: axes.map(({ row }) => ({ name: row.key, min: 0, max: 100 })),
       radius: "62%",
-      axisName: { color: chartThemeColors.axisLabel, width: 110, overflow: "break" },
+      axisName: {
+        formatter: radarAxisFormatter(axes.map(({ row }) => row)),
+        color: chartThemeColors.axisLabel,
+        width: 110,
+        overflow: "break",
+      },
       splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
     },
     series: [

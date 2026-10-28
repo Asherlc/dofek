@@ -1581,7 +1581,7 @@ describe("ProviderDetailPage activity records", () => {
       providerId: "wahoo",
       dataType: "activities",
       recordId: "activity-123",
-      responseVersion: 2,
+      responseVersion: 3,
     });
 
     expect(screen.getByRole("link", { name: "Open activity" }).getAttribute("href")).toBe(

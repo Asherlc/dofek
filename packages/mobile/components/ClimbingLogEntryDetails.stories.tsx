@@ -63,3 +63,49 @@ export const UnknownTarget: Story = {
     }),
   },
 };
+
+export const GroupedSourceTags: Story = {
+  args: {
+    entry: {
+      ...entry,
+      holdTypes: ["crimp"],
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "grip",
+          label: "Crimp",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "unknown-grip",
+          label: "Moon scoop",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "move",
+          label: "Bicycle",
+          categoryKey: "2",
+          categoryLabel: "Movement",
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "custom",
+          label: "Quiet movement",
+          categoryKey: "custom",
+          categoryLabel: "My category",
+        },
+        {
+          providerId: "custom-source",
+          sourceKey: "unknown",
+          label: "Unclassified tag",
+          categoryKey: null,
+          categoryLabel: null,
+        },
+      ],
+    },
+  },
+};

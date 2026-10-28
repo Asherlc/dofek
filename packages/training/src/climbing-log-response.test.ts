@@ -5,7 +5,8 @@ describe("climbing response versions", () => {
   it("defaults callers without a version to the original contract", () => {
     expect(climbingResponseVersionSchema.parse(undefined)).toBe(1);
     expect(climbingResponseVersionSchema.parse(2)).toBe(2);
-    expect(climbingResponseVersionSchema.safeParse(3).success).toBe(false);
+    expect(climbingResponseVersionSchema.parse(3)).toBe(3);
+    expect(climbingResponseVersionSchema.safeParse(4).success).toBe(false);
   });
 
   it.each([

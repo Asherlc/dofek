@@ -13,6 +13,39 @@ import {
 } from "./climbing-log-contracts.ts";
 
 describe("versioned climbing detail responses", () => {
+  it("retains attributed recorded tags in V3 without changing stored log traits", () => {
+    const tags = [
+      {
+        providerId: "kaya",
+        sourceKey: "custom",
+        label: "Funky",
+        categoryKey: "81",
+        categoryLabel: null,
+      },
+    ];
+    const entry = { ...climbingLogEntryFixture(), tags };
+    const response = serializeClimbingLogEntryDetailResponse(entry, 3);
+    expect(response).toEqual(entry);
+    expect(decodeClimbingLogEntryDetailResponse(response)).toEqual(entry);
+    expect(decodeClimbingLogEntriesResponse([response])).toEqual([entry]);
+  });
+  it.each([1, 2] as const)("omits attributed tags from the strict V%s contract", (version) => {
+    const entry = {
+      ...climbingLogEntryFixture(),
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "937",
+          label: "Crimp",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+      ],
+    };
+    const response = serializeClimbingLogEntryDetailResponse(entry, version);
+    const { tags: _tags, ...withoutTags } = entry;
+    expect(decodeClimbingLogEntryDetailResponse(response)).toEqual(withoutTags);
+  });
   it("decodes an old-server scalar response into canonical traits for an updated client", () => {
     const { holdTypes: _holds, ...entry } = climbingLogEntryFixture({
       wallAngle: { value: -10, unit: "degrees" },

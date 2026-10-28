@@ -26,6 +26,7 @@ const climb = {
   subarea: null,
   angle: -20,
   description: "crimps",
+  tags: [],
 };
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
 
@@ -187,6 +188,70 @@ describe("KayaCatalogueAdapter", () => {
 });
 
 describe("Kaya authenticated catalogue classification", () => {
+  it("retains every native source tag and its category without requesting tags on public search", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response([climb]))
+      .mockResolvedValueOnce(
+        Response.json({
+          data: {
+            climb: {
+              ...climb,
+              lead: true,
+              is_trad: false,
+              tags: [
+                { id: "11", name: "Crimp", tag_type_id: "3" },
+                { id: "12", name: "Source movement", tag_type_id: "2" },
+                { id: "13", name: "Custom label", tag_type_id: "1" },
+                { id: "14", name: "Unfamiliar label", tag_type_id: "99" },
+              ],
+            },
+          },
+        }),
+      );
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search(seed);
+    expect(result.candidates[0]?.tags).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "hold",
+          sourceKey: "11",
+          label: "Crimp",
+          category: "Grip",
+          scope: "direct",
+          inheritedFrom: null,
+        },
+        {
+          kind: "other",
+          sourceKey: "12",
+          label: "Source movement",
+          category: "Movement",
+          scope: "direct",
+          inheritedFrom: null,
+        },
+        {
+          kind: "other",
+          sourceKey: "13",
+          label: "Custom label",
+          category: "Custom",
+          scope: "direct",
+          inheritedFrom: null,
+        },
+        {
+          kind: "other",
+          sourceKey: "14",
+          label: "Unfamiliar label",
+          category: "99",
+          scope: "direct",
+          inheritedFrom: null,
+        },
+      ]),
+    );
+    const publicRequest = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
+    const nativeRequest = JSON.parse(String(fetchFn.mock.calls[1]?.[1]?.body));
+    expect(publicRequest.query).not.toContain("tags");
+    expect(nativeRequest.query).toContain("tags { id name tag_type_id }");
+  });
+
   it.each([
     { lead: true, is_trad: false, expected: "Sport" },
     { lead: false, is_trad: true, expected: "Trad" },

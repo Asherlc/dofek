@@ -7,7 +7,9 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
+import { providerLabel } from "@dofek/providers/providers";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
@@ -34,6 +36,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   const path = formatClimbingLocationPath(climb?.areaPath ?? []);
   const angle = formatClimbingWallAngle(entry.wallAngle);
   const holds = formatClimbingHoldTypes(entry.holdTypes);
+  const tagGroups = climbingTagGroups(entry.tags ?? [], entry.holdTypes);
   const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
   return (
     <View style={styles.container}>
@@ -54,6 +57,18 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.board && <Text style={styles.value}>Board: {entry.board.name}</Text>}
       {angle && <Text style={styles.value}>{angle}</Text>}
       {holds && <Text style={styles.value}>{holds}</Text>}
+      {tagGroups.map((group) => (
+        <View key={group.key} style={styles.section}>
+          <Text style={styles.heading}>
+            {providerLabel(group.providerId)} · {group.categoryLabel}
+          </Text>
+          {group.tags.map((tag) => (
+            <Text key={tag.sourceKey} style={styles.value}>
+              {tag.label}
+            </Text>
+          ))}
+        </View>
+      ))}
       {climb && (
         <>
           <Fields

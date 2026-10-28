@@ -28,7 +28,7 @@ describe("climbing strengths PostgreSQL", () => {
       startDate: await climbingTestDate(context.db, 29),
       endDate: await climbingTestDate(context.db, 0),
     };
-    for (const id of ["mountain-project", "openbeta", "wahoo"])
+    for (const id of ["mountain-project", "openbeta", "wahoo", "kaya"])
       await ensureProvider(context.db, id, id, undefined, TEST_USER_ID);
   });
   afterEach(async () => {
@@ -62,6 +62,58 @@ describe("climbing strengths PostgreSQL", () => {
       ],
       ...patch,
     });
+  it("projects historical retained raw tags into category strengths without a resync", async () => {
+    const id = await write("historical-tags", {}, "kaya");
+    await context.db
+      .update(climbingLogEntry)
+      .set({
+        raw: {
+          climb: {
+            tags: [
+              { id: "technical", name: "Technical", tag_type_id: "6" },
+              { id: "balance", name: "Balance", tag_type_id: "2" },
+              { id: "unknown", name: "Literal unfamiliar tag", tag_type_id: "81" },
+            ],
+          },
+        },
+      })
+      .where(eq(climbingLogEntry.id, id));
+    const observations = await repo().getObservations(30);
+    expect(observations[0]?.tags).toEqual([
+      {
+        providerId: "kaya",
+        sourceKey: "technical",
+        label: "Technical",
+        categoryKey: "6",
+        categoryLabel: "Style",
+      },
+      {
+        providerId: "kaya",
+        sourceKey: "balance",
+        label: "Balance",
+        categoryKey: "2",
+        categoryLabel: "Movement",
+      },
+      {
+        providerId: "kaya",
+        sourceKey: "unknown",
+        label: "Literal unfamiliar tag",
+        categoryKey: "81",
+        categoryLabel: null,
+      },
+    ]);
+    const result = analyze(observations);
+    expect(result.tagPanels?.map((panel) => panel.category.label)).toEqual([
+      "Style",
+      "Movement",
+      "81",
+    ]);
+    expect(result.tagPanels?.map((panel) => panel.rows[0]?.cells[0])).toMatchObject([
+      { climbs: 1, sends: 1, successRate: 100 },
+      { climbs: 1, sends: 1, successRate: 100 },
+      { climbs: 1, sends: 1, successRate: 100 },
+    ]);
+  });
   it("serves multiple grips and categorical angles without duplicating baseline climbs", async () => {
     const originalId = await write("multi", {
       holdTypes: ["crimp", "jam"],

@@ -37,7 +37,7 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
         response_version: climbingResponseVersionSchema.describe(
-          "Defaults to 1 for scalar hold_type. Use 2 for the complete hold_types collection.",
+          "Defaults to 1 for scalar hold_type. Versions 2 and 3 return the complete hold_types collection.",
         ),
       }),
       outputSchema: climbingProgressionOutputSchema,
@@ -70,7 +70,7 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         cursor: cursor ?? null,
         limit: limit ?? 100,
       });
-      if (response_version === 2) return jsonToolResult(result);
+      if (response_version !== 1) return jsonToolResult(result);
       return jsonToolResult({
         ...result,
         sessions: result.sessions.map((session) => ({

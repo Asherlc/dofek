@@ -1,4 +1,4 @@
-import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import type { ClimbingStrengthsDisplayPanel } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
   climbingStrengthsAdjustedLabel,
@@ -17,7 +17,7 @@ import { colors } from "../theme";
 import { AccessibleChart } from "./AccessibleChart";
 
 type ViewKind = Exclude<ClimbingStrengthsView, "profile">;
-type Cell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
+type Cell = ClimbingStrengthsDisplayPanel["rows"][number]["cells"][number];
 const palette = [colors.accent, "#bb7944", "#7688bc", "#ad658e", "#5e9d9a", "#9b8b44"];
 function color(index: number) {
   return palette[index % palette.length] ?? colors.accent;
@@ -46,7 +46,7 @@ export function ClimbingStrengthsChart({
   grade,
   onSelect,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ViewKind;
   grade: string;
   onSelect: (rowKey: string, grade: string) => void;

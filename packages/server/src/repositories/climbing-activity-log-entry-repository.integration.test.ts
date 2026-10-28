@@ -25,7 +25,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     await context.db.delete(area);
     await context.db
       .delete(activity)
-      .where(inArray(activity.providerId, ["openbeta", "mountain-project"]));
+      .where(inArray(activity.providerId, ["openbeta", "mountain-project", "kaya"]));
   });
   afterAll(async () => {
     await context.cleanup();
@@ -50,6 +50,127 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it.each([false, true])(
+    "projects historical retained KAYA tags without rewriting raw source records (ascent: %s)",
+    async (ascent) => {
+      await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
+      const tags = [
+        { id: "custom", name: "Funky", tag_type_id: "81" },
+        { id: "technical", name: "Technical", tag_type_id: "6" },
+      ];
+      const raw = ascent ? { climb: { tags } } : { tags };
+      const written = await persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: "kaya",
+        entries: [
+          {
+            externalId: "historical-tags",
+            climbedOn: "2026-10-02",
+            raw,
+            attempts: [{ scope: "climb" }],
+          },
+        ],
+      });
+      const id = written.logEntryIds[0];
+      if (!id) throw new Error("Expected historical KAYA log");
+      const [active] = await repo().getLogEntries([id]);
+      const retained = await repo().getProviderLogEntry("kaya", id);
+      const expected = [
+        {
+          providerId: "kaya",
+          sourceKey: "custom",
+          label: "Funky",
+          categoryKey: "81",
+          categoryLabel: null,
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "technical",
+          label: "Technical",
+          categoryKey: "6",
+          categoryLabel: "Style",
+        },
+      ];
+      expect(active?.toDetail().tags).toEqual(expected);
+      expect(retained?.tags).toEqual(expected);
+      const [stored] = await context.db
+        .select({ raw: climbingLogEntry.raw })
+        .from(climbingLogEntry)
+        .where(eq(climbingLogEntry.id, id));
+      expect(stored?.raw).toEqual(raw);
+    },
+  );
+  it("unions retained tags from a nonpreferred KAYA activity member", async () => {
+    await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
+    const [preferred] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "openbeta",
+        externalId: "tags-preferred",
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning();
+    if (!preferred?.groupId) throw new Error("Expected preferred activity group");
+    const [other] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "kaya",
+        externalId: "tags-other",
+        groupId: preferred.groupId,
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning();
+    if (!other) throw new Error("Expected KAYA activity");
+    const sharedClimb = { ...route, areas: [{ externalId: "tags-wall", name: "Wall" }] };
+    await write({
+      externalId: "tags-preferred-log",
+      activityId: preferred.id,
+      climb: sharedClimb,
+      attempts: [
+        {
+          scope: "climb",
+          ropeMethod: "lead",
+          sourceResult: "Send",
+          qualifier: "free-send",
+          fellOrHung: false,
+          usedAid: false,
+        },
+      ],
+    });
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kaya",
+      entries: [
+        {
+          externalId: "tags-other-log",
+          activityId: other.id,
+          climb: sharedClimb,
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
+          raw: { tags: [{ id: "technical", name: "Technical", tag_type_id: "6" }] },
+        },
+      ],
+    });
+    const details = (await repo().getActivityLogEntries(preferred.groupId)).map((entry) =>
+      entry.toDetail(),
+    );
+    expect(details).toHaveLength(1);
+    expect(details[0]?.providerId).toBe("openbeta");
+    expect(details[0]?.tags).toEqual([
+      {
+        providerId: "kaya",
+        sourceKey: "technical",
+        label: "Technical",
+        categoryKey: "6",
+        categoryLabel: "Style",
+      },
+    ]);
+  });
   it("retains private KAYA media provenance in Postgres while serving sanitized active and provider details", async () => {
     await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
     const raw = {

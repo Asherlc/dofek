@@ -58,6 +58,9 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
 | `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
+| `climbing-tags` | [Attributed source-tag contract](src/climbing-tags.ts), preserving literal labels and source/category keys |
+| `climbing-tag-presentation` | [Grouped tag labels](src/climbing-tag-presentation.ts), avoiding repeated known grip labels in details |
+| `climbing-strengths-presentation` | [Source-aware category breakdown selection](src/climbing-strengths-presentation.ts) for web and mobile |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
 | `climbing-log-response` | [Supported response-version input schema and faithful version-1 projection of canonical grip collections and wall angles](src/climbing-log-response.ts) |
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
@@ -139,11 +142,15 @@ separate. Server queries derive completion, result labels and counts; see the
 Canonical grip collections are nullable and nonempty when supplied. Wall angles
 retain either numeric values with known/unknown units or explicit source
 categories. The [response-version module](src/climbing-log-response.ts) defines
-versions `1` and `2`, defaults omitted requests to `1`, and projects only the
+versions `1`, `2` and `3`, defaults omitted requests to `1`, and projects only the
 traits that the original scalar contract can express. A single supported grip
 remains scalar; multiple grips, newer grip kinds, and categorical angles become
 null in version `1` without altering canonical records. Version `2` retains the
-complete collection and angle object. See the
+complete collection and angle object. Version `3` adds attributed recorded
+source tags through the [server detail contract](../server/src/contracts/climbing-log-contracts.ts).
+The [tag contract](src/climbing-tags.ts) keeps source/category identity; the
+[strengths contract](src/climbing-strengths.ts) adds separate recorded-category
+panels without changing the original panel dimensions. See the
 [shared model](src/climbing-log.ts), [angle schema](src/climbing-experience.ts),
 and [server response-version contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
 

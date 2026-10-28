@@ -5,8 +5,10 @@ import type {
   ClimbingStrengths,
   ClimbingStrengthsExample,
   ClimbingStrengthsPanel,
+  ClimbingStrengthsTagPanel,
 } from "@dofek/training/climbing-strengths";
 import { ALL_CLIMBING_GRADES } from "@dofek/training/climbing-strengths";
+import type { ClimbingTag } from "@dofek/training/climbing-tags";
 import { buildClimbingStrengthProfile } from "./climbing-strength-profile.ts";
 export interface ClimbingStrengthsObservation {
   identity: string | null;
@@ -19,6 +21,7 @@ export interface ClimbingStrengthsObservation {
   gradeSortValue: number;
   wallAngle: ClimbingWallAngle | null;
   holdTypes: string[] | null;
+  tags?: ClimbingTag[];
   outcome: "sent" | "not_sent" | null;
   example: ClimbingStrengthsExample;
 }
@@ -36,6 +39,9 @@ function trait(
 }
 const sampleStatus = (climbs: number): "no_data" | "limited" | "available" =>
   climbs === 0 ? "no_data" : climbs < 5 ? "limited" : "available";
+const categoryKey = (tag: ClimbingTag) => JSON.stringify([tag.providerId, tag.categoryKey]);
+const tagKey = (tag: ClimbingTag) =>
+  JSON.stringify([tag.providerId, tag.categoryKey, tag.sourceKey]);
 function monthlyWindows(window: { startDate: string; endDate: string }) {
   const months: Array<{ startDate: string; endDate: string }> = [];
   let startDate = window.startDate;
@@ -142,6 +148,11 @@ export function buildClimbingStrengths(
       setting: settings.length === 1 ? (settings[0] ?? null) : null,
       holdTypes: holds.length === 1 ? (holds[0] ?? null) : null,
       wallAngle: angles.length === 1 ? (angles[0] ?? null) : null,
+      tags: [
+        ...new Map(
+          group.flatMap((entry) => (entry.tags ?? []).map((tag) => [tagKey(tag), tag])),
+        ).values(),
+      ],
       example: {
         ...preferred.example,
         grade: grade.grade ?? "",
@@ -157,6 +168,7 @@ export function buildClimbingStrengths(
     );
   const months = monthlyWindows({ startDate, endDate: window.endDate });
   const panels: ClimbingStrengthsPanel[] = [];
+  const tagPanels: ClimbingStrengthsTagPanel[] = [];
   const contexts = new Set(entries.map((entry) => entry.contextKey));
   const contextKey = contexts.size === 1 ? (entries[0]?.contextKey ?? "selected") : "selected";
   const representative = entries[0];
@@ -176,7 +188,49 @@ export function buildClimbingStrengths(
     grade: contexts.size > 1 ? `${entry.grade} · ${entry.contextLabel}` : entry.grade,
   }));
   if (selected.length > 0) {
-    for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
+    const categories = new Map(
+      selected.flatMap((entry) =>
+        (entry.tags ?? []).map((tag) => [categoryKey(tag), tag] as const),
+      ),
+    );
+    const dimensions: Array<
+      {
+        values: (entry: ClimbingStrengthsObservation) => string[];
+        label: (key: string) => string;
+      } & (
+        | { dimension: ClimbingStrengthsPanel["dimension"] }
+        | { dimension: "tag"; category: ClimbingStrengthsTagPanel["category"] }
+      )
+    > = (["wall_angle", "hold_type", "setting"] as const).map((dimension) => ({
+      dimension,
+      values: (entry) => trait(entry, dimension),
+      label: (key) =>
+        key === "unknown" && dimension === "setting"
+          ? "Unknown setting"
+          : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
+    }));
+    for (const [key, tag] of categories) {
+      const tags = new Map(
+        selected.flatMap((entry) =>
+          (entry.tags ?? [])
+            .filter((tag) => categoryKey(tag) === key)
+            .map((tag) => [tagKey(tag), tag] as const),
+        ),
+      );
+      dimensions.push({
+        dimension: "tag",
+        category: {
+          providerId: tag.providerId,
+          key: tag.categoryKey,
+          label: tag.categoryLabel ?? tag.categoryKey ?? "Uncategorized tags",
+        },
+        values: (entry) => (entry.tags ?? []).filter((tag) => categoryKey(tag) === key).map(tagKey),
+        label: (key) => tags.get(key)?.label ?? key,
+      });
+    }
+    for (const definition of dimensions) {
+      const { dimension, values, label } = definition;
+      const category = definition.dimension === "tag" ? definition.category : null;
       const buildProfile = (allGrades: boolean, cohort: typeof selected) => {
         const gradeGroups = allGrades
           ? [{ grade: ALL_CLIMBING_GRADES, gradeSortValue: 0 }]
@@ -207,18 +261,15 @@ export function buildClimbingStrengths(
                 "outdoor",
                 ...(cohort.some((entry) => entry.setting === null) ? ["unknown"] : []),
               ]
-            : [...new Set(cohort.flatMap((e) => trait(e, dimension)))].sort();
+            : [...new Set(cohort.flatMap(values))].sort();
         return {
           grades,
           rows: keys.map((key) => ({
             key,
-            label:
-              key === "unknown" && dimension === "setting"
-                ? "Unknown setting"
-                : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
+            label: label(key),
             cells: grades.map((g) => {
               const matching = cohort.filter(
-                (e) => (allGrades || e.grade === g.grade) && trait(e, dimension).includes(key),
+                (e) => (allGrades || e.grade === g.grade) && values(e).includes(key),
               );
               const sends = matching.filter((e) => e.outcome === "sent").length;
               const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
@@ -262,8 +313,7 @@ export function buildClimbingStrengths(
                 key,
                 cells: grades.map(({ grade }) => {
                   const matching = monthly.filter(
-                    (entry) =>
-                      (allGrades || entry.grade === grade) && trait(entry, dimension).includes(key),
+                    (entry) => (allGrades || entry.grade === grade) && values(entry).includes(key),
                   );
                   const sends = matching.filter((entry) => entry.outcome === "sent").length;
                   const unknownOutcomes = matching.filter((entry) => entry.outcome === null).length;
@@ -289,23 +339,33 @@ export function buildClimbingStrengths(
           grade: JSON.stringify([entry.contextKey, entry.grade]),
         })),
       );
-      panels.push({
-        key: JSON.stringify([contextKey, dimension]),
+      const fields = {
+        key: JSON.stringify(
+          category
+            ? [contextKey, dimension, category.providerId, category.key]
+            : [contextKey, dimension],
+        ),
         contextKey,
         contextLabel,
-        dimension,
         setting: null,
         ...profile,
         gradeAdjustedStrengths: buildClimbingStrengthProfile(baselineProfile),
         allGrades: buildProfile(true, selected),
         coverage: {
           missingTraits: selected.filter((entry) =>
-            dimension === "setting" ? entry.setting === null : trait(entry, dimension).length === 0,
+            dimension === "setting" ? entry.setting === null : values(entry).length === 0,
           ).length,
           unknownOutcomes: selected.filter((e) => e.outcome === null).length,
         },
-      });
+      };
+      if (definition.dimension === "tag")
+        tagPanels.push({
+          ...fields,
+          dimension: definition.dimension,
+          category: definition.category,
+        });
+      else panels.push({ ...fields, dimension: definition.dimension });
     }
   }
-  return { panels, coverage };
+  return { panels, ...(tagPanels.length > 0 ? { tagPanels } : {}), coverage };
 }

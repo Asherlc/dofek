@@ -348,6 +348,15 @@ describe("climbingRouter", () => {
       gradeSortValue: 4,
       wallAngle: null,
       holdTypes: ["crimp"],
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "technical",
+          label: "Technical",
+          categoryKey: "6",
+          categoryLabel: "Style",
+        },
+      ],
       outcome: "sent",
       example,
     };
@@ -388,6 +397,16 @@ describe("climbingRouter", () => {
     );
     expect(execute).toHaveBeenCalledOnce();
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
+    expect(result.tagPanels?.[0]).toMatchObject({
+      dimension: "tag",
+      category: { providerId: "kaya", key: "6", label: "Style" },
+      rows: [
+        {
+          label: "Technical",
+          cells: [{ climbs: 3, sends: 1, unknownOutcomes: 1, successRate: 50 }],
+        },
+      ],
+    });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.progress.map(({ startDate, endDate }) => ({ startDate, endDate }))).toEqual([
       { startDate: "2025-01-07", endDate: "2025-01-31" },

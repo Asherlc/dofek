@@ -210,7 +210,7 @@ describe("get_climbing_progression", () => {
     });
   });
 
-  it.each([undefined, 1, 2] as const)(
+  it.each([undefined, 1, 2, 3] as const)(
     "negotiates grip responses for version %s",
     async (version) => {
       const source = fixture();
@@ -236,7 +236,7 @@ describe("get_climbing_progression", () => {
       const parsed = climbingProgressionOutputSchema.parse(result.structuredContent);
       const { hold_types: _holds, ...rest } = first;
       expect(parsed.result.sessions[0]?.climbing_log_entries).toEqual(
-        version === 2
+        version === 2 || version === 3
           ? holds.map((hold_types) => ({ ...rest, hold_types }))
           : ["crimp", null, null, null, null, null].map((hold_type) => ({ ...rest, hold_type })),
       );

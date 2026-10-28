@@ -5,6 +5,8 @@ import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
   climbingStrengthsComparisonFixture,
   climbingStrengthsFixture,
+  climbingStrengthsSparseTagsFixture,
+  climbingStrengthsTagsFixture,
   climbingStrengthsUnknownResultsFixture,
 } from "./climbing-strengths-fixtures";
 
@@ -141,4 +143,14 @@ export const Progress: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Progress" }));
   },
+};
+
+export const SourceCategories: Story = {
+  args: { data: climbingStrengthsTagsFixture },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Kaya · Movement" }));
+  },
+};
+export const SparseUnknownSourceTags: Story = {
+  args: { data: climbingStrengthsSparseTagsFixture },
 };

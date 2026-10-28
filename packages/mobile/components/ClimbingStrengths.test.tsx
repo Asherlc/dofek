@@ -92,3 +92,38 @@ it("uses fixed grade and progress views for both breakdowns", () => {
   expect(screen.getByText("Monthly send rate")).toBeTruthy();
   expect(screen.getByText(/Combines all grades/)).toBeTruthy();
 });
+
+it("selects source categories independently across Styles, Grades and Progress", async () => {
+  const { climbingStrengthsTagsFixture: tagged } = await import("./climbing-strengths-fixtures");
+  render(<ClimbingStrengths data={tagged} />);
+  const category = screen.getByRole("button", { name: "Kaya · Movement" });
+  fireEvent.click(category);
+  expect(category.getAttribute("aria-selected")).toBe("true");
+
+  fireEvent.click(screen.getByRole("button", { name: /View .* data/ }));
+  expect(screen.getAllByText(/Custom movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Grades" }));
+  expect(screen.getAllByRole("button", { name: /Custom movement .* · V3/ }).length).toBeGreaterThan(
+    0,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+
+  expect(screen.getAllByText(/Custom movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "custom-source · Movement" }));
+  fireEvent.click(screen.getByRole("button", { name: /View .* data/ }));
+  expect(screen.getAllByText(/Other movement/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Kaya · Session mood" }));
+  fireEvent.click(screen.getByRole("button", { name: /View .* data/ }));
+  expect(screen.getAllByText(/Unfamiliar/).length).toBeGreaterThan(0);
+});
+it("prefers observed tags when wall and hold observations are missing", async () => {
+  const { climbingStrengthsTagsFixture: tagged } = await import("./climbing-strengths-fixtures");
+  render(
+    <ClimbingStrengths
+      data={{ ...tagged, panels: tagged.panels.map((panel) => ({ ...panel, rows: [] })) }}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Kaya · Movement" }).getAttribute("aria-selected"),
+  ).toBe("true");
+});

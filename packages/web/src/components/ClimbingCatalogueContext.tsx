@@ -1,5 +1,6 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type { ClimbingCatalogueContext as Context } from "@dofek/training/climbing-catalogue";
+import { climbingCatalogueTagLabel } from "@dofek/training/climbing-catalogue";
 import { useEffect, useId, useState } from "react";
 import { trpc } from "../lib/trpc";
 
@@ -77,21 +78,13 @@ export function ClimbingCatalogueContextView({
                     </p>
                   )}
                   {candidate.grade && <p>Catalogue grade: {candidate.grade}</p>}
-                  {candidate.tags
-                    .filter((tag) => tag.kind !== "other")
-                    .map((tag) => (
-                      <p key={`${tag.sourceKey}:${tag.label}:${tag.scope}:${tag.inheritedFrom}`}>
-                        {tag.kind === "hold"
-                          ? "Holds: "
-                          : tag.kind === "climb_type"
-                            ? "Climb type: "
-                            : "Wall: "}
-                        {tag.label}
-                        {tag.scope === "inherited"
-                          ? ` (inherited${tag.inheritedFrom ? ` from ${tag.inheritedFrom}` : ""})`
-                          : ""}
-                      </p>
-                    ))}
+                  {candidate.tags.map((tag) => (
+                    <p
+                      key={`${tag.sourceKey}:${tag.category}:${tag.label}:${tag.scope}:${tag.inheritedFrom}`}
+                    >
+                      {climbingCatalogueTagLabel(tag)}
+                    </p>
+                  ))}
                   {candidate.angle && (
                     <p>
                       Source angle: {candidate.angle.value}

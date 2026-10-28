@@ -137,3 +137,66 @@ it("displays all recorded grips and the source wall category", () => {
   expect(screen.getByText("Hold types: crimp, volume, no grips")).toBeInTheDocument();
   expect(screen.getByText("Wall angle: Roof")).toBeInTheDocument();
 });
+
+it("groups source tags once and keeps custom and unknown grip labels visible", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        holdTypes: ["crimp"],
+        tags: [
+          {
+            providerId: "kaya",
+            sourceKey: "known-grip",
+            label: "Crimp",
+            categoryKey: "3",
+            categoryLabel: "Grip",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "unknown-grip",
+            label: "Moon scoop",
+            categoryKey: "3",
+            categoryLabel: "Grip",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "move",
+            label: "Bicycle",
+            categoryKey: "2",
+            categoryLabel: "Movement",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "move",
+            label: "Bicycle",
+            categoryKey: "2",
+            categoryLabel: "Movement",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "custom",
+            label: "Crimp",
+            categoryKey: "custom",
+            categoryLabel: "My category",
+          },
+          {
+            providerId: "custom-source",
+            sourceKey: "free",
+            label: "Mystery label",
+            categoryKey: null,
+            categoryLabel: null,
+          },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp")).toBeTruthy();
+  expect(screen.getByText("Kaya · Grip")).toBeTruthy();
+  expect(screen.getByText("Moon scoop")).toBeTruthy();
+  expect(screen.getByText("Kaya · Movement")).toBeTruthy();
+  expect(screen.getAllByText("Bicycle")).toHaveLength(1);
+  expect(screen.getAllByText("Crimp")).toHaveLength(1);
+  expect(screen.getByText("Kaya · My category")).toBeTruthy();
+  expect(screen.getByText("custom-source · Uncategorized tags")).toBeTruthy();
+  expect(screen.getByText("Mystery label")).toBeTruthy();
+});

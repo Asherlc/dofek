@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { within } from "storybook/test";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
 import {
+  climbingStrengthsSparseTagsFixture,
+  climbingStrengthsTagsFixture,
   climbingStrengthsUnknownResultsFixture,
   climbingStrengthsFixture as fixture,
 } from "./climbing-strengths-fixtures.ts";
@@ -278,4 +280,14 @@ export const Progress: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Progress" }));
   },
+};
+
+export const SourceCategories: Story = {
+  args: { data: climbingStrengthsTagsFixture },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Kaya · Movement" }));
+  },
+};
+export const SparseUnknownSourceTags: Story = {
+  args: { data: climbingStrengthsSparseTagsFixture },
 };

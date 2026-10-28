@@ -433,11 +433,11 @@ export default function ActivityDetailScreen() {
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "", responseVersion: 2 },
+    { activityId: id ?? "", responseVersion: 3 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 2 },
+    { activityId: id, responseVersion: 3 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
@@ -466,7 +466,7 @@ export default function ActivityDetailScreen() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 2,
+          responseVersion: 3,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
@@ -474,7 +474,7 @@ export default function ActivityDetailScreen() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 2,
+          responseVersion: 3,
         }),
       ]);
     },

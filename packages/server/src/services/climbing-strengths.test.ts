@@ -1,3 +1,4 @@
+import type { ClimbingTag } from "@dofek/training/climbing-tags";
 import { describe, expect, it } from "vitest";
 import { buildClimbingStrengths } from "./climbing-strengths.ts";
 import {
@@ -5,7 +6,138 @@ import {
   dated,
   mixedSettingObservations,
   observation,
+  progressCell,
 } from "./climbing-strengths-test-helpers.ts";
+
+const recordedTag = (patch: Partial<ClimbingTag> = {}): ClimbingTag => ({
+  providerId: "kaya",
+  sourceKey: "technical",
+  label: "Technical",
+  categoryKey: "style",
+  categoryLabel: "Style",
+  ...patch,
+});
+
+describe("recorded tag strengths", () => {
+  it("unions recorded tags across repeated observations and counts each climb once per tag", () => {
+    const technical = recordedTag();
+    const balance = recordedTag({ sourceKey: "balance", label: "Balance" });
+    const result = analyze([
+      dated("2026-08-20", { tags: [technical, technical] }),
+      dated("2026-09-01", { tags: [balance], outcome: "sent" }),
+      dated("2026-10-20", { tags: [technical], outcome: null }),
+      observation({ identity: "other", tags: [technical] }),
+    ]);
+    const panel = result.tagPanels?.[0];
+    expect(panel).toMatchObject({
+      dimension: "tag",
+      category: { providerId: "kaya", key: "style", label: "Style" },
+      grades: [{ grade: "V4", climbs: 2, sends: 1, unknownOutcomes: 0, successRate: 50 }],
+      coverage: { missingTraits: 0, unknownOutcomes: 0 },
+    });
+    expect(
+      panel?.rows.map((row) => [row.label, row.cells[0]?.climbs, row.cells[0]?.sends]),
+    ).toEqual([
+      ["Balance", 1, 1],
+      ["Technical", 2, 1],
+    ]);
+    expect(panel?.progress.map((month) => month.rows[0]?.cells[0])).toEqual([
+      progressCell("V4", 0, 1, 0, 0, "limited"),
+      progressCell("V4", 1, 1, 0, 100, "limited"),
+      progressCell("V4", 0, 1, 1, null, "limited"),
+    ]);
+    expect(panel?.allGrades.rows[0]?.cells[0]).toMatchObject({ climbs: 1, sends: 1 });
+    expect(result.panels.map((panel) => panel.dimension)).toEqual([
+      "wall_angle",
+      "hold_type",
+      "setting",
+    ]);
+  });
+
+  it("keeps source and category identities distinct even when tag keys and labels collide", () => {
+    const result = analyze([
+      observation({
+        tags: [
+          recordedTag(),
+          recordedTag({ categoryKey: "movement", categoryLabel: "Movement" }),
+          recordedTag({ providerId: "other" }),
+          recordedTag({ categoryKey: null, categoryLabel: null }),
+        ],
+      }),
+    ]);
+    expect(result.tagPanels).toHaveLength(4);
+    expect(new Set(result.tagPanels?.map((panel) => panel.key)).size).toBe(4);
+    expect(
+      new Set(result.tagPanels?.flatMap((panel) => panel.rows.map((row) => row.key))).size,
+    ).toBe(4);
+    expect(result.tagPanels?.map((panel) => panel.category)).toEqual(
+      expect.arrayContaining([
+        { providerId: "kaya", key: "style", label: "Style" },
+        { providerId: "kaya", key: "movement", label: "Movement" },
+        { providerId: "other", key: "style", label: "Style" },
+        { providerId: "kaya", key: null, label: "Uncategorized tags" },
+      ]),
+    );
+  });
+
+  it("uses all selected climbs for grade baselines and excludes unknown results from rates", () => {
+    const result = analyze([
+      observation({ identity: "low-tag", tags: [recordedTag()], outcome: "sent" }),
+      observation({ identity: "low-other" }),
+      observation({
+        identity: "high-tag",
+        grade: "V5",
+        gradeSortValue: 5,
+        tags: [recordedTag()],
+        outcome: "sent",
+      }),
+      observation({
+        identity: "high-unknown",
+        grade: "V5",
+        gradeSortValue: 5,
+        tags: [recordedTag()],
+        outcome: null,
+      }),
+    ]);
+    const panel = result.tagPanels?.[0];
+    expect(panel?.coverage).toEqual({ missingTraits: 1, unknownOutcomes: 1 });
+    expect(panel?.rows[0]?.cells).toMatchObject([
+      { climbs: 1, sends: 1, successRate: 100, differencePercentagePoints: 50 },
+      { climbs: 2, sends: 1, unknownOutcomes: 1, successRate: 100, differencePercentagePoints: 0 },
+    ]);
+    expect(panel?.gradeAdjustedStrengths[0]).toMatchObject({
+      expectedSuccessRate: 75,
+      differencePercentagePoints: 25,
+      sampleStatus: "limited",
+    });
+    expect(panel?.allGrades.rows[0]?.cells[0]).toMatchObject({
+      climbs: 3,
+      sends: 2,
+      unknownOutcomes: 1,
+      successRate: 100,
+    });
+  });
+
+  it("keeps semantic lane baselines independent and excludes unresolved grades and identities", () => {
+    const result = analyze([
+      observation({ tags: [recordedTag()], outcome: "sent" }),
+      observation({ identity: "boulder-other", outcome: "sent" }),
+      observation({ contextKey: "lead", laneKey: "lead", tags: [recordedTag()] }),
+      observation({ identity: "lead-other", contextKey: "lead", laneKey: "lead" }),
+      observation({ identity: null, tags: [recordedTag()] }),
+      observation({ identity: "ungraded", grade: null, tags: [recordedTag()] }),
+    ]);
+    expect(result.tagPanels?.[0]?.gradeAdjustedStrengths[0]).toMatchObject({
+      expectedSuccessRate: 50,
+      differencePercentagePoints: 0,
+    });
+    expect(result.coverage).toEqual({ missingIdentity: 1, missingGrades: 1, unknownOutcomes: 0 });
+    expect(result.tagPanels?.[0]?.allGrades.rows[0]?.cells[0]).toMatchObject({
+      climbs: 2,
+      sends: 1,
+    });
+  });
+});
 
 it.each(["Lead", "Bouldering · V scale"])(
   "combines selected types while retaining their same-grade baselines (%s)",
@@ -282,16 +414,7 @@ describe("climbing strengths", () => {
         rows: [
           {
             key: "crimp",
-            cells: [
-              {
-                grade: "V4",
-                sends: 0,
-                climbs: 1,
-                unknownOutcomes: 0,
-                successRate: 0,
-                sampleStatus: "limited",
-              },
-            ],
+            cells: [progressCell("V4", 0, 1, 0, 0, "limited")],
           },
         ],
       },
@@ -301,16 +424,7 @@ describe("climbing strengths", () => {
         rows: [
           {
             key: "crimp",
-            cells: [
-              {
-                grade: "V4",
-                sends: 1,
-                climbs: 1,
-                unknownOutcomes: 0,
-                successRate: 100,
-                sampleStatus: "limited",
-              },
-            ],
+            cells: [progressCell("V4", 1, 1, 0, 100, "limited")],
           },
         ],
       },
@@ -320,16 +434,7 @@ describe("climbing strengths", () => {
         rows: [
           {
             key: "crimp",
-            cells: [
-              {
-                grade: "V4",
-                sends: 0,
-                climbs: 1,
-                unknownOutcomes: 1,
-                successRate: null,
-                sampleStatus: "limited",
-              },
-            ],
+            cells: [progressCell("V4", 0, 1, 1, null, "limited")],
           },
         ],
       },
@@ -355,43 +460,15 @@ describe("climbing strengths", () => {
         {
           key: "indoor",
           cells: [
-            {
-              grade: "V3",
-              sends: 0,
-              climbs: 0,
-              unknownOutcomes: 0,
-              successRate: null,
-              sampleStatus: "no_data",
-            },
-            {
-              grade: "V4",
-              sends: 0,
-              climbs: 0,
-              unknownOutcomes: 0,
-              successRate: null,
-              sampleStatus: "no_data",
-            },
+            progressCell("V3", 0, 0, 0, null, "no_data"),
+            progressCell("V4", 0, 0, 0, null, "no_data"),
           ],
         },
         {
           key: "outdoor",
           cells: [
-            {
-              grade: "V3",
-              sends: 0,
-              climbs: 0,
-              unknownOutcomes: 0,
-              successRate: null,
-              sampleStatus: "no_data",
-            },
-            {
-              grade: "V4",
-              sends: 0,
-              climbs: 0,
-              unknownOutcomes: 0,
-              successRate: null,
-              sampleStatus: "no_data",
-            },
+            progressCell("V3", 0, 0, 0, null, "no_data"),
+            progressCell("V4", 0, 0, 0, null, "no_data"),
           ],
         },
       ],
@@ -461,14 +538,7 @@ describe("climbing strengths", () => {
         key: "crimp",
         label: "Crimp",
         cells: [
-          expect.objectContaining({
-            grade: "V4",
-            sends: 3,
-            climbs: 6,
-            unknownOutcomes: 0,
-            successRate: 50,
-            sampleStatus: "available",
-          }),
+          expect.objectContaining(progressCell("V4", 3, 6, 0, 50, "available")),
           expect.objectContaining({
             grade: "V8",
             sends: 0,
@@ -478,28 +548,14 @@ describe("climbing strengths", () => {
             differencePercentagePoints: null,
             sampleStatus: "no_data",
           }),
-          expect.objectContaining({
-            grade: "V10",
-            sends: 1,
-            climbs: 1,
-            unknownOutcomes: 0,
-            successRate: 100,
-            sampleStatus: "limited",
-          }),
+          expect.objectContaining(progressCell("V10", 1, 1, 0, 100, "limited")),
         ],
       },
       {
         key: "sloper",
         label: "Sloper",
         cells: [
-          expect.objectContaining({
-            grade: "V4",
-            sends: 1,
-            climbs: 1,
-            unknownOutcomes: 0,
-            successRate: 100,
-            sampleStatus: "limited",
-          }),
+          expect.objectContaining(progressCell("V4", 1, 1, 0, 100, "limited")),
           expect.objectContaining({
             grade: "V8",
             sends: 0,
@@ -509,14 +565,7 @@ describe("climbing strengths", () => {
             differencePercentagePoints: null,
             sampleStatus: "no_data",
           }),
-          expect.objectContaining({
-            grade: "V10",
-            sends: 1,
-            climbs: 1,
-            unknownOutcomes: 0,
-            successRate: 100,
-            sampleStatus: "limited",
-          }),
+          expect.objectContaining(progressCell("V10", 1, 1, 0, 100, "limited")),
         ],
       },
     ]);
@@ -528,59 +577,17 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              {
-                grade: "V4",
-                sends: 3,
-                climbs: 6,
-                unknownOutcomes: 0,
-                successRate: 50,
-                sampleStatus: "available",
-              },
-              {
-                grade: "V8",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V10",
-                sends: 1,
-                climbs: 1,
-                unknownOutcomes: 0,
-                successRate: 100,
-                sampleStatus: "limited",
-              },
+              progressCell("V4", 3, 6, 0, 50, "available"),
+              progressCell("V8", 0, 0, 0, null, "no_data"),
+              progressCell("V10", 1, 1, 0, 100, "limited"),
             ],
           },
           {
             key: "sloper",
             cells: [
-              {
-                grade: "V4",
-                sends: 0,
-                climbs: 1,
-                unknownOutcomes: 0,
-                successRate: 0,
-                sampleStatus: "limited",
-              },
-              {
-                grade: "V8",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V10",
-                sends: 0,
-                climbs: 1,
-                unknownOutcomes: 1,
-                successRate: null,
-                sampleStatus: "limited",
-              },
+              progressCell("V4", 0, 1, 0, 0, "limited"),
+              progressCell("V8", 0, 0, 0, null, "no_data"),
+              progressCell("V10", 0, 1, 1, null, "limited"),
             ],
           },
         ],
@@ -592,59 +599,17 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              {
-                grade: "V4",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V8",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V10",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
+              progressCell("V4", 0, 0, 0, null, "no_data"),
+              progressCell("V8", 0, 0, 0, null, "no_data"),
+              progressCell("V10", 0, 0, 0, null, "no_data"),
             ],
           },
           {
             key: "sloper",
             cells: [
-              {
-                grade: "V4",
-                sends: 1,
-                climbs: 1,
-                unknownOutcomes: 0,
-                successRate: 100,
-                sampleStatus: "limited",
-              },
-              {
-                grade: "V8",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V10",
-                sends: 1,
-                climbs: 1,
-                unknownOutcomes: 0,
-                successRate: 100,
-                sampleStatus: "limited",
-              },
+              progressCell("V4", 1, 1, 0, 100, "limited"),
+              progressCell("V8", 0, 0, 0, null, "no_data"),
+              progressCell("V10", 1, 1, 0, 100, "limited"),
             ],
           },
         ],
@@ -656,59 +621,17 @@ describe("climbing strengths", () => {
           {
             key: "crimp",
             cells: [
-              {
-                grade: "V4",
-                sends: 0,
-                climbs: 1,
-                unknownOutcomes: 1,
-                successRate: null,
-                sampleStatus: "limited",
-              },
-              {
-                grade: "V8",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V10",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
+              progressCell("V4", 0, 1, 1, null, "limited"),
+              progressCell("V8", 0, 0, 0, null, "no_data"),
+              progressCell("V10", 0, 0, 0, null, "no_data"),
             ],
           },
           {
             key: "sloper",
             cells: [
-              {
-                grade: "V4",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V8",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
-              {
-                grade: "V10",
-                sends: 0,
-                climbs: 0,
-                unknownOutcomes: 0,
-                successRate: null,
-                sampleStatus: "no_data",
-              },
+              progressCell("V4", 0, 0, 0, null, "no_data"),
+              progressCell("V8", 0, 0, 0, null, "no_data"),
+              progressCell("V10", 0, 0, 0, null, "no_data"),
             ],
           },
         ],
@@ -733,22 +656,12 @@ describe("climbing strengths", () => {
       unknownOutcomes: 0,
       successRate: 50,
     });
-    expect(panel?.progress[0]?.rows[0]?.cells[0]).toEqual({
-      grade: "V4",
-      sends: 1,
-      climbs: 2,
-      unknownOutcomes: 0,
-      successRate: 50,
-      sampleStatus: "limited",
-    });
-    expect(panel?.progress[1]?.rows[0]?.cells[0]).toEqual({
-      grade: "V4",
-      sends: 0,
-      climbs: 1,
-      unknownOutcomes: 0,
-      successRate: 0,
-      sampleStatus: "limited",
-    });
+    expect(panel?.progress[0]?.rows[0]?.cells[0]).toEqual(
+      progressCell("V4", 1, 2, 0, 50, "limited"),
+    );
+    expect(panel?.progress[1]?.rows[0]?.cells[0]).toEqual(
+      progressCell("V4", 0, 1, 0, 0, "limited"),
+    );
     expect(result.panels.find((panel) => panel.dimension === "setting")?.grades[0]).toMatchObject({
       sends: 1,
       climbs: 2,

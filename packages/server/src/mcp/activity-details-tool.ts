@@ -27,7 +27,7 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       inputSchema: z.object({
         activity_id: z.uuid(),
         response_version: climbingResponseVersionSchema.describe(
-          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles.",
+          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles, or 3 to also include recorded source tags.",
         ),
       }),
       outputSchema: activityDetailsOutputSchema,

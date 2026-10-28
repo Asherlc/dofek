@@ -117,8 +117,13 @@ collection; unknown tags remain raw. Sources: authenticated
 
 The same [definitions](https://set.plastick.rocks/index-11950.js.map) assign
 CUSTOM `1`, MOVEMENT `2`, GRIP `3`, FOOTWORK `4`, GENERAL `5`, STYLE `6`,
-CONDITIONS `7`, START `8`, FINISH `9`, and BOLDNESS `10`. Those other categories
-remain available in raw tags without being relabeled as grip types. When no grip
+CONDITIONS `7`, START `8`, FINISH `9`, and BOLDNESS `10`. All categories are
+projected from retained raw records into attributed tags for climb details and
+strengths, without being relabeled as grip types. The
+[provider decoder](../src/providers/kaya/climbing-tags.ts) preserves literal
+labels and unknown category keys; the [generic contract](../packages/training/src/climbing-tags.ts)
+keeps source and category identity. No historical backfill or duplicate tag
+storage is needed. When no grip
 tag is supplied, canonical `holdTypes` remains unknown; the explicit No Grips tag is the
 recorded `no_grips` category, not an empty collection. See the
 [provider mapping](../src/providers/kaya-sync.ts) and
@@ -204,8 +209,9 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   location and published-grade metadata, but rejects `tags`. The
   [catalogue reader](../src/providers/kaya/catalogue.ts) uses the verified search
   response for discovery. With an existing user connection, authenticated
-  `climb(id: ...)` reads fetch native Climb details, including `lead` and
-  `is_trad`; a read-only production request verified this shape on the audit
+  `climb(id: ...)` reads fetch native Climb details, including `lead`,
+  `is_trad`, and the full source tags verified on native Climbs above;
+  a read-only production request verified the classification shape on the audit
   date. Explicit `is_trad: true` supplies Trad; `lead: true` with explicit
   `is_trad: false` supplies Sport, as specified by the product mapping. A null
   classification stays unknown. Known IDs bypass name search. Live requests
@@ -263,11 +269,12 @@ force that source record through name search; see the
 
 Canonical records retain the full grip collection and numeric-or-category
 wall angle. The existing climbing-detail tRPC procedures support
-`responseVersion: 1 | 2`; omitted versions retain the scalar legacy response,
-and updated web/mobile clients explicitly request the full version `2`.
-Their strict decoders also accept the earlier server's version `1` response,
-so an independently published client does not assume that an older server
-honored a newly introduced input. The corresponding MCP tools use
+`responseVersion: 1 | 2 | 3`; omitted versions retain the scalar legacy response,
+and updated web/mobile clients explicitly request version `3` for recorded tags.
+Versions `1` and `2` omit the new tags field. Their strict decoders also accept
+earlier versions `1` and `2`. Publish the version-3 API first: an intermediate
+API accepting only versions `1` and `2` rejects version `3` during input
+validation. The corresponding MCP tools use
 `response_version` and project the response before generating text and
 structured output. See the [response-version contract](climbing-context.md#response-versions-and-independent-releases),
 [shared policy](../packages/training/src/climbing-log-response.ts), and
@@ -279,6 +286,17 @@ arbitrary scalar or a measured degree value. The canonical metadata remains
 available to version `2` and server analytics. See the
 [projection](../packages/training/src/climbing-log-response.ts) and
 [strengths service](../packages/server/src/services/climbing-strengths.ts).
+
+The strengths response keeps its existing angle/hold/setting `panels` and adds
+`tagPanels` for observed recorded tag categories. Each tag contributes once per
+identified climb and category/source; the same grade-adjusted and monthly
+calculations apply. Catalogue tags, including inherited Area context, remain
+reference information and never affect these metrics. Both clients show every
+catalogue tag under its existing disclosure, including unfamiliar tags, instead
+of hiding the generic `other` kind. See the
+[aggregation](../packages/server/src/services/climbing-strengths.ts),
+[web details](../packages/web/src/components/ClimbingCatalogueContext.tsx) and
+[mobile details](../packages/mobile/components/ClimbingCatalogueContext.tsx).
 
 ## Repeating the audit
 

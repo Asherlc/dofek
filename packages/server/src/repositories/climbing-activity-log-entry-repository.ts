@@ -8,6 +8,7 @@ import {
   climbingLogEntrySchema,
 } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { recordedClimbingTags } from "dofek/climbing-tags";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -181,10 +182,19 @@ function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
       ).values(),
     ];
     const photoLogEntryId = match.log.photoLogEntryId ?? log.photoLogEntryId;
+    const tags = [
+      ...new Map(
+        [...(match.log.tags ?? []), ...(log.tags ?? [])].map((tag) => [
+          JSON.stringify([tag.providerId, tag.categoryKey, tag.sourceKey]),
+          tag,
+        ]),
+      ).values(),
+    ];
     Object.assign(match.log, preferred, {
       photoLogEntryId,
       sourceName: [...match.sources].join(", ") || null,
       sourceLinks,
+      tags,
     });
   }
   return output;
@@ -367,6 +377,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       return climbingLogEntryDetailSchema.parse({
         ...row.log,
         raw: climbingDetailRaw(row.log),
+        tags: recordedClimbingTags(row.log.providerId, row.log.raw),
         climb: row.climb,
         mapLocation: mapLocation(row.climb),
         photoLogEntryId:
