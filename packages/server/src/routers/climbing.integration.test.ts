@@ -232,6 +232,45 @@ describe("climbing log router PostgreSQL integration", () => {
       expect.objectContaining({ attempts: null, minutes: expect.any(Number) }),
     ]);
   });
+  it.each([30, null])(
+    "retains recorded attempts alongside activities without logs for %s days",
+    async (days) => {
+      const outing = await seedClimbingActivity(context.db, "kaya-export", "weekly-logged");
+      await log("weekly-v2", "V2", 2, outing.id);
+      await log("weekly-v4", "V4", 3, outing.id);
+      await seedClimbingActivity(context.db, "strava", "weekly-without-logs");
+
+      expect(await caller().volumeOverTime({ days })).toEqual([
+        expect.objectContaining({ attempts: 5, minutes: expect.any(Number) }),
+      ]);
+    },
+  );
+  it("retains standalone attempts in a week with an activity without logs", async () => {
+    await log("standalone-v4", "V4", 3);
+    await seedClimbingActivity(context.db, "strava", "weekly-without-logs");
+
+    expect(await caller().volumeOverTime({ days: 30 })).toEqual([
+      expect.objectContaining({ attempts: 3, minutes: expect.any(Number) }),
+    ]);
+  });
+  it("recomputes weekly attempts cached under the old completeness rule", async () => {
+    await log("standalone-v4", "V4", 3);
+    const input = { days: 30 };
+    const oldKey = requestCacheKey(TEST_USER_ID, "volumeOverTime", input, "UTC");
+    await queryCache.set(
+      oldKey,
+      [{ week: await climbingTestDate(context.db), attempts: null, minutes: null }],
+      CacheTTL.LONG,
+    );
+    try {
+      const cachedCaller = createCaller({ db: context.db, userId: TEST_USER_ID, timezone: "UTC" });
+      expect(await cachedCaller.volumeOverTime(input)).toEqual([
+        expect.objectContaining({ attempts: 3 }),
+      ]);
+    } finally {
+      await queryCache.invalidateByPrefix(`${TEST_USER_ID}:volumeOverTime:`);
+    }
+  });
   it("serves the canonical attempt graph through group and member activity identities", async () => {
     const outing = await seedClimbingActivity(context.db, "kaya-export", "session");
     const id = await log("v4", "V4", 3, outing.id);

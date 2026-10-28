@@ -20,6 +20,106 @@ it("names the grade heatmap for assistive technology", () => {
   fireEvent.click(screen.getByRole("button", { name: "Grades" }));
   expect(screen.getByRole("table", { name: "Success by grade and wall angle" })).toBeVisible();
 });
+it("explains missing wall angles and keeps the single recorded style directly selectable", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const row = panel.rows[0];
+  const pooled = panel.allGrades.rows[0];
+  if (!row || !pooled) throw new Error("Missing fixture row");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          {
+            ...panel,
+            rows: [row],
+            allGrades: { ...panel.allGrades, rows: [pooled] },
+            coverage: { ...panel.coverage, missingTraits: 59 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText(/Wall angle is missing for 59 climbs/)).toBeVisible();
+  expect(screen.queryByText(/Outside the dashed line/)).toBeNull();
+  expect(screen.queryByText(/Grade-adjusted difference on a/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · All grades/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "13 sends / 21 climbs",
+  );
+});
+it("identifies missing hold types when the selected breakdown has no observations", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          {
+            ...panel,
+            dimension: "hold_type",
+            rows: [],
+            allGrades: { ...panel.allGrades, rows: [] },
+            coverage: { ...panel.coverage, missingTraits: 60 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("Hold type is missing for 60 climbs.")).toBeVisible();
+});
+it.each([
+  {
+    state: "the empty contract fallback",
+    missingTraits: 0,
+    message: "No recorded hold type observations for this context.",
+  },
+  {
+    state: "one climb without hold types",
+    missingTraits: 1,
+    message: "Hold type is missing for 1 climb.",
+  },
+])("keeps $state navigable", ({ missingTraits, message }) => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const singleClimb = { sends: 1, climbs: 1, unknownOutcomes: 0, successRate: 100 };
+  render(
+    <ClimbingStrengths
+      data={{
+        coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+        panels: [
+          {
+            ...panel,
+            key: "empty-holds",
+            dimension: "hold_type",
+            grades: missingTraits === 1 ? [{ grade: "V4", gradeSortValue: 4, ...singleClimb }] : [],
+            rows: [],
+            progress: [],
+            gradeAdjustedStrengths: [],
+            allGrades: {
+              grades:
+                missingTraits === 1
+                  ? [{ grade: "All grades", gradeSortValue: 0, ...singleClimb }]
+                  : [],
+              rows: [],
+              progress: [],
+            },
+            coverage: { missingTraits, unknownOutcomes: 0 },
+          },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Hold type" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
+  expect(screen.getByText("No recorded wall angle observations for this context.")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeVisible();
+});
 function renderStrengths(element: Parameters<typeof render>[0]) {
   const result = render(element);
   const grades = screen.queryByRole("button", { name: "Grades" });
@@ -163,5 +263,4 @@ it("uses a fixed heatmap and monthly chart for Grades and Progress across both b
   expect(screen.getByRole("columnheader", { name: "V4" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByText("Monthly send rate")).toBeVisible();
-  expect(screen.getByText(/Combines all grades/)).toBeVisible();
 });

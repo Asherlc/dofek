@@ -75,18 +75,31 @@ export const Sparse: Story = {
       ...fixture,
       panels: fixture.panels.map((panel) => ({
         ...panel,
-        grades: panel.grades.filter((grade) => grade.grade === "V6"),
-        rows: panel.rows.map((row) => ({
-          ...row,
-          cells: row.cells.filter((cell) => cell.grade === "V6"),
-        })),
+        coverage: { ...panel.coverage, missingTraits: 40 },
+        rows: panel.rows.filter((row) => row.key === "slab"),
+        gradeAdjustedStrengths: panel.gradeAdjustedStrengths.filter((row) => row.key === "slab"),
+        allGrades: {
+          ...panel.allGrades,
+          rows: panel.allGrades.rows.filter((row) => row.key === "slab"),
+        },
         progress: panel.progress.map((period) => ({
           ...period,
-          rows: period.rows.map((row) => ({
-            ...row,
-            cells: row.cells.filter((cell) => cell.grade === "V6"),
-          })),
+          rows: period.rows.filter((row) => row.key === "slab"),
         })),
+      })),
+    },
+  },
+};
+export const MissingHoldTypes: Story = {
+  args: {
+    data: {
+      ...fixture,
+      panels: fixture.panels.map((panel) => ({
+        ...panel,
+        dimension: "hold_type",
+        coverage: { ...panel.coverage, missingTraits: 63 },
+        rows: [],
+        allGrades: { ...panel.allGrades, rows: [] },
       })),
     },
   },

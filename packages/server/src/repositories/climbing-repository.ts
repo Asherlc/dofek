@@ -354,13 +354,11 @@ export class ClimbingRepository extends BaseRepository {
       sql`WITH ${this.#canonicalLogCtes(range, filters)},
       weekly_attempts AS (
         SELECT date_trunc('week', session_date::date)::date AS week,
-          CASE WHEN COUNT(canonical_attempt_count) = COUNT(*)
-            THEN SUM(canonical_attempt_count)::int END AS attempts
+          SUM(canonical_attempt_count)::int AS attempts
         FROM canonical_logs GROUP BY 1
       ), weekly_time AS (
         SELECT date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
-          CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS minutes,
-          COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM canonical_logs logs WHERE logs.canonical_activity_id = a.id)) AS activities_without_logs
+          CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS minutes
         FROM fitness.v_activity a
         WHERE a.user_id = ${this.userId} AND a.canonical_type = 'climbing'
           ${ChartRange.fromDays(days).postgresDateAfterEndDate(sql`(a.started_at AT TIME ZONE ${this.timezone})::date`, endDate)}
@@ -370,7 +368,7 @@ export class ClimbingRepository extends BaseRepository {
         GROUP BY 1
       )
       SELECT COALESCE(weekly_attempts.week, weekly_time.week)::text AS week,
-        CASE WHEN COALESCE(weekly_time.activities_without_logs, 0) = 0 THEN weekly_attempts.attempts END AS attempts, weekly_time.minutes
+        weekly_attempts.attempts, weekly_time.minutes
       FROM weekly_attempts FULL JOIN weekly_time USING (week) ORDER BY week`,
     );
     return rows;
