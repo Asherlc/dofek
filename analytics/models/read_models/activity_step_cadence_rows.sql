@@ -309,8 +309,8 @@ winners AS (
     WHERE source_rank = 1
 )
 SELECT
-    k.user_id AS user_id,
-    k.activity_id AS activity_id,
+    assumeNotNull(k.user_id) AS user_id,
+    assumeNotNull(k.activity_id) AS activity_id,
     CAST(60.0 * w.observed_steps / nullIf(w.observed_seconds, 0), 'Nullable(Float64)') AS avg_cadence,
     coalesce(w.observed_steps, 0) AS observed_steps,
     coalesce(w.observed_seconds, 0) AS observed_seconds,
@@ -333,3 +333,4 @@ SELECT
     now64(9, 'UTC') AS refreshed_at
 FROM dirty_keys AS k
 LEFT JOIN winners AS w ON w.user_id = k.user_id AND w.activity_id = k.activity_id
+WHERE k.user_id IS NOT NULL AND k.activity_id IS NOT NULL

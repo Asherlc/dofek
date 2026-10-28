@@ -18,9 +18,9 @@ const member = randomUUID();
 const workout = randomUUID();
 const database = `running_cadence_${randomUUID().replaceAll("-", "")}`;
 let client: ClickHouseClient;
-function render(name: string, scopedIds?: string[]) {
+function render(name: string, scopedIds?: string[], isIncremental = true) {
   return renderDbtModelSql(readModelSql(`${name}.sql`), {
-    isIncremental: true,
+    isIncremental,
     activityRefreshScoped: scopedIds !== undefined,
   })
     .replaceAll('{{ var("activity_refresh_user_id") }}', user)
@@ -193,6 +193,34 @@ describe("running step cadence read model", () => {
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client?.close();
+  });
+  it("creates the first cadence table with the canonical inferred schema and usable workout keys", async () => {
+    await steps("08:00:00", "08:01:00", 150);
+    const firstBuildSql = render("activity_step_cadence_rows", undefined, false);
+    const inferred = await client.query({
+      query: `DESCRIBE TABLE (${firstBuildSql})`,
+      format: "JSONEachRow",
+    });
+    const canonical = await client.query({
+      query: `DESCRIBE TABLE ${database}.activity_step_cadence_rows`,
+      format: "JSONEachRow",
+    });
+    const columnTypes = (columns: { name: string; type: string }[]) =>
+      columns.map(({ name, type }) => ({ name, type }));
+    expect(columnTypes(await inferred.json<{ name: string; type: string }>())).toEqual(
+      columnTypes(await canonical.json<{ name: string; type: string }>()),
+    );
+    await client.command({
+      query: `CREATE TABLE ${database}.first_step_cadence_rows
+        ENGINE=ReplacingMergeTree(refresh_version) ORDER BY (user_id,activity_id)
+        EMPTY AS ${firstBuildSql}`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.first_step_cadence_rows ${firstBuildSql}`,
+    });
+    expect(await rows("first_step_cadence_rows", "user_id,activity_id,avg_cadence")).toEqual([
+      { user_id: user, activity_id: group, avg_cadence: 150 },
+    ]);
   });
   it("joins production workout identities to raw UUID associations through the shared summary", async () => {
     await steps("08:00:00", "08:01:00", 150);
