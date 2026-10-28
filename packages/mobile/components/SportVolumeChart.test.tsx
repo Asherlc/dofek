@@ -30,10 +30,11 @@ vi.mock("../lib/trpc", () => ({
 afterEach(cleanup);
 it("offers sport-specific metrics and leaves missing distance unknown", () => {
   render(<SportVolumeChart days={30} enabled />);
-  expect(screen.getByLabelText("2026-10-19: 90 min")).toBeTruthy();
+  expect(screen.getByText("h:mm per week")).toBeTruthy();
+  expect(screen.getByLabelText("2026-10-19: 1:30 h:mm")).toBeTruthy();
   fireEvent.click(screen.getByRole("radio", { name: "Distance" }));
   expect(screen.getByLabelText("2026-10-19: Not recorded")).toBeTruthy();
   fireEvent.click(screen.getByRole("radio", { name: "Yoga" }));
-  expect(screen.getByLabelText("2026-10-19: 90 min")).toBeTruthy();
+  expect(screen.getByLabelText("2026-10-19: 1:30 h:mm")).toBeTruthy();
   expect(screen.queryByRole("radio", { name: "Distance" })).toBeNull();
 });

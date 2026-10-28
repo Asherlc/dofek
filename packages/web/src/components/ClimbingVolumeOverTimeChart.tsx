@@ -24,9 +24,6 @@ export function ClimbingVolumeOverTimeChart({
           <option value="time">Time</option>
         </select>
       </div>
-      {data.some((row) => (metric === "attempts" ? row.attempts : row.minutes) === null) ? (
-        <p className="text-xs text-muted">Weeks with incomplete records are not plotted.</p>
-      ) : null}
       <DofekChart
         option={{
           grid: dofekGrid("single"),

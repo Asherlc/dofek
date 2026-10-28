@@ -21,7 +21,7 @@ export function ClimbingStrengthsChart({
   onSelectCell,
 }: {
   panel: ClimbingStrengthsPanel;
-  view: Exclude<ClimbingStrengthsView, "profile">;
+  view: ClimbingStrengthsView;
   grade: string;
   selectedRow: string | null;
   onSelectCell: (rowKey: string, grade: string) => void;
@@ -73,7 +73,7 @@ export function ClimbingStrengthsChart({
   const adjustedLabel = (key: string) =>
     climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === key));
   const dataDisclosure = (
-    <details className="text-xs text-muted">
+    <details className="text-xs text-muted" open={sparseRadar || undefined}>
       <summary className="cursor-pointer py-2 font-medium text-foreground">Exact values</summary>
       <div className="max-h-96 overflow-auto">
         <table className="w-full text-left">
@@ -142,26 +142,27 @@ export function ClimbingStrengthsChart({
   );
   return (
     <div className="space-y-3">
-      {view === "progress" ? (
-        <p className="text-xs text-muted">
-          Each climb counts once in each month it was tried; monthly counts need not sum to the
-          whole period. Select a point for climbs across the selected period.
-        </p>
-      ) : null}
-      {view === "radar" ? (
-        <p className="text-xs text-muted">
-          {adjustedRadar
-            ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: your same-grade baseline at zero."
-            : `Success on a shared 0–100% scale. Dashed line: ${baselineLabel.toLowerCase()}. Groups without a success rate are omitted from the polygon.`}{" "}
-          Select a style label to see its climbs.
-        </p>
+      {view === "radar" && !sparseRadar ? (
+        <>
+          <p className="text-sm text-muted">
+            Compared with your usual results at the same grades. Outside the dashed line is
+            stronger; inside is weaker.
+          </p>
+          <p className="text-xs text-muted">
+            {adjustedRadar
+              ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: your same-grade baseline at zero."
+              : `Success on a shared 0–100% scale. Dashed line: ${baselineLabel.toLowerCase()}. Groups without a success rate are omitted from the polygon.`}{" "}
+            Select a style label to see its climbs.
+          </p>
+        </>
       ) : null}
       {sparseRadar ? (
         <>
           <p className="rounded-lg border border-border p-4 text-sm text-muted">
-            {adjustedRadar
-              ? "Radar needs at least three styles with known results. Explore the recorded values below."
-              : "Radar needs at least three style groups with recorded success at this grade. Choose another grade or use the exact values below."}
+            {panel.coverage.missingTraits > 0
+              ? `${panel.dimension === "wall_angle" ? "Wall angle" : panel.dimension === "hold_type" ? "Hold type" : "Setting"} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
+              : ""}
+            A radar chart needs at least three styles with known results.
           </p>
           {dataDisclosure}
         </>

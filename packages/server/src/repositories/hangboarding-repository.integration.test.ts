@@ -1,11 +1,30 @@
+import { randomUUID } from "node:crypto";
+import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
+import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { HangboardingRepository } from "./hangboarding-repository.ts";
 
 describe("HangboardingRepository integration", () => {
   const groupedActivityId = "2fd151b9-75fb-4ff8-98a4-c1881df78561";
+  const otherUserId = "00000000-0000-0000-0000-000000000002";
+  const analyticsDatabase = `hangboarding_${randomUUID().replaceAll("-", "")}`;
+  const clickhouse = createClickHouseClientFromEnv();
+  const sensorStore = new ClickHouseActivitySensorStore({
+    query: (options) =>
+      clickhouse.query({
+        ...options,
+        query: options.query.replaceAll("analytics.", `${analyticsDatabase}.`),
+      }),
+    command: (options) =>
+      clickhouse.command({
+        ...options,
+        query: options.query.replaceAll("analytics.", `${analyticsDatabase}.`),
+      }),
+  });
   let testContext: TestContext;
   let firstActivityId: string;
   let nonHangboardingActivityId: string;
@@ -15,6 +34,7 @@ describe("HangboardingRepository integration", () => {
   let secondDate: string;
   let noHangTenDate: string;
   let nullDataDate: string;
+  let groupedDate: string;
 
   function dateOnly(timestamp: string): string {
     return new Date(timestamp).toISOString().slice(0, 10);
@@ -40,6 +60,7 @@ describe("HangboardingRepository integration", () => {
 
     const activities = await testContext.db.execute<{
       id: string;
+      group_id: string;
       external_id: string;
       started_at: string;
     }>(
@@ -51,13 +72,13 @@ describe("HangboardingRepository integration", () => {
             'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-session-1',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '10 minutes', 'Repeaters',
-            '{"avgHeartRate":120,"maxHeartRate":145,"hangTen":{"sessionId":"session-1","planName":"Repeaters","boardId":"board-1","boardName":"Tension Board"}}'::jsonb
+            '{"hangTen":{"sessionId":"session-1","planName":"Repeaters","boardId":"board-1","boardName":"Tension Board"}}'::jsonb
           ),
           (
             'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-session-2',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '1 day',
             CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '15 minutes', 'Max Hangs',
-            '{"avgHeartRate":130,"maxHeartRate":150,"hangTen":{"sessionId":"session-2","planName":"Max Hangs","boardName":"Tension Board"}}'::jsonb
+            '{"hangTen":{"sessionId":"session-2","planName":"Max Hangs","boardName":"Tension Board"}}'::jsonb
           ),
           (
             'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-not-hangboard',
@@ -74,7 +95,8 @@ describe("HangboardingRepository integration", () => {
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '3 days',
             CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '5 minutes', 'Metadata Missing', '{}'::jsonb
           )
-          RETURNING id::text AS id, external_id, started_at::text AS started_at`,
+          RETURNING id::text AS id, group_id::text AS group_id, external_id,
+            started_at::text AS started_at`,
     );
 
     const firstActivity = activities.find(
@@ -127,7 +149,11 @@ describe("HangboardingRepository integration", () => {
             'Incomplete Rest', 'rest', CURRENT_TIMESTAMP - INTERVAL '31 days', NULL)`,
     );
 
-    const groupedActivities = await testContext.db.execute<{ id: string; external_id: string }>(
+    const groupedActivities = await testContext.db.execute<{
+      id: string;
+      external_id: string;
+      started_at: string;
+    }>(
       sql`INSERT INTO fitness.activity (
             group_id, provider_id, user_id, external_id, canonical_type, provider_type,
             started_at, ended_at, name, raw
@@ -144,7 +170,7 @@ describe("HangboardingRepository integration", () => {
             CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '20 minutes', 'Grouped Other',
             '{"avgHeartRate":200,"maxHeartRate":210}'::jsonb
           )
-          RETURNING id::text AS id, external_id`,
+          RETURNING id::text AS id, external_id, started_at::text AS started_at`,
     );
     const groupedOtherActivity = groupedActivities.find(
       (activity) => activity.external_id === "hangboard-repository-grouped-other",
@@ -156,6 +182,7 @@ describe("HangboardingRepository integration", () => {
       throw new Error("Failed to seed grouped Hangboarding activities");
     }
     groupedOtherActivityId = groupedOtherActivity.id;
+    groupedDate = dateOnly(groupedOtherActivity.started_at);
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, label, interval_type, started_at, ended_at
@@ -167,14 +194,68 @@ describe("HangboardingRepository integration", () => {
             CURRENT_TIMESTAMP - INTERVAL '40 days',
             CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '999 seconds')`,
     );
+
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${otherUserId}::uuid, 'Other Hangboarding User')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('hangboarding-other-user', 'Other User Hang Ten', ${otherUserId}::uuid)`,
+    );
+    const [otherUserActivity] = await testContext.db.execute<{ group_id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, raw
+          ) VALUES (
+            'hangboarding-other-user', ${otherUserId}::uuid, 'other-user-session',
+            'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '1 day',
+            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '10 minutes',
+            '{"hangTen":{"planName":"Other User Session"}}'::jsonb
+          ) RETURNING group_id::text AS group_id`,
+    );
+    if (!otherUserActivity) throw new Error("Failed to seed other user Hangboarding activity");
+
+    await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    await clickhouse.command({
+      query: buildTestAnalyticsTableStatement("analytics.activity_summary").replaceAll(
+        "analytics.",
+        `${analyticsDatabase}.`,
+      ),
+    });
+    if (!clickhouse.insert) throw new Error("ClickHouse test client requires inserts");
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_summary`,
+      format: "JSONEachRow",
+      values: [
+        { activity_id: firstActivity.group_id, user_id: TEST_USER_ID, avg_hr: 120, max_hr: 145 },
+        { activity_id: secondActivity.group_id, user_id: TEST_USER_ID, avg_hr: 130, max_hr: 150 },
+        { activity_id: groupedActivityId, user_id: TEST_USER_ID, avg_hr: 100, max_hr: 160 },
+        { activity_id: groupedHangTenActivity.id, user_id: TEST_USER_ID, avg_hr: 400, max_hr: 410 },
+        {
+          activity_id: nonHangboardingActivity.group_id,
+          user_id: TEST_USER_ID,
+          avg_hr: 350,
+          max_hr: 360,
+        },
+        {
+          activity_id: otherUserActivity.group_id,
+          user_id: otherUserId,
+          avg_hr: 250,
+          max_hr: 300,
+        },
+      ],
+    });
   }, 60_000);
 
   afterAll(async () => {
+    await clickhouse.command({ query: `DROP DATABASE IF EXISTS ${analyticsDatabase} SYNC` });
+    await clickhouse.close?.();
     await testContext?.cleanup();
   });
 
   it("reads a compact finger-loading summary from real Postgres rows", async () => {
-    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore);
 
     await expect(repository.getDetail(firstActivityId)).resolves.toMatchObject({
       planName: "Repeaters",
@@ -190,21 +271,19 @@ describe("HangboardingRepository integration", () => {
   });
 
   it("returns the same details for a displayed group ID and a source member ID", async () => {
-    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore);
     const memberDetail = await repository.getDetail(groupedOtherActivityId);
     expect(memberDetail).not.toBeNull();
     await expect(repository.getDetail(groupedActivityId)).resolves.toEqual(memberDetail);
     await expect(
-      new HangboardingRepository(
-        testContext.db,
-        "00000000-0000-0000-0000-000000000002",
-        "UTC",
-      ).getDetail(groupedActivityId),
+      new HangboardingRepository(testContext.db, otherUserId, "UTC", sensorStore).getDetail(
+        groupedActivityId,
+      ),
     ).resolves.toBeNull();
   });
 
-  it("computes exact session, interval, heart-rate, latest-session, and daily totals", async () => {
-    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+  it("computes totals using canonical sensor heart rates when Hang Ten raw HR is absent", async () => {
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore);
 
     await expect(repository.getSummary(30)).resolves.toMatchObject({
       sessionCount: 3,
@@ -229,7 +308,7 @@ describe("HangboardingRepository integration", () => {
   });
 
   it("keeps canonical hangboard details visible when Hang Ten metadata is absent", async () => {
-    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore);
 
     await expect(repository.getDetail(noHangTenActivityId)).resolves.toEqual({
       planName: null,
@@ -245,16 +324,79 @@ describe("HangboardingRepository integration", () => {
     });
   });
 
+  it("reads sensor HR by group ID when another provider member is canonical", async () => {
+    const nextDate = new Date(`${groupedDate}T00:00:00.000Z`);
+    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const repository = new HangboardingRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: groupedDate,
+        endDateExclusive: nextDate.toISOString().slice(0, 10),
+      },
+    );
+
+    await expect(repository.getSummary(365)).resolves.toMatchObject({
+      sessionCount: 1,
+      totalDurationSeconds: 600,
+      averageHeartRate: 100,
+      peakHeartRate: 160,
+    });
+  });
+
+  it("limits heart rates to the caller's accessible session dates", async () => {
+    const repository = new HangboardingRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: firstDate,
+        endDateExclusive: secondDate,
+      },
+    );
+
+    await expect(repository.getSummary(30)).resolves.toMatchObject({
+      sessionCount: 1,
+      averageHeartRate: 120,
+      peakHeartRate: 145,
+    });
+  });
+
+  it("limits sensor heart rates to the caller's owned Hangboarding sessions", async () => {
+    const repository = new HangboardingRepository(testContext.db, otherUserId, "UTC", sensorStore);
+
+    await expect(repository.getSummary(30)).resolves.toMatchObject({
+      sessionCount: 1,
+      averageHeartRate: 250,
+      peakHeartRate: 300,
+    });
+  });
+
   it("returns null summary metrics for a real session with unfinished intervals and no HR", async () => {
     const nextDate = new Date(`${nullDataDate}T00:00:00.000Z`);
     nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", {
-      kind: "limited",
-      paid: false,
-      reason: "free_recent_week",
-      startDate: nullDataDate,
-      endDateExclusive: nextDate.toISOString().slice(0, 10),
-    });
+    const repository = new HangboardingRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: nullDataDate,
+        endDateExclusive: nextDate.toISOString().slice(0, 10),
+      },
+    );
 
     await expect(repository.getSummary(365)).resolves.toMatchObject({
       sessionCount: 1,
@@ -281,7 +423,7 @@ describe("HangboardingRepository integration", () => {
   });
 
   it("uses Hang Ten metadata and finger-loading data when another member is canonical", async () => {
-    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore);
 
     await expect(repository.getDetail(groupedOtherActivityId)).resolves.toMatchObject({
       planName: "Grouped Hang Ten",
@@ -296,14 +438,12 @@ describe("HangboardingRepository integration", () => {
 
   it("rejects a non-owned activity and a non-Hangboarding activity", async () => {
     await expect(
-      new HangboardingRepository(
-        testContext.db,
-        "00000000-0000-0000-0000-000000000002",
-        "UTC",
-      ).getDetail(firstActivityId),
+      new HangboardingRepository(testContext.db, otherUserId, "UTC", sensorStore).getDetail(
+        firstActivityId,
+      ),
     ).resolves.toBeNull();
     await expect(
-      new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC").getDetail(
+      new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore).getDetail(
         nonHangboardingActivityId,
       ),
     ).resolves.toBeNull();

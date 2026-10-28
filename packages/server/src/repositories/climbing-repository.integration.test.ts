@@ -579,6 +579,19 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: null, recordedAttempts: null, sends: 1 }),
     ]);
+    expect(await repo().getVolumeOverTime(30)).toEqual([
+      expect.objectContaining({ attempts: null }),
+    ]);
+
+    await write({
+      externalId: "known-attempts",
+      attempts: [
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+      ],
+    });
+    expect(await repo().getVolumeOverTime(30)).toEqual([expect.objectContaining({ attempts: 3 })]);
   });
   it("preserves standalone source observations without cross-provider merging", async () => {
     await write({}, "mountain-project");
