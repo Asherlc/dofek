@@ -45,6 +45,15 @@ export function formatDateYmdInTimeZone(value: DateInput, timeZone: string): str
   return `${year}-${month}-${day}`;
 }
 
+/** Format minutes as hours:minutes, rounded to the nearest whole minute. */
+export function formatDurationHoursMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes)) return "--";
+  const totalMinutes = Math.round(minutes);
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  return `${hours}:${String(mins).padStart(2, "0")}`;
+}
+
 /** Format a duration in minutes as "Xh Ym" */
 export function formatDurationMinutes(minutes: number): string {
   const hours = Math.floor(minutes / 60);
