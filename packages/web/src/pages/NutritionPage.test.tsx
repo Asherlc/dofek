@@ -249,7 +249,7 @@ describe("NutritionPage", () => {
     expect(screen.getByText("Named itemized meal")).toBeTruthy();
   });
 
-  it("explains an aggregate-only contribution without rendering an unnamed meal", async () => {
+  it("renders server totals for aggregate-only contributions", async () => {
     foodByDateQuery = {
       data: {
         entries: [],
@@ -299,8 +299,8 @@ describe("NutritionPage", () => {
 
     render(<NutritionPage />);
 
-    expect(screen.getByText("Cronometer (via Apple Health) daily total")).toBeTruthy();
-    expect(screen.getByText("Totals use the only available nutrition source.")).toBeTruthy();
+    expect(screen.getAllByText("1,800 kcal")).toHaveLength(2);
+    expect(screen.getByText("90 g")).toBeTruthy();
     expect(screen.queryByText("Unnamed nutrition entry")).toBeNull();
   });
 });
