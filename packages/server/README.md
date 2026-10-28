@@ -11,7 +11,10 @@ The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
 weekly volume queries provide the charts with attempt counts, working sets,
 weight multiplied by repetitions, and recorded activity duration. The
 [climbing repository](src/repositories/climbing-repository.ts) applies climbing
-filters and retains unknown attempt counts; the
+filters and sums available recorded attempt counts, even when other activities
+in the week have no logs. Conflicting counts remain unknown and do not hide
+other recorded attempts; weeks with no known counts stay null, following
+[PostgreSQL aggregate semantics](https://www.postgresql.org/docs/current/functions-aggregate.html). The
 [strength repository](src/repositories/strength-repository.ts) reports unknown
 set or weight totals when a workout or a working set lacks the required data.
 
@@ -71,6 +74,13 @@ with incomplete power coverage withheld from weekly totals.
   period. A recorded date counts once across climbing types, rope methods, and
   settings. The server computes grade counts, sends per recorded day, stack
   positions, and axes; both clients render the [shared contract](../training/src/climbing-progression.ts).
+  The permanent `climbing.gradeProgressionV2` and `mobileDashboard.trainingV2`
+  procedures serve this combined chart. The original procedures retain their
+  complete [V1 lane contract](../training/src/climbing-progression-v1.ts), projected
+  from the same raw observations by the [V1 builder](src/repositories/climbing-grade-progression-v1.ts).
+  Each request runs one observation query for its selected version; the
+  [climbing router](src/routers/climbing.ts) and [mobile router](src/routers/mobile-dashboard.ts)
+  keep the response schemas and caches separate.
 - **Climbing strengths**: The protected cached `climbing.strengths` query serves
   [display-ready panels](../training/src/climbing-strengths.ts) for both clients.
   Its [repository](src/repositories/climbing-strengths-repository.ts) reuses the
@@ -102,11 +112,14 @@ with incomplete power coverage withheld from weekly totals.
   no recorded attempts retain zero counts. All view metrics
   are supplied by this server response, as defined in the
   [shared strengths contract](../training/src/climbing-strengths.ts).
-  Context labels omit the grading-system suffix when that semantic lane uses
-  one system; distinct systems retain their labels in the
-  [aggregation](src/services/climbing-strengths.ts).
+  The [aggregation](src/services/climbing-strengths.ts) supplies one panel per
+  breakdown dimension for the selection made by the existing page filters.
+  It retains semantic context and display grade system in same-grade radar
+  baselines within the selected view. Display grades omit
+  grading-system names and the redundant Bouldering qualifier for V grades;
+  meaningful rope-method and attempt qualifiers remain when contexts are mixed.
   The same contract supplies a separate `allGrades` profile with pooled counts,
-  rates, comparisons and monthly outcomes from the consolidated climbs. Missing
+  rates, comparisons and monthly outcomes from the selected consolidated climbs. Missing
   aid use joins free climbing; explicit aid stays separate. `days: null` queries
   accessible history through `endDate`, and progress starts at its earliest
   observation. See the [repository](src/repositories/climbing-strengths-repository.ts)

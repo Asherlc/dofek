@@ -4,7 +4,6 @@ import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ActivityList } from "../../components/ActivityList.tsx";
-import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
@@ -42,7 +41,6 @@ function formatTte(seconds: number | null): string {
   return `${mins}m`;
 }
 
-const VARIABILITY_PAGE_SIZE = 20;
 const ACTIVITY_PAGE_SIZE = 20;
 
 interface EstimateEvidence {
@@ -65,7 +63,6 @@ function CyclingTab() {
 }
 
 function CyclingContent({ days }: { days: TimeRangeDays }) {
-  const [variabilityOffset, setVariabilityOffset] = useState(0);
   const [activityPage, setActivityPage] = useState(0);
   const trpcUtils = trpc.useUtils();
   const performance = trpc.cycling.performance.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
@@ -74,8 +71,6 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
       days,
       activityLimit: ACTIVITY_PAGE_SIZE,
       activityOffset: activityPage * ACTIVITY_PAGE_SIZE,
-      variabilityLimit: VARIABILITY_PAGE_SIZE,
-      variabilityOffset,
     },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
@@ -201,7 +196,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
         <QueryStatePanel contextLabel="Cycling activities" error={activityAnalytics.error} />
       ) : (
         <>
-          {/* Aerobic Efficiency + Activity Variability */}
+          {/* Aerobic Efficiency + Vertical Ascent */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Section title="Aerobic Efficiency">
               <AerobicEfficiencyChart
@@ -220,18 +215,6 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
               />
             </Section>
           </div>
-
-          <Section title="Activity Variability Index">
-            <ActivityVariabilityTable
-              data={activityAnalytics.data?.variability.rows ?? []}
-              totalCount={activityAnalytics.data?.variability.totalCount ?? 0}
-              offset={variabilityOffset}
-              limit={VARIABILITY_PAGE_SIZE}
-              onPageChange={setVariabilityOffset}
-              loading={activityAnalytics.isLoading}
-              emptyReason={activityAnalytics.data?.variability.emptyReason ?? undefined}
-            />
-          </Section>
 
           <Section title="Recent Cycling Activities">
             <ActivityList

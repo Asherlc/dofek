@@ -116,7 +116,7 @@ export function climbingProgressionValueLabel(
     maximumFractionDigits: 1,
   }).format(rate);
   const unknown =
-    period.unknownOutcomes > 0
+    segment === undefined && period.unknownOutcomes > 0
       ? ` · ${period.unknownOutcomes} outcome${period.unknownOutcomes === 1 ? "" : "s"} unrecorded`
       : "";
   return `${formattedRate} sends/day · ${sends} send${sends === 1 ? "" : "s"} · ${period.climbingDays} recorded day${period.climbingDays === 1 ? "" : "s"}${unknown}`;

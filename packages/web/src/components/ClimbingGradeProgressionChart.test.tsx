@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers.ts";
 
@@ -16,20 +16,10 @@ interface ChartOption {
   tooltip: { formatter: (params: Array<{ dataIndex: number }>) => string };
 }
 const charts = vi.hoisted((): ChartOption[] => []);
-vi.mock("./DofekChart.tsx", () => ({
-  DofekChart: ({
-    option,
-    empty,
-    emptyMessage,
-    loading,
-  }: {
-    option: ChartOption;
-    empty?: boolean;
-    emptyMessage?: string;
-    loading?: boolean;
-  }) => {
+vi.mock("echarts-for-react", () => ({
+  default: ({ option }: { option: ChartOption }) => {
     if (option.series?.length) charts.push(option);
-    return <div>{loading ? "Loading climbing chart" : empty ? emptyMessage : "Chart"}</div>;
+    return <div>Chart</div>;
   },
 }));
 
@@ -55,13 +45,18 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(option.xAxis).toMatchObject({ show: true, data: ["Jun", "Jul", "Aug"] });
     expect(option.yAxis).toMatchObject({ min: 0, max: 6, interval: 2 });
     expect(option.series.map((series) => series.name)).toEqual(["V2", "V4", "5.9", "5.11a"]);
-    expect(new Set(option.series.map((series) => series.stack)).size).toBe(1);
+    expect(option.series.map((series) => ({ stack: series.stack, type: series.type }))).toEqual([
+      { stack: "sends", type: "bar" },
+      { stack: "sends", type: "bar" },
+      { stack: "sends", type: "bar" },
+      { stack: "sends", type: "bar" },
+    ]);
     expect(option.series[0]?.data.map((point) => point.value)).toEqual([1, 0, null]);
   });
 
   it("retains loading and empty states", () => {
     const { rerender } = render(<ClimbingGradeProgressionChart data={null} loading />);
-    expect(screen.getByText("Loading climbing chart")).toBeTruthy();
+    expect(screen.getByTestId("chart-loading-skeleton")).toBeTruthy();
     rerender(<ClimbingGradeProgressionChart data={null} />);
     expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
   });
@@ -82,6 +77,22 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(option.tooltip.formatter([{ dataIndex: 1 }])).toContain("1 outcome unrecorded");
     expect(option.tooltip.formatter([{ dataIndex: 2 }])).toContain("No recorded days");
     expect(option.tooltip.formatter([])).toBe("");
+  });
+
+  it("exposes period totals and unknown outcomes in accessible data alongside grade rows", async () => {
+    render(<ClimbingGradeProgressionChart data={climbingProgressionFixture()} />);
+    fireEvent.click(screen.getByText("View chart data"));
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("4.0 sends/day · 20 sends · 5 recorded days")).toBeTruthy();
+    expect(
+      within(table).getByText("0.0 sends/day · 0 sends · 4 recorded days · 1 outcome unrecorded"),
+    ).toBeTruthy();
+    expect(within(table).getAllByText("Total")).toHaveLength(3);
+    expect(
+      within(table).getByRole("row", {
+        name: "Jul 2026 V2 0.0 sends/day · 0 sends · 4 recorded days",
+      }),
+    ).toBeTruthy();
   });
 
   it("marks known zero sends differently from an unrecorded period", () => {

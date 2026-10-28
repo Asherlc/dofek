@@ -84,7 +84,7 @@ export function ClimbingTab() {
     ...TRAINING_SLOW_QUERY_OPTIONS,
     placeholderData: keepPreviousData,
   };
-  const gradeProgression = trpc.climbing.gradeProgression.useQuery(
+  const gradeProgression = trpc.climbing.gradeProgressionV2.useQuery(
     rangeInput,
     climbingQueryOptions,
   );

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
@@ -22,7 +22,8 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(screen.getAllByRole("image", { name: /^Grade progression/ })).toHaveLength(1);
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("5.11a")).toBeTruthy();
-    const bars = measureChart().querySelectorAll('rect:not([fill="transparent"])');
+    const plot = measureChart();
+    const bars = plot.querySelectorAll('rect:not([fill="transparent"])');
     expect(bars).toHaveLength(2);
     expect(Number(bars[0]?.getAttribute("x"))).toBeCloseTo(113.2);
     expect(Number(bars[1]?.getAttribute("x"))).toBeCloseTo(113.2);
@@ -32,11 +33,12 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(Number(bars[1]?.getAttribute("height"))).toBeCloseTo(40);
     fireEvent.click(screen.getByRole("button", { name: "View Grade progression data" }));
     expect(
-      screen.getByText("1.3 sends/day · 4 sends · 3 recorded days · 1 outcome unrecorded"),
+      within(screen.getByRole("list")).getByLabelText(
+        "Jul 2026 · Total: 2.0 sends/day · 6 sends · 3 recorded days · 1 outcome unrecorded",
+      ),
     ).toBeTruthy();
-    expect(
-      screen.getByText("0.7 sends/day · 2 sends · 3 recorded days · 1 outcome unrecorded"),
-    ).toBeTruthy();
+    expect(screen.getByText("1.3 sends/day · 4 sends · 3 recorded days")).toBeTruthy();
+    expect(screen.getByText("0.7 sends/day · 2 sends · 3 recorded days")).toBeTruthy();
   });
 
   it("distinguishes identical native grade labels on different scales", () => {
@@ -98,8 +100,10 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(screen.getByText("—")).toBeTruthy();
     expect(screen.getAllByText("0")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "View Grade progression data" }));
-    expect(screen.getAllByText("0.0 sends/day · 0 sends · 1 recorded day")).toHaveLength(2);
-    expect(screen.getByText("No recorded days")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Aug 2026 · Total: 0.0 sends/day · 0 sends · 1 recorded day"),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Sep 2026 · Total: No recorded days")).toBeTruthy();
   });
 
   it("distinguishes loading and empty states", () => {

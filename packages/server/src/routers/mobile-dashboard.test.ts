@@ -1184,7 +1184,7 @@ describe("mobileDashboard.recovery", () => {
   });
 });
 
-describe("mobileDashboard.training", () => {
+describe.each(["training", "trainingV2"] as const)("mobileDashboard.%s", (procedure) => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -1192,10 +1192,10 @@ describe("mobileDashboard.training", () => {
       timezone: "UTC",
     });
 
-    await expect(caller.training({ endDate: "2026-03-28" })).rejects.toMatchObject({
+    await expect(caller[procedure]({ endDate: "2026-03-28" })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: expect.stringContaining(
-        "mobileDashboard.training requires the ClickHouse activity analytics store",
+        `mobileDashboard.${procedure} requires the ClickHouse activity analytics store`,
       ),
     });
   });
@@ -1252,14 +1252,14 @@ describe("mobileDashboard.training", () => {
       },
     });
 
-    const result = await caller.training({ days: 30, endDate: "2026-03-28" });
+    const result = await caller[procedure]({ days: 30, endDate: "2026-03-28" });
 
     expect(result.workloadRatio.timeSeries).toHaveLength(1);
     expect(result.strainTarget.dailyLoad).toBe(50);
     expect(result.activities).toEqual([]);
     expect(result.weeklyVolume).toEqual([]);
     expect(result.climbing).toEqual({
-      gradeProgression: null,
+      gradeProgression: procedure === "training" ? [] : null,
       volumeByGrade: [],
       sessionSummary: [],
       hangboarding: {
@@ -1277,66 +1277,78 @@ describe("mobileDashboard.training", () => {
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-combined-climbing-progression-v7",
+      keyVersion:
+        procedure === "training"
+          ? "training-hangboarding-heart-rate-v7"
+          : "training-combined-climbing-progression-v1",
     });
     const timingCall = vi
       .mocked(logger.info)
-      .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] training timings"));
-    expect(timingCall?.[0]).toEqual(expect.stringContaining("[mobile-dashboard] training timings"));
+      .mock.calls.find((call) =>
+        String(call[0]).includes(`[mobile-dashboard] ${procedure} timings`),
+      );
+    expect(timingCall?.[0]).toEqual(
+      expect.stringContaining(`[mobile-dashboard] ${procedure} timings`),
+    );
     expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
   });
 
   it("defaults timezone when omitted", async () => {
-    const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
-      workloadRatio: {
-        timeSeries: [],
-        context: {
-          label: "Recent-to-baseline workload ratio",
-          description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
-          recentDays: 7,
-          baselineDays: 28,
+    const loadSpy = vi
+      .spyOn(
+        mobileTrainingTab,
+        procedure === "training" ? "loadMobileTrainingTab" : "loadMobileTrainingTabV2",
+      )
+      .mockResolvedValue({
+        workloadRatio: {
+          timeSeries: [],
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
+          displayedStrain: 0,
+          displayedDate: null,
         },
-        displayedStrain: 0,
-        displayedDate: null,
-      },
-      strainTarget: {
-        targetStrain: 0,
-        currentStrain: 0,
-        currentStrainSource: "none",
-        currentPhysiologyLoad: 0,
-        progressPercent: 0,
-        zone: "Recovery",
-        explanation: "",
-        dailyLoad: 0,
-        acuteLoad: 0,
-        chronicLoad: 0,
-        workloadRatio: null,
-        readinessScore: 50,
-      },
-      activities: [],
-      weeklyVolume: [],
-      progressiveOverload: [],
-      verticalAscent: [],
-      chartAvailability: emptyTrainingChartAvailability,
-      climbing: {
-        gradeProgression: null,
-        volumeByGrade: [],
-        sessionSummary: [],
-        hangboarding: {
-          sessionCount: 0,
-          totalDurationSeconds: 0,
-          averageDurationSeconds: null,
-          totalWorkDurationSeconds: null,
-          totalRestDurationSeconds: null,
-          workIntervalCount: null,
-          averageHeartRate: null,
-          peakHeartRate: null,
-          latestSession: null,
-          daily: [],
+        strainTarget: {
+          targetStrain: 0,
+          currentStrain: 0,
+          currentStrainSource: "none",
+          currentPhysiologyLoad: 0,
+          progressPercent: 0,
+          zone: "Recovery",
+          explanation: "",
+          dailyLoad: 0,
+          acuteLoad: 0,
+          chronicLoad: 0,
+          workloadRatio: null,
+          readinessScore: 50,
         },
-      },
-    });
+        activities: [],
+        weeklyVolume: [],
+        progressiveOverload: [],
+        verticalAscent: [],
+        chartAvailability: emptyTrainingChartAvailability,
+        climbing: {
+          gradeProgression: procedure === "training" ? [] : null,
+          volumeByGrade: [],
+          sessionSummary: [],
+          hangboarding: {
+            sessionCount: 0,
+            totalDurationSeconds: 0,
+            averageDurationSeconds: null,
+            totalWorkDurationSeconds: null,
+            totalRestDurationSeconds: null,
+            workIntervalCount: null,
+            averageHeartRate: null,
+            peakHeartRate: null,
+            latestSession: null,
+            daily: [],
+          },
+        },
+      });
 
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -1345,7 +1357,7 @@ describe("mobileDashboard.training", () => {
       sensorStore: makeSensorStore(),
     });
 
-    await caller.training({ days: 30, endDate: "2026-03-28" });
+    await caller[procedure]({ days: 30, endDate: "2026-03-28" });
 
     expect(loadSpy).toHaveBeenCalledWith(
       {
@@ -1369,63 +1381,68 @@ describe("mobileDashboard.training", () => {
       sensorStore: makeSensorStore(),
     });
 
-    await expect(caller.training({ days: 30, endDate: "2026-03-28" })).rejects.toMatchObject({
+    await expect(caller[procedure]({ days: 30, endDate: "2026-03-28" })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: expect.stringContaining("requires resolved entitlement access window"),
     });
   });
 
   it("preserves an explicit timezone when provided", async () => {
-    const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
-      workloadRatio: {
-        timeSeries: [],
-        context: {
-          label: "Recent-to-baseline workload ratio",
-          description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
-          recentDays: 7,
-          baselineDays: 28,
+    const loadSpy = vi
+      .spyOn(
+        mobileTrainingTab,
+        procedure === "training" ? "loadMobileTrainingTab" : "loadMobileTrainingTabV2",
+      )
+      .mockResolvedValue({
+        workloadRatio: {
+          timeSeries: [],
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
+          displayedStrain: 0,
+          displayedDate: null,
         },
-        displayedStrain: 0,
-        displayedDate: null,
-      },
-      strainTarget: {
-        targetStrain: 0,
-        currentStrain: 0,
-        currentStrainSource: "none",
-        currentPhysiologyLoad: 0,
-        progressPercent: 0,
-        zone: "Recovery",
-        explanation: "",
-        dailyLoad: 0,
-        acuteLoad: 0,
-        chronicLoad: 0,
-        workloadRatio: null,
-        readinessScore: 50,
-      },
-      activities: [],
-      weeklyVolume: [],
-      progressiveOverload: [],
-      verticalAscent: [],
-      chartAvailability: emptyTrainingChartAvailability,
-      climbing: {
-        gradeProgression: null,
-        volumeByGrade: [],
-        sessionSummary: [],
-        hangboarding: {
-          sessionCount: 0,
-          totalDurationSeconds: 0,
-          averageDurationSeconds: null,
-          totalWorkDurationSeconds: null,
-          totalRestDurationSeconds: null,
-          workIntervalCount: null,
-          averageHeartRate: null,
-          peakHeartRate: null,
-          latestSession: null,
-          daily: [],
+        strainTarget: {
+          targetStrain: 0,
+          currentStrain: 0,
+          currentStrainSource: "none",
+          currentPhysiologyLoad: 0,
+          progressPercent: 0,
+          zone: "Recovery",
+          explanation: "",
+          dailyLoad: 0,
+          acuteLoad: 0,
+          chronicLoad: 0,
+          workloadRatio: null,
+          readinessScore: 50,
         },
-      },
-    });
+        activities: [],
+        weeklyVolume: [],
+        progressiveOverload: [],
+        verticalAscent: [],
+        chartAvailability: emptyTrainingChartAvailability,
+        climbing: {
+          gradeProgression: procedure === "training" ? [] : null,
+          volumeByGrade: [],
+          sessionSummary: [],
+          hangboarding: {
+            sessionCount: 0,
+            totalDurationSeconds: 0,
+            averageDurationSeconds: null,
+            totalWorkDurationSeconds: null,
+            totalRestDurationSeconds: null,
+            workIntervalCount: null,
+            averageHeartRate: null,
+            peakHeartRate: null,
+            latestSession: null,
+            daily: [],
+          },
+        },
+      });
 
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -1435,7 +1452,7 @@ describe("mobileDashboard.training", () => {
       sensorStore: makeSensorStore(),
     });
 
-    await caller.training({ days: 30, endDate: "2026-03-28" });
+    await caller[procedure]({ days: 30, endDate: "2026-03-28" });
 
     expect(loadSpy).toHaveBeenCalledWith(
       expect.objectContaining({ timezone: "America/Chicago" }),

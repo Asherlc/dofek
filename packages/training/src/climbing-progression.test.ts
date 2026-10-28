@@ -60,6 +60,71 @@ describe("climbingGradeProgressionSchema", () => {
   it("accepts the server-computed combined chart", () => {
     expect(climbingGradeProgressionSchema.parse(chart)).toEqual(chart);
   });
+  const populatedChart: ClimbingGradeProgressionData = {
+    ...chart,
+    axisMax: 3,
+    axisTicks: [0, 1, 2, 3],
+    periods: [
+      {
+        startDate: "2026-01-01",
+        endDate: "2026-01-31",
+        climbingDays: 4,
+        sends: 9,
+        unknownOutcomes: 2,
+        sendsPerDay: 2.25,
+        segments: [
+          {
+            gradeKey: boulderGrade.key,
+            sends: 9,
+            sendsPerDay: 2.25,
+            stackStart: 0,
+            stackEnd: 2.25,
+          },
+        ],
+      },
+      {
+        startDate: "2026-02-01",
+        endDate: "2026-02-28",
+        climbingDays: 0,
+        sends: 0,
+        unknownOutcomes: 0,
+        sendsPerDay: null,
+        segments: [
+          {
+            gradeKey: boulderGrade.key,
+            sends: 0,
+            sendsPerDay: null,
+            stackStart: null,
+            stackEnd: null,
+          },
+        ],
+      },
+    ],
+  };
+  it("accepts populated grade stacks and null rates for unrecorded periods", () => {
+    expect(climbingGradeProgressionSchema.parse(populatedChart)).toEqual(populatedChart);
+  });
+  it("requires every grade segment's send count", () => {
+    const result = climbingGradeProgressionSchema.safeParse({
+      ...populatedChart,
+      periods: populatedChart.periods.map((period) => ({
+        ...period,
+        segments: period.segments.map((segment) => ({ ...segment, sends: undefined })),
+      })),
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Missing segment count accepted");
+    expect(result.error.issues[0]?.path).toEqual(["periods", 0, "segments", 0, "sends"]);
+  });
+  it.each([-1, 0.5, null])("rejects an invalid recorded-day count %s", (climbingDays) => {
+    const result = climbingGradeProgressionSchema.safeParse({
+      ...populatedChart,
+      periods: populatedChart.periods.map((period) => ({ ...period, climbingDays })),
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Invalid recorded-day count accepted");
+    expect(result.error.issues[0]?.path).toEqual(["periods", 0, "climbingDays"]);
+  });
   it("checks each grade's scale against its climb kind", () => {
     const result = climbingGradeProgressionSchema.safeParse({
       ...chart,
@@ -154,6 +219,12 @@ describe("climbingProgressionValueLabel", () => {
     expect(climbingProgressionValueLabel(setting, setting.segments[0])).toBe(
       "0.8 sends/day · 3 sends · 4 recorded days",
     );
+  });
+
+  it("keeps period-wide unrecorded outcomes out of grade-specific labels", () => {
+    expect(
+      climbingProgressionValueLabel({ ...setting, unknownOutcomes: 2 }, setting.segments[0]),
+    ).toBe("0.8 sends/day · 3 sends · 4 recorded days");
   });
 
   it("distinguishes known zero sends from no recorded days", () => {

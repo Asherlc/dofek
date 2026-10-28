@@ -849,7 +849,7 @@ describe("RootLayout background cleanup", () => {
     expect(condition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
     expect(condition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
     expect(condition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
-    expect(condition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.trainingV2" })).toBe(true);
     expect(condition({ type: "query", path: "processing.status" })).toBe(false);
     expect(condition({ type: "mutation", path: "healthKitSync.recordSync" })).toBe(false);
     expect(Reflect.get(splitOptions, "false")).toEqual({

@@ -2,7 +2,7 @@ import { sportVolumeMetricSchema, sportVolumeMetrics } from "@dofek/training/spo
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
-import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import { mobileTrainingV2FixtureSchema } from "dofek-server/mobile-dashboard-contracts";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -77,7 +77,7 @@ const STRAIN_COMPANION_RESPONSES = {
 function createTrainingFailureStoryLink(): TRPCLink<AppRouter> {
   return () =>
     ({ op, next }) => {
-      if (op.path !== "mobileDashboard.training") {
+      if (op.path !== "mobileDashboard.trainingV2") {
         return next(op);
       }
 
@@ -216,7 +216,7 @@ function createSeededProviders(
         displayedDate: null,
         timeSeries: [],
       };
-  const fixture = mobileTrainingFixtureSchema.parse({
+  const fixture = mobileTrainingV2FixtureSchema.parse({
     input: { days: 90, endDate },
     data: {
       workloadRatio,
@@ -303,7 +303,7 @@ function createSeededProviders(
 
   if (!trainingUnavailable) {
     queryClient.setQueryData(
-      [["mobileDashboard", "training"], { input: { days: 90, endDate }, type: "query" }],
+      [["mobileDashboard", "trainingV2"], { input: { days: 90, endDate }, type: "query" }],
       fixture.data,
     );
   }

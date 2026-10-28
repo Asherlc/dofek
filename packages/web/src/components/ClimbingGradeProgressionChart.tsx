@@ -5,6 +5,7 @@ import {
   climbingProgressionPeriodLabel,
   climbingProgressionValueLabel,
 } from "@dofek/training/climbing-progression";
+import { Fragment, useState } from "react";
 import {
   chartThemeColors,
   dofekAxis,
@@ -18,6 +19,66 @@ import { DofekChart } from "./DofekChart.tsx";
 interface ClimbingGradeProgressionChartProps {
   data: ClimbingGradeProgressionData | null;
   loading?: boolean;
+}
+
+function GradeProgressionDataDisclosure({ data }: { data: ClimbingGradeProgressionData }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <details
+      className="mt-2 text-xs text-dim"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer py-1 font-medium text-muted">View chart data</summary>
+      {expanded && (
+        <div className="mt-2 max-h-72 overflow-auto rounded border border-border">
+          <table className="w-full border-collapse text-left">
+            <caption className="sr-only">Grade progression: sends per climbing day</caption>
+            <thead className="sticky top-0 bg-surface">
+              <tr>
+                {["Period", "Grade", "Value"].map((label) => (
+                  <th key={label} scope="col" className="px-3 py-2 font-semibold">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.periods.map((period) => (
+                <Fragment key={period.startDate}>
+                  <tr className="border-t border-border">
+                    <th scope="row" className="px-3 py-2 font-medium">
+                      {climbingProgressionPeriodLabel(period, true)}
+                    </th>
+                    <td className="px-3 py-2">Total</td>
+                    <td className="px-3 py-2 font-mono">{climbingProgressionValueLabel(period)}</td>
+                  </tr>
+                  {data.grades.flatMap((grade) => {
+                    const segment = period.segments.find((item) => item.gradeKey === grade.key);
+                    return segment ? (
+                      <tr key={grade.key} className="border-t border-border">
+                        <th scope="row" className="px-3 py-2 font-medium">
+                          {climbingProgressionPeriodLabel(period, true)}
+                        </th>
+                        <td className="px-3 py-2">
+                          {climbingProgressionGradeLabel(grade, data.grades)}
+                        </td>
+                        <td className="px-3 py-2 font-mono">
+                          {climbingProgressionValueLabel(period, segment)}
+                        </td>
+                      </tr>
+                    ) : (
+                      []
+                    );
+                  })}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </details>
+  );
 }
 
 function chartOption(data: ClimbingGradeProgressionData) {
@@ -135,7 +196,11 @@ export function ClimbingGradeProgressionChart({
           ))}
         </div>
       </div>
-      <DofekChart option={chartOption(data)} height={260} />
+      <DofekChart
+        option={chartOption(data)}
+        height={260}
+        dataDisclosure={<GradeProgressionDataDisclosure data={data} />}
+      />
     </div>
   );
 }

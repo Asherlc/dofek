@@ -8,7 +8,9 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import {
   type MobileTrainingTabResult,
+  type MobileTrainingTabV2Result,
   mobileTrainingTabOutputSchema,
+  mobileTrainingTabV2OutputSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
 import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import { ChartRange } from "../lib/chart-range.ts";
@@ -28,7 +30,12 @@ import {
 } from "./strain-target-result.ts";
 import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
 
-export { type MobileTrainingTabResult, mobileTrainingTabOutputSchema };
+export {
+  type MobileTrainingTabResult,
+  type MobileTrainingTabV2Result,
+  mobileTrainingTabOutputSchema,
+  mobileTrainingTabV2OutputSchema,
+};
 
 /**
  * Caps how many of the training-tab repository reads run at once. It stays
@@ -77,6 +84,34 @@ export async function loadMobileTrainingTab(
   endDate: string,
   climbingFilters: ClimbingFilters = {},
 ): Promise<MobileTrainingTabResult> {
+  return loadMobileTrainingTabProjection(ctx, days, endDate, climbingFilters, async (repository) =>
+    (await repository.getGradeProgression(days, climbingFilters)).map((model) => model.toDetail()),
+  );
+}
+
+export async function loadMobileTrainingTabV2(
+  ctx: MobileTrainingTabContext,
+  days: number,
+  endDate: string,
+  climbingFilters: ClimbingFilters = {},
+): Promise<MobileTrainingTabV2Result> {
+  return loadMobileTrainingTabProjection(
+    ctx,
+    days,
+    endDate,
+    climbingFilters,
+    async (repository) =>
+      (await repository.getGradeProgressionV2(days, climbingFilters))?.toDetail() ?? null,
+  );
+}
+
+async function loadMobileTrainingTabProjection<T>(
+  ctx: MobileTrainingTabContext,
+  days: number,
+  endDate: string,
+  climbingFilters: ClimbingFilters,
+  loadGradeProgression: (repository: ClimbingRepository) => Promise<T>,
+) {
   const trainingRepo = new TrainingRepository(
     ctx.db,
     ctx.userId,
@@ -95,6 +130,7 @@ export async function loadMobileTrainingTab(
     ctx.db,
     ctx.userId,
     ctx.timezone,
+    ctx.sensorStore,
     ctx.accessWindow,
   );
   const strengthRepo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -182,7 +218,7 @@ export async function loadMobileTrainingTab(
   const [
     { activities, weeklyVolume },
     cyclingAnalytics,
-    gradeProgressionModel,
+    gradeProgression,
     volumeByGradeModels,
     sessionSummaryModels,
     hangboardingSummary,
@@ -197,7 +233,7 @@ export async function loadMobileTrainingTab(
         variabilityOffset: 0,
       }),
     ),
-    limiter.run(() => climbingRepo.getGradeProgression(days, climbingFilters)),
+    limiter.run(() => loadGradeProgression(climbingRepo)),
     limiter.run(() => climbingRepo.getVolumeByGrade(days, climbingFilters)),
     limiter.run(() => climbingRepo.getSessionSummaries(days, climbingFilters)),
     limiter.run(() => hangboardingRepo.getSummary(days)),
@@ -235,7 +271,7 @@ export async function loadMobileTrainingTab(
       }),
     },
     climbing: {
-      gradeProgression: gradeProgressionModel?.toDetail() ?? null,
+      gradeProgression,
       volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),
       sessionSummary: sessionSummaryModels.map((model) => model.toDetail()),
       hangboarding: hangboardingSummary,

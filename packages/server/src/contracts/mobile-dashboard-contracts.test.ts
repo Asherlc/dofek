@@ -1,15 +1,17 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { z } from "zod";
 import type { MobileRecoveryTabResult as ServiceMobileRecoveryTabResult } from "../services/mobile-recovery-tab.ts";
-import type { MobileTrainingTabResult as ServiceMobileTrainingTabResult } from "../services/mobile-training-tab.ts";
+import type { MobileTrainingTabV2Result as ServiceMobileTrainingTabV2Result } from "../services/mobile-training-tab.ts";
 import type { WorkloadRatioResult as ServiceWorkloadRatioResult } from "../services/workload-ratio.ts";
 import {
   type MobileRecoveryTabResult,
-  type MobileTrainingTabResult,
+  type MobileTrainingTabV2Result,
   mobileRecoveryFixtureSchema,
   mobileRecoveryTabOutputSchema,
   mobileTrainingFixtureSchema,
   mobileTrainingTabOutputSchema,
+  mobileTrainingTabV2OutputSchema,
+  mobileTrainingV2FixtureSchema,
   type WorkloadRatioResult,
   workloadDisplayFixtureSchema,
 } from "./mobile-dashboard-contracts.ts";
@@ -230,7 +232,7 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
   };
 }
 
-function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
+function validTrainingV2Fixture(): z.input<typeof mobileTrainingV2FixtureSchema> {
   return {
     input,
     data: {
@@ -372,7 +374,7 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
 }
 
 function validWorkloadDisplayFixture(): z.input<typeof workloadDisplayFixtureSchema> {
-  const training = validTrainingFixture();
+  const training = validTrainingV2Fixture();
   if (training.data.strainTarget === undefined) throw new Error("Missing strain target fixture");
   return {
     workloadRatio: training.data.workloadRatio,
@@ -380,8 +382,8 @@ function validWorkloadDisplayFixture(): z.input<typeof workloadDisplayFixtureSch
   };
 }
 
-function zeroClaimTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
-  const fixture = validTrainingFixture();
+function zeroClaimTrainingFixture(): z.input<typeof mobileTrainingV2FixtureSchema> {
+  const fixture = validTrainingV2Fixture();
   fixture.data.workloadRatio.timeSeries = [
     {
       date: input.endDate,
@@ -759,8 +761,64 @@ describe("workloadDisplayFixtureSchema", () => {
 });
 
 describe("mobileTrainingFixtureSchema", () => {
+  it("preserves complete legacy lane arrays in fixture and runtime responses", () => {
+    const combined = validTrainingV2Fixture();
+    const lane = {
+      climbKind: "boulder" as const,
+      attemptScope: "climb" as const,
+      ropeMethod: null,
+      solo: null,
+      usedAid: false,
+      gradeSystem: "v_scale" as const,
+      grades: [{ grade: "V4", gradeSortValue: 65 }],
+      settings: ["indoor" as const],
+      axisMax: 3,
+      axisInterval: 1,
+      axisTicks: [0, 1, 2, 3],
+      periods: [
+        {
+          startDate: "2026-07-01",
+          endDate: "2026-07-31",
+          settings: [
+            {
+              setting: "indoor" as const,
+              climbingDays: 2,
+              sends: 4,
+              unknownOutcomes: 0,
+              sendsPerDay: 2,
+              segments: [{ grade: "V4", sends: 4, sendsPerDay: 2, stackStart: 0, stackEnd: 2 }],
+            },
+          ],
+        },
+      ],
+    };
+    const data = {
+      ...combined.data,
+      climbing: { ...combined.data.climbing, gradeProgression: [lane] },
+    };
+    expect(
+      mobileTrainingFixtureSchema.parse({ input, data }).data.climbing.gradeProgression,
+    ).toEqual([lane]);
+    const availability = {
+      status: "available",
+      sourceLabel: "Recorded training data",
+      observedCount: 2,
+      minimumCount: 2,
+      message: "Training data is available.",
+    };
+    expect(
+      mobileTrainingTabOutputSchema.parse({
+        ...data,
+        chartAvailability: { strainTrend: availability, verticalAscent: availability },
+      }).climbing.gradeProgression,
+    ).toEqual([lane]);
+    expect(mobileTrainingFixtureSchema.safeParse(combined).success).toBe(false);
+  });
+});
+
+describe("mobileTrainingV2FixtureSchema", () => {
   it("preserves recorded attempt subtotals when a grade's complete total is unknown", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const volume = {
       climbKind: "boulder" as const,
       gradeSystem: "v_scale" as const,
@@ -771,27 +829,52 @@ describe("mobileTrainingFixtureSchema", () => {
       sends: 1,
     };
     fixture.data.climbing.volumeByGrade.push(volume);
-    expect(mobileTrainingFixtureSchema.parse(fixture).data.climbing.volumeByGrade).toEqual([
+    expect(mobileTrainingV2FixtureSchema.parse(fixture).data.climbing.volumeByGrade).toEqual([
       volume,
     ]);
   });
 
   it("accepts coherent training claims backed by runtime-valid data", () => {
-    expect(mobileTrainingFixtureSchema.parse(validTrainingFixture())).toBeTruthy();
+    expect(mobileTrainingV2FixtureSchema.parse(validTrainingV2Fixture())).toBeTruthy();
   });
 
   it("accepts null grade progression while retaining other training data", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     fixture.data.climbing.gradeProgression = null;
+    const volume = {
+      climbKind: "boulder" as const,
+      gradeSystem: "v_scale" as const,
+      grade: "V4",
+      gradeSortValue: 65,
+      attempts: 3,
+      recordedAttempts: 3,
+      sends: 2,
+    };
+    const session = {
+      activityId: "climb-1",
+      date: input.endDate,
+      name: "Climbing session",
+      locationName: "Gym",
+      attempts: 3,
+      sends: 2,
+      hardestBoulderGrade: "V4",
+      hardestBoulderGradeSortValue: 65,
+      hardestRouteGrade: null,
+      hardestRouteGradeSortValue: null,
+    };
+    fixture.data.climbing.volumeByGrade = [volume];
+    fixture.data.climbing.sessionSummary = [session];
 
-    const parsed = mobileTrainingFixtureSchema.parse(fixture);
+    const parsed = mobileTrainingV2FixtureSchema.parse(fixture);
 
     expect(parsed.data.climbing.gradeProgression).toBeNull();
+    expect(parsed.data.climbing.volumeByGrade).toEqual([volume]);
+    expect(parsed.data.climbing.sessionSummary).toEqual([session]);
     expect(parsed.data.workloadRatio).toEqual(fixture.data.workloadRatio);
   });
 
   it("preserves the primary activity type through the public training tab output", () => {
-    const data = validTrainingFixture().data;
+    const data = validTrainingV2Fixture().data;
     const unavailableChart = {
       status: "insufficient_data",
       sourceLabel: "Recorded training data",
@@ -799,7 +882,7 @@ describe("mobileTrainingFixtureSchema", () => {
       minimumCount: 1,
       message: "No chart data is available.",
     };
-    const parsed = mobileTrainingTabOutputSchema.parse({
+    const parsed = mobileTrainingTabV2OutputSchema.parse({
       ...data,
       activities: data.activities.map((activity) => ({
         ...activity,
@@ -815,18 +898,18 @@ describe("mobileTrainingFixtureSchema", () => {
   });
 
   it("rejects a positive training story whose trend renders as no data", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     fixture.data.workloadRatio.timeSeries = fixture.data.workloadRatio.timeSeries.slice(-1);
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       ["data", "workloadRatio", "timeSeries"],
       "Positive training claims require enough trend points to avoid a no-data chart",
     );
   });
 
   it("accepts a one-point trend when every rendered training claim is zero or empty", () => {
-    expect(mobileTrainingFixtureSchema.safeParse(zeroClaimTrainingFixture()).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(zeroClaimTrainingFixture()).success).toBe(true);
   });
 
   it("does not treat a zero-valued weekly row as a positive training claim", () => {
@@ -838,20 +921,20 @@ describe("mobileTrainingFixtureSchema", () => {
       hours: 0,
     });
 
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it.each([
     [
       "displayed strain",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.workloadRatio.displayedStrain = 1;
         first(fixture.data.workloadRatio.timeSeries, "workload").strain = 1;
       },
     ],
     [
       "strain target",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.strainTarget = {
           targetStrain: 1,
           currentStrain: 1,
@@ -863,7 +946,7 @@ describe("mobileTrainingFixtureSchema", () => {
     ],
     [
       "activity card",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.activities.push({
           id: "positive-activity",
           name: "Short walk",
@@ -885,7 +968,7 @@ describe("mobileTrainingFixtureSchema", () => {
     ],
     [
       "weekly count",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.weeklyVolume.push({
           week: "2026-07-27",
           canonical_type: "walking",
@@ -896,7 +979,7 @@ describe("mobileTrainingFixtureSchema", () => {
     ],
     [
       "weekly hours",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.weeklyVolume.push({
           week: "2026-07-27",
           canonical_type: "walking",
@@ -910,27 +993,27 @@ describe("mobileTrainingFixtureSchema", () => {
     addPositiveClaim(fixture);
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       ["data", "workloadRatio", "timeSeries"],
       "Positive training claims require enough trend points to avoid a no-data chart",
     );
   });
 
   it("rejects strain-target values that contradict the displayed workload point", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const target = fixture.data.strainTarget;
     if (target === undefined) throw new Error("Missing strain target fixture");
     target.currentStrain = 8.4;
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       ["data", "strainTarget", "currentStrain"],
       "currentStrain must match the displayed workload point",
     );
   });
 
   it("checks every current-day strain-target field", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const target = fixture.data.strainTarget;
     if (target === undefined) throw new Error("Missing strain target fixture");
     target.currentStrain = 8;
@@ -939,7 +1022,7 @@ describe("mobileTrainingFixtureSchema", () => {
     target.chronicLoad = 3;
     target.workloadRatio = 0.4;
 
-    const result = mobileTrainingFixtureSchema.safeParse(fixture);
+    const result = mobileTrainingV2FixtureSchema.safeParse(fixture);
     for (const field of [
       "currentStrain",
       "dailyLoad",
@@ -956,7 +1039,7 @@ describe("mobileTrainingFixtureSchema", () => {
   });
 
   it("does not compare a strain target with a historical displayed date", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     fixture.data.workloadRatio.displayedDate = "2026-07-26";
     fixture.data.workloadRatio.displayedStrain = 11.8;
     const target = fixture.data.strainTarget;
@@ -967,32 +1050,32 @@ describe("mobileTrainingFixtureSchema", () => {
     target.chronicLoad = 3;
     target.workloadRatio = 0.4;
 
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it("accepts a current workload display without a strain target", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     delete fixture.data.strainTarget;
 
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it("accepts an intentionally unselected workload display", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     fixture.data.workloadRatio.displayedDate = null;
     delete fixture.data.strainTarget;
 
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it("rejects weekly activity counts that contradict the activity cards", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const cyclingVolume = fixture.data.weeklyVolume[0];
     if (!cyclingVolume) throw new Error("Missing cycling volume fixture");
     cyclingVolume.count = 3;
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       ["data", "weeklyVolume"],
       "Weekly cycling count must match the fixture activities",
     );
@@ -1001,19 +1084,19 @@ describe("mobileTrainingFixtureSchema", () => {
   it.each([
     [
       "workload",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         first(fixture.data.workloadRatio.timeSeries, "workload").date = "2026-06-27";
       },
     ],
     [
       "activity",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         first(fixture.data.activities, "activity").started_at = "2026-06-27T07:00:00.000Z";
       },
     ],
     [
       "vertical ascent",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.verticalAscent.push({
           date: "2026-06-27",
           activityName: "Hill repeats",
@@ -1027,7 +1110,7 @@ describe("mobileTrainingFixtureSchema", () => {
     ],
     [
       "climbing session",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
+      (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.climbing.sessionSummary.push({
           activityId: "climb-1",
           date: "2026-06-27",
@@ -1043,11 +1126,11 @@ describe("mobileTrainingFixtureSchema", () => {
       },
     ],
   ])("rejects an out-of-window %s date", (_label, moveOutsideWindow) => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     moveOutsideWindow(fixture);
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       [],
       "Fixture date 2026-06-27 is outside 2026-06-28..2026-07-27",
     );
@@ -1059,7 +1142,7 @@ describe("mobileTrainingFixtureSchema", () => {
   ] as const)(
     "rejects %s systems from the wrong discipline",
     (_label, target, climbKind, gradeSystem, grade, gradeSortValue) => {
-      const fixture = validTrainingFixture();
+      const fixture = validTrainingV2Fixture();
       if (target === "gradeProgression") {
         const gradeEntry = fixture.data.climbing.gradeProgression?.grades[0];
         if (!gradeEntry) throw new Error("Missing climbing progression fixture");
@@ -1077,7 +1160,7 @@ describe("mobileTrainingFixtureSchema", () => {
         });
 
       expectIssue(
-        mobileTrainingFixtureSchema.safeParse(fixture),
+        mobileTrainingV2FixtureSchema.safeParse(fixture),
         target === "gradeProgression"
           ? ["data", "climbing", target, "grades", 0, "gradeSystem"]
           : ["data", "climbing", target, 0, "gradeSystem"],
@@ -1090,60 +1173,60 @@ describe("mobileTrainingFixtureSchema", () => {
     ["2026-06-01", "2026-06-27"],
     ["2026-08-01", "2026-08-31"],
   ])("rejects a climbing period entirely outside the selected window", (startDate, endDate) => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const period = fixture.data.climbing.gradeProgression?.periods[0];
     if (!period) throw new Error("Missing climbing period fixture");
     period.startDate = startDate;
     period.endDate = endDate;
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       [],
       `Fixture climbing period ${startDate}..${endDate} does not overlap 2026-06-28..2026-07-27`,
     );
   });
 
   it("accepts calendar buckets that partially overlap the selected window", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const period = fixture.data.climbing.gradeProgression?.periods[0];
     if (!period) throw new Error("Missing climbing period fixture");
     period.startDate = "2026-06-01";
     period.endDate = "2026-06-30";
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it("rejects weekly volume rows that do not start on Monday", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     const cyclingVolume = fixture.data.weeklyVolume[0];
     if (!cyclingVolume) throw new Error("Missing cycling volume fixture");
     cyclingVolume.week = "2026-07-26";
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       [],
       "Fixture week 2026-07-26 must start on Monday",
     );
   });
 
   it("rejects a selected workload date with no row or a mismatched strain", () => {
-    const missingRow = validTrainingFixture();
+    const missingRow = validTrainingV2Fixture();
     missingRow.data.workloadRatio.displayedDate = "2026-07-25";
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(missingRow),
+      mobileTrainingV2FixtureSchema.safeParse(missingRow),
       ["data", "workloadRatio", "displayedStrain"],
       "Displayed strain and date must identify a matching time-series point",
     );
 
-    const mismatchedStrain = validTrainingFixture();
+    const mismatchedStrain = validTrainingV2Fixture();
     mismatchedStrain.data.workloadRatio.displayedStrain = 8;
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(mismatchedStrain),
+      mobileTrainingV2FixtureSchema.safeParse(mismatchedStrain),
       ["data", "workloadRatio", "displayedStrain"],
       "Displayed strain and date must identify a matching time-series point",
     );
   });
 
   it("accepts an activity without an end time when weekly duration is zero", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     fixture.data.activities = [
       {
         id: "open-activity",
@@ -1167,22 +1250,22 @@ describe("mobileTrainingFixtureSchema", () => {
       { week: "2026-07-27", canonical_type: "walking", count: 1, hours: 0 },
     ];
 
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+    expect(mobileTrainingV2FixtureSchema.safeParse(fixture).success).toBe(true);
   });
 
   it("rejects weekly hours that contradict completed activity durations", () => {
-    const fixture = validTrainingFixture();
+    const fixture = validTrainingV2Fixture();
     first(fixture.data.weeklyVolume, "cycling volume").hours = 2;
 
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(fixture),
+      mobileTrainingV2FixtureSchema.safeParse(fixture),
       ["data", "weeklyVolume"],
       "Weekly cycling hours must match the fixture activity durations",
     );
   });
 
   it("rejects activity types present on only one side of the weekly summary", () => {
-    const activityOnly = validTrainingFixture();
+    const activityOnly = validTrainingV2Fixture();
     activityOnly.data.activities.push({
       id: "walk-1",
       name: "Walk",
@@ -1201,12 +1284,12 @@ describe("mobileTrainingFixtureSchema", () => {
       distance_state: { status: "missing", reason: "Distance not recorded" },
     });
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(activityOnly),
+      mobileTrainingV2FixtureSchema.safeParse(activityOnly),
       ["data", "weeklyVolume"],
       "Weekly walking count must match the fixture activities",
     );
 
-    const weeklyOnly = validTrainingFixture();
+    const weeklyOnly = validTrainingV2Fixture();
     weeklyOnly.data.weeklyVolume.push({
       week: "2026-07-27",
       canonical_type: "swimming",
@@ -1214,7 +1297,7 @@ describe("mobileTrainingFixtureSchema", () => {
       hours: 0,
     });
     expectIssue(
-      mobileTrainingFixtureSchema.safeParse(weeklyOnly),
+      mobileTrainingV2FixtureSchema.safeParse(weeklyOnly),
       ["data", "weeklyVolume"],
       "Weekly swimming count must match the fixture activities",
     );
@@ -1224,7 +1307,7 @@ describe("mobileTrainingFixtureSchema", () => {
 describe("canonical mobile dashboard output types", () => {
   it("match the public service result types", () => {
     expectTypeOf<ServiceMobileRecoveryTabResult>().toEqualTypeOf<MobileRecoveryTabResult>();
-    expectTypeOf<ServiceMobileTrainingTabResult>().toEqualTypeOf<MobileTrainingTabResult>();
+    expectTypeOf<ServiceMobileTrainingTabV2Result>().toEqualTypeOf<MobileTrainingTabV2Result>();
     expectTypeOf<ServiceWorkloadRatioResult>().toEqualTypeOf<WorkloadRatioResult>();
   });
 });

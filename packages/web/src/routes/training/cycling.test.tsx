@@ -60,21 +60,6 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@dofek/training/training", () => ({
   CYCLING_ACTIVITY_TYPES: ["cycling"],
 }));
-vi.mock("../../components/ActivityVariabilityTable.tsx", () => ({
-  ActivityVariabilityTable: ({
-    offset,
-    limit,
-    onPageChange,
-  }: {
-    offset: number;
-    limit: number;
-    onPageChange: (offset: number) => void;
-  }) => (
-    <button type="button" onClick={() => onPageChange(offset + limit)}>
-      Next variability page
-    </button>
-  ),
-}));
 vi.mock("../../components/ActivityList.tsx", () => ({
   ActivityList: ({
     error,
@@ -288,7 +273,6 @@ vi.mock("../../lib/trpc.ts", () => ({
           data: state.activityAnalyticsHasData
             ? {
                 activities: { items: [], totalCount: 0 },
-                variability: { rows: [], totalCount: 0, emptyReason: null },
                 verticalAscent: [],
                 aerobicEfficiency: { activities: state.efficiencyActivities, maxHr: null },
               }
@@ -493,8 +477,6 @@ describe("CyclingTab", () => {
           days: 365,
           activityLimit: 20,
           activityOffset: 0,
-          variabilityLimit: 20,
-          variabilityOffset: 0,
         },
       },
     ]);
@@ -513,8 +495,6 @@ describe("CyclingTab", () => {
           days: null,
           activityLimit: 20,
           activityOffset: 0,
-          variabilityLimit: 20,
-          variabilityOffset: 0,
         },
       },
     ]);
@@ -534,23 +514,20 @@ describe("CyclingTab", () => {
           days: null,
           activityLimit: 20,
           activityOffset: 0,
-          variabilityLimit: 20,
-          variabilityOffset: 0,
         },
       },
     ]);
   });
 
-  it("resets both cycling pagination cursors when the selected range changes", async () => {
+  it("resets cycling activity pagination when the selected range changes", async () => {
     await renderCyclingTabInTrainingLayout();
 
     fireEvent.click(screen.getByRole("button", { name: "Next activity page" }));
-    fireEvent.click(screen.getByRole("button", { name: "Next variability page" }));
     expect(
       state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),
     ).toEqual({
       name: "cycling.activities",
-      input: expect.objectContaining({ activityOffset: 20, variabilityOffset: 20 }),
+      input: expect.objectContaining({ activityOffset: 20 }),
     });
 
     fireEvent.click(screen.getByRole("radio", { name: "All" }));
@@ -559,7 +536,7 @@ describe("CyclingTab", () => {
       state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),
     ).toEqual({
       name: "cycling.activities",
-      input: expect.objectContaining({ days: null, activityOffset: 0, variabilityOffset: 0 }),
+      input: expect.objectContaining({ days: null, activityOffset: 0 }),
     });
   });
 });

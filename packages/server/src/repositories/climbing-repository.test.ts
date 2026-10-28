@@ -123,7 +123,8 @@ describe("ClimbingRepository display-grade aggregation", () => {
     },
   );
   it("returns no grade progression for no observations", async () => {
-    expect(await repository([]).getGradeProgression(30)).toBeNull();
+    expect(await repository([]).getGradeProgression(30)).toEqual([]);
+    expect(await repository([]).getGradeProgressionV2(30)).toBeNull();
   });
   it("converts compatible source grades to each selected preference", async () => {
     const result = await repository(
@@ -204,7 +205,7 @@ describe("ClimbingRepository display-grade aggregation", () => {
           { ropeMethod: "top_rope", solo: false, usedAid: true, sends: 0, unknownOutcomes: 0 },
         ],
       },
-    ]).getGradeProgression(30);
+    ]).getGradeProgressionV2(30);
     expect(chart?.toDetail()).toMatchObject({
       grades: [{ climbKind: "route", grade: "5.10c" }],
       periods: [{ sends: 1, climbingDays: 1, segments: [{ sends: 1, sendsPerDay: 1 }] }],
@@ -221,7 +222,7 @@ describe("ClimbingRepository display-grade aggregation", () => {
           { ropeMethod: null, solo: null, usedAid: null, sends: 0, unknownOutcomes: 1 },
         ],
       },
-    ]).getGradeProgression(30);
+    ]).getGradeProgressionV2(30);
     expect(result?.toDetail()).toMatchObject({
       grades: [{ grade: "V4" }],
       periods: [{ sends: 0, unknownOutcomes: 1, climbingDays: 1 }],
@@ -385,6 +386,7 @@ describe("ClimbingRepository attached rock observations", () => {
 describe("ClimbingRepository access-policy wiring", () => {
   it.each([
     "getGradeProgression",
+    "getGradeProgressionV2",
     "getVolumeByGrade",
     "getSessionSummaries",
     "getMapEntries",

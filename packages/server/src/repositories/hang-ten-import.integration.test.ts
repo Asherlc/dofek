@@ -1,3 +1,4 @@
+import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleSchema as schema } from "../../../../src/db/drizzle-schema.ts";
@@ -6,9 +7,12 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { upsertWorkoutBatch } from "../../../../src/providers/apple-health/db-insertion.ts";
 import { hangTenContactMetadata } from "../../../../src/providers/apple-health/test-helpers.ts";
 import { parseWorkout } from "../../../../src/providers/apple-health/workouts.ts";
+import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { HangboardingRepository } from "./hangboarding-repository.ts";
 
 describe("Hang Ten contact workout import", () => {
+  const client = createClickHouseClientFromEnv();
+  const sensorStore = new ClickHouseActivitySensorStore(client);
   let context: TestContext;
 
   beforeAll(async () => {
@@ -17,6 +21,7 @@ describe("Hang Ten contact workout import", () => {
   }, 60_000);
 
   afterAll(async () => {
+    await client.close?.();
     await context?.cleanup();
   });
 
@@ -56,6 +61,7 @@ describe("Hang Ten contact workout import", () => {
       context.db,
       TEST_USER_ID,
       "America/Los_Angeles",
+      sensorStore,
     ).getDetail(stored.groupId);
     expect(detail).toMatchObject({
       planName: "Rehab",

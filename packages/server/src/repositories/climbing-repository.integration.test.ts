@@ -322,7 +322,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       expect.objectContaining({ grade: "5.12a", sends: 1, recordedAttempts: 1 }),
     ]);
     expect(
-      (await repo().getGradeProgression(30, { attemptScope: ["pitch"] }))
+      (await repo().getGradeProgressionV2(30, { attemptScope: ["pitch"] }))
         ?.toDetail()
         .grades.map((grade) => grade.grade),
     ).toEqual(["5.12a"]);
@@ -466,7 +466,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
     });
     expect(await volume()).toEqual([]);
-    expect(await repo().getGradeProgression(30)).toBeNull();
+    expect(await repo().getGradeProgressionV2(30)).toBeNull();
   });
   it("counts known rock ungraded participation without treating opinions as published difficulty", async () => {
     const outing = await seedClimbingActivity(
@@ -506,7 +506,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: 1, recordedAttempts: 1, sends: 0 }),
     ]);
-    const chart = await repo().getGradeProgression(30);
+    const chart = await repo().getGradeProgressionV2(30);
     expect(chart?.toDetail().periods[0]).toMatchObject({
       climbingDays: 1,
       unknownOutcomes: 1,
@@ -579,6 +579,19 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: null, recordedAttempts: null, sends: 1 }),
     ]);
+    expect(await repo().getVolumeOverTime(30)).toEqual([
+      expect.objectContaining({ attempts: null }),
+    ]);
+
+    await write({
+      externalId: "known-attempts",
+      attempts: [
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+      ],
+    });
+    expect(await repo().getVolumeOverTime(30)).toEqual([expect.objectContaining({ attempts: 3 })]);
   });
   it("preserves standalone source observations without cross-provider merging", async () => {
     await write({}, "mountain-project");
@@ -646,7 +659,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     await write({ externalId: "boundary-standalone", climbedOn: boundaryDate });
     await write({ externalId: "undated", climbedOn: null });
     expect(await volume()).toEqual([]);
-    expect(await repo().getGradeProgression(30)).toBeNull();
+    expect(await repo().getGradeProgressionV2(30)).toBeNull();
     expect(await repo().getSessionSummaries(30)).toEqual([]);
   });
   it("uses source-resolved activity dates independently of the log source date", async () => {

@@ -42,12 +42,19 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
   };
   const rows = data.periods.flatMap((period) => {
     const periodLabel = climbingProgressionPeriodLabel(period, true);
+    const totalRow = {
+      label: `${periodLabel} · Total`,
+      value: climbingProgressionValueLabel(period),
+    };
     return period.sendsPerDay === null
-      ? [{ label: periodLabel, value: "No recorded days" }]
-      : period.segments.map((segment) => ({
-          label: `${periodLabel} · ${gradeLabel(segment.gradeKey)}`,
-          value: climbingProgressionValueLabel(period, segment),
-        }));
+      ? [totalRow]
+      : [
+          totalRow,
+          ...period.segments.map((segment) => ({
+            label: `${periodLabel} · ${gradeLabel(segment.gradeKey)}`,
+            value: climbingProgressionValueLabel(period, segment),
+          })),
+        ];
   });
 
   return (

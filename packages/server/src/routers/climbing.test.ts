@@ -11,7 +11,7 @@ import {
 } from "../repositories/climbing-test-helpers.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const { signActivityImage, readActivityImage } = vi.hoisted(() => ({
   signActivityImage: vi.fn(
@@ -91,12 +91,14 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
   const execute = vi.fn();
   for (const response of responses) execute.mockResolvedValueOnce(response);
   execute.mockResolvedValue([]);
+  const sensorStore = makeMockSensorStore();
   const caller = createCaller({
     db: { execute },
     userId: "user-1",
     timezone: "America/Los_Angeles",
+    sensorStore,
   });
-  return { caller, execute };
+  return { caller, execute, sensorStore };
 }
 
 const groupId = "00000000-0000-4000-8000-000000000701";
@@ -278,6 +280,7 @@ describe("climbingRouter", () => {
       "activityLogEntries",
       "unattachedClimbingLogEntries",
       "gradeProgression",
+      "gradeProgressionV2",
       "volumeByGrade",
       "volumeOverTime",
       "sessionSummary",
@@ -285,6 +288,8 @@ describe("climbingRouter", () => {
     ])
       expect(invalidateByPrefix).toHaveBeenCalledWith(`user-1:climbing.${procedure}:`);
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.list:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.training:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.trainingV2:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.weekList:");
   });
   it("returns server-computed volume with the canonical kind", async () => {
@@ -546,8 +551,8 @@ describe("climbingRouter", () => {
     });
     expect(captureException).toHaveBeenCalledWith(error);
   });
-  it("returns one grade progression from the selected attempt facts", async () => {
-    const { caller } = makeCaller([
+  it("preserves legacy grade progression lanes alongside the combined V2 response", async () => {
+    const { caller, execute } = makeCaller([
       {
         session_date: "2026-07-09",
         climb_kind: "route",
@@ -557,26 +562,59 @@ describe("climbingRouter", () => {
         grade: "5.10a",
         attempt_observations: [
           { ropeMethod: "lead", solo: true, usedAid: false, sends: 1, unknownOutcomes: 0 },
+          { ropeMethod: "top_rope", solo: false, usedAid: false, sends: 1, unknownOutcomes: 0 },
         ],
       },
     ]);
-    expect(await caller.gradeProgression({ days: 90 })).toMatchObject({
+    expect(await caller.gradeProgression({ days: 90 })).toMatchObject([
+      {
+        climbKind: "route",
+        attemptScope: "climb",
+        ropeMethod: "lead",
+        solo: true,
+        usedAid: false,
+        gradeSystem: "yds",
+        grades: [{ grade: "5.10a" }],
+        settings: ["indoor"],
+        periods: [
+          {
+            settings: [
+              {
+                setting: "indoor",
+                sends: 1,
+                climbingDays: 1,
+                sendsPerDay: 1,
+                segments: [
+                  { grade: "5.10a", sends: 1, sendsPerDay: 1, stackStart: 0, stackEnd: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        ropeMethod: "top_rope",
+        solo: false,
+        periods: [{ settings: [{ sends: 1, climbingDays: 1 }] }],
+      },
+    ]);
+    expect(await caller.gradeProgressionV2({ days: 90 })).toMatchObject({
       grades: [{ climbKind: "route", gradeSystem: "yds", grade: "5.10a" }],
-      periods: [{ sends: 1, climbingDays: 1 }],
+      periods: [{ sends: 2, climbingDays: 1, sendsPerDay: 2 }],
     });
+    expect(execute).toHaveBeenCalledTimes(4);
   });
   it("returns the Hangboarding summary contract", async () => {
-    const { caller, execute } = makeCallerWithResponses([
+    const { caller, execute, sensorStore } = makeCallerWithResponses([
       [
         {
+          activity_ids: ["activity-1", "activity-2"],
           session_count: 2,
           total_duration_seconds: 1500,
           average_duration_seconds: 750,
           total_work_duration_seconds: 17,
           total_rest_duration_seconds: 103,
           work_interval_count: 2,
-          average_heart_rate: 125,
-          peak_heart_rate: 150,
           latest_activity_id: "activity-2",
           latest_started_at: "2026-08-08T14:00:00.000Z",
           latest_plan_name: "Repeaters",
@@ -602,6 +640,24 @@ describe("climbingRouter", () => {
       ],
     ]);
 
+    vi.mocked(sensorStore.getActivitySummaries).mockResolvedValue([
+      {
+        activity_id: "activity-1",
+        avg_hr: 125,
+        max_hr: 150,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: 100,
+        centroid_lat: null,
+        centroid_lng: null,
+      },
+    ]);
     await expect(caller.hangboardingSummary({ days: 30 })).resolves.toMatchObject({
       sessionCount: 2,
       totalDurationSeconds: 1500,
@@ -621,6 +677,7 @@ describe("climbingRouter", () => {
       ]),
     });
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith(["activity-1", "activity-2"]);
   });
 
   it("rejects malformed hangboarding summary output", async () => {
@@ -653,10 +710,11 @@ describe("climbingRouter", () => {
   it("returns empty projections when there is no climbing data", async () => {
     const { caller, execute } = makeCaller([]);
 
-    await expect(caller.gradeProgression({ days: 90 })).resolves.toBeNull();
+    await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
+    await expect(caller.gradeProgressionV2({ days: 90 })).resolves.toBeNull();
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
-    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute).toHaveBeenCalledTimes(8);
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {

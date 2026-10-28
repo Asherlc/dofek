@@ -1,12 +1,15 @@
 # Combined climbing progression implementation plan
 
-> **For agentic workers:** Use superpowers:subagent-driven-development or superpowers:executing-plans. Track steps and review checkpoints here.
+Work through the server projection, web presentation, and mobile integration in
+order. Record validation results at each review checkpoint below.
 
 **Goal:** One grade-colored stack per period for every selected type and setting.
 
 **Architecture:** Pool raw entries in the server builder and expose one nullable
-chart object. Web and mobile render the same computed contract; page filtering
-continues to select records before projection.
+chart object through permanent V2 procedures. Preserve the existing V1 procedures
+and complete lane response contracts for older clients. Current web and mobile
+clients render the same V2 computed contract; page filtering selects records
+before projection.
 
 **Tech Stack:** Existing TypeScript, Zod, Vitest, ECharts, react-native-svg.
 
@@ -14,8 +17,8 @@ continues to select records before projection.
 
 ## Global constraints
 
-- All metric calculation stays on the server. No new dependency or compatibility path.
-- Keep this branch; commit and push verified work automatically.
+- All metric calculation stays on the server. No new dependency, temporary alias, or client fallback.
+- Preserve supported V1 contracts while current clients explicitly select V2.
 - Retain existing saved grade preferences, distinct boulder/route and retained source scales, loading/error/empty states, and accessible exact values.
 
 ## Review focus
@@ -61,3 +64,42 @@ and query persistence contract where needed. Consumes the same nullable object.
 - [x] Render one SVG and accessible disclosure; migrate parser and cache fixtures.
 - [x] Run affected mobile tests and typecheck.
 - [x] Independently review complete diff, run final checks, then commit and push.
+
+### Task 4: Preserve supported V1 contracts and add permanent V2 procedures
+
+Files: shared V1 progression schema; server projections, models, repository,
+training service, contracts, routers, cache registry and tests; web/mobile query
+calls, transport selection, invalidation, fixtures, stories and tests.
+
+Interfaces: `climbing.gradeProgression` and `mobileDashboard.training` keep the
+complete V1 lane-array contract. `climbing.gradeProgressionV2` returns the current
+combined object or null; `mobileDashboard.trainingV2` uses that object within its
+training response. The existing combined shared schema remains the V2 schema.
+
+- [x] Write failing V1/V2 public response and client routing/invalidation tests.
+- [x] Share raw observation retrieval and preserve genuine per-version denominators.
+- [x] Expose separately typed procedures and migrate current clients to V2.
+- [x] Verify V1 empty/populated arrays and V2 empty/populated objects through real queries.
+- [x] Run focused server/shared/web/mobile suites, typechecks and lint; independently review.
+
+Review checkpoint: both versions share one raw observation query per request.
+The V1 projection retains its complete lane identities, setting-specific periods
+and denominators; V2 pools selected observations before computing distinct days.
+The focused server/shared suites pass 221 tests, and the two real PostgreSQL
+suites pass 43 tests. Mobile passes 1,983 tests; the web chart and chart wrapper
+pass 37 tests, including accessible period totals. Full lint and root/server/web/
+mobile typechecks pass. Independent contract and accessibility reviews found no
+remaining issues.
+
+Final local checkpoint: the full unit/mobile run passes 22,488 tests across
+1,389 files, with 19 existing skipped tests, four workers and zero retries.
+The repository spelling check passes with zero issues.
+
+### Task 5: Resolve feedback, validate the merge head and merge the PR
+
+- [x] Preserve both main and branch documentation during conflict resolution.
+- [x] Advance cache contracts beyond both merged branches and verify cache invalidation.
+- [x] Limit unknown-outcome qualifiers to period totals and strengthen test assertions.
+- [ ] Reply with concrete fix details and resolve every actionable review thread.
+- [ ] Commit and push the merged implementation; verify required CI on that exact head.
+- [ ] Merge PR #3131 after its required checks pass and verify GitHub reports it merged.
