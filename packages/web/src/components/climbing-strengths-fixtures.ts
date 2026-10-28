@@ -30,7 +30,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
     {
       key: "boulder-angle-indoor",
       contextKey: "boulder",
-      contextLabel: "Bouldering · V scale",
+      contextLabel: "Bouldering",
       dimension: "wall_angle",
       setting: "indoor",
       gradeAdjustedStrengths: [],
@@ -280,6 +280,9 @@ if (!unknownBase) throw new Error("Missing climbing strengths panel");
 const unknownRow = unknownBase.rows[0];
 const unknownExample = unknownRow?.cells.flatMap((cell) => cell.examples)[0];
 if (!unknownRow || !unknownExample) throw new Error("Missing climbing strengths examples");
+const pooledExampleCell = unknownBase.allGrades.rows[0]?.cells[0];
+if (!pooledExampleCell) throw new Error("Missing pooled climbing strengths cell");
+pooledExampleCell.examples = [unknownExample];
 const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
   {
     grade: "V3",

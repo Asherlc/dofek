@@ -30,7 +30,8 @@ export const SingleClimb: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByText("Exact values"));
+    const disclosure = canvas.getByText("Exact values");
+    if (!disclosure.closest("details")?.open) await userEvent.click(disclosure);
     await expect(canvas.getByText("Sent 1 of 1 climb")).toBeVisible();
     await expect(canvas.getByText("Too few climbs to judge strengths yet")).toBeVisible();
   },

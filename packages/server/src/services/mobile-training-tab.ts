@@ -95,6 +95,7 @@ export async function loadMobileTrainingTab(
     ctx.db,
     ctx.userId,
     ctx.timezone,
+    ctx.sensorStore,
     ctx.accessWindow,
   );
   const strengthRepo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);

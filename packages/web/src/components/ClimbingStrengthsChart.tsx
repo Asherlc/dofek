@@ -20,7 +20,7 @@ export function ClimbingStrengthsChart({
   onSelectCell,
 }: {
   panel: ClimbingStrengthsPanel;
-  view: Exclude<ClimbingStrengthsView, "profile">;
+  view: ClimbingStrengthsView;
   grade: string;
   selectedRow: string | null;
   onSelectCell: (rowKey: string, grade: string) => void;
@@ -72,7 +72,7 @@ export function ClimbingStrengthsChart({
   const adjustedLabel = (key: string) =>
     climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === key));
   const dataDisclosure = (
-    <details className="text-xs text-muted">
+    <details className="text-xs text-muted" open={sparseRadar || undefined}>
       <summary className="cursor-pointer py-2 font-medium text-foreground">Exact values</summary>
       <div className="max-h-96 overflow-auto">
         <table className="w-full text-left">
@@ -151,12 +151,6 @@ export function ClimbingStrengthsChart({
   );
   return (
     <div className="space-y-3">
-      {view === "progress" ? (
-        <p className="text-xs text-muted">
-          Each climb counts once in each month it was tried; monthly counts need not sum to the
-          whole period. Select a point for climbs across the selected period.
-        </p>
-      ) : null}
       {view === "radar" && !sparseRadar ? (
         <p className="text-xs text-muted">
           {adjustedRadar
@@ -168,9 +162,12 @@ export function ClimbingStrengthsChart({
       {sparseRadar ? (
         <>
           <p className="rounded-lg border border-border p-4 text-sm text-muted">
+            {panel.coverage.missingTraits > 0
+              ? `${panel.dimension === "wall_angle" ? "Wall angle" : panel.dimension === "hold_type" ? "Hold type" : "Setting"} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
+              : ""}
             {adjustedRadar
               ? "Log results in at least three styles to see this chart. Your recorded climbs are listed below."
-              : "Radar needs at least three style groups with recorded success at this grade. Choose another grade or use the exact values below."}
+              : "A radar chart needs at least three styles with known results."}
           </p>
           {dataDisclosure}
         </>

@@ -18,22 +18,116 @@ vi.mock("./DofekChart.tsx", () => ({
 afterEach(cleanup);
 it("keeps the small-sample explanation after opening a style's climbs", () => {
   render(<ClimbingStrengths data={climbingStrengthsSingleClimbFixture} />);
-  fireEvent.click(screen.getByText("Exact values"));
   fireEvent.click(screen.getByRole("button", { name: /Slab ·/ }));
   const selected = screen.getByRole("region", { name: "Selected climbs" });
   expect(selected).toHaveTextContent("Sent 1 of 1 climb");
   expect(selected).toHaveTextContent("Too few climbs to judge strengths yet");
 });
-it("names the grade heatmap for assistive technology", () => {
-  render(<ClimbingStrengths data={fixture} />);
-  fireEvent.click(screen.getByRole("button", { name: "Grades" }));
-  expect(screen.getByRole("table", { name: "Success by grade and wall angle" })).toBeVisible();
+it("explains missing wall angles and keeps the single recorded style directly selectable", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const row = panel.rows[0];
+  const pooled = panel.allGrades.rows[0];
+  if (!row || !pooled) throw new Error("Missing fixture row");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          {
+            ...panel,
+            rows: [row],
+            allGrades: { ...panel.allGrades, rows: [pooled] },
+            coverage: { ...panel.coverage, missingTraits: 59 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText(/Wall angle is missing for 59 climbs/)).toBeVisible();
+  expect(screen.queryByText(/Outside the dashed line/)).toBeNull();
+  expect(screen.queryByText(/Grade-adjusted difference on a/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Sent 13 of 21 climbs",
+  );
+});
+it("identifies missing hold types when the selected breakdown has no observations", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          {
+            ...panel,
+            dimension: "hold_type",
+            rows: [],
+            allGrades: { ...panel.allGrades, rows: [] },
+            coverage: { ...panel.coverage, missingTraits: 60 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("Hold type is missing for 60 climbs.")).toBeVisible();
+});
+it.each([
+  {
+    state: "the empty contract fallback",
+    missingTraits: 0,
+    message: "No recorded hold type observations for this context.",
+  },
+  {
+    state: "one climb without hold types",
+    missingTraits: 1,
+    message: "Hold type is missing for 1 climb.",
+  },
+])("keeps $state navigable", ({ missingTraits, message }) => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const singleClimb = { sends: 1, climbs: 1, unknownOutcomes: 0, successRate: 100 };
+  render(
+    <ClimbingStrengths
+      data={{
+        coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+        panels: [
+          {
+            ...panel,
+            key: "empty-holds",
+            dimension: "hold_type",
+            grades: missingTraits === 1 ? [{ grade: "V4", gradeSortValue: 4, ...singleClimb }] : [],
+            rows: [],
+            progress: [],
+            gradeAdjustedStrengths: [],
+            allGrades: {
+              grades:
+                missingTraits === 1
+                  ? [{ grade: "All grades", gradeSortValue: 0, ...singleClimb }]
+                  : [],
+              rows: [],
+              progress: [],
+            },
+            coverage: { missingTraits, unknownOutcomes: 0 },
+          },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Hold type" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
+  expect(screen.getByText("No recorded wall angle observations for this context.")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeVisible();
 });
 function renderStrengths(element: Parameters<typeof render>[0]) {
   const result = render(element);
-  const grades = screen.queryByRole("button", { name: "Grades" });
-  if (grades) fireEvent.click(grades);
-  for (const disclosure of screen.queryAllByText("Exact values")) fireEvent.click(disclosure);
+  for (const disclosure of screen.queryAllByText("Exact values")) {
+    if (!disclosure.closest("details")?.open) fireEvent.click(disclosure);
+  }
   return result;
 }
 it("keeps breakdown controls usable when the period has no panels", () => {
@@ -44,9 +138,9 @@ it("keeps breakdown controls usable when the period has no panels", () => {
   }
   expect(screen.getByText("No recorded climbing strengths in this period.")).toBeVisible();
 });
-it("distinguishes zero and missing data and exposes actual examples", () => {
+it("opens source examples from the selected style", () => {
   renderStrengths(<ClimbingStrengths data={fixture} />);
-  fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ }));
   expect(screen.getByRole("link", { name: "KAYA" }).getAttribute("href")).toBe(
     "https://kayaclimb.com/climb/example",
   );
@@ -54,29 +148,24 @@ it("distinguishes zero and missing data and exposes actual examples", () => {
     "/activity/activity-1",
   );
   expect(screen.getByText("Evening Arete")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /Overhang · V4/ }));
-  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
-    "0 sends / 2 climbs",
-  );
-  expect(screen.getByRole("button", { name: /Slab · V4 · No data/ })).toBeVisible();
 });
 it("keeps cached content during loading and distinguishes initial loading from empty", () => {
   const { rerender } = renderStrengths(<ClimbingStrengths data={undefined} loading />);
   expect(screen.getByLabelText("Loading climbing strengths.")).toBeVisible();
   rerender(<ClimbingStrengths data={fixture} loading />);
-  fireEvent.click(screen.getByRole("button", { name: "Grades" }));
-  expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
+  fireEvent.click(screen.getByText("Exact values"));
+  expect(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ })).toBeVisible();
   rerender(<ClimbingStrengths data={{ panels: [], coverage: fixture.coverage }} />);
   expect(screen.getByText("No recorded climbing strengths in this period.")).toBeVisible();
 });
 it("preserves selected climbs in the combined view on refresh", () => {
   const { rerender } = renderStrengths(<ClimbingStrengths data={fixture} />);
-  fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ }));
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
     "Evening Arete",
   );
   rerender(<ClimbingStrengths data={structuredClone(fixture)} />);
-  expect(screen.getByRole("button", { name: /Vertical · V4/ })).toHaveAttribute(
+  expect(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -84,7 +173,7 @@ it("preserves selected climbs in the combined view on refresh", () => {
     "Evening Arete",
   );
 });
-it("selects hold types without mixing observations from different settings", () => {
+it("selects the hold-type breakdown", () => {
   const angle = fixture.panels[0];
   if (!angle) throw new Error("Missing fixture");
   renderStrengths(
@@ -93,20 +182,25 @@ it("selects hold types without mixing observations from different settings", () 
         ...fixture,
         panels: [
           angle,
-          { ...angle, key: "outdoor", setting: "outdoor" },
           {
             ...angle,
             key: "holds",
             dimension: "hold_type",
             rows: [{ key: "crimp", label: "Crimp", cells: angle.rows[0]?.cells ?? [] }],
+            allGrades: {
+              ...angle.allGrades,
+              rows: [{ key: "crimp", label: "Crimp", cells: angle.allGrades.rows[0]?.cells ?? [] }],
+            },
           },
         ],
       }}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
-  for (const disclosure of screen.queryAllByText("Exact values")) fireEvent.click(disclosure);
-  expect(screen.getByRole("button", { name: /Crimp · V4/ })).toBeVisible();
+  for (const disclosure of screen.queryAllByText("Exact values")) {
+    if (!disclosure.closest("details")?.open) fireEvent.click(disclosure);
+  }
+  expect(screen.getByRole("button", { name: /Crimp · Sent 13 of 21 climbs/ })).toBeVisible();
 });
 
 it("selects missing dimensions and shows their empty state while preserving navigation", () => {
@@ -121,26 +215,19 @@ it("selects missing dimensions and shows their empty state while preserving navi
     ).toBeVisible();
   }
   fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
-  for (const disclosure of screen.queryAllByText("Exact values")) fireEvent.click(disclosure);
-  expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
+  for (const disclosure of screen.queryAllByText("Exact values")) {
+    if (!disclosure.closest("details")?.open) fireEvent.click(disclosure);
+  }
+  expect(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ })).toBeVisible();
 });
 
-it("shows unknown results and mixed counts without treating logged climbs as missing", () => {
+it("keeps unknown source results visible in the selected style", () => {
   renderStrengths(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: /Vertical · V3 · Result unknown · 0 sends \/ 4 climbs · 4 results unknown/,
-    }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · Sent 2 of 9 climbs/ }));
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
-    "Result unknown",
+    "Sent 2 of 9 climbs · 6 results unknown",
   );
   expect(screen.getByText(/V3 · .* · Result unknown/)).toBeVisible();
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: /Vertical · V4 · 67% · 2 sends \/ 5 climbs · 2 results unknown/,
-    }),
-  );
   expect(screen.getByText("Success rates use climbs with known results.")).toBeVisible();
 });
 
@@ -154,7 +241,7 @@ it("shows the server grade-adjusted radar summary and keeps all styles after sel
   );
   expect(screen.getByRole("button", { name: /Overhang · Sent 11 of 19 climbs/ })).toBeVisible();
 });
-it("uses a fixed heatmap and monthly chart for Grades and Progress across both breakdowns", () => {
+it("keeps the monthly chart available across both breakdowns", () => {
   const angle = fixture.panels[0];
   if (!angle) throw new Error("Missing fixture");
   render(
@@ -162,15 +249,12 @@ it("uses a fixed heatmap and monthly chart for Grades and Progress across both b
       data={{ ...fixture, panels: [angle, { ...angle, key: "holds", dimension: "hold_type" }] }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Grades" }));
-  expect(screen.getByRole("columnheader", { name: "V3" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+  expect(screen.getByText("Monthly send rate")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  fireEvent.click(screen.getByText("Exact values"));
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · All grades · 2026-10-01/ }));
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
     "Evening Arete",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
-  expect(screen.getByRole("columnheader", { name: "V4" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
-  expect(screen.getByText("Monthly send rate")).toBeVisible();
-  expect(screen.getByText(/Combines all grades/)).toBeVisible();
 });
