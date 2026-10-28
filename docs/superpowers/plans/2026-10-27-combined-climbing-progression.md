@@ -95,6 +95,12 @@ Final local checkpoint: the full unit/mobile run passes 22,488 tests across
 1,389 files, with 19 existing skipped tests, four workers and zero retries.
 The repository spelling check passes with zero issues.
 
+CI follow-through: remove the calendar helper's circular type dependency and
+update ten Expo SDK packages to the current stable compatibility patches. The
+exact import-boundary check, Expo dependency check and iOS Metro export pass.
+The post-update full unit/mobile suite passes 22,510 tests across 1,389 files
+with four workers and zero retries; lint, spelling and all typechecks pass.
+
 ### Task 5: Resolve feedback, validate the merge head and merge the PR
 
 - [x] Preserve both main and branch documentation during conflict resolution.
