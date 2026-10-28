@@ -40,7 +40,7 @@ export function RouteComparisonChart({
   onActivityPress,
   width,
 }: RouteComparisonChartProps) {
-  const [selectedRouteId, setSelectedRouteId] = useState<string>();
+  const [selectedRouteId, setSelectedRouteId] = useState(routes[0]?.routeId);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const selected = resolveRouteComparisonSelection(routes, selectedRouteId);
   // Remember initial, changed-anchor, and fallback selections across refreshes.

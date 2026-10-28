@@ -104,7 +104,7 @@ export const LongRouteNames: Story = {
     data: [
       routeFixture(
         50,
-        "Mount Tamalpais — Dipsea, Steep Ravine, Matt Davis and Coastal Trail via Stinson Beach",
+        "Mountain Ridge — Forest Loop, Steep Ravine, Valley Path and Coastal Trail via Ocean Beach",
         12.8,
       ),
       ...routes,

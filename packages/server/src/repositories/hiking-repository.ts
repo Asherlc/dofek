@@ -408,11 +408,11 @@ export class HikingRepository {
       throw error;
     }
 
+    type RouteRow = (typeof rows)[number];
     return groups
-      .filter((group) => group.length >= 2)
+      .filter((group): group is [RouteRow, RouteRow, ...RouteRow[]] => group.length >= 2)
       .map((group) => {
         const anchor = group[0];
-        if (!anchor) throw new Error("Repeated GPS route has no anchor activity");
         const instances = group
           .map((row) => ({
             activityId: row.canonical_activity_id,
