@@ -1,25 +1,40 @@
-import { recordTestFlightUpload, requiresTestFlightUpload } from "./testflight-deployment.ts";
+import {
+  prepareTestFlightUpload,
+  recordTestFlightUpload,
+  requiresTestFlightUpload,
+} from "./testflight-deployment.ts";
 
-const [command, repository, commitSha, buildNumber, runUrl, ...extra] = process.argv.slice(2);
+const [command, repository, first, second, third, fourth, ...extra] = process.argv.slice(2);
 if (
   command === "detect" &&
   repository &&
-  commitSha &&
-  (buildNumber === undefined || buildNumber === "--force") &&
-  runUrl === undefined
+  first &&
+  (second === undefined || second === "--force") &&
+  third === undefined
 ) {
-  console.log(requiresTestFlightUpload(repository, commitSha, buildNumber === "--force"));
+  console.log(requiresTestFlightUpload(repository, first, second === "--force"));
+} else if (
+  command === "prepare" &&
+  repository &&
+  first &&
+  second &&
+  third &&
+  fourth === undefined
+) {
+  console.log(prepareTestFlightUpload(repository, first, second, third));
 } else if (
   command === "record" &&
   repository &&
-  commitSha &&
-  buildNumber &&
-  runUrl &&
+  first &&
+  /^[1-9]\d*$/.test(first) &&
+  second &&
+  third &&
+  fourth &&
   !extra.length
 ) {
-  recordTestFlightUpload(repository, commitSha, buildNumber, runUrl);
+  recordTestFlightUpload(repository, Number(first), second, third, fourth);
 } else {
   throw new Error(
-    "Usage: pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-sha> [--force] | record <owner/repo> <full-sha> <build-number> <run-url>",
+    "Usage: pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-sha> [--force] | prepare <owner/repo> <full-sha> <build-number> <upload-run-url> | record <owner/repo> <deployment-id> <full-sha> <build-number> <upload-run-url>",
   );
 }

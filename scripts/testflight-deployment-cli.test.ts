@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recordTestFlightUpload, requiresTestFlightUpload } from "./testflight-deployment.ts";
+import {
+  prepareTestFlightUpload,
+  recordTestFlightUpload,
+  requiresTestFlightUpload,
+} from "./testflight-deployment.ts";
 
 vi.mock("./testflight-deployment.ts", () => ({
   recordTestFlightUpload: vi.fn(),
+  prepareTestFlightUpload: vi.fn(),
   requiresTestFlightUpload: vi.fn(),
 }));
 
@@ -15,6 +20,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.mocked(requiresTestFlightUpload).mockReturnValue(true);
+  vi.mocked(prepareTestFlightUpload).mockReturnValue(5);
 });
 
 afterEach(() => {
@@ -41,10 +47,11 @@ describe("TestFlight deployment command", () => {
     expect(requiresTestFlightUpload).toHaveBeenCalledExactlyOnceWith("owner/dofek", sha, true);
   });
 
-  it("records the confirmed upload's actual source, build number and caller run URL", async () => {
-    await run(["record", "owner/dofek", sha, "1793210000", runUrl]);
+  it.each([5, 51])("records the original deployment %s and upload evidence", async (id) => {
+    await run(["record", "owner/dofek", String(id), sha, "1793210000", runUrl]);
     expect(recordTestFlightUpload).toHaveBeenCalledExactlyOnceWith(
       "owner/dofek",
+      id,
       sha,
       "1793210000",
       runUrl,
@@ -53,9 +60,25 @@ describe("TestFlight deployment command", () => {
     expect(console.log).not.toHaveBeenCalled();
   });
 
+  it("prints the deployment ID prepared for this upload attempt", async () => {
+    await run(["prepare", "owner/dofek", sha, "1793210000", runUrl]);
+    expect(prepareTestFlightUpload).toHaveBeenCalledExactlyOnceWith(
+      "owner/dofek",
+      sha,
+      "1793210000",
+      runUrl,
+    );
+    expect(console.log).toHaveBeenCalledExactlyOnceWith(5);
+    expect(recordTestFlightUpload).not.toHaveBeenCalled();
+  });
+
   it.each([
     [],
     ["unknown", "owner/dofek", sha],
+    ["unknown", "owner/dofek", "5", sha, "1793210000", runUrl],
+    ["record", "", "5", sha, "1793210000", runUrl],
+    ["record", "owner/dofek", "id5", sha, "1793210000", runUrl],
+    ["record", "owner/dofek", "5x", sha, "1793210000", runUrl],
     ["detect"],
     ["detect", "owner/dofek"],
     ["detect", "owner/dofek", sha, "unexpected"],
@@ -65,9 +88,16 @@ describe("TestFlight deployment command", () => {
     ["record", "owner/dofek", sha],
     ["record", "owner/dofek", sha, "1793210000"],
     ["record", "owner/dofek", sha, "1793210000", runUrl, "unexpected"],
+    ["record", "owner/dofek", "5", sha, "1793210000", runUrl, "unexpected"],
+    ["prepare"],
+    ["prepare", "owner/dofek"],
+    ["prepare", "owner/dofek", sha],
+    ["prepare", "owner/dofek", sha, "1793210000"],
+    ["prepare", "owner/dofek", sha, "1793210000", runUrl, "unexpected"],
   ])("rejects incomplete or unsupported arguments %j", async (...arguments_) => {
     await expect(run(arguments_)).rejects.toThrow("Usage:");
     expect(recordTestFlightUpload).not.toHaveBeenCalled();
+    expect(prepareTestFlightUpload).not.toHaveBeenCalled();
     expect(requiresTestFlightUpload).not.toHaveBeenCalled();
   });
 });

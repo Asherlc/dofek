@@ -65,10 +65,17 @@ jobs:
     if: needs.check.outputs.should_deploy == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      deployments: write
     outputs:
       commit_sha: ${{ steps.checked-out-sha.outputs.sha }}
       build_number: ${{ steps.build-number.outputs.value }}
       upload_succeeded: ${{ steps.upload.outcome == 'success' }}
+      deployment_id: ${{ steps.intent.outputs.deployment_id }}
+      upload_run_url: ${{ steps.intent.outputs.upload_run_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -155,6 +162,27 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
             2>&1 | tail -40
+      - name: Check out trusted upload tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/testflight-deployment.ts
+            scripts/testflight-deployment-cli.ts
+      - name: Prepare upload intent
+        id: intent
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ steps.checked-out-sha.outputs.sha }}
+          BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
+        run: |
+          UPLOAD_RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          DEPLOYMENT_ID=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "upload_run_url=$UPLOAD_RUN_URL" >> "$GITHUB_OUTPUT"
       - name: Export IPA & Upload to TestFlight
         id: upload
         run: |
@@ -210,5 +238,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMIT_SHA: ${{ needs.deploy.outputs.commit_sha }}
           BUILD_NUMBER: ${{ needs.deploy.outputs.build_number }}
+          DEPLOYMENT_ID: ${{ needs.deploy.outputs.deployment_id }}
+          UPLOAD_RUN_URL: ${{ needs.deploy.outputs.upload_run_url }}
         run: |
-          pnpm tsx scripts/testflight-deployment-cli.ts record "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          pnpm tsx scripts/testflight-deployment-cli.ts record "$GITHUB_REPOSITORY" "$DEPLOYMENT_ID" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL"

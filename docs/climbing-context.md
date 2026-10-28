@@ -119,6 +119,13 @@ separate from recorded tags and strengths metrics. See the
 [detail contract](../packages/server/src/contracts/climbing-log-contracts.ts) and
 [strengths contract](../packages/training/src/climbing-strengths.ts).
 
+When a recorded source tag is renamed, strengths display the name from the latest
+recorded calendar date among the included observations. Source record identity
+breaks equal-date ties deterministically; older observations still contribute to
+that same source-tag cohort. Climb details preserve each record's original name.
+Category names follow the same latest-observation rule in the
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
+
 ## Browsing, attachment, and analytics
 
 Both clients render concise cards and expose full facts through details. Provider record details fetch the selected log's full owned graph. Cached records remain visible during refresh errors. Source date stays independent of Activity: attaching or deleting the Activity preserves it. The server suggests active, unattached logs with a matching known day for climbing or hiking Activities; attachment is explicit. See the [association service](../packages/server/src/repositories/climbing-log-entry-associator.ts) and [paired details](../packages/web/src/components/ClimbingLogEntryDetails.tsx).

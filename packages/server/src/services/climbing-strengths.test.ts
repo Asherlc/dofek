@@ -19,6 +19,41 @@ const recordedTag = (patch: Partial<ClimbingTag> = {}): ClimbingTag => ({
 });
 
 describe("recorded tag strengths", () => {
+  it.each([
+    { scope: "same-climb", sameDate: false },
+    { scope: "different-climbs", sameDate: false },
+    { scope: "same-climb", sameDate: true },
+    { scope: "different-climbs", sameDate: true },
+  ])("uses the latest names for $scope with equal dates=$sameDate", ({ scope, sameDate }) => {
+    const historical = dated(sameDate ? "2026-10-01" : "2026-09-01", {
+      tags: [recordedTag({ label: "Historical name", categoryLabel: "Historical category" })],
+      outcome: "sent",
+    });
+    const recent = dated("2026-10-01", {
+      identity: scope === "same-climb" ? "climb" : "another-climb",
+      tags: [recordedTag({ label: "Current name", categoryLabel: "Current category" })],
+    });
+    historical.example.logEntryId = sameDate ? "log-a" : "log-z";
+    recent.example.logEntryId = sameDate ? "log-z" : "log-a";
+    for (const observations of [
+      [historical, recent],
+      [recent, historical],
+    ]) {
+      const panel = analyze(observations).tagPanels?.[0];
+      expect(panel).toMatchObject({
+        category: { label: "Current category" },
+        rows: [
+          { label: "Current name", cells: [{ climbs: scope === "same-climb" ? 1 : 2, sends: 1 }] },
+        ],
+      });
+      expect(panel?.allGrades.rows[0]?.label).toBe("Current name");
+    }
+    expect([historical.tags?.[0]?.label, recent.tags?.[0]?.label]).toEqual([
+      "Historical name",
+      "Current name",
+    ]);
+  });
+
   it("unions recorded tags across repeated observations and counts each climb once per tag", () => {
     const technical = recordedTag();
     const balance = recordedTag({ sourceKey: "balance", label: "Balance" });
@@ -666,6 +701,9 @@ describe("climbing strengths", () => {
       sends: 1,
       climbs: 2,
     });
+    expect(
+      result.panels.find((panel) => panel.dimension === "setting")?.coverage.missingTraits,
+    ).toBe(1);
   });
   it("returns empty coverage without inventing panels for an empty response", () => {
     expect(analyze([])).toEqual({

@@ -53,6 +53,8 @@ jobs:
             echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile OTA sourcemap upload"
             exit 1
           fi
+      # The caller has already completed the matching server rollout. Validate
+      # once: an unavailable or invalid manifest stops publication for diagnosis.
       - name: Validate OTA server
         run: pnpm tsx scripts/check-ota-manifest.ts
       # eoas runs `pnpx expo export` internally and swallows its output, so a

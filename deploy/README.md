@@ -301,6 +301,14 @@ publishing. Manually dispatched `Deploy Web` runs deploy only the server. GitHub
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
+After rollout, OTA publication performs one
+[manifest validation](../scripts/check-ota-manifest.ts). An unavailable or invalid
+manifest stops publication before upload, including when a transient request
+failure causes the check to fail. Inspect the failed check and server availability,
+address the cause, then rerun the failed publication job; the check does not retry
+or conceal an unavailable server. GitHub supports rerunning a
+[specific failed job](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs#re-running-a-specific-job-in-a-workflow).
+
 Mobile publisher calls do not inherit repository secrets. Runtime credentials
 come from the existing [Infisical OIDC action](../.github/actions/load-infisical-secrets/action.yml);
 GitHub automatically supplies the scoped `GITHUB_TOKEN` to reusable workflows,
@@ -320,18 +328,60 @@ group until publishing completes, using GitHub's
 [workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
 
-Signed iOS change detection reads successful GitHub deployment receipts with
-environment `testflight` and task `testflight-upload`, recorded with the actual
-source SHA after successful Xcode upload. Automatic releases compare native
-inputs with that uploaded revision, including rollback targets, and skip an
-already-uploaded SHA. No prior successful receipt selects a first build;
-unavailable or malformed receipt evidence fails the check. Manual `ios` and
-`all` requests force a signed build. Apple processing and tester availability
-follow upload separately. Receipt reads use
-`deployments: read`; only the receipt-writing job receives `deployments: write`.
-GitHub documents deployment
+Signed iOS publishing uses GitHub deployments with environment `testflight` and
+task `testflight-upload`. Immediately before Xcode export/upload, it creates a
+pending deployment for the actual source SHA, build number and original upload
+attempt. After the upload succeeds, a separate job marks that same deployment
+successful. The uploader checks for unresolved attempts again before creating
+its record, including when only that job is rerun. Newer unresolved attempts
+block automatic and manual publication, including forced builds; only an
+explicitly reconciled `inactive` record is skipped. The
+[native release helper](../scripts/testflight-deployment.ts) owns this lifecycle;
+GitHub supports multiple statuses on the
+[same deployment](https://docs.github.com/en/rest/deployments/statuses#about-deployment-statuses).
+
+Automatic releases compare native inputs with the latest successfully uploaded
+revision, including rollback targets, and skip an already-uploaded SHA. No prior
+successful receipt selects a first build; unavailable or malformed evidence
+fails the check. Manual `ios` and `all` requests force a signed build after the
+unresolved-attempt check. Apple
+[processing and tester availability](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+follow upload separately. History reads fetch bounded pages in descending
+creation order and inspect each deployment's latest status, stopping at the first
+successful upload or unresolved attempt. Older pages are fetched only when
+needed; the entire history is never collected into one response. See GitHub's
+[deployment fields and ordering](https://docs.github.com/en/graphql/reference/deployments#deployment)
+and [cursor pagination](https://docs.github.com/en/graphql/guides/using-pagination-in-the-graphql-api).
+Receipt reads use `deployments: read`; the uploader and finalizer receive
+`deployments: write`. GitHub documents deployment
 [creation](https://docs.github.com/en/rest/deployments/deployments#create-a-deployment)
 and [status reporting](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
+
+If upload succeeds but finalizing its receipt fails, rerun only **Record
+successful TestFlight upload**, using `gh run rerun --job <record-job-id>` or the
+job's rerun control. This reuses the original deployment ID and upload evidence;
+it does not upload another binary. GitHub documents
+[specific-job reruns](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs#re-running-a-specific-job-in-a-workflow).
+
+If the uploader fails or is cancelled after creating its pending record, inspect
+the original run and match its exact version/build number in App Store Connect.
+A failed upload command alone does not prove that Apple rejected the binary.
+When upload is confirmed, finalize that original deployment as successful.
+The [release CLI](../scripts/testflight-deployment-cli.ts) validates its stored
+identity before finalization:
+
+```bash
+pnpm tsx scripts/testflight-deployment-cli.ts record <owner/repo> <deployment-id> <full-source-sha> <build-number> <original-upload-attempt-url>
+```
+
+Only after confirming that upload never occurred, append an `inactive` status
+to that deployment with an explanation and the original run URL. Use the
+[deployment status endpoint](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status)
+with `auto_inactive: false`; do not create a replacement record or clear an
+uncertain attempt based only on its job conclusion. An unresolved record remains
+a visible release blocker until this reconciliation is complete. Absence from
+App Store Connect while processing is uncertain does not establish that no upload
+occurred; retain the pending record when the evidence is inconclusive.
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys check out the selected CI run's full commit SHA for both

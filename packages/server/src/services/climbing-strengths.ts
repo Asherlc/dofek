@@ -48,6 +48,9 @@ const sampleStatus = (climbs: number): "no_data" | "limited" | "available" =>
 const categoryKey = (tag: ClimbingTag) => JSON.stringify([tag.providerId, tag.categoryKey]);
 const tagKey = (tag: ClimbingTag) =>
   JSON.stringify([tag.providerId, tag.categoryKey, tag.sourceKey]);
+type RecordedTag = { tag: ClimbingTag; order: string };
+const latestRecordedTag = (previous: RecordedTag | undefined, current: RecordedTag): RecordedTag =>
+  previous && previous.order > current.order ? previous : current;
 function monthlyWindows(window: { startDate: string; endDate: string }) {
   const months: Array<{ startDate: string; endDate: string }> = [];
   let startDate = window.startDate;
@@ -106,7 +109,10 @@ export function buildClimbingStrengths(
       tagKeysByCategory: Map<string, string[]>;
     }
   > = [];
-  const tagCategories = new Map<string, { tag: ClimbingTag; labels: Map<string, string> }>();
+  const tagCategories = new Map<
+    string,
+    { latest: RecordedTag; labels: Map<string, RecordedTag> }
+  >();
   for (const group of groups.values()) {
     const grades = [
       ...new Map(
@@ -148,18 +154,36 @@ export function buildClimbingStrengths(
         }),
       ).values(),
     ];
-    const tags = new Map(
-      group.flatMap((entry) => (entry.tags ?? []).map((tag) => [tagKey(tag), tag])),
-    );
+    const tags = new Map<string, RecordedTag>();
+    for (const entry of group) {
+      for (const tag of entry.tags ?? []) {
+        // Calendar date wins; source record identity and literal metadata break ties.
+        const order = JSON.stringify([
+          entry.example.date,
+          entry.example.providerId,
+          entry.example.logEntryId,
+          tag.label,
+          tag.categoryLabel,
+          tag.sourceKey,
+        ]);
+        const key = tagKey(tag);
+        tags.set(key, latestRecordedTag(tags.get(key), { tag, order }));
+      }
+    }
     const tagKeysByCategory = new Map<string, string[]>();
-    for (const [key, tag] of tags) {
+    for (const [key, recorded] of tags) {
+      const { tag } = recorded;
       const category = categoryKey(tag);
       const keys = tagKeysByCategory.get(category) ?? [];
       keys.push(key);
       tagKeysByCategory.set(category, keys);
-      const labels = tagCategories.get(category)?.labels ?? new Map<string, string>();
-      labels.set(key, tag.label);
-      tagCategories.set(category, { tag, labels });
+      const summary = tagCategories.get(category) ?? {
+        latest: recorded,
+        labels: new Map<string, RecordedTag>(),
+      };
+      summary.labels.set(key, latestRecordedTag(summary.labels.get(key), recorded));
+      summary.latest = latestRecordedTag(summary.latest, recorded);
+      tagCategories.set(category, summary);
     }
     entries.push({
       ...preferred,
@@ -169,7 +193,6 @@ export function buildClimbingStrengths(
       setting: settings.length === 1 ? (settings[0] ?? null) : null,
       holdTypes: holds.length === 1 ? (holds[0] ?? null) : null,
       wallAngle: angles.length === 1 ? (angles[0] ?? null) : null,
-      tags: [...tags.values()],
       tagKeysByCategory,
       example: {
         ...preferred.example,
@@ -221,7 +244,13 @@ export function buildClimbingStrengths(
           ? "Unknown setting"
           : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
     }));
-    for (const [key, { tag, labels }] of tagCategories) {
+    for (const [
+      key,
+      {
+        latest: { tag },
+        labels,
+      },
+    ] of tagCategories) {
       dimensions.push({
         dimension: "tag",
         category: {
@@ -230,7 +259,7 @@ export function buildClimbingStrengths(
           label: tag.categoryLabel ?? tag.categoryKey ?? "Uncategorized tags",
         },
         values: (entry) => entry.tagKeysByCategory.get(key) ?? [],
-        label: (key) => labels.get(key) ?? key,
+        label: (key) => labels.get(key)?.tag.label ?? key,
       });
     }
     for (const definition of dimensions) {
