@@ -10,6 +10,7 @@ import {
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 
 let mockTodayQueryDate = "2026-03-28";
 const mockStrengthsState: {
@@ -26,6 +27,8 @@ const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
 const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockRouteComparisonInvalidate = vi.fn();
+const mockRouteComparisonQuery = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 let mockTrainingDataDays = 90;
 type MockRangeQueryOptions = {
@@ -128,6 +131,7 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    hiking: { activityComparison: { useQuery: mockRouteComparisonQuery } },
     climbing: {
       volumeOverTime: {
         useQuery: () => ({
@@ -215,6 +219,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
@@ -265,6 +270,8 @@ vi.mock("../../lib/units", () => ({
     formatDistance: (km: number) => ({ text: `${km.toFixed(1)} km`, parts: [] }),
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
+    convertPace: (seconds: number) => seconds,
+    paceLabel: "/km",
     distanceLabel: "km",
     formatWeight: (kg: number) => ({
       text: `${kg.toFixed(1)} kg`,
@@ -325,6 +332,15 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingInvalidate.mockReset();
     mockLocationMapInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockRouteComparisonInvalidate.mockReset();
+    mockRouteComparisonInvalidate.mockResolvedValue(undefined);
+    mockRouteComparisonQuery.mockReset();
+    mockRouteComparisonQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
     mockMonotonyInvalidate.mockReset();
@@ -488,6 +504,25 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+    expect(mockRouteComparisonInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("renders the route comparison with the selected training period and opens attempts", async () => {
+    mockRouteComparisonQuery.mockReturnValue({
+      data: routeComparisonFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    mockTimeRangePreference.days = 30;
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText("Route comparison")).toBeTruthy();
+    expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[0]).toEqual({ days: 30 });
+    expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[1].enabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "View Route comparison data" }));
+    fireEvent.click(screen.getByRole("button", { name: /Morning river run:/ }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/22222222-2222-4222-8222-222222222222");
   });
 
   it("renders model labels, values, and calculation details", async () => {

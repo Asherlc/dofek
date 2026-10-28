@@ -401,6 +401,32 @@ refresh_version UInt64,
 is_deleted UInt8,
 source_refreshed_at DateTime64(9, 'UTC'),
 refreshed_at Nullable(DateTime64(6, 'UTC'))`,
+    activity_route_identity: `activity_id UUID,
+user_id UUID,
+canonical_activity_id UUID,
+explicit_provider_route_ids Array(Tuple(provider String, value String, source_activity_id UUID, field String)),
+route_fingerprint Nullable(String),
+reverse_route_fingerprint Nullable(String),
+direction String,
+points Array(Tuple(lat Float64, lng Float64)),
+point_count UInt64,
+route_distance_meters Nullable(Float64),
+started_at Nullable(DateTime64(6, 'UTC')),
+ended_at Nullable(DateTime64(6, 'UTC')),
+elevation_profile Array(Float64),
+coverage_pct Nullable(Float64),
+largest_gap_seconds Nullable(Float64),
+source_providers Array(String),
+source_devices Array(String),
+geometry_status String,
+activity_source_refreshed_at DateTime64(9, 'UTC'),
+location_source_refreshed_at DateTime64(9, 'UTC'),
+identity_source_refreshed_at DateTime64(9, 'UTC'),
+altitude_source_refreshed_at DateTime64(9, 'UTC'),
+source_refreshed_at DateTime64(9, 'UTC'),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_location_summary_rows: `activity_id UUID,
 user_id UUID,
 total_distance Nullable(Float64),
@@ -679,6 +705,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
     shortViewName === "activity_location_sample" ||
+    shortViewName === "activity_route_identity" ||
     shortViewName === "activity_sensor_summary_rows" ||
     shortViewName === "activity_location_summary_rows" ||
     shortViewName === "activity_stream_points" ||
@@ -714,6 +741,7 @@ refreshed_at DateTime64(9)`,
         : shortViewName === "activity_location_sample"
           ? "(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)"
           : shortViewName === "activity_sensor_summary_rows" ||
+              shortViewName === "activity_route_identity" ||
               shortViewName === "activity_location_summary_rows" ||
               shortViewName === "activity_stream_points" ||
               shortViewName === "activity_heart_rate_zones"

@@ -149,6 +149,15 @@ coordinates query states and delegates climbing payload validation, grade cards,
 and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx),
 with focused tests and stories beside the component.
 
+Training also compares one repeated GPS route at a time through
+[RouteComparisonCard](./components/RouteComparisonCard.tsx). The
+[shared response contract](../training/src/route-comparison.ts) supplies pace,
+attempt counts, and activity timestamps; the [SVG chart](./components/RouteComparisonChart.tsx)
+shows faster pace higher and preserves same-day attempts as separate observations.
+Its [accessible data disclosure](./components/AccessibleChart.tsx) lists exact
+attempt values and opens each activity, following the
+[WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+
 The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 `climbing.strengths` query using the current training dates and climbing filters.
 The [strengths chart](components/ClimbingStrengthsChart.tsx) offers Styles with the server-computed grade-adjusted radar and Progress with monthly send rates. Wall angle / Hold type apply to all tabs, with no grade picker or format menu. The radar places the context-specific same-grade baseline at zero; results outside its dashed outline are stronger and those inside weaker. It needs three scored styles; smaller samples remain accessible through the exact-value disclosure. Progress combines grades and says that changes may reflect difficulty mix. The existing page-wide filters define one selected view. The [server aggregation](../server/src/services/climbing-strengths.ts) supplies one panel per breakdown dimension, retaining context-specific grade baselines. Selecting a chart point or exact-value row reveals source climbs, with zeros, unknown outcomes, missing observations and limited known-result samples distinct. Exact-value controls use [React Native accessibility roles and state](https://reactnative.dev/docs/accessibility) through [AccessibleChart](components/AccessibleChart.tsx).
