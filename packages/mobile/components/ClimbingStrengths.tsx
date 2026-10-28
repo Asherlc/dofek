@@ -16,7 +16,7 @@ import {
 } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
 import { type ReactNode, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors, radius, spacing } from "../theme";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
@@ -150,8 +150,7 @@ function ClimbingStrengthsPanelContent({
   const [selectedDetail, setSelectedDetail] = useState<{ rowKey: string; grade: string } | null>(
     null,
   );
-  const displayPanel =
-    view === "profile" ? panel : climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
+  const displayPanel = climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
   const selectedRow = displayPanel.rows.find((row) => row.key === selectedDetail?.rowKey);
   const selectedCell = selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade);
   if (!observed(panel))
@@ -164,69 +163,12 @@ function ClimbingStrengthsPanelContent({
     );
   return (
     <View style={{ gap: spacing.md }}>
-      {view === "profile" ? (
-        <>
-          <Text style={styles.text}>Send rate by grade and style</Text>
-          <ScrollView horizontal accessibilityLabel="Send rate by grade and style">
-            <View style={{ gap: spacing.xs }}>
-              <View style={styles.heatmapRow}>
-                <Text style={[styles.meta, styles.heatmapLabel]}>Style</Text>
-                {panel.grades.map((grade) => (
-                  <Text key={grade.grade} style={styles.heatmapCell}>
-                    {grade.grade}
-                  </Text>
-                ))}
-              </View>
-              {panel.rows.map((row) => (
-                <View key={row.key} style={styles.heatmapRow}>
-                  <Text style={[styles.text, styles.heatmapLabel]}>{row.label}</Text>
-                  {row.cells.map((cell) => (
-                    <Pressable
-                      key={cell.grade}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${row.label} · ${cell.grade} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                      accessibilityState={{
-                        selected:
-                          selectedRow?.key === row.key && selectedCell?.grade === cell.grade,
-                      }}
-                      onPress={() => setSelectedDetail({ rowKey: row.key, grade: cell.grade })}
-                      style={[
-                        styles.heatmapCell,
-                        styles.heatmapValue,
-                        selectedRow?.key === row.key &&
-                          selectedCell?.grade === cell.grade &&
-                          styles.selected,
-                      ]}
-                    >
-                      <View
-                        pointerEvents="none"
-                        style={[
-                          StyleSheet.absoluteFill,
-                          {
-                            backgroundColor: colors.accent,
-                            opacity: cell.successRate === null ? 0 : cell.successRate * 0.004,
-                          },
-                        ]}
-                      />
-                      <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
-                      {cell.sampleStatus === "limited" ? (
-                        <Text style={styles.meta}>Limited sample</Text>
-                      ) : null}
-                    </Pressable>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </>
-      ) : (
-        <ClimbingStrengthsChart
-          panel={displayPanel}
-          view={view}
-          grade={ALL_CLIMBING_GRADES}
-          onSelect={(rowKey, grade) => setSelectedDetail({ rowKey, grade })}
-        />
-      )}
+      <ClimbingStrengthsChart
+        panel={displayPanel}
+        view={view}
+        grade={ALL_CLIMBING_GRADES}
+        onSelect={(rowKey, grade) => setSelectedDetail({ rowKey, grade })}
+      />
       {selectedCell && (
         <View style={styles.examples}>
           <Text style={styles.text}>
@@ -297,17 +239,6 @@ function ClimbingStrengthsPanelContent({
   );
 }
 const styles = StyleSheet.create({
-  heatmapRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.xs },
-  heatmapLabel: { width: 90, alignSelf: "center" },
-  heatmapCell: { width: 116, color: colors.text, textAlign: "center", padding: spacing.xs },
-  heatmapValue: {
-    minHeight: 64,
-    justifyContent: "center",
-    gap: spacing.xs,
-    borderRadius: radius.md,
-    overflow: "hidden",
-    backgroundColor: colors.surfaceSecondary,
-  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,

@@ -140,21 +140,24 @@ export const Default: Story = {};
 export const ExplorationInteraction: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Bouldering" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Indoor" }));
-    await expect(canvas.getByRole("button", { name: "Bouldering" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    await userEvent.click(canvas.getByRole("button", { name: "Filters" }));
+    const filters = within(canvasElement.ownerDocument.body);
+    await userEvent.click(filters.getByRole("checkbox", { name: "All climbing" }));
+    await userEvent.click(filters.getByRole("checkbox", { name: /^Bouldering$/ }));
+    await userEvent.click(filters.getByRole("checkbox", { name: "All settings" }));
+    await userEvent.click(filters.getByRole("checkbox", { name: /^Indoor$/ }));
+    await expect(filters.getByRole("checkbox", { name: /^Bouldering$/ })).toBeChecked();
+    await expect(filters.getByRole("checkbox", { name: /^Indoor$/ })).toBeChecked();
+    await userEvent.click(filters.getByRole("button", { name: "Done" }));
+    const section = canvas.getByRole("heading", { name: "Climbing Strengths" }).closest("section");
+    if (!section) throw new Error("Missing strengths section");
+    const strengths = within(section);
+    await userEvent.click(strengths.getByRole("button", { name: "Progress" }));
+    await userEvent.click(strengths.getByText("Exact values"));
+    await userEvent.click(
+      strengths.getByRole("button", { name: /Vertical · All grades · 2026-10-01/ }),
     );
-    await expect(canvas.getByRole("button", { name: "Indoor" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(await canvas.findByRole("button", { name: /Vertical · V4/ }));
-    await userEvent.click(canvas.getByRole("button", { name: "Progress" }));
-    await expect(canvas.getByLabelText("Grade")).toHaveValue("V4");
-    await expect(canvas.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    await expect(strengths.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
       "Evening Arete",
     );
   },

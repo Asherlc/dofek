@@ -104,116 +104,6 @@ export const MissingHoldTypes: Story = {
     },
   },
 };
-export const SettingsAndContexts: Story = {
-  args: {
-    data: {
-      ...fixture,
-      panels: fixture.panels.flatMap((panel) => [
-        panel,
-        {
-          ...panel,
-          key: "hold-indoor",
-          dimension: "hold_type" as const,
-          rows: panel.rows.map((row) => ({
-            ...row,
-            label: row.key === "vertical" ? "Crimp" : row.key === "overhang" ? "Sloper" : "Jug",
-          })),
-        },
-        { ...panel, key: "angle-outdoor", setting: "outdoor" as const },
-        {
-          ...panel,
-          key: "setting",
-          dimension: "setting" as const,
-          setting: null,
-          progress: panel.progress.map((period) => ({
-            ...period,
-            rows: period.rows
-              .map((row) => (row.key === "overhang" ? { ...row, key: "outdoor" } : row))
-              .filter((row) => row.key !== "slab"),
-          })),
-          rows: [
-            ...panel.rows.slice(0, 1).map((row) => ({ ...row, label: "Indoor" })),
-            {
-              key: "outdoor",
-              label: "Outdoor",
-              cells: [
-                {
-                  grade: "V3",
-                  unknownOutcomes: 0,
-                  sends: 16,
-                  climbs: 20,
-                  successRate: 80,
-                  differencePercentagePoints: 0,
-                  sampleStatus: "available" as const,
-                  examples: [],
-                },
-                {
-                  grade: "V4",
-                  unknownOutcomes: 0,
-                  sends: 0,
-                  climbs: 2,
-                  successRate: 0,
-                  differencePercentagePoints: -37.5,
-                  sampleStatus: "limited" as const,
-                  examples: [],
-                },
-                {
-                  grade: "V5",
-                  unknownOutcomes: 0,
-                  sends: 4,
-                  climbs: 15,
-                  successRate: 26.7,
-                  differencePercentagePoints: -3.3,
-                  sampleStatus: "available" as const,
-                  examples: [],
-                },
-                {
-                  grade: "V6",
-                  unknownOutcomes: 0,
-                  sends: 1,
-                  climbs: 5,
-                  successRate: 20,
-                  differencePercentagePoints: 0,
-                  sampleStatus: "available" as const,
-                  examples: [],
-                },
-              ],
-            },
-          ],
-        },
-        {
-          ...panel,
-          key: "routes",
-          contextKey: "routes",
-          contextLabel: "Routes · Lead · French",
-          progress: panel.progress.map((period) => ({
-            ...period,
-            rows: period.rows.map((row) => ({
-              ...row,
-              cells: row.cells.map((cell, index) => ({
-                ...cell,
-                grade: ["6a", "6b", "6c", "7a"][index] ?? cell.grade,
-              })),
-            })),
-          })),
-          grades: panel.grades.map((grade, index) => ({
-            ...grade,
-            grade: ["6a", "6b", "6c", "7a"][index] ?? grade.grade,
-          })),
-          rows: panel.rows.map((row) => ({
-            ...row,
-            cells: row.cells.map((cell, index) => ({
-              ...cell,
-              grade: ["6a", "6b", "6c", "7a"][index] ?? cell.grade,
-              examples: cell.examples.map((example) => ({ ...example, grade: "6b" })),
-            })),
-          })),
-        },
-      ]),
-    },
-  },
-};
-
 export const MissingDimension: Story = {
   args: {
     data: {
@@ -231,7 +121,7 @@ export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownRes
 export const Narrow: Story = {
   decorators: [
     (Story) => (
-      <div style={{ width: 320 }}>
+      <div style={{ width: 320, maxWidth: "100%" }}>
         <Story />
       </div>
     ),
@@ -241,8 +131,8 @@ export const Narrow: Story = {
 export const SelectedPoint: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(canvas.getByRole("button", { name: /Vertical · V4/ }));
+    await userEvent.click(canvas.getByText("Exact values"));
+    await userEvent.click(canvas.getByRole("button", { name: /Vertical · All grades/ }));
   },
 };
 
@@ -282,11 +172,6 @@ export const HoldTypes: Story = {
   },
 };
 
-export const Grades: Story = {
-  play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
-  },
-};
 export const Progress: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Progress" }));

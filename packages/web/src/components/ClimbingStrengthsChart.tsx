@@ -21,7 +21,7 @@ export function ClimbingStrengthsChart({
   onSelectCell,
 }: {
   panel: ClimbingStrengthsPanel;
-  view: Exclude<ClimbingStrengthsView, "profile">;
+  view: ClimbingStrengthsView;
   grade: string;
   selectedRow: string | null;
   onSelectCell: (rowKey: string, grade: string) => void;

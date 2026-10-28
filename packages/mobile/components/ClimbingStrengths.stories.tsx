@@ -106,8 +106,7 @@ export const UnknownResults: Story = {
   args: { data: climbingStrengthsUnknownResultsFixture },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · V3 · Result unknown/ }));
+    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · All grades:/ }));
     await expect(canvas.getByText(/V3 · .* · Result unknown/)).toBeVisible();
   },
 };
@@ -149,12 +148,6 @@ export const HoldTypes: Story = {
   },
 };
 
-export const Grades: Story = {
-  ...Narrow,
-  play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
-  },
-};
 export const Progress: Story = {
   ...Narrow,
   play: async ({ canvasElement, userEvent }) => {
