@@ -72,7 +72,7 @@ describe("runningRouter", () => {
     await expect(caller.dynamicsV2({ days: 90 })).resolves.toMatchObject({
       data: [
         {
-          activityName: "Run",
+          activityName: "Running",
           cadence: null,
           paceSecondsPerKm: null,
           distanceKm: null,

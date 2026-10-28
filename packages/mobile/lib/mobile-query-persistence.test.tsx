@@ -40,20 +40,21 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("discards v17 running rows before restoring cadence evidence and availability", async () => {
+  it("restores the combined v21 running contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-    const userId = "running-owner";
+    const userId = "combined-running-owner";
     const queryKey = [["running", "dynamicsV2"], { input: { days: 30 }, type: "query" }];
-    const seedClient = createQueryClient();
-    seedClient.setQueryData(queryKey, {
-      data: [{ activityId: "run-1", cadence: 172 }],
+    const data = {
+      data: [{ activityId: "run-1", cadence: null, cadenceBasis: "unknown" }],
       availability: { status: "available" },
-    });
+    };
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, data);
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v17`,
+        buster: `${userId}:v21`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -64,26 +65,70 @@ describe("mobile query persistence", () => {
       maxAge: QUERY_CACHE_MAX_AGE_MS,
       buster: mobileQueryCacheBuster(userId),
     });
-    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
-    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
+    expect(restoredClient.getQueryData(queryKey)).toEqual(data);
   });
 
-  it("discards v15 climbing responses before restoring the hold collection contract", async () => {
+  it.each([17, 20])(
+    "discards v%s running rows before restoring cadence evidence and availability",
+    async (version) => {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      const userId = "running-owner";
+      const queryKey = [["running", "dynamicsV2"], { input: { days: 30 }, type: "query" }];
+      const seedClient = createQueryClient();
+      seedClient.setQueryData(queryKey, {
+        data: [{ activityId: "run-1", cadence: 172 }],
+        availability: { status: "available" },
+      });
+      await AsyncStorage.setItem(
+        `dofek-query-cache:${userId}`,
+        JSON.stringify({
+          timestamp: Date.now(),
+          buster: `${userId}:v${version}`,
+          clientState: dehydrate(seedClient),
+        }),
+      );
+      const restoredClient = createQueryClient();
+      await persistQueryClientRestore({
+        queryClient: restoredClient,
+        persister: createMobileQueryPersister(userId),
+        maxAge: QUERY_CACHE_MAX_AGE_MS,
+        buster: mobileQueryCacheBuster(userId),
+      });
+      expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+      expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
+    },
+  );
+
+  it("discards v19 training responses before restoring combined climbing progression", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "climbing-owner";
-    const queryKey = [
-      ["climbing", "activityLogEntries"],
-      { input: { activityId: "activity-1" }, type: "query" },
-    ];
+    const queryKey = [["mobile", "training"], { input: { days: 90 }, type: "query" }];
     const seedClient = createQueryClient();
-    seedClient.setQueryData(queryKey, [
-      { id: "log", holdType: "crimp", wallAngle: { value: -20, unit: null } },
-    ]);
+    seedClient.setQueryData(queryKey, {
+      climbing: {
+        gradeProgression: [
+          {
+            climbKind: "boulder",
+            attemptScope: "climb",
+            ropeMethod: null,
+            solo: null,
+            usedAid: false,
+            gradeSystem: "v_scale",
+            grades: [{ grade: "V4", gradeSortValue: 65 }],
+            settings: ["indoor"],
+            axisMax: 3,
+            axisInterval: 1,
+            axisTicks: [0, 1, 2, 3],
+            periods: [],
+          },
+        ],
+      },
+    });
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v15`,
+        buster: `${userId}:v19`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -247,7 +292,7 @@ describe("mobile query persistence", () => {
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
 
-  it("discards strengths from v13 without unknown result counts", async () => {
+  it("discards sectioned strengths from v18 before restoring the selected view", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "strengths-owner";
     const queryKey = [["climbing", "strengths"], { input: { days: 90 }, type: "query" }];
@@ -255,7 +300,27 @@ describe("mobile query persistence", () => {
     seedClient.setQueryData(queryKey, {
       panels: [
         {
-          grades: [{ grade: "5.9", climbs: 1, sends: 1, successRate: 100 }],
+          contextKey: "boulder",
+          contextLabel: "Bouldering",
+          setting: "indoor",
+          grades: [
+            {
+              grade: "V4",
+              climbs: 1,
+              sends: 1,
+              unknownOutcomes: 0,
+              successRate: 100,
+            },
+          ],
+          rows: [],
+          progress: [],
+          allGrades: { grades: [], rows: [], progress: [] },
+        },
+        {
+          contextKey: "top-rope",
+          contextLabel: "Top rope",
+          setting: "outdoor",
+          grades: [{ grade: "5.9", climbs: 1, sends: 0, unknownOutcomes: 0, successRate: 0 }],
           rows: [],
           progress: [],
           allGrades: { grades: [], rows: [], progress: [] },
@@ -266,7 +331,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v13`,
+        buster: `${userId}:v18`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -278,6 +343,7 @@ describe("mobile query persistence", () => {
       buster: mobileQueryCacheBuster(userId),
     });
     expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
   it("discards v11 metric sources without structured presentation before restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;

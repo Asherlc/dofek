@@ -30,7 +30,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
     {
       key: "boulder-angle-indoor",
       contextKey: "boulder",
-      contextLabel: "Bouldering · V scale",
+      contextLabel: "Bouldering",
       dimension: "wall_angle",
       setting: "indoor",
       gradeAdjustedStrengths: [],
@@ -280,6 +280,9 @@ if (!unknownBase) throw new Error("Missing climbing strengths panel");
 const unknownRow = unknownBase.rows[0];
 const unknownExample = unknownRow?.cells.flatMap((cell) => cell.examples)[0];
 if (!unknownRow || !unknownExample) throw new Error("Missing climbing strengths examples");
+const pooledExampleCell = unknownBase.allGrades.rows[0]?.cells[0];
+if (!pooledExampleCell) throw new Error("Missing pooled climbing strengths cell");
+pooledExampleCell.examples = [unknownExample];
 const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
   {
     grade: "V3",
@@ -403,3 +406,30 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
   if (!panel) throw new Error("Missing strengths fixture panel");
   panel.gradeAdjustedStrengths = summary;
 });
+
+const singleClimb = cell("All grades", 1, 1, 100, 0, "limited");
+export const climbingStrengthsSingleClimbFixture: ClimbingStrengths = {
+  coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+  panels: [
+    {
+      ...unknownBase,
+      grades: [{ ...singleClimb, gradeSortValue: 0 }],
+      rows: [{ key: "slab", label: "Slab", cells: [singleClimb] }],
+      progress: [],
+      coverage: { missingTraits: 0, unknownOutcomes: 0 },
+      gradeAdjustedStrengths: [
+        {
+          key: "slab",
+          expectedSuccessRate: 100,
+          differencePercentagePoints: 0,
+          sampleStatus: "limited",
+        },
+      ],
+      allGrades: {
+        grades: [{ ...singleClimb, gradeSortValue: 0 }],
+        rows: [{ key: "slab", label: "Slab", cells: [singleClimb] }],
+        progress: [],
+      },
+    },
+  ],
+};

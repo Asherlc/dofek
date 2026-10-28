@@ -24,7 +24,7 @@ const link: TRPCLink<AppRouter> =
       metrics,
       unit: metrics.find((entry) => entry.key === input.metric)?.unit ?? "min",
       weeks: [
-        { week: "2026-10-05", value: 90 },
+        { week: "2026-10-05", value: 85.86666666666666 },
         { week: "2026-10-12", value: null },
         { week: "2026-10-19", value: 120 },
       ],

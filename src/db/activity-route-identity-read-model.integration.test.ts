@@ -56,6 +56,52 @@ describe("activity route identity read model", () => {
     expect(await result.json()).toEqual([{ count: 0 }]);
   });
 
+  it.each([false, true])(
+    "projects cycling, walking, hiking and trail running routes (incremental=%s)",
+    async (incremental) => {
+      await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null });
+      if (incremental) await buildModel(client, database);
+
+      const eligibleIds = [activityId];
+      for (const [canonicalType, modality] of [
+        ["walking", null],
+        ["hiking", null],
+        ["running", "trail"],
+        ["running", "road"],
+      ] as const) {
+        const id = randomUUID();
+        await seedRouteIdentityFixture(client, database, {
+          activityId: id,
+          provider: "strava",
+          routeId: null,
+          canonicalType,
+          modality,
+        });
+        if (canonicalType !== "running" || modality === "trail") eligibleIds.push(id);
+      }
+
+      await buildModel(client, database, incremental);
+
+      const result = await client.query({
+        query: `SELECT toString(activity_id) AS activityId FROM ${database}.activity_route_identity FINAL WHERE is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(
+        new Set((await result.json<{ activityId: string }>()).map((row) => row.activityId)),
+      ).toEqual(new Set(eligibleIds));
+      for (const id of eligibleIds) {
+        expect(await readRouteIdentity(client, database, id)).toMatchObject({
+          canonicalActivityId: id,
+          pointCount: 4,
+          coveragePct: 100,
+          largestGapSeconds: 10,
+          geometryStatus: "available",
+          isDeleted: 0,
+        });
+      }
+    },
+  );
+
   it("marks a one-percent fragment and a large internal gap as partial", async () => {
     await seedRouteIdentityFixture(client, database, {
       provider: "strava",

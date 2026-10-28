@@ -20,11 +20,14 @@ import {
 } from "../services/mobile-recovery-tab.ts";
 import {
   loadMobileTrainingTab,
+  loadMobileTrainingTabV2,
   mobileTrainingTabOutputSchema,
+  mobileTrainingTabV2OutputSchema,
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-primary-title-v6";
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-hangboarding-heart-rate-v7";
+const MOBILE_TRAINING_V2_CACHE_KEY_VERSION = "training-combined-climbing-progression-v1";
 const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
 const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 
@@ -236,6 +239,32 @@ export const mobileDashboardRouter = router({
       );
       logger.info(
         `[mobile-dashboard] training timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
+      );
+      return result;
+    }),
+  trainingV2: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: MOBILE_TRAINING_V2_CACHE_KEY_VERSION,
+  })
+    .input(dateWindowInput.extend({ climbingFilters: climbingFiltersSchema.optional() }))
+    .output(mobileTrainingTabV2OutputSchema)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.trainingV2");
+      const tabStart = performance.now();
+      const result = await loadMobileTrainingTabV2(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.trainingV2"),
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+        input.climbingFilters,
+      );
+      logger.info(
+        `[mobile-dashboard] trainingV2 timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
       );
       return result;
     }),

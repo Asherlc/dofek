@@ -185,7 +185,9 @@ documents tuple arguments as the way to return associated columns from the row
 selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
 `activity_route_identity` follows `activity_location_sample` at canonical
-cycling-activity grain. It reads `deduped_activities FINAL`, selected
+activity grain for cycling, walking, hiking, and trail running (`running` with
+`modality = 'trail'`), as defined by the
+[route model](models/read_models/activity_route_identity.sql). It reads `deduped_activities FINAL`, selected
 `activity_location_sample FINAL` rows, `activity_effort_identity FINAL`, and
 selected `altitude` rows from `activity_sensor_sample FINAL`, preserving explicit provider route/course
 claims separately from a deterministic, 64-point coordinate-quantized ordered

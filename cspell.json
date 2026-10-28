@@ -144,6 +144,7 @@
     "typname",
     "xact",
     "savepoint",
+    "NOWAIT",
     "btrim",
     "nextval",
     "postgis",

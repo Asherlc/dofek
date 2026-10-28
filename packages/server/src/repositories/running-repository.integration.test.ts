@@ -15,7 +15,7 @@ import { RunningRepository } from "./running-repository.ts";
 describe("running summary query", () => {
   let context: TestContext;
   let repository: RunningRepository;
-  const ids = [randomUUID(), randomUUID(), randomUUID()];
+  const ids = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   beforeAll(async () => {
     context = await setupTestDatabase();
     await ensureProvider(context.db, "apple_health", "Apple Health", undefined, userId);
@@ -36,8 +36,11 @@ describe("running summary query", () => {
     const database = `running_query_${randomUUID().replaceAll("-", "")}`;
     const rewrite = (query: string) => query.replaceAll("analytics.", `${database}.`);
     context.addCleanup(async () => {
-      await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
-      await client.close?.();
+      try {
+        await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+      } finally {
+        await client.close?.();
+      }
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({ query: rewrite(buildActivitySummaryRowsTableSql()) });
@@ -52,15 +55,15 @@ describe("running summary query", () => {
           canonical_type: "running",
           name: null,
           started_at: "2026-10-01 08:00:00",
-          ended_at: "2026-10-01 08:10:00",
+          ended_at: "2026-10-01 08:40:00",
           avg_cadence: 200,
           cadence_basis: "step_intervals",
           cadence_observed_seconds: 180,
           cadence_coverage_percent: 30,
           avg_ground_contact_time: 210,
           avg_stance_time: 250,
-          avg_speed: 3,
-          total_distance: 1800,
+          avg_speed: 3.5,
+          total_distance: 8500,
           refresh_version: 1,
         },
         {
@@ -84,6 +87,21 @@ describe("running summary query", () => {
           refresh_version: 1,
         },
         {
+          activity_id: ids[3],
+          user_id: userId,
+          canonical_type: "running",
+          name: "Tempo Run",
+          started_at: "2026-10-02 08:00:00",
+          ended_at: "2026-10-02 08:41:40",
+          avg_cadence: 180,
+          avg_speed: 4,
+          total_distance: 10000,
+          avg_stride_length: 1.2,
+          avg_stance_time: 230,
+          avg_vertical_osc: 85,
+          refresh_version: 1,
+        },
+        {
           activity_id: randomUUID(),
           user_id: randomUUID(),
           canonical_type: "running",
@@ -103,10 +121,45 @@ describe("running summary query", () => {
   afterAll(async () => {
     await context?.cleanup();
   });
+  it("retains pace metrics for unnamed runs alongside named runs", async () => {
+    expect((await repository.getPaceTrend(null)).map((row) => row.toDetail())).toEqual([
+      {
+        date: "2026-10-01",
+        activityName: "Running",
+        paceSecondsPerKm: 286,
+        distanceKm: 8.5,
+        durationMinutes: 40,
+      },
+      {
+        date: "2026-10-02",
+        activityName: "Tempo Run",
+        paceSecondsPerKm: 250,
+        distanceKm: 10,
+        durationMinutes: 42,
+      },
+    ]);
+  });
+  it("retains named running dynamics alongside unnamed and form-only runs", async () => {
+    const data = (await repository.getDynamics(null)).map((row) => row.toDetail());
+    expect(data.find((row) => row.activityId === ids[3])).toEqual({
+      activityId: ids[3],
+      date: "2026-10-02",
+      activityName: "Tempo Run",
+      cadence: 180,
+      cadenceBasis: "unknown",
+      cadenceObservedSeconds: null,
+      cadenceCoveragePercent: null,
+      strideLengthMeters: 1.2,
+      stanceTimeMs: 230,
+      verticalOscillationMm: 85,
+      paceSecondsPerKm: 250,
+      distanceKm: 10,
+    });
+  });
   it("accepts unnamed runs and prefers ground-contact evidence over legacy stance time", async () => {
     const data = (await repository.getDynamics(null)).map((row) => row.toDetail());
     expect(data.find((row) => row.activityId === ids[0])).toMatchObject({
-      activityName: "Run",
+      activityName: "Running",
       cadence: 200,
       cadenceBasis: "step_intervals",
       cadenceObservedSeconds: 180,
@@ -116,7 +169,7 @@ describe("running summary query", () => {
   });
   it("retains owned form-only runs without manufacturing cadence, pace or distance", async () => {
     const data = (await repository.getDynamics(null)).map((row) => row.toDetail());
-    expect(data).toHaveLength(3);
+    expect(data).toHaveLength(4);
     expect(data.find((row) => row.activityId === ids[1])).toMatchObject({
       cadence: null,
       paceSecondsPerKm: null,

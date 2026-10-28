@@ -10,6 +10,7 @@ import {
   formatDateTime,
   formatDateYmd,
   formatDateYmdInTimeZone,
+  formatDurationHoursMinutes,
   formatDurationMinutes,
   formatDurationRange,
   formatDurationSeconds,
@@ -206,6 +207,27 @@ describe("date and time formatters", () => {
     expect(formatDateShort("not-a-date")).toBe("--");
     expect(formatDateTime("not-a-date")).toBe("--");
     expect(formatTimeOnly("not-a-date")).toBe("--");
+  });
+});
+
+describe("formatDurationHoursMinutes", () => {
+  it.each([
+    [0, "0:00"],
+    [5, "0:05"],
+    [45, "0:45"],
+    [59, "0:59"],
+    [60, "1:00"],
+    [61, "1:01"],
+    [85.86666666666666, "1:26"],
+    [90, "1:30"],
+    [59.9, "1:00"],
+    [119.7, "2:00"],
+    [600, "10:00"],
+    [1445, "24:05"],
+    [Number.NaN, "--"],
+    [Number.POSITIVE_INFINITY, "--"],
+  ])("formats %s minutes as %s", (minutes, expected) => {
+    expect(formatDurationHoursMinutes(minutes)).toBe(expected);
   });
 });
 

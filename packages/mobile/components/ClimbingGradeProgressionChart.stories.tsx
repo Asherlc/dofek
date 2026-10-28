@@ -3,12 +3,7 @@ import { View } from "react-native";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
-const data = [
-  climbingProgressionFixture(),
-  climbingProgressionFixture("route", { ropeMethod: "top_rope" }),
-  climbingProgressionFixture("route", { ropeMethod: "lead" }),
-  climbingProgressionFixture("route"),
-];
+const data = climbingProgressionFixture();
 const meta = {
   title: "Components/ClimbingGradeProgressionChart",
   component: ClimbingGradeProgressionChart,
@@ -25,33 +20,40 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
-export const Sparse: Story = { args: { data: data.slice(0, 1) } };
-export const AidStyles: Story = {
+export const Sparse: Story = { args: { data: { ...data, periods: data.periods.slice(0, 1) } } };
+export const MixedNativeScales: Story = {
   args: {
-    data: [
-      climbingProgressionFixture("route", { ropeMethod: "lead" }),
-      climbingProgressionFixture("route", { ropeMethod: "lead", usedAid: true }),
-      climbingProgressionFixture("route", { ropeMethod: "lead", usedAid: null }),
-    ],
+    data: {
+      ...data,
+      grades: [
+        {
+          key: "boulder-v4",
+          climbKind: "boulder",
+          gradeSystem: "font",
+          grade: "6a",
+          gradeSortValue: 65,
+        },
+        {
+          key: "route-5.11a",
+          climbKind: "route",
+          gradeSystem: "french",
+          grade: "6a",
+          gradeSortValue: 65,
+        },
+      ],
+    },
   },
 };
-export const UnknownCategories: Story = {
+export const UnknownOutcomes: Story = {
   args: {
-    data: [
-      {
-        ...climbingProgressionFixture("route", { ropeMethod: "lead" }),
-        settings: ["unknown"],
-        periods: climbingProgressionFixture("route", { ropeMethod: "lead" }).periods.map(
-          (period) => ({
-            ...period,
-            settings: period.settings
-              .slice(0, 1)
-              .map((setting) => ({ ...setting, setting: "unknown", unknownOutcomes: 1 })),
-          }),
-        ),
-      },
-    ],
+    data: {
+      ...data,
+      periods: data.periods.map((period) => ({
+        ...period,
+        unknownOutcomes: period.climbingDays > 0 ? 1 : 0,
+      })),
+    },
   },
 };
-export const Loading: Story = { args: { data: [], loading: true } };
-export const Empty: Story = { args: { data: [] } };
+export const Loading: Story = { args: { data: null, loading: true } };
+export const Empty: Story = { args: { data: null } };

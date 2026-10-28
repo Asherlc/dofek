@@ -1,3 +1,4 @@
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import {
@@ -50,7 +51,7 @@ export class RunningDynamicsActivity {
   }
 
   get activityName(): string {
-    return this.#row.activityName?.trim() || "Run";
+    return this.#row.activityName?.trim() || formatActivityTypeLabel("running");
   }
 
   get cadence(): number | null {
@@ -249,7 +250,7 @@ export class RunningRepository {
         new RunningDynamicsActivity({
           activityId: row.activity_id,
           date: row.date,
-          activityName: row.name,
+          activityName: row.name ?? formatActivityTypeLabel("running"),
           avgCadence: row.avg_cadence,
           cadenceBasis: row.cadence_basis,
           cadenceObservedSeconds: row.cadence_observed_seconds,
@@ -299,7 +300,7 @@ export class RunningRepository {
       (row) =>
         new PaceTrendActivity({
           date: row.date,
-          activityName: row.name?.trim() || "Run",
+          activityName: row.name?.trim() || formatActivityTypeLabel("running"),
           avgSpeed: row.avg_speed,
           totalDistance: row.total_distance,
           durationSeconds: row.duration_seconds,

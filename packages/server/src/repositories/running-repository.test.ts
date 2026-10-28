@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   PaceTrendActivity,
   RunningDynamicsActivity,
@@ -45,7 +46,7 @@ describe("RunningDynamicsActivity", () => {
       }),
     );
     expect(activity.toDetail()).toMatchObject({
-      activityName: "Run",
+      activityName: "Running",
       cadence: null,
       paceSecondsPerKm: null,
       distanceKm: null,
@@ -310,7 +311,13 @@ describe("PaceTrendActivity", () => {
 
 describe("RunningRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const query = vi.fn().mockResolvedValue(rows);
+    const query = vi.fn(
+      async <TSchema extends z.ZodType>(
+        schema: TSchema,
+        _query: string,
+        _params?: Record<string, unknown>,
+      ) => z.array(schema).parse(rows),
+    );
     const execute = vi
       .fn()
       .mockImplementation(async () =>
@@ -334,6 +341,42 @@ describe("RunningRepository", () => {
   }
 
   describe("getDynamics", () => {
+    it("retains dynamics for an unnamed run with a running display label", async () => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "unnamed-run",
+          date: "2024-06-10",
+          name: null,
+          avg_cadence: 180,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: 2400,
+          cadence_coverage_percent: 100,
+          avg_stride_length: 1.2,
+          avg_stance_time: 220,
+          avg_vertical_osc: 85,
+          avg_speed: 4,
+          total_distance: 8000,
+        },
+      ]);
+
+      expect((await repo.getDynamics(90)).map((activity) => activity.toDetail())).toEqual([
+        {
+          activityId: "unnamed-run",
+          date: "2024-06-10",
+          activityName: "Running",
+          cadence: 180,
+          cadenceBasis: "cadence_samples",
+          cadenceObservedSeconds: 2400,
+          cadenceCoveragePercent: 100,
+          strideLengthMeters: 1.2,
+          stanceTimeMs: 220,
+          verticalOscillationMm: 85,
+          paceSecondsPerKm: 250,
+          distanceKm: 8,
+        },
+      ]);
+    });
+
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getDynamics(90);
@@ -390,6 +433,29 @@ describe("RunningRepository", () => {
   });
 
   describe("getPaceTrend", () => {
+    it("retains pace metrics for an unnamed run with a running display label", async () => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "unnamed-run",
+          date: "2024-06-10",
+          name: null,
+          avg_speed: 4,
+          total_distance: 8000,
+          duration_seconds: 2400,
+        },
+      ]);
+
+      expect((await repo.getPaceTrend(90)).map((activity) => activity.toDetail())).toEqual([
+        {
+          date: "2024-06-10",
+          activityName: "Running",
+          paceSecondsPerKm: 250,
+          distanceKm: 8,
+          durationMinutes: 40,
+        },
+      ]);
+    });
+
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getPaceTrend(90);

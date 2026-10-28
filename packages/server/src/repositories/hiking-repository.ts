@@ -1,5 +1,9 @@
 import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
+import type { RouteComparison } from "@dofek/training/route-comparison";
+import { formatActivityTypeLabel } from "@dofek/training/training";
+import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { ChartRange } from "../lib/chart-range.ts";
@@ -8,8 +12,9 @@ import {
   type RangeDays,
   rangeDaysParams,
 } from "../lib/date-window.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { groupEquivalentRoutes } from "./route-equivalence.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -151,32 +156,6 @@ export class WalkingBiomechanicsSnapshot {
   }
 }
 
-export interface RouteInstance {
-  date: string;
-  durationMinutes: number;
-  averagePaceMinPerKm: number;
-  avgHeartRate: number | null;
-  elevationGainMeters: number;
-}
-
-/** A named route (trail, walk) repeated multiple times for comparison. */
-export class RepeatedRoute {
-  readonly #name: string;
-  readonly #instances: RouteInstance[];
-
-  constructor(name: string, instances: RouteInstance[]) {
-    this.#name = name;
-    this.#instances = instances;
-  }
-
-  toDetail() {
-    return {
-      activityName: this.#name,
-      instances: this.#instances,
-    };
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
@@ -184,7 +163,7 @@ export class RepeatedRoute {
 const gradeRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
-  activity_name: z.string(),
+  activity_name: z.string().nullable(),
   canonical_type: z.string(),
   distance_m: z.coerce.number(),
   duration_seconds: z.coerce.number(),
@@ -210,12 +189,23 @@ const biomechanicsRowSchema = z.object({
 });
 
 const comparisonRowSchema = z.object({
-  activity_name: z.string(),
+  canonical_activity_id: z.uuid(),
+  canonical_type: z.string(),
+  modality: z.string().nullable(),
+  activity_name: z.string().nullable(),
+  started_at: timestampStringSchema,
   date: dateStringSchema,
+  distance_m: z.coerce.number(),
   duration_minutes: z.coerce.number(),
   average_pace_min_per_km: z.coerce.number(),
   avg_heart_rate: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number(),
+  points: z.array(z.tuple([z.number(), z.number()])).max(64),
+  route_distance_meters: z.number().nullable(),
+  elevation_profile: z.array(z.number()),
+  geometry_status: z.enum(["available", "partial", "unavailable"]),
+  coverage_pct: z.number().nullable(),
+  largest_gap_seconds: z.number().nullable(),
 });
 
 // ---------------------------------------------------------------------------
@@ -227,13 +217,13 @@ export class HikingRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
-  readonly #sensorStore: ActivitySensorStore;
+  readonly #sensorStore: Pick<ActivitySensorStore, "query">;
 
   constructor(
     db: Pick<Database, "execute">,
     userId: string,
     timezone: string,
-    sensorStore: ActivitySensorStore,
+    sensorStore: Pick<ActivitySensorStore, "query">,
   ) {
     this.#db = db;
     this.#userId = userId;
@@ -272,7 +262,7 @@ export class HikingRepository {
         new HikingActivity({
           activityId: row.activity_id,
           date: String(row.date),
-          activityName: String(row.activity_name),
+          activityName: row.activity_name ?? formatActivityTypeLabel(row.canonical_type),
           activityType: String(row.canonical_type),
           distanceMeters: Number(row.distance_m),
           durationSeconds: Number(row.duration_seconds),
@@ -351,67 +341,104 @@ export class HikingRepository {
     );
   }
 
-  /** Named routes (trails, walks) that have been repeated 2+ times. */
-  async getRepeatedRoutes(days: RangeDays): Promise<RepeatedRoute[]> {
+  /** Repeated GPS routes, using the same bounded matcher as effort discovery. */
+  async getRepeatedRoutes(days: RangeDays): Promise<RouteComparison[]> {
     const rangeFilter = clickHouseIntervalDayLowerBound(days, "hiking.started_at");
     const rows = await this.#sensorStore.query(
       comparisonRowSchema,
-      `WITH activity_data AS (
-        SELECT
-          hiking.activity_name AS activity_name,
-          toString(toDate(toTimeZone(hiking.started_at, {timezone:String}))) AS date,
-          round(hiking.duration_seconds / 60.0, 1) AS duration_minutes,
-          hiking.average_pace_min_per_km AS average_pace_min_per_km,
-          hiking.avg_heart_rate AS avg_heart_rate,
-          hiking.elevation_gain_m AS elevation_gain_m
-        FROM analytics.hiking_activity AS hiking FINAL
-        WHERE hiking.user_id = {userId:UUID}
-          AND hiking.is_deleted = 0
-          ${rangeFilter}
-          AND hiking.canonical_type IN ('walking', 'hiking', 'running')
-          AND hiking.activity_name IS NOT NULL
-          AND hiking.duration_seconds > 0
-      ),
-      repeated_names AS (
-        SELECT activity_name
-        FROM activity_data
-        GROUP BY activity_name
-        HAVING count() >= 2
-      )
-      SELECT
-        d.activity_name AS activity_name,
-        d.date AS date,
-        d.duration_minutes AS duration_minutes,
-        d.average_pace_min_per_km AS average_pace_min_per_km,
-        d.avg_heart_rate AS avg_heart_rate,
-        d.elevation_gain_m AS elevation_gain_m
-      FROM activity_data d
-      INNER JOIN repeated_names rn ON rn.activity_name = d.activity_name
-      ORDER BY d.activity_name, d.date`,
+      `SELECT
+        hiking.activity_id AS canonical_activity_id,
+        hiking.canonical_type AS canonical_type,
+        activity.modality AS modality,
+        hiking.activity_name AS activity_name,
+        formatDateTime(hiking.started_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
+        toString(toDate(toTimeZone(hiking.started_at, {timezone:String}))) AS date,
+        hiking.distance_m AS distance_m,
+        hiking.duration_seconds / 60.0 AS duration_minutes,
+        hiking.average_pace_min_per_km AS average_pace_min_per_km,
+        hiking.avg_heart_rate AS avg_heart_rate,
+        hiking.elevation_gain_m AS elevation_gain_m,
+        arrayMap(point -> [point.1, point.2], route.points) AS points,
+        route.route_distance_meters AS route_distance_meters,
+        route.elevation_profile AS elevation_profile,
+        route.geometry_status AS geometry_status,
+        route.coverage_pct AS coverage_pct,
+        route.largest_gap_seconds AS largest_gap_seconds
+      FROM analytics.hiking_activity AS hiking FINAL
+      INNER JOIN analytics.deduped_activities AS activity FINAL
+        ON activity.user_id = hiking.user_id AND activity.activity_id = hiking.activity_id
+      INNER JOIN analytics.activity_route_identity AS route FINAL
+        ON route.user_id = hiking.user_id AND route.canonical_activity_id = hiking.activity_id
+      WHERE hiking.user_id = {userId:UUID}
+        AND hiking.is_deleted = 0 AND activity.is_deleted = 0 AND route.is_deleted = 0
+        ${rangeFilter}
+        AND hiking.canonical_type IN ('walking', 'hiking', 'running')
+        AND hiking.duration_seconds > 0
+        AND route.geometry_status = 'available'
+      ORDER BY hiking.activity_id
+      LIMIT 251`,
       { userId: this.#userId, timezone: this.#timezone, ...rangeDaysParams(days) },
     );
 
-    const grouped = new Map<string, RouteInstance[]>();
-    for (const row of rows) {
-      const name = String(row.activity_name);
-      let group = grouped.get(name);
-      if (!group) {
-        group = [];
-        grouped.set(name, group);
+    let groups: (typeof rows)[];
+    try {
+      groups = await groupEquivalentRoutes(
+        rows,
+        rows.map((row) => ({
+          activity_id: row.canonical_activity_id,
+          canonical_type: row.canonical_type,
+          modality: row.modality,
+        })),
+      );
+    } catch (error) {
+      captureException(error);
+      if (
+        error instanceof Error &&
+        (error.message === "Too many route candidates; narrow the date range or filters." ||
+          error.message ===
+            "Route grouping sampled-segment work limit exceeded: narrow the date range or filters.")
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "There are too many GPS routes to compare in this period. Choose a shorter date range and retry.",
+          cause: error,
+        });
       }
-      group.push({
-        date: String(row.date),
-        durationMinutes: Number(row.duration_minutes),
-        averagePaceMinPerKm: Number(row.average_pace_min_per_km),
-        avgHeartRate: row.avg_heart_rate != null ? Number(row.avg_heart_rate) : null,
-        elevationGainMeters: Math.round(Number(row.elevation_gain_m)),
-      });
+      throw error;
     }
 
-    const result: RepeatedRoute[] = [];
-    for (const [name, instances] of grouped) {
-      result.push(new RepeatedRoute(name, instances));
-    }
-    return result;
+    type RouteRow = (typeof rows)[number];
+    return groups
+      .filter((group): group is [RouteRow, RouteRow, ...RouteRow[]] => group.length >= 2)
+      .map((group) => {
+        const anchor = group[0];
+        const instances = group
+          .map((row) => ({
+            activityId: row.canonical_activity_id,
+            activityName: row.activity_name ?? row.canonical_type,
+            startedAt: row.started_at,
+            date: row.date,
+            distanceKm: row.distance_m > 0 ? row.distance_m / 1000 : null,
+            durationMinutes: row.duration_minutes,
+            averagePaceMinPerKm:
+              row.distance_m > 0 && row.average_pace_min_per_km > 0
+                ? row.average_pace_min_per_km
+                : null,
+            avgHeartRate: row.avg_heart_rate,
+            elevationGainMeters: Math.round(row.elevation_gain_m),
+          }))
+          .sort(
+            (a, b) =>
+              a.startedAt.localeCompare(b.startedAt) || a.activityId.localeCompare(b.activityId),
+          );
+        return {
+          routeId: anchor.canonical_activity_id,
+          activityName: anchor.activity_name ?? anchor.canonical_type,
+          activityType: anchor.canonical_type,
+          attemptCount: instances.length,
+          instances,
+        };
+      });
   }
 }

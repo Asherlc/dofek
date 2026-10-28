@@ -9,6 +9,7 @@ import {
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { runningData } from "../../components/running-training-test-helpers";
 
 let mockTodayQueryDate = "2026-03-28";
@@ -26,6 +27,9 @@ const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
 const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockRunningInvalidate = vi.fn();
+const mockRouteComparisonInvalidate = vi.fn();
+const mockRouteComparisonQuery = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 let mockTrainingDataDays = 90;
 type MockRangeQueryOptions = {
@@ -142,6 +146,7 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
     },
+    hiking: { activityComparison: { useQuery: mockRouteComparisonQuery } },
     climbing: {
       volumeOverTime: {
         useQuery: () => ({
@@ -177,7 +182,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     mobileDashboard: {
-      training: {
+      trainingV2: {
         useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.training.push({ input, options });
           return {
@@ -229,7 +234,8 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
-      running: { dynamicsV2: { invalidate: vi.fn() } },
+      running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
+      hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
@@ -237,7 +243,7 @@ vi.mock("../../lib/trpc", () => ({
       },
       strength: { volumeOverTime: { invalidate: vi.fn() } },
       mobileDashboard: {
-        training: { invalidate: mockTrainingInvalidate },
+        trainingV2: { invalidate: mockTrainingInvalidate },
       },
       training: {
         sportVolume: { invalidate: vi.fn() },
@@ -280,9 +286,9 @@ vi.mock("../../lib/units", () => ({
     formatDistance: (km: number) => ({ text: `${km.toFixed(1)} km`, parts: [] }),
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
-    distanceLabel: "km",
+    convertPace: (seconds: number) => seconds,
     paceLabel: "/km",
-    convertPace: (value: number) => value,
+    distanceLabel: "km",
     formatWeight: (kg: number) => ({
       text: `${kg.toFixed(1)} kg`,
       parts: [{ type: "unit", value: "kg" }],
@@ -345,9 +351,20 @@ describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
     vi.mocked(captureException).mockReset();
+    mockRunningInvalidate.mockReset();
+    mockRunningInvalidate.mockResolvedValue(undefined);
     mockTrainingInvalidate.mockReset();
     mockLocationMapInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockRouteComparisonInvalidate.mockReset();
+    mockRouteComparisonInvalidate.mockResolvedValue(undefined);
+    mockRouteComparisonQuery.mockReset();
+    mockRouteComparisonQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
     mockMonotonyInvalidate.mockReset();
@@ -450,7 +467,7 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
-    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
@@ -474,7 +491,7 @@ describe("StrainScreen recent activity navigation", () => {
     );
     rerender(<StrainScreen />);
     expect(captureException).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: /Slab · 40%/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Slab:/ })).toBeNull();
   });
 
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
@@ -494,7 +511,7 @@ describe("StrainScreen recent activity navigation", () => {
       endDate: "2026-03-28",
       types: ["lead"],
     });
-    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
@@ -512,6 +529,26 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+    expect(mockRouteComparisonInvalidate).toHaveBeenCalledOnce();
+    expect(mockRunningInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("renders the route comparison with the selected training period and opens attempts", async () => {
+    mockRouteComparisonQuery.mockReturnValue({
+      data: routeComparisonFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    mockTimeRangePreference.days = 30;
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText("Route comparison")).toBeTruthy();
+    expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[0]).toEqual({ days: 30 });
+    expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[1].enabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "View Route comparison data" }));
+    fireEvent.click(screen.getByRole("button", { name: /Morning river run:/ }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/22222222-2222-4222-8222-222222222222");
   });
 
   it("renders model labels, values, and calculation details", async () => {
@@ -1033,7 +1070,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [],
         sessionSummary: [],
       },

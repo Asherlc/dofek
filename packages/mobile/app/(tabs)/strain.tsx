@@ -39,6 +39,7 @@ import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { RouteComparisonCard } from "../../components/RouteComparisonCard";
 import { RunningTrainingCard } from "../../components/RunningTrainingCard";
 import { SportVolumeChart } from "../../components/SportVolumeChart";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
@@ -86,7 +87,7 @@ export default function StrainScreen() {
     hasCommittedHydratedRange.current = isHydrated;
   }, [isHydrated]);
 
-  const trainingQuery = trpc.mobileDashboard.training.useQuery(
+  const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
       enabled: isHydrated,
@@ -239,7 +240,7 @@ export default function StrainScreen() {
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
-        utils.mobileDashboard.training.invalidate(),
+        utils.mobileDashboard.trainingV2.invalidate(),
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
@@ -247,6 +248,7 @@ export default function StrainScreen() {
         utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
+        utils.hiking.activityComparison.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
@@ -421,6 +423,7 @@ export default function StrainScreen() {
       )}
 
       <SportVolumeChart days={days} enabled={isHydrated} />
+      <RouteComparisonCard days={days} enabled={isHydrated} />
       <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
       {climbingVolumeQuery.error ? (
         <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />

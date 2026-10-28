@@ -26,7 +26,7 @@ export function defaultMockTrainingData(): Record<string, unknown> {
     progressiveOverload: [],
     verticalAscent: [],
     climbing: {
-      gradeProgression: [],
+      gradeProgression: null,
       volumeByGrade: [],
       sessionSummary: [],
       hangboarding: {

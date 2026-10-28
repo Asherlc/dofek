@@ -5,6 +5,15 @@ import { VerticalAscentChart } from "./VerticalAscentChart.tsx";
 
 const activities: VerticalAscentRow[] = [
   {
+    date: "2026-04-11",
+    activityName: "Recovery Spin",
+    activityType: "cycling",
+    modality: "road",
+    verticalAscentRate: 100,
+    elevationGainMeters: 150,
+    elapsedMinutes: 90,
+  },
+  {
     date: "2026-04-18",
     activityName: "Hill Country Tempo",
     activityType: "cycling",
