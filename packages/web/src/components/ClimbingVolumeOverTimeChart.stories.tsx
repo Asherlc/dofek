@@ -16,6 +16,14 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const TimeSelected: Story = {
+  args: {
+    data: [
+      { week: "2026-10-05", attempts: 12, minutes: 600 },
+      { week: "2026-10-12", attempts: 8, minutes: 90 },
+      { week: "2026-10-19", attempts: 5, minutes: 45 },
+      { week: "2026-10-26", attempts: null, minutes: null },
+    ],
+  },
   play: async ({ canvasElement, userEvent }) => {
     const metric = within(canvasElement).getByRole("combobox", { name: "Climbing volume metric" });
     await userEvent.selectOptions(metric, "time");
