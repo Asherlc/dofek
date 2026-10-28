@@ -295,7 +295,7 @@
     "pg": "8.23.1",
     "pixelmatch": "8.0.0",
     "postgres": "3.4.8",
-    "posthog-node": "5.56.0",
+    "posthog-node": "5.56.2",
     "prom-client": "15.1.3",
     "sax": "1.6.1",
     "sharp": "0.35.5",
