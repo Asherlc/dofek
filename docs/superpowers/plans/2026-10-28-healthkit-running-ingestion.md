@@ -13,7 +13,7 @@
 - Compute metrics on the server; native code only reads/converts/transports observations.
 - No new dependencies, environment variables, branches, or production mutations.
 - Test behavior before implementation; use real database tests for database semantics.
-- Preserve web/mobile parity through the shared serving API; do not change chart APIs in this ingestion stage.
+- Preserve web/mobile parity through the shared serving API; Tasks 1–3 retain the chart contract, and Task 4 adds the specified shared cadence evidence.
 - Do not consume calorie expenditure estimates.
 
 ## Review Focus
@@ -57,21 +57,32 @@ canonical cadence sample, or client-side rate calculation.
 ### Task 3: Native raw running-step snapshots/deltas and dedicated ingestion
 
 **Files:** HealthKit native query/transport helpers and tests; module bridge/index; mobile sync orchestration/tests; server running-step router/processor/repository and tests; shared workout upsert boundary; affected docs.
-**Interfaces:** Add `RunningStepSample extends HealthKitSample { workoutUuids: string[] }`, a native range snapshot returning `{workouts: WorkoutSample[], samples: RunningStepSample[]}`, and an anchored delta also returning `{deletedUUIDs: string[], queryId: string | null}`. Add `healthKitSync.pushRunningStepSamples({workouts, samples})`; output `{inserted: number}` or an actionable thrown error. Raw metadata keys: `interval_end`, `source_bundle`, `workout_uuids`. Use channel `step_count` and parent `hk:<UUID>` tombstone identity. Reuse existing anchor completion with StepCount type identifier.
+**Interfaces:** Add `RunningStepSample extends HealthKitSample { workoutUuids: string[] }`, a native range snapshot returning `{workouts: WorkoutSample[], samples: RunningStepSample[]}`, and an anchored delta also returning `{deletedUUIDs: string[], queryId: string | null, hasMore: boolean}`. Add `healthKitSync.pushRunningStepSamples({workouts, samples})`; output `{inserted: number}` or an actionable thrown error. Raw metadata keys: `interval_end`, `source_bundle`, `workout_uuids`. Use channel `step_count` and parent `hk:<UUID>` tombstone identity. Reuse existing anchor completion with StepCount type identifier.
 
-- [ ] Write failing tests for associated raw series transport, association merge, snapshot plus delta full sync, step/workout observer refresh, historical delta additions/deletions, failed upload/read anchor handling, separate daily totals routing, raw publishing units/interval identity, ownership, and additive workout upserts without absence reconciliation.
-- [ ] Run focused native/mobile/server tests and record meaningful RED failures.
-- [ ] Implement the dedicated raw interval path and synchronization exactly as the raw cadence spec requires. Do not compute cadence or change analytics in this task.
-- [ ] Verify native coverage, bridge parsing, mobile/server/root typechecks and focused tests; preserve non-running and daily-step regressions. Expected: all affected checks pass. Record exact environment/test failures rather than bypassing gates.
-- [ ] Document the new raw payload and native release/history boundary, commit explicit paths and push. Produce task report and request review.
+- [x] Write failing tests for associated raw series transport, association merge, snapshot plus delta full sync, step/workout observer refresh, historical delta additions/deletions, bounded 500-parent pagination including pages with no associated runs, failed upload/read/later-page anchor handling, separate daily totals routing, raw publishing units/interval identity, ownership, and additive workout upserts without absence reconciliation.
+- [x] Run focused native/mobile/server tests and record meaningful RED failures.
+- [x] Implement the dedicated raw interval path and synchronization exactly as the raw cadence spec requires. Do not compute cadence or change analytics in this task.
+- [x] Verify native coverage, bridge parsing, mobile/server/root typechecks and focused tests; preserve non-running and daily-step regressions. Expected: all affected checks pass. Record exact environment/test failures rather than bypassing gates.
+- [x] Document the new raw payload and native release/history boundary, commit explicit paths and push. Produce task report and request review.
 
 ### Task 4: Bounded interval cadence analytics and shared chart behavior
 
-**Files:** New `analytics/models/read_models/activity_step_cadence_rows.sql`, shared summary model and relevant table/test helpers if needed; production model selection and dataset contracts; running repository/router and tests; affected documentation and incident baseline.
-**Interfaces:** Consume latest raw `step_count` events with metadata from Task3 and current user-scoped workout UUID/member mapping. Produce activity-grain cadence plus observed seconds/source evidence, refresh version/timestamp and lifecycle tombstones. Feed the existing `avg_cadence` summary field only when positive direct cadence is absent. Existing web/mobile numeric API fields remain server-computed.
+**Files:** New `analytics/models/read_models/activity_step_cadence_rows.sql`, shared summary model and relevant table/test helpers if needed; production model selection and dataset contracts; current summary DDL/view and a forward-only ClickHouse migration; running repository/router and tests; web cadence/form rendering and a mobile running training card with tests/stories; affected documentation and incident baseline.
+**Interfaces:** Consume latest raw `step_count` events with metadata from Task3 and current user-scoped workout UUID/member mapping. Produce activity-grain cadence plus observed seconds/source evidence, refresh version/timestamp and lifecycle tombstones. Feed the existing `avg_cadence` summary field only when positive direct cadence is absent. Materialize cadence_basis, cadence_observed_seconds, cadence_coverage_percent atomically with avg_cadence and expose cadenceBasis/cadenceObservedSeconds/cadenceCoveragePercent. Both clients render source basis and supplied coverage; existing numeric API fields remain server-computed.
 
-- [ ] Write real ClickHouse regressions covering weighted counts across unequal durations, one source, overlapping source/interval rejection, raw parent/group deduplication, ownership, invalid intervals, direct precedence, incremental add/change/delete/restore and canonical membership changes. Write failing running query tests for ground-contact display, nullable source names, and the explicit cadence empty-state message.
+- [ ] Write real ClickHouse regressions covering weighted counts across unequal durations, one source, overlapping source/interval rejection, raw parent/group deduplication, ownership, invalid intervals, direct precedence, incremental add/change/delete/restore and canonical membership changes. Write failing running query tests for ground-contact display, nullable source names, and the explicit cadence empty-state message; add web/mobile behavior tests and stories for recorded versus interval-derived cadence, partial coverage, missing form values, stale refetch data, errors and saved date range.
 - [ ] Run the focused regressions against the current implementation and capture RED before model/server changes.
-- [ ] Implement bounded dirty-key cadence refresh using existing ingestion/day-change evidence and current membership, then wire summary consumers, production model lists and processing readiness. Preserve null rather than fabricate values when evidence is absent.
+- [ ] Implement bounded dirty-key cadence refresh using existing ingestion/day-change evidence and current membership, then wire summary consumers, production model lists and processing readiness. Preserve null rather than fabricate values when evidence is absent. Add cadence evidence to the same summary row, render it on web and the equivalent mobile training card, and visually inspect their stories using tunneled preview servers.
 - [ ] Verify focused executable model/repository tests, source policies, SQL lint, typechecks, full lint and full unit/mobile suite. Run relevant integration tests against current workspace services. Expected: passing checks without retries or increased limits.
 - [ ] Update active Apple Health/analytics docs with official citations and production incident evidence, including what still requires release/device validation. Commit and push, request final whole-branch review and address valid findings.
+
+Task4 fixture anchors: one source with 150 steps over 60 seconds and 450 steps over 120 seconds
+must yield 200 steps/min (the unweighted average 187.5 is wrong); direct cadence 172
+must win over that 200. A valid source with configured higher priority must win
+even if another source has more coverage. Nested interval overlap must be tested
+using an earlier long interval enclosing two later short intervals. Restoring a
+second workout in another canonical group must make a shared child's association
+ambiguous for the first group too, even if that first group's own row did not
+change. Test more than 100 dirty groups to prove batched consumption doesn't skip
+remaining keys, and an unchanged subsequent cycle to prove processed-empty rows
+and stable signatures prevent endless refresh.

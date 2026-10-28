@@ -115,3 +115,60 @@ Use the existing deterministic metric event factory's generation handling. If it
 needs interval identity, extend its generic handling for `metadata.interval_end`
 so differing interval ends are distinct while existing point event identities
 remain unchanged. Preserve the parent external ID for all step child tombstones.
+
+## Cadence basis and client parity
+
+Materialize cadence basis and observed coverage alongside `avg_cadence` in the
+same activity summary row, so a partially refreshed pipeline cannot label an
+older numeric value with newer source evidence. Use `cadence_basis` values
+`cadence_samples`, `step_intervals`, or `unknown`, plus nullable
+`cadence_observed_seconds` and `cadence_coverage_percent`. For step intervals,
+coverage is `100 * observed seconds / activity wall-clock seconds`, rounded
+server-side for display; direct cadence may retain unknown coverage. Schema
+changes use a forward-only ClickHouse migration; tests create the current final
+schema directly rather than replay historical backfills.
+
+Expose this evidence with running rows as `cadenceBasis`,
+`cadenceObservedSeconds`, and `cadenceCoveragePercent`. The web cadence tooltip
+and running-form cadence cell must distinguish rates from recorded steps and
+show known coverage without repeating explanatory paragraphs. Add the equivalent
+running cadence/form card to the mobile training screen, using existing chart
+and unit-formatting components and the same server response. Clients render
+these values without deriving rates or coverage. Preserve specific server
+errors and visible previous data during refetches; keep optional missing form
+metrics unavailable rather than zero.
+
+Test normal recorded cadence, interval-derived cadence with partial coverage,
+missing optional form metrics, loading/refetch, errors, empty results, and the
+mobile query's saved date range. Give new UI components colocated tests and
+stories; mobile route helpers/tests/stories remain outside app/. Inspect the
+changed web/mobile stories with browser tooling. Any HTTP preview server must
+have the required Paseo quick tunnel for its lifetime, and shared Storybook
+links must point to the specific story.
+
+Running form must not disappear solely because cadence or speed is missing.
+`dynamicsV2.data` includes a run when any cadence, stride, contact-time, or
+oscillation measurement is available. Preserve nullable `cadence`,
+`paceSecondsPerKm`, and `distanceKm` rather than coercing missing evidence to
+zero. Its existing `availability` describes form rows; add server-authored
+`cadenceAvailability` counting usable cadence rows for the cadence chart.
+Both clients use this distinction, render missing cells as unavailable, and
+retain other form measurements when the cadence chart is empty. Existing v1
+running query consumers/types must remain coherent with the final contract;
+do not add a temporary compatibility route or fabricate missing numbers.
+
+The anchored StepCount discovery query must page through at most 500 added or
+deleted parents per request. It discovers all-day parent changes before selecting
+associated running observations, so an unbounded first All-history query would
+retain unrelated years of step objects. Return required `hasMore: boolean`, true
+when the underlying added-plus-deleted parent count reaches 500. The client
+uploads/deletes and acknowledges each successful page, then continues while
+`hasMore` is true, even when that page has no running observations. Failure on a
+later page preserves the last successfully committed cursor. Keep this limit
+local to the new raw-step delta path; do not change generic quantity queries.
+
+Zero-count intervals are real observations and remain in the duration
+denominator. A valid observed interval rate of zero remains numeric zero;
+absence or rejected evidence remains null. Test the all-zero case separately
+from no observations, as well as mixed zero/nonzero intervals. Direct sensor
+cadence keeps its existing positive-sample preference.
