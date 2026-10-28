@@ -5,11 +5,12 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
-  climbingStrengthsDifferenceLabel,
   climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_TABS,
@@ -179,7 +180,8 @@ function ClimbingStrengthsPanelContent({
           className="rounded-lg border border-border bg-surface p-4 space-y-3"
         >
           <h3 className="font-semibold">
-            {row.label} · {cell.grade}
+            {row.label}
+            {view === "radar" ? "" : ` · ${cell.grade}`}
           </h3>
           {view === "progress" ? (
             <p className="text-xs text-muted">
@@ -187,13 +189,14 @@ function ClimbingStrengthsPanelContent({
             </p>
           ) : null}
           <p>
-            {rateLabel(cell)} · {climbingStrengthsCountLabel(cell)}
+            {view === "radar"
+              ? climbingStrengthsSendLabel(cell)
+              : `${rateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`}
           </p>
           {view === "radar" ? (
             <p className="text-xs text-muted">
-              {climbingStrengthsDifferenceLabel(
-                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key)
-                  ?.differencePercentagePoints ?? null,
+              {climbingStrengthsAdjustedLabel(
+                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key),
               )}
             </p>
           ) : null}
