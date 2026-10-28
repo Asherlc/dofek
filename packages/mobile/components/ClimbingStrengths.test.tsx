@@ -16,8 +16,110 @@ vi.mock("../lib/open-external-url", () => ({ openExternalUrl }));
 const push = vi.hoisted(() => vi.fn());
 vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
 function openData() {
-  fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
+  const disclosure = screen.queryByRole("button", { name: "View Strengths and weaknesses data" });
+  if (disclosure) fireEvent.click(disclosure);
 }
+
+it("explains missing wall angles and keeps the single recorded style directly selectable", () => {
+  const panel = data.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const row = panel.rows[0];
+  const pooled = panel.allGrades.rows[0];
+  if (!row || !pooled) throw new Error("Missing fixture row");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...data,
+        panels: [
+          {
+            ...panel,
+            rows: [row],
+            allGrades: { ...panel.allGrades, rows: [pooled] },
+            coverage: { ...panel.coverage, missingTraits: 59 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText(/Wall angle is missing for 59 climbs/)).toBeTruthy();
+  expect(screen.queryByText(/Outside the dashed line/)).toBeNull();
+  expect(screen.queryByRole("image")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Slab · All grades/ }));
+  expect(screen.getByText("29% · 2 sends / 7 climbs")).toBeTruthy();
+});
+it("identifies missing hold types when the selected breakdown has no observations", () => {
+  const panel = data.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...data,
+        panels: [
+          {
+            ...panel,
+            dimension: "hold_type",
+            rows: [],
+            allGrades: { ...panel.allGrades, rows: [] },
+            coverage: { ...panel.coverage, missingTraits: 60 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("Hold type is missing for 60 climbs.")).toBeTruthy();
+});
+it.each([
+  {
+    state: "the empty contract fallback",
+    missingTraits: 0,
+    message: "No recorded hold type observations in this context.",
+  },
+  {
+    state: "one climb without hold types",
+    missingTraits: 1,
+    message: "Hold type is missing for 1 climb.",
+  },
+])("keeps $state navigable", ({ missingTraits, message }) => {
+  const panel = data.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const singleClimb = { sends: 1, climbs: 1, unknownOutcomes: 0, successRate: 100 };
+  render(
+    <ClimbingStrengths
+      data={{
+        coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+        panels: [
+          {
+            ...panel,
+            key: "empty-holds",
+            dimension: "hold_type",
+            grades: missingTraits === 1 ? [{ grade: "V4", gradeSortValue: 4, ...singleClimb }] : [],
+            rows: [],
+            progress: [],
+            gradeAdjustedStrengths: [],
+            allGrades: {
+              grades:
+                missingTraits === 1
+                  ? [{ grade: "All grades", gradeSortValue: 0, ...singleClimb }]
+                  : [],
+              rows: [],
+              progress: [],
+            },
+            coverage: { missingTraits, unknownOutcomes: 0 },
+          },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Hold type" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
+  expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeTruthy();
+});
 
 it("keeps source-climb selection after a refreshed response and opens its source and activity", async () => {
   const result = render(<ClimbingStrengths data={climbingStrengthsComparisonFixture} />);
@@ -49,7 +151,7 @@ it("uses an observed hold-type panel by default and keeps missing dimensions nav
     "true",
   );
   fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
-  expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
+  expect(screen.getByText("Wall angle is missing for 7 climbs.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
   openData();
   expect(screen.getByRole("button", { name: /^Crimps · All grades:/ })).toBeTruthy();
@@ -81,5 +183,4 @@ it("uses styles and progress views for both breakdowns", () => {
   expect(screen.getByRole("button", { name: /^Crimps · All grades:/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByText("Monthly send rate")).toBeTruthy();
-  expect(screen.getByText(/Combines all grades/)).toBeTruthy();
 });

@@ -155,22 +155,14 @@ function ClimbingStrengthsPanelContent({
   const selectedCell = selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade);
   if (!observed(panel))
     return (
-      <Text
-        style={styles.meta}
-      >{`No recorded ${dimensions[panel.dimension].toLowerCase()} observations in this context.`}</Text>
+      <Text style={styles.meta}>
+        {panel.coverage.missingTraits > 0
+          ? `${dimensions[panel.dimension]} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
+          : `No recorded ${dimensions[panel.dimension].toLowerCase()} observations in this context.`}
+      </Text>
     );
   return (
     <View style={{ gap: spacing.md }}>
-      {view === "radar" ? (
-        <Text style={styles.meta}>
-          Compared with your usual results at the same grades. Outside the dashed line is stronger;
-          inside is weaker.
-        </Text>
-      ) : (
-        <Text style={styles.meta}>
-          Combines all grades; changes can reflect the difficulty of climbs recorded each month.
-        </Text>
-      )}
       <ClimbingStrengthsChart
         panel={displayPanel}
         view={view}

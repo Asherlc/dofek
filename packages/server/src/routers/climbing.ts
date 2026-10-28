@@ -296,7 +296,10 @@ export const climbingRouter = router({
       });
     }),
 
-  volumeOverTime: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  volumeOverTime: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-recorded-weekly-attempts-v1",
+  })
     .input(
       climbingInputSchema.extend({ days: z.number().int().min(1).max(365).nullable().default(90) }),
     )

@@ -11,7 +11,10 @@ The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
 weekly volume queries provide the charts with attempt counts, working sets,
 weight multiplied by repetitions, and recorded activity duration. The
 [climbing repository](src/repositories/climbing-repository.ts) applies climbing
-filters and retains unknown attempt counts; the
+filters and sums available recorded attempt counts, even when other activities
+in the week have no logs. Conflicting counts remain unknown and do not hide
+other recorded attempts; weeks with no known counts stay null, following
+[PostgreSQL aggregate semantics](https://www.postgresql.org/docs/current/functions-aggregate.html). The
 [strength repository](src/repositories/strength-repository.ts) reports unknown
 set or weight totals when a workout or a working set lacks the required data.
 

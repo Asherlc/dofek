@@ -37,6 +37,40 @@ export const Empty: Story = {
     data: { panels: [], coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 } },
   },
 };
+export const Sparse: Story = {
+  args: {
+    data: {
+      ...climbingStrengthsFixture,
+      panels: climbingStrengthsFixture.panels
+        .filter((panel) => panel.dimension === "wall_angle")
+        .map((panel) => ({
+          ...panel,
+          coverage: { ...panel.coverage, missingTraits: 7 },
+          rows: panel.rows.filter((row) => row.key === "slab"),
+          gradeAdjustedStrengths: panel.gradeAdjustedStrengths.filter((row) => row.key === "slab"),
+          allGrades: {
+            ...panel.allGrades,
+            rows: panel.allGrades.rows.filter((row) => row.key === "slab"),
+          },
+        })),
+    },
+  },
+};
+export const MissingHoldTypes: Story = {
+  args: {
+    data: {
+      ...climbingStrengthsFixture,
+      panels: climbingStrengthsFixture.panels
+        .filter((panel) => panel.dimension === "hold_type")
+        .map((panel) => ({
+          ...panel,
+          coverage: { ...panel.coverage, missingTraits: 14 },
+          rows: [],
+          allGrades: { ...panel.allGrades, rows: [] },
+        })),
+    },
+  },
+};
 export const MissingObservations: Story = {
   args: {
     data: {
@@ -72,9 +106,6 @@ export const UnknownResults: Story = {
   args: { data: climbingStrengthsUnknownResultsFixture },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(
-      canvas.getByRole("button", { name: "View Strengths and weaknesses data" }),
-    );
     await userEvent.click(canvas.getByRole("button", { name: /^Vertical · All grades:/ }));
     await expect(canvas.getByText(/V3 · .* · Result unknown/)).toBeVisible();
   },
