@@ -34,7 +34,7 @@ const { VerticalAscentChart } = await import("./VerticalAscentChart.tsx");
 
 describe("VerticalAscentChart", () => {
   it.each(["metric", "imperial"] as const)(
-    "scales bubble sizes by relative elevation gain in %s units",
+    "scales bubble sizes by elevation gain across cycling groups in %s units",
     (unitSystem) => {
       render(
         <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
@@ -54,18 +54,27 @@ describe("VerticalAscentChart", () => {
                 activityName: "Rolling Ride",
                 activityType: "cycling",
                 modality: "road",
-                verticalAscentRate: 500,
+                verticalAscentRate: 1000,
                 elevationGainMeters: 500,
-                elapsedMinutes: 60,
+                elapsedMinutes: 30,
               },
               {
                 date: "2026-04-03",
                 activityName: "Hill Ride",
                 activityType: "cycling",
                 modality: "road",
-                verticalAscentRate: 1000,
+                verticalAscentRate: 500,
                 elevationGainMeters: 1000,
-                elapsedMinutes: 60,
+                elapsedMinutes: 120,
+              },
+              {
+                date: "2026-04-04",
+                activityName: "Gravel Ride",
+                activityType: "cycling",
+                modality: "gravel",
+                verticalAscentRate: 750,
+                elevationGainMeters: 500,
+                elapsedMinutes: 40,
               },
             ]}
           />
@@ -74,9 +83,18 @@ describe("VerticalAscentChart", () => {
 
       const chartElement = screen.getByTestId("echarts-mock");
       const option = JSON.parse(chartElement.dataset.option ?? "{}");
-      expect(
-        option.series[0].data.map((point: { symbolSize: number }) => point.symbolSize),
-      ).toEqual([8, 24, 40]);
+      const roadSeries = option.series.find(
+        (series: { name: string }) => series.name === "Road Cycling",
+      );
+      const gravelSeries = option.series.find(
+        (series: { name: string }) => series.name === "Gravel Cycling",
+      );
+      expect(roadSeries.data.map((point: { symbolSize: number }) => point.symbolSize)).toEqual([
+        8, 24, 40,
+      ]);
+      expect(gravelSeries.data.map((point: { symbolSize: number }) => point.symbolSize)).toEqual([
+        24,
+      ]);
     },
   );
 
