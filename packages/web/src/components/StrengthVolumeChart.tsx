@@ -88,10 +88,10 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
 
   return (
     <>
-      <label>
-        Metric{" "}
+      <div className="mb-3">
         <select
           aria-label="Strength volume metric"
+          className="min-h-11 cursor-pointer rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground hover:border-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           value={metric}
           onChange={(event) => {
             const value = event.target.value;
@@ -102,7 +102,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
           <option value="sets">Sets</option>
           <option value="time">Time</option>
         </select>
-      </label>
+      </div>
       {data.some(
         (row) =>
           (metric === "weight"

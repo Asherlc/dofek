@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
+import { expect, within } from "storybook/test";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
 import { SportVolumeChart } from "./SportVolumeChart.tsx";
@@ -64,3 +65,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const DistanceSelected: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await within(canvasElement).findByRole("option", { name: "Distance" });
+    const metric = within(canvasElement).getByRole("combobox", { name: "Volume metric" });
+    await userEvent.selectOptions(metric, "distance");
+    await expect(metric).toHaveValue("distance");
+  },
+};
