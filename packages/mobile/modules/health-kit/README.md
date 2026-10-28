@@ -47,6 +47,39 @@ the newly retained identifier.
 - Sync pipeline: `packages/mobile/lib/health-kit-sync.ts`
 - Background sync bootstrap: `packages/mobile/lib/background-health-kit-sync.ts`
 
+## Running Measurements
+
+Read authorization, observer delivery, explicit history sync and anchored updates
+include running speed, power, stride length, ground-contact time and vertical
+oscillation. Native uploads use m/s, W, m, ms and mm respectively; the server
+normalizes both native and XML uploads into the existing metric stream. Apple
+defines these [running quantity types](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier).
+
+[`HealthKitQuantitySeriesTransport.swift`](ios/HealthKitQuantitySeriesTransport.swift)
+reads individual quantities for these five types with Apple's
+[`HKQuantitySeriesSampleQueryDescriptor`](https://developer.apple.com/documentation/healthkit/hkquantityseriessamplequerydescriptor).
+Both ordinary and condensed samples use the same batched reader. Each uploaded
+point retains its real quantity, interval with fractional seconds, source and
+parent UUID. It never substitutes a condensed parent's average for its points;
+Apple explains the underlying aggregation in
+[`HKQuantitySample.quantity`](https://developer.apple.com/documentation/healthkit/hkquantitysample/quantity)
+and [condensed workout samples](https://developer.apple.com/documentation/healthkit/accessing-condensed-workout-samples).
+
+The existing account-erasure cutoff filters parents before expansion. Anchored
+queries finish expansion before registering a pending anchor, then JavaScript
+uploads additions and applies parent-UUID deletions before acknowledging success.
+An extraction or upload failure preserves the committed cursor for retry, using
+HealthKit's [anchored-query additions/deletions](https://developer.apple.com/documentation/healthkit/hkanchoredobjectquery).
+
+Retrieving previously omitted running observations requires an updated native
+app release, permission for the added types and an explicit sync covering the
+desired history. An OTA JavaScript update alone cannot install this Swift change
+([Expo native compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
+HealthKit requires authorization per type and can return limited or empty data
+without revealing a denied read permission, so a successful sync does not prove
+that the watch recorded these measurements
+([Apple authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
+
 ## Background Observer Completion
 
 Each native observer delivery receives a unique update ID and retains its

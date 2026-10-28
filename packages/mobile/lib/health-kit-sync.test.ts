@@ -11,7 +11,50 @@ import { captureException } from "./telemetry";
 
 vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 
+const runningQuantities = [
+  ["HKQuantityTypeIdentifierRunningSpeed", "m/s", 3.5],
+  ["HKQuantityTypeIdentifierRunningPower", "W", 240],
+  ["HKQuantityTypeIdentifierRunningStrideLength", "m", 1.2],
+  ["HKQuantityTypeIdentifierRunningGroundContactTime", "ms", 250],
+  ["HKQuantityTypeIdentifierRunningVerticalOscillation", "mm", 85],
+] as const;
+
+function runningSample(type: string, unit: string, value: number) {
+  return {
+    type,
+    unit,
+    value,
+    startDate: "2026-10-28T10:00:00.125Z",
+    endDate: "2026-10-28T10:00:00.875Z",
+    sourceName: "Apple Watch",
+    sourceBundle: "com.apple.health",
+    uuid: `parent-${type}`,
+  };
+}
+
 describe("syncHealthKitToServer", () => {
+  it.each(runningQuantities)(
+    "uploads historical %s observations unchanged",
+    async (type, unit, value) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const sample = runningSample(type, unit, value);
+      healthKit.queryQuantitySamples.mockImplementation(async (identifier) =>
+        identifier === type ? [sample] : [],
+      );
+
+      await syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: null });
+
+      expect(healthKit.queryQuantitySamples).toHaveBeenCalledWith(
+        type,
+        new Date(0).toISOString(),
+        expect.any(String),
+      );
+      expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+        samples: expect.arrayContaining([sample]),
+      });
+    },
+  );
   function createMockClient() {
     return {
       clinicalRecords: {
@@ -858,6 +901,122 @@ describe("syncHealthKitToServer", () => {
 });
 
 describe("syncHealthKitObserverChanges", () => {
+  it.each(runningQuantities)(
+    "applies the erasure cutoff to %s in historical and anchored sync",
+    async (type, unit, value) => {
+      const cutoff = "2026-10-28T10:00:00.125Z";
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const atCutoff = runningSample(type, unit, value);
+      const afterCutoff = {
+        ...atCutoff,
+        uuid: "new-parent",
+        startDate: "2026-10-28T10:00:00.875Z",
+        endDate: "2026-10-28T10:00:01.000Z",
+      };
+      healthKit.queryDailyStatistics.mockResolvedValue([]);
+      healthKit.queryQuantitySamples.mockImplementation(async (identifier) =>
+        identifier === type ? [atCutoff, afterCutoff] : [],
+      );
+      healthKit.queryAnchoredSamples.mockResolvedValue({
+        queryId: "running-query",
+        samples: [atCutoff, afterCutoff],
+        deletedUUIDs: [],
+      });
+
+      await syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: null,
+        minimumSampleDate: cutoff,
+      });
+      expect(healthKit.queryQuantitySamples).toHaveBeenCalledWith(type, cutoff, expect.any(String));
+      expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenLastCalledWith({
+        samples: [afterCutoff],
+      });
+
+      await syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: [type],
+        minimumSampleDate: cutoff,
+      });
+      expect(healthKit.queryAnchoredSamples).toHaveBeenCalledWith(type, cutoff);
+      expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenLastCalledWith({
+        samples: [afterCutoff],
+      });
+    },
+  );
+
+  it.each(["query", "upload", "deletion"] as const)(
+    "preserves the running anchor after %s failure",
+    async (stage) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const type = "HKQuantityTypeIdentifierRunningSpeed";
+      const error = new Error(`${stage} failed`);
+      healthKit.queryAnchoredSamples.mockResolvedValue({
+        queryId: "running-query",
+        samples: [runningSample(type, "m/s", 3.5)],
+        deletedUUIDs: ["old-parent"],
+      });
+      if (stage === "query") healthKit.queryAnchoredSamples.mockRejectedValue(error);
+      if (stage === "upload")
+        client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValue(error);
+      if (stage === "deletion")
+        client.healthKitSync.deleteQuantitySamples.mutate.mockRejectedValue(error);
+
+      await expect(
+        syncHealthKitObserverChanges({ trpcClient: client, healthKit, typeIdentifiers: [type] }),
+      ).rejects.toBe(error);
+
+      if (stage === "query") {
+        expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+      } else {
+        expect(healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+          type,
+          "running-query",
+          false,
+        );
+      }
+    },
+  );
+
+  it.each(runningQuantities)(
+    "uploads anchored %s additions and parent deletions before acknowledgment",
+    async (type, unit, value) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const sample = runningSample(type, unit, value);
+      healthKit.queryAnchoredSamples.mockResolvedValue({
+        queryId: "running-query",
+        samples: [sample],
+        deletedUUIDs: ["old-parent"],
+      });
+
+      await syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: [type],
+      });
+
+      expect(BACKGROUND_HEALTH_KIT_TYPES).toContain(type);
+      expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+        samples: [sample],
+      });
+      expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledWith({
+        typeIdentifier: type,
+        deletedUUIDs: ["old-parent"],
+      });
+      expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(type, "running-query", true);
+      expect(
+        client.healthKitSync.pushQuantitySamples.mutate.mock.invocationCallOrder[0],
+      ).toBeLessThan(healthKit.completeAnchoredQuery.mock.invocationCallOrder[0]);
+      expect(
+        client.healthKitSync.deleteQuantitySamples.mutate.mock.invocationCallOrder[0],
+      ).toBeLessThan(healthKit.completeAnchoredQuery.mock.invocationCallOrder[0]);
+    },
+  );
   function createMockClient() {
     return {
       clinicalRecords: {

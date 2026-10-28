@@ -32,6 +32,11 @@ private struct HealthKitAnchoredObjects {
     let deleted: [HKDeletedObject]
 }
 
+private struct HealthKitAnchoredPayload {
+    let samples: [[String: Any]]
+    let deletedUUIDs: [String]
+}
+
 // swiftlint:disable:next type_body_length
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
@@ -313,24 +318,26 @@ public class HealthKitModule: Module {
                     )
                     return
                 }
-                let samples = (results as? [HKQuantitySample])?
-                    .filter {
-                        self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                let parents = (results ?? []).filter {
+                    self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                }
+                Task {
+                    do {
+                        let samples = try await HealthKitQuantitySeriesTransport.transportSamples(
+                            parents, typeIdentifier: typeIdentifier
+                        ) { parents in
+                            try await HealthKitQuantitySeriesTransport.read(parents, store: self.healthStore)
+                        }
+                        promise.resolve(samples)
+                    } catch {
+                        self.rejectHealthKitError(
+                            promise,
+                            operation: "queryQuantitySamples(\(typeIdentifier))",
+                            fallbackCode: "QUERY_ERROR",
+                            error: error
+                        )
                     }
-                    .map { sample -> [String: Any] in
-                    let unit = HealthKitQueries.preferredUnit(for: sampleType)
-                    return [
-                        "type": typeIdentifier,
-                        "value": sample.quantity.doubleValue(for: unit),
-                        "unit": unit.unitString,
-                        "startDate": HealthKitQueries.formatDate(sample.startDate),
-                        "endDate": HealthKitQueries.formatDate(sample.endDate),
-                        "sourceName": sample.sourceRevision.source.name,
-                        "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
-                        "uuid": sample.uuid.uuidString,
-                    ]
-                } ?? []
-                promise.resolve(samples)
+                }
             }
             self.healthStore.execute(query)
         }
@@ -682,66 +689,71 @@ public class HealthKitModule: Module {
 
             Task {
                 do {
-                    let queryResult: HealthKitPendingAnchoredQuery<HealthKitAnchoredObjects> =
+                    let queryResult: HealthKitPendingAnchoredQuery<HealthKitAnchoredPayload> =
                         try await self.anchoredQueryCoordinator.run(
                         typeIdentifier: typeIdentifier
                     ) { anchor in
-                        try await withCheckedThrowingContinuation { continuation in
-                            let erasureCutoff = self.accountStateStore.deviceErasureCutoff
-                            let predicate: NSPredicate?
-                            if anchor == nil {
-                                let startDate = max(initialStartDate, erasureCutoff ?? initialStartDate)
-                                predicate = HealthKitQueries.datePredicate(
-                                    start: startDate,
-                                    end: Date()
-                                )
-                            } else {
-                                predicate = erasureCutoff.map {
-                                    HKQuery.predicateForSamples(
-                                        withStart: $0,
-                                        end: nil,
-                                        options: .strictStartDate
+                        let (objects, newAnchor): (HealthKitAnchoredObjects, HKQueryAnchor?) =
+                            try await withCheckedThrowingContinuation { continuation in
+                                let erasureCutoff = self.accountStateStore.deviceErasureCutoff
+                                let predicate: NSPredicate?
+                                if anchor == nil {
+                                    let startDate = max(initialStartDate, erasureCutoff ?? initialStartDate)
+                                    predicate = HealthKitQueries.datePredicate(
+                                        start: startDate,
+                                        end: Date()
+                                    )
+                                } else {
+                                    predicate = erasureCutoff.map {
+                                        HKQuery.predicateForSamples(
+                                            withStart: $0,
+                                            end: nil,
+                                            options: .strictStartDate
+                                        )
+                                    }
+                                }
+                                let query = HKAnchoredObjectQuery(
+                                    type: sampleType,
+                                    predicate: predicate,
+                                    anchor: anchor,
+                                    limit: HKObjectQueryNoLimit
+                                ) { _, added, deleted, newAnchor, error in
+                                    if let error {
+                                        continuation.resume(throwing: error)
+                                        return
+                                    }
+                                    continuation.resume(
+                                        returning: (
+                                            HealthKitAnchoredObjects(
+                                                added: added ?? [],
+                                                deleted: deleted ?? []
+                                            ),
+                                            newAnchor
+                                        )
                                     )
                                 }
+                                self.healthStore.execute(query)
                             }
-                            let query = HKAnchoredObjectQuery(
-                                type: sampleType,
-                                predicate: predicate,
-                                anchor: anchor,
-                                limit: HKObjectQueryNoLimit
-                            ) { _, added, deleted, newAnchor, error in
-                                if let error {
-                                    continuation.resume(throwing: error)
-                                    return
-                                }
-                                continuation.resume(
-                                    returning: (
-                                        HealthKitAnchoredObjects(
-                                            added: added ?? [],
-                                            deleted: deleted ?? []
-                                        ),
-                                        newAnchor
-                                    )
-                                )
-                            }
-                            self.healthStore.execute(query)
-                        }
-                    }
-                    let objects: HealthKitAnchoredObjects = queryResult.result
-
-                    let samples = objects.added
-                        .filter {
+                        let parents = objects.added.filter {
                             self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                         }
-                        .compactMap {
-                            HealthKitQueries.transportSample($0, typeIdentifier: typeIdentifier)
+                        let samples = try await HealthKitQuantitySeriesTransport.transportSamples(
+                            parents, typeIdentifier: typeIdentifier
+                        ) { parents in
+                            try await HealthKitQuantitySeriesTransport.read(parents, store: self.healthStore)
                         }
-
-                    let deletedUUIDs = objects.deleted.map { $0.uuid.uuidString }
+                        return (
+                            HealthKitAnchoredPayload(
+                                samples: samples,
+                                deletedUUIDs: objects.deleted.map { $0.uuid.uuidString }
+                            ),
+                            newAnchor
+                        )
+                    }
 
                     promise.resolve([
-                        "samples": samples,
-                        "deletedUUIDs": deletedUUIDs,
+                        "samples": queryResult.result.samples,
+                        "deletedUUIDs": queryResult.result.deletedUUIDs,
                         "queryId": queryResult.queryId ?? NSNull(),
                     ] as [String: Any])
                 } catch let error as HealthKitAnchorStoreError {

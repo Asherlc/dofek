@@ -36,6 +36,11 @@ export const NON_ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierRespiratoryRate",
   "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
   "HKQuantityTypeIdentifierWalkingSpeed",
+  "HKQuantityTypeIdentifierRunningSpeed",
+  "HKQuantityTypeIdentifierRunningPower",
+  "HKQuantityTypeIdentifierRunningStrideLength",
+  "HKQuantityTypeIdentifierRunningGroundContactTime",
+  "HKQuantityTypeIdentifierRunningVerticalOscillation",
   "HKQuantityTypeIdentifierWalkingStepLength",
   "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
   "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
@@ -66,6 +71,11 @@ const ANCHORED_SAMPLE_TYPES = new Set([
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierRespiratoryRate",
+  "HKQuantityTypeIdentifierRunningSpeed",
+  "HKQuantityTypeIdentifierRunningPower",
+  "HKQuantityTypeIdentifierRunningStrideLength",
+  "HKQuantityTypeIdentifierRunningGroundContactTime",
+  "HKQuantityTypeIdentifierRunningVerticalOscillation",
   MENSTRUAL_FLOW_TYPE_IDENTIFIER,
 ]);
 

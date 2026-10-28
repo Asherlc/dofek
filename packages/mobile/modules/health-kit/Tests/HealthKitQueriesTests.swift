@@ -5,6 +5,20 @@ import XCTest
 
 final class HealthKitQueriesTests: XCTestCase {
 
+    func testPreferredRunningUnitsAreCanonicalAndCompatible() {
+        let cases: [(HKQuantityTypeIdentifier, HKUnit)] = [
+            (.runningSpeed, .meter().unitDivided(by: .second())),
+            (.runningPower, .watt()),
+            (.runningStrideLength, .meter()),
+            (.runningGroundContactTime, .secondUnit(with: .milli)),
+            (.runningVerticalOscillation, .meterUnit(with: .milli)),
+        ]
+        for (identifier, expectedUnit) in cases {
+            let type = HKQuantityType.quantityType(forIdentifier: identifier)!
+            XCTAssertEqual(HealthKitQueries.preferredUnit(for: type), expectedUnit)
+        }
+    }
+
     func testClinicalRecordMapsFHIRPayloadAndDownloadDate() throws {
         let fixture = ClinicalRecordMappingInput(
             clinicalRecordUUID: UUID(uuidString: "659EE585-B399-4C21-841F-97FE49FDC465")!,
