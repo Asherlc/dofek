@@ -130,6 +130,86 @@ it("explains sparse radar without hiding exact values or selection", () => {
   fireEvent.click(screen.getByRole("button", { name: /Overhang · V4 · 0% · 0 sends \/ 2 climbs/ }));
   expect(onSelectCell).toHaveBeenCalledWith("overhang", "V4");
 });
+it.each([
+  {
+    dimension: "wall_angle",
+    key: "overhang",
+    label: "Overhang",
+    missingTraits: 1,
+    message:
+      "Wall angle is missing for 1 climb. A radar chart needs at least three styles with known results.",
+  },
+  {
+    dimension: "hold_type",
+    key: "crimp",
+    label: "Crimp",
+    missingTraits: 3,
+    message:
+      "Hold type is missing for 3 climbs. A radar chart needs at least three styles with known results.",
+  },
+  {
+    dimension: "setting",
+    key: "indoor",
+    label: "Indoor",
+    missingTraits: 1,
+    message:
+      "Setting is missing for 1 climb. A radar chart needs at least three styles with known results.",
+  },
+  {
+    dimension: "wall_angle",
+    key: "overhang",
+    label: "Overhang",
+    missingTraits: 0,
+    message: "A radar chart needs at least three styles with known results.",
+  },
+] as const)(
+  "keeps sparse $dimension values selectable with $missingTraits missing traits",
+  ({ dimension, key, label, missingTraits, message }) => {
+    const onSelectCell = vi.fn();
+    const sourceRow = panel.rows.find((row) => row.key === "overhang");
+    if (!sourceRow) throw new Error("Missing fixture row");
+    render(
+      <ClimbingStrengthsChart
+        panel={{
+          ...panel,
+          dimension,
+          rows: [{ ...sourceRow, key, label }],
+          coverage: { ...panel.coverage, missingTraits },
+        }}
+        view="radar"
+        grade="V4"
+        selectedRow={null}
+        onSelectCell={onSelectCell}
+      />,
+    );
+    expect(screen.getByText(message)).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: `${label} · V4 · 0% · 0 sends / 2 climbs` }),
+    );
+    expect(onSelectCell).toHaveBeenCalledWith(key, "V4");
+  },
+);
+it("explains the grade-specific radar scale when enough known styles can be plotted", () => {
+  const onSelectCell = vi.fn();
+  render(
+    <ClimbingStrengthsChart
+      panel={panel}
+      view="radar"
+      grade="V3"
+      selectedRow={null}
+      onSelectCell={onSelectCell}
+    />,
+  );
+  expect(
+    screen.getByText(/Success on a shared 0–100% scale. Dashed line: same-grade baseline/),
+  ).toBeVisible();
+  captured.props?.onEvents?.click?.({
+    componentType: "radar",
+    targetType: "axisName",
+    name: "Overhang",
+  });
+  expect(onSelectCell).toHaveBeenCalledWith("overhang", "V3");
+});
 it("uses data-scoped monthly dates and resolves chart clicks to whole-period detail keys", () => {
   const onSelectCell = vi.fn();
   render(

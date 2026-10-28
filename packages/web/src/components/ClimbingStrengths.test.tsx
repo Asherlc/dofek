@@ -70,6 +70,56 @@ it("identifies missing hold types when the selected breakdown has no observation
   );
   expect(screen.getByText("Hold type is missing for 60 climbs.")).toBeVisible();
 });
+it.each([
+  {
+    state: "the empty contract fallback",
+    missingTraits: 0,
+    message: "No recorded hold type observations for this context.",
+  },
+  {
+    state: "one climb without hold types",
+    missingTraits: 1,
+    message: "Hold type is missing for 1 climb.",
+  },
+])("keeps $state navigable", ({ missingTraits, message }) => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const singleClimb = { sends: 1, climbs: 1, unknownOutcomes: 0, successRate: 100 };
+  render(
+    <ClimbingStrengths
+      data={{
+        coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+        panels: [
+          {
+            ...panel,
+            key: "empty-holds",
+            dimension: "hold_type",
+            grades: missingTraits === 1 ? [{ grade: "V4", gradeSortValue: 4, ...singleClimb }] : [],
+            rows: [],
+            progress: [],
+            gradeAdjustedStrengths: [],
+            allGrades: {
+              grades:
+                missingTraits === 1
+                  ? [{ grade: "All grades", gradeSortValue: 0, ...singleClimb }]
+                  : [],
+              rows: [],
+              progress: [],
+            },
+            coverage: { missingTraits, unknownOutcomes: 0 },
+          },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Hold type" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
+  expect(screen.getByText("No recorded wall angle observations for this context.")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeVisible();
+});
 function renderStrengths(element: Parameters<typeof render>[0]) {
   const result = render(element);
   const grades = screen.queryByRole("button", { name: "Grades" });

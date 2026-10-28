@@ -66,6 +66,58 @@ it("identifies missing hold types when the selected breakdown has no observation
   );
   expect(screen.getByText("Hold type is missing for 60 climbs.")).toBeTruthy();
 });
+it.each([
+  {
+    state: "the empty contract fallback",
+    missingTraits: 0,
+    message: "No recorded hold type observations in this context.",
+  },
+  {
+    state: "one climb without hold types",
+    missingTraits: 1,
+    message: "Hold type is missing for 1 climb.",
+  },
+])("keeps $state navigable", ({ missingTraits, message }) => {
+  const panel = data.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const singleClimb = { sends: 1, climbs: 1, unknownOutcomes: 0, successRate: 100 };
+  render(
+    <ClimbingStrengths
+      data={{
+        coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+        panels: [
+          {
+            ...panel,
+            key: "empty-holds",
+            dimension: "hold_type",
+            grades: missingTraits === 1 ? [{ grade: "V4", gradeSortValue: 4, ...singleClimb }] : [],
+            rows: [],
+            progress: [],
+            gradeAdjustedStrengths: [],
+            allGrades: {
+              grades:
+                missingTraits === 1
+                  ? [{ grade: "All grades", gradeSortValue: 0, ...singleClimb }]
+                  : [],
+              rows: [],
+              progress: [],
+            },
+            coverage: { missingTraits, unknownOutcomes: 0 },
+          },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Hold type" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
+  expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
+  expect(screen.getByText(message)).toBeTruthy();
+});
 
 it("shows all grades together and opens recorded climbs from accessible chart data", () => {
   render(<ClimbingStrengths data={data} />);
