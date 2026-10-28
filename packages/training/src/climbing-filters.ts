@@ -10,25 +10,74 @@ import {
 
 const unknown = z.literal("unknown");
 const settingSchema = climbSettingSchema.or(unknown);
+
+/** Accept one or many choices at the API boundary; readers always receive arrays. */
+function multipleChoice<T extends z.ZodType>(option: T, maximum: number) {
+  return z
+    .union([option, z.array(option).max(maximum)])
+    .transform((value): z.infer<T>[] => (Array.isArray(value) ? value : [value]))
+    .optional();
+}
+
 export const climbingFiltersSchema = z.object({
   climbKind: climbKindSchema.or(unknown).optional(),
   discipline: climbingDisciplineSchema.or(unknown).optional(),
-  attemptScope: attemptScopeSchema.optional(),
+  attemptScope: multipleChoice(attemptScopeSchema, 2),
   ropeMethod: ropeMethodSchema.or(unknown).optional(),
-  solo: z.boolean().nullable().optional(),
-  protectionUsed: protectionStyleSchema.or(unknown).optional(),
-  routeProtection: protectionStyleSchema.or(unknown).optional(),
+  solo: multipleChoice(z.boolean().nullable(), 3),
+  protectionUsed: multipleChoice(protectionStyleSchema.or(unknown), 3),
+  routeProtection: multipleChoice(protectionStyleSchema.or(unknown), 3),
   types: z
-    .array(z.enum(["bouldering", "lead", "top_rope"]))
-    .max(3)
+    .array(z.enum(["bouldering", "lead", "top_rope", "follow", "unroped"]))
+    .max(5)
     .optional(),
-  setting: z
-    .union([settingSchema, z.array(settingSchema).max(3)])
-    .transform((value) => (Array.isArray(value) ? value : [value]))
-    .optional(),
+  setting: multipleChoice(settingSchema, 3),
 });
 export type ClimbingFilters = z.infer<typeof climbingFiltersSchema>;
 export type ClimbingFilterKey = Exclude<keyof ClimbingFilters, "types">;
+
+export const climbingAdvancedFilterKeys = [
+  "attemptScope",
+  "solo",
+  "protectionUsed",
+  "routeProtection",
+] as const;
+export type ClimbingAdvancedFilterKey = (typeof climbingAdvancedFilterKeys)[number];
+
+export function climbingFilterSelection(
+  filters: ClimbingFilters,
+  key: ClimbingAdvancedFilterKey,
+): ReadonlyArray<string | boolean | null> {
+  return (
+    filters[key] ??
+    (key === "attemptScope" ? ["climb"] : climbingFilterOptions[key].map(([option]) => option))
+  );
+}
+
+export function toggleClimbingFilter(
+  filters: ClimbingFilters,
+  key: ClimbingAdvancedFilterKey,
+  option: string | boolean | null,
+): ClimbingFilters {
+  const options = climbingFilterOptions[key].map(([value]) => value);
+  const selected = climbingFilterSelection(filters, key);
+  const values =
+    option === "all"
+      ? selected.length === options.length
+        ? []
+        : options
+      : options.filter((value) =>
+          value === option ? !selected.includes(value) : selected.includes(value),
+        );
+  const next = { ...filters };
+  if (
+    (key === "attemptScope" && values.length === 1 && values[0] === "climb") ||
+    (key !== "attemptScope" && values.length === options.length)
+  )
+    delete next[key];
+  else return climbingFiltersSchema.parse({ ...next, [key]: values });
+  return next;
+}
 
 /** Omitted settings select everything; an empty selection selects nothing. */
 export function toggleClimbingSetting(
@@ -55,6 +104,8 @@ export const climbingTypeOptions = [
   ["bouldering", "Bouldering"],
   ["lead", "Lead"],
   ["top_rope", "Top rope"],
+  ["follow", "Follow"],
+  ["unroped", "Unroped"],
 ] as const;
 
 export function toggleClimbingType(
@@ -99,16 +150,6 @@ export function climbingFilterSummary(filters: ClimbingFilters): string {
   return `${types} · ${settings}`;
 }
 
-export const climbingFilterKeys = [
-  "climbKind",
-  "discipline",
-  "attemptScope",
-  "ropeMethod",
-  "solo",
-  "protectionUsed",
-  "routeProtection",
-  "setting",
-] as const;
 export const climbingFilterLabels: Record<ClimbingFilterKey, string> = {
   climbKind: "Climb kind",
   discipline: "Discipline",
@@ -151,17 +192,17 @@ export const climbingFilterOptions = {
   solo: [
     [true, "Solo"],
     [false, "With a belayer"],
-    [null, "Unknown solo status"],
+    [null, "Unknown"],
   ],
   protectionUsed: [
     ["sport", "Sport"],
     ["trad", "Trad"],
-    ["unknown", "Unknown protection used"],
+    ["unknown", "Unknown"],
   ],
   routeProtection: [
     ["sport", "Sport"],
     ["trad", "Trad"],
-    ["unknown", "Unknown route protection"],
+    ["unknown", "Unknown"],
   ],
   setting: [
     ["indoor", "Indoor"],

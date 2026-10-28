@@ -1,11 +1,27 @@
 /** @vitest-environment jsdom */
 import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it } from "vitest";
 import { ClimbingFilters } from "./ClimbingFilters.tsx";
 
 afterEach(cleanup);
+
+it("combines protection choices with mixed and all checkbox states", () => {
+  render(<Harness />);
+  open();
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
+  const group = within(screen.getByRole("group", { name: "Protection used" }));
+  fireEvent.click(group.getByRole("checkbox", { name: "Unknown" }));
+  expect(value()).toEqual({ protectionUsed: ["sport", "trad"] });
+  expect(group.getByRole("checkbox", { name: "All" })).toBePartiallyChecked();
+  fireEvent.click(group.getByRole("checkbox", { name: "Sport" }));
+  expect(value()).toEqual({ protectionUsed: ["trad"] });
+  fireEvent.click(group.getByRole("checkbox", { name: "All" }));
+  expect(value()).toEqual({});
+  fireEvent.click(group.getByRole("checkbox", { name: "All" }));
+  expect(value()).toEqual({ protectionUsed: [] });
+});
 function Harness({ initial = {} }: { initial?: Filters }) {
   const [value, onChange] = useState(initial);
   return (
@@ -29,7 +45,7 @@ it("uses an opaque panel so charts cannot show through the filters", () => {
 });
 
 it("keeps filters in a popover and summarizes multiple climbing types after closing", async () => {
-  render(<Harness />);
+  render(<Harness initial={{ types: ["bouldering", "lead", "top_rope"] }} />);
   expect(screen.queryByRole("checkbox", { name: "Bouldering" })).toBeNull();
   open();
   fireEvent.click(screen.getByRole("checkbox", { name: "Top rope" }));
@@ -68,19 +84,21 @@ it("toggles settings independently and selects or clears the entire group", () =
   expect(unknown).not.toBeChecked();
 });
 it("combines advanced factual filters and removes them independently", () => {
-  render(<Harness initial={{ types: ["lead"], setting: ["unknown"], solo: false }} />);
+  render(<Harness initial={{ types: ["lead"], setting: ["unknown"], solo: [false] }} />);
   open();
   fireEvent.click(screen.getByRole("button", { name: "More filters" }));
-  fireEvent.change(screen.getByLabelText("Protection used"), { target: { value: "trad" } });
+  const protection = within(screen.getByRole("group", { name: "Protection used" }));
+  fireEvent.click(protection.getByRole("checkbox", { name: "All" }));
+  fireEvent.click(protection.getByRole("checkbox", { name: "Trad" }));
   expect(value()).toEqual({
     types: ["lead"],
     setting: ["unknown"],
-    solo: false,
-    protectionUsed: "trad",
+    solo: [false],
+    protectionUsed: ["trad"],
   });
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove Protection used: Trad filter" }));
-  expect(value()).toEqual({ types: ["lead"], setting: ["unknown"], solo: false });
+  expect(value()).toEqual({ types: ["lead"], setting: ["unknown"], solo: [false] });
   open();
   fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
   expect(value()).toEqual({});

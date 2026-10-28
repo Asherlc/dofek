@@ -1,12 +1,13 @@
 import {
   type ClimbingFilterKey,
-  climbingFilterKeys,
+  climbingAdvancedFilterKeys,
   climbingFilterLabels,
   climbingFilterOptions,
+  climbingFilterSelection,
   climbingFilterSummary,
-  climbingFiltersSchema,
   climbingTypeOptions,
   type ClimbingFilters as Filters,
+  toggleClimbingFilter,
   toggleClimbingSetting,
   toggleClimbingType,
 } from "@dofek/training/climbing-filters";
@@ -23,7 +24,7 @@ export function ClimbingFilters({
 }) {
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
-  const keys = climbingFilterKeys.filter((key) => key !== "setting");
+  const keys = climbingAdvancedFilterKeys;
   const selectedSettings = value.setting ?? climbingFilterOptions.setting.map(([option]) => option);
   const allSettings = selectedSettings.length === climbingFilterOptions.setting.length;
   const chipKeys = keys;
@@ -47,7 +48,13 @@ export function ClimbingFilters({
       </View>
       <View style={styles.row}>
         {chipKeys.map((key) => {
-          const label = climbingFilterOptions[key].find(([option]) => option === value[key])?.[1];
+          const label =
+            value[key]
+              ?.map(
+                (selected) =>
+                  climbingFilterOptions[key].find(([option]) => option === selected)?.[1],
+              )
+              .join(" + ") || (value[key]?.length === 0 ? "None" : undefined);
           return label ? (
             <TouchableOpacity
               key={key}
@@ -89,6 +96,7 @@ export function ClimbingFilters({
                         accessibilityRole="checkbox"
                         accessibilityLabel={label}
                         accessibilityState={{ checked: mixed ? "mixed" : checked }}
+                        aria-checked={mixed ? "mixed" : checked}
                         onPress={() => onChange(toggleClimbingType(value, option))}
                         style={styles.setting}
                       >
@@ -123,6 +131,7 @@ export function ClimbingFilters({
                       accessibilityRole="checkbox"
                       accessibilityLabel={item.label}
                       accessibilityState={{ checked: mixed ? "mixed" : checked }}
+                      aria-checked={mixed ? "mixed" : checked}
                       onPress={() => onChange(toggleClimbingSetting(value, item.value))}
                       style={styles.setting}
                     >
@@ -159,39 +168,49 @@ export function ClimbingFilters({
               </View>
               {open ? (
                 <View style={styles.container}>
-                  {keys.map((key) => (
-                    <View key={key} style={styles.container}>
-                      <Text style={styles.label}>{climbingFilterLabels[key]}</Text>
-                      <View style={styles.row}>
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel={`All ${climbingFilterLabels[key]}`}
-                          accessibilityState={{ selected: value[key] === undefined }}
-                          style={styles.chip}
-                          onPress={() => remove(key)}
-                        >
-                          <Text style={styles.text}>All</Text>
-                        </TouchableOpacity>
-                        {climbingFilterOptions[key].map(([option, label]) => (
-                          <TouchableOpacity
-                            key={String(option)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${climbingFilterLabels[key]}: ${label}`}
-                            accessibilityState={{ selected: value[key] === option }}
-                            onPress={() =>
-                              onChange(climbingFiltersSchema.parse({ ...value, [key]: option }))
-                            }
-                            style={[
-                              styles.chip,
-                              value[key] === option ? styles.selected : undefined,
-                            ]}
-                          >
-                            <Text style={styles.text}>{label}</Text>
-                          </TouchableOpacity>
-                        ))}
+                  {keys.map((key) => {
+                    const selected = climbingFilterSelection(value, key);
+                    const all = selected.length === climbingFilterOptions[key].length;
+                    return (
+                      <View key={key} style={styles.container}>
+                        <Text style={styles.label}>{climbingFilterLabels[key]}</Text>
+                        <View style={styles.row}>
+                          {(
+                            [["all", "All"], ...climbingFilterOptions[key]] satisfies ReadonlyArray<
+                              readonly [string | boolean | null, string]
+                            >
+                          ).map(([option, label]) => {
+                            const checked = option === "all" ? all : selected.includes(option);
+                            const mixed = option === "all" && !all && selected.length > 0;
+                            return (
+                              <TouchableOpacity
+                                key={String(option)}
+                                accessibilityRole="checkbox"
+                                accessibilityLabel={
+                                  option === "all"
+                                    ? `All ${climbingFilterLabels[key]}`
+                                    : `${climbingFilterLabels[key]}: ${label}`
+                                }
+                                accessibilityState={{ checked: mixed ? "mixed" : checked }}
+                                aria-checked={mixed ? "mixed" : checked}
+                                onPress={() => onChange(toggleClimbingFilter(value, key, option))}
+                                style={styles.setting}
+                              >
+                                <Text
+                                  accessibilityElementsHidden
+                                  importantForAccessibility="no"
+                                  style={styles.text}
+                                >
+                                  {mixed ? "▣" : checked ? "☑" : "☐"}
+                                </Text>
+                                <Text style={styles.text}>{label}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
                       </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ) : null}
               <TouchableOpacity
