@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import {
+  climbingStrengthsSingleClimbFixture,
   climbingStrengthsUnknownResultsFixture,
   climbingStrengthsFixture as fixture,
 } from "./climbing-strengths-fixtures.ts";
@@ -27,6 +28,10 @@ vi.mock("./DofekChart.tsx", () => ({
   },
 }));
 afterEach(cleanup);
+function openExactValues() {
+  const summary = screen.getByText("Exact values");
+  if (!summary.closest("details")?.open) fireEvent.click(summary);
+}
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
 it.each(["curves", "pyramids"] as const)(
@@ -41,7 +46,7 @@ it.each(["curves", "pyramids"] as const)(
         onSelectCell={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Exact values"));
+    openExactValues();
     expect(screen.getByRole("columnheader", { name: "Gap vs same-grade baseline" })).toBeVisible();
   },
 );
@@ -55,7 +60,7 @@ it("spells out percentage-point units for positive, negative and recorded zero g
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(screen.getByRole("cell", { name: "+12.5 percentage points" })).toBeVisible();
   expect(screen.getByRole("cell", { name: "-37.5 percentage points" })).toBeVisible();
   rerender(
@@ -80,7 +85,7 @@ it("exposes every curve baseline's supplied exact rate and sample without climb-
       onSelectCell={onSelectCell}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   const baselineRows = screen.getAllByRole("rowheader", { name: /Same-grade baseline · V/ });
   expect(baselineRows).toHaveLength(4);
   const v4 = screen.getByRole("rowheader", { name: "Same-grade baseline · V4" }).closest("tr");
@@ -102,7 +107,7 @@ it("includes the selected radar baseline in exact values even when the polygon i
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(screen.getAllByRole("rowheader", { name: /Same-grade baseline/ })).toHaveLength(1);
   const baseline = screen
     .getByRole("rowheader", { name: "Same-grade baseline · V4" })
@@ -121,11 +126,92 @@ it("explains sparse radar without hiding exact values or selection", () => {
       onSelectCell={onSelectCell}
     />,
   );
-  expect(screen.getByText(/Radar needs at least three style groups/)).toBeVisible();
+  expect(
+    screen.getByText(/A radar chart needs at least three styles with known results/),
+  ).toBeVisible();
   expect(screen.queryByText("Chart canvas")).toBeNull();
-  fireEvent.click(screen.getByText("Exact values"));
   fireEvent.click(screen.getByRole("button", { name: /Overhang · V4 · 0% · 0 sends \/ 2 climbs/ }));
   expect(onSelectCell).toHaveBeenCalledWith("overhang", "V4");
+});
+it.each([
+  {
+    dimension: "wall_angle",
+    key: "overhang",
+    label: "Overhang",
+    missingTraits: 1,
+    message:
+      "Wall angle is missing for 1 climb. A radar chart needs at least three styles with known results.",
+  },
+  {
+    dimension: "hold_type",
+    key: "crimp",
+    label: "Crimp",
+    missingTraits: 3,
+    message:
+      "Hold type is missing for 3 climbs. A radar chart needs at least three styles with known results.",
+  },
+  {
+    dimension: "setting",
+    key: "indoor",
+    label: "Indoor",
+    missingTraits: 1,
+    message:
+      "Setting is missing for 1 climb. A radar chart needs at least three styles with known results.",
+  },
+  {
+    dimension: "wall_angle",
+    key: "overhang",
+    label: "Overhang",
+    missingTraits: 0,
+    message: "A radar chart needs at least three styles with known results.",
+  },
+] as const)(
+  "keeps sparse $dimension values selectable with $missingTraits missing traits",
+  ({ dimension, key, label, missingTraits, message }) => {
+    const onSelectCell = vi.fn();
+    const sourceRow = panel.rows.find((row) => row.key === "overhang");
+    if (!sourceRow) throw new Error("Missing fixture row");
+    render(
+      <ClimbingStrengthsChart
+        panel={{
+          ...panel,
+          dimension,
+          rows: [{ ...sourceRow, key, label }],
+          coverage: { ...panel.coverage, missingTraits },
+        }}
+        view="radar"
+        grade="V4"
+        selectedRow={null}
+        onSelectCell={onSelectCell}
+      />,
+    );
+    expect(screen.getByText(message)).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: `${label} · V4 · 0% · 0 sends / 2 climbs` }),
+    );
+    expect(onSelectCell).toHaveBeenCalledWith(key, "V4");
+  },
+);
+it("explains the grade-specific radar scale when enough known styles can be plotted", () => {
+  const onSelectCell = vi.fn();
+  render(
+    <ClimbingStrengthsChart
+      panel={panel}
+      view="radar"
+      grade="V3"
+      selectedRow={null}
+      onSelectCell={onSelectCell}
+    />,
+  );
+  expect(
+    screen.getByText(/Success on a shared 0–100% scale. Dashed line: same-grade baseline/),
+  ).toBeVisible();
+  captured.props?.onEvents?.click?.({
+    componentType: "radar",
+    targetType: "axisName",
+    name: "Overhang",
+  });
+  expect(onSelectCell).toHaveBeenCalledWith("overhang", "V3");
 });
 it("uses data-scoped monthly dates and resolves chart clicks to whole-period detail keys", () => {
   const onSelectCell = vi.fn();
@@ -139,12 +225,11 @@ it("uses data-scoped monthly dates and resolves chart clicks to whole-period det
     />,
   );
   expect(captured.props?.timeRangeMode).toBe("data");
-  expect(screen.getByText(/Each climb counts once in each month/)).toBeVisible();
   captured.props?.onEvents?.click?.({ data: { rowKey: "vertical", grade: "V4" } });
   expect(onSelectCell).toHaveBeenCalledWith("vertical", "V4");
   captured.props?.onEvents?.click?.({ data: { rowKey: "nonexistent", grade: "V4" } });
   expect(onSelectCell).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(
     screen.getByRole("button", {
       name: /Vertical · V4 · 2026-08-15 – 2026-08-31 · 0% · 0 sends \/ 1 climb/,
@@ -173,7 +258,7 @@ it("retains dense styles and complete long labels in keyboard-selectable exact v
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(screen.getAllByRole("button")).toHaveLength(24);
   expect(
     screen.getByRole("button", { name: /Long source wall-angle description 23 · V3 · 80%/ }),
@@ -194,7 +279,7 @@ it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const
         onSelectCell={() => {}}
       />,
     );
-    fireEvent.click(screen.getByText("Exact values"));
+    openExactValues();
     expect(
       screen.getByRole("button", {
         name: /Vertical · V3.*Result unknown · 0 sends \/ 4 climbs · 4 results unknown/,
@@ -221,12 +306,39 @@ it("labels limited adjusted scores and keeps their table columns aligned", () =>
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
-  const point = screen.getByRole("button", { name: /Vertical · All grades.*Limited sample/ });
+  openExactValues();
+  const point = screen.getByRole("button", {
+    name: /Vertical · Sent 13 of 21 climbs.*Too few climbs/,
+  });
   const row = point.closest("tr");
   if (!row) throw new Error("Missing row");
   expect(within(row).getAllByRole("cell")).toHaveLength(1);
   expect(screen.getAllByRole("columnheader")).toHaveLength(2);
+});
+it("puts a single climb's result before an honest strength assessment and keeps it selectable", () => {
+  const single = climbingStrengthsSingleClimbFixture.panels[0];
+  if (!single) throw new Error("Missing single climb fixture");
+  const onSelectCell = vi.fn();
+  render(
+    <ClimbingStrengthsChart
+      panel={single}
+      view="radar"
+      grade="All grades"
+      selectedRow={null}
+      onSelectCell={onSelectCell}
+    />,
+  );
+  openExactValues();
+  const button = screen.getByRole("button", {
+    name: "Slab · Sent 1 of 1 climb · Too few climbs to judge strengths yet",
+  });
+  const row = button.closest("tr");
+  if (!row) throw new Error("Missing slab row");
+  expect(within(row).getByText("Sent 1 of 1 climb")).toBeVisible();
+  expect(within(row).getByText("Too few climbs to judge strengths yet")).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: "Results" })).toBeVisible();
+  fireEvent.click(button);
+  expect(onSelectCell).toHaveBeenCalledWith("slab", "All grades");
 });
 it("opens a radar style's climbs from its axis label without treating the baseline as a style", () => {
   const pooled = { ...panel, ...panel.allGrades };

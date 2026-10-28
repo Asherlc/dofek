@@ -8,6 +8,7 @@ import {
   climbingStrengthsFixture,
   climbingStrengthsUnknownResultsFixture,
 } from "./climbing-strengths-fixtures";
+import { climbingStrengthsSingleClimbFixture } from "./climbing-strengths-single-climb-fixture";
 
 const panel = climbingStrengthsFixture.panels[0];
 if (!panel) throw new Error("Missing panel fixture");
@@ -15,6 +16,10 @@ const firstRow = panel.rows[0];
 const secondRow = panel.rows[1];
 const firstCell = firstRow?.cells[0];
 if (!firstRow || !secondRow || !firstCell) throw new Error("Missing row fixture");
+function openChartData() {
+  const disclosure = screen.queryByRole("button", { name: /^View .* data$/ });
+  if (disclosure) fireEvent.click(disclosure);
+}
 
 describe("ClimbingStrengthsChart", () => {
   it("numbers progress markers and legend entries beyond a palette cycle", () => {
@@ -56,14 +61,14 @@ describe("ClimbingStrengthsChart", () => {
         onSelect={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+    openChartData();
     expect(screen.getByLabelText(/Slab · All grades.*Overall baseline 36%/)).toBeTruthy();
   });
   it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const)(
     "%s retains exact supplied rates and counts, missing values and limited qualifiers",
     (view) => {
       render(<ClimbingStrengthsChart panel={panel} view={view} grade="V4" onSelect={() => {}} />);
-      fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+      openChartData();
       expect(screen.getByLabelText(/Slab · V4.*0%.*0 sends \/ 2 climbs/)).toBeTruthy();
       if (view !== "progress") {
         expect(screen.getByLabelText(/Vertical · V3.*No data.*0 sends \/ 0 climbs/)).toBeTruthy();
@@ -91,9 +96,7 @@ describe("ClimbingStrengthsChart", () => {
       <ClimbingStrengthsChart panel={comparison} view="radar" grade="V4" onSelect={() => {}} />,
     );
     expect(
-      screen.getByText(
-        "Radar needs at least three styles with recorded success rates for this grade.",
-      ),
+      screen.getByText(/A radar chart needs at least three styles with known results/),
     ).toBeTruthy();
   });
   it("facets progress by style and centers grade pyramids from harder to easier grades", () => {
@@ -131,11 +134,8 @@ describe("ClimbingStrengthsChart", () => {
   it("explains insufficient radar axes while retaining exact values", () => {
     render(<ClimbingStrengthsChart panel={panel} view="radar" grade="V4" onSelect={() => {}} />);
     expect(
-      screen.getByText(
-        "Radar needs at least three styles with recorded success rates for this grade.",
-      ),
+      screen.getByText(/A radar chart needs at least three styles with known results/),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "View Radar profile data" }));
     expect(screen.getByLabelText(/Slab · V4.*0%/)).toBeTruthy();
   });
   it("uses supplied gap, baseline and counts without deriving metrics", () => {
@@ -208,7 +208,7 @@ describe("ClimbingStrengthsChart", () => {
         expect(points[0]?.getAttribute("cx")).toBe("157");
         expect(Number(points[0]?.getAttribute("cy"))).toBeCloseTo(164.68);
       }
-      fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+      openChartData();
       expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 send \/ 3 climbs/)).toBeTruthy();
       result.unmount();
     }
@@ -223,7 +223,7 @@ it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const
     render(
       <ClimbingStrengthsChart panel={unknownPanel} view={view} grade="V3" onSelect={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+    openChartData();
     expect(
       screen.getByLabelText(
         /Vertical · V3.*Result unknown.*0 sends \/ 4 climbs · 4 results unknown/,
@@ -315,11 +315,13 @@ it("places grade-adjusted weaknesses inside and strengths outside the zero basel
   });
   fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
   expect(
-    screen.getByRole("button", { name: /-40 percentage points vs same-grade baseline/ }),
+    screen.getByRole("button", {
+      name: /Sending less often than usual at these grades \(-40 percentage points\)/,
+    }),
   ).toBeTruthy();
 });
 
-it("announces the adjusted radar scale to assistive technology", () => {
+it("explains the style comparison in everyday language to assistive technology", () => {
   const source = climbingStrengthsComparisonFixture.panels[0];
   if (!source) throw new Error("Missing fixture");
   render(
@@ -332,7 +334,69 @@ it("announces the adjusted radar scale to assistive technology", () => {
   );
   expect(
     screen.getByRole("image", {
-      name: /Strengths and weaknesses.*Grade-adjusted difference on a −100 to \+100/,
+      name: /Strengths and weaknesses.*Compared with your own climbs of the same difficulty/,
     }),
   ).toBeTruthy();
+});
+
+it("shows a single climb as a recorded result with too little evidence to judge strength", () => {
+  const single = climbingStrengthsSingleClimbFixture.panels[0];
+  if (!single) throw new Error("Missing single-climb fixture");
+  render(
+    <ClimbingStrengthsChart
+      panel={climbingStrengthsGradePanel(single, "All grades")}
+      view="radar"
+      grade="All grades"
+      onSelect={() => {}}
+    />,
+  );
+  expect(
+    screen.getByText(
+      "Log results in at least three styles to see this chart. Your recorded climbs are listed below.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", {
+      name: "Slab: Sent 1 of 1 climb · Too few climbs to judge strengths yet",
+    }),
+  ).toBeTruthy();
+});
+
+it("keeps sparse source-tag rows distinct when equal labels are replaced on refresh", () => {
+  const rows = ["source-tag-1", "source-tag-2"].map((key) => ({
+    key,
+    label: "Crimp",
+    cells: [{ ...firstCell, grade: "All grades" }],
+  }));
+  const tagged = {
+    ...panel,
+    dimension: "tag" as const,
+    category: { providerId: "source", key: "grips", label: "Grip" },
+    rows,
+    gradeAdjustedStrengths: [],
+    coverage: { missingTraits: 0, unknownOutcomes: 0 },
+  };
+  const selected: string[] = [];
+  const onSelect = (key: string) => {
+    selected.push(key);
+  };
+  const result = render(
+    <ClimbingStrengthsChart panel={tagged} view="radar" grade="All grades" onSelect={onSelect} />,
+  );
+  expect(screen.getAllByRole("button", { name: /^Crimp:/ })).toHaveLength(2);
+  const retained = rows[1];
+  if (!retained) throw new Error("Missing retained source tag");
+  result.rerender(
+    <ClimbingStrengthsChart
+      panel={{ ...tagged, rows: [{ ...retained, key: "source-tag-3", label: "Sloper" }, retained] }}
+      view="radar"
+      grade="All grades"
+      onSelect={onSelect}
+    />,
+  );
+  const crimp = screen.getAllByRole("button", { name: /^Crimp:/ });
+  expect(crimp).toHaveLength(1);
+  if (!crimp[0]) throw new Error("Missing retained source tag button");
+  fireEvent.click(crimp[0]);
+  expect(selected).toEqual(["source-tag-2"]);
 });

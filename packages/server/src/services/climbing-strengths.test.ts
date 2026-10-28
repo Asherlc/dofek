@@ -769,11 +769,46 @@ describe("climbing strengths", () => {
     ]);
     const panel = result.panels.find((panel) => panel.dimension === "setting");
     expect(panel?.grades).toMatchObject([
-      { grade: "V4 · Bouldering · V scale", sends: 0, climbs: 1 },
+      { grade: "V4", sends: 0, climbs: 1 },
       { grade: "V4 · Pitch", sends: 1, climbs: 1 },
-      { grade: "V5 · Bouldering · V scale", sends: 1, climbs: 1 },
+      { grade: "V5", sends: 1, climbs: 1 },
     ]);
     expect(result.coverage.unknownOutcomes).toBe(0);
+  });
+  it("compares selected grades with concise rope and attempt style labels", () => {
+    const result = analyze([
+      observation({ grade: "V0", gradeSortValue: 0, tags: [recordedTag()] }),
+      observation({
+        identity: "top-rope",
+        contextKey: "top-rope",
+        laneKey: "top-rope",
+        contextLabel: "Top rope · Yosemite Decimal System",
+        gradeSystem: "yds",
+        grade: "5.2",
+        gradeSortValue: 2,
+        tags: [recordedTag()],
+      }),
+      observation({
+        identity: "aided-pitch",
+        contextKey: "aided-pitch",
+        laneKey: "aided-pitch",
+        contextLabel: "Bouldering · Pitch · Solo · Aid · V Scale",
+        grade: "V0",
+        gradeSortValue: 0,
+        tags: [recordedTag()],
+      }),
+    ]);
+    expect(result.panels.find((panel) => panel.dimension === "setting")?.grades).toMatchObject([
+      { grade: "V0", climbs: 1 },
+      { grade: "V0 · Pitch · Solo · Aid", climbs: 1 },
+      { grade: "5.2 · Top rope", climbs: 1 },
+    ]);
+    expect(result.tagPanels?.[0]?.grades).toMatchObject([
+      { grade: "V0", climbs: 1 },
+      { grade: "V0 · Pitch · Solo · Aid", climbs: 1 },
+      { grade: "5.2 · Top rope", climbs: 1 },
+    ]);
+    expect(result.tagPanels?.[0]?.rows[0]?.key).toBe('["kaya","style","technical"]');
   });
   it("merges known setting and traits across observations without duplicating the climb", () => {
     const result = analyze([

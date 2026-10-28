@@ -6,6 +6,10 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  lockActivityGroups,
+  reconcileActivityGroups,
+} from "../../../../src/db/activity-group-reconciliation.ts";
 import type { Database as DrizzleDatabase, SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
@@ -485,17 +489,25 @@ export async function processWorkouts(
     inserted++;
   }
 
-  await activitySync.reconcile(undefined, {
-    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
-      workouts.map((workout) =>
-        buildAppleHealthWorkoutIdentity({
-          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
-          sourceName: workout.sourceName,
-        }),
-      ),
-    ),
+  await db.transaction(async (transaction) => {
+    await lockActivityGroups(transaction, userId);
+    await activitySync.reconcile(
+      undefined,
+      {
+        presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+          workouts.map((workout) =>
+            buildAppleHealthWorkoutIdentity({
+              syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+              startedAt: new Date(workout.startDate),
+              endedAt: new Date(workout.endDate),
+              sourceName: workout.sourceName,
+            }),
+          ),
+        ),
+      },
+      transaction,
+    );
+    await reconcileActivityGroups(transaction, userId);
   });
 
   return inserted;

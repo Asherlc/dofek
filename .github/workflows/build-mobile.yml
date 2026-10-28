@@ -11,6 +11,9 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  RCT_REACT_NATIVE_MAVEN_MIRROR_ENABLED: "false"
+
 jobs:
   build-metro-bundle:
     name: Metro Bundle

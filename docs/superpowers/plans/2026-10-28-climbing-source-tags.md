@@ -102,3 +102,14 @@ and ECharts' formatted event names. Future tag/chart tasks should carry a
 verified category table and duplicate-display-label fixture in their brief.
 The existing TDD, provider-audit and final-review workflows fit this work; no
 new dependency or service was required.
+
+### Integration with updated main
+
+While preparing PR #3143 for review, main advanced through
+`78d3584ed`. Its removal of the Grades tab and clearer strengths/sparse-result
+presentation are preserved; tag category breakdowns use the remaining Styles
+and Progress views. The shared/server API still retains per-grade inputs and
+baselines for its calculations. The combined strengths cache version is `v12`.
+See the [current tabs](../../../packages/training/src/climbing-strengths-views.ts),
+[server aggregation](../../../packages/server/src/services/climbing-strengths.ts)
+and [router](../../../packages/server/src/routers/climbing.ts).

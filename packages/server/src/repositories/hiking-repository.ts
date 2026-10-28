@@ -1,4 +1,5 @@
 import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -184,7 +185,7 @@ export class RepeatedRoute {
 const gradeRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
-  activity_name: z.string(),
+  activity_name: z.string().nullable(),
   canonical_type: z.string(),
   distance_m: z.coerce.number(),
   duration_seconds: z.coerce.number(),
@@ -272,7 +273,7 @@ export class HikingRepository {
         new HikingActivity({
           activityId: row.activity_id,
           date: String(row.date),
-          activityName: String(row.activity_name),
+          activityName: row.activity_name ?? formatActivityTypeLabel(row.canonical_type),
           activityType: String(row.canonical_type),
           distanceMeters: Number(row.distance_m),
           durationSeconds: Number(row.duration_seconds),

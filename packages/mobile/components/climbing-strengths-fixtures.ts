@@ -4,7 +4,7 @@ import type { ClimbingStrengths, ClimbingStrengthsPanel } from "@dofek/training/
 const angle: ClimbingStrengthsPanel = {
   key: "boulder-indoor-angle",
   contextKey: "boulder-v",
-  contextLabel: "Bouldering · V scale · Free",
+  contextLabel: "Bouldering",
   dimension: "wall_angle",
   setting: "indoor",
   gradeAdjustedStrengths: [],

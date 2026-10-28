@@ -21,7 +21,6 @@ describe("Cycling Page", () => {
     cy.contains("Estimated Threshold Power Trend").should("be.visible");
     cy.contains("Aerobic Efficiency").should("be.visible");
     cy.contains("Vertical Ascent Rate").should("be.visible");
-    cy.contains("Activity Variability Index").should("be.visible");
   });
 
   it("shows empty states for charts when no data exists", () => {

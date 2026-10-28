@@ -125,6 +125,12 @@ export function climbingStrengthsCountLabel(
   return `${value.sends} ${value.sends === 1 ? "send" : "sends"} / ${value.climbs} ${value.climbs === 1 ? "climb" : "climbs"}${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
 }
 
+export function climbingStrengthsSendLabel(
+  value: Pick<ClimbingStrengthsCell, "sends" | "climbs" | "unknownOutcomes">,
+): string {
+  return `Sent ${value.sends} of ${value.climbs} ${value.climbs === 1 ? "climb" : "climbs"}${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
+}
+
 export function climbingStrengthsResultLabel(outcome: ClimbingStrengthsExample["outcome"]): string {
   return outcome === null ? "Result unknown" : outcome === "sent" ? "Sent" : "Not sent";
 }
@@ -139,5 +145,9 @@ export function climbingStrengthsDifferenceLabel(value: number | null): string {
 export function climbingStrengthsAdjustedLabel(
   strength: ClimbingStrengthsDisplayPanel["gradeAdjustedStrengths"][number] | undefined,
 ): string {
-  return `${climbingStrengthsDifferenceLabel(strength?.differencePercentagePoints ?? null)}${strength?.expectedSuccessRate == null ? "" : ` · Expected send rate at these grades: ${strength.expectedSuccessRate}%`}${strength?.sampleStatus === "limited" ? " · Limited sample" : ""}`;
+  if (strength?.sampleStatus === "limited") return "Too few climbs to judge strengths yet";
+  const difference = strength?.differencePercentagePoints;
+  if (difference == null) return "No results to compare yet";
+  if (difference === 0) return "Sending as often as usual at these grades";
+  return `Sending ${difference > 0 ? "more" : "less"} often than usual at these grades (${difference > 0 ? "+" : ""}${difference} percentage points)`;
 }
