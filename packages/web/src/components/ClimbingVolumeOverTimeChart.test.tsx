@@ -41,7 +41,7 @@ it.each([
   [90, 60, 120],
   [600, 120, 600],
   [601, 120, 720],
-])("uses whole-hour gridlines for %s minutes", (minutes, interval, max) => {
+])("uses whole-hour grid lines for %s minutes", (minutes, interval, max) => {
   render(<ClimbingVolumeOverTimeChart data={[{ week: "2026-01-05", attempts: 5, minutes }]} />);
   fireEvent.change(screen.getByLabelText("Climbing volume metric"), { target: { value: "time" } });
 
