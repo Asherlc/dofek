@@ -13,7 +13,7 @@
     }
 ) }}
 
-WITH cycling_activity_state AS (
+WITH route_activity_state AS (
     SELECT
         activity_id,
         user_id,
@@ -24,7 +24,10 @@ WITH cycling_activity_state AS (
         is_deleted,
         refreshed_at
     FROM {{ ref('deduped_activities') }} FINAL
-    WHERE canonical_type = 'cycling'
+    WHERE (
+        canonical_type IN ('cycling', 'walking', 'hiking')
+        OR (canonical_type = 'running' AND modality = 'trail')
+    )
     {% if activity_refresh_scoped %}
         AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND (
@@ -70,7 +73,7 @@ existing_route_state AS (
         AND (
             activity_id IN {{ activity_refresh_ids() }}
             OR (user_id, activity_id) IN (
-                SELECT user_id, activity_id FROM cycling_activity_state
+                SELECT user_id, activity_id FROM route_activity_state
             )
         )
     {% endif %}
@@ -83,7 +86,7 @@ affected_route_keys AS (
     SELECT
         activities.activity_id AS activity_id,
         activities.user_id AS user_id
-    FROM cycling_activity_state AS activities
+    FROM route_activity_state AS activities
     {% if is_incremental() %}
     {% if not activity_refresh_scoped %}
     LEFT JOIN existing_route_state AS existing_routes
@@ -103,7 +106,7 @@ affected_route_keys AS (
         ON existing_routes.activity_id = locations.activity_id
         AND existing_routes.user_id = locations.user_id
     WHERE (locations.user_id, locations.activity_id) IN (
-        SELECT user_id, activity_id FROM cycling_activity_state
+        SELECT user_id, activity_id FROM route_activity_state
     )
         AND (
             existing_routes.activity_id IS null
@@ -122,7 +125,7 @@ affected_route_keys AS (
         AND existing_routes.user_id = identities.user_id
     WHERE identities.kind = 'provider_route'
         AND (identities.user_id, identities.canonical_activity_id) IN (
-            SELECT user_id, activity_id FROM cycling_activity_state
+            SELECT user_id, activity_id FROM route_activity_state
         )
         AND (
             existing_routes.activity_id IS null
@@ -139,7 +142,7 @@ affected_route_keys AS (
         ON existing_routes.activity_id = samples.activity_id
         AND existing_routes.user_id = samples.user_id
     WHERE (samples.user_id, samples.activity_id) IN (
-            SELECT user_id, activity_id FROM cycling_activity_state
+            SELECT user_id, activity_id FROM route_activity_state
         )
         AND (
             existing_routes.activity_id IS null
@@ -155,7 +158,7 @@ affected_route_keys AS (
         existing_routes.user_id AS user_id
     FROM existing_route_state AS existing_routes
     {% if not activity_refresh_scoped %}
-    LEFT JOIN cycling_activity_state AS activities
+    LEFT JOIN route_activity_state AS activities
         ON activities.activity_id = existing_routes.activity_id
         AND activities.user_id = existing_routes.user_id
     WHERE existing_routes.is_deleted = 0
@@ -180,7 +183,7 @@ affected_location_samples AS MATERIALIZED (
         activities.ended_at AS activity_ended_at,
         activities.is_deleted AS activity_is_deleted
     FROM {{ ref('activity_location_sample') }} AS locations FINAL
-    INNER JOIN cycling_activity_state AS activities
+    INNER JOIN route_activity_state AS activities
         ON activities.activity_id = locations.activity_id
         AND activities.user_id = locations.user_id
     WHERE (locations.user_id, locations.activity_id) IN (
@@ -308,7 +311,7 @@ current_route_sources AS (
             coalesce(altitude.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
             coalesce(route_ids.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC'))
         ) AS source_refreshed_at
-    FROM cycling_activity_state AS activities
+    FROM route_activity_state AS activities
     LEFT JOIN altitude_state AS altitude
         ON altitude.activity_id = activities.activity_id AND altitude.user_id = activities.user_id
     LEFT JOIN location_refresh_state AS locations
@@ -474,7 +477,7 @@ route_quality AS (
             )
         ) AS coverage_pct
     FROM sampling_statistics AS statistics
-    INNER JOIN cycling_activity_state AS activities
+    INNER JOIN route_activity_state AS activities
         ON activities.activity_id = statistics.activity_id AND activities.user_id = statistics.user_id
     INNER JOIN location_interval_metrics AS metrics
         ON metrics.activity_id = statistics.activity_id

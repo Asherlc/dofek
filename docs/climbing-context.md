@@ -96,7 +96,7 @@ and [Zod object behavior](https://zod.dev/api#objects).
 
 Versioned request inputs separate query keys, and the server cache includes
 the raw input and the procedure's cache version. Mobile keeps persisted-cache
-contract `19`; the new versioned keys and strict decoders handle mixed API/OTA
+contract `20`; the new versioned keys and strict decoders handle mixed API/OTA
 release order. See the [server cache](../packages/server/src/trpc.ts),
 [mobile persistence](../packages/mobile/lib/mobile-query-persistence.ts), and
 [TanStack query-key guidance](https://tanstack.com/query/latest/docs/framework/react/guides/query-keys).

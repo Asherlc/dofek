@@ -2,7 +2,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
-import { safeParseRows } from "../lib/safe-parse";
+import { safeParseData, safeParseRows } from "../lib/safe-parse";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
@@ -60,7 +60,7 @@ const mobileHangboardingSummarySchema = z.object({
 });
 
 const mobileClimbingDataSchema = z.object({
-  gradeProgression: z.array(climbingGradeProgressionSchema),
+  gradeProgression: climbingGradeProgressionSchema.nullable(),
   volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
   sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
   hangboarding: z.object({
@@ -87,7 +87,7 @@ interface MobileClimbingParseResult {
 }
 
 const emptyClimbingData: MobileClimbingData = {
-  gradeProgression: [],
+  gradeProgression: null,
   volumeByGrade: [],
   sessionSummary: [],
   hangboarding: {
@@ -121,9 +121,9 @@ function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
     return { data: emptyClimbingData, error: parseError };
   }
 
-  const gradeProgression = safeParseRows(
-    climbingGradeProgressionSchema,
-    payloadResult.data.gradeProgression ?? [],
+  const gradeProgression = safeParseData(
+    climbingGradeProgressionSchema.nullable(),
+    payloadResult.data.gradeProgression ?? null,
     "strain:climbing.gradeProgression",
   );
   const volumeByGrade = safeParseRows(
@@ -164,7 +164,7 @@ function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
 
   return {
     data: {
-      gradeProgression: gradeProgression.data,
+      gradeProgression: gradeProgression.data ?? null,
       volumeByGrade: volumeByGrade.data,
       sessionSummary: sessionSummary.data,
       hangboarding,

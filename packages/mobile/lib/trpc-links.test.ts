@@ -83,7 +83,7 @@ describe("createMobileTrpcLinks", () => {
       client.query("mobileDashboard.dashboard"),
       client.query("mobileDashboard.dashboardV2"),
       client.query("mobileDashboard.recovery"),
-      client.query("mobileDashboard.training"),
+      client.query("mobileDashboard.trainingV2"),
       client.query("processing.status"),
       client.query("anomalyDetection.check"),
       client.mutation("healthKitSync.recordSync", {}),
@@ -96,7 +96,7 @@ describe("createMobileTrpcLinks", () => {
         "/api/trpc/mobileDashboard.dashboard",
         "/api/trpc/mobileDashboard.dashboardV2",
         "/api/trpc/mobileDashboard.recovery",
-        "/api/trpc/mobileDashboard.training",
+        "/api/trpc/mobileDashboard.trainingV2",
       ],
     );
     expect(urls.filter((url) => url.searchParams.has("batch")).map((url) => url.pathname)).toEqual([

@@ -65,13 +65,15 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-log-response` | [Supported response-version input schema and faithful version-1 projection of canonical grip collections and wall angles](src/climbing-log-response.ts) |
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
-| `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), chart selection for recorded aid status and route methods, concise lane and setting labels, and period/exact-value formatting shared by web and mobile |
+| `climbing-progression` | [Server-computed combined grade-stack contract](src/climbing-progression.ts), display grade labels with scale disambiguation, and period/exact-value formatting shared by web and mobile; the [server](../server/src/repositories/climbing-grade-progression.ts) pools selected types and settings using distinct climbing dates |
+| `climbing-progression-v1` | [Supported V1 lane contract](src/climbing-progression-v1.ts) for older clients; the [versioned routers](../server/src/routers/climbing.ts) preserve its per-type/per-setting response while current clients explicitly request the combined V2 projection |
 | `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles plus server-computed grade-adjusted strength differences, with rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
 | `climbing-strengths-views` | [Shared Styles / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with fixed Styles radar and Progress views |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
+| `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
 | `pmc` | TRIMP, heart-rate/power stress, FTP estimate, learned stress model, and performance-management calculations |
 | `power-analysis` | Power curves, normalized power, critical-power fit, regression, and duration constants |

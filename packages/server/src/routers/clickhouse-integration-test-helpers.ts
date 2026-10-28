@@ -738,6 +738,9 @@ ${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   // repositories can query them without errors. Tests that exercise these
   // serving paths seed the minimal final rows they need.
   await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_route_identity"),
+  });
+  await client.command({
     query: buildTestAnalyticsTableStatement("analytics.activity_power_curve"),
   });
   await client.command({

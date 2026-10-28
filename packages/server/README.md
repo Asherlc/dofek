@@ -69,6 +69,18 @@ with incomplete power coverage withheld from weekly totals.
   failures retained only in raw JSON by older adapters remain unsuccessful.
   Explicit aid/fall/dab facts still prevent a clean free send. See the
   [OpenBeta interpretation](../../docs/openbeta.md#stored-records).
+- **Climbing grade progression**: The [builder](src/repositories/climbing-grade-progression.ts)
+  pools the graded observations selected by page filters into one stack per
+  period. A recorded date counts once across climbing types, rope methods, and
+  settings. The server computes grade counts, sends per recorded day, stack
+  positions, and axes; both clients render the [shared contract](../training/src/climbing-progression.ts).
+  The permanent `climbing.gradeProgressionV2` and `mobileDashboard.trainingV2`
+  procedures serve this combined chart. The original procedures retain their
+  complete [V1 lane contract](../training/src/climbing-progression-v1.ts), projected
+  from the same raw observations by the [V1 builder](src/repositories/climbing-grade-progression-v1.ts).
+  Each request runs one observation query for its selected version; the
+  [climbing router](src/routers/climbing.ts) and [mobile router](src/routers/mobile-dashboard.ts)
+  keep the response schemas and caches separate.
 - **Climbing strengths**: The protected cached `climbing.strengths` query serves
   [display-ready panels](../training/src/climbing-strengths.ts) for both clients.
   Its [repository](src/repositories/climbing-strengths-repository.ts) reuses the
@@ -134,7 +146,7 @@ with incomplete power coverage withheld from weekly totals.
   Updated web/mobile clients request `3` and strictly decode all supported
   wire shapes. Publish the version-3 API before these clients because a server
   accepting only versions `1` and `2` rejects version `3`. Raw request inputs
-  separate server cache entries; mobile keeps persisted-cache contract `19` with
+  separate server cache entries; mobile keeps persisted-cache contract `20` with
   versioned query keys. See the
   [serializers and decoders](src/contracts/climbing-log-contracts.ts),
   [shared version policy](../training/src/climbing-log-response.ts), and
@@ -616,6 +628,16 @@ and mobile removal together: older clients can no longer call the report APIs.
 also removes that table's indexes and constraints.
 
 ## Activity metric sources
+
+`hiking.activityComparison` groups complete recorded GPS routes with the existing
+[bounded route matcher](src/repositories/route-equivalence.ts), keeping activity
+type and modality separate. Names label groups rather than establish identity.
+The [repository](src/repositories/hiking-repository.ts) returns chronological,
+identified attempts and nullable pace through the
+[shared response schema](../training/src/route-comparison.ts). Insufficient GPS
+cannot establish a repeated route, and route identity alone does not establish
+equivalent effort or conditions. The endpoint versions its response cache when
+replacing the former name-based contract; see [the router](src/routers/hiking.ts).
 
 The [source contract](../providers-meta/src/activity-metric-source.ts) separates
 the complete source label from its compact display name, provider identity, and

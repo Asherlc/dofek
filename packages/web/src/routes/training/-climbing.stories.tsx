@@ -50,8 +50,8 @@ const mockLink: TRPCLink<AppRouter> = () => {
             ? climbingAttachmentActivities
             : op.path === "climbing.attachClimbingLogEntry"
               ? { attached: true }
-              : op.path === "climbing.gradeProgression"
-                ? [climbingProgressionFixture("route", { ropeMethod: "lead" })]
+              : op.path === "climbing.gradeProgressionV2"
+                ? climbingProgressionFixture()
                 : op.path === "climbing.volumeOverTime"
                   ? [
                       { week: "2026-09-28", attempts: 12, minutes: 120 },

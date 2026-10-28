@@ -23,10 +23,12 @@ import { ClimbingImagesRepository } from "../repositories/climbing-images-reposi
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
   type ClimbingGradeProgressionRow,
+  type ClimbingGradeProgressionV2Row,
   ClimbingRepository,
   type ClimbingSessionSummaryRow,
   type ClimbingVolumeByGradeRow,
   climbingGradeProgressionSchema,
+  climbingGradeProgressionV1Schema,
   climbingSessionSummarySchema,
   climbingVolumeByGradeSchema,
 } from "../repositories/climbing-repository.ts";
@@ -46,7 +48,8 @@ import {
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const climbingInputSchema = daysInputSchema.extend(climbingFiltersSchema.shape);
 const climbingLogEntriesSchema = z.array(climbingLogEntryDetailResponseSchema);
-const climbingGradeProgressionsSchema = z.array(climbingGradeProgressionSchema);
+const climbingGradeProgressionOutputSchema = z.array(climbingGradeProgressionV1Schema);
+const climbingGradeProgressionV2OutputSchema = climbingGradeProgressionSchema.nullable();
 const climbingVolumesSchema = z.array(climbingVolumeByGradeSchema);
 const climbingSessionSummariesSchema = z.array(climbingSessionSummarySchema);
 
@@ -254,6 +257,9 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityLogEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgressionV2:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:mobileDashboard.training:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:mobileDashboard.trainingV2:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeOverTime:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.locationMap:`),
@@ -268,17 +274,31 @@ export const climbingRouter = router({
 
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    outputSchema: climbingGradeProgressionsSchema,
+    outputSchema: climbingGradeProgressionOutputSchema,
     keyVersion: "climbing-scoped-grade-lanes-v4",
   })
     .input(climbingInputSchema)
-    .output(climbingGradeProgressionsSchema)
+    .output(climbingGradeProgressionOutputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getGradeProgression(input.days, input)).map((row) =>
-          row.toDetail(),
+        return (await repository.getGradeProgression(input.days, input)).map((lane) =>
+          lane.toDetail(),
         );
+      });
+    }),
+
+  gradeProgressionV2: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    outputSchema: climbingGradeProgressionV2OutputSchema,
+    keyVersion: "climbing-combined-grade-progression-v1",
+  })
+    .input(climbingInputSchema)
+    .output(climbingGradeProgressionV2OutputSchema)
+    .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionV2Row | null> => {
+      return runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        return (await repository.getGradeProgressionV2(input.days, input))?.toDetail() ?? null;
       });
     }),
 

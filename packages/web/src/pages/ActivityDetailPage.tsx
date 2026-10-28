@@ -176,7 +176,7 @@ export function ActivityDetailPage() {
           responseVersion: 3,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
-        trpcUtils.climbing.gradeProgression.invalidate(),
+        trpcUtils.climbing.gradeProgressionV2.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
