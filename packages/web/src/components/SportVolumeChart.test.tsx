@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { buildChartTable } from "./chart-accessibility.ts";
 import { SportVolumeChart } from "./SportVolumeChart.tsx";
 
-interface VolumeOption {
+interface VolumeOption extends Record<string, unknown> {
   yAxis: { name: string; axisLabel: { formatter: (value: number) => string } };
   tooltip: { valueFormatter?: (value: number) => string };
   series: { data: unknown[] }[];
