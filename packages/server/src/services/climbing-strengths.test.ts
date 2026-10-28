@@ -7,6 +7,41 @@ import {
   observation,
 } from "./climbing-strengths-test-helpers.ts";
 
+it.each(["Lead", "Bouldering · V scale"])(
+  "combines selected types while retaining their same-grade baselines (%s)",
+  (contextLabel) => {
+    const result = analyze([
+      ...["b1", "b2", "b3"].map((identity, index) =>
+        observation({ identity, outcome: "sent", holdTypes: [index < 2 ? "crimp" : "jug"] }),
+      ),
+      ...["l1", "l2", "l3", "l4"].map((identity, index) =>
+        observation({
+          identity,
+          contextKey: "lead",
+          contextLabel,
+          laneKey: "lead",
+          holdTypes: [index === 0 ? "crimp" : "jug"],
+          outcome: "not_sent",
+        }),
+      ),
+    ]);
+    const panels = result.panels.filter((panel) => panel.dimension === "hold_type");
+    expect(panels).toHaveLength(1);
+    expect(panels[0]?.allGrades.rows.find((row) => row.key === "crimp")?.cells[0]).toMatchObject({
+      climbs: 3,
+      sends: 2,
+      successRate: 67,
+    });
+    expect(
+      panels[0]?.allGrades.progress.at(-1)?.rows.find((row) => row.key === "crimp")?.cells[0],
+    ).toMatchObject({ climbs: 3, sends: 2, successRate: 67 });
+    expect(panels[0]?.gradeAdjustedStrengths.find((row) => row.key === "crimp")).toMatchObject({
+      expectedSuccessRate: 66.7,
+      differencePercentagePoints: 0,
+    });
+  },
+);
+
 describe("climbing strengths", () => {
   it("counts each grip once while preserving distinct-climb grade baselines and monthly counts", () => {
     const result = analyze([
@@ -151,40 +186,6 @@ describe("climbing strengths", () => {
       successRate: 100,
     });
     expect(result.coverage.unknownOutcomes).toBe(0);
-  });
-  it("labels a single grading system by climbing context without redundant system text", () => {
-    const result = analyze([
-      observation({ contextLabel: "Bouldering · V Scale" }),
-      observation({
-        contextKey: "lead",
-        laneKey: "lead",
-        contextLabel: "Lead · Yosemite Decimal System",
-        gradeSystem: "yds",
-        grade: "5.8",
-      }),
-    ]);
-    expect(result.panels.find((panel) => panel.contextKey === "boulder")?.contextLabel).toBe(
-      "Bouldering",
-    );
-    expect(result.panels.find((panel) => panel.contextKey === "lead")?.contextLabel).toBe("Lead");
-  });
-
-  it("retains grading system labels when the same climbing lane has different systems", () => {
-    const result = analyze([
-      observation({ contextKey: "v", contextLabel: "Bouldering · V Scale" }),
-      observation({
-        contextKey: "font",
-        gradeSystem: "font",
-        grade: "6b",
-        contextLabel: "Bouldering · Fontainebleau",
-      }),
-    ]);
-    expect(result.panels.find((panel) => panel.contextKey === "v")?.contextLabel).toBe(
-      "Bouldering · V Scale",
-    );
-    expect(result.panels.find((panel) => panel.contextKey === "font")?.contextLabel).toBe(
-      "Bouldering · Fontainebleau",
-    );
   });
   it("pools distinct climbs across grades using counts and independent monthly outcomes", () => {
     const entries = [
@@ -853,15 +854,13 @@ describe("climbing strengths", () => {
       observation({ contextKey: "pitch", contextLabel: "Pitch", outcome: "sent" }),
       observation({ identity: "other", grade: "V5", gradeSortValue: 5, outcome: "sent" }),
     ]);
-    const panel = result.panels.find(
-      (panel) => panel.dimension === "setting" && panel.contextKey === "boulder",
-    );
+    const panel = result.panels.find((panel) => panel.dimension === "setting");
     expect(panel?.grades).toMatchObject([
-      { grade: "V4", sends: 0, climbs: 1 },
-      { grade: "V5", sends: 1, climbs: 1 },
+      { grade: "V4 · Bouldering · V scale", sends: 0, climbs: 1 },
+      { grade: "V4 · Pitch", sends: 1, climbs: 1 },
+      { grade: "V5 · Bouldering · V scale", sends: 1, climbs: 1 },
     ]);
     expect(result.coverage.unknownOutcomes).toBe(0);
-    expect(result.panels.some((panel) => panel.contextKey === "pitch")).toBe(true);
   });
   it("merges known setting and traits across observations without duplicating the climb", () => {
     const result = analyze([
@@ -933,7 +932,7 @@ describe("climbing strengths", () => {
     expect(
       result.panels
         .filter((panel) => panel.dimension === "setting")
-        .map((panel) => panel.grades[0]?.sends),
+        .flatMap((panel) => panel.grades.map((grade) => grade.sends)),
     ).toEqual([0, 0]);
   });
   it("keeps a missing-system send isolated from another semantic lane for the same climb", () => {

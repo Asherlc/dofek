@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
@@ -60,23 +60,20 @@ it("keeps cached content during loading and distinguishes initial loading from e
   rerender(<ClimbingStrengths data={{ panels: [], coverage: fixture.coverage }} />);
   expect(screen.getByText("No recorded climbing strengths in this period.")).toBeVisible();
 });
-it("renders each context separately and preserves its selected climbs on refresh", () => {
-  const angle = fixture.panels[0];
-  if (!angle) throw new Error("Missing fixture");
-  const data = {
-    ...fixture,
-    panels: [angle, { ...angle, key: "route", contextKey: "route", contextLabel: "Lead" }],
-  };
-  const { rerender } = renderStrengths(<ClimbingStrengths data={data} />);
-  const route = within(screen.getByRole("region", { name: "Lead" }));
-  fireEvent.click(route.getByRole("button", { name: /Vertical · V4/ }));
-  expect(route.getByRole("region", { name: "Selected climbs" })).toHaveTextContent("Evening Arete");
-  rerender(<ClimbingStrengths data={structuredClone(data)} />);
-  expect(route.getByRole("button", { name: /Vertical · V4/ })).toHaveAttribute(
+it("preserves selected climbs in the combined view on refresh", () => {
+  const { rerender } = renderStrengths(<ClimbingStrengths data={fixture} />);
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Evening Arete",
+  );
+  rerender(<ClimbingStrengths data={structuredClone(fixture)} />);
+  expect(screen.getByRole("button", { name: /Vertical · V4/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  expect(route.getByRole("region", { name: "Selected climbs" })).toHaveTextContent("Evening Arete");
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Evening Arete",
+  );
 });
 it("selects hold types without mixing observations from different settings", () => {
   const angle = fixture.panels[0];

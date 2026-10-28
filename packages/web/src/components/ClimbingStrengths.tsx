@@ -51,9 +51,6 @@ export function ClimbingStrengths({
   );
   const panels = data?.panels ?? [];
   const dimension = selectedDimension ?? preferred(panels)?.dimension ?? "wall_angle";
-  const contexts = [
-    ...new Map(panels.map((panel) => [panel.contextKey, panel.contextLabel])).entries(),
-  ];
   if (!data && loading)
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   return (
@@ -105,34 +102,25 @@ export function ClimbingStrengths({
       {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
         <p className="text-xs text-muted">Success rates use climbs with known results.</p>
       ) : null}
-      {contexts.map(([key, label]) => (
-        <ClimbingStrengthsContext
-          key={key}
-          panels={panels.filter((panel) => panel.contextKey === key)}
-          dimension={dimension}
-          view={view}
-          label={contexts.length > 1 ? label : undefined}
-        />
-      ))}
+      {panels.length > 0 ? (
+        <ClimbingStrengthsBreakdown panels={panels} dimension={dimension} view={view} />
+      ) : null}
     </div>
   );
 }
 
-function ClimbingStrengthsContext({
+function ClimbingStrengthsBreakdown({
   panels,
   dimension,
   view,
-  label,
 }: {
   panels: ClimbingStrengthsPanel[];
   dimension: ClimbingStrengthsPanel["dimension"];
   view: ClimbingStrengthsTab;
-  label: string | undefined;
 }) {
   const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
   return (
-    <section className="space-y-3" aria-label={label}>
-      {label ? <h3 className="font-semibold">{label}</h3> : null}
+    <section className="space-y-3">
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
           <div key={panel.key} className="space-y-3">
