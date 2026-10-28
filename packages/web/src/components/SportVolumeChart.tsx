@@ -52,9 +52,9 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
       <div className="mb-3 flex flex-wrap gap-4">
         {sport === undefined && data?.sports.length ? (
           <label className="text-sm text-muted">
-            Sport{" "}
+            Activity type{" "}
             <select
-              aria-label="Volume sport"
+              aria-label="Volume activity type"
               className="rounded border border-border bg-surface px-2 py-2"
               value={currentSport}
               onChange={(event) => {

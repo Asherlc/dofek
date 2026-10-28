@@ -107,7 +107,7 @@ function createSportVolumeStoryLink(): TRPCLink<AppRouter> {
       const metrics = sportVolumeMetrics(sport);
       const data = {
         sport,
-        sports: ["cycling", "running", "swimming", "yoga"],
+        sports: ["cardio", "cycling", "running", "swimming", "yoga"],
         metric: input.metric,
         metrics,
         unit: metrics.find((entry) => entry.key === input.metric)?.unit ?? "min",

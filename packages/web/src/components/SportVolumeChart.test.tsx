@@ -13,7 +13,7 @@ vi.mock("../lib/trpc.ts", () => ({
         useQuery: (input: { sport?: string; metric: string }) => ({
           data: {
             sport: input.sport ?? "running",
-            sports: ["running", "swimming", "yoga"],
+            sports: ["cardio", "running", "swimming", "yoga"],
             metric: input.metric,
             unit: input.metric === "distance" ? "km" : "min",
             weeks: [{ week: "2026-10-19", value: input.metric === "distance" ? null : 90 }],
@@ -38,10 +38,19 @@ it("switches volume measures and retains unknown distance", () => {
   fireEvent.change(screen.getByLabelText("Volume metric"), { target: { value: "distance" } });
   expect(screen.getByTestId("chart").textContent).toContain("null");
 });
-it("offers recorded sports and resets the metric for a time-only sport", () => {
+it("offers recorded activity types and resets the metric for a time-only activity", () => {
   render(<SportVolumeChart days={null} />);
   fireEvent.change(screen.getByLabelText("Volume metric"), { target: { value: "distance" } });
-  fireEvent.change(screen.getByLabelText("Volume sport"), { target: { value: "yoga" } });
+  fireEvent.change(screen.getByLabelText("Volume activity type"), { target: { value: "yoga" } });
   expect(screen.getByLabelText("Volume metric")).toHaveValue("time");
   expect(screen.queryByRole("option", { name: "Distance" })).toBeNull();
+});
+it("shows recorded cardio volume through the activity type selector", () => {
+  render(<SportVolumeChart days={30} />);
+  const activityType = screen.getByRole("combobox", { name: "Volume activity type" });
+  expect(screen.getByText("Activity type")).toBeTruthy();
+  fireEvent.change(activityType, { target: { value: "cardio" } });
+  expect(activityType).toHaveValue("cardio");
+  expect(screen.getByRole("heading", { name: "Cardio Volume" })).toBeTruthy();
+  expect(screen.getByTestId("chart").textContent).toContain(",90]");
 });

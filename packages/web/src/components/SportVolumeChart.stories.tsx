@@ -19,7 +19,7 @@ const link: TRPCLink<AppRouter> =
     const metrics = sportVolumeMetrics(sport);
     const data = {
       sport,
-      sports: ["cycling", "running", "swimming", "yoga"],
+      sports: ["cardio", "cycling", "running", "swimming", "yoga"],
       metric: input.metric,
       metrics,
       unit: metrics.find((entry) => entry.key === input.metric)?.unit ?? "min",
@@ -65,6 +65,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const CardioSelected: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const activityType = await within(canvasElement).findByRole("combobox", {
+      name: "Volume activity type",
+    });
+    await userEvent.selectOptions(activityType, "cardio");
+    await expect(activityType).toHaveValue("cardio");
+    await expect(
+      within(canvasElement).getByRole("heading", { name: "Cardio Volume" }),
+    ).toBeVisible();
+  },
+};
 export const DistanceSelected: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await within(canvasElement).findByRole("option", { name: "Distance" });
