@@ -1,3 +1,4 @@
+import { formatDurationMinutesClock } from "@dofek/format/format";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useUnitConverter } from "../lib/units";
@@ -41,8 +42,13 @@ export function TrainingVolumeChart(props: Props) {
                 ? null
                 : units.convertWeight(row.recordedVolumeKg),
         );
-  const unit =
-    metric === "time"
+  const showHoursMinutes =
+    props.sport === "climbing" &&
+    metric === "time" &&
+    values.some((value) => value != null && value >= 60);
+  const unit = showHoursMinutes
+    ? "hours:minutes"
+    : metric === "time"
       ? "minutes"
       : props.sport === "strength" && metric === "primary"
         ? units.weightLabel
@@ -83,6 +89,7 @@ export function TrainingVolumeChart(props: Props) {
               value: values[index] ?? null,
             }))}
             unit={unit}
+            formatValue={showHoursMinutes ? formatDurationMinutesClock : undefined}
           />
         </>
       ) : (

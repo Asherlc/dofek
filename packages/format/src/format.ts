@@ -53,6 +53,13 @@ export function formatDurationMinutes(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
+/** Format a duration in minutes as hours:minutes, rounded to the nearest minute. */
+export function formatDurationMinutesClock(minutes: number): string {
+  if (!Number.isFinite(minutes)) return "--";
+  const totalMinutes = Math.round(minutes);
+  return `${Math.floor(totalMinutes / 60)}:${String(totalMinutes % 60).padStart(2, "0")}`;
+}
+
 /** Format a duration in seconds as "Xh Ym" or "Xs" for short durations. */
 export function formatDurationSeconds(seconds: number): string {
   if (!Number.isFinite(seconds)) return "--";

@@ -11,6 +11,7 @@ import {
   formatDateYmd,
   formatDateYmdInTimeZone,
   formatDurationMinutes,
+  formatDurationMinutesClock,
   formatDurationRange,
   formatDurationSeconds,
   formatGrams,
@@ -232,6 +233,24 @@ describe("formatDurationMinutes", () => {
 
   it("rounds fractional minutes", () => {
     expect(formatDurationMinutes(90.7)).toBe("1h 31m");
+  });
+});
+
+describe("formatDurationMinutesClock", () => {
+  it.each([
+    [0, "0:00"],
+    [45, "0:45"],
+    [59, "0:59"],
+    [60, "1:00"],
+    [61, "1:01"],
+    [90, "1:30"],
+    [600, "10:00"],
+    [59.7, "1:00"],
+    [119.7, "2:00"],
+    [Number.NaN, "--"],
+    [Number.POSITIVE_INFINITY, "--"],
+  ])("formats %s minutes as %s", (minutes, expected) => {
+    expect(formatDurationMinutesClock(minutes)).toBe(expected);
   });
 });
 
