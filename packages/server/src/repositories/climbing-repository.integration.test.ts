@@ -322,9 +322,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       expect.objectContaining({ grade: "5.12a", sends: 1, recordedAttempts: 1 }),
     ]);
     expect(
-      (await repo().getGradeProgression(30, { attemptScope: ["pitch"] })).flatMap((row) =>
-        row.toDetail().grades.map((grade) => grade.grade),
-      ),
+      (await repo().getGradeProgression(30, { attemptScope: ["pitch"] }))
+        ?.toDetail()
+        .grades.map((grade) => grade.grade),
     ).toEqual(["5.12a"]);
   });
   it("requires combined method and solo filters on the same attempt", async () => {
@@ -466,7 +466,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
     });
     expect(await volume()).toEqual([]);
-    expect(await repo().getGradeProgression(30)).toEqual([]);
+    expect(await repo().getGradeProgression(30)).toBeNull();
   });
   it("counts known rock ungraded participation without treating opinions as published difficulty", async () => {
     const outing = await seedClimbingActivity(
@@ -506,8 +506,8 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: 1, recordedAttempts: 1, sends: 0 }),
     ]);
-    const [lane] = await repo().getGradeProgression(30);
-    expect(lane?.toDetail().periods[0]?.settings[0]).toMatchObject({
+    const chart = await repo().getGradeProgression(30);
+    expect(chart?.toDetail().periods[0]).toMatchObject({
       climbingDays: 1,
       unknownOutcomes: 1,
       sends: 0,
@@ -646,7 +646,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     await write({ externalId: "boundary-standalone", climbedOn: boundaryDate });
     await write({ externalId: "undated", climbedOn: null });
     expect(await volume()).toEqual([]);
-    expect(await repo().getGradeProgression(30)).toEqual([]);
+    expect(await repo().getGradeProgression(30)).toBeNull();
     expect(await repo().getSessionSummaries(30)).toEqual([]);
   });
   it("uses source-resolved activity dates independently of the log source date", async () => {

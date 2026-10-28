@@ -157,10 +157,15 @@ and labels retained data while it refreshes. Successful attachment actions
 invalidate strengths alongside the affected climbing detail queries; see the
 [attachment picker](components/ClimbingLogAttachment.tsx).
 
-Climbing grade charts use the [shared chart selection and labels](../training/src/climbing-progression.ts)
-to display bouldering and routes with recorded rope methods, each with recorded
-aid status. Ordinary climbs use their style name; aided climbs retain an "Aid"
-qualifier.
+The [grade progression chart](components/ClimbingGradeProgressionChart.tsx) shows
+one grade stack per period across all types and settings selected by the page
+filters. The [server projection](../server/src/repositories/climbing-grade-progression.ts)
+pools the selected observations before computing sends per distinct climbing day,
+so a day shared by types or settings counts once. The
+[shared contract and labels](../training/src/climbing-progression.ts) keep display
+grade scales distinct and qualify identical labels from different scales. The
+[repository](../server/src/repositories/climbing-repository.ts) continues to apply
+the user's saved grade preferences before pooling.
 
 [ClimbingLocationMapCard](./components/ClimbingLocationMapCard.tsx) uses the same
 Training dates and climbing filters to render [server-computed clusters](../training/src/climbing-location-map.ts).

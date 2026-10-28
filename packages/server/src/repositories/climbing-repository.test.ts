@@ -116,12 +116,15 @@ describe("ClimbingRepository map entries", () => {
   });
 });
 describe("ClimbingRepository display-grade aggregation", () => {
-  it.each(["getGradeProgression", "getVolumeByGrade", "getSessionSummaries"] as const)(
+  it.each(["getVolumeByGrade", "getSessionSummaries"] as const)(
     "returns empty %s for no observations",
     async (method) => {
       expect(await repository([])[method](30)).toEqual([]);
     },
   );
+  it("returns no grade progression for no observations", async () => {
+    expect(await repository([]).getGradeProgression(30)).toBeNull();
+  });
   it("converts compatible source grades to each selected preference", async () => {
     const result = await repository(
       [
@@ -189,8 +192,8 @@ describe("ClimbingRepository display-grade aggregation", () => {
       expect.objectContaining({ grade: "V4", attempts: 5, sends: 3 }),
     ]);
   });
-  it("uses individual attempt facts for progression lanes", async () => {
-    const [lead, topRope] = await repository([
+  it("pools individual attempt facts into one grade progression", async () => {
+    const chart = await repository([
       {
         ...route,
         session_date: "2026-10-01",
@@ -202,17 +205,9 @@ describe("ClimbingRepository display-grade aggregation", () => {
         ],
       },
     ]).getGradeProgression(30);
-    expect(lead?.toDetail()).toMatchObject({
-      ropeMethod: "lead",
-      solo: true,
-      usedAid: false,
-      periods: [{ settings: [{ sends: 1, climbingDays: 1 }] }],
-    });
-    expect(topRope?.toDetail()).toMatchObject({
-      ropeMethod: "top_rope",
-      solo: false,
-      usedAid: true,
-      periods: [{ settings: [{ sends: 0, climbingDays: 1 }] }],
+    expect(chart?.toDetail()).toMatchObject({
+      grades: [{ climbKind: "route", grade: "5.10c" }],
+      periods: [{ sends: 1, climbingDays: 1, segments: [{ sends: 1, sendsPerDay: 1 }] }],
     });
   });
   it("retains recorded days and unknown outcomes in progression", async () => {
@@ -227,9 +222,9 @@ describe("ClimbingRepository display-grade aggregation", () => {
         ],
       },
     ]).getGradeProgression(30);
-    expect(result[0]?.toDetail()).toMatchObject({
+    expect(result?.toDetail()).toMatchObject({
       grades: [{ grade: "V4" }],
-      periods: [{ settings: [{ sends: 0, unknownOutcomes: 1, climbingDays: 1 }] }],
+      periods: [{ sends: 0, unknownOutcomes: 1, climbingDays: 1 }],
     });
   });
 });

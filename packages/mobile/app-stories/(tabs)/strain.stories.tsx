@@ -251,7 +251,7 @@ function createSeededProviders(
       verticalAscent: [],
       progressiveOverload: [],
       climbing: {
-        gradeProgression: [],
+        gradeProgression: null,
         volumeByGrade:
           withUnknownClimbingAttempts || withRecordedClimbingAttempts
             ? [

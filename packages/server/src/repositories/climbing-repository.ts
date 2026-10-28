@@ -17,7 +17,7 @@ import {
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import {
-  type ClimbingGradeProgressionLane,
+  type ClimbingGradeProgressionData,
   climbingGradeProgressionSchema,
   climbingProgressionSettings,
 } from "@dofek/training/climbing-progression";
@@ -40,7 +40,7 @@ import {
 
 export type { ClimbingLogEntryDetail, FreeRockGradeSystem, RockClimbKind };
 export { climbingGradeProgressionSchema };
-export type ClimbingGradeProgressionRow = ClimbingGradeProgressionLane;
+export type ClimbingGradeProgressionRow = ClimbingGradeProgressionData;
 export interface AttachedRockClimbingObservation {
   activityId: string;
   date: string;
@@ -219,7 +219,7 @@ export class ClimbingRepository extends BaseRepository {
   async getGradeProgression(
     days: number,
     filters: ClimbingFilters = {},
-  ): Promise<ClimbingGradeProgression[]> {
+  ): Promise<ClimbingGradeProgression | null> {
     const rows = await executeWithSchema(
       this.db,
       progressionRowSchema,
@@ -245,7 +245,8 @@ export class ClimbingRepository extends BaseRepository {
           }))
         : [];
     });
-    return buildClimbingGradeProgression(entries).map((row) => new ClimbingGradeProgression(row));
+    const chart = buildClimbingGradeProgression(entries);
+    return chart === null ? null : new ClimbingGradeProgression(chart);
   }
   async getMapEntries(
     days: number,

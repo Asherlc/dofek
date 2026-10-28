@@ -10,7 +10,7 @@ const mockTrainingState: { data: Record<string, unknown> | undefined } = { data:
 function defaultMockTrainingData() {
   return {
     climbing: {
-      gradeProgression: [],
+      gradeProgression: null,
       volumeByGrade: [],
       sessionSummary: [],
       hangboarding: {
@@ -38,7 +38,7 @@ describe("ClimbingTrainingCard", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [
           {
             climbKind: "boulder",
@@ -70,7 +70,7 @@ describe("ClimbingTrainingCard", () => {
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
     expect(screen.getByText("Climbing")).toBeTruthy();
-    expect(screen.getByText("Bouldering")).toBeTruthy();
+    expect(screen.getByRole("image", { name: /^Grade progression/ })).toBeTruthy();
     expect(screen.getAllByText("V4").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("8 attempts")).toBeTruthy();
     expect(screen.getByText("5 sends")).toBeTruthy();
@@ -81,7 +81,7 @@ describe("ClimbingTrainingCard", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [{ climbKind: "boulder", grade: "V4", gradeSortValue: "bad" }],
         sessionSummary: [],
       },
@@ -89,7 +89,7 @@ describe("ClimbingTrainingCard", () => {
 
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
-    expect(screen.getByText("Bouldering")).toBeTruthy();
+    expect(screen.getByRole("image", { name: /^Grade progression/ })).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Climbing data could not be loaded. Please try again.")).toBeTruthy();
     expect(screen.queryByText(/Zod parse failed/)).toBeNull();
@@ -103,7 +103,7 @@ describe("ClimbingTrainingCard", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [],
+        gradeProgression: null,
         volumeByGrade: [
           {
             climbKind: "boulder",

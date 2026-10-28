@@ -1,24 +1,39 @@
-import type { ClimbingGradeProgressionLane } from "@dofek/training/climbing-progression";
+import type { ClimbingGradeProgressionData } from "@dofek/training/climbing-progression";
 
-/** Hand-authored server response, including zero sends and unrecorded months. */
-export function climbingProgressionFixture(
-  climbKind: ClimbingGradeProgressionLane["climbKind"] = "boulder",
-  facts: Partial<ClimbingGradeProgressionLane> = {},
-): ClimbingGradeProgressionLane {
-  const grades = climbKind === "boulder" ? ["V2", "V4"] : ["5.9", "5.11a"];
-  const [lower = "V2", higher = "V4"] = grades;
+/** Hand-authored combined server response, including zero and unrecorded periods. */
+export function climbingProgressionFixture(): ClimbingGradeProgressionData {
+  const grades: ClimbingGradeProgressionData["grades"] = [
+    {
+      key: "boulder:v_scale:V2",
+      climbKind: "boulder",
+      gradeSystem: "v_scale",
+      grade: "V2",
+      gradeSortValue: 55,
+    },
+    {
+      key: "boulder:v_scale:V4",
+      climbKind: "boulder",
+      gradeSystem: "v_scale",
+      grade: "V4",
+      gradeSortValue: 65,
+    },
+    {
+      key: "route:yds:5.9",
+      climbKind: "route",
+      gradeSystem: "yds",
+      grade: "5.9",
+      gradeSortValue: 55,
+    },
+    {
+      key: "route:yds:5.11a",
+      climbKind: "route",
+      gradeSystem: "yds",
+      grade: "5.11a",
+      gradeSortValue: 65,
+    },
+  ];
   return {
-    attemptScope: "climb",
-    ropeMethod: null,
-    solo: null,
-    usedAid: false,
-    climbKind,
-    gradeSystem: climbKind === "boulder" ? "v_scale" : "yds",
-    grades: [
-      { grade: lower, gradeSortValue: 55 },
-      { grade: higher, gradeSortValue: 65 },
-    ],
-    settings: ["indoor", "outdoor"],
+    grades,
     axisMax: 6,
     axisInterval: 2,
     axisTicks: [0, 2, 4, 6],
@@ -26,88 +41,48 @@ export function climbingProgressionFixture(
       {
         startDate: "2026-06-01",
         endDate: "2026-06-30",
-        settings: [
-          {
-            setting: "indoor",
-            climbingDays: 4,
-            sends: 16,
-            unknownOutcomes: 0,
-            sendsPerDay: 4,
-            segments: [
-              { grade: lower, sends: 12, sendsPerDay: 3, stackStart: 0, stackEnd: 3 },
-              { grade: higher, sends: 4, sendsPerDay: 1, stackStart: 3, stackEnd: 4 },
-            ],
-          },
-          {
-            setting: "outdoor",
-            climbingDays: 2,
-            sends: 4,
-            unknownOutcomes: 0,
-            sendsPerDay: 2,
-            segments: [
-              { grade: lower, sends: 2, sendsPerDay: 1, stackStart: 0, stackEnd: 1 },
-              { grade: higher, sends: 2, sendsPerDay: 1, stackStart: 1, stackEnd: 2 },
-            ],
-          },
-        ],
+        climbingDays: 5,
+        sends: 20,
+        unknownOutcomes: 0,
+        sendsPerDay: 4,
+        segments: grades.map(({ key }, index) => ({
+          gradeKey: key,
+          sends: 5,
+          sendsPerDay: 1,
+          stackStart: index,
+          stackEnd: index + 1,
+        })),
       },
       {
         startDate: "2026-07-01",
         endDate: "2026-07-31",
-        settings: [
-          {
-            setting: "indoor",
-            climbingDays: 4,
-            sends: 16,
-            unknownOutcomes: 0,
-            sendsPerDay: 4,
-            segments: [
-              { grade: lower, sends: 2, sendsPerDay: 0.5, stackStart: 0, stackEnd: 0.5 },
-              { grade: higher, sends: 14, sendsPerDay: 3.5, stackStart: 0.5, stackEnd: 4 },
-            ],
-          },
-          {
-            setting: "outdoor",
-            climbingDays: 1,
-            sends: 0,
-            unknownOutcomes: 0,
-            sendsPerDay: 0,
-            segments: [
-              { grade: lower, sends: 0, sendsPerDay: 0, stackStart: 0, stackEnd: 0 },
-              { grade: higher, sends: 0, sendsPerDay: 0, stackStart: 0, stackEnd: 0 },
-            ],
-          },
-        ],
+        climbingDays: 4,
+        sends: 0,
+        unknownOutcomes: 1,
+        sendsPerDay: 0,
+        segments: grades.map(({ key }) => ({
+          gradeKey: key,
+          sends: 0,
+          sendsPerDay: 0,
+          stackStart: 0,
+          stackEnd: 0,
+        })),
       },
       {
         startDate: "2026-08-01",
         endDate: "2026-08-31",
-        settings: [
-          {
-            setting: "indoor",
-            climbingDays: 0,
-            sends: 0,
-            unknownOutcomes: 0,
-            sendsPerDay: null,
-            segments: [
-              { grade: lower, sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null },
-              { grade: higher, sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null },
-            ],
-          },
-          {
-            setting: "outdoor",
-            climbingDays: 0,
-            sends: 0,
-            unknownOutcomes: 0,
-            sendsPerDay: null,
-            segments: [
-              { grade: lower, sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null },
-              { grade: higher, sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null },
-            ],
-          },
-        ],
+        climbingDays: 0,
+        sends: 0,
+        unknownOutcomes: 0,
+        sendsPerDay: null,
+        segments: grades.map(({ key }) => ({
+          gradeKey: key,
+          sends: 0,
+          sendsPerDay: null,
+          stackStart: null,
+          stackEnd: null,
+        })),
       },
     ],
-    ...facts,
   };
 }

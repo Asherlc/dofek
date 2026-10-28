@@ -1,145 +1,76 @@
 import {
-  type ClimbingGradeProgressionLane,
-  climbingProgressionChartLanes,
+  type ClimbingGradeProgressionData,
   climbingProgressionGradeColor,
-  climbingProgressionLaneKey,
-  climbingProgressionLaneLabel,
+  climbingProgressionGradeLabel,
   climbingProgressionPeriodLabel,
-  climbingProgressionSettingLabels,
-  climbingProgressionSettings,
   climbingProgressionValueLabel,
 } from "@dofek/training/climbing-progression";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Defs, G, Line, Pattern, Rect, Text as SvgText } from "react-native-svg";
+import Svg, { G, Line, Rect, Text as SvgText } from "react-native-svg";
 import { colors } from "../theme";
 import { AccessibleChart } from "./AccessibleChart";
 
 interface Props {
-  data: ClimbingGradeProgressionLane[];
+  data: ClimbingGradeProgressionData | null;
   loading?: boolean;
 }
 
-function laneKey(lane: ClimbingGradeProgressionLane) {
-  return JSON.stringify([climbingProgressionLaneKey(lane), lane.gradeSystem]);
-}
-
 export function ClimbingGradeProgressionChart({ data, loading }: Props) {
-  const lanes = climbingProgressionChartLanes(data);
-  const availableSettings = climbingProgressionSettings.filter((setting) =>
-    lanes.some((lane) => lane.settings.includes(setting)),
-  );
-  if (lanes.length === 0)
+  const [width, setWidth] = useState(0);
+  const [selectedPeriodStart, setSelectedPeriodStart] = useState<string | null>(null);
+  if (data === null)
     return (
       <Text style={styles.empty}>
         {loading ? "Loading climbing grades…" : "No recorded climbing grades"}
       </Text>
     );
 
-  return (
-    <View style={styles.stack}>
-      <Text style={styles.caption}>Sends per climbing day</Text>
-      <View style={styles.legend}>
-        {availableSettings.map((setting) => (
-          <Text key={setting} style={styles.caption}>
-            {setting === "indoor" ? "■" : setting === "outdoor" ? "▨" : "▦"}{" "}
-            {climbingProgressionSettingLabels[setting]}
-          </Text>
-        ))}
-      </View>
-      {lanes.map((lane) => (
-        <ClimbingLane
-          key={laneKey(lane)}
-          lane={lane}
-          label={climbingProgressionLaneLabel(lane, lanes)}
-        />
-      ))}
-    </View>
-  );
-}
-
-function ClimbingLane({ lane, label }: { lane: ClimbingGradeProgressionLane; label: string }) {
-  const [width, setWidth] = useState(0);
-  const [selectedPeriodStart, setSelectedPeriodStart] = useState<string | null>(null);
-  const selectedPeriod = lane.periods.find((period) => period.startDate === selectedPeriodStart);
-  const patternId = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const settings = lane.settings;
-  const plotHeight = 125;
+  const selectedPeriod = data.periods.find((period) => period.startDate === selectedPeriodStart);
+  const plotHeight = 180;
   const left = 28;
   const top = 12;
   const baseline = top + plotHeight;
   const plotWidth = Math.max(0, width - left - 8);
-  const periodWidth = plotWidth / lane.periods.length;
-  const barWidth =
-    periodWidth * (settings.length === 1 ? 0.4 : settings.length === 2 ? 0.22 : 0.16);
-  const barGap = barWidth * 0.2;
-  const groupWidth = barWidth * settings.length + barGap * (settings.length - 1);
-  const scaleY = (value: number) => baseline - (value / lane.axisMax) * plotHeight;
+  const periodWidth = plotWidth / data.periods.length;
+  const barWidth = periodWidth * 0.4;
+  const scaleY = (value: number) => baseline - (value / data.axisMax) * plotHeight;
   const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
-  const rows = lane.periods.flatMap((period) =>
-    period.settings
-      .filter((point) => settings.includes(point.setting))
-      .flatMap((point) => {
-        const periodLabel = `${climbingProgressionPeriodLabel(period, true)} · ${climbingProgressionSettingLabels[point.setting]}`;
-        return point.sendsPerDay === null
-          ? [{ label: periodLabel, value: "No recorded days" }]
-          : point.segments.map((segment) => ({
-              label: `${periodLabel} · ${segment.grade}`,
-              value: climbingProgressionValueLabel(point, segment),
-            }));
-      }),
-  );
+  const gradeLabel = (gradeKey: string) => {
+    const grade = data.grades.find((grade) => grade.key === gradeKey);
+    return grade ? climbingProgressionGradeLabel(grade, data.grades) : gradeKey;
+  };
+  const rows = data.periods.flatMap((period) => {
+    const periodLabel = climbingProgressionPeriodLabel(period, true);
+    return period.sendsPerDay === null
+      ? [{ label: periodLabel, value: "No recorded days" }]
+      : period.segments.map((segment) => ({
+          label: `${periodLabel} · ${gradeLabel(segment.gradeKey)}`,
+          value: climbingProgressionValueLabel(period, segment),
+        }));
+  });
 
   return (
-    <View style={styles.lane}>
-      <View style={styles.laneHeader}>
-        <Text style={styles.title}>{label}</Text>
-      </View>
+    <View style={styles.stack}>
+      <Text style={styles.caption}>Sends per climbing day</Text>
       <View style={styles.legend}>
-        {lane.grades.map(({ grade }, index) => (
-          <View key={grade} style={styles.gradeLegend}>
+        {data.grades.map((grade, index) => (
+          <View key={grade.key} style={styles.gradeLegend}>
             <View
               style={[
                 styles.swatch,
-                { backgroundColor: climbingProgressionGradeColor(index, lane.grades.length) },
+                { backgroundColor: climbingProgressionGradeColor(index, data.grades.length) },
               ]}
             />
-            <Text style={styles.caption}>{grade}</Text>
+            <Text style={styles.caption}>{climbingProgressionGradeLabel(grade, data.grades)}</Text>
           </View>
         ))}
       </View>
-      <AccessibleChart title={label} summary="Sends per climbing day" rows={rows}>
+      <AccessibleChart title="Grade progression" summary="Sends per climbing day" rows={rows}>
         <View onLayout={onLayout} style={{ height: baseline + 30 }}>
           {width > 0 && (
             <Svg width={width} height={baseline + 30}>
-              <Defs>
-                <Pattern
-                  id={`${patternId}outdoor`}
-                  width={6}
-                  height={6}
-                  patternUnits="userSpaceOnUse"
-                  patternTransform="rotate(45)"
-                >
-                  <Line
-                    x1={0}
-                    y1={0}
-                    x2={0}
-                    y2={6}
-                    stroke="#0f172a"
-                    strokeOpacity={0.45}
-                    strokeWidth={1}
-                  />
-                </Pattern>
-                <Pattern
-                  id={`${patternId}unknown`}
-                  width={6}
-                  height={6}
-                  patternUnits="userSpaceOnUse"
-                >
-                  <Circle cx={2} cy={2} r={0.7} fill="#0f172a" fillOpacity={0.55} />
-                </Pattern>
-              </Defs>
-              {lane.axisTicks.map((tick) => (
+              {data.axisTicks.map((tick) => (
                 <G key={tick}>
                   <Line
                     x1={left}
@@ -159,55 +90,38 @@ function ClimbingLane({ lane, label }: { lane: ClimbingGradeProgressionLane; lab
                   </SvgText>
                 </G>
               ))}
-              {lane.periods.map((period, periodIndex) => {
+              {data.periods.map((period, periodIndex) => {
                 const center = left + periodWidth * (periodIndex + 0.5);
                 return (
                   <G key={period.startDate}>
-                    {settings.map((setting, settingIndex) => {
-                      const point = period.settings.find((point) => point.setting === setting);
-                      const barX = center - groupWidth / 2 + settingIndex * (barWidth + barGap);
-                      return (
-                        <G key={setting}>
-                          {point?.segments.map((segment, gradeIndex) =>
-                            segment.stackStart !== null && segment.stackEnd !== null ? (
-                              <Rect
-                                key={segment.grade}
-                                x={barX}
-                                y={scaleY(segment.stackEnd)}
-                                width={barWidth}
-                                height={
-                                  ((segment.stackEnd - segment.stackStart) / lane.axisMax) *
-                                  plotHeight
-                                }
-                                fill={climbingProgressionGradeColor(gradeIndex, lane.grades.length)}
-                              />
-                            ) : null,
-                          )}
-                          {point?.sendsPerDay != null &&
-                            point.sendsPerDay > 0 &&
-                            setting !== "indoor" && (
-                              <Rect
-                                x={barX}
-                                y={scaleY(point.sendsPerDay)}
-                                width={barWidth}
-                                height={(point.sendsPerDay / lane.axisMax) * plotHeight}
-                                fill={`url(#${patternId}${setting})`}
-                              />
-                            )}
-                          {(point?.sendsPerDay == null || point.sendsPerDay === 0) && (
-                            <SvgText
-                              x={barX + barWidth / 2}
-                              y={baseline - 5}
-                              textAnchor="middle"
-                              fill={colors.textTertiary}
-                              fontSize={11}
-                            >
-                              {point?.sendsPerDay === 0 ? "0" : "—"}
-                            </SvgText>
-                          )}
-                        </G>
+                    {period.segments.map((segment) => {
+                      const gradeIndex = data.grades.findIndex(
+                        (grade) => grade.key === segment.gradeKey,
                       );
+                      return segment.stackStart !== null && segment.stackEnd !== null ? (
+                        <Rect
+                          key={segment.gradeKey}
+                          x={center - barWidth / 2}
+                          y={scaleY(segment.stackEnd)}
+                          width={barWidth}
+                          height={
+                            ((segment.stackEnd - segment.stackStart) / data.axisMax) * plotHeight
+                          }
+                          fill={climbingProgressionGradeColor(gradeIndex, data.grades.length)}
+                        />
+                      ) : null;
                     })}
+                    {(period.sendsPerDay === null || period.sendsPerDay === 0) && (
+                      <SvgText
+                        x={center}
+                        y={baseline - 5}
+                        textAnchor="middle"
+                        fill={colors.textTertiary}
+                        fontSize={11}
+                      >
+                        {period.sendsPerDay === 0 ? "0" : "—"}
+                      </SvgText>
+                    )}
                     <SvgText
                       x={center}
                       y={baseline + 19}
@@ -234,7 +148,7 @@ function ClimbingLane({ lane, label }: { lane: ClimbingGradeProgressionLane; lab
       </AccessibleChart>
       {selectedPeriod && (
         <View style={styles.details}>
-          <View style={styles.laneHeader}>
+          <View style={styles.detailsHeader}>
             <Text style={styles.title}>{climbingProgressionPeriodLabel(selectedPeriod, true)}</Text>
             <Pressable
               accessibilityRole="button"
@@ -245,20 +159,14 @@ function ClimbingLane({ lane, label }: { lane: ClimbingGradeProgressionLane; lab
               <Text style={styles.buttonText}>Close</Text>
             </Pressable>
           </View>
-          {selectedPeriod.settings
-            .filter((point) => settings.includes(point.setting))
-            .map((point) => (
-              <View key={point.setting} style={styles.stack}>
-                <Text style={styles.title}>{climbingProgressionSettingLabels[point.setting]}</Text>
-                <Text style={styles.caption}>{climbingProgressionValueLabel(point)}</Text>
-                {point.segments
-                  .filter((segment) => segment.sends > 0)
-                  .map((segment) => (
-                    <Text key={segment.grade} style={styles.caption}>
-                      {segment.grade}: {climbingProgressionValueLabel(point, segment)}
-                    </Text>
-                  ))}
-              </View>
+          <Text style={styles.caption}>{climbingProgressionValueLabel(selectedPeriod)}</Text>
+          {selectedPeriod.segments
+            .filter((segment) => segment.sends > 0)
+            .map((segment) => (
+              <Text key={segment.gradeKey} style={styles.caption}>
+                {gradeLabel(segment.gradeKey)}:{" "}
+                {climbingProgressionValueLabel(selectedPeriod, segment)}
+              </Text>
             ))}
         </View>
       )}
@@ -276,13 +184,7 @@ const styles = StyleSheet.create({
   swatch: { width: 10, height: 10, borderRadius: 2 },
   buttonText: { color: colors.accent, fontSize: 12, fontWeight: "600" },
   closeButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: "center" },
-  lane: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.surfaceSecondary,
-    paddingTop: 8,
-    gap: 4,
-  },
-  laneHeader: {
+  detailsHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

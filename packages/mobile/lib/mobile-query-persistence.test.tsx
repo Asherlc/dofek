@@ -40,22 +40,36 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("discards v15 climbing responses before restoring the hold collection contract", async () => {
+  it("discards v17 training responses before restoring combined climbing progression", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "climbing-owner";
-    const queryKey = [
-      ["climbing", "activityLogEntries"],
-      { input: { activityId: "activity-1" }, type: "query" },
-    ];
+    const queryKey = [["mobile", "training"], { input: { days: 90 }, type: "query" }];
     const seedClient = createQueryClient();
-    seedClient.setQueryData(queryKey, [
-      { id: "log", holdType: "crimp", wallAngle: { value: -20, unit: null } },
-    ]);
+    seedClient.setQueryData(queryKey, {
+      climbing: {
+        gradeProgression: [
+          {
+            climbKind: "boulder",
+            attemptScope: "climb",
+            ropeMethod: null,
+            solo: null,
+            usedAid: false,
+            gradeSystem: "v_scale",
+            grades: [{ grade: "V4", gradeSortValue: 65 }],
+            settings: ["indoor"],
+            axisMax: 3,
+            axisInterval: 1,
+            axisTicks: [0, 1, 2, 3],
+            periods: [],
+          },
+        ],
+      },
+    });
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v15`,
+        buster: `${userId}:v17`,
         clientState: dehydrate(seedClient),
       }),
     );

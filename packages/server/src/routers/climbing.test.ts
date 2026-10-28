@@ -546,7 +546,7 @@ describe("climbingRouter", () => {
     });
     expect(captureException).toHaveBeenCalledWith(error);
   });
-  it("returns progression with independently recorded method and solo status", async () => {
+  it("returns one grade progression from the selected attempt facts", async () => {
     const { caller } = makeCaller([
       {
         session_date: "2026-07-09",
@@ -560,15 +560,10 @@ describe("climbingRouter", () => {
         ],
       },
     ]);
-    expect(await caller.gradeProgression({ days: 90 })).toMatchObject([
-      {
-        climbKind: "route",
-        ropeMethod: "lead",
-        solo: true,
-        usedAid: false,
-        periods: [{ settings: [{ sends: 1, climbingDays: 1 }] }],
-      },
-    ]);
+    expect(await caller.gradeProgression({ days: 90 })).toMatchObject({
+      grades: [{ climbKind: "route", gradeSystem: "yds", grade: "5.10a" }],
+      periods: [{ sends: 1, climbingDays: 1 }],
+    });
   });
   it("returns the Hangboarding summary contract", async () => {
     const { caller, execute } = makeCallerWithResponses([
@@ -655,10 +650,10 @@ describe("climbingRouter", () => {
       getSummary.mockRestore();
     }
   });
-  it("returns empty arrays when there is no climbing data", async () => {
+  it("returns empty projections when there is no climbing data", async () => {
     const { caller, execute } = makeCaller([]);
 
-    await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
+    await expect(caller.gradeProgression({ days: 90 })).resolves.toBeNull();
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
     expect(execute).toHaveBeenCalledTimes(6);

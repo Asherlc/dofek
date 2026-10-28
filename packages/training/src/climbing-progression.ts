@@ -3,84 +3,65 @@ import {
   FREE_ROCK_GRADE_SYSTEMS,
   gradeSystemLabel,
   isGradeSystemForClimbKind,
+  type RockClimbKind,
 } from "./climbing-grades.ts";
-import { attemptScopeSchema, ropeMethodSchema } from "./climbing-log.ts";
-export const climbingProgressionSettings = ["indoor", "outdoor", "unknown"] as const;
-const ropeMethodLabels = {
-  top_rope: "Top rope",
-  lead: "Lead",
-  follow: "Follow",
-  unroped: "Unroped",
-} as const;
-export const climbingProgressionSettingLabels = {
-  indoor: "Indoor",
-  outdoor: "Outdoor",
-  unknown: "Unknown setting",
-} as const;
+import type { AttemptScope, RopeMethod } from "./climbing-log.ts";
 
+export const climbingProgressionSettings = ["indoor", "outdoor", "unknown"] as const;
 const countSchema = z.number().int().nonnegative();
 const rateSchema = z.number().nonnegative().nullable();
+const gradeSchema = z
+  .object({
+    key: z.string(),
+    climbKind: z.enum(["boulder", "route"]),
+    gradeSystem: z.enum(FREE_ROCK_GRADE_SYSTEMS),
+    grade: z.string(),
+    gradeSortValue: z.number(),
+  })
+  .refine((grade) => isGradeSystemForClimbKind(grade.gradeSystem, grade.climbKind), {
+    path: ["gradeSystem"],
+    message: "Grade system must match the climb kind",
+  });
 const segmentSchema = z.object({
-  grade: z.string(),
+  gradeKey: z.string(),
   sends: countSchema,
   sendsPerDay: rateSchema,
   stackStart: rateSchema,
   stackEnd: rateSchema,
 });
-const settingSchema = z.object({
-  setting: z.enum(climbingProgressionSettings),
-  climbingDays: countSchema,
-  sends: countSchema,
-  unknownOutcomes: countSchema,
-  sendsPerDay: rateSchema,
-  segments: z.array(segmentSchema),
+
+/** One server-computed stack across every record selected by the page filters. */
+export const climbingGradeProgressionSchema = z.object({
+  grades: z.array(gradeSchema),
+  axisMax: z.number().positive(),
+  axisInterval: z.number().positive(),
+  axisTicks: z.array(z.number().nonnegative()),
+  periods: z.array(
+    z.object({
+      startDate: z.iso.date(),
+      endDate: z.iso.date(),
+      climbingDays: countSchema,
+      sends: countSchema,
+      unknownOutcomes: countSchema,
+      sendsPerDay: rateSchema,
+      segments: z.array(segmentSchema),
+    }),
+  ),
 });
 
-/** Server-computed grade stacks; clients format and position these values. */
-export const climbingGradeProgressionSchema = z
-  .object({
-    climbKind: z.enum(["boulder", "route"]),
-    attemptScope: attemptScopeSchema,
-    ropeMethod: ropeMethodSchema.nullable(),
-    solo: z.boolean().nullable(),
-    usedAid: z.boolean().nullable(),
-    gradeSystem: z.enum(FREE_ROCK_GRADE_SYSTEMS),
-    grades: z.array(z.object({ grade: z.string(), gradeSortValue: z.number() })),
-    settings: z.array(z.enum(climbingProgressionSettings)),
-    axisMax: z.number().positive(),
-    axisInterval: z.number().positive(),
-    axisTicks: z.array(z.number().nonnegative()),
-    periods: z.array(
-      z.object({
-        startDate: z.iso.date(),
-        endDate: z.iso.date(),
-        settings: z.array(settingSchema),
-      }),
-    ),
-  })
-  .refine((lane) => isGradeSystemForClimbKind(lane.gradeSystem, lane.climbKind), {
-    path: ["gradeSystem"],
-    message: "Grade system must match the climb kind",
-  });
+export type ClimbingGradeProgressionData = z.infer<typeof climbingGradeProgressionSchema>;
+export type ClimbingProgressionGrade = ClimbingGradeProgressionData["grades"][number];
+export type ClimbingProgressionPeriod = ClimbingGradeProgressionData["periods"][number];
 
-export type ClimbingGradeProgressionLane = z.infer<typeof climbingGradeProgressionSchema>;
-export type ClimbingProgressionPeriod = ClimbingGradeProgressionLane["periods"][number];
-export type ClimbingProgressionSetting = ClimbingProgressionPeriod["settings"][number];
-
-export function climbingProgressionChartLanes(
-  lanes: ClimbingGradeProgressionLane[],
-): ClimbingGradeProgressionLane[] {
-  return lanes.filter(
-    (lane) => lane.usedAid !== null && (lane.climbKind === "boulder" || lane.ropeMethod !== null),
-  );
+export interface ClimbingProgressionLaneFacts {
+  climbKind: RockClimbKind;
+  attemptScope: AttemptScope;
+  ropeMethod: RopeMethod | null;
+  solo: boolean | null;
+  usedAid: boolean | null;
 }
 
-export function climbingProgressionLaneKey(
-  lane: Pick<
-    ClimbingGradeProgressionLane,
-    "climbKind" | "attemptScope" | "ropeMethod" | "solo" | "usedAid"
-  >,
-): string {
+export function climbingProgressionLaneKey(lane: ClimbingProgressionLaneFacts): string {
   return JSON.stringify([
     lane.climbKind,
     lane.attemptScope,
@@ -90,39 +71,15 @@ export function climbingProgressionLaneKey(
   ]);
 }
 
-export function climbingProgressionLaneLabel(
-  lane: ClimbingGradeProgressionLane,
-  lanes: ClimbingGradeProgressionLane[],
+export function climbingProgressionGradeLabel(
+  grade: ClimbingProgressionGrade,
+  grades: ClimbingProgressionGrade[],
 ): string {
-  const parts = [
-    lane.climbKind === "boulder"
-      ? "Bouldering"
-      : lane.ropeMethod === null
-        ? "Routes"
-        : ropeMethodLabels[lane.ropeMethod],
-  ];
-  const matching = lanes.filter(
-    (other) =>
-      other.climbKind === lane.climbKind &&
-      other.attemptScope === lane.attemptScope &&
-      other.ropeMethod === lane.ropeMethod,
-  );
-  if (lane.climbKind === "boulder" && lane.ropeMethod !== null)
-    parts.push(ropeMethodLabels[lane.ropeMethod]);
-  if (lane.solo === true) parts.push("Solo");
-  else if (matching.some((other) => other.solo !== lane.solo))
-    parts.push(lane.solo === false ? "With belayer" : "Solo unknown");
-  if (lane.usedAid === true) parts.push("Aid");
-  if (lane.attemptScope === "pitch") parts.push("Pitch");
-  if (
-    lanes.some(
-      (other) =>
-        climbingProgressionLaneKey(other) === climbingProgressionLaneKey(lane) &&
-        other.gradeSystem !== lane.gradeSystem,
-    )
+  return grades.some(
+    (other) => other.grade === grade.grade && other.gradeSystem !== grade.gradeSystem,
   )
-    parts.push(gradeSystemLabel(lane.gradeSystem));
-  return parts.join(" · ");
+    ? `${grade.grade} · ${gradeSystemLabel(grade.gradeSystem)}`
+    : grade.grade;
 }
 
 export function climbingProgressionPeriodLabel(
@@ -148,19 +105,19 @@ export function climbingProgressionGradeColor(index: number, gradeCount: number)
 }
 
 export function climbingProgressionValueLabel(
-  setting: ClimbingProgressionSetting,
-  segment?: ClimbingProgressionSetting["segments"][number],
+  period: ClimbingProgressionPeriod,
+  segment?: ClimbingProgressionPeriod["segments"][number],
 ): string {
-  const rate = segment ? segment.sendsPerDay : setting.sendsPerDay;
+  const rate = segment ? segment.sendsPerDay : period.sendsPerDay;
   if (rate === null) return "No recorded days";
-  const sends = segment ? segment.sends : setting.sends;
+  const sends = segment ? segment.sends : period.sends;
   const formattedRate = new Intl.NumberFormat(undefined, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(rate);
   const unknown =
-    setting.unknownOutcomes > 0
-      ? ` · ${setting.unknownOutcomes} outcome${setting.unknownOutcomes === 1 ? "" : "s"} unrecorded`
+    period.unknownOutcomes > 0
+      ? ` · ${period.unknownOutcomes} outcome${period.unknownOutcomes === 1 ? "" : "s"} unrecorded`
       : "";
-  return `${formattedRate} sends/day · ${sends} send${sends === 1 ? "" : "s"} · ${setting.climbingDays} recorded day${setting.climbingDays === 1 ? "" : "s"}${unknown}`;
+  return `${formattedRate} sends/day · ${sends} send${sends === 1 ? "" : "s"} · ${period.climbingDays} recorded day${period.climbingDays === 1 ? "" : "s"}${unknown}`;
 }

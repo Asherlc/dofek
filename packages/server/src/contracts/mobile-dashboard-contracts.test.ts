@@ -319,39 +319,39 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
       progressiveOverload: [],
       verticalAscent: [],
       climbing: {
-        gradeProgression: [
-          {
-            attemptScope: "climb",
-            ropeMethod: null,
-            solo: null,
-            usedAid: false,
-            climbKind: "boulder",
-            gradeSystem: "v_scale",
-            grades: [{ grade: "V4", gradeSortValue: 65 }],
-            settings: ["indoor"],
-            axisMax: 3,
-            axisInterval: 1,
-            axisTicks: [0, 1, 2, 3],
-            periods: [
-              {
-                startDate: "2026-07-01",
-                endDate: "2026-07-31",
-                settings: [
-                  {
-                    setting: "indoor",
-                    climbingDays: 2,
-                    sends: 4,
-                    unknownOutcomes: 0,
-                    sendsPerDay: 2,
-                    segments: [
-                      { grade: "V4", sends: 4, sendsPerDay: 2, stackStart: 0, stackEnd: 2 },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
+        gradeProgression: {
+          grades: [
+            {
+              key: '["boulder","v_scale","V4"]',
+              climbKind: "boulder",
+              gradeSystem: "v_scale",
+              grade: "V4",
+              gradeSortValue: 65,
+            },
+          ],
+          axisMax: 3,
+          axisInterval: 1,
+          axisTicks: [0, 1, 2, 3],
+          periods: [
+            {
+              startDate: "2026-07-01",
+              endDate: "2026-07-31",
+              climbingDays: 2,
+              sends: 4,
+              unknownOutcomes: 0,
+              sendsPerDay: 2,
+              segments: [
+                {
+                  gradeKey: '["boulder","v_scale","V4"]',
+                  sends: 4,
+                  sendsPerDay: 2,
+                  stackStart: 0,
+                  stackEnd: 2,
+                },
+              ],
+            },
+          ],
+        },
         volumeByGrade: [],
         sessionSummary: [],
         hangboarding: {
@@ -1051,10 +1051,10 @@ describe("mobileTrainingFixtureSchema", () => {
     (_label, target, climbKind, gradeSystem, grade, gradeSortValue) => {
       const fixture = validTrainingFixture();
       if (target === "gradeProgression") {
-        const lane = fixture.data.climbing.gradeProgression[0];
-        if (!lane) throw new Error("Missing climbing progression fixture");
-        lane.climbKind = climbKind;
-        lane.gradeSystem = gradeSystem;
+        const gradeEntry = fixture.data.climbing.gradeProgression?.grades[0];
+        if (!gradeEntry) throw new Error("Missing climbing progression fixture");
+        gradeEntry.climbKind = climbKind;
+        gradeEntry.gradeSystem = gradeSystem;
       } else
         fixture.data.climbing.volumeByGrade.push({
           climbKind,
@@ -1068,7 +1068,9 @@ describe("mobileTrainingFixtureSchema", () => {
 
       expectIssue(
         mobileTrainingFixtureSchema.safeParse(fixture),
-        ["data", "climbing", target, 0, "gradeSystem"],
+        target === "gradeProgression"
+          ? ["data", "climbing", target, "grades", 0, "gradeSystem"]
+          : ["data", "climbing", target, 0, "gradeSystem"],
         "Grade system must match the climb kind",
       );
     },
@@ -1079,7 +1081,7 @@ describe("mobileTrainingFixtureSchema", () => {
     ["2026-08-01", "2026-08-31"],
   ])("rejects a climbing period entirely outside the selected window", (startDate, endDate) => {
     const fixture = validTrainingFixture();
-    const period = fixture.data.climbing.gradeProgression[0]?.periods[0];
+    const period = fixture.data.climbing.gradeProgression?.periods[0];
     if (!period) throw new Error("Missing climbing period fixture");
     period.startDate = startDate;
     period.endDate = endDate;
@@ -1092,7 +1094,7 @@ describe("mobileTrainingFixtureSchema", () => {
 
   it("accepts calendar buckets that partially overlap the selected window", () => {
     const fixture = validTrainingFixture();
-    const period = fixture.data.climbing.gradeProgression[0]?.periods[0];
+    const period = fixture.data.climbing.gradeProgression?.periods[0];
     if (!period) throw new Error("Missing climbing period fixture");
     period.startDate = "2026-06-01";
     period.endDate = "2026-06-30";

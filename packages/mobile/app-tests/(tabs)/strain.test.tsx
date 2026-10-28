@@ -1009,7 +1009,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [],
         sessionSummary: [],
       },

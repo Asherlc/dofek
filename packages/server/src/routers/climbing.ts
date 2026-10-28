@@ -46,7 +46,7 @@ import {
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const climbingInputSchema = daysInputSchema.extend(climbingFiltersSchema.shape);
 const climbingLogEntriesSchema = z.array(climbingLogEntryDetailResponseSchema);
-const climbingGradeProgressionsSchema = z.array(climbingGradeProgressionSchema);
+const climbingGradeProgressionOutputSchema = climbingGradeProgressionSchema.nullable();
 const climbingVolumesSchema = z.array(climbingVolumeByGradeSchema);
 const climbingSessionSummariesSchema = z.array(climbingSessionSummarySchema);
 
@@ -268,17 +268,15 @@ export const climbingRouter = router({
 
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    outputSchema: climbingGradeProgressionsSchema,
-    keyVersion: "climbing-scoped-grade-lanes-v4",
+    outputSchema: climbingGradeProgressionOutputSchema,
+    keyVersion: "climbing-combined-grade-progression-v5",
   })
     .input(climbingInputSchema)
-    .output(climbingGradeProgressionsSchema)
-    .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
+    .output(climbingGradeProgressionOutputSchema)
+    .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow | null> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getGradeProgression(input.days, input)).map((row) =>
-          row.toDetail(),
-        );
+        return (await repository.getGradeProgression(input.days, input))?.toDetail() ?? null;
       });
     }),
 

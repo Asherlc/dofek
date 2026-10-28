@@ -1259,7 +1259,7 @@ describe("mobileDashboard.training", () => {
     expect(result.activities).toEqual([]);
     expect(result.weeklyVolume).toEqual([]);
     expect(result.climbing).toEqual({
-      gradeProgression: [],
+      gradeProgression: null,
       volumeByGrade: [],
       sessionSummary: [],
       hangboarding: {
@@ -1277,7 +1277,7 @@ describe("mobileDashboard.training", () => {
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-primary-title-v6",
+      keyVersion: "training-combined-climbing-progression-v7",
     });
     const timingCall = vi
       .mocked(logger.info)
@@ -1320,7 +1320,7 @@ describe("mobileDashboard.training", () => {
       verticalAscent: [],
       chartAvailability: emptyTrainingChartAvailability,
       climbing: {
-        gradeProgression: [],
+        gradeProgression: null,
         volumeByGrade: [],
         sessionSummary: [],
         hangboarding: {
@@ -1409,7 +1409,7 @@ describe("mobileDashboard.training", () => {
       verticalAscent: [],
       chartAvailability: emptyTrainingChartAvailability,
       climbing: {
-        gradeProgression: [],
+        gradeProgression: null,
         volumeByGrade: [],
         sessionSummary: [],
         hangboarding: {

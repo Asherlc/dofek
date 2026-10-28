@@ -392,7 +392,7 @@ export const mobileTrainingTabOutputSchema = z.object({
     verticalAscent: trainingChartAvailabilitySchema,
   }),
   climbing: z.object({
-    gradeProgression: z.array(climbingGradeProgressionSchema),
+    gradeProgression: climbingGradeProgressionSchema.nullable(),
     volumeByGrade: z.array(
       climbingGradeDisplaySchema.extend({
         attempts: z.number().int().nonnegative().nullable(),
@@ -625,8 +625,8 @@ export const mobileTrainingFixtureSchema = z
       context,
     );
     const windowStart = fixtureWindowStart(input);
-    for (const lane of data.climbing.gradeProgression) {
-      for (const period of lane.periods) {
+    if (data.climbing.gradeProgression !== null) {
+      for (const period of data.climbing.gradeProgression.periods) {
         if (period.startDate > input.endDate || period.endDate < windowStart) {
           context.addIssue({
             code: "custom",

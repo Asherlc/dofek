@@ -1,106 +1,89 @@
 import { describe, expect, it } from "vitest";
 import {
-  type ClimbingGradeProgressionLane,
-  type ClimbingProgressionSetting,
-  climbingProgressionChartLanes,
+  type ClimbingGradeProgressionData,
+  type ClimbingProgressionGrade,
+  type ClimbingProgressionPeriod,
+  climbingGradeProgressionSchema,
   climbingProgressionGradeColor,
-  climbingProgressionLaneLabel,
+  climbingProgressionGradeLabel,
+  climbingProgressionLaneKey,
   climbingProgressionPeriodLabel,
   climbingProgressionValueLabel,
 } from "./climbing-progression.ts";
 
-const boulderingLane: ClimbingGradeProgressionLane = {
-  attemptScope: "climb",
-  ropeMethod: null,
-  solo: null,
-  usedAid: null,
+const boulderGrade: ClimbingProgressionGrade = {
+  key: '["boulder","v_scale","V4"]',
   climbKind: "boulder",
   gradeSystem: "v_scale",
-  grades: [],
-  settings: ["indoor"],
-  axisMax: 1,
-  axisInterval: 1,
-  axisTicks: [0, 1],
-  periods: [],
+  grade: "V4",
+  gradeSortValue: 65,
 };
-
-describe("climbingProgressionChartLanes", () => {
-  it.each([false, true])("keeps bouldering with recorded aid status %s", (usedAid) => {
-    const recorded = { ...boulderingLane, usedAid };
-    expect(climbingProgressionChartLanes([boulderingLane, recorded])).toEqual([recorded]);
+describe("climbingProgressionGradeLabel", () => {
+  it("preserves native grade labels when no other scale uses that label", () => {
+    const routeGrade: ClimbingProgressionGrade = {
+      key: '["route","yds","5.10a"]',
+      climbKind: "route",
+      gradeSystem: "yds",
+      grade: "5.10a",
+      gradeSortValue: 61,
+    };
+    const grades = [boulderGrade, routeGrade];
+    expect(climbingProgressionGradeLabel(boulderGrade, grades)).toBe("V4");
+    expect(climbingProgressionGradeLabel(routeGrade, grades)).toBe("5.10a");
   });
-
-  it.each(["lead", "top_rope", "follow", "unroped"] as const)(
-    "selects route lanes with recorded %s methods and aid status",
-    (ropeMethod) => {
-      const recorded: ClimbingGradeProgressionLane = {
-        ...boulderingLane,
-        climbKind: "route",
-        ropeMethod,
-        usedAid: false,
-      };
-      const aided = { ...recorded, usedAid: true };
-      const lanes = [
-        { ...recorded, usedAid: null },
-        recorded,
-        { ...recorded, ropeMethod: null },
-        aided,
-        { ...aided, ropeMethod: null },
-      ];
-      expect(climbingProgressionChartLanes(lanes)).toEqual([recorded, aided]);
-    },
-  );
+  it("qualifies identical native labels with their grading scales", () => {
+    const font: ClimbingProgressionGrade = {
+      ...boulderGrade,
+      key: "font-6A",
+      grade: "6A",
+      gradeSystem: "font",
+    };
+    const french: ClimbingProgressionGrade = {
+      ...font,
+      key: "french-6A",
+      climbKind: "route",
+      gradeSystem: "french",
+    };
+    expect(climbingProgressionGradeLabel(font, [font, french])).toBe("6A · Fontainebleau");
+    expect(climbingProgressionGradeLabel(french, [font, french])).toBe("6A · French");
+  });
 });
 
-describe("climbingProgressionLaneLabel", () => {
-  it("distinguishes solo facts with concise climbing labels", () => {
-    const known: ClimbingGradeProgressionLane = {
-      ...boulderingLane,
-      climbKind: "route",
-      ropeMethod: "lead",
+describe("climbingGradeProgressionSchema", () => {
+  const chart: ClimbingGradeProgressionData = {
+    grades: [boulderGrade],
+    axisMax: 1,
+    axisInterval: 1,
+    axisTicks: [0, 1],
+    periods: [],
+  };
+  it("accepts the server-computed combined chart", () => {
+    expect(climbingGradeProgressionSchema.parse(chart)).toEqual(chart);
+  });
+  it("checks each grade's scale against its climb kind", () => {
+    const result = climbingGradeProgressionSchema.safeParse({
+      ...chart,
+      grades: [{ ...boulderGrade, gradeSystem: "yds" }],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Invalid grade scale accepted");
+    expect(result.error.issues[0]?.path).toEqual(["grades", 0, "gradeSystem"]);
+  });
+});
+
+describe("climbingProgressionLaneKey", () => {
+  it("retains independent method, solo, aid and scope identities for strengths", () => {
+    const lane = {
+      climbKind: "route" as const,
+      attemptScope: "climb" as const,
+      ropeMethod: "lead" as const,
       solo: false,
       usedAid: false,
     };
-    const unknown: ClimbingGradeProgressionLane = { ...known, solo: null, usedAid: null };
-    expect(climbingProgressionLaneLabel(known, [known, unknown])).toBe("Lead · With belayer");
-    expect(climbingProgressionLaneLabel(unknown, [known, unknown])).toBe("Lead · Solo unknown");
-  });
-  it("uses the style label when matching lanes share a grade scale", () => {
-    expect(climbingProgressionLaneLabel(boulderingLane, [boulderingLane])).toBe("Bouldering");
-    expect(climbingProgressionLaneLabel(boulderingLane, [boulderingLane, boulderingLane])).toBe(
-      "Bouldering",
-    );
-  });
-
-  it("qualifies both scales when a style retains different grade systems", () => {
-    const fontLane: ClimbingGradeProgressionLane = { ...boulderingLane, gradeSystem: "font" };
-    const lanes = [boulderingLane, fontLane];
-    expect(climbingProgressionLaneLabel(boulderingLane, lanes)).toBe("Bouldering · V Scale");
-    expect(climbingProgressionLaneLabel(fontLane, lanes)).toBe("Bouldering · Fontainebleau");
-  });
-
-  it("keeps different styles concise even when their grade systems differ", () => {
-    const leadLane: ClimbingGradeProgressionLane = {
-      ...boulderingLane,
-      ropeMethod: "lead",
-      climbKind: "route",
-      gradeSystem: "yds",
-    };
-    const lanes = [boulderingLane, leadLane];
-    expect(climbingProgressionLaneLabel(boulderingLane, lanes)).toBe("Bouldering");
-    expect(climbingProgressionLaneLabel(leadLane, lanes)).toBe("Lead");
-  });
-  it("labels method solo aid and pitch scope independently", () => {
-    const lane: ClimbingGradeProgressionLane = {
-      ...boulderingLane,
-      climbKind: "route",
-      ropeMethod: "lead",
-      solo: true,
-      usedAid: true,
-      attemptScope: "pitch",
-      gradeSystem: "yds",
-    };
-    expect(climbingProgressionLaneLabel(lane, [lane])).toBe("Lead · Solo · Aid · Pitch");
+    expect(climbingProgressionLaneKey(lane)).toBe('["route","climb","lead",false,false]');
+    expect(
+      climbingProgressionLaneKey({ ...lane, attemptScope: "pitch", solo: true, usedAid: true }),
+    ).toBe('["route","pitch","lead",true,true]');
   });
 });
 
@@ -149,22 +132,25 @@ describe("climbingProgressionGradeColor", () => {
 });
 
 describe("climbingProgressionValueLabel", () => {
-  const setting: ClimbingProgressionSetting = {
-    setting: "indoor",
+  const setting: ClimbingProgressionPeriod = {
+    startDate: "2026-01-01",
+    endDate: "2026-01-31",
     climbingDays: 4,
     sends: 9,
     unknownOutcomes: 0,
     sendsPerDay: 2.25,
-    segments: [{ grade: "V4", sends: 3, sendsPerDay: 0.75, stackStart: 0, stackEnd: 0.75 }],
+    segments: [
+      { gradeKey: boulderGrade.key, sends: 3, sendsPerDay: 0.75, stackStart: 0, stackEnd: 0.75 },
+    ],
   };
 
-  it("formats the server's setting totals with one decimal place", () => {
+  it("formats the server's period totals with one decimal place", () => {
     expect(climbingProgressionValueLabel(setting)).toBe(
       "2.3 sends/day · 9 sends · 4 recorded days",
     );
   });
 
-  it("uses the selected grade's send count and rate with the setting's recorded days", () => {
+  it("uses the selected grade's send count and rate with the period's recorded days", () => {
     expect(climbingProgressionValueLabel(setting, setting.segments[0])).toBe(
       "0.8 sends/day · 3 sends · 4 recorded days",
     );
@@ -178,7 +164,7 @@ describe("climbingProgressionValueLabel", () => {
     expect(climbingProgressionValueLabel(missingSetting)).toBe("No recorded days");
     expect(
       climbingProgressionValueLabel(missingSetting, {
-        grade: "V4",
+        gradeKey: boulderGrade.key,
         sends: 0,
         sendsPerDay: null,
         stackStart: null,

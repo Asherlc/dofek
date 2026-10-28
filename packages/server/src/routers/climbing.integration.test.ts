@@ -197,14 +197,11 @@ describe("climbing log router PostgreSQL integration", () => {
         expect.objectContaining({ grade: "V5", recordedAttempts: 4, sends: 0 }),
       ]),
     );
-    expect(progression).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          climbKind: "boulder",
-          grades: expect.arrayContaining([expect.objectContaining({ grade: "V4" })]),
-        }),
+    expect(progression).toMatchObject({
+      grades: expect.arrayContaining([
+        expect.objectContaining({ climbKind: "boulder", grade: "V4" }),
       ]),
-    );
+    });
     expect(summaries).toEqual([
       expect.objectContaining({
         activityId: outing.groupId,

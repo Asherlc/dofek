@@ -177,7 +177,7 @@ describe("ClimbingTab", () => {
   });
   it("shows actionable refresh errors alongside retained charts", async () => {
     gradeProgressionQuery.mockReturnValue({
-      data: [],
+      data: climbingProgressionFixture(),
       isLoading: false,
       error: new Error("Reconnect the climbing provider"),
     });
@@ -311,7 +311,7 @@ describe("ClimbingTab", () => {
     recentActivitiesSection.mockReset();
     trainingDaysState.days = 90;
     queryDate.value = "2026-10-26";
-    gradeProgressionQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    gradeProgressionQuery.mockReturnValue({ data: null, isLoading: false, error: null });
     volumeByGradeQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     hangboardingSummaryQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
@@ -411,7 +411,7 @@ describe("ClimbingTab", () => {
 
   it("keeps empty cached section data visible during refetch errors", async () => {
     gradeProgressionQuery.mockReturnValue({
-      data: [],
+      data: null,
       isLoading: false,
       error: new Error("Grade query failed"),
     });
@@ -425,7 +425,7 @@ describe("ClimbingTab", () => {
 
   it("keeps stale cached section data visible during refetch errors", async () => {
     gradeProgressionQuery.mockReturnValue({
-      data: [climbingProgressionFixture()],
+      data: climbingProgressionFixture(),
       isLoading: false,
       error: new Error("Grade query failed"),
     });

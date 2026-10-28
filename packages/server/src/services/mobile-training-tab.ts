@@ -182,7 +182,7 @@ export async function loadMobileTrainingTab(
   const [
     { activities, weeklyVolume },
     cyclingAnalytics,
-    gradeProgressionModels,
+    gradeProgressionModel,
     volumeByGradeModels,
     sessionSummaryModels,
     hangboardingSummary,
@@ -235,7 +235,7 @@ export async function loadMobileTrainingTab(
       }),
     },
     climbing: {
-      gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),
+      gradeProgression: gradeProgressionModel?.toDetail() ?? null,
       volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),
       sessionSummary: sessionSummaryModels.map((model) => model.toDetail()),
       hangboarding: hangboardingSummary,

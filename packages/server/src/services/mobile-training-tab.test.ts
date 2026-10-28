@@ -123,7 +123,7 @@ describe("loadMobileTrainingTab", () => {
       .prototype;
     const gradeProgressionSpy = vi
       .spyOn(repository, "getGradeProgression")
-      .mockResolvedValue([new ClimbingGradeProgression(climbingProgressionFixture)]);
+      .mockResolvedValue(new ClimbingGradeProgression(climbingProgressionFixture));
     const volumeByGradeSpy = vi.spyOn(repository, "getVolumeByGrade").mockResolvedValue([
       new ClimbingVolumeByGrade({
         climbKind: "route",
@@ -192,7 +192,7 @@ describe("loadMobileTrainingTab", () => {
         daily: [],
       }),
     );
-    gradeProgressionSpy.mockImplementation(track([]));
+    gradeProgressionSpy.mockImplementation(track(null));
     volumeByGradeSpy.mockImplementation(track([]));
     sessionSummarySpy.mockImplementation(track([]));
 
@@ -311,7 +311,7 @@ describe("loadMobileTrainingTab", () => {
       variabilityOffset: 0,
     });
     expect(result.climbing).toEqual({
-      gradeProgression: [climbingProgressionFixture],
+      gradeProgression: climbingProgressionFixture,
       volumeByGrade: [
         {
           climbKind: "route",

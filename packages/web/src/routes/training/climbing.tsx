@@ -148,9 +148,9 @@ export function ClimbingTab() {
           {gradeProgression.error ? (
             <QueryStatePanel error={gradeProgression.error} height={0} />
           ) : null}
-          {gradeProgression.error && !gradeProgression.data ? null : (
+          {gradeProgression.error && gradeProgression.data === undefined ? null : (
             <ClimbingGradeProgressionChart
-              data={gradeProgression.data ?? []}
+              data={gradeProgression.data ?? null}
               loading={gradeProgression.isLoading}
             />
           )}
