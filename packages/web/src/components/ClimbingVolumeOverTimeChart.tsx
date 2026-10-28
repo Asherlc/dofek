@@ -1,4 +1,4 @@
-import { formatDurationMinutesClock, formatNumber } from "@dofek/format/format";
+import { formatDurationHoursMinutes, formatNumber } from "@dofek/format/format";
 import { useState } from "react";
 import {
   chartColors,
@@ -22,7 +22,7 @@ export function ClimbingVolumeOverTimeChart({
   const useHours = metric === "time" && maxMinutes >= 60;
   const label = metric === "attempts" ? "Attempts" : useHours ? "Time (h:mm)" : "Time (minutes)";
   const formatValue = useHours
-    ? formatDurationMinutesClock
+    ? formatDurationHoursMinutes
     : (value: number) => formatNumber(value, 0);
   const hourInterval = Math.max(1, Math.ceil(maxMinutes / 60 / 6)) * 60;
   const points = data.map((row) => {
@@ -45,9 +45,6 @@ export function ClimbingVolumeOverTimeChart({
           <option value="time">Time</option>
         </select>
       </div>
-      {data.some((row) => (metric === "attempts" ? row.attempts : row.minutes) === null) ? (
-        <p className="text-xs text-muted">Weeks with incomplete records are not plotted.</p>
-      ) : null}
       <DofekChart
         option={{
           grid: dofekGrid("single"),
@@ -65,7 +62,7 @@ export function ClimbingVolumeOverTimeChart({
             ...dofekAxis.value({
               name: label,
               min: 0,
-              axisLabel: useHours ? { formatter: formatDurationMinutesClock } : undefined,
+              axisLabel: useHours ? { formatter: formatDurationHoursMinutes } : undefined,
             }),
             ...(useHours
               ? { interval: hourInterval, max: Math.ceil(maxMinutes / hourInterval) * hourInterval }

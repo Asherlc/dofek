@@ -41,14 +41,33 @@ export const Sparse: Story = {
   args: {
     data: {
       ...climbingStrengthsFixture,
-      panels: climbingStrengthsFixture.panels.map((panel) => ({
-        ...panel,
-        grades: panel.grades.filter((grade) => grade.grade === "V4"),
-        rows: panel.rows.map((row) => ({
-          ...row,
-          cells: row.cells.filter((cell) => cell.grade === "V4"),
+      panels: climbingStrengthsFixture.panels
+        .filter((panel) => panel.dimension === "wall_angle")
+        .map((panel) => ({
+          ...panel,
+          coverage: { ...panel.coverage, missingTraits: 7 },
+          rows: panel.rows.filter((row) => row.key === "slab"),
+          gradeAdjustedStrengths: panel.gradeAdjustedStrengths.filter((row) => row.key === "slab"),
+          allGrades: {
+            ...panel.allGrades,
+            rows: panel.allGrades.rows.filter((row) => row.key === "slab"),
+          },
         })),
-      })),
+    },
+  },
+};
+export const MissingHoldTypes: Story = {
+  args: {
+    data: {
+      ...climbingStrengthsFixture,
+      panels: climbingStrengthsFixture.panels
+        .filter((panel) => panel.dimension === "hold_type")
+        .map((panel) => ({
+          ...panel,
+          coverage: { ...panel.coverage, missingTraits: 14 },
+          rows: [],
+          allGrades: { ...panel.allGrades, rows: [] },
+        })),
     },
   },
 };
@@ -87,8 +106,7 @@ export const UnknownResults: Story = {
   args: { data: climbingStrengthsUnknownResultsFixture },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · V3 · Result unknown/ }));
+    await userEvent.click(canvas.getByRole("button", { name: /^Vertical · All grades:/ }));
     await expect(canvas.getByText(/V3 · .* · Result unknown/)).toBeVisible();
   },
 };
@@ -130,12 +148,6 @@ export const HoldTypes: Story = {
   },
 };
 
-export const Grades: Story = {
-  ...Narrow,
-  play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Grades" }));
-  },
-};
 export const Progress: Story = {
   ...Narrow,
   play: async ({ canvasElement, userEvent }) => {

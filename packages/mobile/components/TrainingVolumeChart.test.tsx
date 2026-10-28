@@ -31,7 +31,7 @@ it.each([
   fireEvent.click(screen.getByRole("radio", { name: "Time" }));
   expect(screen.getByText("hours:minutes per week")).toBeTruthy();
   expect(screen.getByText(duration)).toBeTruthy();
-  expect(screen.getByLabelText(`2026-01-05: ${duration}`)).toBeTruthy();
+  expect(screen.getByLabelText(`2026-01-05: ${duration} h:mm`)).toBeTruthy();
   fireEvent.click(screen.getByRole("radio", { name: "Attempts" }));
   expect(screen.getByLabelText("2026-01-05: 3 attempts")).toBeTruthy();
   expect(screen.getByText("attempts per week")).toBeTruthy();
@@ -49,9 +49,9 @@ it("uses one duration format while preserving zero and missing climbing time", (
     />,
   );
   fireEvent.click(screen.getByRole("radio", { name: "Time" }));
-  expect(screen.getByLabelText("2026-01-05: 1:30")).toBeTruthy();
-  expect(screen.getByLabelText("2026-01-12: 0:45")).toBeTruthy();
-  expect(screen.getByLabelText("2026-01-19: 0:00")).toBeTruthy();
+  expect(screen.getByLabelText("2026-01-05: 1:30 h:mm")).toBeTruthy();
+  expect(screen.getByLabelText("2026-01-12: 0:45 h:mm")).toBeTruthy();
+  expect(screen.getByLabelText("2026-01-19: 0:00 h:mm")).toBeTruthy();
   expect(screen.getByText("0:00")).toBeTruthy();
   expect(screen.getByLabelText("2026-01-26: Not recorded")).toBeTruthy();
   expect(screen.getByText("—")).toBeTruthy();
@@ -77,10 +77,7 @@ it("formats lifted weight in the selected unit system", () => {
       ]}
     />,
   );
-  const units = new UnitConverter("imperial");
-  expect(
-    screen.getByLabelText(`2026-01-05: ${units.convertWeight(400)} ${units.weightLabel}`),
-  ).toBeTruthy();
+  expect(screen.getByLabelText("2026-01-05: 882 lbs")).toBeTruthy();
 });
 it("keeps strength time in minutes", () => {
   render(

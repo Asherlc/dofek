@@ -10,8 +10,8 @@ import {
   formatDateTime,
   formatDateYmd,
   formatDateYmdInTimeZone,
+  formatDurationHoursMinutes,
   formatDurationMinutes,
-  formatDurationMinutesClock,
   formatDurationRange,
   formatDurationSeconds,
   formatGrams,
@@ -210,6 +210,27 @@ describe("date and time formatters", () => {
   });
 });
 
+describe("formatDurationHoursMinutes", () => {
+  it.each([
+    [0, "0:00"],
+    [5, "0:05"],
+    [45, "0:45"],
+    [59, "0:59"],
+    [60, "1:00"],
+    [61, "1:01"],
+    [85.86666666666666, "1:26"],
+    [90, "1:30"],
+    [59.9, "1:00"],
+    [119.7, "2:00"],
+    [600, "10:00"],
+    [1445, "24:05"],
+    [Number.NaN, "--"],
+    [Number.POSITIVE_INFINITY, "--"],
+  ])("formats %s minutes as %s", (minutes, expected) => {
+    expect(formatDurationHoursMinutes(minutes)).toBe(expected);
+  });
+});
+
 describe("formatDurationMinutes", () => {
   it("formats minutes only when < 60", () => {
     expect(formatDurationMinutes(45)).toBe("45m");
@@ -233,24 +254,6 @@ describe("formatDurationMinutes", () => {
 
   it("rounds fractional minutes", () => {
     expect(formatDurationMinutes(90.7)).toBe("1h 31m");
-  });
-});
-
-describe("formatDurationMinutesClock", () => {
-  it.each([
-    [0, "0:00"],
-    [45, "0:45"],
-    [59, "0:59"],
-    [60, "1:00"],
-    [61, "1:01"],
-    [90, "1:30"],
-    [600, "10:00"],
-    [59.7, "1:00"],
-    [119.7, "2:00"],
-    [Number.NaN, "--"],
-    [Number.POSITIVE_INFINITY, "--"],
-  ])("formats %s minutes as %s", (minutes, expected) => {
-    expect(formatDurationMinutesClock(minutes)).toBe(expected);
   });
 });
 
