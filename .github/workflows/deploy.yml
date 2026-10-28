@@ -32,7 +32,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 concurrency:
   group: ${{ (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') && 'deploy-web-production' || format('deploy-{0}-{1}', inputs.target, github.run_id) }}
@@ -58,13 +57,15 @@ jobs:
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Compute image tag
+      - name: Compute image name and tag
         id: tag
         env:
           SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -82,7 +83,7 @@ jobs:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
@@ -107,8 +108,8 @@ jobs:
             REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
+          cache-from: type=registry,ref=${{ steps.tag.outputs.image }}:server-buildcache
+          cache-to: type=registry,ref=${{ steps.tag.outputs.image }}:server-buildcache,mode=max
 
   docker_ml:
     name: Docker ML Build & Push
@@ -120,13 +121,15 @@ jobs:
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Compute image tag
+      - name: Compute image name and tag
         id: tag
         env:
           SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')-ml" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -144,7 +147,7 @@ jobs:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-ml
+          images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
@@ -155,8 +158,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=ml
-          cache-to: type=gha,mode=max,scope=ml
+          cache-from: type=registry,ref=${{ steps.tag.outputs.image }}:buildcache
+          cache-to: type=registry,ref=${{ steps.tag.outputs.image }}:buildcache,mode=max
 
   web-stack:
     name: Deploy Web Stack
