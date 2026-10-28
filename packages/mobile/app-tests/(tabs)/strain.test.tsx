@@ -8,8 +8,8 @@ import {
   recentCyclingActivityFixture,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
-
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { runningData } from "../../components/running-training-test-helpers";
 
 let mockTodayQueryDate = "2026-03-28";
 const mockStrengthsState: {
@@ -33,7 +33,7 @@ type MockRangeQueryOptions = {
   placeholderData?: (previousData: unknown) => unknown;
 };
 let mockRangeQueryCalls: Record<
-  "training" | "hrZones" | "polarization" | "monotony" | "locationMap" | "strengths",
+  "running" | "training" | "hrZones" | "polarization" | "monotony" | "locationMap" | "strengths",
   Array<{ input: { days: number | null; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -128,6 +128,20 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    running: {
+      dynamicsV2: {
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.running.push({ input, options });
+          return {
+            data: { ...runningData, data: [] },
+            isLoading: false,
+            isError: false,
+            error: null,
+            refetch: vi.fn(),
+          };
+        },
+      },
+    },
     climbing: {
       volumeOverTime: {
         useQuery: () => ({
@@ -215,6 +229,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      running: { dynamicsV2: { invalidate: vi.fn() } },
       climbing: {
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
@@ -266,6 +281,8 @@ vi.mock("../../lib/units", () => ({
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
     distanceLabel: "km",
+    paceLabel: "/km",
+    convertPace: (value: number) => value,
     formatWeight: (kg: number) => ({
       text: `${kg.toFixed(1)} kg`,
       parts: [{ type: "unit", value: "kg" }],
@@ -278,6 +295,12 @@ vi.mock("../../lib/units", () => ({
 import { captureException } from "../../lib/telemetry";
 
 describe("StrainScreen recent activity navigation", () => {
+  it("shows running cadence and form on the training screen", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText("Running Form")).toBeTruthy();
+  });
+
   it.each([
     { name: "Morning Run", expectedTitle: "Morning Run" },
     { name: null, expectedTitle: "Walking" },
@@ -315,7 +338,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Open Running" })).toBeDefined();
   });
 
@@ -337,6 +360,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockRefreshInvalidate = undefined;
     mockTrainingDataDays = 90;
     mockRangeQueryCalls = {
+      running: [],
       training: [],
       locationMap: [],
       strengths: [],

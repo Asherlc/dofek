@@ -2,11 +2,10 @@ import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format
 import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
 import type { TrainingChartAvailability } from "dofek-server/types";
-import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
-import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { RunningDynamics } from "../../components/RunningDynamics.tsx";
 import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState.tsx";
 import {
@@ -46,6 +45,8 @@ export function RunningTab() {
       <div className="card p-4">
         <SportVolumeChart days={days} sport="running" />
       </div>
+      {paceCurve.error && paceCurve.data && <QueryStatePanel error={paceCurve.error} />}
+      {paceTrend.error && paceTrend.data && <QueryStatePanel error={paceTrend.error} />}
       {/* Pace Duration Curve */}
       <Section title="Pace Duration Curve">
         {paceCurve.error && !paceCurve.data ? (
@@ -74,33 +75,8 @@ export function RunningTab() {
             />
           )}
         </Section>
-
-        <Section title="Cadence Trend">
-          {dynamics.error && !dynamics.data ? (
-            <QueryStatePanel error={dynamics.error} />
-          ) : (
-            <CadenceTrendChart
-              data={dynamics.data?.data ?? []}
-              availability={dynamics.data?.availability}
-              loading={dynamics.isLoading}
-            />
-          )}
-        </Section>
       </div>
-
-      {/* Running Dynamics Table */}
-      <Section title="Running Form">
-        {dynamics.error && !dynamics.data ? (
-          <QueryStatePanel error={dynamics.error} />
-        ) : (
-          <RunningDynamicsTable
-            data={dynamics.data?.data ?? []}
-            availability={dynamics.data?.availability}
-            loading={dynamics.isLoading}
-            units={units}
-          />
-        )}
-      </Section>
+      <RunningDynamics data={dynamics.data} loading={dynamics.isLoading} error={dynamics.error} />
 
       <Section title="Recent Runs">
         <RecentActivitiesSection activityTypes={RUNNING_ACTIVITY_TYPES} />
@@ -276,174 +252,6 @@ function PaceTrendChart({
       empty={data.length === 0}
       height={250}
       emptyMessage="No running data"
-    />
-  );
-}
-
-// ── Cadence Trend Chart ──
-
-interface DynamicsRow {
-  activityId: string;
-  date: string;
-  activityName: string;
-  cadence: number;
-  strideLengthMeters: number | null;
-  stanceTimeMs: number | null;
-  verticalOscillationMm: number | null;
-  paceSecondsPerKm: number;
-  distanceKm: number;
-}
-
-function CadenceTrendChart({
-  data,
-  availability,
-  loading,
-}: {
-  data: DynamicsRow[];
-  availability?: TrainingChartAvailability;
-  loading: boolean;
-}) {
-  const option = {
-    grid: { ...dofekGrid("single"), top: 20, bottom: 40, left: 55 },
-    tooltip: dofekTooltip({
-      trigger: "item",
-      formatter: (params: { data: [string, number]; dataIndex: number }) => {
-        const dataPoint = data[params.dataIndex];
-        if (!dataPoint) return "";
-        return `<strong>${escapeTooltipHtml(dataPoint.activityName)}</strong><br/>${escapeTooltipHtml(formatDateMedium(dataPoint.date))}<br/>Cadence: ${dataPoint.cadence} spm`;
-      },
-    }),
-    xAxis: dofekAxis.time(),
-    yAxis: dofekAxis.value({ name: "Steps/min" }),
-    legend: dofekLegend(false),
-    series: [
-      dofekSeries.line(
-        "Cadence",
-        data.map((d) => [d.date, d.cadence]),
-        {
-          color: chartColors.amber,
-          smooth: true,
-          symbol: "circle",
-          symbolSize: 5,
-        },
-      ),
-    ],
-  };
-
-  if (!loading && availability?.status === "insufficient_data") {
-    return <TrainingChartEmptyState availability={availability} />;
-  }
-
-  return (
-    <DofekChart
-      option={option}
-      loading={loading}
-      empty={data.length === 0}
-      height={250}
-      emptyMessage="No cadence data"
-    />
-  );
-}
-
-// ── Running Dynamics Table ──
-
-function RunningDynamicsTable({
-  data,
-  availability,
-  loading,
-  units,
-}: {
-  data: DynamicsRow[];
-  availability?: TrainingChartAvailability;
-  loading: boolean;
-  units: UnitConverter;
-}) {
-  if (loading) return <ChartLoadingSkeleton height={200} />;
-
-  if (availability?.status === "insufficient_data") {
-    return <TrainingChartEmptyState availability={availability} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-dim text-sm">No running dynamics data</span>
-      </div>
-    );
-  }
-
-  const columns: ActivityTableColumn<DynamicsRow>[] = [
-    {
-      key: "date",
-      label: "Date",
-      headerClassName: "py-2 pr-3",
-      cellClassName: "py-1.5 pr-3 text-subtle",
-      renderCell: (row) => formatDateMedium(row.date),
-    },
-    {
-      key: "activity",
-      label: "Activity",
-      headerClassName: "py-2 pr-3",
-      cellClassName: "py-1.5 pr-3 truncate max-w-[150px]",
-      renderCell: (row) => row.activityName,
-    },
-    {
-      key: "pace",
-      label: "Pace",
-      headerClassName: "py-2 pr-3 text-right",
-      cellClassName: "py-1.5 pr-3 text-right font-mono",
-      renderCell: (row) =>
-        `${formatPace(units.convertPace(row.paceSecondsPerKm))} ${units.paceLabel}`,
-    },
-    {
-      key: "distance",
-      label: "Distance",
-      headerClassName: "py-2 pr-3 text-right",
-      cellClassName: "py-1.5 pr-3 text-right font-mono",
-      renderCell: (row) =>
-        `${formatNumber(units.convertDistance(row.distanceKm))} ${units.distanceLabel}`,
-    },
-    {
-      key: "cadence",
-      label: "Cadence",
-      headerClassName: "py-2 pr-3 text-right",
-      cellClassName: "py-1.5 pr-3 text-right font-mono",
-      renderCell: (row) => row.cadence,
-    },
-    {
-      key: "stride",
-      label: "Stride",
-      headerClassName: "py-2 pr-3 text-right",
-      cellClassName: "py-1.5 pr-3 text-right font-mono",
-      renderCell: (row) =>
-        row.strideLengthMeters != null ? `${formatNumber(row.strideLengthMeters, 2)} m` : "--",
-    },
-    {
-      key: "stanceTime",
-      label: "Stance Time",
-      headerClassName: "py-2 pr-3 text-right",
-      cellClassName: "py-1.5 pr-3 text-right font-mono",
-      renderCell: (row) => (row.stanceTimeMs != null ? `${Math.round(row.stanceTimeMs)} ms` : "--"),
-    },
-    {
-      key: "verticalOscillation",
-      label: "Vert. Osc.",
-      headerClassName: "py-2 text-right",
-      cellClassName: "py-1.5 text-right font-mono",
-      renderCell: (row) =>
-        row.verticalOscillationMm != null ? `${formatNumber(row.verticalOscillationMm)} mm` : "--",
-    },
-  ];
-
-  return (
-    <ActivityTable
-      rows={data.slice().reverse()}
-      columns={columns}
-      getRowKey={(row) => `${row.activityId}-${row.date}-${row.activityName}`}
-      getActivityId={(row) => row.activityId}
-      tableClassName="w-full text-xs"
-      headerRowClassName="border-b border-border-strong text-subtle text-left"
-      rowClassName="border-b border-border/50 text-foreground hover:bg-surface-hover cursor-pointer"
     />
   );
 }

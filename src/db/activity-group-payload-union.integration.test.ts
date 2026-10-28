@@ -11,6 +11,7 @@ import {
   runDbtBatch,
 } from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
+import { buildActivityStepCadenceRowsTableSql } from "./clickhouse-activity-step-cadence.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import {
   buildPostgresFitnessActivityRawTableStatement,
@@ -601,6 +602,7 @@ async function seedFixture(
     createActivityLocationSampleSql(database),
     buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${database}.`),
     createActivityLocationSummarySql(database),
+    buildActivityStepCadenceRowsTableSql().replaceAll("analytics.", `${database}.`),
     buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${database}.`),
     `INSERT INTO ${database}.source_activity
       (id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,

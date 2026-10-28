@@ -98,6 +98,15 @@ sensor_summary_dirty_keys AS (
         AND sensor.refreshed_at > target_state.last_refreshed_at
 ),
 
+step_cadence_dirty_keys AS (
+    SELECT
+activity_id,
+user_id
+    FROM {{ ref('activity_step_cadence_rows') }} FINAL
+    CROSS JOIN target_state
+    WHERE refreshed_at > target_state.last_refreshed_at
+),
+
 location_summary_dirty_keys AS (
     SELECT DISTINCT
         loc.activity_id,
@@ -201,6 +210,11 @@ dirty_key_candidates AS (
             activity_id,
             user_id
         FROM location_summary_dirty_keys
+        UNION ALL
+        SELECT
+activity_id,
+user_id
+FROM step_cadence_dirty_keys
     )
 ),
 
@@ -382,7 +396,12 @@ SELECT
     sensor_summary.max_power AS max_power,
     if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.avg_speed) AS avg_speed,
     if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.max_speed) AS max_speed,
-    sensor_summary.avg_cadence AS avg_cadence,
+    if(isFinite(sensor_summary.avg_cadence) AND sensor_summary.avg_cadence > 0,
+        sensor_summary.avg_cadence, step_cadence.avg_cadence) AS avg_cadence,
+    multiIf(isFinite(sensor_summary.avg_cadence) AND sensor_summary.avg_cadence > 0, 'cadence_samples',
+        step_cadence.avg_cadence IS NOT null, 'step_intervals', 'unknown') AS cadence_basis,
+    if(cadence_basis = 'step_intervals', step_cadence.observed_seconds, null) AS cadence_observed_seconds,
+    if(cadence_basis = 'step_intervals', round(100 * step_cadence.coverage_fraction, 1), null) AS cadence_coverage_percent,
     sensor_summary.elevation_gain_legacy AS elevation_gain_legacy,
     if(
         activity_bounds.modality IN ('indoor', 'virtual'),
@@ -428,3 +447,8 @@ LEFT JOIN sensor_summary
 LEFT JOIN location_summary
     ON location_summary.activity_id = active_dirty_keys.activity_id
     AND location_summary.user_id = active_dirty_keys.user_id
+
+LEFT JOIN {{ ref('activity_step_cadence_rows') }} AS step_cadence FINAL
+    ON step_cadence.activity_id = active_dirty_keys.activity_id
+    AND step_cadence.user_id = active_dirty_keys.user_id
+    AND step_cadence.is_deleted = 0

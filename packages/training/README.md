@@ -71,6 +71,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
 | `pmc` | TRIMP, heart-rate/power stress, FTP estimate, learned stress model, and performance-management calculations |
+| `running-cadence` | [Cadence basis and supplied-coverage labels](src/running-cadence.ts) shared by web and mobile; values remain server-authored |
 | `power-analysis` | Power curves, normalized power, critical-power fit, regression, and duration constants |
 | `training` | Canonical activity types, provider normalization, and weekly-volume grouping |
 | `training-distribution` | [Karvonen](https://pubmed.ncbi.nlm.nih.gov/13470504/) and [Treff](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full) weekly intensity-distribution summaries |

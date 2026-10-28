@@ -106,6 +106,7 @@ describe("production analytics read-model build", () => {
       "activity_sensor_sample",
       "activity_location_sample",
       "activity_route_identity",
+      "activity_step_cadence_rows",
       "activity_sensor_summary_rows",
       "activity_location_summary_rows",
       "activity_stream_points",

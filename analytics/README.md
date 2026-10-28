@@ -220,6 +220,30 @@ Its model-local
 being re-evaluated across current-row and tombstone branches; ClickHouse
 introduced this explicit single-evaluation behavior in
 [version 26.3](https://clickhouse.com/blog/clickhouse-release-26-03).
+`activity_step_cadence_rows` materializes one observed step rate per canonical
+run from workout-associated raw `step_count` intervals. It selects at most 100
+oldest dirty activity keys before reading raw histories, resolves every child's
+associations against all current user-owned workout mappings, and rejects
+cross-group ambiguity and sources containing overlapping intervals (including
+nested overlaps). Exact duplicate evidence contributes once. One provider and
+source bundle wins by configured cadence priority, disjoint observed duration,
+then stable source identity. Rates use the ratio of total steps to observed
+seconds, retaining zero counts. These are derived values in ClickHouse only.
+
+Each row independently consumes its raw day watermark, stable activity lifecycle
+watermark, per-user membership signature, and active cadence-priority signature.
+Routine source-row build timestamps do not trigger work. Processed-empty rows
+consume inputs; removals emit tombstones, and restores become eligible again.
+The shared summary atomically publishes `avg_cadence`, `cadence_basis`,
+`cadence_observed_seconds`, and `cadence_coverage_percent`, preferring finite
+positive direct cadence. Apply [migration 0107](../src/db/clickhouse-migrations/0107_running_step_cadence.ts)
+before the next build. This follows [dbt's incremental contract](https://docs.getdbt.com/docs/build/incremental-models)
+and uses [ReplacingMergeTree with FINAL](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+for replacement and tombstone reads. Raw step intervals bypass point-sensor
+deduplication, and requests read only the shared summary. Historical raw
+observations still require an authorized bounded device sync; rebuilding
+analytics cannot recreate missing ingestion.
+
 `provider_metric_stream_daily` then recomputes at most 32 dirty
 `(user_id, provider_id, recorded_date)` keys per build from exact latest metric
 state, including replacements, tombstones, resurrection, and late arrivals.

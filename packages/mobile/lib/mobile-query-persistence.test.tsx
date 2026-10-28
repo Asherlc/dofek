@@ -40,6 +40,34 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
+  it("discards v17 running rows before restoring cadence evidence and availability", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "running-owner";
+    const queryKey = [["running", "dynamicsV2"], { input: { days: 30 }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, {
+      data: [{ activityId: "run-1", cadence: 172 }],
+      availability: { status: "available" },
+    });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v17`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
+  });
+
   it("discards v15 climbing responses before restoring the hold collection contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "climbing-owner";

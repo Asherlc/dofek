@@ -30,7 +30,7 @@ describe("runActivityIntegrityDbtBuild", () => {
       "deduped_activity_members activity_effort_identity activity_sensor_sample activity_location_sample activity_route_identity",
     );
     expect(selection).toContain(
-      "activity_sensor_sample activity_location_sample activity_route_identity activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate",
+      "activity_sensor_sample activity_location_sample activity_route_identity activity_step_cadence_rows activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate",
     );
     child.emit("close", 0);
     await expect(build).resolves.toBeUndefined();

@@ -1,0 +1,60 @@
+import { UnitConverter } from "@dofek/format/units";
+import type { Meta, StoryObj } from "@storybook/react-native";
+import { RunningTrainingCard } from "./RunningTrainingCard";
+import {
+  emptyRunning,
+  emptyRunningForm,
+  intervalRun,
+  runningData,
+} from "./running-training-test-helpers";
+
+const meta = {
+  title: "Training/RunningTrainingCard",
+  component: RunningTrainingCard,
+  args: {
+    data: runningData,
+    loading: false,
+    error: null,
+    units: new UnitConverter("metric"),
+    onOpenActivity: () => {},
+  },
+} satisfies Meta<typeof RunningTrainingCard>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+export const RecordedAndIntervals: Story = {};
+export const PartialCoverage: Story = { args: { data: { ...runningData, data: [intervalRun] } } };
+export const MissingCadence: Story = {
+  args: {
+    data: {
+      ...runningData,
+      data: [
+        {
+          ...intervalRun,
+          cadence: null,
+          cadenceBasis: "unknown",
+          cadenceCoveragePercent: null,
+          cadenceObservedSeconds: null,
+          paceSecondsPerKm: null,
+          distanceKm: null,
+        },
+      ],
+      cadenceAvailability: emptyRunning,
+    },
+  },
+};
+export const Empty: Story = {
+  args: { data: { data: [], availability: emptyRunningForm, cadenceAvailability: emptyRunning } },
+};
+export const Loading: Story = { args: { data: undefined, loading: true } };
+export const RefetchError: Story = {
+  args: {
+    loading: true,
+    error: new Error("Running analytics is refreshing. Pull to refresh to retry."),
+  },
+};
+export const InitialError: Story = {
+  args: {
+    data: undefined,
+    error: new Error("Running analytics requires the activity store. Retry after sync finishes."),
+  },
+};

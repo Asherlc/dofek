@@ -39,6 +39,7 @@ import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { RunningTrainingCard } from "../../components/RunningTrainingCard";
 import { SportVolumeChart } from "../../components/SportVolumeChart";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
@@ -92,6 +93,14 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const runningQuery = trpc.running.dynamicsV2.useQuery(
+    { days },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(runningQuery);
   const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
     { days: strengthsAllTime ? null : days, endDate, ...climbingFilters },
     {
@@ -231,6 +240,7 @@ export default function StrainScreen() {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.training.invalidate(),
+        utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
@@ -489,6 +499,16 @@ export default function StrainScreen() {
         data={climbingLocationMapQuery.data}
         loading={climbingLocationMapQuery.isLoading}
         error={climbingLocationMapQuery.error}
+      />
+      <RunningTrainingCard
+        units={units}
+        data={isHydrated ? runningQuery.data : undefined}
+        loading={!isHydrated || runningQuery.isLoading}
+        error={runningQuery.error}
+        onRetry={() => {
+          void runningQuery.refetch();
+        }}
+        onOpenActivity={(id) => router.push(`/activity/${id}`)}
       />
       {shouldShowClimbingSection && !isLoading ? (
         <ClimbingTrainingCard

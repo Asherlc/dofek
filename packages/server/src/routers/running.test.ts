@@ -52,6 +52,41 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 }
 
 describe("runningRouter", () => {
+  it("counts cadence separately from optional form rows and describes missing interval evidence", async () => {
+    const caller = makeCaller([
+      {
+        activity_id: "run-form",
+        date: "2026-10-01",
+        name: null,
+        avg_cadence: null,
+        cadence_basis: "unknown",
+        cadence_observed_seconds: null,
+        cadence_coverage_percent: null,
+        avg_stride_length: null,
+        avg_stance_time: 240,
+        avg_vertical_osc: null,
+        avg_speed: null,
+        total_distance: null,
+      },
+    ]);
+    await expect(caller.dynamicsV2({ days: 90 })).resolves.toMatchObject({
+      data: [
+        {
+          activityName: "Run",
+          cadence: null,
+          paceSecondsPerKm: null,
+          distanceKm: null,
+          stanceTimeMs: 240,
+        },
+      ],
+      availability: { observedCount: 1 },
+      cadenceAvailability: {
+        observedCount: 0,
+        message: expect.stringContaining("imported step intervals"),
+      },
+    });
+  });
+
   describe("dynamics", () => {
     it("returns empty when no data", async () => {
       const caller = makeCaller([]);
@@ -66,6 +101,9 @@ describe("runningRouter", () => {
           date: "2026-01-15",
           name: "Morning Run",
           avg_cadence: 172,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
           avg_stride_length: 1.15,
           avg_stance_time: 245,
           avg_vertical_osc: 8.2,
@@ -82,6 +120,9 @@ describe("runningRouter", () => {
         date: "2026-01-15",
         activityName: "Morning Run",
         cadence: 172,
+        cadenceBasis: "cadence_samples",
+        cadenceObservedSeconds: null,
+        cadenceCoveragePercent: null,
         strideLengthMeters: 1.15,
         stanceTimeMs: 245,
         verticalOscillationMm: 8.2,
@@ -97,6 +138,9 @@ describe("runningRouter", () => {
           date: "2026-01-10",
           name: "Easy Run",
           avg_cadence: 168,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
           avg_stride_length: 1.1,
           avg_stance_time: 260,
           avg_vertical_osc: 9.0,
@@ -108,6 +152,9 @@ describe("runningRouter", () => {
           date: "2026-01-12",
           name: "Tempo Run",
           avg_cadence: 178,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
           avg_stride_length: 1.25,
           avg_stance_time: 230,
           avg_vertical_osc: 7.5,
@@ -130,6 +177,9 @@ describe("runningRouter", () => {
           date: "2026-01-15",
           name: "Treadmill",
           avg_cadence: 170,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
           avg_stride_length: null,
           avg_stance_time: null,
           avg_vertical_osc: null,
@@ -229,6 +279,9 @@ describe("runningRouter", () => {
         date: new Date("2026-01-15T00:00:00Z"),
         name: "Morning Run",
         avg_cadence: 172,
+        cadence_basis: "cadence_samples",
+        cadence_observed_seconds: null,
+        cadence_coverage_percent: null,
         avg_stride_length: 1.15,
         avg_stance_time: 245,
         avg_vertical_osc: 8.2,
@@ -243,7 +296,7 @@ describe("runningRouter", () => {
         status: "available",
         observedCount: 1,
         minimumCount: 1,
-        message: "running dynamics data is available from Running activity sensor summaries.",
+        message: "Running form measurements are available.",
       },
     });
   });

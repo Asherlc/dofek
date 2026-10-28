@@ -27,12 +27,15 @@ export interface RunningDynamicsRow {
   activityId: string;
   date: string;
   activityName: string;
-  cadence: number;
+  cadence: number | null;
+  cadenceBasis: "cadence_samples" | "step_intervals" | "unknown";
+  cadenceObservedSeconds: number | null;
+  cadenceCoveragePercent: number | null;
   strideLengthMeters: number | null;
   stanceTimeMs: number | null;
   verticalOscillationMm: number | null;
-  paceSecondsPerKm: number;
-  distanceKm: number;
+  paceSecondsPerKm: number | null;
+  distanceKm: number | null;
 }
 
 export interface PaceTrendRow {
@@ -47,12 +50,15 @@ const runningDynamicsRowSchema = z.object({
   activityId: z.string(),
   date: dateStringSchema,
   activityName: z.string(),
-  cadence: z.number(),
+  cadence: z.number().nullable(),
+  cadenceBasis: z.enum(["cadence_samples", "step_intervals", "unknown"]),
+  cadenceObservedSeconds: z.number().nullable(),
+  cadenceCoveragePercent: z.number().nullable(),
   strideLengthMeters: z.number().nullable(),
   stanceTimeMs: z.number().nullable(),
   verticalOscillationMm: z.number().nullable(),
-  paceSecondsPerKm: z.number(),
-  distanceKm: z.number(),
+  paceSecondsPerKm: z.number().nullable(),
+  distanceKm: z.number().nullable(),
 });
 
 const paceTrendRowSchema = z.object({
@@ -84,11 +90,16 @@ function runningAvailability(chartLabel: string, dataLabel: string, observedCoun
 }
 
 export const runningRouter = router({
-  dynamics: selectedChartRangeQuery("running.dynamics", CacheTTL.LONG, async ({ ctx, range }) => {
-    const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
-    const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-    return (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
-  }),
+  dynamics: selectedChartRangeQuery(
+    "running.dynamics",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
+      const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
+      return (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
+    },
+    { keyVersion: "running-cadence-evidence-v1", outputSchema: z.array(runningDynamicsRowSchema) },
+  ),
 
   paceTrend: selectedChartRangeQuery("running.paceTrend", CacheTTL.LONG, async ({ ctx, range }) => {
     const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");
@@ -105,14 +116,34 @@ export const runningRouter = router({
       const data = (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
       return {
         data,
-        availability: runningAvailability(
-          "running dynamics data",
-          "running dynamics data",
-          data.length,
-        ),
+        cadenceAvailability: makeTrainingChartAvailability({
+          sourceLabel: RUNNING_SENSOR_SOURCE,
+          observedCount: data.filter((row) => row.cadence !== null).length,
+          minimumCount: 1,
+          messages: {
+            available: "Running cadence is available.",
+            insufficientData:
+              "No cadence samples or usable imported step intervals are available for these runs. Check the selected range and Apple Health sync status.",
+          },
+        }),
+        availability: makeTrainingChartAvailability({
+          sourceLabel: RUNNING_SENSOR_SOURCE,
+          observedCount: data.length,
+          minimumCount: 1,
+          messages: {
+            available: "Running form measurements are available.",
+            insufficientData:
+              "No running form measurements are available for these runs. Check the selected range and sync status.",
+          },
+        }),
       };
     },
-    { outputSchema: runningChartOutput(runningDynamicsRowSchema) },
+    {
+      keyVersion: "running-cadence-evidence-v1",
+      outputSchema: runningChartOutput(runningDynamicsRowSchema).extend({
+        cadenceAvailability: trainingChartAvailabilitySchema,
+      }),
+    },
   ),
 
   paceTrendV2: selectedChartRangeQuery(

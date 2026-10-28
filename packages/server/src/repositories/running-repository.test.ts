@@ -22,6 +22,9 @@ describe("RunningDynamicsActivity", () => {
       date: "2024-06-10",
       activityName: "Morning Run",
       avgCadence: 180,
+      cadenceBasis: "cadence_samples" as const,
+      cadenceObservedSeconds: null,
+      cadenceCoveragePercent: null,
       avgStrideLengthMeters: 1.2 satisfies number | null,
       avgStanceTimeMs: 220 satisfies number | null,
       avgVerticalOscillationMm: 85 satisfies number | null,
@@ -30,6 +33,25 @@ describe("RunningDynamicsActivity", () => {
       ...overrides,
     };
   }
+
+  it("preserves missing cadence, pace and distance while retaining form and server evidence", () => {
+    const activity = new RunningDynamicsActivity(
+      makeRow({
+        avgCadence: null,
+        avgSpeed: null,
+        totalDistance: null,
+        activityName: null,
+        cadenceBasis: "unknown",
+      }),
+    );
+    expect(activity.toDetail()).toMatchObject({
+      activityName: "Run",
+      cadence: null,
+      paceSecondsPerKm: null,
+      distanceKm: null,
+      stanceTimeMs: 220,
+    });
+  });
 
   it("exposes date and activityName", () => {
     const activity = new RunningDynamicsActivity(makeRow());
@@ -84,9 +106,9 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.paceSecondsPerKm).not.toBe(5000);
   });
 
-  it("returns 0 pace when speed is 0", () => {
+  it("returns unknown pace when speed is 0", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 0 }));
-    expect(activity.paceSecondsPerKm).toBe(0);
+    expect(activity.paceSecondsPerKm).toBeNull();
   });
 
   it("computes distance in km by dividing by 1000 (m to km)", () => {
@@ -110,13 +132,13 @@ describe("RunningDynamicsActivity", () => {
   it("returns 0 pace for negative speed (same as 0)", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: -1 }));
     // -1 is not > 0, so falls into the else branch returning 0
-    expect(activity.paceSecondsPerKm).toBe(0);
+    expect(activity.paceSecondsPerKm).toBeNull();
   });
 
   it("pace check uses > 0 (speed of exactly 0 returns 0, not Infinity)", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 0 }));
-    expect(activity.paceSecondsPerKm).toBe(0);
-    expect(Number.isFinite(activity.paceSecondsPerKm)).toBe(true);
+    expect(activity.paceSecondsPerKm).toBeNull();
+    expect(activity.paceSecondsPerKm).toBeNull();
   });
 
   it("distance divides by 1000 then multiplies by 10 for rounding (correct order)", () => {
@@ -152,6 +174,9 @@ describe("RunningDynamicsActivity", () => {
       date: "2024-06-10",
       activityName: "Morning Run",
       cadence: 180,
+      cadenceBasis: "cadence_samples",
+      cadenceObservedSeconds: null,
+      cadenceCoveragePercent: null,
       strideLengthMeters: 1.2,
       stanceTimeMs: 220,
       verticalOscillationMm: 85,
@@ -323,6 +348,9 @@ describe("RunningRepository", () => {
           date: "2024-06-10",
           name: "Morning Run",
           avg_cadence: 180,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
           avg_stride_length: 1.2,
           avg_stance_time: 220,
           avg_vertical_osc: 85,

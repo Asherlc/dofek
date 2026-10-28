@@ -250,3 +250,41 @@ The clinical records import runs after the XML import:
 6. Parse and batch-insert into `lab_result` table (500 per batch)
 
 The source name map uses SAX streaming — the export.xml can be 2.5GB and must not be loaded into memory. The SAX parser fires `opentag` for each `<ClinicalRecord>` element and extracts only the `sourceName` and `resourceFilePath` attributes.
+
+## Running form and observed step cadence
+
+Native sync imports available running stride length, ground-contact time, and
+vertical oscillation as raw sensor quantities. Apple defines these identifiers
+as [running stride length](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier/runningstridelength),
+[running ground-contact time](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier/runninggroundcontacttime),
+and [running vertical oscillation](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier/runningverticaloscillation).
+The XML importer uses the same channels and source units.
+
+Running step uploads retain only quantities explicitly associated with a
+running workout, using Apple's [workout association predicate](https://developer.apple.com/documentation/healthkit/hkquery/predicateforobjects(from:)-5irg9)
+and [quantity-series query](https://developer.apple.com/documentation/healthkit/hkquantityseriessamplequerydescriptor).
+Each child retains the parent UUID, original count, exact interval, source
+bundle, and associated workout UUIDs. Native snapshots recover late
+associations in the selected observer range; historical associations outside
+that range still require a bounded historical sync. The anchored delta pages
+through at most 500 changed step parents, including unrelated or deleted
+parents, acknowledging each page only after successful uploads and deletions.
+This workout subset does not replace the complete-day step-statistics writer.
+
+The [cadence model](../analytics/models/read_models/activity_step_cadence_rows.sql)
+selects one non-overlapping recording source and computes
+`60 * recorded steps / observed interval seconds`. Zero counts remain observed;
+missing or ambiguous evidence remains unavailable. This describes the recorded
+intervals, including any pauses within them, rather than full-workout active-time
+cadence. Apple's [workout duration](https://developer.apple.com/documentation/healthkit/hkworkout/duration)
+can account for pauses and is not interchangeable with the observed intervals.
+Positive direct cadence samples take precedence. Both clients show the supplied
+basis and observed wall-clock coverage, retain other running-form measurements
+when cadence is missing, and preserve server errors alongside previous data.
+
+Apply [ClickHouse migration 0107](../src/db/clickhouse-migrations/0107_running_step_cadence.ts)
+before refreshing the model and shared summary. The bounded incremental build
+cannot recover observations omitted by older importers. A released native
+build, authorization, device validation, and an explicitly bounded historical
+sync remain required; repository tests do not establish production recovery.
+The model follows [dbt incremental-model semantics](https://docs.getdbt.com/docs/build/incremental-models).

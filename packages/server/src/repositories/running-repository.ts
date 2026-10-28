@@ -21,13 +21,16 @@ const RUNNING_TYPES = ["running"] as const;
 export interface RunningDynamicsActivityRow {
   activityId: string;
   date: string;
-  activityName: string;
-  avgCadence: number;
+  activityName: string | null;
+  avgCadence: number | null;
+  cadenceBasis: "cadence_samples" | "step_intervals" | "unknown";
+  cadenceObservedSeconds: number | null;
+  cadenceCoveragePercent: number | null;
   avgStrideLengthMeters: number | null;
   avgStanceTimeMs: number | null;
   avgVerticalOscillationMm: number | null;
-  avgSpeed: number;
-  totalDistance: number;
+  avgSpeed: number | null;
+  totalDistance: number | null;
 }
 
 /** A running activity with dynamics metrics (cadence, stride, stance, oscillation). */
@@ -47,10 +50,10 @@ export class RunningDynamicsActivity {
   }
 
   get activityName(): string {
-    return this.#row.activityName;
+    return this.#row.activityName?.trim() || "Run";
   }
 
-  get cadence(): number {
+  get cadence(): number | null {
     return this.#row.avgCadence;
   }
 
@@ -67,13 +70,17 @@ export class RunningDynamicsActivity {
   }
 
   /** Pace in seconds per kilometer, derived from average speed (m/s). */
-  get paceSecondsPerKm(): number {
-    return this.#row.avgSpeed > 0 ? Math.round(1000 / this.#row.avgSpeed) : 0;
+  get paceSecondsPerKm(): number | null {
+    return this.#row.avgSpeed != null && this.#row.avgSpeed > 0
+      ? Math.round(1000 / this.#row.avgSpeed)
+      : null;
   }
 
   /** Distance in kilometers, rounded to 1 decimal. */
-  get distanceKm(): number {
-    return Math.round((this.#row.totalDistance / 1000) * 10) / 10;
+  get distanceKm(): number | null {
+    return this.#row.totalDistance != null
+      ? Math.round((this.#row.totalDistance / 1000) * 10) / 10
+      : null;
   }
 
   toDetail() {
@@ -82,6 +89,9 @@ export class RunningDynamicsActivity {
       date: this.date,
       activityName: this.activityName,
       cadence: this.cadence,
+      cadenceBasis: this.#row.cadenceBasis,
+      cadenceObservedSeconds: this.#row.cadenceObservedSeconds,
+      cadenceCoveragePercent: this.#row.cadenceCoveragePercent,
       strideLengthMeters: this.strideLengthMeters,
       stanceTimeMs: this.stanceTimeMs,
       verticalOscillationMm: this.verticalOscillationMm,
@@ -148,19 +158,22 @@ export class PaceTrendActivity {
 const dynamicsRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
-  name: z.string(),
-  avg_cadence: z.coerce.number(),
+  name: z.string().nullable(),
+  avg_cadence: z.coerce.number().nullable(),
+  cadence_basis: z.enum(["cadence_samples", "step_intervals", "unknown"]),
+  cadence_observed_seconds: z.coerce.number().nullable(),
+  cadence_coverage_percent: z.coerce.number().nullable(),
   avg_stride_length: z.coerce.number().nullable(),
   avg_stance_time: z.coerce.number().nullable(),
   avg_vertical_osc: z.coerce.number().nullable(),
-  avg_speed: z.coerce.number(),
-  total_distance: z.coerce.number(),
+  avg_speed: z.coerce.number().nullable(),
+  total_distance: z.coerce.number().nullable(),
 });
 
 const paceTrendRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
-  name: z.string(),
+  name: z.string().nullable(),
   avg_speed: z.coerce.number(),
   total_distance: z.coerce.number(),
   duration_seconds: z.coerce.number(),
@@ -203,8 +216,11 @@ export class RunningRepository {
         toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
         name,
         avg_cadence,
+        cadence_basis,
+        cadence_observed_seconds,
+        cadence_coverage_percent,
         avg_stride_length,
-        avg_stance_time,
+        coalesce(avg_ground_contact_time, avg_stance_time) AS avg_stance_time,
         avg_vertical_osc,
         avg_speed,
         total_distance
@@ -212,8 +228,8 @@ export class RunningRepository {
       WHERE user_id = {userId:UUID}
         ${rangeFilter}
         AND canonical_type IN {runningTypes:Array(String)}
-        AND avg_speed > 0
-        AND avg_cadence > 0
+        AND (avg_cadence IS NOT NULL OR avg_stride_length IS NOT NULL
+          OR avg_ground_contact_time IS NOT NULL OR avg_stance_time IS NOT NULL OR avg_vertical_osc IS NOT NULL)
       ORDER BY started_at`,
       {
         userId: this.#userId,
@@ -235,6 +251,9 @@ export class RunningRepository {
           date: row.date,
           activityName: row.name,
           avgCadence: row.avg_cadence,
+          cadenceBasis: row.cadence_basis,
+          cadenceObservedSeconds: row.cadence_observed_seconds,
+          cadenceCoveragePercent: row.cadence_coverage_percent,
           avgStrideLengthMeters: row.avg_stride_length,
           avgStanceTimeMs: row.avg_stance_time,
           avgVerticalOscillationMm: row.avg_vertical_osc,
@@ -280,7 +299,7 @@ export class RunningRepository {
       (row) =>
         new PaceTrendActivity({
           date: row.date,
-          activityName: row.name,
+          activityName: row.name?.trim() || "Run",
           avgSpeed: row.avg_speed,
           totalDistance: row.total_distance,
           durationSeconds: row.duration_seconds,
