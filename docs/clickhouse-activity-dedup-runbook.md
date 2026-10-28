@@ -69,6 +69,22 @@ If this returns many rows while Postgres `fitness.v_activity` groups the same
 IDs under one `member_activity_ids` array, the ClickHouse final summary is using
 raw activity identity somewhere.
 
+For late HealthKit copies, compare raw `provider_id`, `source_name`, workout
+UUIDs, and `group_id` before investigating analytics freshness. A WHOOP workout
+can arrive directly and through Apple Health with a different UUID while still
+reporting WHOOP as its source. The [HealthKit workout processor](../packages/server/src/routers/health-kit-sync-processors.ts)
+runs shared group reconciliation in a transaction after reconciling provider
+presence, before returning success and invalidating user queries. All raw
+source records remain stored. The [router integration tests](../packages/server/src/routers/health-kit-sync.integration.test.ts)
+cover a late WHOOP-sourced copy joining the original group. If both database
+projections expose separate groups, inspect this ingestion boundary before
+changing overlap thresholds or rebuilding ClickHouse models.
+
+After a provider removal, inspect persisted membership separately from visible
+activity counts: the [canonical view](../drizzle/_views/01_v_activity.sql)
+excludes groups containing an effective tombstone, even when reconciliation
+has separated the remaining active records into different groups.
+
 ## Missing Primary Source Label
 
 When a card shows only “Sources,” inspect `source_providers`,

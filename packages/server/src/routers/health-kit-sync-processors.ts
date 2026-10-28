@@ -6,6 +6,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { reconcileActivityGroups } from "../../../../src/db/activity-group-reconciliation.ts";
 import type { Database as DrizzleDatabase, SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
@@ -497,6 +498,8 @@ export async function processWorkouts(
       ),
     ),
   });
+
+  await db.transaction((transaction) => reconcileActivityGroups(transaction, userId));
 
   return inserted;
 }

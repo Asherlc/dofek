@@ -69,6 +69,10 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   upsertProviderActivity: vi.fn(),
 }));
 
+vi.mock("../../../../src/db/activity-group-reconciliation.ts", () => ({
+  reconcileActivityGroups: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC

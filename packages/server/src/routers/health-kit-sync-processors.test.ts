@@ -31,6 +31,14 @@ const hangTenIntervalMocks = vi.hoisted(() => ({
   replace: vi.fn().mockResolvedValue(undefined),
 }));
 
+const activityGroupMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../../src/db/activity-group-reconciliation.ts", () => ({
+  reconcileActivityGroups: activityGroupMocks.reconcile,
+}));
+
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   ProviderActivityListSync: class {
     constructor(scope: { windowStart: Date; windowEnd: Date }) {
@@ -317,7 +325,7 @@ describe("processWorkouts", () => {
       },
     );
 
-    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(transaction).toHaveBeenCalledTimes(3);
     expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
   });
 
@@ -414,5 +422,21 @@ describe("processWorkouts", () => {
     );
 
     expect(hangTenIntervalMocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("rejects workout processing when activity grouping fails", async () => {
+    activityGroupMocks.reconcile.mockRejectedValueOnce(new Error("Activity grouping failed"));
+
+    await expect(
+      processWorkouts(
+        makeTransactionalTestDatabase({ execute: vi.fn(async () => []) }),
+        "00000000-0000-0000-0000-000000000001",
+        [],
+        {
+          windowStart: "2026-06-13T00:00:00.000Z",
+          windowEnd: "2026-06-21T00:00:00.000Z",
+        },
+      ),
+    ).rejects.toThrow("Activity grouping failed");
   });
 });
