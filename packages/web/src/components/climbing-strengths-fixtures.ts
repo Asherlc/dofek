@@ -406,3 +406,30 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
   if (!panel) throw new Error("Missing strengths fixture panel");
   panel.gradeAdjustedStrengths = summary;
 });
+
+const singleClimb = cell("All grades", 1, 1, 100, 0, "limited");
+export const climbingStrengthsSingleClimbFixture: ClimbingStrengths = {
+  coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+  panels: [
+    {
+      ...unknownBase,
+      grades: [{ ...singleClimb, gradeSortValue: 0 }],
+      rows: [{ key: "slab", label: "Slab", cells: [singleClimb] }],
+      progress: [],
+      coverage: { missingTraits: 0, unknownOutcomes: 0 },
+      gradeAdjustedStrengths: [
+        {
+          key: "slab",
+          expectedSuccessRate: 100,
+          differencePercentagePoints: 0,
+          sampleStatus: "limited",
+        },
+      ],
+      allGrades: {
+        grades: [{ ...singleClimb, gradeSortValue: 0 }],
+        rows: [{ key: "slab", label: "Slab", cells: [singleClimb] }],
+        progress: [],
+      },
+    },
+  ],
+};

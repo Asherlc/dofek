@@ -5,6 +5,7 @@ import {
   climbingStrengthsBaselineLabel,
   climbingStrengthsCountLabel,
   climbingStrengthsRateLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_VIEWS,
@@ -56,7 +57,7 @@ export function ClimbingStrengthsChart({
     ? "Same-grade baseline"
     : climbingStrengthsBaselineLabel(grade);
   const explanation = adjustedRadar
-    ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: same-grade baseline at zero."
+    ? "Compared with your own climbs of the same difficulty. Outside the dashed line means you send more often than usual; inside means less often."
     : explanations[view].replaceAll("same-grade baseline", baselineLabel.toLowerCase());
   const title = adjustedRadar
     ? "Strengths and weaknesses"
@@ -80,10 +81,10 @@ export function ClimbingStrengthsChart({
         )
       : panel.rows.flatMap((row) =>
           row.cells.map((cell) => ({
-            label: `${row.label} · ${cell.grade}`,
+            label: adjustedRadar ? row.label : `${row.label} · ${cell.grade}`,
             onPress: () => onSelect(row.key, cell.grade),
             value: adjustedRadar
-              ? `${climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key))} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`
+              ? `${climbingStrengthsSendLabel(cell)} · ${climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key))}`
               : `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${climbingStrengthsRateLabel(panel.grades.find((entry) => entry.grade === cell.grade) ?? { climbs: 0, successRate: null })}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
           })),
         );
@@ -139,12 +140,6 @@ export function ClimbingStrengthsChart({
       style={styles.container}
     >
       <Text style={styles.title}>{title}</Text>
-      {view === "radar" && !insufficientRadar ? (
-        <Text style={styles.meta}>
-          Compared with your usual results at the same grades. Outside the dashed line is stronger;
-          inside is weaker.
-        </Text>
-      ) : null}
       {!insufficientRadar && <Text style={styles.meta}>{explanation}</Text>}
       {(view === "gaps" || view === "exposure") && (
         <Text style={styles.meta}>Gap (percentage points)</Text>
@@ -155,7 +150,9 @@ export function ClimbingStrengthsChart({
             {panel.coverage.missingTraits > 0
               ? `${panel.dimension === "wall_angle" ? "Wall angle" : panel.dimension === "hold_type" ? "Hold type" : "Setting"} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
               : ""}
-            A radar chart needs at least three styles with known results.
+            {adjustedRadar
+              ? "Log results in at least three styles to see this chart. Your recorded climbs are listed below."
+              : "A radar chart needs at least three styles with known results."}
           </Text>
           <View accessibilityRole="list" style={styles.container}>
             {exactRows.map((row) => (
@@ -622,10 +619,8 @@ export function ClimbingStrengthsChart({
           <View style={styles.legend}>
             {adjustedRadar ? (
               <>
-                <Text style={[styles.meta, { color: colors.accent }]}>
-                  Grade-adjusted strengths
-                </Text>
-                <Text style={styles.meta}>Same-grade baseline</Text>
+                <Text style={[styles.meta, { color: colors.accent }]}>Your results</Text>
+                <Text style={styles.meta}>Your usual results</Text>
               </>
             ) : view === "curves" ? (
               <Text style={styles.meta}>Same-grade baseline</Text>

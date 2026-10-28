@@ -5,6 +5,7 @@ import type { ComponentProps } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import {
+  climbingStrengthsSingleClimbFixture,
   climbingStrengthsUnknownResultsFixture,
   climbingStrengthsFixture as fixture,
 } from "./climbing-strengths-fixtures.ts";
@@ -304,11 +305,38 @@ it("labels limited adjusted scores and keeps their table columns aligned", () =>
     />,
   );
   openExactValues();
-  const point = screen.getByRole("button", { name: /Vertical · All grades.*Limited sample/ });
+  const point = screen.getByRole("button", {
+    name: /Vertical · Sent 13 of 21 climbs.*Too few climbs/,
+  });
   const row = point.closest("tr");
   if (!row) throw new Error("Missing row");
   expect(within(row).getAllByRole("cell")).toHaveLength(1);
   expect(screen.getAllByRole("columnheader")).toHaveLength(2);
+});
+it("puts a single climb's result before an honest strength assessment and keeps it selectable", () => {
+  const single = climbingStrengthsSingleClimbFixture.panels[0];
+  if (!single) throw new Error("Missing single climb fixture");
+  const onSelectCell = vi.fn();
+  render(
+    <ClimbingStrengthsChart
+      panel={single}
+      view="radar"
+      grade="All grades"
+      selectedRow={null}
+      onSelectCell={onSelectCell}
+    />,
+  );
+  openExactValues();
+  const button = screen.getByRole("button", {
+    name: "Slab · Sent 1 of 1 climb · Too few climbs to judge strengths yet",
+  });
+  const row = button.closest("tr");
+  if (!row) throw new Error("Missing slab row");
+  expect(within(row).getByText("Sent 1 of 1 climb")).toBeVisible();
+  expect(within(row).getByText("Too few climbs to judge strengths yet")).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: "Results" })).toBeVisible();
+  fireEvent.click(button);
+  expect(onSelectCell).toHaveBeenCalledWith("slab", "All grades");
 });
 it("opens a radar style's climbs from its axis label without treating the baseline as a style", () => {
   const pooled = { ...panel, ...panel.allGrades };

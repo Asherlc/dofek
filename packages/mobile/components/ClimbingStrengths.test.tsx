@@ -6,6 +6,7 @@ import {
   climbingStrengthsUnknownResultsFixture,
   climbingStrengthsFixture as fixture,
 } from "./climbing-strengths-fixtures";
+import { climbingStrengthsSingleClimbFixture } from "./climbing-strengths-single-climb-fixture";
 
 const data = {
   ...fixture,
@@ -44,8 +45,8 @@ it("explains missing wall angles and keeps the single recorded style directly se
   expect(screen.getByText(/Wall angle is missing for 59 climbs/)).toBeTruthy();
   expect(screen.queryByText(/Outside the dashed line/)).toBeNull();
   expect(screen.queryByRole("image")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Slab · All grades/ }));
-  expect(screen.getByText("29% · 2 sends / 7 climbs")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Slab:/ }));
+  expect(screen.getByText("Sent 2 of 7 climbs")).toBeTruthy();
 });
 it("identifies missing hold types when the selected breakdown has no observations", () => {
   const panel = data.panels[0];
@@ -124,7 +125,7 @@ it.each([
 it("keeps source-climb selection after a refreshed response and opens its source and activity", async () => {
   const result = render(<ClimbingStrengths data={climbingStrengthsComparisonFixture} />);
   openData();
-  fireEvent.click(screen.getByRole("button", { name: /^0° · All grades:/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^0°:/ }));
   result.rerender(<ClimbingStrengths data={structuredClone(climbingStrengthsComparisonFixture)} />);
   expect(screen.getByText("Quiet Feet")).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: "Mountain Project source for Quiet Feet" }));
@@ -138,9 +139,9 @@ it("keeps source-climb selection after a refreshed response and opens its source
 it("keeps empty source examples explicit for a selected style", () => {
   render(<ClimbingStrengths data={data} />);
   openData();
-  fireEvent.click(screen.getByRole("button", { name: /^Slab · All grades:/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Slab:/ }));
   expect(screen.getByText("No examples available for this selection.")).toBeTruthy();
-  expect(screen.getByText("29% · 2 sends / 7 climbs")).toBeTruthy();
+  expect(screen.getByText("Sent 2 of 7 climbs")).toBeTruthy();
 });
 it("uses an observed hold-type panel by default and keeps missing dimensions navigable", () => {
   const panels = data.panels.map((panel) =>
@@ -154,7 +155,7 @@ it("uses an observed hold-type panel by default and keeps missing dimensions nav
   expect(screen.getByText("Wall angle is missing for 7 climbs.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
   openData();
-  expect(screen.getByRole("button", { name: /^Crimps · All grades:/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Crimps:/ })).toBeTruthy();
 });
 it("separates initial loading, empty, error and cached refresh states", () => {
   const result = render(<ClimbingStrengths data={undefined} loading />);
@@ -164,14 +165,14 @@ it("separates initial loading, empty, error and cached refresh states", () => {
   );
   expect(screen.getByText("Reconnect provider")).toBeTruthy();
   openData();
-  expect(screen.getByRole("button", { name: /^Slab · All grades:/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Slab:/ })).toBeTruthy();
   result.rerender(<ClimbingStrengths data={{ ...data, panels: [] }} />);
   expect(screen.getByText("No recorded climbing outcomes in this period")).toBeTruthy();
 });
 it("keeps recorded unknown results in the selected style's source climbs", () => {
   render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
   openData();
-  fireEvent.click(screen.getByRole("button", { name: /^Vertical · All grades:/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Vertical:/ }));
   expect(screen.getByText(/V3 · .* · Result unknown/)).toBeTruthy();
   expect(screen.getByText("Known ascent")).toBeTruthy();
   expect(screen.getByText("Success rates use climbs with known results.")).toBeTruthy();
@@ -180,7 +181,19 @@ it("uses styles and progress views for both breakdowns", () => {
   render(<ClimbingStrengths data={data} />);
   fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
   openData();
-  expect(screen.getByRole("button", { name: /^Crimps · All grades:/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Crimps:/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByText("Monthly send rate")).toBeTruthy();
+});
+
+it("opens the recorded climb with a clear small-sample explanation", () => {
+  render(<ClimbingStrengths data={climbingStrengthsSingleClimbFixture} />);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Slab: Sent 1 of 1 climb · Too few climbs to judge strengths yet",
+    }),
+  );
+  expect(screen.getByText("Sent 1 of 1 climb")).toBeTruthy();
+  expect(screen.getByText("Too few climbs to judge strengths yet")).toBeTruthy();
+  expect(screen.getByText("Quiet Feet")).toBeTruthy();
 });
