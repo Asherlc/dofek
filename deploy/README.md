@@ -360,11 +360,14 @@ and [status reporting](https://docs.github.com/en/rest/deployments/statuses#crea
 If upload succeeds but finalizing its receipt fails, rerun only **Record
 successful TestFlight upload**, using `gh run rerun --job <record-job-id>` or the
 job's rerun control. This reuses the original deployment ID and upload evidence;
-it does not upload another binary. GitHub documents
+it does not upload another binary. Finalization preserves an operator's `inactive`
+reconciliation and leaves an already-successful record unchanged. GitHub documents
 [specific-job reruns](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs#re-running-a-specific-job-in-a-workflow).
 
 If the uploader fails or is cancelled after creating its pending record, inspect
 the original run and match its exact version/build number in App Store Connect.
+Before changing its receipt manually, wait for or stop the original finalizer
+job so reconciliation does not compete with an active status write.
 A failed upload command alone does not prove that Apple rejected the binary.
 When upload is confirmed, finalize that original deployment as successful.
 The [release CLI](../scripts/testflight-deployment-cli.ts) validates its stored

@@ -203,7 +203,14 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   before they appear in App Store Connect.
   `testflight-deployment-cli.ts` supplies the workflow command interface. The
   finalizer validates the original deployment ID, source SHA, build number and
-  upload-attempt run URL. Rerun only a failed receipt job to finalize the original
+  upload-attempt run URL. It checks that deployment's authoritative latest status
+  using the REST response's [global node ID](https://docs.github.com/en/graphql/guides/using-global-node-ids),
+  preserves `INACTIVE` reconciliation, and completes an already `SUCCESS` receipt
+  without another status write. The history read and intent creation are separate
+  API operations; publisher attempts rely on the caller's `deploy-web-production`
+  and reusable `deploy-ios` [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+  rather than an atomic API lock.
+  Rerun only a failed receipt job to finalize the original
   successful upload without reuploading; the workflow retains those original outputs.
   - Detection: `pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-source-sha> [--force]`
   - Prepare, immediately before upload: `pnpm tsx scripts/testflight-deployment-cli.ts prepare <owner/repo> <full-source-sha> <build-number> <upload-attempt-run-url>`

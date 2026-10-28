@@ -32,12 +32,17 @@ const page = (nodes: unknown[] = [], hasNextPage = false, endCursor: string | nu
 
 const uploadDeployment = (patch: Record<string, unknown> = {}) => ({
   id: 5,
+  node_id: "D_returned_fixture_node",
   sha: currentSha,
   environment: "testflight",
   task: "testflight-upload",
   payload: { build_number: "1793210000", run_url: runUrl },
   ...patch,
 });
+const deploymentStatus = (state: string | null, databaseId = 5) =>
+  JSON.stringify({
+    data: { node: { databaseId, latestStatus: state === null ? null : { state } } },
+  });
 
 beforeEach(() => gh.mockReset());
 
@@ -277,6 +282,7 @@ describe("TestFlight upload receipts", () => {
     expect(() => requiresTestFlightUpload("owner/dofek", currentSha)).toThrow("cursor");
   });
 
+  // The workflow callers serialize the non-atomic history-read/create boundary.
   it("creates and marks one upload intent pending before returning its ID", () => {
     gh.mockReturnValueOnce(page())
       .mockReturnValueOnce(JSON.stringify(uploadDeployment()))
@@ -373,7 +379,9 @@ describe("TestFlight upload receipts", () => {
   it.each(['{"state":"pending"}', "{}"])(
     "requires acknowledgement of successful finalization: %s",
     (response) => {
-      gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockReturnValueOnce(response);
+      gh.mockReturnValueOnce(JSON.stringify(uploadDeployment()))
+        .mockReturnValueOnce(deploymentStatus("PENDING"))
+        .mockReturnValueOnce(response);
       expect(() =>
         recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl),
       ).toThrow();
@@ -381,9 +389,9 @@ describe("TestFlight upload receipts", () => {
   );
 
   it("finalizes the original deployment ID without creating another upload intent", () => {
-    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockReturnValueOnce(
-      '{"state":"success"}',
-    );
+    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment()))
+      .mockReturnValueOnce(deploymentStatus("PENDING"))
+      .mockReturnValueOnce('{"state":"success"}');
     recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl);
     expect(gh).toHaveBeenNthCalledWith(
       1,
@@ -392,7 +400,7 @@ describe("TestFlight upload receipts", () => {
       expect.any(Object),
     );
     expect(gh).toHaveBeenNthCalledWith(
-      2,
+      3,
       "gh",
       ["api", "--method", "POST", "repos/owner/dofek/deployments/5/statuses", "--input", "-"],
       expect.objectContaining({
@@ -405,6 +413,55 @@ describe("TestFlight upload receipts", () => {
       }),
     );
   });
+
+  it("preserves an operator's inactive reconciliation instead of posting success", () => {
+    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockReturnValueOnce(
+      deploymentStatus("INACTIVE"),
+    );
+    expect(() =>
+      recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl),
+    ).toThrow("INACTIVE");
+    expect(gh).toHaveBeenCalledTimes(2);
+    expect(gh).toHaveBeenLastCalledWith(
+      "gh",
+      ["api", "graphql", "--input", "-"],
+      expect.objectContaining({
+        input: expect.stringContaining('"id":"D_returned_fixture_node"'),
+      }),
+    );
+  });
+
+  it("returns successfully without another status write when the original receipt is already successful", () => {
+    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockReturnValueOnce(
+      deploymentStatus("SUCCESS"),
+    );
+    recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl);
+    expect(gh).toHaveBeenCalledTimes(2);
+    const request = JSON.parse(String(gh.mock.calls[1]?.[2]?.input));
+    expect(request.variables).toEqual({ id: "D_returned_fixture_node" });
+    expect(request.query).toContain("... on Deployment");
+    expect(request.query).toContain("latestStatus { state }");
+  });
+
+  it.each([
+    deploymentStatus("PENDING", 6),
+    deploymentStatus(null),
+    JSON.stringify({ data: { node: null } }),
+    JSON.stringify({
+      errors: [{ message: "Not authorized" }],
+      data: { node: { databaseId: 5, latestStatus: { state: "PENDING" } } },
+    }),
+  ])(
+    "rejects mismatched or incomplete current-status evidence before finalizing: %s",
+    (response) => {
+      gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockReturnValueOnce(response);
+      expect(() =>
+        recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl),
+      ).toThrow();
+      expect(gh).toHaveBeenCalledTimes(2);
+      expect(gh.mock.calls[1]?.[1]).toEqual(["api", "graphql", "--input", "-"]);
+    },
+  );
 
   it.each([
     { id: 6 },
@@ -422,17 +479,21 @@ describe("TestFlight upload receipts", () => {
   });
 
   it("reruns only finalization after a failed success write using the same original intent", () => {
-    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockImplementationOnce(() => {
-      throw new Error("Receipt API failed");
-    });
+    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment()))
+      .mockReturnValueOnce(deploymentStatus("PENDING"))
+      .mockImplementationOnce(() => {
+        throw new Error("Receipt API failed");
+      });
     expect(() =>
       recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl),
     ).toThrow("Receipt API failed");
-    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment())).mockReturnValueOnce(
-      '{"state":"success"}',
-    );
+    gh.mockReturnValueOnce(JSON.stringify(uploadDeployment()))
+      .mockReturnValueOnce(deploymentStatus("PENDING"))
+      .mockReturnValueOnce('{"state":"success"}');
     recordTestFlightUpload("owner/dofek", 5, currentSha, "1793210000", runUrl);
-    expect(gh.mock.calls.map(([, args]) => args?.[3])).toEqual([
+    expect(
+      gh.mock.calls.filter(([, args]) => args?.[1] === "--method").map(([, args]) => args?.[3]),
+    ).toEqual([
       "repos/owner/dofek/deployments/5",
       "repos/owner/dofek/deployments/5/statuses",
       "repos/owner/dofek/deployments/5",

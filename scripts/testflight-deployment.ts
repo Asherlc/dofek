@@ -5,6 +5,18 @@ const commitShaSchema = z
   .string()
   .regex(/^[a-fA-F0-9]{40}$/)
   .toLowerCase();
+const deploymentStatusSchema = z.object({
+  state: z.enum([
+    "ERROR",
+    "FAILURE",
+    "INACTIVE",
+    "IN_PROGRESS",
+    "QUEUED",
+    "PENDING",
+    "SUCCESS",
+    "WAITING",
+  ]),
+});
 const deploymentPageSchema = z.object({
   errors: z.never().optional(),
   data: z.object({
@@ -16,20 +28,7 @@ const deploymentPageSchema = z.object({
             commitOid: commitShaSchema,
             environment: z.literal("testflight"),
             task: z.string(),
-            latestStatus: z
-              .object({
-                state: z.enum([
-                  "ERROR",
-                  "FAILURE",
-                  "INACTIVE",
-                  "IN_PROGRESS",
-                  "QUEUED",
-                  "PENDING",
-                  "SUCCESS",
-                  "WAITING",
-                ]),
-              })
-              .nullable(),
+            latestStatus: deploymentStatusSchema.nullable(),
           }),
         ),
         pageInfo: z.object({
@@ -116,6 +115,7 @@ function findLastTestFlightUpload(repository: string): string | null {
 
 const uploadDeploymentSchema = z.object({
   id: z.number().int().positive(),
+  node_id: z.string().min(1),
   sha: commitShaSchema,
   environment: z.literal("testflight"),
   task: z.literal("testflight-upload"),
@@ -148,7 +148,11 @@ function verifyUploadDeployment(
   return deployment;
 }
 
-/** Rechecks ambiguity inside every uploader attempt, immediately before the upload side effect. */
+/**
+ * Rechecks ambiguity inside every uploader attempt, immediately before upload.
+ * Caller contract: deploy-web-production and deploy-ios serialize attempts;
+ * this history read and intent creation are separate, non-atomic API operations.
+ */
 export function prepareTestFlightUpload(
   repository: string,
   commitSha: string,
@@ -209,6 +213,30 @@ export function recordTestFlightUpload(
   );
   if (deployment.id !== deploymentId)
     throw new Error("TestFlight deployment ID does not match the original upload intent");
+  const current = z
+    .object({
+      errors: z.never().optional(),
+      data: z.object({
+        node: z.object({
+          databaseId: z.number().int().positive(),
+          latestStatus: deploymentStatusSchema,
+        }),
+      }),
+    })
+    .parse(
+      githubApi(["graphql", "--input", "-"], {
+        query:
+          "query($id: ID!) { node(id: $id) { ... on Deployment { databaseId latestStatus { state } } } }",
+        variables: { id: deployment.node_id },
+      }),
+    ).data.node;
+  if (current.databaseId !== deploymentId)
+    throw new Error("Current TestFlight deployment status belongs to a different upload intent");
+  if (current.latestStatus.state === "INACTIVE")
+    throw new Error(
+      "TestFlight upload intent is INACTIVE; its operator reconciliation cannot be overwritten by finalization",
+    );
+  if (current.latestStatus.state === "SUCCESS") return;
   z.object({ state: z.literal("success") }).parse(
     githubApi(
       [
