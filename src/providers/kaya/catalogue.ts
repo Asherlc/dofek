@@ -49,7 +49,7 @@ const nativeSchema = z.object({
       tags: z.array(
         z.object({
           id: z.union([z.string().min(1), z.number().int()]),
-          name: z.string().trim().min(1),
+          name: z.string().refine((name) => name.trim().length > 0),
           tag_type_id: z.union([z.string().min(1), z.number().int()]),
         }),
       ),

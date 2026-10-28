@@ -67,7 +67,7 @@ it("retains ordered grades, real zero and null gaps in curves with a supplied ba
   expect(option.series).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        name: "Vertical",
+        name: "vertical",
         connectNulls: false,
         data: [
           expect.objectContaining({ value: 80 }),
@@ -854,3 +854,43 @@ it.each(["V3", "All grades"])(
     });
   },
 );
+
+it("keeps equal tag labels independently selectable in the curves legend", () => {
+  const tagged = {
+    ...panel,
+    dimension: "tag" as const,
+    category: { providerId: "source", key: "grips", label: "Grip" },
+    rows: panel.rows.map((row, index) => ({ ...row, label: index < 2 ? "Crimp" : "2. Crimp" })),
+  };
+  const option = climbingStrengthsChartOption(tagged, "curves", "V3", null);
+  const first = z.object({ lineStyle: z.object({ color: z.string() }) }).parse(option.series[0]);
+  const second = z.object({ lineStyle: z.object({ color: z.string() }) }).parse(option.series[1]);
+  withRenderedChart(option, (chart) => {
+    const labels = renderedText(chart).map((item) => item.text);
+    expect(labels).toEqual(
+      expect.arrayContaining(["1. Crimp", "2. Crimp", "3. 2. Crimp", "Same-grade baseline"]),
+    );
+    const coloredElements = (color: string) =>
+      chart
+        .getZr()
+        .storage.getDisplayList(true)
+        .filter(
+          (element) =>
+            z.object({ stroke: z.literal(color) }).safeParse(Reflect.get(element, "style")).success,
+        );
+    expect(coloredElements(first.lineStyle.color).length).toBeGreaterThan(0);
+    expect(coloredElements(second.lineStyle.color).length).toBeGreaterThan(0);
+    chart.dispatchAction({ type: "legendUnSelect", name: "overhang" });
+    const state = z
+      .object({ legend: z.array(z.object({ selected: z.record(z.string(), z.boolean()) })) })
+      .parse(chart.getOption());
+    expect(state.legend[0]?.selected).toMatchObject({
+      vertical: true,
+      overhang: false,
+      slab: true,
+      "Same-grade baseline": true,
+    });
+    expect(coloredElements(second.lineStyle.color)).toHaveLength(0);
+    expect(coloredElements(first.lineStyle.color).length).toBeGreaterThan(0);
+  });
+});

@@ -188,6 +188,61 @@ describe("KayaCatalogueAdapter", () => {
 });
 
 describe("Kaya authenticated catalogue classification", () => {
+  it.each(["  Literal STYLE!  ", "\tSource label\n"])(
+    "preserves the exact native tag label %j",
+    async (name) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          data: {
+            climb: {
+              ...climb,
+              lead: true,
+              is_trad: false,
+              tags: [{ id: "literal", name, tag_type_id: "6" }],
+            },
+          },
+        }),
+      );
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
+        ...seed,
+        providerId: "kaya",
+        externalId: climb.id,
+      });
+      expect(result.candidates[0]?.tags).toContainEqual({
+        kind: "other",
+        sourceKey: "literal",
+        label: name,
+        category: "Style",
+        scope: "direct",
+        inheritedFrom: null,
+      });
+    },
+  );
+
+  it.each(["", "  ", "\t\n"])("rejects an empty native tag label %j", async (name) => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        data: {
+          climb: {
+            ...climb,
+            lead: true,
+            is_trad: false,
+            tags: [{ id: "empty", name, tag_type_id: "6" }],
+          },
+        },
+      }),
+    );
+    await expect(
+      new KayaCatalogueAdapter(fetchFn, async () => "token").search({
+        ...seed,
+        providerId: "kaya",
+        externalId: climb.id,
+      }),
+    ).rejects.toThrow(
+      "Kaya authenticated catalogue lookup returned invalid or rejected climb details; sync or reconnect Kaya and retry.",
+    );
+  });
+
   it("retains every native source tag and its category without requesting tags on public search", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()

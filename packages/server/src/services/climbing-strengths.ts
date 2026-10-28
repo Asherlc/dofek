@@ -103,8 +103,10 @@ export function buildClimbingStrengths(
   const entries: Array<
     ClimbingStrengthsObservation & {
       observations: ClimbingStrengthsObservation[];
+      tagKeysByCategory: Map<string, string[]>;
     }
   > = [];
+  const tagCategories = new Map<string, { tag: ClimbingTag; labels: Map<string, string> }>();
   for (const group of groups.values()) {
     const grades = [
       ...new Map(
@@ -146,6 +148,19 @@ export function buildClimbingStrengths(
         }),
       ).values(),
     ];
+    const tags = new Map(
+      group.flatMap((entry) => (entry.tags ?? []).map((tag) => [tagKey(tag), tag])),
+    );
+    const tagKeysByCategory = new Map<string, string[]>();
+    for (const [key, tag] of tags) {
+      const category = categoryKey(tag);
+      const keys = tagKeysByCategory.get(category) ?? [];
+      keys.push(key);
+      tagKeysByCategory.set(category, keys);
+      const labels = tagCategories.get(category)?.labels ?? new Map<string, string>();
+      labels.set(key, tag.label);
+      tagCategories.set(category, { tag, labels });
+    }
     entries.push({
       ...preferred,
       observations: group,
@@ -154,11 +169,8 @@ export function buildClimbingStrengths(
       setting: settings.length === 1 ? (settings[0] ?? null) : null,
       holdTypes: holds.length === 1 ? (holds[0] ?? null) : null,
       wallAngle: angles.length === 1 ? (angles[0] ?? null) : null,
-      tags: [
-        ...new Map(
-          group.flatMap((entry) => (entry.tags ?? []).map((tag) => [tagKey(tag), tag])),
-        ).values(),
-      ],
+      tags: [...tags.values()],
+      tagKeysByCategory,
       example: {
         ...preferred.example,
         grade: grade.grade ?? "",
@@ -193,14 +205,9 @@ export function buildClimbingStrengths(
     };
   });
   if (selected.length > 0) {
-    const categories = new Map(
-      selected.flatMap((entry) =>
-        (entry.tags ?? []).map((tag) => [categoryKey(tag), tag] as const),
-      ),
-    );
     const dimensions: Array<
       {
-        values: (entry: ClimbingStrengthsObservation) => string[];
+        values: (entry: (typeof selected)[number]) => string[];
         label: (key: string) => string;
       } & (
         | { dimension: ClimbingStrengthsPanel["dimension"] }
@@ -214,14 +221,7 @@ export function buildClimbingStrengths(
           ? "Unknown setting"
           : (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " "),
     }));
-    for (const [key, tag] of categories) {
-      const tags = new Map(
-        selected.flatMap((entry) =>
-          (entry.tags ?? [])
-            .filter((tag) => categoryKey(tag) === key)
-            .map((tag) => [tagKey(tag), tag] as const),
-        ),
-      );
+    for (const [key, { tag, labels }] of tagCategories) {
       dimensions.push({
         dimension: "tag",
         category: {
@@ -229,8 +229,8 @@ export function buildClimbingStrengths(
           key: tag.categoryKey,
           label: tag.categoryLabel ?? tag.categoryKey ?? "Uncategorized tags",
         },
-        values: (entry) => (entry.tags ?? []).filter((tag) => categoryKey(tag) === key).map(tagKey),
-        label: (key) => tags.get(key)?.label ?? key,
+        values: (entry) => entry.tagKeysByCategory.get(key) ?? [],
+        label: (key) => labels.get(key) ?? key,
       });
     }
     for (const definition of dimensions) {

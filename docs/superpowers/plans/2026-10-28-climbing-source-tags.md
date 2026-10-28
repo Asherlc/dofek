@@ -1,6 +1,6 @@
 # Climbing Source Tags Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **Implementation:** Complete the tasks in dependency order, checking off each step after its validation and review.
 
 **Goal:** Expose every recorded source tag in climb details and strengths on web/mobile while keeping catalogue tags informational.
 
@@ -17,7 +17,7 @@
 - All numeric calculations remain on the server; web/mobile render the same response.
 - No new provider, inferred labels, dependency, database migration or historical backfill.
 - Keep old response versions compatible; stay on the current branch.
-- Write failing behavioral tests first. Root coordinates checks, commits and automatic pushes.
+- Write failing behavioral tests first. Run shared checks and review before committing and pushing completed changes.
 
 ## Review Focus
 

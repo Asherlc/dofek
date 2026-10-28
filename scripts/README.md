@@ -177,6 +177,22 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
   and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
   - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
+- `testflight-deployment.ts`: Detects signed iOS native changes against the
+  latest successful upload receipt, and records the actual uploaded source SHA
+  and build number after Xcode's upload succeeds. Uses one GitHub deployment
+  history with environment `testflight` and task `testflight-upload`, independent
+  of the caller workflow's commit or job name. Empty successful history requires
+  a first build; API or malformed-history failures stop the release. Explicit
+  manual publication uses `--force`; automatic releases compare the uploaded and
+  requested source trees, including rollback differences. GitHub documents
+  [deployment filtering and exact refs](https://docs.github.com/en/rest/deployments/deployments)
+  and [successful deployment statuses](https://docs.github.com/en/rest/deployments/statuses).
+  The receipt records upload success, while Apple separately
+  [processes uploaded builds](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+  before they appear in App Store Connect.
+  `testflight-deployment-cli.ts` supplies the workflow command interface.
+  - Detection: `pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-source-sha> [--force]`
+  - Receipt, only after a successful upload: `pnpm tsx scripts/testflight-deployment-cli.ts record <owner/repo> <full-source-sha> <build-number> <workflow-run-url>`
 - `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
   using the same user-bound discovery, comparison, trend, and cycling-performance
   repositories as MCP. It makes no provider network requests and computes no

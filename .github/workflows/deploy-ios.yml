@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy"
+        description: "Actual deployed server source SHA to publish"
         required: true
         type: string
       ci_run_id:
@@ -15,20 +15,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to the selected ref HEAD)."
-        required: false
-        type: string
-      ci_run_id:
-        description: "CI run ID to include in deploy summary (optional)."
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -37,156 +23,57 @@ permissions:
 
 concurrency:
   group: deploy-ios
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check:
     name: Deploy Check
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    env:
-      IOS_NATIVE_INPUT_PATTERN: '^(pnpm-lock\.yaml$|patches/|packages/mobile/(package\.json$|app\.json$|app\.config\.(js|ts|mjs|cjs)$|fingerprint\.config\.js$|\.fingerprintignore$|\.gitignore$|assets/|certs/certificate\.pem$|build/|plugins/|targets/|native/|modules/[^/]+/(expo-module\.config\.json$|ios/)))'
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
     outputs:
-      commit_sha: ${{ steps.resolve.outputs.sha }}
       should_deploy: ${{ steps.detect.outputs.should_deploy }}
-      ci_run_id: ${{ steps.find-run.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 0
-      - name: Resolve commit SHA
-        id: resolve
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_SHA: ${{ inputs.commit_sha }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          DISPATCH_SHA: ${{ github.sha }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
-            echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_SHA" ]; then
-            echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "sha=$DISPATCH_SHA" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Detect iOS native changes
         id: detect
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          SHA: ${{ steps.resolve.outputs.sha }}
+          SHA: ${{ inputs.commit_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Manual deploy requested"
-            exit 0
+          FORCE=()
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            FORCE=(--force)
           fi
-
-          # Find the commit from the last iOS deploy that actually
-          # uploaded to TestFlight. HEAD~1 misses native changes in
-          # merge commits that bundle multiple PR commits — we need
-          # to diff against the last commit that triggered a real deploy.
-          #
-          # Runs where should_deploy was false still show conclusion=success
-          # (the deploy job is skipped, not failed), so we check that the
-          # "Upload to TestFlight" job completed successfully.
-          #
-          # If the GitHub API is unavailable, fall back to deploying
-          # rather than silently skipping a needed deploy.
-          LAST_DEPLOY_SHA=""
-          if ! RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-ios.yml/runs?status=success&per_page=100" \
-            --jq '[.workflow_runs[] | select(.head_sha != "'"$SHA"'")] | .[].id' 2>/dev/null); then
-            echo "GitHub API unavailable — deploying to avoid blocking releases"
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          for RUN_ID in $RUNS; do
-            DEPLOY_JOB=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs" \
-              --jq '.jobs[] | select(.name == "Upload to TestFlight" and .conclusion == "success") | .id' 2>/dev/null || true)
-            if [ -z "$DEPLOY_JOB" ]; then
-              continue
-            fi
-            LAST_DEPLOY_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" --jq '.head_sha' 2>/dev/null || true)
-            if [ -n "$LAST_DEPLOY_SHA" ]; then
-              echo "Last actual deploy: run $RUN_ID (commit $LAST_DEPLOY_SHA)"
-              break
-            fi
-          done
-
-          if [ -z "$LAST_DEPLOY_SHA" ]; then
-            echo "No previous successful deploy found — deploying"
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Diff against the resolved SHA (not HEAD) so the comparison
-          # matches the commit being deployed, even if main has advanced.
-          DIFF_SHA="${SHA:-HEAD}"
-          echo "Comparing $LAST_DEPLOY_SHA...$DIFF_SHA"
-          DIFF=$(git diff --name-only "$LAST_DEPLOY_SHA"..."$DIFF_SHA")
-          echo "$DIFF"
-          if echo "$DIFF" | grep -qE "$IOS_NATIVE_INPUT_PATTERN"; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "iOS native changes detected"
-          else
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "No iOS native changes since last deploy — skipping"
-          fi
-      - name: Resolve triggering CI run ID
-        id: find-run
-        if: steps.detect.outputs.should_deploy == 'true'
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_RUN_ID: ${{ inputs.ci_run_id }}
-          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
-            echo "run_id=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "Using triggering CI run: $WORKFLOW_RUN_ID"
-            exit 0
-          fi
-
-          if [ -n "$INPUT_RUN_ID" ]; then
-            echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "Using provided CI run: $INPUT_RUN_ID"
-          else
-            echo "run_id=" >> "$GITHUB_OUTPUT"
-            echo "No CI run ID provided"
-          fi
+          SHOULD_DEPLOY=$(pnpm tsx scripts/testflight-deployment-cli.ts detect "$GITHUB_REPOSITORY" "$SHA" "${FORCE[@]}")
+          echo "should_deploy=$SHOULD_DEPLOY" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
-          dispatching_run_id: ${{ inputs.dispatching_run_id != '' && inputs.dispatching_run_id || github.event.workflow_run.id }}
+          dispatching_run_id: ${{ inputs.dispatching_run_id }}
 
   deploy:
     name: Upload to TestFlight
     needs: [check]
-    if: |
-      needs.check.result == 'success' &&
-      needs.check.outputs.should_deploy == 'true'
+    if: needs.check.outputs.should_deploy == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
+    outputs:
+      commit_sha: ${{ steps.checked-out-sha.outputs.sha }}
+      build_number: ${{ steps.build-number.outputs.value }}
+      upload_succeeded: ${{ steps.upload.outcome == 'success' }}
     steps:
-      - name: Resolve commit SHA
-        id: sha
-        env:
-          CHECK_SHA: ${{ needs.check.outputs.commit_sha }}
-          INPUT_SHA: ${{ inputs.commit_sha }}
-        run: |
-          if [ -n "$CHECK_SHA" ]; then
-            echo "ref=$CHECK_SHA" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_SHA" ]; then
-            echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::No commit SHA resolved for iOS deployment"
-            exit 1
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ steps.sha.outputs.ref }}
+          ref: ${{ inputs.commit_sha }}
       - name: Resolve checked-out commit SHA
         id: checked-out-sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -237,14 +124,14 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo -n "$IOS_DISTRIBUTION_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
-          security import $RUNNER_TEMP/dist-cert.p12 -P "$IOS_DISTRIBUTION_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$IOS_DISTRIBUTION_CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/dist-cert.p12"
+          security import "$RUNNER_TEMP/dist-cert.p12" -P "$IOS_DISTRIBUTION_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
       - name: Setup App Store Connect API key
         run: |
           mkdir -p ~/private_keys
-          echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+          echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
       - name: Archive (Release, signed)
         env:
           SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
@@ -258,10 +145,10 @@ jobs:
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
             -configuration Release \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
             -destination 'generic/platform=iOS' \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
@@ -269,13 +156,14 @@ jobs:
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
             2>&1 | tail -40
       - name: Export IPA & Upload to TestFlight
+        id: upload
         run: |
           xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
             -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
-            -exportPath $RUNNER_TEMP/export \
+            -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
       - name: Write job summary
@@ -283,7 +171,7 @@ jobs:
         env:
           BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
           COMMIT_SHA: ${{ steps.checked-out-sha.outputs.sha }}
-          CI_RUN_ID: ${{ needs.check.outputs.ci_run_id }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['version'])")
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
@@ -301,4 +189,26 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Cleanup keychain
         if: always()
-        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+
+  record-upload:
+    name: Record successful TestFlight upload
+    needs: [deploy]
+    if: always() && needs.deploy.outputs.upload_succeeded == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Record uploaded source commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ needs.deploy.outputs.commit_sha }}
+          BUILD_NUMBER: ${{ needs.deploy.outputs.build_number }}
+        run: |
+          pnpm tsx scripts/testflight-deployment-cli.ts record "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

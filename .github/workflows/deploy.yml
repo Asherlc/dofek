@@ -34,10 +34,14 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+concurrency:
+  group: ${{ (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') && 'deploy-web-production' || format('deploy-{0}-{1}', inputs.target, github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   terraform:
     name: Deploy Infra
-    if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'all'
+    if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -46,7 +50,7 @@ jobs:
 
   docker:
     name: Docker Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -108,7 +112,7 @@ jobs:
 
   docker_ml:
     name: Docker ML Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -157,7 +161,7 @@ jobs:
   web-stack:
     name: Deploy Web Stack
     needs: [terraform, docker, docker_ml]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    if: ${{ !cancelled() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
@@ -176,27 +180,30 @@ jobs:
 
   ios:
     name: Deploy iOS
-    if: inputs.target == 'ios' || inputs.target == 'all'
+    needs: web-stack
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
       id-token: write
+      deployments: write
     uses: ./.github/workflows/deploy-ios.yml
     with:
-      commit_sha: ${{ github.sha }}
+      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
   ota:
     name: Deploy OTA
-    if: inputs.target == 'ota' || inputs.target == 'all'
+    needs: web-stack
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ota' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
       id-token: write
     uses: ./.github/workflows/deploy-ota.yml
     with:
-      commit_sha: ${{ github.sha }}
+      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).

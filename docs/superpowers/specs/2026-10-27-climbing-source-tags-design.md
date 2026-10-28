@@ -30,8 +30,8 @@ stays at the source boundary and analytics consumes generic tags.
   preserve unfamiliar categories and custom labels.
 - Show grouped tags in climb details, with each fact stated once.
 - Extend the existing strengths breakdown to observed tag categories, reusing
-  the current grade-adjusted calculations, limited-sample states, grade view,
-  progress view and source-climb drilldown. Empty tags remain unknown.
+  the current grade-adjusted calculations, limited-sample states, Styles view,
+  Progress view and source-climb drilldown. Empty tags remain unknown.
 - Keep sources and categories distinct when identical labels do not establish
   equivalent meanings. Repeated logs do not multiply a climb's tag membership.
 - Preserve tags from all contributing records during existing log consolidation.

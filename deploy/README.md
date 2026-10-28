@@ -253,6 +253,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> validate the final schema; write and observe exact causal markers
               -> final deploy restores analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation
               -> verify backup freshness and record Sentry release
+         -> publish matching mobile OTA and eligible signed iOS build from the verified server-image source commit
 ```
 
 Production web deployments are serialized and never cancel an in-progress
@@ -290,6 +291,42 @@ For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix wit
 the selected workflow tag, verify the running Swarm image digest matches the
 resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
 [canonical deployment workflow](../.github/workflows/deploy-web-stack.yml).
+
+Production mobile OTA and signed iOS publishing follow a successful server
+rollout in the same release run. Automatic `Deploy Web` releases pass the server
+image's validated `SENTRY_RELEASE` commit to both reusable mobile publishers;
+signed iOS publishes when its native-change check selects a build. Each publisher
+checks out that exact commit. A failed or cancelled server rollout prevents
+publishing. Manually dispatched `Deploy Web` runs deploy only the server. GitHub documents reusable workflow
+[outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
+and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
+
+For a manual mobile release, dispatch **Deploy** (`deploy.yml`) with target `ota`
+or `ios` from the desired source ref. Without an `image_tag`, the workflow builds
+and deploys that commit's server image before publishing the selected mobile
+release. Target `all` publishes both mobile releases after the server. When
+reusing an existing `image_tag`, select its matching source ref in the dispatch:
+the immutable image's `SENTRY_RELEASE` must equal the checked-out source commit,
+or deployment fails before migrations. The OTA, signed iOS, and stack workflows
+are reusable only. For a server-only manual rollout, dispatch **Deploy** with
+target `web` (including infrastructure) or `web-stack` (stack only).
+Automatic and manual server/mobile releases share the production concurrency
+group until publishing completes, using GitHub's
+[workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+Signed iOS change detection reads successful GitHub deployment receipts with
+environment `testflight` and task `testflight-upload`, recorded with the actual
+source SHA after successful Xcode upload. Automatic releases compare native
+inputs with that uploaded revision, including rollback targets, and skip an
+already-uploaded SHA. No prior successful receipt selects a first build;
+unavailable or malformed receipt evidence fails the check. Manual `ios` and
+`all` requests force a signed build. Apple processing and tester availability
+follow upload separately. Receipt reads use
+`deployments: read`; only the receipt-writing job receives `deployments: write`.
+GitHub documents deployment
+[creation](https://docs.github.com/en/rest/deployments/deployments#create-a-deployment)
+and [status reporting](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys check out the selected CI run's full commit SHA for both

@@ -140,12 +140,13 @@ export function climbingStrengthsChartOption(
   if (view === "curves")
     return {
       ...base,
+      legend: { ...base.legend, formatter: radarAxisFormatter(panel.rows) },
       xAxis: dofekAxis.category({ show: true, data: panel.grades.map((item) => item.grade) }),
       yAxis: dofekAxis.value({ name: "Success (%)", min: 0, max: 100 }),
       series: [
         ...panel.rows.map((row, index) =>
           dofekSeries.line(
-            row.label,
+            row.key,
             row.cells.map((cell) => point(row, cell, cell.successRate, seriesColor(index))),
             { color: seriesColor(index), smooth: false, symbol: "circle", symbolSize: 8 },
           ),

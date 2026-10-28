@@ -73,3 +73,29 @@ jobs:
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets: inherit
+
+  ota:
+    name: Deploy Matching OTA
+    needs: [resolve, production]
+    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' }}
+    uses: ./.github/workflows/deploy-ota.yml
+    with:
+      commit_sha: ${{ needs.production.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+    secrets: inherit
+
+  ios:
+    name: Deploy Matching iOS
+    needs: [resolve, production]
+    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ios.yml
+    with:
+      commit_sha: ${{ needs.production.outputs.commit_sha }}
+      ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}
+      dispatching_run_id: ${{ github.run_id }}
+    secrets: inherit
