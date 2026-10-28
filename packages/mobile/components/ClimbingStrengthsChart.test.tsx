@@ -8,6 +8,7 @@ import {
   climbingStrengthsFixture,
   climbingStrengthsUnknownResultsFixture,
 } from "./climbing-strengths-fixtures";
+import { climbingStrengthsSingleClimbFixture } from "./climbing-strengths-single-climb-fixture";
 
 const panel = climbingStrengthsFixture.panels[0];
 if (!panel) throw new Error("Missing panel fixture");
@@ -315,11 +316,13 @@ it("places grade-adjusted weaknesses inside and strengths outside the zero basel
   });
   fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
   expect(
-    screen.getByRole("button", { name: /-40 percentage points vs same-grade baseline/ }),
+    screen.getByRole("button", {
+      name: /Sending less often than usual at these grades \(-40 percentage points\)/,
+    }),
   ).toBeTruthy();
 });
 
-it("announces the adjusted radar scale to assistive technology", () => {
+it("explains the style comparison in everyday language to assistive technology", () => {
   const source = climbingStrengthsComparisonFixture.panels[0];
   if (!source) throw new Error("Missing fixture");
   render(
@@ -332,7 +335,31 @@ it("announces the adjusted radar scale to assistive technology", () => {
   );
   expect(
     screen.getByRole("image", {
-      name: /Strengths and weaknesses.*Grade-adjusted difference on a −100 to \+100/,
+      name: /Strengths and weaknesses.*Compared with your own climbs of the same difficulty/,
+    }),
+  ).toBeTruthy();
+});
+
+it("shows a single climb as a recorded result with too little evidence to judge strength", () => {
+  const single = climbingStrengthsSingleClimbFixture.panels[0];
+  if (!single) throw new Error("Missing single-climb fixture");
+  render(
+    <ClimbingStrengthsChart
+      panel={climbingStrengthsGradePanel(single, "All grades")}
+      view="radar"
+      grade="All grades"
+      onSelect={() => {}}
+    />,
+  );
+  expect(
+    screen.getByText(
+      "Log results in at least three styles to see this chart. Your recorded climbs are listed below.",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
+  expect(
+    screen.getByRole("button", {
+      name: "Slab: Sent 1 of 1 climb · Too few climbs to judge strengths yet",
     }),
   ).toBeTruthy();
 });

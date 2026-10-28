@@ -7,6 +7,7 @@ import {
   climbingStrengthsFixture,
   climbingStrengthsUnknownResultsFixture,
 } from "./climbing-strengths-fixtures";
+import { climbingStrengthsSingleClimbFixture } from "./climbing-strengths-single-climb-fixture";
 
 const meta = {
   title: "Components/ClimbingStrengths",
@@ -16,6 +17,23 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const SingleClimb: Story = {
+  args: { data: climbingStrengthsSingleClimbFixture },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "View Strengths and weaknesses data" }),
+    );
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Slab: Sent 1 of 1 climb · Too few climbs to judge strengths yet",
+      }),
+    );
+    await expect(canvas.getByText("Sent 1 of 1 climb")).toBeVisible();
+    await expect(canvas.getByText("Too few climbs to judge strengths yet")).toBeVisible();
+    await expect(canvas.getByText("Quiet Feet")).toBeVisible();
+  },
+};
 export const Narrow: Story = {
   args: {
     data: {

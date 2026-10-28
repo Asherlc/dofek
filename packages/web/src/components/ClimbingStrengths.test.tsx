@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
 import {
+  climbingStrengthsSingleClimbFixture,
   climbingStrengthsUnknownResultsFixture,
   climbingStrengthsFixture as fixture,
 } from "./climbing-strengths-fixtures.ts";
@@ -15,6 +16,14 @@ vi.mock("./DofekChart.tsx", () => ({
 }));
 
 afterEach(cleanup);
+it("keeps the small-sample explanation after opening a style's climbs", () => {
+  render(<ClimbingStrengths data={climbingStrengthsSingleClimbFixture} />);
+  fireEvent.click(screen.getByText("Exact values"));
+  fireEvent.click(screen.getByRole("button", { name: /Slab ·/ }));
+  const selected = screen.getByRole("region", { name: "Selected climbs" });
+  expect(selected).toHaveTextContent("Sent 1 of 1 climb");
+  expect(selected).toHaveTextContent("Too few climbs to judge strengths yet");
+});
 it("names the grade heatmap for assistive technology", () => {
   render(<ClimbingStrengths data={fixture} />);
   fireEvent.click(screen.getByRole("button", { name: "Grades" }));
@@ -139,11 +148,11 @@ it("shows the server grade-adjusted radar summary and keeps all styles after sel
   render(<ClimbingStrengths data={fixture} />);
   expect(screen.getByText("Strengths and weaknesses")).toBeVisible();
   fireEvent.click(screen.getByText("Exact values"));
-  fireEvent.click(screen.getByRole("button", { name: /Vertical · All grades/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · Sent 13 of 21 climbs/ }));
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
-    "13 sends / 21 climbs",
+    "Sent 13 of 21 climbs",
   );
-  expect(screen.getByRole("button", { name: /Overhang · All grades/ })).toBeVisible();
+  expect(screen.getByRole("button", { name: /Overhang · Sent 11 of 19 climbs/ })).toBeVisible();
 });
 it("uses a fixed heatmap and monthly chart for Grades and Progress across both breakdowns", () => {
   const angle = fixture.panels[0];

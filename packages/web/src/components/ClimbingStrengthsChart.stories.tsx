@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
-import { climbingStrengthsFixture } from "./climbing-strengths-fixtures.ts";
+import {
+  climbingStrengthsFixture,
+  climbingStrengthsSingleClimbFixture,
+} from "./climbing-strengths-fixtures.ts";
 
 const panel = climbingStrengthsFixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
@@ -19,6 +22,19 @@ export const GradePyramids: Story = { args: { view: "pyramids" } };
 export const Progress: Story = { args: { view: "progress", grade: "V4" } };
 export const RadarProfile: Story = { args: { view: "radar" } };
 export const SparseRadar: Story = { args: { view: "radar", grade: "V4" } };
+export const SingleClimb: Story = {
+  args: {
+    panel: climbingStrengthsSingleClimbFixture.panels[0],
+    view: "radar",
+    grade: "All grades",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByText("Exact values"));
+    await expect(canvas.getByText("Sent 1 of 1 climb")).toBeVisible();
+    await expect(canvas.getByText("Too few climbs to judge strengths yet")).toBeVisible();
+  },
+};
 export const DenseLongLabels: Story = {
   args: {
     panel: {

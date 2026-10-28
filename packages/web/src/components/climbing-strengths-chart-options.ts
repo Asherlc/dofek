@@ -4,10 +4,11 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsBaselineLabel,
   climbingStrengthsCountLabel,
-  climbingStrengthsDifferenceLabel,
   climbingStrengthsRateLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import type { CustomSeriesRenderItem } from "echarts";
@@ -92,7 +93,7 @@ export function climbingStrengthsChartOption(
     legend: dofekLegend(true, { type: "scroll" }),
     aria: {
       label: {
-        description: `${panel.contextLabel}. ${chartGrade}. ${view === "radar" && grade === ALL_CLIMBING_GRADES ? "Grade-adjusted differences in percentage points; zero is the same-grade baseline" : "Success per distinct climb"}; limited samples are marked. Exact values are available below.`,
+        description: `${panel.contextLabel}. ${chartGrade}. ${view === "radar" && grade === ALL_CLIMBING_GRADES ? "Compared with your own climbs of the same difficulty. Outside the dashed line means you send more often than usual; inside means less often." : "Success per distinct climb; limited samples are marked."} Exact values are available below.`,
       },
     },
   };
@@ -350,17 +351,12 @@ export function climbingStrengthsChartOption(
           type: "radar",
           data: [
             {
-              name: "Grade-adjusted strengths",
+              name: "Climbing strengths",
               value: axes.map((axis) => axis.value),
               tooltipText: axes
                 .map(
-                  ({
-                    row,
-                    cell,
-                    strength,
-                    value,
-                  }) => `${row.label} · ${climbingStrengthsDifferenceLabel(value)}
-${climbingStrengthsCountLabel(cell)}${strength.sampleStatus === "limited" ? " · Limited sample" : ""}`,
+                  ({ row, cell, strength }) => `${row.label} · ${climbingStrengthsSendLabel(cell)}
+${climbingStrengthsAdjustedLabel(strength)}`,
                 )
                 .join("\n"),
               lineStyle: { color: seriesColor(0) },
@@ -368,9 +364,9 @@ ${climbingStrengthsCountLabel(cell)}${strength.sampleStatus === "limited" ? " ·
               areaStyle: { opacity: 0.12 },
             },
             {
-              name: "Same-grade baseline",
+              name: "Your usual send rate",
               value: axes.map(() => 0),
-              tooltipText: "Same-grade baseline · 0 percentage points",
+              tooltipText: "Your usual send rate for climbs of the same difficulty",
               lineStyle: { type: "dashed", color: chartThemeColors.axisLabel },
               itemStyle: { color: chartThemeColors.axisLabel },
             },

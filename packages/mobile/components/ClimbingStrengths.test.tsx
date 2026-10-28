@@ -5,6 +5,7 @@ import {
   climbingStrengthsUnknownResultsFixture,
   climbingStrengthsFixture as fixture,
 } from "./climbing-strengths-fixtures";
+import { climbingStrengthsSingleClimbFixture } from "./climbing-strengths-single-climb-fixture";
 
 const data = {
   ...fixture,
@@ -91,4 +92,17 @@ it("uses fixed grade and progress views for both breakdowns", () => {
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByText("Monthly send rate")).toBeTruthy();
   expect(screen.getByText(/Combines all grades/)).toBeTruthy();
+});
+
+it("opens the recorded climb with a clear small-sample explanation", () => {
+  render(<ClimbingStrengths data={climbingStrengthsSingleClimbFixture} />);
+  fireEvent.click(screen.getByRole("button", { name: "View Strengths and weaknesses data" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Slab: Sent 1 of 1 climb · Too few climbs to judge strengths yet",
+    }),
+  );
+  expect(screen.getByText("Sent 1 of 1 climb")).toBeTruthy();
+  expect(screen.getByText("Too few climbs to judge strengths yet")).toBeTruthy();
+  expect(screen.getByText("Quiet Feet")).toBeTruthy();
 });

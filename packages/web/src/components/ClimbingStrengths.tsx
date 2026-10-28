@@ -5,11 +5,12 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
-  climbingStrengthsDifferenceLabel,
   climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_TABS,
@@ -165,12 +166,7 @@ function ClimbingStrengthsPanelContent({
                 ? "Send rate by grade and style"
                 : "Monthly send rate"}
           </h4>
-          {view === "radar" ? (
-            <p className="text-sm text-muted">
-              Compared with your usual results at the same grades. Outside the dashed line is
-              stronger; inside is weaker.
-            </p>
-          ) : view === "progress" ? (
+          {view === "progress" ? (
             <p className="text-sm text-muted">
               Combines all grades; changes can reflect the difficulty of climbs recorded each month.
             </p>
@@ -244,7 +240,8 @@ function ClimbingStrengthsPanelContent({
           className="rounded-lg border border-border bg-surface p-4 space-y-3"
         >
           <h3 className="font-semibold">
-            {row.label} · {cell.grade}
+            {row.label}
+            {view === "radar" ? "" : ` · ${cell.grade}`}
           </h3>
           {view === "progress" ? (
             <p className="text-xs text-muted">
@@ -252,13 +249,14 @@ function ClimbingStrengthsPanelContent({
             </p>
           ) : null}
           <p>
-            {rateLabel(cell)} · {climbingStrengthsCountLabel(cell)}
+            {view === "radar"
+              ? climbingStrengthsSendLabel(cell)
+              : `${rateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`}
           </p>
           {view === "radar" ? (
             <p className="text-xs text-muted">
-              {climbingStrengthsDifferenceLabel(
-                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key)
-                  ?.differencePercentagePoints ?? null,
+              {climbingStrengthsAdjustedLabel(
+                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key),
               )}
             </p>
           ) : null}

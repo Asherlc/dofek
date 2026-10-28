@@ -4,11 +4,12 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
-  climbingStrengthsDifferenceLabel,
   climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_TABS,
@@ -219,16 +220,11 @@ function ClimbingStrengthsPanelContent({
         </>
       ) : (
         <>
-          {view === "radar" ? (
-            <Text style={styles.meta}>
-              Compared with your usual results at the same grades. Outside the dashed line is
-              stronger; inside is weaker.
-            </Text>
-          ) : (
+          {view === "progress" ? (
             <Text style={styles.meta}>
               Combines all grades; changes can reflect the difficulty of climbs recorded each month.
             </Text>
-          )}
+          ) : null}
           <ClimbingStrengthsChart
             panel={displayPanel}
             view={view}
@@ -240,19 +236,21 @@ function ClimbingStrengthsPanelContent({
       {selectedCell && (
         <View style={styles.examples}>
           <Text style={styles.text}>
-            {selectedRow?.label} · {selectedCell.grade}
+            {selectedRow?.label}
+            {view === "radar" ? "" : ` · ${selectedCell.grade}`}
+          </Text>
+          <Text style={styles.meta}>
+            {view === "radar"
+              ? climbingStrengthsSendLabel(selectedCell)
+              : `${climbingStrengthsRateLabel(selectedCell)} · ${climbingStrengthsCountLabel(selectedCell)}`}
           </Text>
           {view === "radar" ? (
             <Text style={styles.meta}>
-              {climbingStrengthsDifferenceLabel(
-                panel.gradeAdjustedStrengths.find((entry) => entry.key === selectedRow?.key)
-                  ?.differencePercentagePoints ?? null,
+              {climbingStrengthsAdjustedLabel(
+                panel.gradeAdjustedStrengths.find((entry) => entry.key === selectedRow?.key),
               )}
             </Text>
           ) : null}
-          <Text style={styles.meta}>
-            {climbingStrengthsRateLabel(selectedCell)} · {climbingStrengthsCountLabel(selectedCell)}
-          </Text>
           <Text style={styles.text}>
             {view === "progress"
               ? "Recorded climbs · Across the selected period"
