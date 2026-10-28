@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 
 let capturedOption: Record<string, unknown> | null = null;
 
@@ -32,6 +33,71 @@ vi.mock("./LoadingSkeleton.tsx", () => ({
 const { VerticalAscentChart } = await import("./VerticalAscentChart.tsx");
 
 describe("VerticalAscentChart", () => {
+  it.each(["metric", "imperial"] as const)(
+    "scales bubble sizes by elevation gain across cycling groups in %s units",
+    (unitSystem) => {
+      render(
+        <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
+          <VerticalAscentChart
+            data={[
+              {
+                date: "2026-04-01",
+                activityName: "Flat Ride",
+                activityType: "cycling",
+                modality: "road",
+                verticalAscentRate: 0,
+                elevationGainMeters: 0,
+                elapsedMinutes: 60,
+              },
+              {
+                date: "2026-04-02",
+                activityName: "Rolling Ride",
+                activityType: "cycling",
+                modality: "road",
+                verticalAscentRate: 1000,
+                elevationGainMeters: 500,
+                elapsedMinutes: 30,
+              },
+              {
+                date: "2026-04-03",
+                activityName: "Hill Ride",
+                activityType: "cycling",
+                modality: "road",
+                verticalAscentRate: 500,
+                elevationGainMeters: 1000,
+                elapsedMinutes: 120,
+              },
+              {
+                date: "2026-04-04",
+                activityName: "Gravel Ride",
+                activityType: "cycling",
+                modality: "gravel",
+                verticalAscentRate: 750,
+                elevationGainMeters: 500,
+                elapsedMinutes: 40,
+              },
+            ]}
+          />
+        </UnitContext.Provider>,
+      );
+
+      const chartElement = screen.getByTestId("echarts-mock");
+      const option = JSON.parse(chartElement.dataset.option ?? "{}");
+      const roadSeries = option.series.find(
+        (series: { name: string }) => series.name === "Road Cycling",
+      );
+      const gravelSeries = option.series.find(
+        (series: { name: string }) => series.name === "Gravel Cycling",
+      );
+      expect(roadSeries.data.map((point: { symbolSize: number }) => point.symbolSize)).toEqual([
+        8, 24, 40,
+      ]);
+      expect(gravelSeries.data.map((point: { symbolSize: number }) => point.symbolSize)).toEqual([
+        24,
+      ]);
+    },
+  );
+
   it("renders separate scatter series by cycling type with stable colors", () => {
     render(
       <VerticalAscentChart

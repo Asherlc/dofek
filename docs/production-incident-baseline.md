@@ -33704,6 +33704,46 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 - **Retrospective / proposed guidance:** Full installation logs distinguished the failed artifact transfer from downstream missing-build-log noise. The supported repository selector avoided custom download infrastructure. Add a React Native artifact-download note to the CI debugging guide, linking the upstream selector and requiring a complete archive/checksum check; reuse the CI debugging workflow for similar failures.
 - **Merge readiness:** The first fixed head received no new PR CI run because a concurrent incident-baseline append made the PR conflict with `main`. Integrated current main on the existing branch and retained both incident records. GitHub documents that [merge conflicts prevent `pull_request` workflows from running](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request); this was a separate scheduling prerequisite, not another artifact-download failure.
 
+## 2026-10-27 — Historical vertical ascent totals repaired in production
+
+- **Symptoms / root cause:** The October 7 ascent outliers remained visible despite the deployed altitude-source correction in `a5a3245ef`. Read-only queries confirmed that the September 21 and December 15, 2020 sensor summaries still had September 16, 2026 refresh timestamps and gains of 87,246.4 m and 148,115.8 m. The old calculation counted switches between overlapping recordings' altitude baselines as climbing. Deploying new incremental SQL did not rewrite those historical rows; dbt documents the need for an [explicit historical rebuild](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model).
+- **Reviewed scope / direct fix:** Audited all 1,148 cycling activities for the affected account in explicit batches of 50 canonical IDs. Of 775 activities with altitude samples and an active sensor summary, 24 differed from the deployed provider/member/device source-selection calculation. With user approval, ran the existing [bounded repair](altitude-provenance.md#bounded-repair-of-existing-elevation-summaries), supplying those 24 IDs and their user UUID. The deployed `dbt build --threads 1 --select "activity_sensor_summary_rows activity_summary_rows cycling_activity hiking_activity"` finished in 15.44 seconds at 04:12:59 UTC on October 28: `PASS=4 WARN=0 ERROR=0 SKIP=0`. No raw ingestion, identity rebuild, full refresh, outlier cap, retry, or timeout change was introduced.
+- **Production validation:** All 24 repaired sensor gain/loss totals and cycling gains match the source-specific diagnostics within 0.000001 m. The 1,148 activity identities, start times, elapsed durations, other cycling elevation totals, and 123,601 altitude samples belonging to the repaired activities are unchanged. Group `3f5f8e36-d2ef-4d1d-a65f-1c9f848ff435` now has 274.5 m ascent over 2,806 seconds; group `efe36a0c-b37e-45e3-b09e-2be66bb35c19` has 481.8 m over 6,327 seconds. Authenticated production HTTP calls to both `cycling.activities` (all history) and `mobileDashboard.training` (3,650 days) return 200 and the same corrected observations: 352.2 and 274.1 m/h, displayed as approximately 1,156 and 899 ft/h. These requests refresh their response caches through the normal API path.
+- **Web presentation / local validation:** The web bubble-size denominator converted gain to feet while the numerator retained meters. It now uses meters consistently, matching mobile. A regression first reproduced imperial sizes of 8 / 12.8768 / 17.7536 px instead of 8 / 24 / 40 px; both unit systems now pass. The imperial Storybook preview was checked visually. All 90 focused unit tests, seven executable ClickHouse regression tests, root/server/web TypeScript checks, and full `pnpm lint` pass. The presentation change still requires its normal merge and deployment; the historical data repair is already live.
+- **Cache-refresh operational failure:** The production image uses the native Node TypeScript entrypoint, rather than the runbook's development `pnpm tsx` invocation. An initial `node --import tsx` invocation failed before execution because `tsx` is absent. After matching the native entrypoint, launching a second cache-warmer Node process inside the running analytics container exceeded its 400 MiB cgroup limit: Docker records `OOMKilled=true`, exit 137, and finish time 04:15:37 UTC. Swarm replaced the task, and the replacement resumed its ordinary analytics cycle. The standalone warmer was not repeated; lightweight authenticated HTTP requests verified and refreshed the two affected API responses. No service configuration or memory limit was changed. Native HTTP verification did not add another application runtime to the worker container.
+- **Recovery confirmation:** The replacement worker completed its ordinary build/cache cycle at 04:23:04 UTC. Its readiness response reports `status=ok`, `lastFailure=null`, and `lastSuccessAt=2026-10-28T04:23:04.442Z`; the cache-warmer reports 43 refreshed query caches. Read-only Redis checks independently confirm the repaired observations in both web and mobile response caches.
+- **Merge validation on October 28:** Integrated current main while preserving both branches' incident records. The Docker-free unit/mobile command passed 22,467 tests but exited unsuccessfully after four mobile suites failed to start their Vitest workers with `Timeout waiting for worker to respond`. All four suites then passed their seven tests in 2.05 seconds with one worker and zero retries; no application assertions failed and no timeout or configuration changed. The workstation's five-/fifteen-minute load averages were 24.09/30.77 when inspected, versus a current one-minute load of 6.80; those measurements support resource contention without proving the cause of each worker timeout. Final hosted validation is tracked in [PR #3141](https://github.com/Asherlc/dofek/pull/3141/checks). Review follow-up strengthened the metric/imperial regression to distinguish elevation gain from ascent rate and require one shared maximum across cycling groups.
+- **Retrospective / follow-up:** The prior incident record and source-level audit isolated the stale rows without filtering legitimate chart data; auditing ordinary rides caught 22 additional affected activities. Deployment alone is insufficient evidence that a historical calculation is corrected. Use `check-logs` and `integration-tests-ready` for recurrence. Proposed runbook improvement: distinguish development and production entrypoints, inspect maintenance-process memory headroom before executing inside a running worker, and prefer the existing worker's normal cache-refresh cycle or ordinary authenticated API reads. The replacement worker's successful full cycle confirms recovery separately from the successful ascent repair; no resilience knob was added.
+
+Reviewed repair scope, with ascent in meters (rounded here to one decimal):
+
+| Canonical activity ID | Before | After |
+| --- | ---: | ---: |
+| `089fd54f-0d06-4129-b6aa-f28425010ee0` | 327.9 | 290.5 |
+| `0fef8b46-0bf5-4586-a86f-f3fcce2c93f5` | 6416.5 | 420.0 |
+| `0c4a393f-007a-4bf3-ac89-3016b7f1fc52` | 12668.0 | 358.6 |
+| `0b9467bd-f6e6-4be5-bebd-0f3067de2820` | 922.1 | 615.6 |
+| `180175e7-8926-4766-94b9-ca17d519a1da` | 808.2 | 396.8 |
+| `192cbc78-23bc-463f-ba46-3a443bee4684` | 1997.1 | 461.0 |
+| `3567c367-f6d2-4fe9-8c86-26a966a997ef` | 369.0 | 313.0 |
+| `3f5f8e36-d2ef-4d1d-a65f-1c9f848ff435` | 87246.4 | 274.5 |
+| `4d93bb97-aad5-47ae-b0c2-47fee197b791` | 669.6 | 82.2 |
+| `4bca5047-7f99-4023-be18-66da91936e51` | 6509.1 | 496.6 |
+| `5a39e282-0985-4baa-9407-6dc67a810bb9` | 357.3 | 309.1 |
+| `5ce50aad-dafc-489f-b7ea-4a9981571498` | 23383.9 | 582.9 |
+| `69be5e5d-68b6-4e93-80cc-e81bd78a22ae` | 241.7 | 192.9 |
+| `665c5dd2-28e2-4314-9292-762087e71bd1` | 848.9 | 511.8 |
+| `7815a71f-2598-431e-94f3-937d89c5a96a` | 600.5 | 236.7 |
+| `8128d071-e47c-448b-9d81-4728d0654bbc` | 12325.9 | 618.2 |
+| `91fd7605-06db-42f2-a01c-e07490c28645` | 12414.1 | 891.2 |
+| `971726f9-f2a1-4aec-8352-37b61c22f787` | 16897.6 | 358.2 |
+| `b893fd83-f83a-4926-9dc2-8288b885eafb` | 891.1 | 725.5 |
+| `d1b813e3-0cb0-4a9b-8adb-56084a6fff0e` | 14478.8 | 377.7 |
+| `d7f8027b-46a6-41af-93b3-6bde054acce5` | 704.9 | 281.3 |
+| `d3755e84-af49-426d-95aa-d9ec3a6d8131` | 565.9 | 514.8 |
+| `d8a58a54-5a2d-461e-bf64-811836480d51` | 496.1 | 469.7 |
+| `efe36a0c-b37e-45e3-b09e-2be66bb35c19` | 148115.8 | 481.8 |
+
 ## 2026-10-28 — Route-comparison PR blocked by dependency drift and test gaps
 
 - **Symptoms / impact:** [PR #3142's Metro job](https://github.com/Asherlc/dofek/actions/runs/40723847668/job/122942618671) stopped at `Verify dependencies match Expo SDK` before iOS export. The exact command was `pnpm exec expo install --check`; the first failure reported `expo@58.0.20 - expected version: ~58.0.21` and nine related Expo patch mismatches, ending with `Found outdated dependencies`. The [spellcheck job](https://github.com/Asherlc/dofek/actions/runs/40723847668/job/122942621198) separately rejected three place names in a new synthetic Storybook fixture.
