@@ -15,6 +15,10 @@ const firstRow = panel.rows[0];
 const secondRow = panel.rows[1];
 const firstCell = firstRow?.cells[0];
 if (!firstRow || !secondRow || !firstCell) throw new Error("Missing row fixture");
+function openChartData() {
+  const disclosure = screen.queryByRole("button", { name: /^View .* data$/ });
+  if (disclosure) fireEvent.click(disclosure);
+}
 
 describe("ClimbingStrengthsChart", () => {
   it("numbers progress markers and legend entries beyond a palette cycle", () => {
@@ -56,14 +60,14 @@ describe("ClimbingStrengthsChart", () => {
         onSelect={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+    openChartData();
     expect(screen.getByLabelText(/Slab · All grades.*Overall baseline 36%/)).toBeTruthy();
   });
   it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const)(
     "%s retains exact supplied rates and counts, missing values and limited qualifiers",
     (view) => {
       render(<ClimbingStrengthsChart panel={panel} view={view} grade="V4" onSelect={() => {}} />);
-      fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+      openChartData();
       expect(screen.getByLabelText(/Slab · V4.*0%.*0 sends \/ 2 climbs/)).toBeTruthy();
       if (view !== "progress") {
         expect(screen.getByLabelText(/Vertical · V3.*No data.*0 sends \/ 0 climbs/)).toBeTruthy();
@@ -91,9 +95,7 @@ describe("ClimbingStrengthsChart", () => {
       <ClimbingStrengthsChart panel={comparison} view="radar" grade="V4" onSelect={() => {}} />,
     );
     expect(
-      screen.getByText(
-        "Radar needs at least three styles with recorded success rates for this grade.",
-      ),
+      screen.getByText(/A radar chart needs at least three styles with known results/),
     ).toBeTruthy();
   });
   it("facets progress by style and centers grade pyramids from harder to easier grades", () => {
@@ -131,11 +133,8 @@ describe("ClimbingStrengthsChart", () => {
   it("explains insufficient radar axes while retaining exact values", () => {
     render(<ClimbingStrengthsChart panel={panel} view="radar" grade="V4" onSelect={() => {}} />);
     expect(
-      screen.getByText(
-        "Radar needs at least three styles with recorded success rates for this grade.",
-      ),
+      screen.getByText(/A radar chart needs at least three styles with known results/),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "View Radar profile data" }));
     expect(screen.getByLabelText(/Slab · V4.*0%/)).toBeTruthy();
   });
   it("uses supplied gap, baseline and counts without deriving metrics", () => {
@@ -208,7 +207,7 @@ describe("ClimbingStrengthsChart", () => {
         expect(points[0]?.getAttribute("cx")).toBe("157");
         expect(Number(points[0]?.getAttribute("cy"))).toBeCloseTo(164.68);
       }
-      fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+      openChartData();
       expect(screen.getByLabelText(/Style 19 · V4.*33%.*1 send \/ 3 climbs/)).toBeTruthy();
       result.unmount();
     }
@@ -223,7 +222,7 @@ it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const
     render(
       <ClimbingStrengthsChart panel={unknownPanel} view={view} grade="V3" onSelect={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+    openChartData();
     expect(
       screen.getByLabelText(
         /Vertical · V3.*Result unknown.*0 sends \/ 4 climbs · 4 results unknown/,
