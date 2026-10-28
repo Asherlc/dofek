@@ -15,8 +15,8 @@ const memberSchema = z.object({
 });
 const aliasSchema = z.object({ alias_id: z.guid(), group_id: z.guid() });
 
-/** Must run inside the canonical commit transaction; the lock lasts until commit/rollback. */
-export async function reconcileActivityGroups(
+/** Acquire before activity writes that share the grouping transaction. */
+export async function lockActivityGroups(
   transaction: SchemaExecutionDatabase,
   userId: string,
 ): Promise<void> {
@@ -24,6 +24,14 @@ export async function reconcileActivityGroups(
   await transaction.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`activity-groups:${userId}`}, 0))`,
   );
+}
+
+/** Must run inside the canonical commit transaction; the lock lasts until commit/rollback. */
+export async function reconcileActivityGroups(
+  transaction: SchemaExecutionDatabase,
+  userId: string,
+): Promise<void> {
+  await lockActivityGroups(transaction, userId);
   // Members, ownership anchors, and edges must share a statement snapshot. Provider
   // writers do not acquire this advisory lock, so separate reads can invent a split.
   // The oldest active member owns a split. Fully inactive groups remain untouched.

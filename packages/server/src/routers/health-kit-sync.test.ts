@@ -69,6 +69,11 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   upsertProviderActivity: vi.fn(),
 }));
 
+vi.mock("../../../../src/db/activity-group-reconciliation.ts", () => ({
+  lockActivityGroups: vi.fn().mockResolvedValue(undefined),
+  reconcileActivityGroups: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -1138,7 +1143,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
-    it("handles empty workouts array", async () => {
+    it("invalidates regrouped activities after an empty workout upload", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: makeDatabase(execute),
@@ -1148,6 +1153,7 @@ describe("healthKitSyncRouter", () => {
 
       const result = await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
       expect(result.inserted).toBe(0);
+      expect(mockInvalidateByPrefix).toHaveBeenLastCalledWith("user-1:");
     });
 
     it("emits HealthKit metrics for workouts", async () => {
