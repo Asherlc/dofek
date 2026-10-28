@@ -5,6 +5,7 @@ import {
   emptyRunning,
   emptyRunningForm,
   intervalRun,
+  recordedRun,
   runningData,
 } from "./running-training-test-helpers";
 
@@ -56,5 +57,36 @@ export const InitialError: Story = {
   args: {
     data: undefined,
     error: new Error("Running analytics requires the activity store. Retry after sync finishes."),
+  },
+};
+
+export const IsolatedCadence: Story = {
+  args: {
+    data: {
+      ...runningData,
+      data: [
+        recordedRun,
+        {
+          ...recordedRun,
+          activityId: "form-only",
+          date: "2026-10-02",
+          activityName: "Form only",
+          cadence: null,
+          cadenceBasis: "unknown",
+          cadenceObservedSeconds: null,
+          cadenceCoveragePercent: null,
+        },
+        intervalRun,
+      ],
+    },
+  },
+};
+export const ZeroCadence: Story = {
+  args: {
+    data: {
+      ...runningData,
+      data: [{ ...intervalRun, cadence: 0, cadenceCoveragePercent: 100 }],
+      cadenceAvailability: { ...runningData.cadenceAvailability, observedCount: 1 },
+    },
   },
 };

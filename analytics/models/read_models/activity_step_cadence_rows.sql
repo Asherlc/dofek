@@ -244,7 +244,7 @@ intervals AS MATERIALIZED (
     INNER JOIN dirty_keys AS k ON k.user_id = a.user_id AND k.activity_id = a.activity_id
     WHERE a.group_count = 1 AND a.contained = 1 AND r.interval_end > r.interval_start
         AND r.bundle != '' AND k.is_deleted = 0
-    GROUP BY r.user_id, a.activity_id, r.provider_id, r.bundle, r.interval_start, r.interval_end, r.steps
+    GROUP BY r.user_id, a.activity_id, r.provider_id, r.bundle, r.id, r.parent_id, r.interval_start, r.interval_end, r.steps
 ),
 -- The prior maximum catches nested overlaps; any overlap invalidates this source.
 ordered_intervals AS (

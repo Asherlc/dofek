@@ -7,9 +7,19 @@ import {
   emptyRunning,
   emptyRunningForm,
   intervalRun,
+  recordedRun,
   runningData,
 } from "./running-training-test-helpers";
 
+// Give the real chart its measured layout; preserve all rendering behavior.
+vi.mock("./charts/SparkLine", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./charts/SparkLine")>();
+  return {
+    SparkLine: (props: Parameters<typeof actual.SparkLine>[0]) => (
+      <actual.SparkLine {...props} width={140} height={100} />
+    ),
+  };
+});
 const props = {
   data: runningData,
   loading: false,
@@ -18,11 +28,33 @@ const props = {
   onOpenActivity: vi.fn(),
 };
 describe("RunningTrainingCard", () => {
+  it.each([
+    { data: [intervalRun], count: 1 },
+    {
+      data: [recordedRun, { ...recordedRun, activityId: "form-only", cadence: null }, intervalRun],
+      count: 2,
+    },
+    { data: [{ ...intervalRun, cadence: 0 }], count: 1 },
+  ])("renders $count available cadence observations in the chart", ({ data, count }) => {
+    const { container } = render(
+      <RunningTrainingCard
+        {...props}
+        data={{
+          ...runningData,
+          data,
+          cadenceAvailability: { ...runningData.cadenceAvailability, observedCount: count },
+        }}
+      />,
+    );
+    expect(container.querySelectorAll("circle")).toHaveLength(count);
+    expect(container.querySelectorAll("polyline")).toHaveLength(0);
+  });
+
   it("renders server cadence basis and coverage and opens the source run", () => {
     render(<RunningTrainingCard {...props} />);
     expect(screen.getByText("Recorded cadence")).toBeTruthy();
     expect(screen.getByText("Steps · 30% coverage")).toBeTruthy();
-    expect(screen.getByText("200 spm")).toBeTruthy();
+    expect(screen.getAllByText("200 spm").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Open Park Run" }));
     expect(props.onOpenActivity).toHaveBeenCalledWith("run-2");
   });
@@ -95,7 +127,7 @@ describe("RunningTrainingCard", () => {
         }}
       />,
     );
-    expect(screen.getByText("0 spm")).toBeTruthy();
+    expect(screen.getAllByText("0 spm").length).toBeGreaterThan(0);
     expect(screen.getByText("Steps · 100% coverage")).toBeTruthy();
   });
 });

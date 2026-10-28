@@ -225,7 +225,8 @@ run from workout-associated raw `step_count` intervals. It selects at most 100
 oldest dirty activity keys before reading raw histories, resolves every child's
 associations against all current user-owned workout mappings, and rejects
 cross-group ambiguity and sources containing overlapping intervals (including
-nested overlaps). Exact duplicate evidence contributes once. One provider and
+nested overlaps). Each raw child contributes once across member associations;
+distinct raw parents retain their identities through overlap validation. One provider and
 source bundle wins by configured cadence priority, disjoint observed duration,
 then stable source identity. Rates use the ratio of total steps to observed
 seconds, retaining zero counts. These are derived values in ClickHouse only.

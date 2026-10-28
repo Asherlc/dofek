@@ -129,15 +129,14 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.distanceKm).toBe(7.6);
   });
 
-  it("returns 0 pace for negative speed (same as 0)", () => {
+  it("returns unavailable pace for negative speed", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: -1 }));
-    // -1 is not > 0, so falls into the else branch returning 0
+    // A nonpositive speed cannot define pace.
     expect(activity.paceSecondsPerKm).toBeNull();
   });
 
-  it("pace check uses > 0 (speed of exactly 0 returns 0, not Infinity)", () => {
+  it("keeps pace unavailable when speed is exactly zero", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 0 }));
-    expect(activity.paceSecondsPerKm).toBeNull();
     expect(activity.paceSecondsPerKm).toBeNull();
   });
 
