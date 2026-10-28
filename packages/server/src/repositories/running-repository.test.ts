@@ -132,7 +132,7 @@ describe("RunningDynamicsActivity", () => {
 
   it("returns unavailable pace for negative speed", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: -1 }));
-    // A nonpositive speed cannot define pace.
+    // A zero or negative speed cannot define pace.
     expect(activity.paceSecondsPerKm).toBeNull();
   });
 

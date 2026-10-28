@@ -22,7 +22,7 @@ current_mappings AS MATERIALIZED (
         g.user_id AS user_id,
         g.activity_id AS activity_id,
         s.activity_id AS member_id,
-        lower(replaceRegexpOne(assumeNotNull(s.external_id), '^hk:', '')) AS workout_uuid,
+        lower(replaceRegexpOne(assumeNotNull(s.external_id), '^hk:workout:', '')) AS workout_uuid,
         s.started_at AS member_start,
         s.ended_at AS member_end,
         s.source_name AS source_name,

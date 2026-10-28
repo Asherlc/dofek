@@ -271,6 +271,13 @@ through at most 500 changed step parents, including unrelated or deleted
 parents, acknowledging each page only after successful uploads and deletions.
 This workout subset does not replace the complete-day step-statistics writer.
 
+Raw step parents use `hk:<sample UUID>` for replacement and deletion, while the
+[workout writer](../packages/server/src/routers/health-kit-sync-processors.ts)
+uses `hk:workout:<workout UUID>`. The
+[raw step writer](../packages/server/src/repositories/health-kit-running-steps-repository.ts)
+retains bare workout UUIDs in `workout_uuids`; the cadence model removes the
+workout prefix when resolving those associations to current owned activities.
+
 The [cadence model](../analytics/models/read_models/activity_step_cadence_rows.sql)
 selects one non-overlapping recording source and computes
 `60 * recorded steps / observed interval seconds`. Zero counts remain observed;

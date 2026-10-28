@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { appleHealthWorkoutExternalId } from "../../../packages/server/src/routers/health-kit-sync-processors.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
@@ -123,7 +124,7 @@ async function activities(
       group_id: record.id,
       user_id: record.owner ?? user,
       provider_id: "apple_health",
-      external_id: `hk:${record.uuid}`,
+      external_id: appleHealthWorkoutExternalId(record.uuid),
       canonical_type: "running",
       started_at: "2026-10-01 08:00:00",
       ended_at: "2026-10-01 08:10:00",
@@ -193,7 +194,7 @@ describe("running step cadence read model", () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client?.close();
   });
-  it("serves weighted raw interval cadence through the shared summary", async () => {
+  it("joins production workout identities to raw UUID associations through the shared summary", async () => {
     await steps("08:00:00", "08:01:00", 150);
     await steps("08:01:00", "08:03:00", 450);
     await run("activity_step_cadence_rows");
