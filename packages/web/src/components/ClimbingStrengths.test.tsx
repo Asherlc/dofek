@@ -20,6 +20,56 @@ it("names the grade heatmap for assistive technology", () => {
   fireEvent.click(screen.getByRole("button", { name: "Grades" }));
   expect(screen.getByRole("table", { name: "Success by grade and wall angle" })).toBeVisible();
 });
+it("explains missing wall angles and keeps the single recorded style directly selectable", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  const row = panel.rows[0];
+  const pooled = panel.allGrades.rows[0];
+  if (!row || !pooled) throw new Error("Missing fixture row");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          {
+            ...panel,
+            rows: [row],
+            allGrades: { ...panel.allGrades, rows: [pooled] },
+            coverage: { ...panel.coverage, missingTraits: 59 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText(/Wall angle is missing for 59 climbs/)).toBeVisible();
+  expect(screen.queryByText(/Outside the dashed line/)).toBeNull();
+  expect(screen.queryByText(/Grade-adjusted difference on a/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · All grades/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "13 sends / 21 climbs",
+  );
+});
+it("identifies missing hold types when the selected breakdown has no observations", () => {
+  const panel = fixture.panels[0];
+  if (!panel) throw new Error("Missing fixture");
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        panels: [
+          {
+            ...panel,
+            dimension: "hold_type",
+            rows: [],
+            allGrades: { ...panel.allGrades, rows: [] },
+            coverage: { ...panel.coverage, missingTraits: 60 },
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("Hold type is missing for 60 climbs.")).toBeVisible();
+});
 function renderStrengths(element: Parameters<typeof render>[0]) {
   const result = render(element);
   const grades = screen.queryByRole("button", { name: "Grades" });
@@ -163,5 +213,4 @@ it("uses a fixed heatmap and monthly chart for Grades and Progress across both b
   expect(screen.getByRole("columnheader", { name: "V4" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Progress" }));
   expect(screen.getByText("Monthly send rate")).toBeVisible();
-  expect(screen.getByText(/Combines all grades/)).toBeVisible();
 });

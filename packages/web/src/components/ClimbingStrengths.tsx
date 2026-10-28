@@ -154,7 +154,11 @@ function ClimbingStrengthsPanelContent({
       {!observed(panel) ? (
         <QueryStatePanel
           variant="empty"
-          message={`No recorded ${dimensions[panel.dimension].toLowerCase()} observations for this context.`}
+          message={
+            panel.coverage.missingTraits > 0
+              ? `${dimensions[panel.dimension]} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
+              : `No recorded ${dimensions[panel.dimension].toLowerCase()} observations for this context.`
+          }
         />
       ) : (
         <>
@@ -165,16 +169,6 @@ function ClimbingStrengthsPanelContent({
                 ? "Send rate by grade and style"
                 : "Monthly send rate"}
           </h4>
-          {view === "radar" ? (
-            <p className="text-sm text-muted">
-              Compared with your usual results at the same grades. Outside the dashed line is
-              stronger; inside is weaker.
-            </p>
-          ) : view === "progress" ? (
-            <p className="text-sm text-muted">
-              Combines all grades; changes can reflect the difficulty of climbs recorded each month.
-            </p>
-          ) : null}
           {view === "profile" ? (
             <div className="overflow-x-auto">
               <table className="w-full border-separate border-spacing-1 text-sm">

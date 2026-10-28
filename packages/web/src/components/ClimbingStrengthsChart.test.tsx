@@ -25,6 +25,10 @@ vi.mock("./DofekChart.tsx", () => ({
   },
 }));
 afterEach(cleanup);
+function openExactValues() {
+  const summary = screen.getByText("Exact values");
+  if (!summary.closest("details")?.open) fireEvent.click(summary);
+}
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
 it.each(["curves", "pyramids"] as const)(
@@ -39,7 +43,7 @@ it.each(["curves", "pyramids"] as const)(
         onSelectCell={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Exact values"));
+    openExactValues();
     expect(screen.getByRole("columnheader", { name: "Gap vs same-grade baseline" })).toBeVisible();
   },
 );
@@ -53,7 +57,7 @@ it("spells out percentage-point units for positive, negative and recorded zero g
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(screen.getByRole("cell", { name: "+12.5 percentage points" })).toBeVisible();
   expect(screen.getByRole("cell", { name: "-37.5 percentage points" })).toBeVisible();
   rerender(
@@ -78,7 +82,7 @@ it("exposes every curve baseline's supplied exact rate and sample without climb-
       onSelectCell={onSelectCell}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   const baselineRows = screen.getAllByRole("rowheader", { name: /Same-grade baseline · V/ });
   expect(baselineRows).toHaveLength(4);
   const v4 = screen.getByRole("rowheader", { name: "Same-grade baseline · V4" }).closest("tr");
@@ -100,7 +104,7 @@ it("includes the selected radar baseline in exact values even when the polygon i
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(screen.getAllByRole("rowheader", { name: /Same-grade baseline/ })).toHaveLength(1);
   const baseline = screen
     .getByRole("rowheader", { name: "Same-grade baseline · V4" })
@@ -119,9 +123,10 @@ it("explains sparse radar without hiding exact values or selection", () => {
       onSelectCell={onSelectCell}
     />,
   );
-  expect(screen.getByText(/Radar needs at least three style groups/)).toBeVisible();
+  expect(
+    screen.getByText(/A radar chart needs at least three styles with known results/),
+  ).toBeVisible();
   expect(screen.queryByText("Chart canvas")).toBeNull();
-  fireEvent.click(screen.getByText("Exact values"));
   fireEvent.click(screen.getByRole("button", { name: /Overhang · V4 · 0% · 0 sends \/ 2 climbs/ }));
   expect(onSelectCell).toHaveBeenCalledWith("overhang", "V4");
 });
@@ -137,12 +142,11 @@ it("uses data-scoped monthly dates and resolves chart clicks to whole-period det
     />,
   );
   expect(captured.props?.timeRangeMode).toBe("data");
-  expect(screen.getByText(/Each climb counts once in each month/)).toBeVisible();
   captured.props?.onEvents?.click?.({ data: { rowKey: "vertical", grade: "V4" } });
   expect(onSelectCell).toHaveBeenCalledWith("vertical", "V4");
   captured.props?.onEvents?.click?.({ data: { rowKey: "nonexistent", grade: "V4" } });
   expect(onSelectCell).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(
     screen.getByRole("button", {
       name: /Vertical · V4 · 2026-08-15 – 2026-08-31 · 0% · 0 sends \/ 1 climb/,
@@ -171,7 +175,7 @@ it("retains dense styles and complete long labels in keyboard-selectable exact v
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   expect(screen.getAllByRole("button")).toHaveLength(24);
   expect(
     screen.getByRole("button", { name: /Long source wall-angle description 23 · V3 · 80%/ }),
@@ -192,7 +196,7 @@ it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const
         onSelectCell={() => {}}
       />,
     );
-    fireEvent.click(screen.getByText("Exact values"));
+    openExactValues();
     expect(
       screen.getByRole("button", {
         name: /Vertical · V3.*Result unknown · 0 sends \/ 4 climbs · 4 results unknown/,
@@ -219,7 +223,7 @@ it("labels limited adjusted scores and keeps their table columns aligned", () =>
       onSelectCell={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("Exact values"));
+  openExactValues();
   const point = screen.getByRole("button", { name: /Vertical · All grades.*Limited sample/ });
   const row = point.closest("tr");
   if (!row) throw new Error("Missing row");
