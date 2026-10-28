@@ -191,6 +191,7 @@ export const activityRouter = router({
         ctx.db,
         ctx.userId,
         ctx.timezone,
+        ctx.sensorStore,
         ctx.accessWindow,
       );
       const detail = await repository.getDetail(input.id);

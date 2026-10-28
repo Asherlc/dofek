@@ -1,4 +1,4 @@
-import { formatDateShort, formatNumber } from "@dofek/format/format";
+import { formatDateShort, formatDurationHoursMinutes, formatNumber } from "@dofek/format/format";
 import {
   type SportVolumeMetric,
   sportVolumeMetricSchema,
@@ -30,17 +30,25 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
       ? units.distanceLabel
       : data?.unit === "m"
         ? units.elevationLabel
-        : (data?.unit ?? "min");
-  const points = (data?.weeks ?? []).map((row) => [
-    row.week,
-    row.value == null
-      ? null
-      : data?.unit === "km"
-        ? units.convertDistance(row.value)
-        : data?.unit === "m"
-          ? units.convertElevation(row.value)
-          : row.value,
-  ]);
+        : data?.unit === "min"
+          ? "h:mm"
+          : (data?.unit ?? "h:mm");
+  const formatValue = (value: number) =>
+    unit === "h:mm" ? formatDurationHoursMinutes(value) : formatNumber(value, 0);
+  const points = (data?.weeks ?? []).map((row) => {
+    const value =
+      row.value == null
+        ? null
+        : data?.unit === "km"
+          ? units.convertDistance(row.value)
+          : data?.unit === "m"
+            ? units.convertElevation(row.value)
+            : row.value;
+    return {
+      value: [row.week, value],
+      displayValue: value == null ? "Not recorded" : formatValue(value),
+    };
+  });
   const plotLabel =
     sportVolumeMetrics(data?.sport ?? currentSport).find((entry) => entry.key === data?.metric)
       ?.label ?? "Time";
@@ -103,7 +111,7 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
           <DofekChart
             option={{
               grid: dofekGrid("single", { left: 65, top: 40 }),
-              tooltip: dofekTooltip(),
+              tooltip: { ...dofekTooltip(), valueFormatter: formatValue },
               xAxis: dofekAxis.time({
                 show: true,
                 axisLabel: {
@@ -113,7 +121,7 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
               }),
               yAxis: dofekAxis.value({
                 name: `${plotLabel} (${unit})`,
-                axisLabel: { formatter: (value: number) => formatNumber(value) },
+                axisLabel: { formatter: formatValue },
               }),
               series: [
                 dofekSeries.bar(`${plotLabel} (${unit})`, points, { color: chartColors.emerald }),

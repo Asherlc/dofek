@@ -310,9 +310,10 @@ export class ProviderActivityListSync {
   async reconcile(
     presentExternalIds?: ReadonlySet<string>,
     options?: Pick<ProviderActivityAbsenceReconciliation, "presentAppleHealthIdentities">,
+    db: SyncDatabase = this.#scope.db,
   ): Promise<void> {
     if (this.#reconciliationDisabled) return;
-    await finishProviderActivityListSync(this.#scope.db, {
+    await finishProviderActivityListSync(db, {
       providerId: this.#scope.providerId,
       userId: this.#scope.userId,
       windowStart: this.#scope.windowStart,

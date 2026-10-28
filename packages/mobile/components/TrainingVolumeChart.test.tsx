@@ -40,8 +40,5 @@ it("formats lifted weight in the selected unit system", () => {
       ]}
     />,
   );
-  const units = new UnitConverter("imperial");
-  expect(
-    screen.getByLabelText(`2026-01-05: ${units.convertWeight(400)} ${units.weightLabel}`),
-  ).toBeTruthy();
+  expect(screen.getByLabelText("2026-01-05: 882 lbs")).toBeTruthy();
 });

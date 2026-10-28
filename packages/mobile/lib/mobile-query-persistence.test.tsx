@@ -219,7 +219,7 @@ describe("mobile query persistence", () => {
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
 
-  it("discards strengths from v13 without unknown result counts", async () => {
+  it("discards sectioned strengths from v18 before restoring the selected view", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "strengths-owner";
     const queryKey = [["climbing", "strengths"], { input: { days: 90 }, type: "query" }];
@@ -227,7 +227,27 @@ describe("mobile query persistence", () => {
     seedClient.setQueryData(queryKey, {
       panels: [
         {
-          grades: [{ grade: "5.9", climbs: 1, sends: 1, successRate: 100 }],
+          contextKey: "boulder",
+          contextLabel: "Bouldering",
+          setting: "indoor",
+          grades: [
+            {
+              grade: "V4",
+              climbs: 1,
+              sends: 1,
+              unknownOutcomes: 0,
+              successRate: 100,
+            },
+          ],
+          rows: [],
+          progress: [],
+          allGrades: { grades: [], rows: [], progress: [] },
+        },
+        {
+          contextKey: "top-rope",
+          contextLabel: "Top rope",
+          setting: "outdoor",
+          grades: [{ grade: "5.9", climbs: 1, sends: 0, unknownOutcomes: 0, successRate: 0 }],
           rows: [],
           progress: [],
           allGrades: { grades: [], rows: [], progress: [] },
@@ -238,7 +258,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v13`,
+        buster: `${userId}:v18`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -250,6 +270,7 @@ describe("mobile query persistence", () => {
       buster: mobileQueryCacheBuster(userId),
     });
     expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
   it("discards v11 metric sources without structured presentation before restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;

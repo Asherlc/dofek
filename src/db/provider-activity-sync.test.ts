@@ -831,6 +831,30 @@ describe("ProviderActivityListSync", () => {
     expect([...sync.presentExternalIds]).toEqual(["whoop-workout-1"]);
   });
 
+  it("reconciles provider presence through the supplied transaction", async () => {
+    const db = makeMockDb();
+    const transaction = makeMockDb();
+    const sync = new ProviderActivityListSync({
+      db,
+      providerId: "apple_health",
+      userId: "user-1",
+      windowStart: new Date("2026-06-13T00:00:00Z"),
+      windowEnd: new Date("2026-06-21T00:00:00Z"),
+    });
+    sync.trackPresent("hk:workout:present");
+
+    await sync.reconcile(undefined, undefined, transaction);
+
+    expect(mockReconcile.mock.calls[0]?.[0]).toBe(transaction);
+    expect(mockReconcile).toHaveBeenCalledWith(transaction, {
+      providerId: "apple_health",
+      userId: "user-1",
+      windowStart: new Date("2026-06-13T00:00:00Z"),
+      windowEnd: new Date("2026-06-21T00:00:00Z"),
+      presentExternalIds: new Set(["hk:workout:present"]),
+    });
+  });
+
   it("allows overriding the authoritative present list", async () => {
     const db = makeMockDb();
     const sync = new ProviderActivityListSync({

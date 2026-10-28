@@ -33,7 +33,9 @@ export function SportVolumeChart({ days, enabled }: { days: number | null; enabl
       ? units.distanceLabel
       : data?.unit === "m"
         ? units.elevationLabel
-        : (data?.unit ?? "min");
+        : data?.unit == null || data.unit === "min"
+          ? "h:mm"
+          : data.unit;
   const weeks = (data?.weeks ?? []).map((row) => ({
     ...row,
     value:

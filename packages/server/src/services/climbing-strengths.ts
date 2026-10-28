@@ -22,6 +22,12 @@ export interface ClimbingStrengthsObservation {
   outcome: "sent" | "not_sent" | null;
   example: ClimbingStrengthsExample;
 }
+function contextLabelWithoutSystem(entry: ClimbingStrengthsObservation): string {
+  const suffix = entry.gradeSystem ? ` · ${gradeSystemLabel(entry.gradeSystem)}` : null;
+  return suffix && entry.contextLabel.toLowerCase().endsWith(suffix.toLowerCase())
+    ? entry.contextLabel.slice(0, -suffix.length)
+    : entry.contextLabel;
+}
 const percent = (sends: number, climbs: number) =>
   climbs ? Math.round((sends / climbs) * 100) : null;
 function trait(
@@ -160,21 +166,20 @@ export function buildClimbingStrengths(
   const contexts = new Set(entries.map((entry) => entry.contextKey));
   const contextKey = contexts.size === 1 ? (entries[0]?.contextKey ?? "selected") : "selected";
   const representative = entries[0];
-  const label = representative?.contextLabel ?? "Selected climbs";
-  const suffix = representative?.gradeSystem
-    ? ` · ${gradeSystemLabel(representative.gradeSystem)}`
-    : null;
   const contextLabel =
-    contexts.size > 1
-      ? "Selected climbs"
-      : suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
-        ? label.slice(0, -suffix.length)
-        : label;
+    contexts.size === 1 && representative
+      ? contextLabelWithoutSystem(representative)
+      : "Selected climbs";
   // Keep same-grade baselines specific to each type and grading system.
-  const selected = entries.map((entry) => ({
-    ...entry,
-    grade: contexts.size > 1 ? `${entry.grade} · ${entry.contextLabel}` : entry.grade,
-  }));
+  const selected = entries.map((entry) => {
+    const labels = contextLabelWithoutSystem(entry)
+      .split(" · ")
+      .filter((label) => entry.gradeSystem !== "v_scale" || label !== "Bouldering");
+    return {
+      ...entry,
+      grade: contexts.size > 1 ? [entry.grade, ...labels].join(" · ") : entry.grade,
+    };
+  });
   if (selected.length > 0) {
     for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
       const buildProfile = (allGrades: boolean, cohort: typeof selected) => {

@@ -358,7 +358,7 @@ it("keeps signed gap and exposure axes comparable and includes the zero-gap refe
       axisLabel: { interval: 0, overflow: "truncate" },
     },
     legend: { show: true, type: "scroll" },
-    aria: { label: { description: expect.stringContaining("Bouldering · V scale. V4.") } },
+    aria: { label: { description: expect.stringContaining("Bouldering. V4.") } },
   });
   const exposure = climbingStrengthsChartOption(panel, "exposure", "V4", null);
   expect(exposure).toMatchObject({
@@ -685,7 +685,7 @@ it("renders the server grade-adjusted radar scores around a zero baseline", () =
     aria: {
       label: {
         description:
-          "Bouldering · V scale. All grades. Grade-adjusted differences in percentage points; zero is the same-grade baseline; limited samples are marked. Exact values are available below.",
+          "Bouldering. All grades. Grade-adjusted differences in percentage points; zero is the same-grade baseline; limited samples are marked. Exact values are available below.",
       },
     },
     radar: {
@@ -727,13 +727,13 @@ it.each(["curves", "pyramids", "radar"] as const)(
   (view) => {
     const option = climbingStrengthsChartOption(panel, view, "V4", null);
     expect(option.aria.label.description).toBe(
-      `Bouldering · V scale. ${view === "radar" ? "V4" : "All grades"}. Success per distinct climb; limited samples are marked. Exact values are available below.`,
+      `Bouldering. ${view === "radar" ? "V4" : "All grades"}. Success per distinct climb; limited samples are marked. Exact values are available below.`,
     );
     if (view !== "radar") {
       expect(
         climbingStrengthsChartOption(panel, view, "All grades", null).aria.label.description,
       ).toBe(
-        "Bouldering · V scale. All grades. Success per distinct climb; limited samples are marked. Exact values are available below.",
+        "Bouldering. All grades. Success per distinct climb; limited samples are marked. Exact values are available below.",
       );
     }
   },
