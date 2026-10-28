@@ -37,7 +37,7 @@ function tooltipText(label: string, cell: OutcomeValues, period?: string) {
 
 export function climbingStrengthsChartOption(
   panel: ClimbingStrengthsPanel,
-  view: Exclude<ClimbingStrengthsView, "profile">,
+  view: ClimbingStrengthsView,
   grade: string,
   selectedRow: string | null,
 ) {

@@ -11,12 +11,12 @@ import {
   type ClimbingStrengthsView,
 } from "@dofek/training/climbing-strengths-views";
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, G, Line, Polygon, Rect, Text as SvgText } from "react-native-svg";
 import { colors } from "../theme";
 import { AccessibleChart } from "./AccessibleChart";
 
-type ViewKind = Exclude<ClimbingStrengthsView, "profile">;
+type ViewKind = ClimbingStrengthsView;
 type Cell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
 const palette = [colors.accent, "#bb7944", "#7688bc", "#ad658e", "#5e9d9a", "#9b8b44"];
 function color(index: number) {
@@ -34,8 +34,7 @@ const explanations: Record<ViewKind, string> = {
     "Distinct climbs on the horizontal axis; success gap in percentage points from the same-grade baseline on the vertical axis.",
   pyramids:
     "Sent climbs overlaid on centered total-climb tracks, grouped by style from harder to easier grades. All tracks use the same count scale.",
-  progress:
-    "Success rate by calendar month on a shared 0–100% scale. Missing months leave gaps. Monthly distinct climbs need not sum to the selected period.",
+  progress: "Success rate by calendar month on a shared 0–100% scale. Missing months leave gaps.",
   radar:
     "Success rate from 0 to 100% on every axis. The dashed outline is the same-grade baseline.",
 };
@@ -140,19 +139,41 @@ export function ClimbingStrengthsChart({
       style={styles.container}
     >
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.meta}>{explanation}</Text>
-      {insufficientRadar && (
+      {view === "radar" && !insufficientRadar ? (
         <Text style={styles.meta}>
-          {adjustedRadar
-            ? "Radar needs at least three styles with known results. Explore the recorded values below."
-            : "Radar needs at least three styles with recorded success rates for this grade."}
+          Compared with your usual results at the same grades. Outside the dashed line is stronger;
+          inside is weaker.
         </Text>
-      )}
+      ) : null}
+      {!insufficientRadar && <Text style={styles.meta}>{explanation}</Text>}
       {(view === "gaps" || view === "exposure") && (
         <Text style={styles.meta}>Gap (percentage points)</Text>
       )}
-      <AccessibleChart title={title} summary={`${grade}. ${explanation}`} rows={exactRows}>
-        {!insufficientRadar && (
+      {insufficientRadar ? (
+        <>
+          <Text style={styles.meta}>
+            {panel.coverage.missingTraits > 0
+              ? `${panel.dimension === "wall_angle" ? "Wall angle" : panel.dimension === "hold_type" ? "Hold type" : "Setting"} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
+              : ""}
+            A radar chart needs at least three styles with known results.
+          </Text>
+          <View accessibilityRole="list" style={styles.container}>
+            {exactRows.map((row) => (
+              <Pressable
+                key={row.label}
+                accessibilityRole="button"
+                accessibilityLabel={`${row.label}: ${row.value}`}
+                onPress={row.onPress}
+                style={styles.recordedValue}
+              >
+                <Text style={styles.meta}>{row.label}</Text>
+                <Text style={styles.meta}>{row.value}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : (
+        <AccessibleChart title={title} summary={`${grade}. ${explanation}`} rows={exactRows}>
           <ScrollView horizontal contentContainerStyle={{ minWidth: width }}>
             <Svg width={chartWidth} height={height} viewBox={`0 0 ${chartWidth} ${height}`}>
               {view === "gaps" && (
@@ -594,29 +615,32 @@ export function ClimbingStrengthsChart({
                 })()}
             </Svg>
           </ScrollView>
-        )}
-      </AccessibleChart>
-      {(view === "curves" || view === "exposure" || view === "radar" || view === "progress") && (
-        <View style={styles.legend}>
-          {adjustedRadar ? (
-            <>
-              <Text style={[styles.meta, { color: colors.accent }]}>Grade-adjusted strengths</Text>
-              <Text style={styles.meta}>Same-grade baseline</Text>
-            </>
-          ) : view === "curves" ? (
-            <Text style={styles.meta}>Same-grade baseline</Text>
-          ) : null}
-          {!adjustedRadar &&
-            legendRows.map(({ row, index }, axis) => (
-              <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
-                {view === "exposure" || view === "radar" || view === "progress"
-                  ? `${axis + 1}. `
-                  : ""}
-                {row.label}
-              </Text>
-            ))}
-        </View>
+        </AccessibleChart>
       )}
+      {!insufficientRadar &&
+        (view === "curves" || view === "exposure" || view === "radar" || view === "progress") && (
+          <View style={styles.legend}>
+            {adjustedRadar ? (
+              <>
+                <Text style={[styles.meta, { color: colors.accent }]}>
+                  Grade-adjusted strengths
+                </Text>
+                <Text style={styles.meta}>Same-grade baseline</Text>
+              </>
+            ) : view === "curves" ? (
+              <Text style={styles.meta}>Same-grade baseline</Text>
+            ) : null}
+            {!adjustedRadar &&
+              legendRows.map(({ row, index }, axis) => (
+                <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
+                  {view === "exposure" || view === "radar" || view === "progress"
+                    ? `${axis + 1}. `
+                    : ""}
+                  {row.label}
+                </Text>
+              ))}
+          </View>
+        )}
     </View>
   );
 }
@@ -624,5 +648,6 @@ const styles = StyleSheet.create({
   container: { gap: 10 },
   title: { color: colors.text, fontSize: 16, fontWeight: "600" },
   meta: { color: colors.textSecondary, fontSize: 12 },
+  recordedValue: { minHeight: 44, gap: 4, justifyContent: "center" },
   legend: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
 });
