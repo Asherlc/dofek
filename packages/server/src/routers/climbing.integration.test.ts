@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import { queryCache } from "dofek/lib/cache";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -8,6 +10,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 import {
   climbingTestDate,
   seedClimbingActivity,
@@ -15,6 +18,7 @@ import {
 } from "../repositories/climbing-integration-test-helpers.ts";
 import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import { activityRouter } from "./activity.ts";
+import { buildTestAnalyticsTableStatement } from "./clickhouse-integration-test-models.ts";
 import { climbingRouter } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -22,10 +26,18 @@ const createCaller = createTestCallerFactory(climbingRouter);
 const createActivityCaller = createTestCallerFactory(activityRouter);
 const hangboardingActivityIdRowSchema = z.object({
   id: z.string(),
+  group_id: z.string(),
   external_id: z.string(),
   started_at: z.string(),
 });
 describe("Hangboarding climbing router integration", () => {
+  const database = `hangboarding_router_${randomUUID().replaceAll("-", "")}`;
+  const client = createClickHouseClientFromEnv();
+  const rewrite = (query: string) => query.replaceAll("analytics.", `${database}.`);
+  const sensorStore = new ClickHouseActivitySensorStore({
+    query: (options) => client.query({ ...options, query: rewrite(options.query) }),
+    command: (options) => client.command({ ...options, query: rewrite(options.query) }),
+  });
   let testContext: TestContext;
   let firstDate: string;
   let secondDate: string;
@@ -48,15 +60,15 @@ describe("Hangboarding climbing router integration", () => {
             'hangboarding-climbing-router-test', ${TEST_USER_ID}, 'hangboard-climbing-router-session-1',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '10 minutes', 'Repeaters',
-            '{"avgHeartRate":120,"maxHeartRate":145,"hangTen":{"planName":"Repeaters","boardName":"Tension Board"}}'::jsonb
+            '{"hangTen":{"planName":"Repeaters","boardName":"Tension Board"}}'::jsonb
           ),
           (
             'hangboarding-climbing-router-test', ${TEST_USER_ID}, 'hangboard-climbing-router-session-2',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '1 day',
             CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '15 minutes', 'Max Hangs',
-            '{"avgHeartRate":130,"maxHeartRate":150,"hangTen":{"planName":"Max Hangs","boardName":"Tension Board"}}'::jsonb
+            '{"hangTen":{"planName":"Max Hangs","boardName":"Tension Board"}}'::jsonb
           )
-          RETURNING id::text AS id, external_id, started_at::text AS started_at`,
+          RETURNING id::text AS id, group_id::text AS group_id, external_id, started_at::text AS started_at`,
     );
     const firstActivity = activities.find(
       (activity) => activity.external_id === "hangboard-climbing-router-session-1",
@@ -69,6 +81,25 @@ describe("Hangboarding climbing router integration", () => {
     }
     firstDate = new Date(firstActivity.started_at).toISOString().slice(0, 10);
     secondDate = new Date(secondActivity.started_at).toISOString().slice(0, 10);
+    await client.command({ query: `CREATE DATABASE ${database}` });
+    await client.command({
+      query: rewrite(buildTestAnalyticsTableStatement("analytics.activity_summary")),
+    });
+    if (!client.insert) throw new Error("ClickHouse test client requires inserts");
+    await client.insert({
+      table: `${database}.activity_summary`,
+      format: "JSONEachRow",
+      values: [firstActivity, secondActivity].map((activity, index) => ({
+        activity_id: activity.group_id,
+        user_id: TEST_USER_ID,
+        canonical_type: "hangboard",
+        started_at: new Date(activity.started_at).toISOString().replace("T", " ").slice(0, 19),
+        avg_hr: index === 0 ? 120 : 130,
+        max_hr: index === 0 ? 145 : 150,
+        hr_sample_count: 10,
+        sample_count: 10,
+      })),
+    });
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, interval_type, started_at, ended_at
@@ -98,6 +129,8 @@ describe("Hangboarding climbing router integration", () => {
   }, 60_000);
 
   afterAll(async () => {
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+    await client.close?.();
     await testContext?.cleanup();
   });
 
@@ -106,6 +139,8 @@ describe("Hangboarding climbing router integration", () => {
       db: testContext.db,
       userId: TEST_USER_ID,
       timezone: "UTC",
+      sensorStore,
+      cacheMode: "refresh",
     });
     await expect(caller.hangboardingSummary({ days: 30 })).resolves.toMatchObject({
       sessionCount: 2,

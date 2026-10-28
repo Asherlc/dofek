@@ -350,6 +350,7 @@ export const climbingRouter = router({
   hangboardingSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: hangboardingSummarySchema,
+    keyVersion: "hangboarding-sensor-heart-rate-v1",
   })
     .input(daysInputSchema)
     .output(hangboardingSummarySchema)
@@ -358,6 +359,7 @@ export const climbingRouter = router({
         ctx.db,
         ctx.userId,
         ctx.timezone,
+        ctx.sensorStore,
         ctx.accessWindow,
       );
       return runClimbingQuery(() => repository.getSummary(input.days));
