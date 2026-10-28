@@ -27,7 +27,7 @@ class ClimbingVolumeByGradeChartModel {
       grid: dofekGrid("single", { top: 36, bottom: 42, left: 48 }),
       legend: dofekLegend(true),
       tooltip: dofekTooltip(),
-      xAxis: dofekAxis.category({ data: grades }),
+      xAxis: dofekAxis.category({ data: grades, show: true }),
       yAxis: dofekAxis.value({ name: "Recorded attempts and sends" }),
       series: [
         dofekSeries.bar(
