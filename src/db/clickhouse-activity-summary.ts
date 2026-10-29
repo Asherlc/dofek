@@ -1,5 +1,3 @@
-import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
-
 export function buildActivitySummaryRowsTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows (
   activity_id UUID,
@@ -55,7 +53,8 @@ ORDER BY (user_id, activity_id)`;
 }
 
 export function buildActivitySummaryViewSql(): string {
-  return `${standardViewHeader("analytics.activity_summary")}
+  return `CREATE OR REPLACE VIEW analytics.activity_summary
+AS
 SELECT
   activity_id,
   user_id,

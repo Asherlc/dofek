@@ -176,9 +176,13 @@ fixtures but must not modify product sources or run a broad native campaign.
 - [x] Add and review the real legacy-view upgrade regression using full0107 and
   the real running repository, preserving fresh-schema tests. Collection/types
   pass; production `IF NOT EXISTS` remains unchanged for a hosted RED checkpoint.
-- [ ] Capture the exact hosted missing-column failure, then correct the
-  canonical view builder and affected statement-prefix expectations. Require
-  actual repeatable upgrade GREEN and all exact-head gates before merge.
+- [x] Capture the exact hosted missing-column failure, then correct the
+  canonical view builder and affected statement-prefix expectations. Hosted
+  code47/UNKNOWN_IDENTIFIER reproduced the stale view; the bounded correction,
+  53 affected tests, root/server types, scoped independent review and the full
+  23,039-test unit/mobile suite pass. Header-consumer handling is preserved.
+- [ ] Require actual repeatable upgrade GREEN and all exact-head gates before
+  merge; the regression remains unchanged after its behavioral RED.
 
 ## Final acceptance after approved follow-up
 
