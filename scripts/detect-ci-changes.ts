@@ -286,7 +286,7 @@ function classifyChanges(
       globalPackageChange ||
       hasMatchingFile(
         changedFiles,
-        /^(?:deploy\/ota\/|\.github\/workflows\/build-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
+        /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
       ),
     docker_server: serverChange,
     e2e_web:

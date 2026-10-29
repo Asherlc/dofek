@@ -32,12 +32,25 @@ The compiler and runtime image are pinned by version and digest. The compiler
 is [Go 1.27.3](https://go.dev/dl/); the upstream runtime remains non-root. The
 result reports `3.2.7-dofek.1` so normal version-scoped caches identify this
 binary separately. CI verifies the upstream tests and builds the runtime image.
-On main, the workflow publishes source-commit tags to the private `dofek-ota`
-GHCR package and records its digest. Visibility is checked before and after
-publication; a public package stops the job. GitHub documents that
-[new container packages are private by default](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+On main, the workflow publishes source-commit tags to the private `dofek-ota-internal`
+GHCR package and records its digest. The package must already exist and be
+private before any licensed image is uploaded. A missing package, an unreadable
+package, or any other visibility blocks publication. Bootstrap a new package
+with a `FROM scratch` image containing only the repository source label; verify
+its private visibility, repository linkage and anonymous pull denial before
+using the canonical `build-private-ota.yml` workflow. Verify visibility again
+after publication. The first publication on October 29 was public despite the
+[documented private default](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry);
+that default is insufficient evidence for uploading licensed code.
 Do not export OTA build layers to GitHub Actions caches: this repository is
 public, and [fork pull requests can read base-branch caches](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
+
+Storage operations stream child stderr directly to CI while retaining stdout
+for JSON results, using [Node subprocess stdio](https://nodejs.org/api/child_process.html#optionsstdio).
+Phase boundaries and [rclone transfer statistics](https://rclone.org/flags/#logging)
+identify work in progress without changing retries or deadlines. A cancelled
+snapshot is unverified; use a new identifier and retain the failed prefix for
+investigation.
 
 ## Migration boundary
 
@@ -103,7 +116,7 @@ Dispatch the CI rehearsal with the private image digest recorded by the main
 image build:
 
 ```sh
-gh workflow run ota-storage.yml -f operation=migration-rehearsal -f snapshot_id=2026-10-29-before-v3 -f image=ghcr.io/asherlc/dofek-ota@sha256:<digest>
+gh workflow run ota-storage.yml -f operation=migration-rehearsal -f snapshot_id=2026-10-29-before-v3 -f image=ghcr.io/asherlc/dofek-ota-internal@sha256:<digest>
 ```
 
 The ARM64 job uses the [locked Infisical tool](../../mise.lock), loads existing

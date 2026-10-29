@@ -1,4 +1,4 @@
-name: Build OTA
+name: Build private OTA
 
 on:
   workflow_call:
@@ -46,7 +46,7 @@ jobs:
           password: ${{ github.token }}
       - name: Resolve image name
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}-ota" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}-ota-internal" >> "$GITHUB_OUTPUT"
       - name: Run upstream and storage-failure tests
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -68,7 +68,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pnpm tsx scripts/check-ota-image-visibility.ts --require-existing
+        run: pnpm tsx scripts/check-ota-image-visibility.ts
       - name: Record immutable image
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:

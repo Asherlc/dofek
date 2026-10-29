@@ -98,7 +98,7 @@ jobs:
     name: Build OTA
     needs: detect-changes
     if: needs.detect-changes.outputs.docker_ota == 'true'
-    uses: ./.github/workflows/build-ota.yml
+    uses: ./.github/workflows/build-private-ota.yml
 
   build-docker-ml:
     name: Build Docker ML
