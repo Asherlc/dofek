@@ -38,6 +38,19 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("retains distinct recorded times from consolidated sources", async () => {
+    const api = named("kaya");
+    api.externalId = "kaya:ascent:123";
+    api.raw = { date: "2026-07-06T22:21:59Z" };
+    const exported = named("kaya-export", "20000000-0000-4000-8000-000000000011");
+    exported.externalId = "kaya:entry:123";
+    exported.raw = { date: "Mon Jul 06 2026 22:23:07 GMT+0000 (GMT+00:00)" };
+    const [result] = await repository([api, exported]).getActivityLogEntries("activity");
+    expect(result?.toDetail().chartAnnotations?.map((annotation) => annotation.startedAt)).toEqual([
+      "2026-07-06T22:21:59.000Z",
+      "2026-07-06T22:23:07.000Z",
+    ]);
+  });
   it.each([false, true])(
     "plots a consolidated API/export ascent once while retaining separate same-provider ascents (API first: %s)",
     async (apiFirst) => {

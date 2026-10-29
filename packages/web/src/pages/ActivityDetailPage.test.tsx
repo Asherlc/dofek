@@ -43,6 +43,10 @@ vi.mock("maplibre-gl", async () => {
   };
 });
 
+vi.mock("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url", () => ({
+  default: "/maplibre-worker.js",
+}));
+
 vi.mock("echarts-for-react", () => ({
   default: (props: {
     option: Record<string, unknown>;

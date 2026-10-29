@@ -1,3 +1,4 @@
+import type { ClimbingChartAnnotation } from "@dofek/training/climbing-chart";
 import {
   type ClimbingGradePreference,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
@@ -24,7 +25,10 @@ import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { displayGradeComponents, selectRockClimbingGrade } from "./climbing-grade-display.ts";
 import { climbingSourceLinks } from "./climbing-source-links.ts";
 
-type HydratedLogEntry = ClimbingLogEntryDetail & { tags: ReturnType<typeof recordedClimbingTags> };
+type HydratedLogEntry = ClimbingLogEntryDetail & {
+  tags: ReturnType<typeof recordedClimbingTags>;
+  chartAnnotations: ClimbingChartAnnotation[];
+};
 
 const databaseRowSchema = z.object({
   log: climbingLogEntrySchema.extend({
@@ -195,9 +199,10 @@ function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
     ];
     const chartAnnotations = [
       ...new Map(
-        [...(match.log.chartAnnotations ?? []), ...(log.chartAnnotations ?? [])].map(
-          (annotation) => [JSON.stringify([annotation.startedAt, annotation.endedAt]), annotation],
-        ),
+        [...match.log.chartAnnotations, ...log.chartAnnotations].map((annotation) => [
+          JSON.stringify([annotation.startedAt, annotation.endedAt]),
+          annotation,
+        ]),
       ).values(),
     ];
     Object.assign(match.log, preferred, {
