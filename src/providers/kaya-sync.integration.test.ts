@@ -85,7 +85,7 @@ describe("KayaSyncProvider canonical persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
 
-  it.each(["Onsight", "Unfamiliar"])(
+  it.each(["Onsight", "Redpoint", "Unfamiliar"])(
     "refreshes counted %s methods while preserving identities and attachments",
     async (result) => {
       sessions = [kayaSessionFixture({ attempted_climbs: [] })];
