@@ -42,6 +42,11 @@ jobs:
         with:
           version: "2026.10.23"
           install_args: infisical
+          add_shims_to_path: "false"
+          env: "false"
+          export_path: "false"
+      - name: Expose the Infisical binary
+        run: dirname "$(mise which infisical)" >> "$GITHUB_PATH"
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
