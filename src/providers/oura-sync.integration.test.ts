@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, sleepSession } from "../db/schema/activity.ts";
 import { healthEvent } from "../db/schema/clinical.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import type {
@@ -178,7 +178,7 @@ function ouraHandlers(opts?: MockFetchOptions) {
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("OuraProvider.sync() (integration)", () => {
@@ -188,7 +188,7 @@ describe("OuraProvider.sync() (integration)", () => {
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
@@ -201,7 +201,7 @@ describe("OuraProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -453,13 +453,13 @@ function ouraErrorHandlers(opts: { sleepError?: boolean }) {
 
 describe("OuraProvider.sync() — error paths (integration)", () => {
   let ctx: TestContext;
-  const errorServer = setupServer();
+  const errorServer = createIntegrationMswFixture();
 
   beforeAll(async () => {
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
-    errorServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    errorServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
@@ -468,7 +468,7 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
   });
 
   afterAll(async () => {
-    errorServer.close();
+    errorServer.deactivate();
     if (ctx) await ctx.cleanup();
   });
 

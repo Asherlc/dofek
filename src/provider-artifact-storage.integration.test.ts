@@ -13,9 +13,9 @@ const { client, storage, server, originals, writes } = createProviderArtifactSto
 );
 let directory: string;
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => server.activate({ onUnhandledRequest: "error" }));
 afterAll(() => {
-  server.close();
+  server.deactivate();
   client.destroy();
 });
 beforeEach(async () => {

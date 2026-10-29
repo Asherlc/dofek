@@ -1,6 +1,5 @@
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { activity } from "../db/schema/activity.ts";
@@ -15,6 +14,7 @@ import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -25,7 +25,7 @@ import { publicAscent, publicFeed } from "./thecrag/test-helpers.ts";
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000000003";
 const feedEndpoint = "https://www.thecrag.com/feed/ascents/climber/:accountId";
 const ascentEndpoint = "https://www.thecrag.com/ascent/:ascentId";
-const server = setupServer();
+const server = createIntegrationMswFixture();
 type AscentFixture = Parameters<typeof publicAscent>[0];
 
 describe("TheCragProvider.sync (PostgreSQL)", () => {
@@ -87,7 +87,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   }
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
       VALUES (${OTHER_USER_ID}::uuid, 'Other climber')`);
   }, 60_000);
@@ -98,7 +98,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   });
   afterEach(() => server.resetHandlers());
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (context) await context.cleanup();
   });
 

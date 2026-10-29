@@ -3,7 +3,6 @@ import { syncBuiltinESMExports } from "node:module";
 import { CreateBucketCommand, GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createSeaweedFsS3Container } from "../account-erasure/test-helpers.ts";
@@ -21,6 +20,7 @@ import {
   setupTestDatabase,
   type TestContext,
 } from "../db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import {
   createAccountErasureWorkLockPool,
   runQueuedUserWorkUnlessAccountErasing,
@@ -29,7 +29,7 @@ import { processActivityImageJob } from "./process-activity-image-job.ts";
 
 describe("account erasure racing with image acquisition", () => {
   let ctx: TestContext, container: StartedTestContainer, client: S3Client;
-  const server = setupServer();
+  const server = createIntegrationMswFixture();
   const userId = randomUUID(),
     activityId = randomUUID(),
     bucket = "media-erasure-race";
@@ -51,7 +51,7 @@ describe("account erasure racing with image acquisition", () => {
     vi.stubEnv("R2_ACCESS_KEY_ID", "media");
     vi.stubEnv("R2_SECRET_ACCESS_KEY", "media-secret");
     vi.stubEnv("ACTIVITY_MEDIA_R2_BUCKET", bucket);
-    server.listen({ onUnhandledRequest: "bypass" });
+    server.activate({ onUnhandledRequest: "bypass" });
     syncBuiltinESMExports();
     await ctx.db.execute(
       sql`INSERT INTO fitness.user_profile(id,name) VALUES(${userId},'Media erasure race')`,
@@ -69,7 +69,7 @@ describe("account erasure racing with image acquisition", () => {
   afterAll(async () => {
     vi.unstubAllEnvs();
     client?.destroy();
-    server.close();
+    server.deactivate();
     syncBuiltinESMExports();
     await container?.stop();
     await ctx?.cleanup();

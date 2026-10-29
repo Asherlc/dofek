@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { activity } from "../db/schema/activity.ts";
@@ -24,6 +23,7 @@ import {
   createAccountErasureWorkLockPool,
   runQueuedUserWorkUnlessAccountErasing,
 } from "../jobs/account-erasure-work-guard.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { MountainProjectProvider } from "./mountain-project.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -33,7 +33,7 @@ const fixtureCsv = readFileSync(
   join(import.meta.dirname, "fixtures/mountain-project-ticks.csv"),
   "utf8",
 );
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const exportUrl = "https://www.mountainproject.com/user/110186720/ticks/tick-export";
 
 describe("MountainProjectProvider canonical persistence", () => {
@@ -41,7 +41,7 @@ describe("MountainProjectProvider canonical persistence", () => {
   let currentExport: string;
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "mountain-project",
@@ -69,7 +69,7 @@ describe("MountainProjectProvider canonical persistence", () => {
     await ctx.db.delete(area);
   });
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await ctx.cleanup();
   });
   function run() {

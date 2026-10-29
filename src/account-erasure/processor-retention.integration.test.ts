@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { verifyProcessorRetentionPolicies } from "./processor-retention.ts";
 
@@ -13,7 +13,7 @@ const config = {
   sentryOrg: "east-bay-software",
 };
 
-const server = setupServer(
+const server = createIntegrationMswFixture(
   http.get("https://api.axiom.co/v2/datasets/dofek-traces", ({ request }) => {
     expect(request.headers.get("authorization")).toBe("Bearer axiom-token");
     expect(request.headers.get("x-axiom-org-id")).toBe("axiom-org");
@@ -28,7 +28,7 @@ const server = setupServer(
 
 describe("account-erasure processor retention (integration)", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -36,7 +36,7 @@ describe("account-erasure processor retention (integration)", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   it("verifies processor retention with a one-day margin before the public deadline", async () => {

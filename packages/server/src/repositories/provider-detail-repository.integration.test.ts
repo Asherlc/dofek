@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { deleteProviderAuthorization } from "../../../../src/db/tokens.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
@@ -18,7 +18,7 @@ import {
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 const archiveKeys = new Set<string>();
-const archiveNetwork = setupServer(
+const archiveNetwork = createIntegrationMswFixture(
   http.get("http://provider-archives.test/original-fits", ({ request }) => {
     const prefix = new URL(request.url).searchParams.get("prefix") ?? "";
     const key = [...archiveKeys].find((candidate) => candidate.startsWith(prefix));
@@ -33,14 +33,14 @@ beforeAll(() => {
   vi.stubEnv("R2_SECRET_ACCESS_KEY", "integration-secret");
   vi.stubEnv("R2_ENDPOINT", "http://provider-archives.test");
   vi.stubEnv("IMPORT_R2_BUCKET", "original-fits");
-  archiveNetwork.listen({ onUnhandledRequest: "bypass" });
+  archiveNetwork.activate({ onUnhandledRequest: "bypass" });
 });
 afterEach(() => {
   archiveKeys.clear();
   archiveNetwork.resetHandlers();
 });
 afterAll(() => {
-  archiveNetwork.close();
+  archiveNetwork.deactivate();
   vi.unstubAllEnvs();
 });
 

@@ -1,12 +1,12 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type FitbitActivity,
@@ -162,7 +162,7 @@ function fitbitHandlers(opts?: {
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("FitbitProvider.sync() (integration)", () => {
@@ -172,7 +172,7 @@ describe("FitbitProvider.sync() (integration)", () => {
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
@@ -186,7 +186,7 @@ describe("FitbitProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -727,7 +727,7 @@ describe("parseFitbitActivity — edge cases", () => {
 
 describe("FitbitClient — error handling", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -735,7 +735,7 @@ describe("FitbitClient — error handling", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   it("throws on non-OK response", async () => {
@@ -853,23 +853,21 @@ function fitbitWeightErrorHandlers(opts: { weightError?: boolean }) {
 
 describe("FitbitProvider.sync() — weight error paths (integration)", () => {
   let ctx: TestContext;
-  const weightServer = setupServer();
 
   beforeAll(async () => {
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
-    weightServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
   afterEach(() => {
-    weightServer.resetHandlers();
+    server.resetHandlers();
   });
 
   afterAll(async () => {
-    weightServer.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -885,7 +883,7 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     const since = new Date();
     since.setDate(since.getDate() - 1);
 
-    weightServer.use(...fitbitWeightErrorHandlers({ weightError: true }));
+    server.use(...fitbitWeightErrorHandlers({ weightError: true }));
 
     const provider = new FitbitProvider();
     const result = await provider.sync(

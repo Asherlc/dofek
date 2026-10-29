@@ -1,19 +1,19 @@
 import { OAuth2Tokens } from "arctic";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { revokeIdentityCredentials } from "./identity-credential-revocation.ts";
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("identity credential revocation", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => server.resetHandlers());
-  afterAll(() => server.close());
+  afterAll(() => server.deactivate());
 
   it("revokes the Google refresh token issued by a failed callback", async () => {
     server.use(

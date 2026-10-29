@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import { S3Client } from "@aws-sdk/client-s3";
 import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../../db/schema/activity.ts";
 import { TEST_USER_ID } from "../../db/schema/core.ts";
@@ -14,6 +13,7 @@ import {
   type ProviderArtifactStorage,
   R2ProviderArtifactStorage,
 } from "../../provider-artifact-storage.ts";
+import { createIntegrationMswFixture } from "../../test/early-msw-lifecycle.ts";
 import { createCapturingMetricStreamPublisher } from "../test-helpers.ts";
 import { syncGarminActivityRecord } from "./activities.ts";
 
@@ -52,15 +52,15 @@ const dependencies = { artifacts, fetchFn: globalThis.fetch, accessToken: "test-
 
 describe("official Garmin activity persistence", () => {
   let context: TestContext;
-  const server = setupServer();
+  const server = createIntegrationMswFixture();
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
+    server.activate({ onUnhandledRequest: "error" });
     context = await setupTestDatabase();
     await ensureProvider(context.db, "garmin", "Garmin", undefined, TEST_USER_ID);
   }, 60_000);
   afterEach(() => server.resetHandlers());
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
   });
   beforeEach(async () => {

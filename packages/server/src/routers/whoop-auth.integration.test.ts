@@ -1,9 +1,9 @@
 import { isEncryptedCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { getWhoopVerificationChallengeStore } from "../lib/whoop-verification-challenge-store.ts";
@@ -39,7 +39,7 @@ function bootstrapHandler(userId: number) {
   });
 }
 
-const mswServer = setupServer();
+const mswServer = createIntegrationMswFixture();
 
 describe("whoopAuth router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -48,7 +48,7 @@ describe("whoopAuth router", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    mswServer.listen({ onUnhandledRequest: "bypass" });
+    mswServer.activate({ onUnhandledRequest: "bypass" });
     testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
@@ -66,7 +66,7 @@ describe("whoopAuth router", () => {
   }, 60_000);
 
   afterAll(async () => {
-    mswServer.close();
+    mswServer.deactivate();
     if (server) {
       server.closeAllConnections();
       await new Promise<void>((resolve) => {

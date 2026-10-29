@@ -26,9 +26,22 @@ import { createTheCragPublicFetch } from "./public-transport.ts";
 const API_BASE_URL = "https://www.thecrag.com/api";
 const ORIGIN = "https://www.thecrag.com";
 
+class TheCragPublicRequestError extends Error {}
+
+function publicRedirectTarget(location: string | null, requestUrl: string): string {
+  if (location === null) return "missing";
+  const target = URL.parse(location, requestUrl);
+  if (!target) return "invalid";
+  // Only emit fixed categories: even hostnames can contain private information.
+  if (target.origin === ORIGIN) return "thecrag";
+  if (target.origin === "https://swamp.processing.thecrag.com") return "thecrag_processing";
+  return "external";
+}
+
 async function publicResponse(
   fetchFn: typeof fetch,
   url: string,
+  requestKind: "profile_lookup" | "feed" | "ascent",
   signal?: AbortSignal,
 ): Promise<Response> {
   const response = await fetchFn(url, {
@@ -37,10 +50,21 @@ async function publicResponse(
     headers: { Accept: "application/atom+xml, application/json, text/html" },
     signal,
   });
-  if (response.status !== 200)
-    throw new Error(
+  if (response.status !== 200) {
+    const error = new TheCragPublicRequestError(
       `theCrag public request failed (${response.status}). Try again when public access is available.`,
     );
+    captureException(error, {
+      tags: { provider: "thecrag", phase: "public_request", requestKind },
+      extra: {
+        httpStatus: response.status,
+        ...(response.status >= 300 && response.status < 400
+          ? { redirectTarget: publicRedirectTarget(response.headers.get("location"), url) }
+          : {}),
+      },
+    });
+    throw error;
+  }
   if (response.url) {
     const requested = new URL(url);
     const received = new URL(response.url);
@@ -84,7 +108,7 @@ export class TheCragProvider implements SyncProvider {
           const username = publicProfileUsername(input);
           const url = new URL(`${API_BASE_URL}/lookup/climber`);
           url.searchParams.set("search", username);
-          const response = await publicResponse(this.#fetchFn, url.href);
+          const response = await publicResponse(this.#fetchFn, url.href, "profile_lookup");
           let body: unknown;
           try {
             body = await response.json();
@@ -153,7 +177,7 @@ export class TheCragProvider implements SyncProvider {
                 "theCrag public feed pagination could not complete because it looped or exceeded 100 pages. Contact support to investigate the public feed pagination.",
               );
             visited.add(next);
-            const response = await publicResponse(this.#fetchFn, next, options.signal);
+            const response = await publicResponse(this.#fetchFn, next, "feed", options.signal);
             const page = parsePublicFeed(await response.text(), accountId);
             for (const item of page.items) {
               const previous = references.get(item.id);
@@ -168,6 +192,7 @@ export class TheCragProvider implements SyncProvider {
             const response = await publicResponse(
               this.#fetchFn,
               `${ORIGIN}/ascent/${reference.id}`,
+              "ascent",
               options.signal,
             );
             records.push(parsePublicAscent(await response.text(), reference, username));
@@ -179,7 +204,8 @@ export class TheCragProvider implements SyncProvider {
       );
       return { provider: this.id, recordsSynced, errors: [], duration: Date.now() - startedAt };
     } catch (error) {
-      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      if (!(error instanceof TheCragPublicRequestError))
+        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
       if (findProviderTransportError(error)) throw error;
       return {
         provider: this.id,

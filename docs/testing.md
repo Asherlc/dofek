@@ -203,14 +203,18 @@ and [advanced API](https://v4.vitest.dev/advanced/api/).
 
 ### Integration request interception
 
-The integration project starts [MSW interception](../src/test/early-msw-setup.ts)
+The integration project starts its single [MSW server](../src/test/early-msw-setup.ts)
 before test modules load, so retained provider clients capture an intercepted
-fetch function. Each file retains its handlers and unhandled-request policy;
-the handler-free setup closes at file teardown. The lifecycle regression uses
-three real runner files and a guarded native transport to verify early capture,
-strict fixture handling and cleanup without external traffic. MSW documents the
-[client-construction ordering requirement](https://github.com/mswjs/msw/issues/2180),
-and Vitest documents [setup-file execution with cached modules](https://vitest.dev/config/setupfiles).
+fetch function. Integration setup owns listening and closing; fixtures select
+their handler baselines and unhandled-request policies without opening another
+server. Resets must restore each fixture's baseline, and teardown must clear its
+handlers and policy before the next file. MSW recommends [one global or individual
+server pattern](https://mswjs.io/api/setup-server/), and documents the
+[client-construction ordering requirement](https://github.com/mswjs/msw/issues/2180).
+Vitest documents [setup-file execution with cached modules](https://vitest.dev/config/setupfiles).
+The guarded lifecycle regression checks early capture, exactly-once request
+effects, strictness, baseline restoration and independent cleanup across real
+runner files without external traffic.
 
 ### Hosted ClickHouse Failure Diagnostics
 

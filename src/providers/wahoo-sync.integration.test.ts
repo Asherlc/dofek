@@ -115,7 +115,7 @@ describe("WahooProvider.sync() (integration)", () => {
     process.env.WAHOO_CLIENT_ID = "test-client-id";
     process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);
 
@@ -131,7 +131,7 @@ describe("WahooProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     archive.client.destroy();
     vi.unstubAllEnvs();
     if (ctx) await ctx.cleanup();

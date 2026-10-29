@@ -384,6 +384,76 @@ describe("theCrag public profile", () => {
     expect(result.errors[0]?.message).toMatch(/403/);
     expect(mocks.write).not.toHaveBeenCalled();
   });
+  it.each([
+    [
+      "https://swamp.processing.thecrag.com/%2Fascent%2F1001?secret=private-query",
+      "thecrag_processing",
+    ],
+    ["/en/ascent/1001?secret=private-query", "thecrag"],
+    ["https://private-host.example/login?secret=private-query", "external"],
+    ["https://swamp.processing.thecrag.com.evil.example/private-query", "external"],
+    ["https://private-user:private-password@www.thecrag.com/ascent/1001", "thecrag"],
+    ["http://www.thecrag.com/ascent/1001", "external"],
+    ["https://[private-query", "invalid"],
+    [null, "missing"],
+  ])("reports a safe ascent redirect category for %j", async (location, redirectTarget) => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(publicFeed()))
+      .mockResolvedValueOnce(
+        new Response("private-response-body", {
+          status: 302,
+          headers: location === null ? {} : { Location: location },
+        }),
+      );
+    const result = await new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db));
+    expect(result.errors[0]?.message).toContain("(302)");
+    expect(mocks.captureException).toHaveBeenCalledExactlyOnceWith(result.errors[0]?.cause, {
+      tags: { provider: "thecrag", phase: "public_request", requestKind: "ascent" },
+      extra: { httpStatus: 302, redirectTarget },
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(mocks.write).not.toHaveBeenCalled();
+    const output = inspect(
+      { result, telemetry: mocks.captureException.mock.calls },
+      { depth: null },
+    );
+    for (const secret of [
+      "private-query",
+      "private-host",
+      "private-user",
+      "private-password",
+      "private-response-body",
+    ])
+      expect(output).not.toContain(secret);
+  });
+  it("reports failed feed requests without treating Location on a non-redirect as a redirect", async () => {
+    const result = await new TheCragProvider(
+      async () =>
+        new Response("private-body", {
+          status: 404,
+          headers: { Location: "https://private-host.example" },
+        }),
+    ).sync(makeRun(createMockDatabase().db));
+    expect(mocks.captureException).toHaveBeenCalledExactlyOnceWith(result.errors[0]?.cause, {
+      tags: { provider: "thecrag", phase: "public_request", requestKind: "feed" },
+      extra: { httpStatus: 404 },
+    });
+  });
+  it("reports a failed public lookup with its request kind", async () => {
+    const exchange = new TheCragProvider(
+      async () =>
+        new Response(null, {
+          status: 307,
+          headers: { Location: "/login?username=sampleclimber" },
+        }),
+    ).authSetup().manualToken?.exchangeToken;
+    await expect(exchange?.("sampleclimber")).rejects.toThrow(/307/);
+    expect(mocks.captureException).toHaveBeenCalledExactlyOnceWith(expect.any(Error), {
+      tags: { provider: "thecrag", phase: "public_request", requestKind: "profile_lookup" },
+      extra: { httpStatus: 307, redirectTarget: "thecrag" },
+    });
+  });
   it("rejects redirects to a nonpublic resource", async () => {
     const body = new Response(publicFeed());
     Object.defineProperty(body, "url", { value: "https://www.thecrag.com/login" });

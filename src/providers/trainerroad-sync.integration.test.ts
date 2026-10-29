@@ -1,12 +1,12 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -78,14 +78,14 @@ function trainerroadHandlers(
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("TrainerRoadProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "trainerroad", "TrainerRoad", "https://www.trainerroad.com");
   }, 60_000);
 
@@ -94,7 +94,7 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 

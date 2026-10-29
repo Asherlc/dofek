@@ -1,12 +1,12 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { MapMyFitnessProvider } from "./mapmyfitness.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -107,7 +107,7 @@ function mapmyfitHandlers(opts: MockFetchOptions) {
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("MapMyFitnessProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -116,7 +116,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     process.env.MAPMYFITNESS_CLIENT_ID = "test-client-id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "mapmyfitness", "MapMyFitness", "https://api.mapmyfitness.com");
   }, 60_000);
 
@@ -125,7 +125,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 

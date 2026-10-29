@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createIntegrationMswFixture } from "./test/early-msw-lifecycle.ts";
 import { ZohoDeskClient, type ZohoDeskConfig, ZohoDeskError } from "./zoho-desk.ts";
 
 const config: ZohoDeskConfig = {
@@ -12,11 +12,11 @@ const config: ZohoDeskConfig = {
   dataCenter: "us",
 };
 
-const mswServer = setupServer();
+const mswServer = createIntegrationMswFixture();
 
-beforeAll(() => mswServer.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => mswServer.activate({ onUnhandledRequest: "error" }));
 afterEach(() => mswServer.resetHandlers());
-afterAll(() => mswServer.close());
+afterAll(() => mswServer.deactivate());
 
 describe("ZohoDeskClient", () => {
   it("refreshes the access token and creates a ticket with org + auth headers", async () => {

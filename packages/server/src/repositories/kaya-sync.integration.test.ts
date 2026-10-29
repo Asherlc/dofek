@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { activity } from "../../../../src/db/schema/activity.ts";
@@ -11,6 +10,7 @@ import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
 import { KayaSyncProvider } from "../../../../src/providers/kaya-sync.ts";
 import { SyncRun } from "../../../../src/providers/sync-run.ts";
 import { SyncWindow } from "../../../../src/providers/sync-window.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { buildClimbingStrengths } from "../services/climbing-strengths.ts";
 import { seedClimbingActivity, seedClimbingLog } from "./climbing-integration-test-helpers.ts";
@@ -18,14 +18,14 @@ import { ClimbingLogEntryAssociator } from "./climbing-log-entry-associator.ts";
 import { ClimbingRepository } from "./climbing-repository.ts";
 import { ClimbingStrengthsRepository } from "./climbing-strengths-repository.ts";
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
   let context: TestContext;
 
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(
       context.db,
       "kaya",
@@ -56,7 +56,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
   });
 

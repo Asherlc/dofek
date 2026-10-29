@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { createGarminAuthSetup } from "../providers/garmin/oauth.ts";
@@ -10,6 +9,7 @@ import {
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { revokeRemoteAccounts } from "./remote-revocation.ts";
 import {
   type AccountErasureRemoteSnapshot,
@@ -19,14 +19,14 @@ import {
 
 describe("account-erasure rotated revocation credentials (integration)", () => {
   let context: TestContext;
-  const server = setupServer();
+  const server = createIntegrationMswFixture();
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
+    server.activate({ onUnhandledRequest: "error" });
     context = await setupTestDatabase();
   });
   afterEach(() => server.resetHandlers());
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
   });
 

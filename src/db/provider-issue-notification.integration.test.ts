@@ -1,8 +1,8 @@
 import { eq, type SQLWrapper } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { Database, SyncDatabase, TransactionDatabase } from "./index.ts";
 import { notifyProviderSyncIssue } from "./provider-issue-notification.ts";
@@ -20,14 +20,14 @@ import { ensureProvider } from "./tokens.ts";
 
 const BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000000002";
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("provider issue email delivery", () => {
   let context: TestContext;
   let emailRequests: unknown[];
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.insert(userProfile).values({ id: OTHER_USER_ID, name: "Other User" });
   }, 120_000);
@@ -61,7 +61,7 @@ describe("provider issue email delivery", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
   });
 

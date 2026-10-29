@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AccountErasureRestoreIntent } from "../../../../src/account-erasure/restore-ledger.ts";
 import { deleteExpiredAccountErasurePreparations } from "../../../../src/db/account-erasure-processing.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -16,7 +16,7 @@ const accountErasureUserId = "30000000-0000-4000-8000-000000001994";
 const guardedAccountErasureUserId = "40000000-0000-4000-8000-000000001994";
 const stripeSecretKey = "sk_test_account_erasure_router";
 let stripeCustomerDiscoveryRequests = 0;
-const externalApiServer = setupServer(
+const externalApiServer = createIntegrationMswFixture(
   http.get("https://api.stripe.com/v1/customers", ({ request }) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${stripeSecretKey}`);
     expect(new URL(request.url).searchParams.get("limit")).toBe("100");
@@ -41,7 +41,7 @@ describe("account erasure router (integration)", () => {
 
   beforeAll(async () => {
     process.env.STRIPE_SECRET_KEY = stripeSecretKey;
-    externalApiServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    externalApiServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name, email)
@@ -125,7 +125,7 @@ describe("account erasure router (integration)", () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-    externalApiServer.close();
+    externalApiServer.deactivate();
     if (originalStripeSecretKey === undefined) {
       delete process.env.STRIPE_SECRET_KEY;
     } else {
