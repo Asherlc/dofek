@@ -172,9 +172,16 @@ by byte verification. It deletes migrated objects **only in the rehearsal
 prefix** and restores the original layout from the locked snapshot. Production recovery uses the separately guarded procedure below. Never run a
 restore while a server can continue migrating or a publisher can write.
 
-After successful cutover and validation, re-enable each paused workflow with
-`gh workflow enable <file>`. Retain the workflow run links, snapshot ID and
-candidate image digest in the incident record.
+Before resuming automatic deployment, require successful **main push CI** for
+the cutover commit or a reviewed descendant containing the upgrade. The
+[release selector](../../scripts/select-web-deploy.ts) chooses the newest
+successful main CI release; a manual deployment alone does not establish that
+baseline. Cancel or drain obsolete main CI while publishers remain disabled,
+and confirm no older deployment runs remain queued, waiting or running. After
+cutover, delivery verification and that main CI baseline succeed, re-enable each
+paused workflow with `gh workflow enable <file>`. Verify the first automatic
+deployment selects the cutover release or a reviewed newer release. Retain the
+workflow run links, snapshot ID and candidate image digest in the incident record.
 Before cutover, dispatch `operation=verify-snapshot` with the same ID to prove
 production still matches the locked snapshot after rehearsal. This operation
 only lists and reads objects; it fails on any byte or object-set difference.
