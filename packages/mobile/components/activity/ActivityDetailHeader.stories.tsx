@@ -29,7 +29,7 @@ type Story = StoryObj<typeof meta>;
 export const BranchingSourcesCollapsed: Story = {};
 export const BranchingSourcesExpanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     const trigger = await canvas.findByRole("button", { name: "Sources: Garmin Edge 530" });
     await userEvent.click(trigger);
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -46,7 +46,7 @@ export const UnresolvedSources: Story = {
     },
   },
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(await canvas.findByRole("button", { name: "Sources" }));
     await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
@@ -56,7 +56,7 @@ export const EmptyTree: Story = {
     activity: { ...detailHeaderActivity, sourceTree: { primary: null, otherSources: [] } },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.getByText("Morning Ride")).toBeVisible();
     await expect(canvas.queryByRole("button", { name: /Sources/ })).toBeNull();
   },
@@ -64,7 +64,7 @@ export const EmptyTree: Story = {
 export const RemovedSource: Story = {
   args: { activity: removedDetailHeaderActivity },
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(await canvas.findByRole("button", { name: "Sources: Garmin Edge 530" }));
     await expect(canvas.getByText("Removed from provider sync on March 5, 2026")).toBeVisible();
     await expect(
@@ -79,7 +79,7 @@ export const DeviceMetadataCollapsed: Story = {
 export const DeviceMetadataExpanded: Story = {
   args: { hardware: garminActivitySourceHardware },
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(await canvas.findByRole("button", { name: "Sources: Garmin Edge 530" }));
     await expect(canvas.getByText("Firmware: 9.75")).toBeVisible();
     await expect(canvas.getByText("Peloton")).toBeVisible();
@@ -111,7 +111,7 @@ export const PrimarySourceWithoutTitle: Story = {
     hardware: walkingActivitySourceHardware,
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.getByText("Running")).toBeVisible();
     await expect(canvas.getByText("Walking")).toBeVisible();
   },
@@ -127,7 +127,7 @@ export const WalkingExpanded: Story = {
     hardware: walkingActivitySourceHardware,
   },
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(
       await canvas.findByRole("button", { name: "Sources: Asher’s Apple Watch" }),
     );

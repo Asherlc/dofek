@@ -1876,7 +1876,7 @@ describe("ActivityDetailPage", () => {
 
       fireEvent.click(trigger);
       expect(trigger).toHaveAttribute("aria-expanded", "false");
-      expect(trigger).toHaveFocus();
+      await waitFor(() => expect(trigger).toHaveFocus());
       expect(screen.queryByText("Strava")).toBeNull();
     });
 
