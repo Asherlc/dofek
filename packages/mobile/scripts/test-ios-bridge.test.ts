@@ -43,6 +43,8 @@ function fixture() {
   );
   mkdirSync(join(mobile, "node_modules"));
   symlinkSync(helper, join(mobile, "node_modules/expo-modules-test-core"));
+  const zodPackage = createRequire(import.meta.url).resolve("zod/package.json");
+  symlinkSync(dirname(zodPackage), join(mobile, "node_modules/zod"));
   const runner = join(mobile, "scripts/test-ios-bridge.ts");
   writeFileSync(runner, readFileSync(script));
   const podfile = join(ios, "Podfile");
@@ -53,9 +55,21 @@ function fixture() {
     state,
     JSON.stringify({
       devices: {
-        "iOS-27": [
-          { name: "iPhone Fresh", udid: "fresh", state: "Shutdown" },
-          { name: "iPhone Running", udid: "running", state: "Booted" },
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+          {
+            deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+            isAvailable: true,
+            name: "iPhone Fresh",
+            udid: "fresh",
+            state: "Shutdown",
+          },
+          {
+            deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+            isAvailable: true,
+            name: "iPhone Running",
+            udid: "running",
+            state: "Booted",
+          },
         ],
       },
     }),
@@ -136,20 +150,124 @@ describe("iOS bridge runner CLI", () => {
   it("selects an available phone when none is booted", () => {
     const setup = fixture();
     setup.configure({
-      devices: { "iOS-27": [{ name: "iPhone Fresh", udid: "fresh", state: "Shutdown" }] },
+      devices: {
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+          {
+            deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+            isAvailable: true,
+            name: "iPhone Fresh",
+            udid: "fresh",
+            state: "Shutdown",
+          },
+        ],
+      },
     });
     expect(setup.run().status).toBe(0);
     expect(setup.calls()[2]?.args).toContain("platform=iOS Simulator,id=fresh");
   });
 
-  it("fails with the simulator prerequisite instead of invoking tests on a different device", () => {
+  it.each(["Booted", "Shutdown"])(
+    "skips an older %s iPhone runtime before selecting a compatible phone",
+    (state) => {
+      const setup = fixture();
+      setup.configure({
+        devices: {
+          "com.apple.CoreSimulator.SimRuntime.iOS-16-3": [
+            {
+              name: "iPhone Old",
+              udid: "old",
+              state,
+              isAvailable: true,
+              deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
+            },
+          ],
+          "com.apple.CoreSimulator.SimRuntime.iOS-16-4": [
+            {
+              name: "Bridge test phone",
+              udid: "compatible",
+              state: "Shutdown",
+              isAvailable: true,
+              deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
+            },
+          ],
+        },
+      });
+      const result = setup.run();
+      expect(result.status, result.stderr).toBe(0);
+      expect(setup.calls()[2]?.args).toContain("platform=iOS Simulator,id=compatible");
+    },
+  );
+
+  it("fails with the minimum runtime remedy when every iPhone is too old", () => {
     const setup = fixture();
     setup.configure({
-      devices: { "tvOS-27": [{ name: "Apple TV", udid: "tv", state: "Booted" }] },
+      devices: {
+        "com.apple.CoreSimulator.SimRuntime.iOS-16-3": [
+          {
+            name: "iPhone Old",
+            udid: "old",
+            state: "Booted",
+            isAvailable: true,
+            deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
+          },
+        ],
+      },
     });
     const result = setup.run();
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Install an iPhone Simulator runtime");
+    expect(result.stderr).toContain("Install an iPhone Simulator runtime for iOS 16.4 or later");
+    expect(setup.calls().map((call) => call.tool)).toEqual(["pod", "xcrun"]);
+  });
+
+  it.each([
+    ["missing devices", {}],
+    ["non-map devices", { devices: [] }],
+    [
+      "non-array runtime devices",
+      { devices: { "com.apple.CoreSimulator.SimRuntime.iOS-27-0": {} } },
+    ],
+    [
+      "invalid simulator fields",
+      {
+        devices: {
+          "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+            {
+              udid: "phone",
+              state: "Booted",
+              isAvailable: true,
+            },
+          ],
+        },
+      },
+    ],
+  ])("rejects %s with an actionable simulator inventory error", (_description, inventory) => {
+    const setup = fixture();
+    setup.configure(inventory);
+    const result = setup.run();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("xcrun simctl returned an invalid simulator inventory");
+    expect(result.stderr).toContain("xcrun simctl list devices available --json");
+    expect(setup.calls().map((call) => call.tool)).toEqual(["pod", "xcrun"]);
+  });
+
+  it("fails with the simulator prerequisite instead of invoking tests on a different device", () => {
+    const setup = fixture();
+    setup.configure({
+      devices: {
+        "com.apple.CoreSimulator.SimRuntime.tvOS-27-0": [
+          {
+            name: "Apple TV",
+            udid: "tv",
+            state: "Booted",
+            isAvailable: true,
+            deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K",
+          },
+        ],
+      },
+    });
+    const result = setup.run();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Install an iPhone Simulator runtime for iOS 16.4 or later");
     expect(setup.calls().map((call) => call.tool)).toEqual(["pod", "xcrun"]);
   });
 
@@ -157,7 +275,17 @@ describe("iOS bridge runner CLI", () => {
     const setup = fixture();
     setup.configure({
       fail: tool,
-      devices: { iOS: [{ name: "iPhone Test", udid: "phone", state: "Booted" }] },
+      devices: {
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+          {
+            deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+            isAvailable: true,
+            name: "iPhone Test",
+            udid: "phone",
+            state: "Booted",
+          },
+        ],
+      },
     });
     const result = setup.run();
     expect(result.status).not.toBe(0);

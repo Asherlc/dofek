@@ -133,4 +133,23 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         XCTAssertEqual(samples.first?["timestamp"] as? String, "2026-10-28T00:00:02.430Z")
         XCTAssertEqual(try store.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 2)
     }
+
+    func testAppendAfterFractionalCutoffRetainsOnlyLaterSamples() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        try store.advanceErasureCutoff(to: XCTUnwrap(formatter.date(from: "2026-10-28T00:00:02.200Z")))
+        try store.append(stream: .realtime, deviceId: "a", samples: [
+            ["timestamp": "2026-10-28T00:00:02.100Z", "heartRateBpm": 70],
+            ["timestamp": "2026-10-28T00:00:02.200Z", "heartRateBpm": 71],
+            ["timestamp": "2026-10-28T00:00:02.430Z", "heartRateBpm": 72],
+        ])
+        let batch = try XCTUnwrap(store.reserve(stream: .realtime))
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: batch.body) as? [String: Any])
+        let samples = try XCTUnwrap(body["samples"] as? [[String: Any]])
+        XCTAssertEqual(samples.count, 1)
+        XCTAssertEqual(samples.first?["timestamp"] as? String, "2026-10-28T00:00:02.430Z")
+        XCTAssertEqual(try store.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 2)
+    }
 }

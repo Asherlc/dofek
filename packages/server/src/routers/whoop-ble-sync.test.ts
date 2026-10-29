@@ -721,6 +721,44 @@ describe("whoopBleSyncRouter", () => {
       }
     });
 
+    it("publishes valid readings while filtering raw future-clock samples in the same batch", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
+      try {
+        const sample = {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 72,
+          rrIntervalMs: 0,
+          quaternionW: 0,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+        };
+        const result = await caller(ctx).pushRealtimeData({
+          deviceId: "WHOOP Strap",
+          samples: [sample, { ...sample, timestamp: "2106-02-07T06:28:15.000Z", heartRateBpm: 99 }],
+        });
+        expect(result).toEqual({ inserted: 1 });
+        expect(getPublishedRows(metricStreamPublisher)).toEqual([
+          expect.objectContaining({
+            recordedAt: sample.timestamp,
+            channel: "heart_rate",
+            scalar: 72,
+          }),
+        ]);
+        expect(logger.info).toHaveBeenCalledWith(
+          "[sensor-upload] upload_published",
+          expect.objectContaining({
+            inputSampleCount: 2,
+            acceptedSampleCount: 1,
+            filteredSampleCount: 1,
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("filters out malformed sample timestamps", async () => {
       const trpcCaller = caller(ctx);
 

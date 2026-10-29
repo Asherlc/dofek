@@ -1331,11 +1331,35 @@ jobs:
           path: reports/mutation/
           retention-days: 7
 
-  mutation-swift:
-    name: Swift Mutation Testing
+  mutation-swift-prep:
+    name: Discover Swift mutation files
     needs: check-mobile-changes
     runs-on: macos-latest
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
+    outputs:
+      files: ${{ steps.discover.outputs.files }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Discover changed compiled Swift sources
+        id: discover
+        run: |
+          FILES=$(pnpm tsx scripts/run-swift-mutation.ts --base origin/main --list-files)
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+  mutation-swift:
+    name: Swift Mutation Testing (${{ matrix.file }})
+    needs: mutation-swift-prep
+    runs-on: macos-latest
+    if: needs.mutation-swift-prep.outputs.files != '' && needs.mutation-swift-prep.outputs.files != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.mutation-swift-prep.outputs.files) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1365,12 +1389,18 @@ jobs:
         run: brew link --overwrite muter 2>/dev/null || ln -sf /opt/homebrew/Cellar/muter/*/bin/muter /opt/homebrew/bin/muter
       - name: Run native mutation tests
         timeout-minutes: 30
-        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main
+        env:
+          MUTATION_FILE: ${{ matrix.file }}
+        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main --file "$MUTATION_FILE"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && hashFiles('reports/swift-mutation/*.json') != ''
+        if: always()
         with:
-          name: muter-report
-          path: reports/swift-mutation/
+          name: muter-report-${{ strategy.job-index }}
+          path: |
+            reports/swift-mutation/
+            packages/mobile/modules/*_mutated/*.log
+            packages/mobile/targets/*_mutated/*.log
+          if-no-files-found: ignore
           retention-days: 7
 
   mutation-gate:
@@ -1417,7 +1447,7 @@ jobs:
 
   test-all-gate:
     name: Test Gate
-    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, migration-lint]
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift-prep, mutation-swift, migration-lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1431,6 +1461,7 @@ jobs:
             "${{ needs.test-mobile.result }}" \
             "${{ needs.test-swift.result }}" \
             "${{ needs.mutation-gate.result }}" \
+            "${{ needs.mutation-swift-prep.result }}" \
             "${{ needs.mutation-swift.result }}" \
             "${{ needs.migration-lint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

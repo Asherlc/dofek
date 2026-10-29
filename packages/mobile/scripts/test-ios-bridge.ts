@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 const mobileDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const iosDirectory = resolve(mobileDirectory, "ios");
@@ -35,21 +36,52 @@ execFileSync("pod", ["install"], {
   env: { ...process.env, EXPO_USE_PRECOMPILED_MODULES: "0" },
 });
 
-interface Simulator {
-  name: string;
-  udid: string;
-  state: string;
-}
-const inventory: { devices: Record<string, Simulator[]> } = JSON.parse(
+const simulatorInventorySchema = z.object({
+  devices: z.record(
+    z.string(),
+    z.array(
+      z.object({
+        deviceTypeIdentifier: z.string(),
+        isAvailable: z.boolean(),
+        udid: z.string(),
+        state: z.string(),
+      }),
+    ),
+  ),
+});
+const rawInventory: unknown = JSON.parse(
   execFileSync("xcrun", ["simctl", "list", "devices", "available", "--json"], {
     encoding: "utf8",
   }),
 );
-const phones = Object.values(inventory.devices)
-  .flat()
-  .filter((device) => device.name.startsWith("iPhone"));
+const parsedInventory = simulatorInventorySchema.safeParse(rawInventory);
+if (!parsedInventory.success) {
+  throw new Error(
+    "xcrun simctl returned an invalid simulator inventory. Check `xcrun simctl list devices available --json` output and the selected Xcode installation before retrying bridge tests.",
+    { cause: parsedInventory.error },
+  );
+}
+const inventory = parsedInventory.data;
+const phones = Object.entries(inventory.devices).flatMap(([runtime, devices]) => {
+  const version = runtime.match(
+    /^com\.apple\.CoreSimulator\.SimRuntime\.iOS-(\d+)-(\d+)(?:-\d+)?$/,
+  );
+  if (!version) return [];
+  const major = Number(version[1]);
+  const minor = Number(version[2]);
+  // The WHOOP bridge test host's deployment target is iOS 16.4.
+  if (major < 16 || (major === 16 && minor < 4)) return [];
+  return devices.filter(
+    (device) =>
+      device.isAvailable &&
+      device.deviceTypeIdentifier.startsWith("com.apple.CoreSimulator.SimDeviceType.iPhone-"),
+  );
+});
 const simulator = phones.find((device) => device.state === "Booted") ?? phones[0];
-if (!simulator) throw new Error("Install an iPhone Simulator runtime before running bridge tests");
+if (!simulator)
+  throw new Error(
+    "Install an iPhone Simulator runtime for iOS 16.4 or later before running bridge tests",
+  );
 
 execFileSync(
   "xcodebuild",

@@ -64,18 +64,16 @@ final class WhoopBleSampleSerializerTests: XCTestCase {
         XCTAssertEqual(rows[1]["timestamp"] as? String, "2026-03-29T15:28:29.430Z")
     }
 
-    func testClockBoundsAndImuSamplePosition() throws {
+    func testRealtimePreservesEarlyAndFutureDeviceTimes() throws {
         let rows = WhoopBleSampleSerializer.realtime([
             makeRealtimeSample(timestampSeconds: 100_000),
             makeRealtimeSample(timestampSeconds: UInt32.max),
         ])
-        XCTAssertEqual(rows[0]["timestamp"] as? String, "2000-01-01T00:00:00.000Z")
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let timestamp = try XCTUnwrap(rows[1]["timestamp"] as? String)
-        let date = try XCTUnwrap(formatter.date(from: timestamp))
-        // The wire timestamp rounds to milliseconds, while Date retains finer precision.
-        XCTAssertLessThanOrEqual(date.timeIntervalSince1970, Date().addingTimeInterval(300.001).timeIntervalSince1970)
+        XCTAssertEqual(rows[0]["timestamp"] as? String, "1970-01-02T03:46:40.000Z")
+        XCTAssertEqual(rows[1]["timestamp"] as? String, "2106-02-07T06:28:15.000Z")
+    }
+
+    func testImuPreservesFractionalClockAndSamplePosition() throws {
         let sample = WhoopImuSample(
             timestampSeconds: 1_711_000_000, subSeconds: 16_384, sampleIndex: 99, samplesInFrame: 100,
             accelerometerX: 0, accelerometerY: 0, accelerometerZ: 0,
@@ -84,17 +82,19 @@ final class WhoopBleSampleSerializerTests: XCTestCase {
         XCTAssertEqual(WhoopBleSampleSerializer.imu([sample])[0]["timestamp"] as? String, "2024-03-21T05:46:41.490Z")
     }
 
-    func testFutureImuClockBoundsIncludeFinalSampleOffset() throws {
-        let sample = WhoopImuSample(
+    func testImuPreservesEarlyAndFutureDeviceTimesIncludingSampleOffsets() throws {
+        let earlySample = WhoopImuSample(
+            timestampSeconds: 100_000, subSeconds: 16_384, sampleIndex: 1, samplesInFrame: 50,
+            accelerometerX: 0, accelerometerY: 0, accelerometerZ: 0,
+            gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
+        )
+        let futureSample = WhoopImuSample(
             timestampSeconds: UInt32.max, subSeconds: 16_384, sampleIndex: 99, samplesInFrame: 100,
             accelerometerX: 0, accelerometerY: 0, accelerometerZ: 0,
             gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
         )
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let row = try XCTUnwrap(WhoopBleSampleSerializer.imu([sample]).first)
-        let timestamp = try XCTUnwrap(row["timestamp"] as? String)
-        let date = try XCTUnwrap(formatter.date(from: timestamp))
-        XCTAssertLessThanOrEqual(date.timeIntervalSince1970, Date().addingTimeInterval(300.001).timeIntervalSince1970)
+        let rows = WhoopBleSampleSerializer.imu([earlySample, futureSample])
+        XCTAssertEqual(rows[0]["timestamp"] as? String, "1970-01-02T03:46:40.520Z")
+        XCTAssertEqual(rows[1]["timestamp"] as? String, "2106-02-07T06:28:16.490Z")
     }
 }

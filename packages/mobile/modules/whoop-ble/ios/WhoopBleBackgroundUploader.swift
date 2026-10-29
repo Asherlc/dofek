@@ -244,7 +244,10 @@ final class WhoopBleBackgroundUploader: NSObject {
                 active.insert(identity); lastSubmission[stream] = now()
                 submittedEpoch[identity] = tokenEpoch
                 transport.start(request: request, file: file, identity: identity)
-            } catch { record(error) }
+            } catch {
+                retryAfter[stream] = now().addingTimeInterval(30)
+                record(error)
+            }
         }
     }
 

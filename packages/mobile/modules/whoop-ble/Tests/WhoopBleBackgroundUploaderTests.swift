@@ -1,40 +1,42 @@
 import XCTest
 @testable import WhoopBLE
 
-final class WhoopBleBackgroundUploaderTests: XCTestCase {
-    private final class Transport: WhoopUploadTransport {
-        var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
-        var onFinishEvents: (() -> Void)?
-        var tasks: [String] = []
-        var requests: [(URLRequest, URL, String)] = []
-        var reconciliationCount = 0
-        var delayCancellation = false
-        var delayedCancellations: [() -> Void] = []
-        var cancellations: [String] = []
-        func allTasks(_ completion: @escaping ([String]) -> Void) { reconciliationCount += 1; completion(tasks) }
-        func start(request: URLRequest, file: URL, identity: String) {
-            tasks.append(identity); requests.append((request, file, identity))
-        }
-        func cancel(identity: String) {
-            cancellations.append(identity)
-            let cancel = { self.tasks.removeAll { $0 == identity } }
-            if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
-        }
-        func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
-            let task = requests[index]
-            tasks.removeAll { $0 == task.2 }
-            onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
-        }
+private final class Transport: WhoopUploadTransport {
+    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
+    var onFinishEvents: (() -> Void)?
+    var tasks: [String] = []
+    var requests: [(URLRequest, URL, String)] = []
+    var reconciliationCount = 0
+    var delayCancellation = false
+    var delayedCancellations: [() -> Void] = []
+    var cancellations: [String] = []
+    func allTasks(_ completion: @escaping ([String]) -> Void) { reconciliationCount += 1; completion(tasks) }
+    func start(request: URLRequest, file: URL, identity: String) {
+        tasks.append(identity); requests.append((request, file, identity))
     }
+    func cancel(identity: String) {
+        cancellations.append(identity)
+        let cancel = { self.tasks.removeAll { $0 == identity } }
+        if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
+    }
+    func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
+        let task = requests[index]
+        tasks.removeAll { $0 == task.2 }
+        onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
+    }
+}
+
+final class WhoopBleBackgroundUploaderTests: XCTestCase {
     private func setup(
-        reportError: @escaping (Error) -> Void = { _ in }
+        reportError: @escaping (Error) -> Void = { _ in },
+        now: @escaping () -> Date = Date.init
     ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, Transport) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
         let store = try WhoopBleSampleStore(directory: directory)
         let transport = Transport()
         let uploader = try WhoopBleBackgroundUploader(
-            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: reportError)
+            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: reportError, now: now)
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
         return (uploader, store, transport)
     }
@@ -335,6 +337,32 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         XCTAssertTrue(transport.requests.last?.0.url?.path.contains("Realtime") == true)
         XCTAssertGreaterThan(errors.count, errorsBefore)
         XCTAssertEqual(try store.pendingBatches().first { $0.stream == .imu }?.id, batch.id)
+    }
+
+    func testBodyWriteFailureWaitsForExistingRetryIntervalWithoutBlockingRealtime() throws {
+        var errors: [Error] = []
+        var clock = Date(timeIntervalSince1970: 1_800_000_000)
+        let (uploader, _, transport) = try setup(reportError: { errors.append($0) }, now: { clock })
+        try settle(uploader)
+        try uploader.append(stream: .imu, deviceId: "a", samples: Array(repeating: rows[0], count: 500))
+        try settle(uploader)
+        let file = try XCTUnwrap(transport.requests.first?.1)
+        transport.complete(0, status: 500); try settle(uploader)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        try uploader.flush(); try settle(uploader)
+        let errorsAfterFailure = errors.count
+        XCTAssertEqual(errorsAfterFailure, 2)
+        clock = clock.addingTimeInterval(5)
+        try uploader.append(stream: .realtime, deviceId: "a", samples: Array(repeating: rows[0], count: 500))
+        try settle(uploader)
+        XCTAssertEqual(errors.count, errorsAfterFailure)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertTrue(transport.requests.last?.0.url?.path.contains("Realtime") == true)
+        clock = clock.addingTimeInterval(25)
+        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try settle(uploader)
+        XCTAssertEqual(errors.count, errorsAfterFailure + 1)
     }
 
     func testAcknowledgedBodyRemovalFailureStillContinuesFullBatches() throws {

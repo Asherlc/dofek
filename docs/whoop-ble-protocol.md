@@ -269,6 +269,14 @@ verify matching captured live/history readings. The independently maintained
 [R21 protocol reference](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_SENSORS.md#inertial-record-timestamps)
 documents the same fractional clock scale.
 
+The [native serializer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleSerializer.swift)
+preserves device time without replacing early or future readings with phone-clock
+bounds. The [server timestamp filter](../packages/server/src/routers/sample-validation.ts)
+drops individual samples more than five minutes ahead of server time. Filtered
+samples are processed as part of the acknowledged batch and are removed from the
+native queue; this does not recover readings from a bad device clock. The policy
+retains CRC checks while avoiding timestamp identities manufactured by clamping.
+
 ## Persistent Config Keys (from firmware console logs)
 
 The WHOOP app pushes 17 persistent config keys to the strap during sync via `SEND_NEXT_DEVICE_CONFIG (0x74)`:
@@ -351,8 +359,8 @@ The [background uploader](../packages/mobile/modules/whoop-ble/ios/WhoopBleBackg
 uses independent native transfers for the two streams. Actual BLE arrivals
 coalesce scheduling checks to five seconds. Full batches are eligible immediately
 at a scheduling check; partial batches are eligible after 30 seconds, or an
-authenticated configuration/foreground/refresh flush. A transient transport
-failure retains the reservation and delays capture-triggered reattempts by
+authenticated configuration/foreground/refresh flush. Submission failures and
+transient transport failures retain the reservation and delay capture-triggered reattempts by
 30 seconds to avoid a per-notification retry loop. Explicit lifecycle flushes
 may retry sooner. Authentication failures block the affected stream until new
 configuration; a restored task with unknown credentials may retry the currently

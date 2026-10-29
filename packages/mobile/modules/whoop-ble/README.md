@@ -31,6 +31,10 @@ WHOOP can report BPM when beat intervals are unavailable during movement; see
 its [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
 Captured R18/R21 fractional clock words use 1/32768-second ticks, and buffer
 timestamps use that scale; see the [capture-backed protocol reference](../../../../docs/whoop-ble-protocol.md).
+The [serializer](ios/WhoopBleSampleSerializer.swift) preserves device time,
+including early and future values. The [server filter](../../../server/src/routers/sample-validation.ts)
+rejects future samples individually; an acknowledged batch removes those rows
+from the queue too. Reported times determine sample identities.
 Native changes require a new iOS build, following Expo's
 [native development workflow](https://docs.expo.dev/workflow/customizing/).
 
