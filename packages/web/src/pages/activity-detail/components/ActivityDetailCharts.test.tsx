@@ -62,6 +62,43 @@ const args = {
   units: new UnitConverter("metric"),
 };
 
+it("overlays timed climbs on heart rate and exposes exact climb labels", () => {
+  render(
+    <MetricsChart
+      {...args}
+      activityType="climbing"
+      climbAnnotations={[
+        { id: "ascent", label: "Corner · V3", startedAt: "2026-10-18T17:30:20Z", endedAt: null },
+        {
+          id: "range",
+          label: "Arete · V4",
+          startedAt: "2026-10-18T17:29:00Z",
+          endedAt: "2026-10-18T17:30:40Z",
+        },
+        { id: "outside", label: "Outside", startedAt: "2026-10-18T17:32:00Z", endedAt: null },
+      ]}
+    />,
+  );
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.tooltip.trigger).toBe("item");
+  expect(series[0].markArea.tooltip.trigger).toBe("item");
+  expect(series[0].markLine.data).toEqual([
+    expect.objectContaining({ name: "Corner · V3", xAxis: Date.parse("2026-10-18T17:30:20Z") }),
+  ]);
+  expect(series[0].markArea.data).toEqual([
+    [
+      expect.objectContaining({ name: "Arete · V4", xAxis: Date.parse(points[0].recordedAt) }),
+      { xAxis: Date.parse("2026-10-18T17:30:40Z") },
+    ],
+  ]);
+  expect(screen.getByText(/Corner · V3/)).toBeDefined();
+  expect(screen.getByText(/Arete · V4/)).toBeDefined();
+  expect(screen.queryByText(/Outside/)).toBeNull();
+  const svg = renderChartSvg();
+  expect(svg.querySelectorAll("path").length).toBeGreaterThan(0);
+});
+
 function customLegend({
   isVisible,
   toggle,

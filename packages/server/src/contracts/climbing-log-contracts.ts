@@ -1,3 +1,4 @@
+import { climbingChartAnnotationSchema } from "@dofek/training/climbing-chart";
 import { climbingSourceLinkSchema } from "@dofek/training/climbing-context";
 import {
   areaSchema,
@@ -51,6 +52,7 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
   displayGrade: z.string().nullable(),
   sourceLinks: z.array(climbingSourceLinkSchema),
   tags: z.array(climbingTagSchema).optional(),
+  chartAnnotations: z.array(climbingChartAnnotationSchema).optional(),
 });
 export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema>;
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;

@@ -7,6 +7,7 @@ import {
   activityPreviewPoints,
   defaultActivityMetricSources,
 } from "@dofek/training/fixtures/activity-metric-sources";
+import { climbingChartAnnotations } from "@dofek/training/fixtures/climbing-chart";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
@@ -70,6 +71,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const LocalizedTooltip: Story = {};
+export const TimedClimbs: Story = {
+  args: { activityType: "climbing", climbAnnotations: climbingChartAnnotations },
+};
 export const Loading: Story = { args: { loading: true } };
 export const Empty: Story = { args: { points: [] } };
 export const FractionalReadings: Story = {

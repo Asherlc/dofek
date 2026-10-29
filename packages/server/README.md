@@ -655,7 +655,14 @@ versions its response cache when this contract changes; the
 invalidates cached responses from the older contract.
 
 Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Each control preselects its existing priority winner
+cadence, and elevation. Heart rate prefers sources explicitly linked to a member
+activity or matching its reported recording device. Within that tier, or when
+no direct recording is evidenced, it prefers the most distinct valid sample
+timestamps in the activity window, using provider priority to break ties.
+Duplicate timestamps count once through ClickHouse's
+[`uniqExact`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqexact).
+The [source repository](src/repositories/activity-metric-sources-repository.ts)
+applies this rule for both web and mobile. Other controls preselect their priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.

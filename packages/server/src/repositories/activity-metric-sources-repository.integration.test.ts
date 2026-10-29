@@ -133,10 +133,10 @@ describe("activity metric source selection", () => {
     await client?.close();
   });
 
-  it("offers all eligible providers, including standalone recordings, in default priority order", async () => {
+  it("prefers activity-linked HR over standalone recordings and keeps other metric priorities", async () => {
     const metrics = await getActivityMetricSources(store, window);
     expect(metrics.map((metric) => [metric.key, metric.defaultSourceId])).toEqual([
-      ["heartRate", "whoop"],
+      ["heartRate", "garmin"],
       ["power", "garmin"],
       ["speed", "garmin"],
       ["cadence", "garmin"],
@@ -144,10 +144,60 @@ describe("activity metric source selection", () => {
     ]);
     expect(
       metrics.find((metric) => metric.key === "heartRate")?.sources.map((source) => source.id),
-    ).toEqual(["whoop", "garmin"]);
+    ).toEqual(["garmin", "whoop"]);
     expect(
       metrics.find((metric) => metric.key === "power")?.sources.map((source) => source.id),
     ).toEqual(["garmin", "wahoo"]);
+  });
+  it("ranks unlinked HR by distinct valid timestamps, then provider priority", async () => {
+    const densityWindow = {
+      ...window,
+      startedAt: "2026-10-21T12:00:00.000Z",
+      endedAt: "2026-10-21T13:00:00.000Z",
+    };
+    await executeCommand(`INSERT INTO analytics.sensor_scalar_sample
+      (id, user_id, recorded_at, recorded_date, channel, provider_id, device_id, scalar, provider_priority)
+      VALUES
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:00', '2026-10-21', 'heart_rate', 'apple_health', 'Watch', 100, 1),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:00', '2026-10-21', 'heart_rate', 'apple_health', 'Watch', 101, 1),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:01', '2026-10-21', 'heart_rate', 'apple_health', 'Watch', 0, 1),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:02', '2026-10-21', 'heart_rate', 'apple_health', 'Watch', -1, 1),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:00', '2026-10-21', 'heart_rate', 'whoop_ble', 'strap', 150, 2),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:01', '2026-10-21', 'heart_rate', 'whoop_ble', 'strap', 151, 2),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:00', '2026-10-21', 'heart_rate', 'polar', 'strap', 160, 3),
+      (generateUUIDv4(), '${userId}', '2026-10-21 12:00:01', '2026-10-21', 'heart_rate', 'polar', 'strap', 161, 3)`);
+    const metrics = await getActivityMetricSources(store, densityWindow);
+    expect(metrics[0]?.defaultSourceId).toBe('["whoop_ble","strap"]');
+    expect(metrics[0]?.sources.map((source) => source.id)).toEqual([
+      '["whoop_ble","strap"]',
+      '["polar","strap"]',
+      '["apple_health","Watch"]',
+    ]);
+
+    const hardware = {
+      items: [
+        {
+          id: "watch-recorder",
+          activityId,
+          providerId: "apple_health",
+          sourceName: "Watch",
+          role: "recorder" as const,
+          label: "Apple Watch",
+          model: null,
+          manufacturer: null,
+          evidence: "Recording device reported by HealthKit",
+          details: [],
+        },
+      ],
+      power: [],
+    };
+    const recorded = await getActivityMetricSources(store, densityWindow, hardware);
+    expect(recorded[0]?.defaultSourceId).toBe('["apple_health","Watch"]');
+    const exported = await getActivityMetricSources(store, densityWindow, {
+      ...hardware,
+      items: hardware.items.map((item) => ({ ...item, role: "creator" as const })),
+    });
+    expect(exported[0]?.defaultSourceId).toBe('["whoop_ble","strap"]');
   });
   it("replaces HR with the requested source without mixing in default HR or losing power", async () => {
     const points = await store.getStream(window, 500, { heartRate: "garmin" });

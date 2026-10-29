@@ -7,6 +7,10 @@ import {
   activityChartSeries,
   nearestActivityChartSample,
 } from "@dofek/training/activity-chart-series";
+import {
+  type ClimbingChartAnnotation,
+  climbingChartPositions,
+} from "@dofek/training/climbing-chart";
 import { cadenceAxisLabel } from "@dofek/training/training";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
@@ -109,8 +113,10 @@ export function MetricsChart({
   renderLegend,
   metricSources = [],
   error,
+  climbAnnotations = [],
 }: {
   points: StreamPoint[];
+  climbAnnotations?: readonly ClimbingChartAnnotation[];
   activityType: string;
   hasHr: boolean;
   hasPower: boolean;
@@ -247,6 +253,11 @@ export function MetricsChart({
   const timeline = activityChartSeries(
     points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
   );
+  const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
+  const climbTooltip = (annotation: ClimbingChartAnnotation) => ({
+    formatter: () =>
+      `${escapeTooltipHtml(annotation.label)}<br/>${escapeTooltipHtml(formatDateTime(new Date(annotation.startedAt)))}${annotation.endedAt ? ` – ${escapeTooltipHtml(formatDateTime(new Date(annotation.endedAt)))}` : ""}`,
+  });
   const yAxes = metrics.map((metric, index) => {
     const visible = isVisible(metric.name);
     const isFirst = index === 0;
@@ -289,6 +300,41 @@ export function MetricsChart({
     emphasis: { itemStyle: { opacity: 1 } },
     lineStyle: { width: 1.5, color: metric.color },
     itemStyle: { color: metric.color },
+    ...(metric.name === "Heart Rate" && climbs.length > 0
+      ? {
+          markLine: {
+            tooltip: { trigger: "item" },
+            symbol: "none",
+            lineStyle: { color: "#a78bfa", width: 1.5, type: "dashed" },
+            label: { show: false },
+            data: climbs
+              .filter(({ annotation }) => annotation.endedAt === null)
+              .map(({ annotation }) => ({
+                name: annotation.label,
+                xAxis: Date.parse(annotation.startedAt),
+                tooltip: climbTooltip(annotation),
+              })),
+          },
+          markArea: {
+            tooltip: { trigger: "item" },
+            itemStyle: { color: "rgba(167,139,250,0.16)" },
+            label: { show: false },
+            data: climbs
+              .filter(({ annotation }) => annotation.endedAt !== null)
+              .map(({ annotation, startPosition, endPosition }) => [
+                {
+                  name: annotation.label,
+                  xAxis:
+                    timeline.startedAt + startPosition * (timeline.endedAt - timeline.startedAt),
+                  tooltip: climbTooltip(annotation),
+                },
+                {
+                  xAxis: timeline.startedAt + endPosition * (timeline.endedAt - timeline.startedAt),
+                },
+              ]),
+          },
+        }
+      : {}),
   }));
 
   const visibleRightAxisCount = metrics.slice(1).filter((m) => isVisible(m.name)).length;
@@ -370,6 +416,19 @@ export function MetricsChart({
         <p className="py-6 text-sm text-muted">No samples for the selected sources.</p>
       ) : (
         <DofekChart option={option} height={380} onEvents={chartEvents} timeRangeMode="data" />
+      )}
+      {hasHr && isVisible("Heart Rate") && climbs.length > 0 && (
+        <details className="mt-2 text-xs text-muted">
+          <summary className="cursor-pointer">Climbs ({climbs.length})</summary>
+          <ul className="mt-2 space-y-1">
+            {climbs.map(({ annotation }) => (
+              <li key={annotation.id}>
+                {annotation.label} · {formatDateTime(new Date(annotation.startedAt))}
+                {annotation.endedAt && ` – ${formatDateTime(new Date(annotation.endedAt))}`}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </figure>
   );
