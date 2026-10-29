@@ -1,9 +1,9 @@
-import { mapAttribution } from "@dofek/training/map-style";
+import { mapAttributionText } from "@dofek/training/map-style";
 import { StyleSheet, Text } from "react-native";
 import { colors } from "../theme";
 
 export function MapAttribution() {
-  return <Text style={styles.text}>{mapAttribution.replace(/<[^>]*>/g, "")}</Text>;
+  return <Text style={styles.text}>{mapAttributionText}</Text>;
 }
 
 const styles = StyleSheet.create({

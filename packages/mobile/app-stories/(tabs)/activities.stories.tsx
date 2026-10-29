@@ -17,7 +17,7 @@ import { trpc } from "../../lib/trpc";
 const mapPreview = {
   width: 1024,
   height: 576,
-  center: [-122.4188, 37.77525],
+  center: [-122.4188, 37.77525] satisfies [number, number],
   zoom: 18,
   routePath: [
     { x: 288.304, y: 453.089 },

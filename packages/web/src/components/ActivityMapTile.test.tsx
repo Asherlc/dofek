@@ -90,6 +90,29 @@ describe("ActivityMapTile", () => {
     expect(maps[0]?.remove).toHaveBeenCalledOnce();
     act(() => maps[1]?.fire("idle"));
   });
+  it("releases a stalled preview so the next visible map can render", async () => {
+    vi.useFakeTimers();
+    render(
+      <>
+        <ActivityMapTile location={location()} />
+        <ActivityMapTile location={location()} />
+      </>,
+    );
+    try {
+      await vi.waitFor(() => expect(maps).toHaveLength(1));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(maps[0]?.remove).toHaveBeenCalledOnce();
+      expect(captureException).toHaveBeenCalledOnce();
+      expect(maps).toHaveLength(2);
+      expect(screen.getByText("Map unavailable. Check your connection.")).toBeVisible();
+      act(() => maps[1]?.fire("idle"));
+      expect(screen.getByTestId("activity-map-snapshot")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("letterboxes the complete camera and overlays at differing panel proportions", async () => {
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
       configurable: true,

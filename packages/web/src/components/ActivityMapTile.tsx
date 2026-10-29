@@ -1,6 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { createMapStyle, mapAttribution } from "@dofek/training/map-style";
+import { createMapStyle, mapAttributionText } from "@dofek/training/map-style";
 import type { ActivityLocation } from "dofek-server/types";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
@@ -197,7 +197,10 @@ function ReadyActivityMapTile({
     return queueMapSnapshot((done) => {
       let cancelled = false;
       let map: MapLibreMap | null = null;
+      let deadline: ReturnType<typeof setTimeout>;
       const finish = () => {
+        cancelled = true;
+        clearTimeout(deadline);
         map?.remove();
         map = null;
         done();
@@ -208,6 +211,10 @@ function ReadyActivityMapTile({
         setLoadFailed(true);
         finish();
       };
+      deadline = setTimeout(
+        () => fail(new Error("Map preview rendering exceeded 30 seconds")),
+        30_000,
+      );
       loadMapLibre()
         .then((M) => {
           if (cancelled) return;
@@ -234,6 +241,7 @@ function ReadyActivityMapTile({
         .catch(fail);
       return () => {
         cancelled = true;
+        clearTimeout(deadline);
         map?.remove();
         map = null;
       };
@@ -312,8 +320,10 @@ function ReadyActivityMapTile({
           )}
         </div>
       </div>
-      <span className="pointer-events-none absolute bottom-0 right-0 bg-white/80 px-1 text-[9px] text-black">
-        {mapAttribution.replace(/<[^>]+>/g, "")}
+      <span
+        className={`pointer-events-none absolute bottom-0 right-0 max-w-full break-words bg-white/80 px-1 text-black ${compact ? "text-[7px] leading-[8px] font-normal" : "text-[9px] leading-3"}`}
+      >
+        {mapAttributionText}
       </span>
       {loadFailed ? (
         <div

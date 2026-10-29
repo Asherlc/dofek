@@ -1,7 +1,15 @@
 import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 
-export const mapAttribution =
-  '<a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors';
+const mapCredits = [
+  { label: "OpenFreeMap", url: "https://openfreemap.org/" },
+  { label: "OpenMapTiles", url: "https://www.openmaptiles.org/" },
+  { label: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
+];
+
+export const mapAttributionText = mapCredits.map(({ label }) => label).join(" · ");
+export const mapAttribution = mapCredits
+  .map(({ label, url }) => `<a href="${url}">${label}</a>`)
+  .join(" · ");
 
 /** Shared map appearance; activity data is supplied as separate overlays. */
 export function createMapStyle(mode: "light" | "dark") {

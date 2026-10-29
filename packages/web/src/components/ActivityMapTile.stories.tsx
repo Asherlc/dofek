@@ -1,4 +1,6 @@
+import { mapAttributionText } from "@dofek/training/map-style";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
 import { ActivityMapTile } from "./ActivityMapTile.tsx";
 
@@ -64,5 +66,18 @@ export const ClimbingSourceLocations: Story = {
   name: "Climbing source points",
   args: {
     location: climbingSourceLocation,
+  },
+};
+
+export const Thumbnail: Story = {
+  args: { variant: "thumbnail" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const tile = canvas.getByTestId("activity-map-tile").getBoundingClientRect();
+    const credit = canvas.getByText(mapAttributionText).getBoundingClientRect();
+    await expect(credit.top).toBeGreaterThanOrEqual(tile.top);
+    await expect(credit.bottom).toBeLessThanOrEqual(tile.bottom);
+    await expect(credit.left).toBeGreaterThanOrEqual(tile.left);
+    await expect(credit.right).toBeLessThanOrEqual(tile.right);
   },
 };
