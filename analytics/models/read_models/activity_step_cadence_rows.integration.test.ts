@@ -197,8 +197,13 @@ describe("running step cadence read model", () => {
   it("creates the first cadence table with the canonical inferred schema and usable workout keys", async () => {
     await steps("08:00:00", "08:01:00", 150);
     const firstBuildSql = render("activity_step_cadence_rows", undefined, false);
+    await client.command({
+      query: `CREATE TABLE ${database}.first_step_cadence_rows
+        ENGINE=ReplacingMergeTree(refresh_version) ORDER BY (user_id,activity_id)
+        EMPTY AS ${firstBuildSql}`,
+    });
     const inferred = await client.query({
-      query: `DESCRIBE TABLE (${firstBuildSql})`,
+      query: `DESCRIBE TABLE ${database}.first_step_cadence_rows`,
       format: "JSONEachRow",
     });
     const canonical = await client.query({
@@ -210,11 +215,6 @@ describe("running step cadence read model", () => {
     expect(columnTypes(await inferred.json<{ name: string; type: string }>())).toEqual(
       columnTypes(await canonical.json<{ name: string; type: string }>()),
     );
-    await client.command({
-      query: `CREATE TABLE ${database}.first_step_cadence_rows
-        ENGINE=ReplacingMergeTree(refresh_version) ORDER BY (user_id,activity_id)
-        EMPTY AS ${firstBuildSql}`,
-    });
     await client.command({
       query: `INSERT INTO ${database}.first_step_cadence_rows ${firstBuildSql}`,
     });

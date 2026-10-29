@@ -99,6 +99,15 @@ integration shards instead of being counted as uncovered Docker-free mutants.
 Use `pnpm test:integration` for integration behavior and `pnpm test:mutation`
 for mutation quality; do not mix the two execution models.
 
+For dbt first-build schema tests, execute the adapter's actual
+[`CREATE TABLE ... EMPTY AS` path](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/include/clickhouse/macros/materializations/table.sql),
+then compare the created table's complete schema with the canonical table and
+verify inserted rows. On pinned ClickHouse 26.6.1.1193,
+[`DESCRIBE TABLE (SELECT ...)`](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Interpreters/InterpreterDescribeQuery.cpp#L155-L173)
+can build unexecuted materialized CTE plans that retain source tables and block
+synchronous cleanup; the [incident record](production-incident-baseline.md#2026-10-28--describe-subquery-retained-cadence-source-tables-during-ci-teardown)
+documents the executable reproduction and ownership evidence.
+
 Sources:
 
 - PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
