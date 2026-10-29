@@ -84,18 +84,30 @@ describe("bounded activity source and marker verification", () => {
   const keys = [[activityPerformanceUserId, activityPerformanceId(1)]];
 
   beforeAll(async () => {
+    const startedAt = performance.now();
+    const progress = (phase: string) =>
+      process.stdout.write(
+        `${JSON.stringify({ activityKeyVerificationSetup: { database, phase, elapsedMs: performance.now() - startedAt } })}\n`,
+      );
     process.stdout.write(
       `${JSON.stringify({ task6BKeyFixture: { database, phase: "setup", context: activitySensorCoverageQuerySettings } })}\n`,
     );
+    progress("source-fixture-started");
     await createActivityPerformanceFixture(client, database);
-    for (const name of ["activity_pace_curve", "activity_heart_rate_distribution"])
+    progress("source-fixture-completed");
+    for (const name of ["activity_pace_curve", "activity_heart_rate_distribution"]) {
+      progress(`target-table-${name}-started`);
       await client.command({
         query: buildTestAnalyticsTableStatement(`analytics.${name}`).replaceAll(
           "analytics.",
           `${database}.`,
         ),
       });
+      progress(`target-table-${name}-completed`);
+    }
+    progress("dbt-view-started");
     await runActivityPerformanceModel(database, model, readModelSql(`${model}.sql`));
+    progress("dbt-view-completed");
   });
   beforeEach(async () => {
     for (const table of [
