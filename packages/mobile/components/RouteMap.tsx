@@ -2,11 +2,29 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
+import { createMapStyle } from "@dofek/training/map-style";
+import {
+  Camera,
+  GeoJSONSource,
+  Layer,
+  Marker,
+  Map as NativeMap,
+} from "@maplibre/maplibre-react-native";
 import { useCallback, useMemo, useState } from "react";
-import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from "react-native";
+import { captureException } from "../lib/telemetry";
 import { colors, radius, spacing } from "../theme";
+import { CompactRouteMap } from "./CompactRouteMap";
+import { MapAttribution } from "./MapAttribution";
 import { MapProcessingState } from "./MapProcessingState";
+import { QueryStatePanel } from "./QueryStatePanel";
 
 interface GpsPoint {
   lat: number | null;
@@ -31,6 +49,9 @@ export function RouteMap({
   compact = false,
   onSelectEntry,
 }: RouteMapProps) {
+  const mode = useColorScheme() === "dark" ? "dark" : "light";
+  const mapStyle = useMemo(() => createMapStyle(mode), [mode]);
+  const [mapFailed, setMapFailed] = useState(false);
   const [mapWidth, setMapWidth] = useState<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
@@ -53,7 +74,7 @@ export function RouteMap({
     [points],
   );
 
-  const region = useMemo(() => {
+  const bounds = useMemo<[number, number, number, number] | null>(() => {
     const mapPoints = [
       ...gpsPoints,
       ...(climbMarkers ?? []).map(({ location }) => ({
@@ -79,82 +100,105 @@ export function RouteMap({
     const latDelta = Math.max((maxLat - minLat) * 1.3, 0.005);
     const lngDelta = Math.max((maxLng - minLng) * 1.3, 0.005);
 
-    return {
-      latitude: (minLat + maxLat) / 2,
-      longitude: (minLng + maxLng) / 2,
-      latitudeDelta: latDelta,
-      longitudeDelta: lngDelta,
-    };
+    return [
+      (minLng + maxLng - lngDelta) / 2,
+      (minLat + maxLat - latDelta) / 2,
+      (minLng + maxLng + lngDelta) / 2,
+      (minLat + maxLat + latDelta) / 2,
+    ];
   }, [gpsPoints, climbMarkers]);
+  const initialViewState = useMemo(() => (bounds ? { bounds } : undefined), [bounds]);
 
-  if (region == null) return null;
+  const coordinates = useMemo(
+    () => gpsPoints.map((point): [number, number] => [point.lng, point.lat]),
+    [gpsPoints],
+  );
 
-  const coordinates = gpsPoints.map((point) => ({
-    latitude: point.lat,
-    longitude: point.lng,
-  }));
+  if (bounds == null) return null;
+  if (compact)
+    return (
+      <View style={styles.compactContainer}>
+        <CompactRouteMap
+          bounds={bounds}
+          coordinates={coordinates}
+          markerGroups={markerGroups}
+          hoveredPosition={hoveredPosition}
+          mode={mode}
+        />
+        <MapAttribution />
+      </View>
+    );
 
   const startCoordinate = coordinates[0];
   const endCoordinate = coordinates[coordinates.length - 1];
 
   return (
-    <View style={compact ? styles.compactContainer : styles.container}>
-      {!compact && gpsPoints.length > 0 && <Text style={styles.title}>Route Map</Text>}
-      <View
-        style={[styles.mapWrapper, { height: compact ? 140 : MAP_HEIGHT }]}
-        onLayout={handleLayout}
-      >
+    <View style={styles.container}>
+      {gpsPoints.length > 0 && <Text style={styles.title}>Route Map</Text>}
+      <View style={[styles.mapWrapper, { height: MAP_HEIGHT }]} onLayout={handleLayout}>
         {mapWidth != null && (
-          <MapView
-            style={{ width: mapWidth, height: compact ? 140 : MAP_HEIGHT }}
-            pointerEvents={compact ? "none" : "auto"}
-            region={region}
-            scrollEnabled={!compact}
-            zoomEnabled={!compact}
-            rotateEnabled={false}
-            pitchEnabled={false}
-            toolbarEnabled={false}
-            showsUserLocation={false}
-            showsPointsOfInterests={false}
-            onMapReady={() => setMapReady(true)}
-            loadingEnabled
-            loadingIndicatorColor={colors.accent}
-            loadingBackgroundColor={colors.surfaceSecondary}
+          <NativeMap
+            style={{ width: mapWidth, height: MAP_HEIGHT }}
+            pointerEvents="auto"
+            mapStyle={mapStyle}
+            dragPan
+            touchZoom
+            doubleTapZoom
+            doubleTapHoldZoom
+            touchRotate={false}
+            touchPitch={false}
+            attribution
+            onDidFinishLoadingMap={() => setMapReady(true)}
+            onDidFailLoadingMap={() => {
+              captureException(new Error("Route map failed to load"));
+              setMapFailed(true);
+            }}
           >
-            {coordinates.length > 0 && (
-              <Polyline
-                coordinates={coordinates}
-                strokeColor={statusColors.positive}
-                strokeWidth={3}
-              />
+            <Camera initialViewState={initialViewState} bounds={bounds} duration={0} />
+            {coordinates.length > 1 && (
+              <GeoJSONSource
+                id="activity-route"
+                data={{
+                  type: "Feature",
+                  properties: {},
+                  geometry: { type: "LineString", coordinates },
+                }}
+              >
+                <Layer
+                  id="activity-route-line"
+                  type="line"
+                  paint={{ "line-color": statusColors.positive, "line-width": 3 }}
+                  layout={{ "line-cap": "round", "line-join": "round" }}
+                />
+              </GeoJSONSource>
             )}
             {startCoordinate != null && (
-              <Marker coordinate={startCoordinate} pinColor={statusColors.positive} title="Start" />
+              <Marker id="route-start" lngLat={startCoordinate} accessibilityLabel="Start">
+                <View style={[styles.sourceMarker, { backgroundColor: statusColors.positive }]} />
+              </Marker>
             )}
             {endCoordinate != null && (
-              <Marker coordinate={endCoordinate} pinColor={statusColors.danger} title="Finish" />
+              <Marker id="route-finish" lngLat={endCoordinate} accessibilityLabel="Finish">
+                <View style={[styles.sourceMarker, { backgroundColor: statusColors.danger }]} />
+              </Marker>
             )}
             {markerGroups.map(({ coordinates, markers, title, description }) => (
               <Marker
                 key={`${coordinates.latitude}:${coordinates.longitude}`}
-                identifier={markers[0].entryId}
-                coordinate={coordinates}
-                title={title}
-                description={description}
-                anchor={{ x: 0.5, y: 0.5 }}
-                onPress={
-                  compact
-                    ? undefined
-                    : () => {
-                        if (markers.length === 1) {
-                          setSelectedEntryId(markers[0].entryId);
-                          setInspectedPoint(null);
-                          onSelectEntry?.(markers[0].entryId);
-                        } else {
-                          setInspectedPoint(coordinates);
-                        }
-                      }
-                }
+                id={markers[0].entryId}
+                lngLat={[coordinates.longitude, coordinates.latitude]}
+                accessibilityLabel={title}
+                accessibilityHint={description}
+                anchor="center"
+                onPress={() => {
+                  if (markers.length === 1) {
+                    setSelectedEntryId(markers[0].entryId);
+                    setInspectedPoint(null);
+                    onSelectEntry?.(markers[0].entryId);
+                  } else {
+                    setInspectedPoint(coordinates);
+                  }
+                }}
               >
                 <View
                   style={[
@@ -170,24 +214,33 @@ export function RouteMap({
             ))}
             {hoveredPosition != null && (
               <Marker
-                coordinate={{
-                  latitude: hoveredPosition.lat,
-                  longitude: hoveredPosition.lng,
-                }}
-                anchor={{ x: 0.5, y: 0.5 }}
+                id="route-hover"
+                lngLat={[hoveredPosition.lng, hoveredPosition.lat]}
+                accessibilityLabel="Selected chart position"
+                anchor="center"
               >
                 <View style={styles.hoverMarker} />
               </Marker>
             )}
-          </MapView>
+          </NativeMap>
         )}
-        {!mapReady && (
+        {mapFailed && (
+          <View style={StyleSheet.absoluteFill}>
+            <QueryStatePanel
+              variant="error"
+              message="Map unavailable. Check your connection and reopen this activity."
+              minHeight={MAP_HEIGHT}
+            />
+          </View>
+        )}
+        {!mapReady && !mapFailed && (
           <View style={StyleSheet.absoluteFill}>
             <MapProcessingState />
           </View>
         )}
       </View>
-      {!compact && inspectedPoint && (
+      <MapAttribution />
+      {inspectedPoint && (
         <View accessibilityLabel="Climbing entries at this location" style={styles.occurrences}>
           {climbMarkers.map((marker) => {
             const { latitude, longitude } = marker.location.coordinates;

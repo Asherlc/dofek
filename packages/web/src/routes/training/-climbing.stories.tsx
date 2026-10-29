@@ -13,7 +13,7 @@ import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { expect, within } from "storybook/test";
 import { z } from "zod";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-test-helpers.ts";
 import { climbingAttachmentActivities } from "../../components/climbing-log-attachment-test-helpers.ts";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
