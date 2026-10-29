@@ -37,26 +37,33 @@ export function ActivityDetailHeader({
 
   return (
     <View style={styles.header}>
-      <View style={styles.headerRow}>
-        <ActivityTypeIcon activityType={activity.activityType} size={48} />
-        <View style={styles.headerText}>
-          <Text style={styles.name}>
-            {activity.name ??
-              formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
-          </Text>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>
-              {formatActivityTypeLabel(activity.activityType)}
+      <ActivitySourceDisclosure
+        tree={activity.sourceTree}
+        {...hardwareProps}
+        heading={
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              <ActivityTypeIcon activityType={activity.activityType} size={48} />
+              <View style={styles.headerText}>
+                <Text style={styles.name}>
+                  {activity.name ??
+                    formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
+                </Text>
+                <View style={styles.typeBadge}>
+                  <Text style={styles.typeBadgeText}>
+                    {formatActivityTypeLabel(activity.activityType)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            <Text style={styles.dateTime}>
+              {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
+              {" at "}
+              {localStartTime === "--" ? "Local time unavailable" : localStartTime}
             </Text>
           </View>
-        </View>
-      </View>
-      <Text style={styles.dateTime}>
-        {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
-        {" at "}
-        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
-      </Text>
-      <ActivitySourceDisclosure tree={activity.sourceTree} {...hardwareProps} />
+        }
+      />
       {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
     </View>
   );
