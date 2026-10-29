@@ -14,7 +14,7 @@ export interface HealthRecord {
 export function parseRecord(attrs: Record<string, string>): HealthRecord | null {
   const type = attrs.type;
   const value = parseFloat(attrs.value ?? "");
-  if (!type || Number.isNaN(value)) return null;
+  if (!type || !Number.isFinite(value)) return null;
 
   return {
     type,

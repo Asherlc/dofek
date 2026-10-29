@@ -95,7 +95,7 @@ export default function StrainScreen() {
     },
   );
   const runningQuery = trpc.running.dynamicsV2.useQuery(
-    { days },
+    { days, responseVersion: 2 },
     {
       enabled: isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,

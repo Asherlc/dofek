@@ -90,3 +90,10 @@ export const ZeroCadence: Story = {
     },
   },
 };
+
+export const MalformedResponse: Story = {
+  args: { data: { data: runningData.data, availability: runningData.availability } },
+};
+export const MalformedResponseWithError: Story = {
+  args: { data: null, error: new Error("Running sync is still processing. Try again shortly.") },
+};

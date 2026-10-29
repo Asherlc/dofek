@@ -381,10 +381,10 @@ public class HealthKitModule: Module {
                                 self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                             }
                             let snapshot: HealthKitRunningStepSnapshot
-                            if let start = parents.map(\.startDate).min(), let end = parents.map(\.endDate).max() {
+                            if !parents.isEmpty {
                                 // Overlap only discovers candidates; association + parent UUID predicates prove membership.
-                                let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-                                let workouts = try await self.runningWorkouts(predicate: predicate)
+                                let workouts = try await HealthKitRunningStepTransport.discoverWorkouts(
+                                    parents: parents, store: self.healthStore)
                                 snapshot = try await HealthKitRunningStepTransport.read(workouts: workouts,
                                     parentIds: Set(parents.map(\.uuid)),
                                     shouldInclude: { self.accountStateStore.shouldInclude(sampleDate: $0) }, store: self.healthStore)

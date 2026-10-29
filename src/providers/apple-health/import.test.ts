@@ -1045,6 +1045,29 @@ describe("runImport", () => {
     ]);
   });
 
+  it.each(["Infinity", "-Infinity", "1e309", "-1e309"])(
+    "skips nonfinite XML quantity %s while publishing valid records",
+    async (value) => {
+      const xmlPath = join(tmpDir, "nonfinite-import.xml");
+      writeFileSync(
+        xmlPath,
+        `<HealthData>${[value, "250.5"]
+          .map(
+            (quantity) =>
+              `<Record type="HKQuantityTypeIdentifierRunningPower" sourceName="Apple Watch" unit="W" value="${quantity}" startDate="2026-10-28 10:00:00 +0000" endDate="2026-10-28 10:00:01 +0000"/>`,
+          )
+          .join("")}</HealthData>`,
+      );
+      const { db } = createRunImportMockDb();
+      const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+      expect(result.errors).toEqual([]);
+      expect(result.recordsSynced).toBe(1);
+      expect(publishedMetricRows).toEqual([
+        expect.objectContaining({ channel: "power", scalar: 250.5 }),
+      ]);
+    },
+  );
+
   it("imports heart rate records from XML", async () => {
     const xmlPath = join(tmpDir, "hr-import.xml");
     writeFileSync(
@@ -1505,6 +1528,13 @@ describe("runImport (control-flow mutation killers)", () => {
 
     const firstMetricRecord = { type: "metric.type", marker: "first" };
     const secondMetricRecord = { type: "metric.type", marker: "second" };
+    const runningRecords = [
+      "RunningSpeed",
+      "RunningPower",
+      "RunningStrideLength",
+      "RunningGroundContactTime",
+      "RunningVerticalOscillation",
+    ].map((suffix) => ({ type: `HKQuantityTypeIdentifier${suffix}`, marker: suffix }));
     const bodyRecord = { type: "body.type", marker: "body" };
     const upsertMetricStreamBatch = vi.fn().mockResolvedValue(1);
     const upsertBodyMeasurementBatch = vi.fn().mockResolvedValue(1);
@@ -1512,7 +1542,10 @@ describe("runImport (control-flow mutation killers)", () => {
     const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
 
     vi.doMock("./db-insertion.ts", () => ({
-      METRIC_STREAM_TYPES: { "metric.type": true },
+      METRIC_STREAM_TYPES: {
+        "metric.type": true,
+        ...Object.fromEntries(runningRecords.map((record) => [record.type, true])),
+      },
       BODY_MEASUREMENT_TYPES: new Set(["body.type"]),
       DAILY_METRIC_TYPES: new Set(["daily.type"]),
       NUTRITION_TYPES: { "nutrition.type": true },
@@ -1537,7 +1570,7 @@ describe("runImport (control-flow mutation killers)", () => {
             onRecordBatch: (records: Array<{ type: string; marker: string }>) => Promise<void>;
           },
         ) => {
-          await handlers.onRecordBatch([firstMetricRecord]);
+          await handlers.onRecordBatch([firstMetricRecord, ...runningRecords]);
           await handlers.onRecordBatch([bodyRecord]);
           await handlers.onRecordBatch([secondMetricRecord]);
           return { recordCount: 3, workoutCount: 0, sleepCount: 0, categoryCount: 0 };
@@ -1561,7 +1594,7 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertMetricStreamBatch).toHaveBeenCalledWith(
       db,
       "apple_health",
-      [firstMetricRecord],
+      [firstMetricRecord, ...runningRecords],
       expect.objectContaining({ providerId: "apple_health" }),
       undefined,
     );

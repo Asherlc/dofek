@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { lockActivityGroups } from "../../../../src/db/activity-group-reconciliation.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { userProfile } from "../../../../src/db/schema/reference.ts";
-import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import {
+  createTestBarrier,
+  hasDatabaseLockWaiter,
+  setupTestDatabase,
+  type TestContext,
+} from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import {
   createMetricStreamDeletedEvent,
@@ -74,6 +80,118 @@ describe("associated running steps", () => {
         .where(and(eq(activity.userId, owner), eq(activity.externalId, `hk:workout:${run.uuid}`)))
     )[0];
   }
+  async function isolatedCloudRun() {
+    const owner = randomUUID();
+    await ctx.db.insert(userProfile).values({ id: owner, name: "Step grouping" });
+    await ensureProvider(ctx.db, "strava", "Strava", undefined, owner);
+    const id = randomUUID();
+    const groupId = randomUUID();
+    const run = workout();
+    await ctx.db.execute(sql`INSERT INTO fitness.activity
+      (id, group_id, user_id, provider_id, external_id, canonical_type, provider_type, started_at, ended_at)
+      VALUES (${id}, ${groupId}, ${owner}, 'strava', ${id}, 'running', 'Run', ${run.startDate}, ${run.endDate})`);
+    return { owner, run, id, groupId };
+  }
+  async function cloudGroup(id: string) {
+    const [row] = await ctx.db
+      .select({ groupId: activity.groupId })
+      .from(activity)
+      .where(eq(activity.id, id));
+    if (!row) throw new Error("Cloud run missing");
+    return row.groupId;
+  }
+
+  it("immediately groups an overlapping step-only context with the cloud run", async () => {
+    const { owner, run, id } = await isolatedCloudRun();
+    const observation = sample(run);
+    await processRunningStepSamples(ctx.db, owner, [run], [observation], publisher);
+    expect((await stored(run, owner))?.groupId).toBe(await cloudGroup(id));
+    await processRunningStepSamples(ctx.db, owner, [run], [observation], publisher);
+    expect((await stored(run, owner))?.groupId).toBe(await cloudGroup(id));
+    const observations = events.filter((event) => event.userId === owner);
+    expect(observations).toHaveLength(2);
+    expect(observations[1]?.id).toBe(observations[0]?.id);
+  });
+
+  it("restores provider presence before grouping and leaves other partial-list members untouched", async () => {
+    const { owner, run, id } = await isolatedCloudRun();
+    const unrelated = {
+      ...workout(),
+      startDate: "2026-10-21T10:00:00Z",
+      endDate: "2026-10-21T11:00:00Z",
+    };
+    const original = { ...run, startDate: "2026-10-22T10:00:00Z", endDate: "2026-10-22T11:00:00Z" };
+    await processRunningStepSamples(
+      ctx.db,
+      owner,
+      [original, unrelated],
+      [sample(original)],
+      publisher,
+    );
+    const absent = await stored(run, owner);
+    if (!absent) throw new Error("Absent fixture missing");
+    await ctx.db
+      .update(activity)
+      .set({ providerAbsentAt: new Date(), absenceProviderId: "apple_health" })
+      .where(eq(activity.id, absent.id));
+    await processRunningStepSamples(ctx.db, owner, [run], [sample(run)], publisher);
+    expect((await stored(run, owner))?.providerAbsentAt).toBeNull();
+    expect((await stored(run, owner))?.groupId).toBe(await cloudGroup(id));
+    expect((await stored(unrelated, owner))?.providerAbsentAt).toBeNull();
+  });
+
+  it("waits on the group lock before making any context visible", async () => {
+    const { owner, run, id } = await isolatedCloudRun();
+    const acquired = createTestBarrier();
+    const release = createTestBarrier();
+    const holder = ctx.db.transaction(async (transaction) => {
+      await lockActivityGroups(transaction, owner);
+      acquired.resolve();
+      await release.promise;
+    });
+    await acquired.promise;
+    const upload = processRunningStepSamples(ctx.db, owner, [run], [sample(run)], publisher);
+    const completion = Promise.allSettled([holder, upload]);
+    try {
+      await expect.poll(() => hasDatabaseLockWaiter(ctx.db)).toBe(true);
+      expect(await stored(run, owner)).toBeUndefined();
+    } finally {
+      release.resolve();
+      await completion;
+    }
+    expect(await completion).toEqual([
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: 1 },
+    ]);
+    expect((await stored(run, owner))?.groupId).toBe(await cloudGroup(id));
+  });
+
+  it("rolls back earlier context metadata when a later context fails and publishes nothing", async () => {
+    const { owner, run } = await isolatedCloudRun();
+    await processRunningStepSamples(ctx.db, owner, [run], [sample(run)], publisher);
+    const before = await stored(run, owner);
+    const rejected = workout("00000000-0000-4000-8000-000000003144");
+    const eventCount = events.length;
+    await ctx.db.execute(sql`ALTER TABLE fitness.activity ADD CONSTRAINT task2_reject_context
+      CHECK (external_id <> 'hk:workout:00000000-0000-4000-8000-000000003144')`);
+    try {
+      await expect(
+        processRunningStepSamples(
+          ctx.db,
+          owner,
+          [{ ...run, sourceName: "Changed Watch" }, rejected],
+          [sample(run)],
+          publisher,
+        ),
+      ).rejects.toThrow();
+      expect((await stored(run, owner))?.raw).toEqual(before?.raw);
+      expect((await stored(run, owner))?.sourceName).toBe(before?.sourceName);
+      expect(await stored(rejected, owner)).toBeUndefined();
+      expect(events).toHaveLength(eventCount);
+    } finally {
+      await ctx.db.execute(sql`ALTER TABLE fitness.activity DROP CONSTRAINT task2_reject_context`);
+    }
+  });
   it("adds workout contexts without hiding absent list members and restores confirmed presence only", async () => {
     const existing = workout();
     const run = workout();

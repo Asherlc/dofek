@@ -214,6 +214,8 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     minimumSampleDate === null ? null : localCalendarDate(minimumSampleDate);
 
   const allSamples: HealthKitSample[] = [];
+  let totalInserted = 0;
+  const errors: string[] = [];
   const totalTypes = ALL_QUANTITY_TYPES.length;
   let typeIndex = 0;
 
@@ -263,13 +265,17 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     });
 
     const samples = await healthKit.queryQuantitySamples(typeId, startDate, endDate);
-    allSamples.push(
-      ...samples.filter(
-        (sample) =>
-          minimumSampleDate === null ||
-          isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
-      ),
+    const retainedSamples = samples.filter(
+      (sample) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     );
+    if (retainedSamples.length > 0) {
+      onProgress?.(`Pushing ${retainedSamples.length} samples...`);
+      const result = await pushQuantitySampleBatches(trpcClient, retainedSamples, onStage);
+      totalInserted += result.inserted;
+      errors.push(...result.errors);
+    }
     typeIndex++;
   }
 
@@ -304,9 +310,6 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     ),
   );
-
-  let totalInserted = 0;
-  const errors: string[] = [];
 
   // Push quantity samples in batches
   if (allSamples.length > 0) {

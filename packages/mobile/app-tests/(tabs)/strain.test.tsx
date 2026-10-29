@@ -10,9 +10,12 @@ import {
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
-import { runningData } from "../../components/running-training-test-helpers";
+import { intervalRun, runningData } from "../../components/running-training-test-helpers";
 
 let mockTodayQueryDate = "2026-03-28";
+let mockRunningData: unknown;
+let mockRunningLoading = false;
+let mockRunningError: Error | null = null;
 const mockStrengthsState: {
   data: unknown;
   isLoading: boolean;
@@ -137,10 +140,10 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.running.push({ input, options });
           return {
-            data: { ...runningData, data: [] },
-            isLoading: false,
-            isError: false,
-            error: null,
+            data: mockRunningData,
+            isLoading: mockRunningLoading,
+            isError: mockRunningError !== null,
+            error: mockRunningError,
             refetch: vi.fn(),
           };
         },
@@ -301,10 +304,44 @@ vi.mock("../../lib/units", () => ({
 import { captureException } from "../../lib/telemetry";
 
 describe("StrainScreen recent activity navigation", () => {
+  it("requests current running response for the selected range", async () => {
+    mockTimeRangePreference.days = 30;
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(mockRangeQueryCalls.running.at(-1)?.input).toEqual({ days: 30, responseVersion: 2 });
+  });
+  it("reports malformed restored running data once and shows the actionable error", async () => {
+    mockRunningData = { data: runningData.data, availability: runningData.availability };
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const view = render(<StrainScreen />);
+    expect(
+      screen.getByText(
+        "Running data has an unexpected format. Refresh and try again. If it continues, contact support.",
+      ),
+    ).toBeTruthy();
+    expect(captureException).toHaveBeenCalledOnce();
+    view.rerender(<StrainScreen />);
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Open Park Run" })).toBeNull();
+  });
+  it("preserves valid stale running rows and exact refetch error", async () => {
+    mockRunningData = runningData;
+    mockRunningLoading = true;
+    mockRunningError = new Error("Running sync is still processing. Try again shortly.");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText(mockRunningError.message)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Park Run" })).toBeTruthy();
+    expect(screen.getByText("Steps · 30% coverage")).toBeTruthy();
+  });
   it("shows running cadence and form on the training screen", async () => {
+    mockRunningData = { ...runningData, data: [intervalRun] };
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
     expect(screen.getByText("Running Form")).toBeTruthy();
+    expect(screen.getByText("200 spm")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Park Run/ }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/run-2");
   });
 
   it.each([
@@ -349,6 +386,9 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   beforeEach(() => {
+    mockRunningData = { ...runningData, data: [] };
+    mockRunningLoading = false;
+    mockRunningError = null;
     mockRouterPush.mockReset();
     vi.mocked(captureException).mockReset();
     mockRunningInvalidate.mockReset();

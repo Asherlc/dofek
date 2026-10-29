@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { buildIngestMetricStreamCreateTableSql } from "../metric-stream/clickhouse-table.ts";
+import { runningRevisionFixture } from "./activity-data-integrity-cadence-test-helpers.ts";
 import { queryClickHouseRows } from "./activity-data-integrity-clickhouse.ts";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
@@ -102,6 +103,97 @@ describe("activity data integrity repair", () => {
     expect(rows).toEqual([{ started_at: "2026-09-01T23:30:00.123456Z", ended_at: null }]);
     expect(new Date(rows[0]?.started_at ?? "").toISOString()).toBe("2026-09-01T23:30:00.123Z");
   });
+
+  it("finishes 101 revision/member aliases, old-group tombstones and downstream cadence before returning", async () => {
+    await seedProductionDbtFixture(client, database);
+    configureDbtEnvironment(database);
+    const fixture = runningRevisionFixture(TEST_USER_ID);
+    const { records } = fixture;
+    await client.insert({
+      table: `${database}.activity`,
+      format: "JSONEachRow",
+      values: fixture.initialActivityRows,
+    });
+    await client.insert({
+      table: `${database}.metric_stream`,
+      format: "JSONEachRow",
+      values: fixture.initialStepRows,
+    });
+    const input = {
+      userId: TEST_USER_ID,
+      activityIds: records.map((record) => record.member),
+      eventTimeStart: new Date("2026-09-01"),
+      eventTimeEnd: new Date("2026-09-03"),
+    };
+    const cadenceRows = async () => {
+      const result = await client.query({
+        query: `SELECT activity_id,avg_cadence,is_deleted FROM ${database}.activity_step_cadence_rows FINAL WHERE user_id={user:UUID}`,
+        query_params: { user: TEST_USER_ID },
+        format: "JSONEachRow",
+      });
+      return result.json<{ activity_id: string; avg_cadence: number | null; is_deleted: number }>();
+    };
+    // Establish every old row before testing correction of the entire canonical scope.
+    await runActivityIntegrityDbtBuild(input);
+    await runActivityIntegrityDbtBuild(input);
+    const before = await cadenceRows();
+    expect(before).toHaveLength(101);
+    expect(before).toEqual(
+      expect.arrayContaining(
+        records.map((record) => ({
+          activity_id: record.group,
+          avg_cadence: 150,
+          is_deleted: 0,
+        })),
+      ),
+    );
+
+    await client.insert({
+      table: `${database}.activity`,
+      format: "JSONEachRow",
+      values: fixture.revisedActivityRows,
+    });
+    await client.insert({
+      table: `${database}.metric_stream`,
+      format: "JSONEachRow",
+      values: fixture.revisedStepRows,
+    });
+    await runActivityIntegrityDbtBuild(input);
+    const cadence = await cadenceRows();
+    expect(cadence).toHaveLength(202);
+    expect(cadence.filter((row) => row.is_deleted === 0)).toHaveLength(101);
+    for (const record of records) {
+      expect(cadence.find((row) => row.activity_id === record.group)).toMatchObject({
+        is_deleted: 1,
+        avg_cadence: null,
+      });
+      expect(cadence.find((row) => row.activity_id === record.nextGroup)).toMatchObject({
+        is_deleted: 0,
+        avg_cadence: 180,
+      });
+    }
+    const summaries = await client.query({
+      query: `SELECT activity_id,avg_cadence FROM ${database}.activity_summary_rows FINAL WHERE user_id={user:UUID} AND is_deleted=0 AND activity_id IN {ids:Array(UUID)}`,
+      query_params: { user: TEST_USER_ID, ids: records.map((record) => record.nextGroup) },
+      format: "JSONEachRow",
+    });
+    const summaryRows = await summaries.json();
+    expect(summaryRows).toHaveLength(101);
+    expect(summaryRows).toEqual(
+      expect.arrayContaining(
+        records.map((record) => ({
+          activity_id: record.nextGroup,
+          avg_cadence: 180,
+        })),
+      ),
+    );
+    const foreign = await client.query({
+      query: `SELECT count() AS count FROM ${database}.activity_step_cadence_rows FINAL WHERE user_id={user:UUID}`,
+      query_params: { user: fixture.foreignUserId },
+      format: "JSONEachRow",
+    });
+    expect(await foreign.json()).toEqual([{ count: "0" }]);
+  }, 300_000);
 
   it("uses the production dbt path to split a legacy Wahoo/Peloton component, preserve its valid B-C edge, and roll back only local time", async () => {
     await seedProductionDbtFixture(client, database);

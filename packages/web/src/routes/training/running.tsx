@@ -38,7 +38,10 @@ export function RunningTab() {
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const paceTrend = trpc.running.paceTrendV2.useQuery(selectedRangeQueryInput(days));
-  const dynamics = trpc.running.dynamicsV2.useQuery(selectedRangeQueryInput(days));
+  const dynamics = trpc.running.dynamicsV2.useQuery({
+    ...selectedRangeQueryInput(days),
+    responseVersion: 2,
+  });
 
   return (
     <>

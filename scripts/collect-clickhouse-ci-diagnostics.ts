@@ -1,6 +1,7 @@
 import { captureException } from "../src/lib/error-reporting.ts";
 import {
   ClickHouseDiagnosticsInputError,
+  ClickHouseDiagnosticsOperationError,
   collectClickHouseDiagnostics,
 } from "./clickhouse-ci-diagnostics.ts";
 
@@ -17,9 +18,10 @@ try {
   if (result.failures.length) process.exitCode = 1;
 } catch (error) {
   const safeError =
-    error instanceof ClickHouseDiagnosticsInputError
+    error instanceof ClickHouseDiagnosticsInputError ||
+    error instanceof ClickHouseDiagnosticsOperationError
       ? error
-      : new Error("ClickHouse CI diagnostics could not complete; inspect available artifacts");
+      : new Error("ClickHouse CI diagnostics could not complete");
   captureException(safeError);
   console.error(safeError.message);
   process.exitCode = 1;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RunningTrainingCard } from "./RunningTrainingCard";
 import {
   emptyRunning,
@@ -129,5 +129,46 @@ describe("RunningTrainingCard", () => {
     );
     expect(screen.getAllByText("0 spm").length).toBeGreaterThan(0);
     expect(screen.getByText("Steps · 100% coverage")).toBeTruthy();
+  });
+});
+
+vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
+
+import { captureException } from "../lib/telemetry";
+
+beforeEach(() => vi.mocked(captureException).mockClear());
+describe("running response validation", () => {
+  it.each([
+    null,
+    { data: runningData.data, availability: runningData.availability },
+    {
+      ...runningData,
+      cadenceAvailability: { ...runningData.cadenceAvailability, observedCount: -1 },
+    },
+    { ...runningData, data: [{ ...intervalRun, cadenceBasis: "invalid" }] },
+    { ...runningData, data: [{ ...intervalRun, distanceKm: "bad" }] },
+  ])("rejects malformed restored data and reports once: %j", (data) => {
+    const view = render(
+      <RunningTrainingCard
+        {...props}
+        data={data}
+        loading
+        error={new Error("Sync intervals first.")}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Running data has an unexpected format. Refresh and try again. If it continues, contact support.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Sync intervals first.")).toBeTruthy();
+    expect(screen.queryByText("Park Run")).toBeNull();
+    expect(captureException).toHaveBeenCalledOnce();
+    view.rerender(<RunningTrainingCard {...props} data={data} loading error={null} />);
+    expect(captureException).toHaveBeenCalledOnce();
+  });
+  it("does not report undefined loading as malformed", () => {
+    render(<RunningTrainingCard {...props} data={undefined} loading />);
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

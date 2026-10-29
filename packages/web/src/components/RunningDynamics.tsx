@@ -1,7 +1,14 @@
 import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { runningCadenceLabel } from "@dofek/training/running-cadence";
-import type { RunningDynamicsRow, TrainingChartAvailability } from "dofek-server/types";
+import {
+  RUNNING_DYNAMICS_INVALID_RESPONSE_MESSAGE,
+  type RunningDynamicsResponseV2,
+  type RunningDynamicsRow,
+  runningDynamicsResponseV2Schema,
+} from "@dofek/training/running-response";
+import type { TrainingChartAvailability } from "@dofek/training/training-chart-availability";
+import { useEffect, useMemo } from "react";
 import {
   chartColors,
   dofekAxis,
@@ -11,6 +18,7 @@ import {
   dofekTooltip,
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { DofekChart } from "./DofekChart.tsx";
@@ -19,25 +27,33 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 type DynamicsRow = RunningDynamicsRow;
-export interface RunningDynamicsData {
-  data: RunningDynamicsRow[];
-  availability: TrainingChartAvailability;
-  cadenceAvailability: TrainingChartAvailability;
-}
+export type RunningDynamicsData = RunningDynamicsResponseV2;
 export function RunningDynamics({
-  data,
+  data: rawData,
   loading,
   error,
 }: {
-  data: RunningDynamicsData | undefined;
+  data: unknown;
   loading: boolean;
   error: { message: string } | null;
 }) {
   const units = useUnitConverter();
+  const parsed = useMemo(
+    () => (rawData === undefined ? undefined : runningDynamicsResponseV2Schema.safeParse(rawData)),
+    [rawData],
+  );
+  const failure = parsed && !parsed.success ? parsed.error : undefined;
+  useEffect(() => {
+    if (failure) captureException(failure, { context: "Running data" });
+  }, [failure]);
+  const data = parsed?.success ? parsed.data : undefined;
   return (
     <>
       {error && <QueryStatePanel error={error} />}
-      {(!error || data) && (
+      {failure && (
+        <QueryStatePanel error={{ message: RUNNING_DYNAMICS_INVALID_RESPONSE_MESSAGE }} />
+      )}
+      {!failure && (!error || data) && (
         <>
           <section>
             <h2 className="mb-1 text-sm font-medium text-muted uppercase tracking-wider">

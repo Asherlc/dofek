@@ -21,6 +21,41 @@ struct HealthKitRunningStepDeltaPayload {
 enum HealthKitRunningStepTransport {
     static let anchoredPageSize = 500
 
+    static func discoverWorkouts(
+        parents: [HKQuantitySample],
+        queryWorkouts: ([DateInterval]) async throws -> [HKWorkout]
+    ) async throws -> [HKWorkout] {
+        var intervals = parents.map { DateInterval(start: $0.startDate, end: $0.endDate) }
+        intervals.sort { first, second in
+            if first.start == second.start { return first.end < second.end }
+            return first.start < second.start
+        }
+        guard !intervals.isEmpty else { return [] }
+        var merged: [DateInterval] = []
+        for interval in intervals {
+            if let previous = merged.last, interval.start <= previous.end {
+                merged[merged.count - 1] = DateInterval(start: previous.start, end: max(previous.end, interval.end))
+            } else {
+                merged.append(interval)
+            }
+        }
+        var knownIds = Set<UUID>()
+        return try await queryWorkouts(merged).filter { knownIds.insert($0.uuid).inserted }
+    }
+
+    static func discoverWorkouts(parents: [HKQuantitySample], store: HKHealthStore) async throws -> [HKWorkout] {
+        try await discoverWorkouts(parents: parents) { intervals in
+            let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                HKQuery.predicateForWorkouts(with: .running),
+                NSCompoundPredicate(orPredicateWithSubpredicates: intervals.map {
+                    HKQuery.predicateForSamples(withStart: $0.start, end: $0.end, options: [])
+                }),
+            ])
+            return try await querySamples(type: HKWorkoutType.workoutType(), predicate: predicate, store: store)
+                .compactMap { $0 as? HKWorkout }
+        }
+    }
+
     static func snapshot(
         workouts: [HKWorkout],
         shouldInclude: (Date) -> Bool,
@@ -93,13 +128,7 @@ enum HealthKitRunningStepTransport {
     static func read(workouts: [HKWorkout], parentIds: Set<UUID>? = nil,
                      shouldInclude: (Date) -> Bool, store: HKHealthStore) async throws -> HealthKitRunningStepSnapshot {
         try await snapshot(workouts: workouts, shouldInclude: shouldInclude, discoverWorkouts: { parents in
-            guard let start = parents.map(\.startDate).min(), let end = parents.map(\.endDate).max() else { return [] }
-            let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                HKQuery.predicateForWorkouts(with: .running),
-                HKQuery.predicateForSamples(withStart: start, end: end, options: []),
-            ])
-            return try await querySamples(type: HKWorkoutType.workoutType(), predicate: predicate, store: store)
-                .compactMap { $0 as? HKWorkout }
+            try await discoverWorkouts(parents: parents, store: store)
         }, readParents: { workout in
             var predicates = [HKQuery.predicateForObjects(from: workout)]
             if let parentIds { predicates.append(HKQuery.predicateForObjects(with: parentIds)) }

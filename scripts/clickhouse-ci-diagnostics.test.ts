@@ -8,7 +8,7 @@ const directories: string[] = [];
 const containerId = "a".repeat(64);
 const password = "private-ci-password";
 
-function fixture(failCapture = "") {
+function fixture(failCapture = "", extraLog = "", exception?: string) {
   const directory = mkdtempSync(join(tmpdir(), "clickhouse-diagnostics-test-"));
   directories.push(directory);
   const commands = join(directory, "commands.jsonl");
@@ -39,10 +39,11 @@ if (args[0] === 'inspect') {
   process.stdout.write('2026.10.28 22:21:27 [ 42 ] {query-id} <Error> Code: 60. Unknown table. In scope SELECT \\'exception-payload-secret\\'\\n');
   process.stdout.write('2026.10.28 22:21:27 [ 42 ] {query-id} <Error> url=http://user:${password}@example.test/?token=unknown-token Authorization: Bearer unknown-bearer\\n');
   process.stdout.write('0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x123\\n');
+  process.stdout.write(${JSON.stringify(extraLog)});
 } else if (query.includes('system.stack_trace')) {
   process.stdout.write(JSON.stringify({ query_id: 'drop-id', thread_id: 42, thread_name: 'QueryWorker', trace: [123,456] }) + '\\n');
 } else {
-  process.stdout.write(JSON.stringify({ query_id: 'drop-id', exception: "waiting for lock (in query: /* dbt */ EXPLAIN SELECT 'query-payload-secret')", query_duration_ms: 120000, stack_trace: 'DB::DatabaseAtomic::waitTableFinallyDropped()' }) + '\\n');
+  process.stdout.write(JSON.stringify({ query_id: 'drop-id', exception: ${JSON.stringify(exception ?? "waiting for lock (in query: /* dbt */ EXPLAIN SELECT 'query-payload-secret')")}, query_duration_ms: 120000, stack_trace: 'DB::DatabaseAtomic::waitTableFinallyDropped()' }) + '\\n');
 }
 if (${JSON.stringify(failCapture)} && query.includes(${JSON.stringify(failCapture)})) {
   process.stderr.write('capture failed password=${password} http://user:${password}@example.test');
@@ -234,4 +235,78 @@ describe("ClickHouse CI diagnostics", () => {
       }
     },
   );
+});
+
+describe("SQL continuation record boundaries", () => {
+  it("redacts timestamp-like SQL across every public log artifact and preserves later records", async () => {
+    const { outputDirectory } = fixture(
+      "",
+      [
+        "2026.10.28 22:21:27.100 [ 42 ] {sql-id} <Debug> executeQuery: SELECT 'start-secret',",
+        "2026-10-28 22:21:28 'timestamp-payload-secret',",
+        "2026.10.28 22:21:29 'dotted-payload-secret'",
+        "2026.10.28 22:21:30.123 [ 43 ] {later-query-id} <Information> DatabaseAtomic: waiting for drop lock",
+        "2026-10-28T22:21:31.000000000Z 2026.10.28 22:21:31.123 [ 44 ] {later-error-id} <Error> executeQuery: Code: 473. Cannot drop table: waiting for lock (in query: SELECT 'later-sql-secret')",
+        "0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x456",
+        "",
+      ].join("\n"),
+    );
+    await collectClickHouseDiagnostics({ containerId, outputDirectory });
+    for (const name of ["docker-logs", "server", "server-error"]) {
+      const artifact = readFileSync(join(outputDirectory, `${name}.stdout.log`), "utf8");
+      expect(artifact).not.toContain("timestamp-payload-secret");
+      expect(artifact).not.toContain("dotted-payload-secret");
+      expect(artifact).not.toContain("later-sql-secret");
+      expect(artifact).toContain(
+        "{later-query-id} <Information> DatabaseAtomic: waiting for drop lock",
+      );
+      expect(artifact).toContain(
+        "{later-error-id} <Error> executeQuery: Code: 473. Cannot drop table: waiting for lock",
+      );
+      expect(artifact).toContain("DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x456");
+    }
+  });
+
+  it.each([
+    ["Error", "DatabaseAtomic (default)", ""],
+    ["Information", "DatabaseAtomic (default)", "2026-10-28T22:21:28.000000000Z "],
+    ["Error", "default.source (00000000-0000-0000-0000-000000000001)", ""],
+  ])("preserves %s records from logger %s after SQL", async (severity, logger, prefix) => {
+    const errorContext = `${logger}: Code: 473. Cannot drop table: waiting for lock held by query other-id`;
+    const { outputDirectory } = fixture(
+      "",
+      [
+        "2026.10.28 22:21:27.100 [ 42 ] {sql-id} <Debug> executeQuery: SELECT 'logger-payload-secret'",
+        `${prefix}2026.10.28 22:21:28.123 [ 43 ] {} <${severity}> ${errorContext}`,
+        "0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x456",
+        "",
+      ].join("\n"),
+    );
+    await collectClickHouseDiagnostics({ containerId, outputDirectory });
+    for (const name of ["docker-logs", "server", "server-error"]) {
+      const artifact = readFileSync(join(outputDirectory, `${name}.stdout.log`), "utf8");
+      expect(artifact).toContain(errorContext);
+      expect(artifact).toContain("DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x456");
+      expect(artifact).not.toContain("logger-payload-secret");
+    }
+  });
+
+  it("does not trust log-like boundaries embedded inside structured exception strings", async () => {
+    const { outputDirectory } = fixture(
+      "",
+      "",
+      [
+        "Code: 473. waiting for lock (in query: SELECT 'first-secret',",
+        "2026.10.28 22:21:29.123 [ 42 ] {fake-id} <Error> fake: 'structured-payload-secret'",
+        "0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x789",
+      ].join("\n"),
+    );
+    await collectClickHouseDiagnostics({ containerId, outputDirectory });
+    const row = JSON.parse(readFileSync(join(outputDirectory, "query-log.stdout.log"), "utf8"));
+    expect(row.query_id).toBe("drop-id");
+    expect(row.exception).toContain("Code: 473. waiting for lock");
+    expect(row.exception).not.toContain("structured-payload-secret");
+    expect(row.exception).toContain("DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x789");
+    expect(row.stack_trace).toBe("DB::DatabaseAtomic::waitTableFinallyDropped()");
+  });
 });

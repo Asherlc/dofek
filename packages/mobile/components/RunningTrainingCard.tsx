@@ -1,40 +1,56 @@
 import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { runningCadenceLabel } from "@dofek/training/running-cadence";
-import type { RunningDynamicsRow, TrainingChartAvailability } from "dofek-server/types";
+import {
+  RUNNING_DYNAMICS_INVALID_RESPONSE_MESSAGE,
+  runningDynamicsResponseV2Schema,
+} from "@dofek/training/running-response";
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { safeParseData } from "../lib/safe-parse";
 import { chartColors, colors, spacing } from "../theme";
 import { SparkLine } from "./charts/SparkLine";
 import { QueryStatePanel } from "./QueryStatePanel";
 import { TrainingChartEmptyState } from "./TrainingChartEmptyState";
 
-interface RunningTrainingData {
-  data: RunningDynamicsRow[];
-  availability: TrainingChartAvailability;
-  cadenceAvailability: TrainingChartAvailability;
-}
 export function RunningTrainingCard({
-  data,
+  data: rawData,
   loading,
   error,
   onRetry,
   onOpenActivity,
   units,
 }: {
-  data: RunningTrainingData | undefined;
+  data: unknown;
   units: UnitConverter;
   loading: boolean;
   error: { message: string } | null;
   onRetry?: () => void;
   onOpenActivity: (id: string) => void;
 }) {
+  const parsed = useMemo(
+    () =>
+      rawData === undefined
+        ? undefined
+        : safeParseData(runningDynamicsResponseV2Schema, rawData, "Running data"),
+    [rawData],
+  );
+  const data = parsed?.data;
+  const validationFailed = parsed?.error != null;
   return (
     <View style={styles.card}>
       <Text accessibilityRole="header" style={styles.title}>
         Running
       </Text>
       {error && <QueryStatePanel variant="error" message={error.message} onRetry={onRetry} />}
-      {loading && !data && <QueryStatePanel variant="loading" />}
+      {validationFailed && (
+        <QueryStatePanel
+          variant="error"
+          message={RUNNING_DYNAMICS_INVALID_RESPONSE_MESSAGE}
+          onRetry={onRetry}
+        />
+      )}
+      {loading && !data && !error && !validationFailed && <QueryStatePanel variant="loading" />}
       {data && (
         <>
           <Text accessibilityRole="header" style={styles.heading}>

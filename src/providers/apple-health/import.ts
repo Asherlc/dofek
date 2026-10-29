@@ -49,6 +49,7 @@ import {
   parseFhirObservation,
 } from "./fhir.ts";
 import { type CategoryRecord, type HealthRecord, normalizedCategoryMetadata } from "./records.ts";
+import { RUNNING_QUANTITY_TYPES } from "./running-quantities.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
@@ -336,7 +337,11 @@ export async function runImport(
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
           unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
         ]);
-        dailyAggregateMetricRecords.push(...metricRecords);
+        for (const record of metricRecords) {
+          if (!Object.hasOwn(RUNNING_QUANTITY_TYPES, record.type)) {
+            dailyAggregateMetricRecords.push(record);
+          }
+        }
         for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {

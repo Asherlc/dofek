@@ -231,7 +231,7 @@ describe("RunningTab", () => {
       expect(state.queryCalls).toEqual([
         { name: "paceCurve", input: { days: 30 } },
         { name: "paceTrendV2", input: { days: 30 } },
-        { name: "dynamicsV2", input: { days: 30 } },
+        { name: "dynamicsV2", input: { days: 30, responseVersion: 2 } },
       ]);
     });
 
@@ -244,7 +244,7 @@ describe("RunningTab", () => {
       expect(state.queryCalls).toEqual([
         { name: "paceCurve", input: { days: null } },
         { name: "paceTrendV2", input: { days: null } },
-        { name: "dynamicsV2", input: { days: null } },
+        { name: "dynamicsV2", input: { days: null, responseVersion: 2 } },
       ]);
     });
   });
@@ -453,7 +453,11 @@ describe("RunningTab", () => {
       error: null,
     };
     dynamicsQuery = {
-      data: { data: [], availability: mockDynamicsResponse.availability },
+      data: {
+        data: [],
+        availability: mockDynamicsResponse.availability,
+        cadenceAvailability: mockDynamicsResponse.cadenceAvailability,
+      },
       isLoading: false,
       error: null,
     };
@@ -522,6 +526,7 @@ describe("RunningTab", () => {
           },
         ],
         availability: mockDynamicsResponse.availability,
+        cadenceAvailability: mockDynamicsResponse.cadenceAvailability,
       },
       isLoading: false,
       error: null,

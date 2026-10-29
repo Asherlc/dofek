@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncDatabase } from "../../../../src/db/index.ts";
+import {
+  lockActivityGroups,
+  reconcileActivityGroups,
+} from "../../../../src/db/activity-group-reconciliation.ts";
+import { markProviderActivityPresent } from "../../../../src/db/provider-activity-sync.ts";
 import {
   createMetricStreamEvent,
   type MetricStreamEventV2,
@@ -15,6 +19,10 @@ vi.mock("../routers/health-kit-sync-processors.ts", () => ({
 }));
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   markProviderActivityPresent: vi.fn(),
+}));
+vi.mock("../../../../src/db/activity-group-reconciliation.ts", () => ({
+  lockActivityGroups: vi.fn(),
+  reconcileActivityGroups: vi.fn(),
 }));
 vi.mock("../../../../src/db/provider-data-deletion.ts", () => ({
   getProviderDataGenerations: async (
@@ -47,7 +55,7 @@ const sample: RunningStepSample = {
   sourceBundle: "watch",
   workoutUuids: [run.uuid],
 };
-function database(): SyncDatabase {
+function database() {
   const db = {
     execute: vi.fn().mockResolvedValue([]),
     select: vi.fn(),
@@ -60,7 +68,72 @@ function database(): SyncDatabase {
 }
 describe("processRunningStepSamples", () => {
   beforeEach(() => {
-    vi.mocked(upsertHealthKitWorkouts).mockClear();
+    vi.resetAllMocks();
+    vi.mocked(upsertHealthKitWorkouts).mockResolvedValue(1);
+    vi.mocked(reconcileActivityGroups).mockResolvedValue(undefined);
+  });
+  it("locks, upserts, restores and reconciles on the inner transaction before publishing", async () => {
+    const outer = database();
+    const inner = database();
+    const order: string[] = [];
+    outer.transaction.mockImplementation(async (work) => {
+      order.push("begin");
+      await work(inner);
+      order.push("commit");
+    });
+    vi.mocked(lockActivityGroups).mockImplementation(async (db, owner) => {
+      expect(db).toBe(inner);
+      expect(owner).toBe(userId);
+      order.push("lock");
+    });
+    vi.mocked(upsertHealthKitWorkouts).mockImplementation(async (db, owner, workouts) => {
+      expect(db).toBe(inner);
+      expect(owner).toBe(userId);
+      expect(workouts).toEqual([run]);
+      order.push("upsert");
+      return 1;
+    });
+    vi.mocked(markProviderActivityPresent).mockImplementation(async (db, identity) => {
+      expect(db).toBe(inner);
+      expect(identity).toEqual({
+        userId,
+        providerId: "apple_health",
+        externalId: `hk:workout:${run.uuid}`,
+      });
+      order.push("present");
+    });
+    vi.mocked(reconcileActivityGroups).mockImplementation(async (db, owner) => {
+      expect(db).toBe(inner);
+      expect(owner).toBe(userId);
+      order.push("reconcile");
+    });
+    const publisher: MetricStreamEventPublisher = {
+      publishRows: async (rows, options) => {
+        order.push("publish");
+        return rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
+      },
+    };
+    await processRunningStepSamples(outer, userId, [run], [sample], publisher);
+    expect(order).toEqual([
+      "begin",
+      "lock",
+      "upsert",
+      "present",
+      "reconcile",
+      "commit",
+      "begin",
+      "publish",
+      "commit",
+    ]);
+  });
+  it("propagates reconciliation failure without publishing raw observations", async () => {
+    const failure = new Error("Grouping rejected");
+    vi.mocked(reconcileActivityGroups).mockRejectedValueOnce(failure);
+    const publisher: MetricStreamEventPublisher = { publishRows: vi.fn().mockResolvedValue([]) };
+    await expect(
+      processRunningStepSamples(database(), userId, [run], [sample], publisher),
+    ).rejects.toBe(failure);
+    expect(publisher.publishRows).not.toHaveBeenCalled();
   });
   it("merges all associations once and retains distinct interval ends and source identities", async () => {
     const secondRun = { ...run, uuid: "00000000-0000-4000-8000-000000000203" };

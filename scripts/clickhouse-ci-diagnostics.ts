@@ -54,7 +54,10 @@ const queries = [
   ],
 ] as const;
 
-function redact(text: string, secrets: string[]): string {
+const logRecordHeader =
+  /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+)?\d{4}[.-]\d{2}[.-]\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\s+\[\s*\d+\s*\]\s+\{[^}\r\n]*\}\s+<(Trace|Debug|Information|Warning|Error|Fatal)>\s+([^\r\n]+?):[ \t]+/;
+
+function redact(text: string, secrets: string[], logRecords: boolean): string {
   let value = text;
   for (const secret of secrets) value = value.replaceAll(secret, "[REDACTED]");
   value = value
@@ -68,13 +71,16 @@ function redact(text: string, secrets: string[]): string {
   return value
     .split("\n")
     .map((line) => {
-      if (/^\d{4}[.-]\d{2}[.-]\d{2}[ T]/.test(line)) sqlContinuation = false;
+      const header = logRecords ? logRecordHeader.exec(line) : null;
+      if (header) sqlContinuation = false;
       const sql = /\bquery(?:_text)?\s*[:=]\s*|\bIn scope\b\s*|\bwhile executing\b\s*/i.exec(line);
       const execution = /executeQuery:\s*(?:\([^\n)]*\)\s*)*/i.exec(line);
       const executionPayload = execution ? line.slice(execution.index + execution[0].length) : "";
       const diagnosticError =
         execution &&
-        /<(?:Error|Information)>\s*$/.test(line.slice(0, execution.index)) &&
+        header &&
+        (header[1] === "Error" || header[1] === "Information") &&
+        header[2] === "executeQuery" &&
         /^(?:Code:\s*\d+|DB::Exception:)/.test(executionPayload);
       let payload = sql;
       if (execution && !diagnosticError && (!payload || execution.index < payload.index))
@@ -115,13 +121,41 @@ export class ClickHouseDiagnosticsInputError extends Error {
   }
 }
 
+function safeErrorCode(error: unknown): string {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(code) ? code : "UNKNOWN";
+}
+
+/** Carries only operation context and a bounded code, never the raw exception or path. */
+export class ClickHouseDiagnosticsOperationError extends Error {
+  constructor(
+    operation: "create output directory" | "write capture artifact" | "write manifest",
+    error: unknown,
+  ) {
+    super(`ClickHouse CI diagnostics could not ${operation} (${safeErrorCode(error)})`);
+  }
+}
+
+async function writeArtifact(path: string, text: string, manifest = false): Promise<void> {
+  try {
+    await writeFile(path, text, { mode: 0o600 });
+  } catch (error) {
+    const safeError = new ClickHouseDiagnosticsOperationError(
+      manifest ? "write manifest" : "write capture artifact",
+      error,
+    );
+    captureException(safeError);
+    throw safeError;
+  }
+}
+
 function redactStructured(text: string, secrets: string[], jsonLines: boolean) {
   let invalid = false;
   const values = jsonLines ? text.trimEnd().split("\n").filter(Boolean) : text ? [text] : [];
   const output = values.map((line) => {
     try {
       return JSON.stringify(JSON.parse(line), (_key, value: unknown) =>
-        typeof value === "string" ? redact(value, secrets) : value,
+        typeof value === "string" ? redact(value, secrets, false) : value,
       );
     } catch {
       invalid = true;
@@ -152,7 +186,13 @@ export async function collectClickHouseDiagnostics(options: {
       throw error;
     }
   }
-  await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    const safeError = new ClickHouseDiagnosticsOperationError("create output directory", error);
+    captureException(safeError);
+    throw safeError;
+  }
   const captures: Capture[] = [];
   const commands: { name: string; args: string[] }[] = [
     { name: "container", args: ["inspect", "--format", inspectFormat, containerId] },
@@ -213,11 +253,11 @@ export async function collectClickHouseDiagnostics(options: {
     const parsed = structured
       ? redactStructured(result.stdout ?? "", secrets, name !== "container")
       : null;
-    const stdout = parsed?.output ?? redact(result.stdout ?? "", secrets);
-    const stderr = redact(result.stderr ?? "", secrets);
+    const stdout = parsed?.output ?? redact(result.stdout ?? "", secrets, true);
+    const stderr = redact(result.stderr ?? "", secrets, true);
     const failed = result.status !== 0 || result.error !== undefined || parsed?.invalid === true;
     const error = result.error
-      ? redact(result.error.message, secrets)
+      ? `Docker capture failed (${safeErrorCode(result.error)})`
       : parsed?.invalid
         ? "Invalid structured output"
         : null;
@@ -231,14 +271,14 @@ export async function collectClickHouseDiagnostics(options: {
       stdoutBytes: Buffer.byteLength(stdout),
       stderrBytes: Buffer.byteLength(stderr),
     });
-    await writeFile(join(outputDirectory, `${name}.stdout.log`), stdout, { mode: 0o600 });
-    await writeFile(join(outputDirectory, `${name}.stderr.log`), stderr, { mode: 0o600 });
+    await writeArtifact(join(outputDirectory, `${name}.stdout.log`), stdout);
+    await writeArtifact(join(outputDirectory, `${name}.stderr.log`), stderr);
     if (failed) captureException(new Error(`ClickHouse CI diagnostics capture failed: ${name}`));
   }
   const failures = captures
     .filter((capture) => capture.status === "failed")
     .map((capture) => capture.name);
-  await writeFile(
+  await writeArtifact(
     join(outputDirectory, "manifest.json"),
     JSON.stringify(
       {
@@ -260,7 +300,7 @@ export async function collectClickHouseDiagnostics(options: {
       null,
       2,
     ),
-    { mode: 0o600 },
+    true,
   );
   return { failures };
 }

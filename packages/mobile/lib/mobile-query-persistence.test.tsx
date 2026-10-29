@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query-persist-client";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runningData } from "../components/running-training-test-helpers";
 import {
   createMobileQueryPersister,
   MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES,
@@ -43,11 +44,11 @@ describe("mobile query persistence", () => {
   it("restores the combined v21 running contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "combined-running-owner";
-    const queryKey = [["running", "dynamicsV2"], { input: { days: 30 }, type: "query" }];
-    const data = {
-      data: [{ activityId: "run-1", cadence: null, cadenceBasis: "unknown" }],
-      availability: { status: "available" },
-    };
+    const queryKey = [
+      ["running", "dynamicsV2"],
+      { input: { days: 30, responseVersion: 2 }, type: "query" },
+    ];
+    const data = runningData;
     const seedClient = createQueryClient();
     seedClient.setQueryData(queryKey, data);
     await AsyncStorage.setItem(

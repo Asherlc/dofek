@@ -1,4 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import {
+  lockActivityGroups,
+  reconcileActivityGroups,
+} from "../../../../src/db/activity-group-reconciliation.ts";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { markProviderActivityPresent } from "../../../../src/db/provider-activity-sync.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
@@ -60,15 +64,6 @@ export async function processRunningStepSamples(
       ].sort(),
     });
   }
-  // No absence reconciliation: this upload contains partial, additive context.
-  await upsertHealthKitWorkouts(db, userId, workouts);
-  for (const workout of workouts) {
-    await markProviderActivityPresent(db, {
-      userId,
-      providerId: PROVIDER_ID,
-      externalId: appleHealthWorkoutExternalId(workout.uuid),
-    });
-  }
   const rows: MetricStreamRowInput[] = [...byChild.values()].map((sample) => ({
     recordedAt: sample.startDate,
     userId,
@@ -84,6 +79,19 @@ export async function processRunningStepSamples(
       workout_uuids: sample.workoutUuids,
     },
   }));
+  // No absence reconciliation: this upload contains partial, additive context.
+  await db.transaction(async (transaction) => {
+    await lockActivityGroups(transaction, userId);
+    await upsertHealthKitWorkouts(transaction, userId, workouts);
+    for (const workout of workouts) {
+      await markProviderActivityPresent(transaction, {
+        userId,
+        providerId: PROVIDER_ID,
+        externalId: appleHealthWorkoutExternalId(workout.uuid),
+      });
+    }
+    await reconcileActivityGroups(transaction, userId);
+  });
   await writeMetricStreamRows({ database: db, publisher, rows });
   return rows.length;
 }
