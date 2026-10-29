@@ -155,8 +155,9 @@ describe("activity hardware source labels in ClickHouse", () => {
     const result = await getActivityMetricSources(store, window);
     const sourceId = JSON.stringify(["ble_heart_rate", peripheral]);
     expect(result[0]).toMatchObject({
-      defaultSourceId: sourceId,
+      defaultSourceId: "strava",
       sources: [
+        { id: "strava", label: "Strava" },
         {
           id: sourceId,
           label: "Heart Rate Monitor (Bluetooth) · Polar H10 updated",
@@ -167,7 +168,6 @@ describe("activity hardware source labels in ClickHouse", () => {
             attribution: { kind: "bluetooth", label: "Bluetooth" },
           },
         },
-        { id: "strava", label: "Strava" },
       ],
     });
     const hardware: ActivityHardware = {
@@ -188,7 +188,7 @@ describe("activity hardware source labels in ClickHouse", () => {
       power: [],
     };
     const enriched = await getActivityMetricSources(store, window, hardware);
-    expect(enriched[0]?.sources[1]?.label).toBe("Strava · recorded by Edge 530");
+    expect(enriched[0]?.sources[0]?.label).toBe("Strava · recorded by Edge 530");
     expect(
       enriched.map((metric) => [
         metric.key,

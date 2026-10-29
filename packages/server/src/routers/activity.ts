@@ -275,7 +275,7 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "source-presentation-v2",
+    keyVersion: "recording-density-v3",
   })
     .input(z.object({ id: z.guid() }))
     .output(activityMetricSourcesSchema)

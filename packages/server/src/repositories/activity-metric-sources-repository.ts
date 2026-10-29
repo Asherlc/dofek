@@ -104,6 +104,7 @@ const sourceRowSchema = z.object({
   device_id: z.string().nullable(),
   source_id: z.string(),
   activity_ids: z.array(z.string()),
+  sample_count: z.coerce.number(),
 });
 const deviceNameSchema = z.object({
   provider_id: z.string(),
@@ -123,7 +124,8 @@ export async function getActivityMetricSources(
       SELECT *, ${activityMetricSourceIdSql} AS source_id FROM (${activityMetricSamplesSql})
     )
     SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id,
-      groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids
+      groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids,
+      uniqExact(recorded_at) AS sample_count
     FROM source_samples
     GROUP BY channel, provider_id, source_id
     ORDER BY channel, min(provider_priority), provider_id, min(id), source_id`,
@@ -153,58 +155,75 @@ export async function getActivityMetricSources(
       )
     : [];
   return ACTIVITY_CHART_METRICS.flatMap((metric) => {
-    const sources = rows
-      .filter((row) => row.channel === metric.channel)
-      .map((row) => {
-        const peripheralName = peripheralNames.find(
-          (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
-        )?.device_name;
-        const originalLabel =
-          row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
-            ? providerSourceLabel(row.provider_id, row.device_id)
-            : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id);
-        const provenance = hardware.items.filter(
+    const metricRows = rows.filter((row) => row.channel === metric.channel);
+    if (metric.key === "heartRate") {
+      const directlyRecorded = (row: z.infer<typeof sourceRowSchema>) =>
+        row.activity_ids.some((id) => window.memberActivityIds.includes(id)) ||
+        hardware.items.some(
           (item) =>
+            item.role === "recorder" &&
+            window.memberActivityIds.includes(item.activityId) &&
             item.providerId === row.provider_id &&
-            row.activity_ids.includes(item.activityId) &&
-            (row.device_id === null ||
-              row.device_id === item.sourceName ||
-              row.device_id === item.label),
+            row.device_id !== null &&
+            (row.device_id === item.sourceName || row.device_id === item.label),
         );
-        const role = provenance.some((item) => item.role === "recorder") ? "recorder" : "creator";
-        const matching = provenance.filter((item) => item.role === role);
-        const labels = [...new Set(matching.map((item) => item.label))];
-        const name =
-          labels.length === 1 &&
-          row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
-            ? labels[0]
-            : undefined;
-        let label = originalLabel;
-        if (name) {
-          const includesHardwareName = originalLabel
-            .replace(/\s+/g, " ")
-            .toLowerCase()
-            .includes(name.replace(/\s+/g, " ").toLowerCase());
-          if (role === "recorder") {
-            label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
-          } else {
-            const baseLabel = includesHardwareName
-              ? providerRecordLabel(row.provider_id, null)
-              : originalLabel;
-            label = `${baseLabel} · file created by ${name}`;
-          }
+      // Stable sorting preserves provider priority for equal recording evidence and counts.
+      metricRows.sort(
+        (left, right) =>
+          Number(directlyRecorded(right)) - Number(directlyRecorded(left)) ||
+          right.sample_count - left.sample_count,
+      );
+    }
+    const sources = metricRows.map((row) => {
+      const peripheralName = peripheralNames.find(
+        (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
+      )?.device_name;
+      const originalLabel =
+        row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
+          ? providerSourceLabel(row.provider_id, row.device_id)
+          : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id);
+      const provenance = hardware.items.filter(
+        (item) =>
+          item.providerId === row.provider_id &&
+          row.activity_ids.includes(item.activityId) &&
+          (row.device_id === null ||
+            row.device_id === item.sourceName ||
+            row.device_id === item.label),
+      );
+      const role = provenance.some((item) => item.role === "recorder") ? "recorder" : "creator";
+      const matching = provenance.filter((item) => item.role === role);
+      const labels = [...new Set(matching.map((item) => item.label))];
+      const name =
+        labels.length === 1 &&
+        row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
+          ? labels[0]
+          : undefined;
+      let label = originalLabel;
+      if (name) {
+        const includesHardwareName = originalLabel
+          .replace(/\s+/g, " ")
+          .toLowerCase()
+          .includes(name.replace(/\s+/g, " ").toLowerCase());
+        if (role === "recorder") {
+          label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
+        } else {
+          const baseLabel = includesHardwareName
+            ? providerRecordLabel(row.provider_id, null)
+            : originalLabel;
+          label = `${baseLabel} · file created by ${name}`;
         }
-        return {
-          id: row.source_id,
+      }
+      return {
+        id: row.source_id,
+        label,
+        presentation: activityMetricSourcePresentation(
+          row.provider_id,
+          peripheralName ?? row.device_id,
           label,
-          presentation: activityMetricSourcePresentation(
-            row.provider_id,
-            peripheralName ?? row.device_id,
-            label,
-            name,
-          ),
-        };
-      });
+          name,
+        ),
+      };
+    });
     const first = sources[0];
     return first
       ? [
