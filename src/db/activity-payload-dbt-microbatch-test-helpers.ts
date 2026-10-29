@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { rm } from "node:fs/promises";
 import type { createClient } from "@clickhouse/client";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -704,6 +705,7 @@ export async function runDbtBatch(
   activityRefreshUserId = userId,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const url = new URL(requireClickHouseUrl());
+  await rm(artifactDirectory, { recursive: true, force: true });
   const result = await withActivityScopeDbtProject(
     {
       activity_sensor_sample_begin: start,

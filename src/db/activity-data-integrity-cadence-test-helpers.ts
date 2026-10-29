@@ -100,7 +100,10 @@ export async function mirrorRunningLocalTime(
       local_time_source: z.string(),
     }),
     sql`SELECT id,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source
-    FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND id=ANY(${activityIds}::uuid[])`,
+    FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND id=ANY(ARRAY[${sql.join(
+      activityIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )}]::uuid[])`,
   );
   const current = await queryClickHouseRows(
     client,

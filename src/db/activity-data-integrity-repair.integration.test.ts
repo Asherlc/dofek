@@ -86,6 +86,9 @@ describe("activity data integrity repair", () => {
       );
     });
     await context.db.execute(
+      sql`DELETE FROM fitness.activity_integrity_repair_journal WHERE user_id=${TEST_USER_ID}::uuid`,
+    );
+    await context.db.execute(
       sql`DELETE FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND provider_id='apple_health'`,
     );
     await seedPostgres(context);

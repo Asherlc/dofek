@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
@@ -120,6 +120,19 @@ describe("packed activity refresh scope on ClickHouse and dbt", () => {
       format: "JSONEachRow",
     });
     expect(await result.json()).toEqual([{ value: String(maximumQueryBytes) }]);
+  }, 120_000);
+  afterAll(async () => {
+    if (client) {
+      await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+      await client.close();
+    }
+    if (artifacts) await rm(artifacts, { recursive: true, force: true });
+  });
+
+  it("executes every complete materialization and introspection at 10000 IDs with exact decoding and fenced sibling expansion", async () => {
+    // Every retry starts with absent targets and fresh artifacts.
+    await rm(artifacts, { recursive: true, force: true });
+    await mkdir(artifacts);
     await seedProductionDbtFixture(client, database);
     // The shared repair fixture seeds this empty target for runs selecting fewer models.
     // This suite selects its model and consumers through ref(), so dbt must create it.
@@ -150,16 +163,6 @@ describe("packed activity refresh scope on ClickHouse and dbt", () => {
         created_at: "2026-09-02 17:00:00",
       })),
     });
-  }, 120_000);
-  afterAll(async () => {
-    if (client) {
-      await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
-      await client.close();
-    }
-    if (artifacts) await rm(artifacts, { recursive: true, force: true });
-  });
-
-  it("executes every complete materialization and introspection at 10000 IDs with exact decoding and fenced sibling expansion", async () => {
     await withActivityScopeDbtProject(
       {
         activity_refresh_user_id: TEST_USER_ID,
@@ -177,6 +180,7 @@ WITH {{ activity_refresh_scope_ctes() }}
 SELECT {{ activity_refresh_requested_ids() }} AS requested, {{ activity_refresh_ids() }} AS expanded
 `,
         );
+        const scopedModels = new Set<string>();
         for (const phase of ["create", "incremental"]) {
           const result = await dbt(project, phase, [
             "run",
@@ -187,15 +191,24 @@ SELECT {{ activity_refresh_requested_ids() }} AS requested, {{ activity_refresh_
             "--select",
             [...models, "packed_scope_probe"].join(" "),
           ]);
+          // Debug stdout is the complete invocation stream. dbt.log rotates at10MiB.
+          const statements = readDbtStatementMessages(result.stdout).filter((query) => {
+            const target = readDbtStatementTarget(query);
+            return target?.database === database && models.includes(target.model);
+          });
+          const evidence = statements.map((query) => ({
+            ...readDbtStatementTarget(query),
+            ...statementEvidence(query),
+            payloadCopies: query.split(payload).length - 1,
+            scoped: query.includes("dofek_refresh_uuid_bytes"),
+          }));
+          process.stdout.write(`${JSON.stringify({ phase, loggedMaterializations: evidence })}\n`);
           expect(result.exitCode, dbtFailureDiagnostic(result, payload)).toBe(0);
-          const log = await readFile(join(artifacts, `${phase}-logs`, "dbt.log"), "utf8");
-          const statements = readDbtStatementMessages(log).filter((query) =>
-            query.includes(payload),
-          );
-          expect(statements.length).toBeGreaterThanOrEqual(models.length);
-          const evidence = statements.map(statementEvidence);
-          for (const item of evidence)
+          for (const item of evidence) {
+            if (item.payloadCopies === 1 && item.model) scopedModels.add(item.model);
             expect(item.bytes, JSON.stringify(item)).toBeLessThan(maximumQueryBytes);
+            expect(item.payloadCopies, JSON.stringify(item)).toBe(item.scoped ? 1 : 0);
+          }
           const targets = statements.map(readDbtStatementTarget);
           for (const model of models) {
             for (const operation of phase === "create" ? ["create", "insert"] : ["insert"]) {
@@ -248,7 +261,6 @@ SELECT {{ activity_refresh_requested_ids() }} AS requested, {{ activity_refresh_
           process.stdout.write(
             `${JSON.stringify({
               phase,
-              loggedMaterializations: evidence,
               reconstructedIntrospection: introspectionEvidence,
             })}\n`,
           );
@@ -274,6 +286,7 @@ SELECT {{ activity_refresh_requested_ids() }} AS requested, {{ activity_refresh_
               .map((activity_id) => ({ activity_id, user_id: TEST_USER_ID })),
           );
         }
+        expect(scopedModels).toEqual(new Set(models));
       },
     );
   }, 300_000);

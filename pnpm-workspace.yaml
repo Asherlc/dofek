@@ -107,7 +107,7 @@ patchedDependencies:
   expo-apple-authentication@58.0.2: patches/expo-apple-authentication@58.0.2.patch
   node-forge@1.4.0: patches/node-forge@1.4.0.patch
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
-  react-native@0.88.0: patches/react-native@0.88.0.patch
+  react-native@0.88.1: patches/react-native@0.88.1.patch
 
 allowBuilds:
   "@sentry/cli": true
@@ -190,22 +190,7 @@ minimumReleaseAgeExclude:
   - '@expo/modules-macros-win32-x64@0.20.0 || 0.27.1'
   - expo-modules-macros@0.20.0 || 0.27.1
   - '@expo/package-manager@1.14.2'
-  - '@react-native/asset-utils@0.88.0'
-  - '@react-native/babel-plugin-codegen@0.88.0'
-  - '@react-native/babel-preset@0.88.0'
-  - '@react-native/codegen@0.88.0'
-  - '@react-native/community-cli-plugin@0.88.0'
-  - '@react-native/debugger-frontend@0.88.0'
-  - '@react-native/debugger-shell@0.88.0'
-  - '@react-native/dev-middleware@0.88.0'
-  - '@react-native/gradle-plugin@0.88.0'
-  - '@react-native/js-polyfills@0.88.0'
-  - '@react-native/metro-babel-transformer@0.88.0'
-  - '@react-native/metro-config@0.88.0'
-  - '@react-native/normalize-colors@0.88.0'
-  - '@react-native/virtualized-lists@0.88.0'
   - react-native-svg@15.16.0
-  - react-native@0.88.0
   - '@ai-sdk/provider@4.0.28'
   - '@expo/schema-utils@58.0.2'
   - expo-modules-cli@0.3.1 || 0.3.2 || 0.3.3 || 0.4.0
