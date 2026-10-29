@@ -107,7 +107,7 @@ patchedDependencies:
   expo-apple-authentication@58.0.2: patches/expo-apple-authentication@58.0.2.patch
   node-forge@1.4.0: patches/node-forge@1.4.0.patch
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
-  react-native@0.88.0: patches/react-native@0.88.0.patch
+  react-native@0.88.1: patches/react-native@0.88.1.patch
 
 allowBuilds:
   "@sentry/cli": true

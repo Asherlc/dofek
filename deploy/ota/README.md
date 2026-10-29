@@ -27,7 +27,10 @@ The compiler and runtime image are pinned by version and digest. The compiler
 is [Go 1.27.3](https://go.dev/dl/); the upstream runtime remains non-root. The
 result reports `3.2.7-dofek.1` so normal version-scoped caches identify this
 binary separately. CI verifies the upstream tests and builds the runtime image.
-The preparation workflow does not publish images.
+On main, the workflow publishes source-commit tags to the private `dofek-ota`
+GHCR package and records its digest. Visibility is checked before and after
+publication; a public package stops the job. GitHub documents that
+[new container packages are private by default](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 ## Migration boundary
 
@@ -48,6 +51,5 @@ scopes migration reads, copies, and deletions to the configured prefix.
 The [licensing guide](https://mercure-technologies.gitbook.io/xprem/references/open-core-and-licensing.md)
 documents stateless community self-hosting. The full image includes EE code and
 dashboard assets subject to the [EE license](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/ee/LICENSE).
-Permission to redistribute a modified full image remains unconfirmed; do not
-publish or deploy this rebuilt image until that question is resolved. Isolated
-development and testing are explicitly permitted by the EE license.
+Distribute this rebuilt image only privately for deployments with the required
+commercial entitlement. Stateless mode does not enable enterprise features.
