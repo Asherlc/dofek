@@ -160,7 +160,20 @@ describe("OTA storage operator CLI", () => {
       }
       expect(diagnostics).toHaveBeenCalledWith("OTA storage: starting copy");
       expect(diagnostics).toHaveBeenCalledWith(
-        expect.stringMatching(/^OTA storage: completed copy in \d+ms$/),
+        expect.stringMatching(/^OTA storage: finished copy in \d+ms$/),
+      );
+    } finally {
+      diagnostics.mockRestore();
+    }
+  });
+
+  it("reports elapsed time when a transfer fails without suppressing the error", async () => {
+    failCommand = " copy ";
+    const diagnostics = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(import("./ota-storage.ts")).rejects.toThrow("transfer failed");
+      expect(diagnostics).toHaveBeenCalledWith(
+        expect.stringMatching(/^OTA storage: finished copy in \d+ms$/),
       );
     } finally {
       diagnostics.mockRestore();

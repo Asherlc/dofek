@@ -78,31 +78,33 @@ async function main(): Promise<void> {
   const run = (arguments_: string[], input?: string): string => {
     const started = Date.now();
     console.error(`OTA storage: starting ${arguments_[0]}`);
-    const output = execFileSync(
-      "docker",
-      [
-        "run",
-        "--rm",
-        "--interactive",
-        ...Object.keys(environment).flatMap((name) => ["--env", name]),
-        rcloneImage,
-        "--stats",
-        "30s",
-        "--stats-one-line",
-        "--stats-log-level",
-        "NOTICE",
-        ...arguments_,
-      ],
-      {
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "inherit"],
-        input,
-        env: { ...process.env, ...environment },
-        maxBuffer: 32 * 1024 * 1024,
-      },
-    );
-    console.error(`OTA storage: completed ${arguments_[0]} in ${Date.now() - started}ms`);
-    return output;
+    try {
+      return execFileSync(
+        "docker",
+        [
+          "run",
+          "--rm",
+          "--interactive",
+          ...Object.keys(environment).flatMap((name) => ["--env", name]),
+          rcloneImage,
+          "--stats",
+          "30s",
+          "--stats-one-line",
+          "--stats-log-level",
+          "NOTICE",
+          ...arguments_,
+        ],
+        {
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "inherit"],
+          input,
+          env: { ...process.env, ...environment },
+          maxBuffer: 32 * 1024 * 1024,
+        },
+      );
+    } finally {
+      console.error(`OTA storage: finished ${arguments_[0]} in ${Date.now() - started}ms`);
+    }
   };
 
   const snapshot = `ota:dofek-ota-backups/snapshots/${snapshotId}`;
