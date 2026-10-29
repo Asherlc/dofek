@@ -86,15 +86,12 @@ scoped occurrences and retains one partially described occurrence when a total
 is missing. Recorded booleans and raw source result labels remain independently
 nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
 original supported label through the [canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
-Every attempt on a known route, including pitch and counted attempts, requires
-a recorded rope method. Bouldering remains exempt. The [source validator](source-attempt-facts.ts)
-rejects unresolved route methods before an import commits; the
-[database migration](../../drizzle/0150_require_climbing_route_methods.sql)
-also checks direct writes, log reassociation, and changes to Climb kind. Its
-[deferred constraint triggers](https://www.postgresql.org/docs/current/sql-createtrigger.html)
-allow related facts to be updated together. Existing missing methods must be
-corrected from verified evidence before applying the migration; it does not
-guess methods or remove attempts.
+Methods remain nullable for every climb kind. Missing source evidence does
+not establish a method; omitted fields preserve existing facts and explicit
+null clears them. The [nullable-method migration](../../drizzle/0171_nullable_climbing_route_methods.sql)
+removes the earlier cross-table requirement using PostgreSQL
+[`DROP TRIGGER`](https://www.postgresql.org/docs/current/sql-droptrigger.html);
+it does not rewrite historical attempts.
 The readonly `fitness.v_climbing_log_entry` projection derives current paths,
 owned grade arrays, counts, and compatible free-send status; PostgreSQL
 [views](https://www.postgresql.org/docs/current/sql-createview.html) provide this

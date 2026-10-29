@@ -262,6 +262,7 @@ export class KayaSyncProvider implements SyncProvider {
                 date: ascent.date,
                 label: ascent.ascent_type.name,
                 attempts: ascent.attempts,
+                lead: ascent.lead,
                 reportedGrade: ascent.grade,
                 gym: ascent.climb.gym ?? ascent.gym ?? session.gym,
                 notes: ascent.comment,
@@ -298,6 +299,7 @@ export class KayaSyncProvider implements SyncProvider {
               date: ascent.date,
               label: ascent.ascent_type.name,
               attempts: ascent.attempts,
+              lead: ascent.lead,
               reportedGrade: ascent.grade,
               gym: ascent.climb.gym ?? ascent.gym ?? null,
               notes: ascent.comment,
@@ -396,6 +398,7 @@ function kayaLogEntry(
     label?: string;
     attempts: number | null;
     sent?: boolean;
+    lead?: boolean | null;
     gym: KayaAscent["climb"]["gym"];
     notes?: string | null;
     raw: SourceClimbingLogEntry["raw"];
@@ -443,7 +446,8 @@ function kayaLogEntry(
     const category = categories[climb.angle];
     if (category) wallAngle = { category };
   }
-  const ropeMethod = boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope";
+  const lead = source.lead ?? climb.lead;
+  const ropeMethod = boulder || lead == null ? null : lead ? "lead" : "top_rope";
   const attempts: SourceClimbingAttempt[] = [
     {
       scope: "climb",
@@ -453,7 +457,7 @@ function kayaLogEntry(
       ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
     },
   ];
-  if ((ropeMethod !== null || source.sent === false) && source.attempts !== null)
+  if (source.attempts !== null)
     for (let attemptCount = 1; attemptCount < source.attempts; attemptCount++)
       attempts.push({
         scope: "climb",
