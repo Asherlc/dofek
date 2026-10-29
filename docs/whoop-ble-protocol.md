@@ -549,6 +549,15 @@ physical iPhone; simulator evidence does not establish those hardware paths
 For a disconnection alert, first correlate the native disconnect with the
 [notification coordinator's](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
 five-minute grace period, then check for a native reconnect or handshake failure.
+The absence of an alert does not establish continuous heart-rate capture or
+successful upload. The [notification coordinator](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+cancels the warning on a connected event; it does not inspect sample freshness,
+queue age, or upload acknowledgments. A short reconnection can therefore cancel
+the warning even when no new valid heart rate has been observed. Compare the
+capture and upload evidence separately. The app-closure warning is best effort
+because iOS may omit the [termination callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:));
+neither warning proves notification authorization or delivery without direct
+evidence of those outcomes.
 If the background outcome has not reached the log service, open Dofek briefly
 to allow the [reporter](../packages/mobile/lib/whoop-ble-diagnostics.ts) to export
 retained native history. Correlate `nativeSessionId`, sort by `nativeOccurredAt`,
