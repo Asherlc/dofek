@@ -31,7 +31,7 @@ import {
   initBackgroundWatchInertialMeasurementUnitSync,
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
-import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
+import { syncWhoopBle } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
@@ -460,7 +460,6 @@ function AuthGate() {
       teardownBackgroundHealthKitSync();
       teardownBackgroundAccelerometerSync();
       teardownBackgroundWatchInertialMeasurementUnitSync();
-      teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
   }, [

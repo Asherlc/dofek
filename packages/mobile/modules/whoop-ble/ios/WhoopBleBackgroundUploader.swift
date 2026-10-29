@@ -121,9 +121,10 @@ final class WhoopBleBackgroundUploader: NSObject {
         try queue.sync { try disableLocked() }
     }
 
-    private func disableLocked() throws {
+    private func disableLocked(cutoff: Date? = nil) throws {
         token = nil; headers = [:]; blocked.removeAll()
         try cancelOwnedTasks()
+        if let cutoff { try store.advanceErasureCutoff(to: cutoff) }
         active.removeAll()
         tokenEpoch += 1; submittedEpoch.removeAll()
         authRetriedEpoch.removeAll()
@@ -138,8 +139,7 @@ final class WhoopBleBackgroundUploader: NSObject {
 
     func purge(cutoff: Date) throws {
         try queue.sync {
-            try disableLocked()
-            try store.advanceErasureCutoff(to: cutoff)
+            try disableLocked(cutoff: cutoff)
         }
     }
 
@@ -198,10 +198,12 @@ final class WhoopBleBackgroundUploader: NSObject {
                         self.transport.cancel(identity: identity)
                         self.active.remove(identity)
                     }
-                    for file in try FileManager.default.contentsOfDirectory(at: self.directory, includingPropertiesForKeys: nil)
-                    where !known.contains(file.deletingPathExtension().lastPathComponent) {
-                        try FileManager.default.removeItem(at: file)
-                    }
+                    do {
+                        for file in try FileManager.default.contentsOfDirectory(at: self.directory, includingPropertiesForKeys: nil)
+                        where !known.contains(file.deletingPathExtension().lastPathComponent) {
+                        do { try FileManager.default.removeItem(at: file) } catch { self.record(error) }
+                        }
+                    } catch { self.record(error) }
                     try self.submitAvailable(partial: partial)
                 } catch { self.record(error) }
                 self.reconciling = false
@@ -214,33 +216,35 @@ final class WhoopBleBackgroundUploader: NSObject {
         guard let token, let binding = try store.binding else { return }
         let pending = try store.pendingBatches()
         for stream in WhoopUploadStream.allCases {
-            guard !blocked.contains(stream), retryAfter[stream].map({ $0 <= now() }) ?? true else { continue }
-            if let batch = pending.first(where: { $0.stream == stream }), active.contains(identity(batch)) { continue }
-            let count = try store.queuedCount(stream: stream, limit: 500)
-            let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
-            guard count >= 500 || partial || now().timeIntervalSince(since) >= 30 else { continue }
-            guard let batch = try store.reserve(stream: stream) else { continue }
-            let identity = identity(batch)
-            guard !active.contains(identity) else { continue }
-            let file = directory.appendingPathComponent(identity + ".json")
-            // Always regenerate atomically; the database is the only source of truth.
-            try batch.body.write(to: file, options: .atomic)
-            #if os(iOS)
-            try FileManager.default.setAttributes(
-                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
-            #endif
-            let route = stream == .imu ? "inertialMeasurementUnitSync.pushSamples" : "whoopBleSync.pushRealtimeData"
-            guard let url = URL(string: binding.serverURL + "/api/trpc/" + route) else {
-                throw WhoopUploadError(message: "Invalid WHOOP upload URL")
-            }
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-            active.insert(identity); lastSubmission[stream] = now()
-            submittedEpoch[identity] = tokenEpoch
-            transport.start(request: request, file: file, identity: identity)
+            do {
+                guard !blocked.contains(stream), retryAfter[stream].map({ $0 <= now() }) ?? true else { continue }
+                if let batch = pending.first(where: { $0.stream == stream }), active.contains(identity(batch)) { continue }
+                let count = try store.queuedCount(stream: stream, limit: 500)
+                let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
+                guard count >= 500 || partial || now().timeIntervalSince(since) >= 30 else { continue }
+                guard let batch = try store.reserve(stream: stream) else { continue }
+                let identity = identity(batch)
+                guard !active.contains(identity) else { continue }
+                let file = directory.appendingPathComponent(identity + ".json")
+                // Always regenerate atomically; the database is the only source of truth.
+                try batch.body.write(to: file, options: .atomic)
+                #if os(iOS)
+                try FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
+                #endif
+                let route = stream == .imu ? "inertialMeasurementUnitSync.pushSamples" : "whoopBleSync.pushRealtimeData"
+                guard let url = URL(string: binding.serverURL + "/api/trpc/" + route) else {
+                    throw WhoopUploadError(message: "Invalid WHOOP upload URL")
+                }
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                active.insert(identity); lastSubmission[stream] = now()
+                submittedEpoch[identity] = tokenEpoch
+                transport.start(request: request, file: file, identity: identity)
+            } catch { record(error) }
         }
     }
 
@@ -281,7 +285,9 @@ final class WhoopBleBackgroundUploader: NSObject {
             _ = try store.acknowledge(id: batch.id, generation: batch.generation)
             authRetriedEpoch[identity] = nil
             let file = directory.appendingPathComponent(identity + ".json")
-            if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+            if FileManager.default.fileExists(atPath: file.path) {
+                do { try FileManager.default.removeItem(at: file) } catch { record(error) }
+            }
             retryAfter[batch.stream] = nil
             // Continue full batches only; partial tails wait for capture/lifecycle triggers.
             schedule(partial: false)

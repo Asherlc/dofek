@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Alert } from "react-native";
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
@@ -20,11 +21,18 @@ import type { WhoopBleSyncDeps, WhoopUploadContext } from "./whoop-ble-sync-type
  */
 export function useWhoopBleSync(context: WhoopUploadContext, whoopDeps: WhoopBleSyncDeps): void {
   useEffect(() => {
+    let active = true;
     initBackgroundWhoopBleSync(context, whoopDeps).catch((error: unknown) => {
-      captureException(error, { source: "whoop-ble-sync-init" });
+      captureException(error, {
+        source: "whoop-ble-sync-init",
+        ...(active ? {} : { retiredLifetime: true }),
+      });
+      if (!active) return;
+      Alert.alert("WHOOP capture stopped", error instanceof Error ? error.message : String(error));
     });
 
     return () => {
+      active = false;
       teardownBackgroundWhoopBleSync();
     };
   }, [context, whoopDeps]);

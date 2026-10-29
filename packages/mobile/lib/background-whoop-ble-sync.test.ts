@@ -50,6 +50,7 @@ function deferred<T>() {
 }
 describe("native WHOOP lifecycle", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     AppState.currentState = "active";
   });
   afterEach(() => teardownBackgroundWhoopBleSync());
@@ -96,6 +97,36 @@ describe("native WHOOP lifecycle", () => {
     });
     await expect(initBackgroundWhoopBleSync(context, native)).rejects.toThrow("queue unavailable");
     expect(native.findWhoop).not.toHaveBeenCalled();
+  });
+  it("removes partially installed listeners when startup fails", async () => {
+    const native = deps();
+    native.flushUploads.mockImplementation(() => {
+      throw new Error("queue unavailable");
+    });
+    await expect(initBackgroundWhoopBleSync(context, native)).rejects.toThrow("queue unavailable");
+    expect(native.addCaptureErrorListener.mock.results[0]?.value.remove).toHaveBeenCalledOnce();
+    expect(native.addConnectionStateListener.mock.results[0]?.value.remove).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(AppState.addEventListener).mock.results[0]?.value.remove,
+    ).toHaveBeenCalledOnce();
+    native.flushUploads.mockClear();
+    await syncWhoopBle();
+    expect(native.flushUploads).not.toHaveBeenCalled();
+  });
+  it("keeps discovery single-flight across foreground reentry", async () => {
+    const native = deps();
+    const found = deferred<{ id: string; name: string }>();
+    native.findWhoop.mockReturnValue(found.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    AppState.currentState = "background";
+    stateChanged("background");
+    AppState.currentState = "active";
+    stateChanged("active");
+    expect(native.findWhoop).toHaveBeenCalledOnce();
+    found.resolve({ id: "strap", name: "WHOOP" });
+    await initializing;
+    expect(native.connect).toHaveBeenCalledOnce();
+    expect(native.startImuStreaming).toHaveBeenCalledOnce();
   });
   it.each(["find", "connect", "stream"])(
     "stops foreground connection work after backgrounding during %s",

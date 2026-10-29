@@ -264,9 +264,8 @@ For captured R18 and R21 records, combine the timestamp as
 In the [capture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv),
 the fractional word `14090` means approximately `0.43` seconds. Treating it as
 milliseconds incorrectly adds `14.09` seconds. The
-[buffer regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleSerializerTests.swift)
-verify matching captured live/history readings and use the same conversion for
-serialization and account-erasure cutoffs. The independently maintained
+[serialization regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleSerializerTests.swift)
+verify matching captured live/history readings. The independently maintained
 [R21 protocol reference](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_SENSORS.md#inertial-record-timestamps)
 documents the same fractional clock scale.
 
@@ -623,7 +622,7 @@ Check the reported-BPM and interval channels independently, retain the provider
 and device identities, and compare live/history copies for timestamp shifts.
 Use captured packets to distinguish an absent interval from an absent BPM;
 the [native capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleSerializerTests.swift)
-exercise both cases. The [server chart regression](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts)
+exercise the absent-interval case. The [server chart regression](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts)
 executes the reported-BPM path through an interval gap against ClickHouse.
 
 ## Next Steps: SpO2 and Skin Temperature

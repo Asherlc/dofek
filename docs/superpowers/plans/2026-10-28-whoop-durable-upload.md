@@ -1,7 +1,5 @@
 # WHOOP durable upload implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Preserve native WHOOP samples until server acknowledgment and deliver them through iOS background transfers.
 
 **Architecture:** A transactional SQLite queue owns realtime and IMU samples, account ownership, and stable batch reservations. A native background uploader consumes that queue; the Expo bridge configures it from existing authentication and native BLE arrivals.

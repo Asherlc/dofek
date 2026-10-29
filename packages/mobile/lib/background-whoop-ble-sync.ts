@@ -50,49 +50,54 @@ export async function initBackgroundWhoopBleSync(
     syncing: false,
   };
   currentSession = session;
-  session.captureErrorSubscription = deps.addCaptureErrorListener(({ message }) => {
-    if (!session.active) return;
-    captureException(new Error(message), { source: "whoop-ble-native-capture" });
-    Alert.alert("WHOOP capture stopped", message);
-  });
-  captureSnapshot(session, "initial");
-  session.connectionStateSubscription = deps.addConnectionStateListener((event) => {
-    if (!session.active) return;
-    if (event.state === "connected") session.connected = true;
-    else if (event.state === "disconnected") session.connected = false;
-    captureSnapshot(session, "connection");
-  });
-  session.appStateSubscription = AppState.addEventListener("change", (state) => {
-    if (!session.active) return;
-    captureSnapshot(session, "app_state", state);
-    if (state !== "active") return;
-    try {
-      deps.flushUploads();
-    } catch (error: unknown) {
-      captureException(error, { source: "whoop-ble-foreground-flush" });
-    }
-    if (session.syncing) return;
-    session.syncing = true;
-    syncOnForeground(session, foreground)
-      .catch((error: unknown) => {
-        captureException(error, {
-          source: "whoop-ble-foreground-sync",
-          retiredLifetime: !session.active,
-        });
-      })
-      .finally(() => {
-        session.syncing = false;
-      });
-  });
-  deps.flushUploads();
-  if (!foreground()) return;
-  session.syncing = true;
   try {
-    await syncOnForeground(session, foreground);
+    session.captureErrorSubscription = deps.addCaptureErrorListener(({ message }) => {
+      if (!session.active) return;
+      captureException(new Error(message), { source: "whoop-ble-native-capture" });
+      Alert.alert("WHOOP capture stopped", message);
+    });
+    captureSnapshot(session, "initial");
+    session.connectionStateSubscription = deps.addConnectionStateListener((event) => {
+      if (!session.active) return;
+      if (event.state === "connected") session.connected = true;
+      else if (event.state === "disconnected") session.connected = false;
+      captureSnapshot(session, "connection");
+    });
+    session.appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (!session.active) return;
+      captureSnapshot(session, "app_state", state);
+      if (state !== "active") return;
+      try {
+        deps.flushUploads();
+      } catch (error: unknown) {
+        captureException(error, { source: "whoop-ble-foreground-flush" });
+      }
+      if (session.syncing) return;
+      session.syncing = true;
+      syncOnForeground(session, foreground)
+        .catch((error: unknown) => {
+          captureException(error, {
+            source: "whoop-ble-foreground-sync",
+            retiredLifetime: !session.active,
+          });
+        })
+        .finally(() => {
+          session.syncing = false;
+        });
+    });
+    deps.flushUploads();
+    if (!foreground()) return;
+    session.syncing = true;
+    try {
+      await syncOnForeground(session, foreground);
+    } catch (error: unknown) {
+      captureException(error, { source: "whoop-ble-init-sync", retiredLifetime: !session.active });
+    } finally {
+      session.syncing = false;
+    }
   } catch (error: unknown) {
-    captureException(error, { source: "whoop-ble-init-sync", retiredLifetime: !session.active });
-  } finally {
-    session.syncing = false;
+    teardownBackgroundWhoopBleSync();
+    throw error;
   }
 }
 

@@ -10,11 +10,13 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         var reconciliationCount = 0
         var delayCancellation = false
         var delayedCancellations: [() -> Void] = []
+        var cancellations: [String] = []
         func allTasks(_ completion: @escaping ([String]) -> Void) { reconciliationCount += 1; completion(tasks) }
         func start(request: URLRequest, file: URL, identity: String) {
             tasks.append(identity); requests.append((request, file, identity))
         }
         func cancel(identity: String) {
+            cancellations.append(identity)
             let cancel = { self.tasks.removeAll { $0 == identity } }
             if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
         }
@@ -24,13 +26,15 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
         }
     }
-    private func setup() throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, Transport) {
+    private func setup(
+        reportError: @escaping (Error) -> Void = { _ in }
+    ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, Transport) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
         let store = try WhoopBleSampleStore(directory: directory)
         let transport = Transport()
         let uploader = try WhoopBleBackgroundUploader(
-            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: { _ in })
+            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: reportError)
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
         return (uploader, store, transport)
     }
@@ -264,5 +268,132 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             completion.fulfill()
         }
         wait(for: [completion], timeout: 0.5)
+    }
+
+    private func obstructRemoval(at path: URL) throws {
+        let manager = FileManager.default
+        if manager.fileExists(atPath: path.path) { try manager.removeItem(at: path) }
+        try manager.createDirectory(at: path, withIntermediateDirectories: true)
+        try Data("retained projection".utf8).write(to: path.appendingPathComponent("body"))
+        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: path.path)
+        addTeardownBlock {
+            if manager.fileExists(atPath: path.path) {
+                try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path.path)
+            }
+        }
+    }
+
+    func testErasurePersistsCutoffWhenBodyRemovalFailsAndCancelsReservedIdentity() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        let body = try XCTUnwrap(transport.requests.first?.1)
+        let activeIdentity = try XCTUnwrap(transport.requests.first?.2)
+        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try settle(uploader)
+        let reserved = try XCTUnwrap(store.reserve(stream: .imu))
+        let reservedIdentity = reserved.generation + "." + reserved.id
+        try obstructRemoval(at: body)
+        let cutoff = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:01Z"))
+        XCTAssertThrowsError(try uploader.purge(cutoff: cutoff))
+        XCTAssertTrue(transport.cancellations.contains(activeIdentity))
+        XCTAssertTrue(transport.cancellations.contains(reservedIdentity))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: body.path)
+        try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "new", headers: [:])
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows + [
+            ["timestamp": "2026-10-28T00:00:02.000Z", "heartRateBpm": 71],
+        ])
+        XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 1)
+        let reopened = try WhoopBleSampleStore(directory: body.deletingLastPathComponent().deletingLastPathComponent())
+        try reopened.append(stream: .realtime, deviceId: "a", samples: rows)
+        XCTAssertEqual(try reopened.queuedCount(stream: .realtime), 1)
+        transport.complete(0); try settle(uploader)
+        XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 1)
+    }
+
+    func testIMUBodyWriteFailureStillSubmitsRealtimeAndReportsError() throws {
+        var errors: [Error] = []
+        let (uploader, store, transport) = try setup(reportError: { errors.append($0) })
+        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try settle(uploader)
+        let batch = try XCTUnwrap(store.reserve(stream: .imu))
+        // A directory at the exact output path makes atomic file replacement fail.
+        try uploader.flush(); try settle(uploader)
+        let imuRequest = try XCTUnwrap(transport.requests.first { $0.0.url?.path.contains("inertial") == true })
+        transport.complete(try XCTUnwrap(transport.requests.firstIndex { $0.2 == imuRequest.2 }), status: 500)
+        try settle(uploader)
+        try FileManager.default.removeItem(at: imuRequest.1)
+        try FileManager.default.createDirectory(at: imuRequest.1, withIntermediateDirectories: true)
+        // Leave realtime available while forcing the earlier IMU stream to fail.
+        transport.complete(try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path.contains("Realtime") == true }), status: 500)
+        try settle(uploader)
+        let before = transport.requests.count
+        let errorsBefore = errors.count
+        try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, before + 1)
+        XCTAssertTrue(transport.requests.last?.0.url?.path.contains("Realtime") == true)
+        XCTAssertGreaterThan(errors.count, errorsBefore)
+        XCTAssertEqual(try store.pendingBatches().first { $0.stream == .imu }?.id, batch.id)
+    }
+
+    func testAcknowledgedBodyRemovalFailureStillContinuesFullBatches() throws {
+        var errors: [Error] = []
+        let (uploader, store, transport) = try setup(reportError: { errors.append($0) })
+        try uploader.append(stream: .realtime, deviceId: "a", samples: Array(repeating: rows[0], count: 1000))
+        try uploader.flush(); try settle(uploader)
+        let file = try XCTUnwrap(transport.requests.first?.1)
+        try obstructRemoval(at: file)
+        transport.complete(0); try settle(uploader)
+        XCTAssertEqual(try store.statistics(stream: .realtime)["count"] as? Int, 500)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertFalse(errors.isEmpty)
+    }
+
+    func testOrphanRemovalFailureStillSubmitsOtherStreamsAndReportsError() throws {
+        var errors: [Error] = []
+        let (uploader, _, transport) = try setup(reportError: { errors.append($0) })
+        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        let directory = try XCTUnwrap(transport.requests.first?.1.deletingLastPathComponent())
+        try obstructRemoval(at: directory.appendingPathComponent("orphan.json"))
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertFalse(errors.isEmpty)
+    }
+
+    func testBodyDirectoryListingFailureStillSubmitsAndReportsError() throws {
+        var errors: [Error] = []
+        let (uploader, _, transport) = try setup(reportError: { errors.append($0) })
+        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        let directory = try XCTUnwrap(transport.requests.first?.1.deletingLastPathComponent())
+        try FileManager.default.setAttributes([.posixPermissions: 0o300], ofItemAtPath: directory.path)
+        addTeardownBlock { try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertFalse(errors.isEmpty)
+    }
+
+    func testCrossOriginCompletionRetainsRowsAndBlocksUntilConfigure() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        let identity = try XCTUnwrap(transport.requests.first?.2)
+        transport.tasks.removeAll()
+        transport.onCompletion?(identity, 200, Data("{\"result\":{\"data\":{\"inserted\":1}}}".utf8),
+                                URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData"), nil)
+        try settle(uploader)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+        XCTAssertEqual(try store.pendingBatches().count, 1)
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
+        try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 1)
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
+        try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests.last?.2, identity)
     }
 }

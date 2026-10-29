@@ -83,4 +83,18 @@ final class WhoopBleSampleSerializerTests: XCTestCase {
         )
         XCTAssertEqual(WhoopBleSampleSerializer.imu([sample])[0]["timestamp"] as? String, "2024-03-21T05:46:41.490Z")
     }
+
+    func testFutureImuClockBoundsIncludeFinalSampleOffset() throws {
+        let sample = WhoopImuSample(
+            timestampSeconds: UInt32.max, subSeconds: 16_384, sampleIndex: 99, samplesInFrame: 100,
+            accelerometerX: 0, accelerometerY: 0, accelerometerZ: 0,
+            gyroscopeX: 0, gyroscopeY: 0, gyroscopeZ: 0
+        )
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let row = try XCTUnwrap(WhoopBleSampleSerializer.imu([sample]).first)
+        let timestamp = try XCTUnwrap(row["timestamp"] as? String)
+        let date = try XCTUnwrap(formatter.date(from: timestamp))
+        XCTAssertLessThanOrEqual(date.timeIntervalSince1970, Date().addingTimeInterval(300.001).timeIntervalSince1970)
+    }
 }

@@ -27,6 +27,7 @@ const mockTeardownBackgroundAccelerometerSync = vi.fn();
 const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundWatchSync = vi.fn();
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
+const mockInitBackgroundWhoopBleSync = vi.fn().mockResolvedValue(undefined);
 const mockUseWhoopBleSync = vi.fn();
 const mockUseBleHeartRateSync = vi.fn();
 const mockRefreshRemove = vi.fn();
@@ -181,6 +182,7 @@ vi.mock("../lib/background-watch-inertial-measurement-unit-sync", () => ({
 }));
 
 vi.mock("../lib/background-whoop-ble-sync", () => ({
+  initBackgroundWhoopBleSync: (...args: unknown[]) => mockInitBackgroundWhoopBleSync(...args),
   syncWhoopBle: vi.fn(),
   teardownBackgroundWhoopBleSync: (...args: unknown[]) =>
     mockTeardownBackgroundWhoopBleSync(...args),
@@ -328,6 +330,7 @@ async function importRootLayout() {
 describe("RootLayout background cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseWhoopBleSync.mockReset();
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
     mockIsHealthKitAvailable.mockReturnValue(false);
     mockHasEverAuthorized.mockReturnValue(false);
@@ -368,11 +371,31 @@ describe("RootLayout background cleanup", () => {
         }),
       },
       expect.objectContaining({
-        configureUpload: expect.any(Function),
-        flushUploads: expect.any(Function),
+        configureUpload: (await import("../modules/whoop-ble")).configureUpload,
+        flushUploads: (await import("../modules/whoop-ble")).flushUploads,
       }),
     );
     rendered.unmount();
+  });
+
+  it("keeps WHOOP owned by its mounted hook when the auth cleanup nonce changes", async () => {
+    const { useWhoopBleSync } =
+      await vi.importActual<typeof import("../lib/useWhoopBleSync")>("../lib/useWhoopBleSync");
+    mockUseWhoopBleSync.mockImplementation(useWhoopBleSync);
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockInitBackgroundWhoopBleSync).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+
+    mockAuthState.value.accountSessionOwnerNonce = "22222222-2222-4222-8222-222222222222";
+    await act(async () => rendered.rerender(<RootLayout />));
+
+    expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledTimes(2);
+    expect(mockInitBackgroundWhoopBleSync).toHaveBeenCalledOnce();
+    expect(mockTeardownBackgroundWhoopBleSync).not.toHaveBeenCalled();
+    rendered.unmount();
+    expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalledOnce();
+    mockUseWhoopBleSync.mockReset();
   });
 
   it("owns diagnostics alongside the authenticated refresh listener and retires them on cleanup", async () => {
@@ -745,7 +768,6 @@ describe("RootLayout background cleanup", () => {
       expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
       expect(mockTeardownBackgroundAccelerometerSync).toHaveBeenCalled();
       expect(mockTeardownBackgroundWatchSync).toHaveBeenCalled();
-      expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
       expect(mockRefreshRemove).toHaveBeenCalled();
     });
   });
