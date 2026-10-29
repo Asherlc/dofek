@@ -117,6 +117,24 @@ describe("recorded climbing route methods", () => {
     );
   });
 
+  it("preserves recorded methods when a reduced count supplies no method evidence", async () => {
+    await write([
+      source({
+        attempts: Array.from({ length: 3 }, () => ({ scope: "climb", ropeMethod: "lead" })),
+        reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+      }),
+    ]);
+    await expect(
+      write([
+        source({
+          attempts: [{ scope: "climb" }],
+          reportedAttemptCounts: [{ scope: "climb", count: 2 }],
+        }),
+      ]),
+    ).rejects.toThrow("Source count is below its described recorded attempts.");
+    expect(await recorded((await log()).id)).toHaveLength(3);
+  });
+
   it("retains separately recorded methods when a count update cannot account for them", async () => {
     await write([
       source({

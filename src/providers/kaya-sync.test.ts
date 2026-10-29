@@ -729,6 +729,7 @@ describe("KayaSyncProvider", () => {
         climb: { externalId: "climb-ungraded", kind: "route" },
         attempts: [
           { scope: "climb", ropeMethod: null, qualifier: "free-send", sourceResult: "Redpoint" },
+          { scope: "climb", ropeMethod: null },
         ],
       });
     },

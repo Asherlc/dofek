@@ -495,6 +495,7 @@ function matchAttempt(
   supplied: AttemptEvidence,
   matched: Set<string>,
   reportedCount: number | undefined,
+  sharedCountedMethod: boolean,
 ): AttemptRow | undefined {
   const remaining = rows.filter((row) => !matched.has(row.id));
   if (!described(supplied)) return remaining[0];
@@ -510,6 +511,7 @@ function matchAttempt(
       factKeys.every(
         (key) =>
           key === "sourceResult" ||
+          (key === "ropeMethod" && sharedCountedMethod) ||
           supplied[key] == null ||
           row[key] == null ||
           equalFact(row[key], supplied[key]),
@@ -719,12 +721,25 @@ async function reconcileAttempts(
   )) {
     const scopedRows = rows.filter((row) => matchesTarget(row, group.target));
     const parents = new Set(rows.map((row) => row.parentAttemptId).filter((id) => id !== null));
+    // Uniform methods describe the counted group, not individual attempt identity.
+    const sharedCountedMethod =
+      group.count !== undefined &&
+      group.attempts.length > 0 &&
+      group.attempts.length === group.count &&
+      group.attempts[0]?.source.ropeMethod !== undefined &&
+      scopedRows.every((row) => row.ropeMethod === scopedRows[0]?.ropeMethod) &&
+      group.attempts.every(
+        (item) => item.source.ropeMethod === group.attempts[0]?.source.ropeMethod,
+      );
+
     const individuallyDescribed = (row: AttemptRow) =>
       described({
         ...row,
-        ropeMethod: group.attempts.some((attempt) => attempt.source.ropeMethod === row.ropeMethod)
-          ? null
-          : row.ropeMethod,
+        ropeMethod:
+          sharedCountedMethod ||
+          group.attempts.some((attempt) => attempt.source.ropeMethod === row.ropeMethod)
+            ? null
+            : row.ropeMethod,
       });
     const protectedRow = (row: AttemptRow) => individuallyDescribed(row) || parents.has(row.id);
     if (
@@ -754,7 +769,7 @@ async function reconcileAttempts(
       const hint = associatedParent(item.source.sourceKey, entry, rows);
       const known = hint
         ? scopedRows.find((row) => row.id === hint && !matched.has(row.id))
-        : matchAttempt(scopedRows, evidence, matched, group.count);
+        : matchAttempt(scopedRows, evidence, matched, group.count, sharedCountedMethod);
       const values = {
         ...evidence,
         scope: group.target.scope,

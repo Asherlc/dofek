@@ -457,7 +457,7 @@ function kayaLogEntry(
       ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
     },
   ];
-  if ((ropeMethod !== null || source.sent === false) && source.attempts !== null)
+  if (source.attempts !== null)
     for (let attemptCount = 1; attemptCount < source.attempts; attemptCount++)
       attempts.push({
         scope: "climb",
