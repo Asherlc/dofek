@@ -12,6 +12,9 @@ jobs:
   cleanup:
     name: Delete PR Preview Objects
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check cleanup prerequisites
         id: ready
@@ -55,6 +58,16 @@ jobs:
             --region auto \
             --endpoint-url "$R2_ENDPOINT"
 
+      - name: Check out the cleanup action
+        if: steps.ready.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Load OTA application identity through OIDC
+        if: steps.ready.outputs.ready == 'true'
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_APP_ID
       - name: Delete mobile preview OTA objects
         if: steps.ready.outputs.ready == 'true'
         env:
@@ -65,7 +78,7 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail
-          aws s3 rm "s3://dofek-ota/pr-$PR_NUMBER/" \
+          aws s3 rm "s3://dofek-ota/$EXPO_APP_ID/pr-$PR_NUMBER/" \
             --recursive \
             --region auto \
             --endpoint-url "$R2_ENDPOINT"

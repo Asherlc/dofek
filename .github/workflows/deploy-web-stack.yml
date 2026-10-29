@@ -29,6 +29,16 @@ on:
         required: false
         type: string
         default: ""
+      ota_quiesce:
+        description: Keep OTA stopped for a storage migration or recovery
+        required: false
+        type: boolean
+        default: false
+      ota_image:
+        description: Immutable OTA image override for verified recovery
+        required: false
+        type: string
+        default: ""
       infisical_environment:
         description: "Infisical environment to export for the stack"
         required: false
@@ -122,6 +132,7 @@ jobs:
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
+      OTA_IMAGE: ${{ inputs.ota_image || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -204,6 +215,7 @@ jobs:
           PEERDB_PUBLIC_URL_INPUT: ${{ inputs.peerdb_public_url || 'https://peerdb.dofek.asherlc.com' }}
           PEERDB_HOST_RULE_INPUT: ${{ inputs.peerdb_host_rule }}
           STACK_OVERRIDE_INPUT: ${{ inputs.stack_override }}
+          OTA_QUIESCE: ${{ inputs.ota_quiesce }}
         run: |
           if [ "$DEPLOY_ENVIRONMENT" = "prod" ] || [ "$DEPLOY_ENVIRONMENT" = "production" ]; then
             PUBLIC_URL_INPUT="${PUBLIC_URL_INPUT:-https://dofek.fit}"
@@ -223,6 +235,13 @@ jobs:
           if [ -n "$STACK_OVERRIDE_INPUT" ]; then
             test -f "$STACK_OVERRIDE_INPUT" || { echo "::error::stack_override file not found: $STACK_OVERRIDE_INPUT"; exit 1; }
             STACK_FILE_FLAGS="$STACK_FILE_FLAGS -c $STACK_OVERRIDE_INPUT"
+          fi
+          if [ -n "$OTA_IMAGE" ] && ! [[ "$OTA_IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::ota_image must be an immutable GHCR image digest"
+            exit 1
+          fi
+          if [ "$OTA_QUIESCE" = "true" ]; then
+            STACK_FILE_FLAGS="$STACK_FILE_FLAGS -c deploy/stack.ota-quiesce.yml"
           fi
 
           {
@@ -569,6 +588,10 @@ jobs:
         env:
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
         run: pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"
+
+      - name: Wait for OTA storage access to stop
+        if: inputs.ota_quiesce
+        run: pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" ota
 
       - name: Wait for Postgres writable
         run: |

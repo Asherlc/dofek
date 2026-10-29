@@ -1,0 +1,4 @@
+services:
+  ota:
+    deploy:
+      replicas: 0

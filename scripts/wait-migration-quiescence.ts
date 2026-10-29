@@ -57,9 +57,9 @@ const taskInspectionsSchema = z.array(
   }),
 );
 
-function inspectService(serviceName: string, deadline: number): string[] {
+function inspectService(serviceName: string, deadline: number, context?: string): string[] {
   const docker = (arguments_: string[]) =>
-    execFileSync("docker", arguments_, {
+    execFileSync("docker", context ? ["--context", context, ...arguments_] : arguments_, {
       encoding: "utf8",
       timeout: Math.max(1, deadline - Date.now()),
     });
@@ -95,13 +95,25 @@ function inspectService(serviceName: string, deadline: number): string[] {
     .map((task) => `${serviceName}: ${task.ID}=${task.Status.State}`);
 }
 
+export function assertServiceStopped(serviceName: string, context: string): void {
+  if (!serviceName.trim() || !context.trim())
+    throw new Error("A service and Docker context are required");
+  const activeTasks = inspectService(serviceName, Date.now() + QUIESCENCE_TIMEOUT_MS, context);
+  if (activeTasks.length)
+    throw new Error(`${serviceName} tasks must be stopped: ${activeTasks.join(", ")}`);
+}
+
 export async function waitForMigrationQuiescence(
   stackName: string,
-  deploymentMode: "rolling" | "maintenance",
+  deploymentMode: "rolling" | "maintenance" | "ota",
 ): Promise<void> {
   if (!stackName.trim()) throw new Error("A stack name is required for migration quiescence.");
   const consumers =
-    deploymentMode === "maintenance" ? [...MIGRATION_CONSUMERS, "web"] : MIGRATION_CONSUMERS;
+    deploymentMode === "ota"
+      ? ["ota"]
+      : deploymentMode === "maintenance"
+        ? [...MIGRATION_CONSUMERS, "web"]
+        : MIGRATION_CONSUMERS;
   const deadline = Date.now() + QUIESCENCE_TIMEOUT_MS;
   let waiting: string[] = [];
   while (Date.now() < deadline) {
@@ -123,11 +135,13 @@ if (commandPath && import.meta.url === pathToFileURL(commandPath).href) {
   const [stackName, deploymentMode, ...extra] = process.argv.slice(2);
   if (
     !stackName ||
-    (deploymentMode !== "rolling" && deploymentMode !== "maintenance") ||
+    (deploymentMode !== "rolling" &&
+      deploymentMode !== "maintenance" &&
+      deploymentMode !== "ota") ||
     extra.length > 0
   ) {
     throw new Error(
-      "Usage: pnpm tsx scripts/wait-migration-quiescence.ts <stack-name> <rolling|maintenance>",
+      "Usage: pnpm tsx scripts/wait-migration-quiescence.ts <stack-name> <rolling|maintenance|ota>",
     );
   }
   await waitForMigrationQuiescence(stackName, deploymentMode);

@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Verified storage operation (restore affects rehearsal only)
+        description: Verified storage operation (production restore requires stopped OTA)
         required: true
         type: choice
-        options: [snapshot, verify-snapshot, rehearsal-copy, migration-rehearsal, restore-rehearsal]
+        options: [snapshot, verify-snapshot, rehearsal-copy, migration-rehearsal, restore-rehearsal, restore-production, verify-production-migration]
       snapshot_id:
         description: Unique 8–64 character lowercase snapshot identifier
         required: true
@@ -62,6 +62,24 @@ jobs:
             R2_ENDPOINT
             R2_ACCESS_KEY_ID
             R2_SECRET_ACCESS_KEY
+      - name: Set up production inspection SSH
+        if: inputs.operation == 'restore-production'
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ vars.ORACLE_SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Create the production inspection context
+        if: inputs.operation == 'restore-production'
+        env:
+          ORACLE_SERVER_HOST: ${{ vars.ORACLE_SERVER_HOST }}
+        run: |
+          test -n "$ORACLE_SERVER_HOST" || { echo "::error::ORACLE_SERVER_HOST is required"; exit 1; }
+          docker context create ota-production --docker "host=ssh://ubuntu@$ORACLE_SERVER_HOST"
+      - name: Load application identity for production migration verification
+        if: inputs.operation == 'verify-production-migration'
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_APP_ID
       - name: Copy and byte-verify storage
         if: inputs.operation != 'migration-rehearsal'
         env:
@@ -69,6 +87,8 @@ jobs:
           OPERATION: ${{ inputs.operation }}
           SNAPSHOT_ID: ${{ inputs.snapshot_id }}
           OTA_REHEARSAL_STOPPED: ${{ inputs.candidate_stopped }}
+          OTA_DOCKER_CONTEXT: ota-production
+          ORACLE_SERVER_HOST: ${{ vars.ORACLE_SERVER_HOST }}
         run: pnpm tsx scripts/ota-storage.ts "$OPERATION" "$SNAPSHOT_ID" >> "$GITHUB_STEP_SUMMARY"
       - name: Load retained application identity and signing keys
         if: inputs.operation == 'migration-rehearsal'
