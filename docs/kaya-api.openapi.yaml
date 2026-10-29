@@ -132,6 +132,12 @@ components:
       required: [id, session_id, date, attempts, grade, ascent_type, climb]
       properties:
         id: { type: string }
+        lead:
+          type: [boolean, 'null']
+          description: >-
+            Ascent-level method, verified on 2026-10-29 through authenticated
+            ascentsForUser reads. Takes precedence over climb.lead; null or
+            absent falls back to the route flag. Both missing remains unknown.
         session_id: { type: [string, 'null'] }
         date: { type: string, format: date-time }
         comment: { type: [string, 'null'] }

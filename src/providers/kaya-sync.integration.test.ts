@@ -85,6 +85,52 @@ describe("KayaSyncProvider canonical persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
 
+  it.each(["Onsight", "Redpoint", "Unfamiliar"])(
+    "refreshes counted %s methods while preserving identities and attachments",
+    async (result) => {
+      sessions = [kayaSessionFixture({ attempted_climbs: [] })];
+      const route = kayaClimbFixture({
+        climb_type: { id: "2", name: "Routes" },
+        lead: false,
+        grade: { id: "25", name: "5.11a", climb_type_group: "3" },
+      });
+      const source = kayaAscentFixture({
+        attempts: 3,
+        lead: null,
+        climb: route,
+        ascent_type: { id: "result", name: result },
+      });
+      ascents = [source];
+      expect(await run()).toMatchObject({ errors: [] });
+      const [entry] = await logs();
+      const before = await context.db.select().from(climbingAttempt);
+      expect(before).toHaveLength(3);
+      expect(before.map((attempt) => attempt.ropeMethod)).toEqual([
+        "top_rope",
+        "top_rope",
+        "top_rope",
+      ]);
+
+      for (const [lead, routeLead, method] of [
+        [true, false, "lead"],
+        [null, false, "top_rope"],
+        [null, null, null],
+      ] as const) {
+        ascents = [{ ...source, lead, climb: { ...route, lead: routeLead } }];
+        expect(await run()).toMatchObject({ errors: [] });
+        expect(await logs()).toEqual([
+          expect.objectContaining({ id: entry?.id, activityId: entry?.activityId }),
+        ]);
+        const after = await context.db.select().from(climbingAttempt);
+        expect(after.map((attempt) => attempt.id).sort()).toEqual(
+          before.map((attempt) => attempt.id).sort(),
+        );
+        expect(after.map((attempt) => attempt.ropeMethod)).toEqual([method, method, method]);
+        expect((await logs())[0]?.raw).toMatchObject({ lead, climb: { lead: routeLead } });
+      }
+    },
+  );
+
   it("discovers historical and standalone photos during normal sync without per-ascent requests", async () => {
     sessions = [kayaSessionFixture({ attempted_climbs: [] })];
     ascents = [

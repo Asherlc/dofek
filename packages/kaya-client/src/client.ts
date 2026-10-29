@@ -76,6 +76,7 @@ const ascentSchema = z.object({
   video: z.json().optional(),
   id: idSchema,
   session_id: idSchema.nullable(),
+  lead: z.boolean().nullish(),
   date: z.string(),
   comment: z.string().nullable().optional(),
   rating: z.number().nullable().optional(),
@@ -211,4 +212,4 @@ const LOCATION_FIELDS = `id name latitude longitude description access_descripti
 const GYM_FIELDS = `id name address city region country latitude longitude slug website nickname postal_code photo_url thumbnail_url banner_photo_url is_official`;
 const CLIMB_FIELDS = `id name color { name } slug lead climb_type { id name } grade { id name climb_type_group } gym { ${GYM_FIELDS} } destination { ${LOCATION_FIELDS} } area { ${LOCATION_FIELDS} } subarea { ${LOCATION_FIELDS} } board { ${LOCATION_FIELDS} } angle tags { id name color icon tag_type_id } description access_description protection_description is_benchmark bolts pitches is_trad length latitude longitude fa date_set date_updated photo_url location risk intensity complexity gem anchor thumbnail_url video_url video_thumbnail_url wall_set_id wallarea { id name photo_url location_type { id name } climb_type_id }`;
 const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { ${GYM_FIELDS} } board { ${LOCATION_FIELDS} } destination { ${LOCATION_FIELDS} } attempted_climbs { attempts: session_attempts sent ${CLIMB_FIELDS} } } }`;
-const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts grade { id name climb_type_group } photo { photo_url thumb_url } video { video_url thumb_url } ascent_type { id name } gym { ${GYM_FIELDS} } climb { ${CLIMB_FIELDS} } } }`;
+const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id lead date comment rating stiffness attempts grade { id name climb_type_group } photo { photo_url thumb_url } video { video_url thumb_url } ascent_type { id name } gym { ${GYM_FIELDS} } climb { ${CLIMB_FIELDS} } } }`;
