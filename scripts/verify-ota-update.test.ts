@@ -1,7 +1,9 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { HttpResponse, http } from "msw";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import { HttpResponse, http, passthrough } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { verifyOtaUpdate } from "./verify-ota-update.ts";
 
 const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -84,6 +86,46 @@ const options = {
 };
 
 describe("signed OTA update audit", () => {
+  it("aborts a download that stalls after sending response headers", async () => {
+    serve();
+    const controller = new AbortController();
+    const originalTimeout = AbortSignal.timeout;
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((delay) =>
+        delay === 60_000 ? controller.signal : originalTimeout(delay),
+      );
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const stalled = createServer((_request, response) => {
+      response.writeHead(200);
+      response.write(bytes.subarray(0, 1));
+      timers.push(
+        setTimeout(() => controller.abort(new DOMException("Asset timed out", "TimeoutError")), 25),
+      );
+      timers.push(setTimeout(() => response.destroy(), 300));
+    });
+    stalled.listen(0, "127.0.0.1");
+    await once(stalled, "listening");
+    const address = stalled.address();
+    if (!address || typeof address === "string") throw new Error("Missing fixture server address");
+    const url = `http://127.0.0.1:${address.port}/asset`;
+    server.use(http.get(url, () => passthrough()));
+    try {
+      await expect(
+        verifyOtaUpdate({
+          ...options,
+          fetchImplementation: (input, init) =>
+            fetch(String(input).startsWith("https://ota.example.test/assets/") ? url : input, init),
+        }),
+      ).rejects.toMatchObject({ name: expect.stringMatching(/AbortError|TimeoutError/) });
+      expect(timeout).toHaveBeenCalledWith(60_000);
+    } finally {
+      timeout.mockRestore();
+      for (const timer of timers) clearTimeout(timer);
+      stalled.closeAllConnections();
+      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+    }
+  });
   it("verifies retained identity, device certificate and every asset hash", async () => {
     serve();
     await expect(verifyOtaUpdate(options)).resolves.toBe(manifest.id);

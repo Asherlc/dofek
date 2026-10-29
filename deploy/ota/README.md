@@ -126,6 +126,11 @@ to bind the signature to the manifest part's headers and exact bytes, and
 [structured-headers](https://github.com/evert/structured-header) for the signature
 dictionary. A signature on another MIME part does not certify the manifest.
 The legacy request omits `expo-app-id`, exercising the installed-client fallback.
+The audit bounds each asset fetch and body read to 60 seconds. Expo's
+[iOS downloader](https://github.com/expo/expo/blob/expo%4058.0.21/packages/expo-updates/ios/EXUpdates/AppLoader/FileDownloader.swift)
+uses a 60-second request timeout; the audit applies a total deadline so a stalled
+body fails through normal candidate cleanup. The manifest deadline remains five
+seconds.
 
 The job stops the candidate before restoring the mutable copy and refuses to
 restore if the stop fails. It byte-verifies restoration, then rechecks that

@@ -66,7 +66,10 @@ export async function verifyOtaUpdate(options: AuditOptions): Promise<string> {
     throw new Error("OTA manifest signature does not match the installed device certificate");
   }
   for (const asset of [manifest.launchAsset, ...manifest.assets]) {
-    const response = await options.fetchImplementation(asset.url);
+    const response = await options.fetchImplementation(asset.url, {
+      // Expo iOS uses a 60-second request timeout; also bound the audit body read.
+      signal: AbortSignal.timeout(60_000),
+    });
     if (!response.ok) throw new Error(`OTA asset returned HTTP ${response.status}`);
     const hash = createHash("sha256")
       .update(Buffer.from(await response.arrayBuffer()))
