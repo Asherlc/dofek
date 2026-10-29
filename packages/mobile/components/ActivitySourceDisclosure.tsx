@@ -5,7 +5,7 @@ import {
   type ActivitySourceTreeNode,
   activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { SERVER_URL } from "../lib/server";
 import { captureException } from "../lib/telemetry";
@@ -16,6 +16,7 @@ import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
 interface Props {
   tree: ActivitySourceTree;
+  heading?: ReactNode;
   hardware?: ActivityHardware;
   hardwareLoading?: boolean;
   hardwareError?: unknown;
@@ -99,6 +100,7 @@ function SourceBranches({ nodes }: { nodes: ActivitySourceTreeNode[] }) {
 
 export function ActivitySourceDisclosure({
   tree,
+  heading,
   hardware,
   hardwareLoading = false,
   hardwareError,
@@ -108,12 +110,14 @@ export function ActivitySourceDisclosure({
   const contentId = useId();
   const sourceTree = hardware ? activitySourceTreeWithHardware(tree, hardware) : tree;
   const { primary, otherSources } = sourceTree;
-  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError) return null;
+  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError)
+    return <>{heading}</>;
 
   return (
-    <View style={styles.container}>
+    <View style={heading ? styles.headerContainer : styles.container}>
+      {heading ? <View style={styles.heading}>{heading}</View> : null}
       <Pressable
-        style={styles.trigger}
+        style={[styles.trigger, heading ? styles.headerTrigger : undefined]}
         accessibilityRole="button"
         accessibilityLabel={primary ? `Sources: ${primary.label}` : "Sources"}
         accessibilityHint={open ? "Hide activity sources" : "Show activity sources"}
@@ -141,16 +145,18 @@ export function ActivitySourceDisclosure({
         </View>
       </Pressable>
       {hardwareError ? (
-        <QueryStatePanel
-          variant="error"
-          title="Could not load device metadata"
-          message={getQueryErrorMessage(hardwareError)}
-          onRetry={onRetryHardware}
-          minHeight={72}
-        />
+        <View style={styles.fullWidth}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load device metadata"
+            message={getQueryErrorMessage(hardwareError)}
+            onRetry={onRetryHardware}
+            minHeight={72}
+          />
+        </View>
       ) : null}
       {open ? (
-        <View id={contentId} style={styles.details}>
+        <View id={contentId} style={[styles.details, heading ? styles.fullWidth : undefined]}>
           {!hardware && hardwareLoading && !hardwareError ? (
             <QueryStatePanel variant="loading" minHeight={72} />
           ) : null}
@@ -178,6 +184,15 @@ export function ActivitySourceDisclosure({
 }
 
 const styles = StyleSheet.create({
+  headerContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  heading: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
+  headerTrigger: { maxWidth: "50%", paddingHorizontal: 0 },
+  fullWidth: { width: "100%" },
   container: {
     borderTopWidth: 1,
     borderTopColor: colors.surfaceSecondary,
