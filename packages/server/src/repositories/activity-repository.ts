@@ -12,7 +12,7 @@ import {
   postgresEndDateTimestampRangeLowerBound,
   type RangeDays,
 } from "../lib/date-window.ts";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
@@ -751,7 +751,7 @@ export class ActivityRepository extends BaseRepository {
                 centroidLng: summary.centroid_lng,
                 mapPreview:
                   routePreview ??
-                  osmTilePreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
+                  routeMapPreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
               }
             : pendingLocation,
       };

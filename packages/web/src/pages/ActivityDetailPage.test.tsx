@@ -28,47 +28,20 @@ const capturedOptions: Array<Record<string, unknown>> = [];
 const capturedEvents: Array<Record<string, (...params: Array<Record<string, unknown>>) => void>> =
   [];
 
-const leafletMocks = vi.hoisted(() => ({
-  map: vi.fn((container: HTMLElement) => ({
-    remove: vi.fn(() => container.replaceChildren()),
-    fitBounds: vi.fn(),
-    container,
-  })),
-  tileLayer: vi.fn(() => ({
-    addTo: vi.fn(),
-    on: vi.fn(),
-    once: vi.fn((_event: string, onLoad: () => void) => onLoad()),
-  })),
-  latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
-  latLngBounds: vi.fn(() => ({})),
-  polyline: vi.fn(() => ({ addTo: vi.fn() })),
-  circleMarker: vi.fn(() => {
-    const element = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.append(element);
-    const marker = {
-      addTo: vi.fn((map: { container: HTMLElement }) => {
-        map.container.append(svg);
-        return marker;
-      }),
-      remove: vi.fn(),
-      setLatLng: vi.fn(),
-      bindTooltip: vi.fn(() => marker),
-      on: vi.fn((event: string, listener: () => void) => {
-        element.addEventListener(event, listener);
-        return marker;
-      }),
-      fire: vi.fn((event: string) => {
-        element.dispatchEvent(new Event(event));
-        return marker;
-      }),
-      getElement: vi.fn(() => element),
-      openTooltip: vi.fn(),
-      closeTooltip: vi.fn(),
-    };
-    return marker;
-  }),
-}));
+import { maps, markers, resetMaps } from "../lib/maplibre-test-helpers.ts";
+
+vi.mock("maplibre-gl", async () => {
+  const helper = await import("../lib/maplibre-test-helpers.ts");
+  return {
+    ...helper.maplibreMock,
+    Map: class extends helper.TestMap {
+      constructor(options: Record<string, unknown>) {
+        super(options);
+        queueMicrotask(() => this.fire("load"));
+      }
+    },
+  };
+});
 
 vi.mock("echarts-for-react", () => ({
   default: (props: {
@@ -466,8 +439,6 @@ vi.mock("../lib/trpc.ts", () => ({
   },
 }));
 
-vi.mock("leaflet", () => leafletMocks);
-
 vi.mock("react-body-highlighter", () => ({
   default: ({ type }: { type: string }) => <div data-testid={`muscle-map-${type}`} />,
   MuscleType: {
@@ -577,12 +548,7 @@ afterEach(() => {
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
   capturedEvents.length = 0;
-  leafletMocks.map.mockClear();
-  leafletMocks.tileLayer.mockClear();
-  leafletMocks.latLng.mockClear();
-  leafletMocks.latLngBounds.mockClear();
-  leafletMocks.polyline.mockClear();
-  leafletMocks.circleMarker.mockClear();
+  resetMaps();
   mockStrengthExercisesUseQuery.mockClear();
   mockHangboardDetailsUseQuery.mockClear();
   mockClimbingEntriesUseQuery.mockClear();
@@ -1033,7 +999,7 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("Processing route map…")).toBeDefined();
     expect(screen.getByRole("status").parentElement).toHaveClass("h-[400px]");
     expect(screen.getByRole("status").querySelector(".animate-spin")).not.toBeNull();
-    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    expect(maps).toHaveLength(0);
     const routeOptions = mockRouteUseQuery.mock.calls[0]?.[1];
     if (
       !routeOptions ||
@@ -1113,7 +1079,7 @@ describe("ActivityDetailPage", () => {
     const climbPoint = await screen.findByRole("button", {
       name: "Located climb · Climb location: Located climb · Mountain Project",
     });
-    const createdMaps = leafletMocks.map.mock.calls.length;
+    const createdMaps = maps.length;
     act(() => climbPoint.focus());
     fireEvent.keyDown(climbPoint, { key: "Enter" });
     const dialog = await screen.findByRole("dialog");
@@ -1136,9 +1102,13 @@ describe("ActivityDetailPage", () => {
         name: "Climbing log details",
       }),
     ).toBeInTheDocument();
-    expect(leafletMocks.map).toHaveBeenCalledTimes(createdMaps);
+    expect(maps).toHaveLength(createdMaps);
     if (state.startsWith("cached")) {
-      await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(7, 8));
+      await waitFor(() =>
+        expect(
+          markers.some((marker) => marker.coordinates?.[0] === 8 && marker.coordinates[1] === 7),
+        ).toBe(true),
+      );
     }
     if (state.endsWith("error")) {
       expect(screen.getByText("Recorded route refresh failed")).toBeDefined();
@@ -1156,7 +1126,7 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Loading route map…")).toBeDefined();
-    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    expect(maps).toHaveLength(0);
   });
 
   it("shows a route-specific error instead of drawing cached partial GPS", async () => {
@@ -1170,7 +1140,7 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Route freshness query failed.")).toBeDefined();
-    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    expect(maps).toHaveLength(0);
   });
 
   it("draws the ready route endpoint even when the cached sensor stream ends early", async () => {
@@ -1189,34 +1159,33 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(9, 9));
+    await waitFor(() =>
+      expect(
+        markers.some((marker) => marker.coordinates?.[0] === 9 && marker.coordinates[1] === 9),
+      ).toBe(true),
+    );
   });
 
-  it("shows OpenStreetMap tiles with attribution on the route map", async () => {
+  it("shows the shared vector map background and its attribution on the route map", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
-
-    await waitFor(() =>
-      expect(leafletMocks.map).toHaveBeenCalledWith(
-        expect.any(HTMLElement),
-        expect.objectContaining({ attributionControl: true }),
-      ),
-    );
-    expect(leafletMocks.tileLayer).toHaveBeenCalledWith(
-      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      expect.objectContaining({
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }),
-    );
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.options).toMatchObject({
+      attributionControl: {},
+      style: {
+        sources: {
+          openmaptiles: { type: "vector", attribution: expect.stringContaining("OpenStreetMap") },
+        },
+      },
+    });
   });
 
   it("creates a route hover marker from valid chart pointer events", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
 
-    await waitFor(() => expect(leafletMocks.map).toHaveBeenCalledOnce());
-    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(maps).toHaveLength(1));
+    await waitFor(() => expect(markers).toHaveLength(2));
     const metricEvents = capturedEvents.find((events) => events.updateAxisPointer != null);
     if (!metricEvents?.updateAxisPointer || !metricEvents.globalout) {
       throw new Error("Metrics chart pointer events were not registered");
@@ -1225,7 +1194,7 @@ describe("ActivityDetailPage", () => {
     metricEvents.updateAxisPointer({
       axesInfo: [{ value: Date.parse(mockStreamPoints[0]?.recordedAt ?? "") }],
     });
-    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(markers).toHaveLength(3));
 
     metricEvents.updateAxisPointer({});
     metricEvents.updateAxisPointer({ axesInfo: [] });
@@ -1234,12 +1203,12 @@ describe("ActivityDetailPage", () => {
       axesInfo: [{ value: Date.parse(mockStreamPoints.at(-1)?.recordedAt ?? "") + 1 }],
     });
 
-    expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3);
+    expect(markers).toHaveLength(3);
 
     metricEvents.updateAxisPointer({
       axesInfo: [{ value: Date.parse(mockStreamPoints[1]?.recordedAt ?? "") }],
     });
-    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(markers).toHaveLength(4));
     metricEvents.globalout();
   });
 
@@ -1408,7 +1377,7 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    await waitFor(() => expect(leafletMocks.map).toHaveBeenCalledOnce());
+    await waitFor(() => expect(maps).toHaveLength(1));
     const metricEvents = capturedEvents.find((events) => events.updateAxisPointer != null);
     if (!metricEvents?.updateAxisPointer) {
       throw new Error("Metrics chart pointer events were not registered");
@@ -1418,7 +1387,7 @@ describe("ActivityDetailPage", () => {
       axesInfo: [{ value: Date.parse(mockStreamPoints[1]?.recordedAt ?? "") }],
     });
 
-    expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2);
+    expect(markers).toHaveLength(2);
   });
 
   it("shows a climbing-entry query failure for a climbing activity", async () => {
@@ -1907,7 +1876,7 @@ describe("ActivityDetailPage", () => {
 
       fireEvent.click(trigger);
       expect(trigger).toHaveAttribute("aria-expanded", "false");
-      expect(trigger).toHaveFocus();
+      await waitFor(() => expect(trigger).toHaveFocus());
       expect(screen.queryByText("Strava")).toBeNull();
     });
 

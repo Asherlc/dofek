@@ -480,15 +480,8 @@ function makeActivityMapPreview() {
       { x: 120.5, y: 300.25 },
       { x: 640.75, y: 180.5 },
     ],
-    tiles: [
-      {
-        height: 256,
-        url: "https://tile.openstreetmap.org/13/1310/3166.png",
-        width: 256,
-        x: 0,
-        y: 0,
-      },
-    ],
+    center: [-122.34375, 37.74900069],
+    zoom: 12,
     width: 1024,
   };
 }
@@ -2231,15 +2224,8 @@ describe("createMcpRouter", () => {
                   { x: 120.5, y: 300.25 },
                   { x: 640.75, y: 180.5 },
                 ],
-                tiles: [
-                  {
-                    height: 256,
-                    url: "https://tile.openstreetmap.org/13/1310/3166.png",
-                    width: 256,
-                    x: 0,
-                    y: 0,
-                  },
-                ],
+                center: [-122.34375, 37.74900069],
+                zoom: 12,
                 width: 1024,
               },
             },

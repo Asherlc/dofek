@@ -113,7 +113,7 @@ export const IndoorCycling: HeaderStory = {
     powerWork: { workKilojoules: 477.8, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.queryByText("Distance")).not.toBeInTheDocument();
     await expect(canvas.getByText("Energy Output")).toBeVisible();
     await expect(canvas.getByText("478 kJ")).toBeVisible();
@@ -159,7 +159,7 @@ export const WalkingSourcesExpanded: HeaderStory = {
   parameters: { layout: "padded" },
   args: WalkingSourcesCollapsed.args,
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(canvas.getByRole("button", { name: "Asher’s Apple Watch Sources" }));
     await expect(canvas.getByText("Whoop")).toBeVisible();
     await expect(canvas.getByText("Apple Health")).toBeVisible();
@@ -179,7 +179,7 @@ export const PrimarySourceWithoutTitle: HeaderStory = {
     },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.getByRole("heading", { name: "Running" })).toBeVisible();
     await expect(canvas.getByText("Walking")).toBeVisible();
   },
@@ -187,7 +187,7 @@ export const PrimarySourceWithoutTitle: HeaderStory = {
 
 export const BranchingCollapsed: HeaderStory = {
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" })).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -198,7 +198,7 @@ export const BranchingCollapsed: HeaderStory = {
 
 export const BranchingExpanded: HeaderStory = {
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" }));
     await expect(canvas.getAllByText("Garmin Edge 530")).toHaveLength(1);
     await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
@@ -221,7 +221,7 @@ export const UnresolvedSources: HeaderStory = {
     },
   },
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(canvas.getByRole("button", { name: "Sources" }));
     await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
@@ -230,7 +230,7 @@ export const UnresolvedSources: HeaderStory = {
 export const RemovedSources: HeaderStory = {
   args: { activity: { ...baseActivity, sourceTree: removedDetailSourceTree } },
   play: async ({ canvasElement, userEvent }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" }));
     await expect(canvas.getAllByText("Removed from provider")[0]).toBeVisible();
     await expect(canvas.queryByRole("link", { name: "Strava" })).toBeNull();

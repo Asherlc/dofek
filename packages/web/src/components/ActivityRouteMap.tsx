@@ -2,7 +2,10 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
+import { createMapStyle } from "@dofek/training/map-style";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
+import { loadMapLibre, mapColorMode, mapDot, watchMapTheme } from "../lib/maplibre.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 
@@ -24,25 +27,23 @@ export function ActivityRouteMap({
   >;
 }) {
   const mapRef = useRef<HTMLElement>(null);
-  const mapInstanceRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
+  const mapInstanceRef = useRef<MapLibreMap | null>(null);
   const [previewVisible, setPreviewVisible] = useState(presentation === "detail");
   const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [tileWarning, setTileWarning] = useState<string | null>(null);
 
   useEffect(() => {
-    if (presentation !== "compact" || previewVisible || !mapRef.current) return;
+    if (presentation !== "compact" || !mapRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setPreviewVisible(true);
-        observer.disconnect();
+        setPreviewVisible(entries.some((entry) => entry.isIntersecting));
       },
       { rootMargin: "200px" },
     );
     observer.observe(mapRef.current);
     return () => observer.disconnect();
-  }, [presentation, previewVisible]);
+  }, [presentation]);
 
   const [mapState, setMapState] = useState<{ loading: boolean; error: string | null }>({
     loading: true,
@@ -60,190 +61,132 @@ export function ActivityRouteMap({
 
     let cancelled = false;
 
-    import("leaflet")
-      .then((L) => {
-        if (cancelled || !container) return;
-
-        // Clean up any existing map instance
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.remove();
-          mapInstanceRef.current = null;
-        }
-
-        const map = L.map(container, {
-          zoomControl: presentation === "detail",
-          attributionControl: true,
+    const cleanups: (() => void)[] = [];
+    loadMapLibre()
+      .then((M) => {
+        if (cancelled) return;
+        const map = new M.Map({
+          container,
+          style: createMapStyle(mapColorMode()),
+          attributionControl: {},
+          interactive: presentation === "detail",
         });
         mapInstanceRef.current = map;
-
-        const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 19,
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        if (presentation === "detail")
+          map.addControl(new M.NavigationControl({ showCompass: false }), "top-right");
+        cleanups.push(watchMapTheme(map));
+        map.once("load", () => {
+          if (!cancelled) setMapState({ loading: false, error: null });
         });
-        let tileErrorReported = false;
-        tiles.on("tileerror", () => {
-          if (cancelled || tileErrorReported) return;
-          tileErrorReported = true;
-          const error = new Error("Map tiles could not load. Check your connection.");
-          captureException(error, { component: "ActivityRouteMap" });
+        let errorReported = false;
+        map.on("error", (event) => {
+          if (cancelled || errorReported) return;
+          errorReported = true;
+          captureException(event.error, { component: "ActivityRouteMap" });
           setTileWarning("Some map tiles could not load. Check your connection.");
           setMapState({ loading: false, error: null });
         });
-        tiles.once("load", () => {
-          if (!cancelled) setMapState({ loading: false, error: null });
-        });
-        tiles.addTo(map);
-
-        const latLngs = points.map((p) => L.latLng(p.lat, p.lng));
-
-        if (latLngs.length > 0) {
-          L.polyline(latLngs, {
-            color: statusColors.positive,
-            weight: 3,
-            opacity: 0.8,
-          }).addTo(map);
-        }
-
-        // Sensor endpoints do not represent source climb locations.
-        const startLatLng = latLngs[0];
-        const endLatLng = latLngs[latLngs.length - 1];
-        if (startLatLng) {
-          L.circleMarker(startLatLng, {
-            radius: 6,
-            color: statusColors.positive,
-            fillColor: statusColors.positive,
-            fillOpacity: 1,
-          }).addTo(map);
-        }
-        if (endLatLng) {
-          L.circleMarker(endLatLng, {
-            radius: 6,
-            color: statusColors.danger,
-            fillColor: statusColors.danger,
-            fillOpacity: 1,
-          }).addTo(map);
-        }
-
-        const sourceDots = groupClimbingMapMarkers(climbMarkers, providerSourceLabel).map(
-          (group) => {
-            const { latitude, longitude } = group.coordinates;
-            const point = L.latLng(latitude, longitude);
-            const label = `${group.title} · ${group.description}`;
-            const tooltip = document.createElement("span");
-            tooltip.textContent = label;
-            Object.assign(tooltip.style, {
-              display: "block",
-              width: "max-content",
-              maxWidth: "240px",
-              whiteSpace: "normal",
-              overflowWrap: "anywhere",
-            });
-            const color = group.markers.every((marker) => marker.location.scope === "area")
-              ? "#d97706"
-              : "#2563eb";
-            const badge = document.createElement("span");
-            badge.textContent = String(group.markers.length);
-            badge.setAttribute("aria-hidden", "true");
-            Object.assign(badge.style, {
-              display: "grid",
-              placeItems: "center",
-              width: "100%",
-              height: "100%",
-              borderRadius: "50%",
-              border: "2px solid white",
-              backgroundColor: color,
-              color: "white",
-              fontSize: "12px",
-              fontWeight: "700",
-              boxShadow: "0 1px 4px #0004",
-            });
-            const dot = (
-              group.markers.length > 1
-                ? L.marker(point, {
-                    keyboard: false,
-                    icon: L.divIcon({
-                      html: badge,
-                      className: "climbing-location-marker",
-                      iconSize: [28, 28],
-                      iconAnchor: [14, 14],
-                    }),
-                  })
-                : L.circleMarker(point, { radius: 7, color, fillColor: color, fillOpacity: 1 })
-            )
-              .bindTooltip(tooltip)
-              .addTo(map);
-            if (presentation === "detail") {
-              dot.on("click", () => {
-                if (group.markers.length > 1) {
-                  setInspectedPoint(group.coordinates);
-                } else {
-                  const marker = group.markers[0];
-                  setInspectedPoint(null);
-                  setSelectedEntryId(marker.entryId);
-                  onSelectEntry?.(marker.entryId);
-                }
-              });
-            }
-            return { point, dot, label, markers: group.markers };
-          },
-        );
-        const bounds = L.latLngBounds([...latLngs, ...sourceDots.map(({ point }) => point)]);
-        map.fitBounds(bounds, {
-          padding: [30, 30],
-          ...(points.length === 0 ? { maxZoom: 15 } : {}),
-        });
-        for (const { dot, label, markers } of sourceDots) {
-          const element = dot.getElement();
-          element?.setAttribute("aria-label", label);
-          element?.setAttribute(
-            "data-entry-ids",
-            JSON.stringify(markers.map((marker) => marker.entryId)),
-          );
-          if (markers.length === 1) element?.setAttribute("data-entry-id", markers[0].entryId);
-          element?.setAttribute("role", presentation === "detail" ? "button" : "img");
-          element?.setAttribute("tabindex", "0");
-          element?.addEventListener("focus", () => dot.openTooltip());
-          element?.addEventListener("blur", () => dot.closeTooltip());
-          if (presentation === "detail") {
-            element?.addEventListener("keydown", (event) => {
-              if (!(event instanceof KeyboardEvent)) return;
-              if (event.key !== "Enter" && event.key !== " ") return;
-              event.preventDefault();
-              dot.fire("click");
-            });
-          }
-        }
-
-        // Register hover marker callback so charts can update the map without React re-renders
-        if (onRegisterHoverCallback) {
-          let hoverMarker: ReturnType<typeof L.circleMarker> | null = null;
-
-          onRegisterHoverCallback.current = (position) => {
-            if (position) {
-              if (hoverMarker) {
-                hoverMarker.setLatLng([position.lat, position.lng]);
-              } else {
-                hoverMarker = L.circleMarker([position.lat, position.lng], {
-                  radius: 7,
-                  color: statusColors.positive,
-                  fillColor: "#ffffff",
-                  fillOpacity: 1,
-                  weight: 3,
-                }).addTo(map);
-              }
-            } else {
-              if (hoverMarker) {
-                hoverMarker.remove();
-                hoverMarker = null;
-              }
+        const route = points.map((point): [number, number] => [point.lng, point.lat]);
+        const drawRoute = () => {
+          if (cancelled || route.length < 2 || map.getSource("activity-route")) return;
+          map.addSource("activity-route", {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: route },
+            },
+          });
+          map.addLayer({
+            id: "activity-route",
+            type: "line",
+            source: "activity-route",
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: { "line-color": statusColors.positive, "line-width": 3, "line-opacity": 0.8 },
+          });
+        };
+        map.on("style.load", drawRoute);
+        map.on("load", drawRoute);
+        const start = route[0];
+        const end = route[route.length - 1];
+        if (start)
+          cleanups.push(mapDot(M, map, start, { radius: 6, color: statusColors.positive }).remove);
+        if (end)
+          cleanups.push(mapDot(M, map, end, { radius: 6, color: statusColors.danger }).remove);
+        const groups = groupClimbingMapMarkers(climbMarkers, providerSourceLabel);
+        for (const group of groups) {
+          const { latitude, longitude } = group.coordinates;
+          const select = () => {
+            if (group.markers.length > 1) setInspectedPoint(group.coordinates);
+            else {
+              const marker = group.markers[0];
+              setInspectedPoint(null);
+              setSelectedEntryId(marker.entryId);
+              onSelectEntry?.(marker.entryId);
             }
           };
+          const dot = mapDot(M, map, [longitude, latitude], {
+            radius: group.markers.length > 1 ? 14 : 7,
+            color: group.markers.every((marker) => marker.location.scope === "area")
+              ? "#d97706"
+              : "#2563eb",
+            label: `${group.title} · ${group.description}`,
+            count: group.markers.length,
+            ...(presentation === "detail" ? { onSelect: select } : {}),
+          });
+          dot.element.setAttribute(
+            "data-entry-ids",
+            JSON.stringify(group.markers.map((marker) => marker.entryId)),
+          );
+          if (group.markers.length === 1)
+            dot.element.setAttribute("data-entry-id", group.markers[0].entryId);
+          cleanups.push(dot.remove);
         }
+        const coordinates = [
+          ...route,
+          ...groups.map((group): [number, number] => [
+            group.coordinates.longitude,
+            group.coordinates.latitude,
+          ]),
+        ];
+        const west = Math.min(...coordinates.map(([lng]) => lng));
+        const east = Math.max(...coordinates.map(([lng]) => lng));
+        const south = Math.min(...coordinates.map(([, lat]) => lat));
+        const north = Math.max(...coordinates.map(([, lat]) => lat));
+        map.fitBounds(
+          [
+            [west, south],
+            [east, north],
+          ],
+          { padding: 30, duration: 0, ...(points.length === 0 ? { maxZoom: 14 } : {}) },
+        );
+        if (onRegisterHoverCallback) {
+          let hover: ReturnType<typeof mapDot> | null = null;
+          cleanups.push(() => hover?.remove());
+          onRegisterHoverCallback.current = (position) => {
+            if (!position) {
+              hover?.remove();
+              hover = null;
+              return;
+            }
+            const coordinates: [number, number] = [position.lng, position.lat];
+            if (hover) hover.marker.setLngLat(coordinates);
+            else
+              hover = mapDot(M, map, coordinates, {
+                radius: 7,
+                color: statusColors.positive,
+                fill: "#ffffff",
+              });
+          };
+        }
+        const observer = new ResizeObserver(() => map.resize());
+        observer.observe(container);
+        cleanups.push(() => observer.disconnect());
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         captureException(error, { component: "ActivityRouteMap" });
+        for (const cleanup of cleanups.splice(0)) cleanup();
         mapInstanceRef.current?.remove();
         mapInstanceRef.current = null;
         setMapState({
@@ -257,6 +200,7 @@ export function ActivityRouteMap({
       if (onRegisterHoverCallback) {
         onRegisterHoverCallback.current = () => {};
       }
+      for (const cleanup of cleanups) cleanup();
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
