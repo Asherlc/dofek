@@ -75,24 +75,37 @@ async function main(): Promise<void> {
     RCLONE_CONFIG_OTA_NO_CHECK_BUCKET: "true",
   };
   await requirePausedWriters();
-  const run = (arguments_: string[], input?: string): string =>
-    execFileSync(
-      "docker",
-      [
-        "run",
-        "--rm",
-        "--interactive",
-        ...Object.keys(environment).flatMap((name) => ["--env", name]),
-        rcloneImage,
-        ...arguments_,
-      ],
-      {
-        encoding: "utf8",
-        input,
-        env: { ...process.env, ...environment },
-        maxBuffer: 32 * 1024 * 1024,
-      },
-    );
+  const run = (arguments_: string[], input?: string): string => {
+    const started = Date.now();
+    console.error(`OTA storage: starting ${arguments_[0]}`);
+    try {
+      return execFileSync(
+        "docker",
+        [
+          "run",
+          "--rm",
+          "--interactive",
+          ...Object.keys(environment).flatMap((name) => ["--env", name]),
+          rcloneImage,
+          "--stats",
+          "30s",
+          "--stats-one-line",
+          "--stats-log-level",
+          "NOTICE",
+          ...arguments_,
+        ],
+        {
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "inherit"],
+          input,
+          env: { ...process.env, ...environment },
+          maxBuffer: 32 * 1024 * 1024,
+        },
+      );
+    } finally {
+      console.error(`OTA storage: finished ${arguments_[0]} in ${Date.now() - started}ms`);
+    }
+  };
 
   const snapshot = `ota:dofek-ota-backups/snapshots/${snapshotId}`;
   const rehearsal = `ota:dofek-ota-backups/rehearsals/${snapshotId}`;

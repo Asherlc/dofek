@@ -39,7 +39,7 @@ async function main(): Promise<void> {
   const [snapshotId, ...extra] = process.argv.slice(2);
   const image = required("OTA_REHEARSAL_IMAGE");
   const repository = required("GITHUB_REPOSITORY").toLowerCase();
-  const prefix = `ghcr.io/${repository}-ota@sha256:`;
+  const prefix = `ghcr.io/${repository}-ota-internal@sha256:`;
   if (!image.startsWith(prefix) || !/^[a-f0-9]{64}$/.test(image.slice(prefix.length))) {
     throw new Error(
       "OTA_REHEARSAL_IMAGE must be an immutable digest in this repository's private OTA package",
@@ -70,6 +70,7 @@ async function main(): Promise<void> {
   const storage = (operation: string, confirmedStopped = false) =>
     execFileSync("pnpm", ["tsx", "scripts/ota-storage.ts", operation, snapshotId], {
       encoding: "utf8",
+      stdio: ["pipe", "pipe", "inherit"],
       env: { ...process.env, OTA_REHEARSAL_STOPPED: String(confirmedStopped) },
     });
   storage("verify-snapshot");

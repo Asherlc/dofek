@@ -142,6 +142,44 @@ describe("OTA storage operator CLI", () => {
     expect(transfers()).toHaveLength(1);
   });
 
+  it("streams transfer diagnostics while retaining machine-readable stdout", async () => {
+    const diagnostics = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await import("./ota-storage.ts");
+      for (const [, arguments_, options] of execute.mock.calls) {
+        expect(options?.stdio).toEqual(["pipe", "pipe", "inherit"]);
+        expect(arguments_).toEqual(
+          expect.arrayContaining([
+            "--stats",
+            "30s",
+            "--stats-one-line",
+            "--stats-log-level",
+            "NOTICE",
+          ]),
+        );
+      }
+      expect(diagnostics).toHaveBeenCalledWith("OTA storage: starting copy");
+      expect(diagnostics).toHaveBeenCalledWith(
+        expect.stringMatching(/^OTA storage: finished copy in \d+ms$/),
+      );
+    } finally {
+      diagnostics.mockRestore();
+    }
+  });
+
+  it("reports elapsed time when a transfer fails without suppressing the error", async () => {
+    failCommand = " copy ";
+    const diagnostics = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(import("./ota-storage.ts")).rejects.toThrow("transfer failed");
+      expect(diagnostics).toHaveBeenCalledWith(
+        expect.stringMatching(/^OTA storage: finished copy in \d+ms$/),
+      );
+    } finally {
+      diagnostics.mockRestore();
+    }
+  });
+
   it("copies production to a fresh snapshot and verifies every byte", async () => {
     await import("./ota-storage.ts");
     const commands = transfers();
