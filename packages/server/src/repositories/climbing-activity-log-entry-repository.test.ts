@@ -39,6 +39,52 @@ function repository(logs: ClimbingLogEntryDetail[]) {
 }
 describe("ClimbingActivityLogEntryRepository", () => {
   it.each([false, true])(
+    "preserves timed climbs when a richer source wins (KAYA first: %s)",
+    async (kayaFirst) => {
+      const kaya = named("kaya");
+      kaya.externalId = "kaya:ascent:123";
+      kaya.raw = { date: "2026-10-01T17:15:00-07:00" };
+      const richer = named("openbeta", "20000000-0000-4000-8000-000000000011", true);
+      const [result] = await repository(
+        kayaFirst ? [kaya, richer] : [richer, kaya],
+      ).getActivityLogEntries("activity");
+      expect(result?.toDetail().chartAnnotations).toEqual([
+        {
+          id: kaya.id,
+          label: "Corner · 5.10a",
+          startedAt: "2026-10-02T00:15:00.000Z",
+          endedAt: null,
+        },
+      ]);
+    },
+  );
+  it.each([
+    ["kaya", "kaya:ascent:123", "2026-10-01"],
+    ["kaya", "kaya:ascent:123", "2026-10-01T17:15:00"],
+    ["kaya", "kaya:ascent:123", "2026-02-30T17:15:00Z"],
+    ["kaya", "kaya:session:123:attempted:456", "2026-10-01T17:15:00Z"],
+    ["mountain-project", "tick", "2026-10-01T17:15:00Z"],
+  ])("does not invent timing for %s %s %s", async (providerId, externalId, date) => {
+    const log = named(providerId);
+    log.externalId = externalId;
+    log.raw = { date };
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().chartAnnotations).toEqual([]);
+  });
+  it("projects a precisely timed KAYA export using its title and reported grade", async () => {
+    const log = climbingLogEntryFixture({
+      providerId: "kaya-export",
+      externalId: "kaya:entry:123",
+      title: "Blue",
+      reportedGrades: [{ value: "V3", system: "v_scale" }],
+      raw: { date: "2026-10-01T17:15:00Z" },
+    });
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().chartAnnotations).toEqual([
+      { id: log.id, label: "Blue · V3", startedAt: "2026-10-01T17:15:00.000Z", endedAt: null },
+    ]);
+  });
+  it.each([false, true])(
     "hydrates historical retained source tags (ascent: %s)",
     async (ascent) => {
       const log = named("kaya");

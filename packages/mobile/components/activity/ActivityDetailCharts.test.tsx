@@ -1,13 +1,17 @@
 import { formatDateTime } from "@dofek/format/format";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AreaChart, LineChart } from "./ActivityDetailCharts";
 
+const scrub = vi.hoisted(() => {
+  const callbacks: { onHoverTime?: (timestamp: number | null) => void } = {};
+  return callbacks;
+});
 vi.mock("./useChartScrub", () => ({
-  useChartScrub: () => ({
-    touchIndex: null,
-    panResponder: { panHandlers: {} },
-  }),
+  useChartScrub: (options: typeof scrub) => {
+    scrub.onHoverTime = options.onHoverTime;
+    return { touchIndex: null, panResponder: { panHandlers: {} } };
+  },
 }));
 
 function expectVisibleDots(container: HTMLElement, count: number) {
@@ -27,6 +31,61 @@ function expectVisibleDots(container: HTMLElement, count: number) {
 }
 
 describe("ActivityDetailCharts", () => {
+  it.each([null, "2026-10-18T10:05:00Z"])(
+    "selects the nearest climb marker near an earlier climb ending at %s",
+    (endedAt) => {
+      render(
+        <LineChart
+          data={[
+            { recordedAt: "2026-10-18T10:00:00Z", value: 130 },
+            { recordedAt: "2026-10-18T12:00:00Z", value: 150 },
+          ]}
+          color="#ff0000"
+          label="Heart Rate"
+          unit="bpm"
+          climbAnnotations={[
+            { id: "first", label: "Earlier · V3", startedAt: "2026-10-18T10:00:00Z", endedAt },
+            { id: "second", label: "Later · V4", startedAt: "2026-10-18T10:03:00Z", endedAt: null },
+          ]}
+        />,
+      );
+      act(() => scrub.onHoverTime?.(Date.parse("2026-10-18T10:03:05Z")));
+      expect(screen.getByText(/Later · V4 ·/)).toBeDefined();
+      expect(screen.queryByText(/Earlier · V3 ·/)).toBeNull();
+    },
+  );
+  it("positions climb markers and clipped bands with selectable exact climb details", () => {
+    const { container } = render(
+      <LineChart
+        data={[
+          { recordedAt: "2026-10-18T17:30:00Z", value: 130 },
+          { recordedAt: "2026-10-18T17:31:00Z", value: 150 },
+        ]}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="bpm"
+        climbAnnotations={[
+          { id: "ascent", label: "Corner · V3", startedAt: "2026-10-18T17:30:30Z", endedAt: null },
+          {
+            id: "range",
+            label: "Arete · V4",
+            startedAt: "2026-10-18T17:29:00Z",
+            endedAt: "2026-10-18T17:30:30Z",
+          },
+          { id: "outside", label: "Outside", startedAt: "2026-10-18T17:32:00Z", endedAt: null },
+        ]}
+      />,
+    );
+    const marker = container.querySelector('Line[stroke="#a78bfa"]');
+    expect(Number(marker?.getAttribute("x1"))).toBe(184);
+    const band = container.querySelector('Rect[fill="#a78bfa"]');
+    expect(Number(band?.getAttribute("x"))).toBe(44);
+    expect(Number(band?.getAttribute("width"))).toBe(140);
+    fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
+    fireEvent.click(screen.getByRole("button", { name: /Corner · V3/ }));
+    expect(screen.getAllByText(/Corner · V3/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Outside/)).toBeNull();
+  });
   it("connects regular readings across other metrics' timestamps", () => {
     const { container } = render(
       <LineChart

@@ -367,6 +367,11 @@ export function ActivityDetailPage() {
               </p>
             )}
           <MetricsChart
+            climbAnnotations={
+              isClimbingActivity
+                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                : undefined
+            }
             points={points}
             activityType={activity.activityType}
             hasHr={hasHr}

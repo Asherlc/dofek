@@ -110,6 +110,19 @@ isolated observations retain markers; dense continuous segments show markers
 on hover or touch. Measurements are preserved without filling or smoothing.
 The renderer can show only gaps retained in the API's downsampled observations.
 
+### Timed climbing overlays
+
+Climbing activity heart-rate charts on web and mobile render the server's
+`chartAnnotations` with climb names, display grades and original timestamps.
+The [server projection](../server/src/services/climbing-chart-annotations.ts)
+accepts timezone-qualified KAYA ascent and export dates from retained raw
+records; date-only logs, session attempt summaries and ingestion timestamps
+do not establish climb timing. Current KAYA records have no per-climb end
+boundary. The [shared annotation contract](src/climbing-chart.ts) represents
+instants as markers and bounded climbs as shaded regions, using the existing
+[ECharts marker components](https://echarts.apache.org/en/option.html#series-line.markArea)
+and [SVG shapes](https://www.w3.org/TR/SVG2/shapes.html).
+
 ### Activity icons
 
 The [activity icon metadata](src/activity-icons.ts) owns Dofek's original rounded

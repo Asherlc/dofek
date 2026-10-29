@@ -19,6 +19,7 @@ import {
 } from "../contracts/climbing-log-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { climbingChartAnnotations } from "../services/climbing-chart-annotations.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { displayGradeComponents, selectRockClimbingGrade } from "./climbing-grade-display.ts";
 import { climbingSourceLinks } from "./climbing-source-links.ts";
@@ -192,11 +193,16 @@ function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
         ]),
       ).values(),
     ];
+    const chartAnnotations = [
+      ...(match.log.chartAnnotations ?? []),
+      ...(log.chartAnnotations ?? []),
+    ];
     Object.assign(match.log, preferred, {
       photoLogEntryId,
       sourceName: [...match.sources].join(", ") || null,
       sourceLinks,
       tags,
+      chartAnnotations,
     });
   }
   return output;
@@ -402,7 +408,11 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ),
         sourceLinks: climbingSourceLinks(row.log.providerId, row.log.raw),
       });
-      return { ...detail, tags: recordedClimbingTags(row.log.providerId, row.log.raw) };
+      return {
+        ...detail,
+        chartAnnotations: climbingChartAnnotations(detail),
+        tags: recordedClimbingTags(row.log.providerId, row.log.raw),
+      };
     });
   }
 }
