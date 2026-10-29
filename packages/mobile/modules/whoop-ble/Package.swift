@@ -3,6 +3,8 @@ import Foundation
 import PackageDescription
 
 let expoFiles = [
+    "BridgeTests",
+    "BridgeTestHost",
     "WhoopBleModule.swift",
     "WhoopBleModule+ConnectionManagerDelegate.swift",
     "WhoopBleUploadAppDelegateSubscriber.swift",

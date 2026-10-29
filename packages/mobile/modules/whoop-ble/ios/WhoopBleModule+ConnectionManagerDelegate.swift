@@ -10,20 +10,29 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     ) {
-        guard !captureSuspended else {
-            manager.disconnect()
+        publishReadyConnection(
+            peripheralId: peripheral.identifier.uuidString,
+            peripheralName: peripheral.name,
+            wasStreaming: wasStreaming
+        )
+    }
+
+    /// Publish and activate notification readiness on the connection manager's BLE queue.
+    func publishReadyConnection(peripheralId: String, peripheralName: String?, wasStreaming: Bool) {
+        guard !captureSuspended, captureFailure == nil else {
+            connectionManager.disconnect()
             return
         }
-        lastKnownDeviceId = peripheral.identifier.uuidString
-        lastKnownDeviceName = peripheral.name
+        lastKnownDeviceId = peripheralId
+        lastKnownDeviceName = peripheralName
+        emitDeviceState()
+        guard !captureSuspended, captureFailure == nil else { return }
         MainThreadEventEmitter.emit([
             "state": "connected",
-            "peripheralId": peripheral.identifier.uuidString,
+            "peripheralId": peripheralId,
         ]) { [weak self] payload in
             self?.sendEvent("onConnectionStateChanged", payload)
         }
-        emitDeviceState()
-
         sendActivationCommands(includeImu: false)
         watchdog.start()
 

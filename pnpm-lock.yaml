@@ -678,6 +678,9 @@ importers:
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
+      expo-modules-test-core:
+        specifier: 58.0.5
+        version: 58.0.5(expo@58.0.21)
       playwright:
         specifier: 1.62.1
         version: 1.62.1
@@ -9098,6 +9101,9 @@ packages:
   '@types/node@18.19.130':
     resolution: {integrity: sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg==}
 
+  '@types/node@22.20.5':
+    resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
+
   '@types/node@25.9.5':
     resolution: {integrity: sha512-OScDchr2fwuUmWdf4kZ9h7PcJiYDVInhJizG/biAq3cAvqwYktuy/TYGGdZNMtNTFUP7rnb0NU4TUdm82kt4Rg==}
 
@@ -11502,6 +11508,12 @@ packages:
   expo-modules-macros@0.27.1:
     resolution: {integrity: sha512-xWNI+LpK4Pdmj52ygNYlxefZDhw4mpe6s5yVCLXpqtOyU3PPrFGJJJnDyBpOsOv+mXiYLeaszEEJEpDKBObZ7A==}
 
+  expo-modules-test-core@58.0.5:
+    resolution: {integrity: sha512-sw3sGxxNn3UA+gz8KUgg57Aw9kP2pXZKfhgeFp07TzS4fKCWVTYKnGwSp1qMR/L5oIxOhSLIx/NtRHg0LibSig==}
+    hasBin: true
+    peerDependencies:
+      expo: '*'
+
   expo-network@58.0.4:
     resolution: {integrity: sha512-E3dYtnku+LDal+4OtKdxGotX7DLjaq+GOvrtN0RiYDTNum8lhMB7dK4GqGgBqHjwsC0awEds5DhTkm+w7O1TtQ==}
     peerDependencies:
@@ -11579,6 +11591,10 @@ packages:
 
   expo-structured-headers@58.0.1:
     resolution: {integrity: sha512-wIduvAIUdGQk82osLjFiYYq3TFHUdG4RgmN+C//EySxn/2PTu0RsJsdgBtXrp/OT3YGeesNgfzb1mFxq5Zhp0g==}
+
+  expo-type-information@0.2.1:
+    resolution: {integrity: sha512-l9Yo6wELt3uSbuap15k24Qh4DzZmC30Uu12TLbYvUK+dAEpsj1B6oAnNuC+he7WPHOvOm40E1EXg/Xdcm52aAA==}
+    hasBin: true
 
   expo-updates-interface@58.0.1:
     resolution: {integrity: sha512-OF+3BtMXtUsXWDfpHVNus9yHpx7WjMwjxDfeeN9LQBYSq/UtYmNNHBSfzChYTuqljWFSOAHRfsDykV9EB73Wlg==}
@@ -16423,6 +16439,9 @@ packages:
   undici-types@5.26.5:
     resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
 
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+
   undici-types@7.24.6:
     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
 
@@ -17066,6 +17085,10 @@ packages:
   xdg-basedir@5.1.0:
     resolution: {integrity: sha512-GCPAHLvrIH13+c0SuacwvRYj2SxJXQ4kaVTT5xgL3kPrz56XxkF21IGhjSE1+W0aw7gpBWRGXLCPnPby6lSpmQ==}
     engines: {node: '>=12'}
+
+  xml-js@1.6.11:
+    resolution: {integrity: sha512-7rVi2KMfwfWFl+GpPg6m80IVMWXLRjO+PxTq7V2CDhoGak0wzYzFgUY2m4XJ47OGdXd8eLE8EmwfAmdjw7lC1g==}
+    hasBin: true
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -26583,6 +26606,10 @@ snapshots:
     dependencies:
       undici-types: 5.26.5
 
+  '@types/node@22.20.5':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/node@25.9.5':
     dependencies:
       undici-types: 7.24.6
@@ -29277,6 +29304,15 @@ snapshots:
       '@expo/modules-macros-win32-arm64': 0.27.1
       '@expo/modules-macros-win32-x64': 0.27.1
 
+  expo-modules-test-core@58.0.5(expo@58.0.21):
+    dependencies:
+      '@types/node': 22.20.5
+      expo: 58.0.21(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.15)(expo-router@58.0.28)(react-dom@19.3.0)(react-native-web@0.21.4)(react-native-worklets@0.13.0)(react-native@0.88.0)(react@19.3.0)(supports-color@11.0.0)(typescript@6.0.3)
+      expo-type-information: 0.2.1
+      glob: 13.0.6
+      xml-js: 1.6.11
+      yaml: 2.9.0
+
   expo-network@58.0.4(expo@58.0.21)(react@19.3.0):
     dependencies:
       expo: 58.0.21(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.15)(expo-router@58.0.28)(react-dom@19.3.0)(react-native-web@0.21.4)(react-native-worklets@0.13.0)(react-native@0.88.0)(react@19.3.0)(supports-color@11.0.0)(typescript@6.0.3)
@@ -29354,6 +29390,14 @@ snapshots:
       react-native: 0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
 
   expo-structured-headers@58.0.1: {}
+
+  expo-type-information@0.2.1:
+    dependencies:
+      chalk: 4.1.2
+      commander: 12.1.0
+      prettier: 3.9.5
+      typescript: 6.0.3
+      yaml: 2.9.0
 
   expo-updates-interface@58.0.1(expo@58.0.21):
     dependencies:
@@ -35120,6 +35164,8 @@ snapshots:
 
   undici-types@5.26.5: {}
 
+  undici-types@6.21.0: {}
+
   undici-types@7.24.6: {}
 
   undici-types@8.3.0: {}
@@ -35784,6 +35830,10 @@ snapshots:
   xdg-basedir@4.0.0: {}
 
   xdg-basedir@5.1.0: {}
+
+  xml-js@1.6.11:
+    dependencies:
+      sax: 1.6.1
 
   xml-name-validator@5.0.0: {}
 

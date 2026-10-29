@@ -67,17 +67,7 @@ public class WhoopBleModule: Module {
         // MARK: - Connection
 
         AsyncFunction("connect") { (peripheralId: String, promise: Promise) in
-            self.connectionManager.connect(peripheralId: peripheralId) { result in
-                switch result {
-                case .success(let value):
-                    self.emitDeviceState()
-                    promise.resolve(value)
-                case .failure(let error):
-                    self.emitDeviceState()
-                    let rejection = error.rejection
-                    promise.reject(rejection.code, rejection.message)
-                }
-            }
+            self.connect(peripheralId: peripheralId, promise: promise)
         }
 
         // MARK: - IMU streaming
@@ -268,9 +258,7 @@ public class WhoopBleModule: Module {
         // MARK: - Background reconnection
 
         AsyncFunction("retryConnection") { (promise: Promise) in
-            self.connectionManager.retryConnection { success in
-                promise.resolve(success)
-            }
+            self.retryConnection(promise: promise)
         }
 
         // MARK: - Disconnect
@@ -327,6 +315,33 @@ public class WhoopBleModule: Module {
         }
     }
 
+    private func connect(peripheralId: String, promise: Promise) {
+        connectionManager.syncOnBleQueue {
+            guard !rejectUnavailableCapture(promise) else { return }
+            connectionManager.connect(peripheralId: peripheralId) { result in
+                self.emitDeviceState()
+                guard !self.rejectUnavailableCapture(promise) else { return }
+                switch result {
+                case .success(let value):
+                    promise.resolve(value)
+                case .failure(let error):
+                    let rejection = error.rejection
+                    promise.reject(rejection.code, rejection.message)
+                }
+            }
+        }
+    }
+
+    private func retryConnection(promise: Promise) {
+        connectionManager.syncOnBleQueue {
+            guard !rejectUnavailableCapture(promise) else { return }
+            connectionManager.retryConnection { success in
+                guard !self.rejectUnavailableCapture(promise) else { return }
+                promise.resolve(success)
+            }
+        }
+    }
+
     private func parseIsoDate(_ value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -335,6 +350,22 @@ public class WhoopBleModule: Module {
         }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
+    }
+
+    /// Read capture eligibility on the BLE queue, including when a queued request settles.
+    private func rejectUnavailableCapture(_ promise: Promise) -> Bool {
+        if let captureFailure {
+            promise.reject("WHOOP_BLE_CAPTURE_FAILED", captureFailure)
+            return true
+        }
+        if captureSuspended {
+            promise.reject(
+                "WHOOP_BLE_CAPTURE_SUSPENDED",
+                "WHOOP capture is suspended. Configure uploads before reconnecting."
+            )
+            return true
+        }
+        return false
     }
 
     private func deviceSummaryPayload() throws -> [String: Any] {

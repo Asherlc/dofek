@@ -223,3 +223,4 @@ minimumReleaseAgeExclude:
   - noxcturnal@0.1.8 || 0.1.11
   - '@expo/modules-macros-linux-arm64@0.27.1'
   - '@expo/modules-macros-linux-x64@0.27.1'
+  - expo-modules-test-core@58.0.5

@@ -139,6 +139,34 @@ The
 [diagnostic procedure](../../../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
 describes correlation with upload and server events.
 
+## Native bridge tests
+
+On macOS with Xcode and an installed iPhone Simulator runtime, run from
+`packages/mobile`:
+
+```sh
+EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id pnpm prebuild --no-install
+pnpm test:ios:bridge
+```
+
+The public DSN placeholder follows the app's
+[local simulator setup](../../README.md#signed-release-simulator-audit).
+The bridge suite runs the real Expo registration and JavaScript promise path in
+a UIKit test host. CocoaPods generates its host and XCTest target from the
+module's [test specification](https://guides.cocoapods.org/using/test-specs.html).
+It uses Expo's official
+[TestAppContext](https://github.com/expo/expo/tree/main/packages/expo-modules-test-core/ios/Runtime)
+with a Hermes runtime and JavaScript scheduling. The runner installs source
+Expo modules because that helper imports ExpoModulesCore with `@testable`.
+This changes the generated local Pods installation; ordinary `pnpm prebuild`
+regenerates the normal app project. No Metro server or authenticated account
+is needed. The [test cases](ios/BridgeTests/WhoopBleModuleTests.swift) exercise
+bridge state transitions; validate physical strap capture and background
+Bluetooth delivery separately on a device.
+
+The standalone `swift test` suite remains separate: its target excludes the Expo
+bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
+
 ## Runtime, Stability, and Errors
 
 - Node.js 22.14 or later is required by the package tooling.
