@@ -321,8 +321,12 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   request](https://docs.expo.dev/technical-specs/expo-updates-1/) and prints
   the deployed update metadata, or reports that no update is available.
   URL, channel, runtime version, and platform have explicit command-line
-  overrides for local and preview checks.
-  - Usage: `pnpm check:mobile-update`
+  options for local and preview checks. Runtime version is required; the
+  deployment resolves it with the installed Expo Updates CLI rather than
+  probing a historical runtime. A valid `noUpdateAvailable` directive is a
+  healthy empty runtime; malformed responses and mismatched runtime manifests
+  fail the check, following the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+  - Usage: `pnpm check:mobile-update --runtime-version <runtime>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
 - `validate-deploy-env.ts`: Validates the rendered production dotenv and calls
   the same account-erasure keyring parser used by web and worker startup.
