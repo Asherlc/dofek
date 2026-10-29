@@ -1,9 +1,25 @@
 /** @vitest-environment jsdom */
 
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
+
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+beforeEach(() => {
+  resetMaps();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
+});
+
+async function finishMapSnapshot() {
+  await waitFor(() => expect(maps.length).toBeGreaterThan(0));
+  act(() => {
+    for (const map of maps) map.fire("idle");
+  });
+}
 
 const units = new UnitConverter("metric");
 
@@ -104,7 +120,13 @@ describe("ActivityCardContent", () => {
       kind: "recorded_gps" as const,
       centroidLat: 37,
       centroidLng: -122,
-      mapPreview: { width: 512, height: 288, tiles: [], routePath: null },
+      mapPreview: {
+        width: 512,
+        height: 288,
+        center: [0, 0] satisfies [number, number],
+        zoom: 0,
+        routePath: null,
+      },
     },
   ])("keeps the $kind map instead of a photo", (location) => {
     render(
@@ -273,7 +295,13 @@ describe("ActivityCardContent", () => {
           stats: [{ status: "available", label: "Climbs", value: "3" }],
           location: {
             kind: "climbing_source",
-            mapPreview: { width: 512, height: 288, tiles: [], routePath: null },
+            mapPreview: {
+              width: 512,
+              height: 288,
+              center: [0, 0] satisfies [number, number],
+              zoom: 0,
+              routePath: null,
+            },
             sourcePoints: [
               {
                 x: 256,
@@ -362,7 +390,7 @@ describe("ActivityCardContent", () => {
     expect(screen.queryByText("—")).toBeNull();
   });
 
-  it("gives mapped activities a full-height map pane and keeps metrics with the details", () => {
+  it("gives mapped activities a full-height map pane and keeps metrics with the details", async () => {
     render(
       <ActivityCardContent
         activity={activity({
@@ -401,7 +429,8 @@ describe("ActivityCardContent", () => {
             mapPreview: {
               width: 256,
               height: 256,
-              tiles: [],
+              center: [0, 0] satisfies [number, number],
+              zoom: 0,
               routePath: null,
             },
           },
@@ -414,6 +443,11 @@ describe("ActivityCardContent", () => {
 
     expect(screen.getByTestId("activity-card-layout")).toHaveClass(
       "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
+    );
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
     );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon")).toBeVisible();
@@ -440,7 +474,8 @@ describe("ActivityCardContent", () => {
             mapPreview: {
               width: 256,
               height: 256,
-              tiles: [],
+              center: [0, 0] satisfies [number, number],
+              zoom: 0,
               routePath: null,
             },
           },

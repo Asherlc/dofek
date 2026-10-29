@@ -9,7 +9,7 @@ import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import {
   createClickHouseTestActivitySensorStore,
   executeClickHouseTestCommand,
@@ -265,7 +265,7 @@ describe("Activities list climbing source GPS", () => {
       kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
-      mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
+      mapPreview: routeMapPreview([{ lat: 37.8, lng: -122.4 }]),
     });
     expect(entries.find((entry) => entry.id === unknownGroup)?.location).toBeNull();
   });

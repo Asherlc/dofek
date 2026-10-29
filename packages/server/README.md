@@ -213,6 +213,13 @@ Release this response change together with compatible web and mobile clients: ol
 every non-null location has map preview data. See the [web map renderer](../web/src/components/ActivityMapTile.tsx)
 and [mobile map renderer](../mobile/components/ActivityMapTile.tsx).
 
+The [map preview projection](src/lib/map-preview.ts) returns a geographic center,
+MapLibre zoom, reference viewport dimensions, and projected route/source overlays.
+Raster tile URLs are removed. Publish this API contract with the matching web and
+new native mobile build; the mobile cache contract is incremented to discard old
+previews. The renderers use the shared [MapLibre style](../training/src/map-style.ts);
+MapLibre documents its [camera coordinate and zoom conventions](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/).
+
 ### Activity training-stress availability contract
 
 `calendar.weekList` owns both Training Stress Score calculation and availability explanations.

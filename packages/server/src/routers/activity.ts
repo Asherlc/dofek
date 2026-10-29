@@ -158,12 +158,12 @@ export const activityRouter = router({
       }
     },
     undefined,
-    { keyVersion: "activity-list-primary-title-v2" },
+    { keyVersion: "activity-list-maplibre-v3" },
   ),
 
   byId: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-primary-title-v4",
+    keyVersion: "activity-maplibre-v5",
   })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { trpc } from "../lib/trpc.ts";
 import { ClimbingLocationMap } from "./ClimbingLocationMap.tsx";
 import {
@@ -14,41 +14,11 @@ const captureException = vi.hoisted(() => vi.fn());
 vi.mock("../lib/telemetry.ts", () => ({ captureException }));
 beforeEach(() => captureException.mockClear());
 
-const originalCreateSvgRect = Object.getOwnPropertyDescriptor(
-  SVGSVGElement.prototype,
-  "createSVGRect",
-);
-const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-beforeAll(() => {
-  Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", {
-    configurable: true,
-    value: () => ({}),
-  });
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-    configurable: true,
-    get: () => 800,
-  });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
-    configurable: true,
-    get: () => 360,
-  });
-});
-afterAll(() => {
-  if (originalCreateSvgRect) {
-    Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", originalCreateSvgRect);
-  } else {
-    Reflect.deleteProperty(SVGSVGElement.prototype, "createSVGRect");
-  }
-  for (const [key, descriptor] of [
-    ["clientWidth", originalClientWidth],
-    ["clientHeight", originalClientHeight],
-  ] as const) {
-    if (descriptor) Object.defineProperty(HTMLElement.prototype, key, descriptor);
-    else Reflect.deleteProperty(HTMLElement.prototype, key);
-  }
-});
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
 
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
+
+beforeEach(() => resetMaps());
 describe("ClimbingLocationMap", () => {
   it("attaches the selected unattached log and preserves its location while the map refreshes", async () => {
     const fixture = createClimbingAttachmentFixture();
@@ -65,7 +35,7 @@ describe("ClimbingLocationMap", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." }));
     fireEvent.click(await screen.findByRole("button", { name: "2 climbs. Show climb details." }));
-    const pane = container.querySelector(".leaflet-map-pane");
+    const pane = container.querySelector(".maplibregl-map");
     const list = screen.getByRole("list", { name: "Climbs at this location" });
     const attachButton = within(list).getByRole("button", {
       name: "Attach to activity for Left Arete",
@@ -85,7 +55,7 @@ describe("ClimbingLocationMap", () => {
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "View activity for Left Arete" })).toHaveFocus(),
     );
-    expect(container.querySelector(".leaflet-map-pane")).toBe(pane);
+    expect(container.querySelector(".maplibregl-map")).toBe(pane);
     expect(fixture.requests).toContainEqual({
       path: "climbing.attachmentActivities",
       input: { date: "2026-10-05" },
@@ -105,34 +75,32 @@ describe("ClimbingLocationMap", () => {
       expect(screen.getByRole("button", { name: "3 climbs. Zoom in to explore." })).toBeVisible(),
     );
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    for (const tile of view.container.querySelectorAll("img.leaflet-tile")) fireEvent.load(tile);
+    act(() => maps[0]?.fire("load"));
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-    const pane = view.container.querySelector(".leaflet-map-pane");
+    const pane = view.container.querySelector(".maplibregl-map");
     view.rerender(<ClimbingLocationMap data={{ ...climbingLocationMapFixture }} loading />);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "3 climbs. Zoom in to explore." })).toBeVisible(),
     );
-    expect(view.container.querySelector(".leaflet-map-pane")).toBe(pane);
+    expect(view.container.querySelector(".maplibregl-map")).toBe(pane);
     expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("expands a server-sized cluster into consistent dots without remounting the map", async () => {
     const { container } = render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
     const cluster = await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." });
-    const pane = container.querySelector(".leaflet-map-pane");
-    const color = cluster.getAttribute("fill");
-    expect(cluster.getAttribute("d")).toContain("a15,15");
+    const pane = container.querySelector(".maplibregl-map");
+    const color = cluster.style.backgroundColor;
+    expect(cluster).toHaveStyle({ width: "30px", height: "30px" });
     fireEvent.click(cluster);
     const coincident = await screen.findByRole("button", { name: "2 climbs. Show climb details." });
     const single = screen.getByRole("button", { name: "The Traverse. Show climb details." });
-    expect(coincident.getAttribute("fill")).toBe(color);
-    expect(single.getAttribute("fill")).toBe(color);
-    expect(single.getAttribute("d")).toContain("a7,7");
-    expect(container.querySelector(".leaflet-map-pane")).toBe(pane);
-    expect(container.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(2);
-    expect(container.querySelector(".leaflet-control-attribution")).toHaveTextContent(
-      "OpenStreetMap",
-    );
+    expect(coincident.style.backgroundColor).toBe(color);
+    expect(single.style.backgroundColor).toBe(color);
+    expect(single).toHaveStyle({ width: "14px", height: "14px" });
+    expect(container.querySelector(".maplibregl-map")).toBe(pane);
+    expect(maps[0]?.jumpTo).toHaveBeenCalledWith(expect.objectContaining({ zoom: 15 }));
+    expect(maps[0]?.options.style).toMatchObject({ version: 8 });
   });
 
   it.each(["Enter", " "])(
@@ -185,22 +153,20 @@ describe("ClimbingLocationMap", () => {
     );
     const dot = await screen.findByRole("button", { name: `${label}. Show climb details.` });
     fireEvent.focus(dot);
-    expect(container.querySelector(".leaflet-tooltip")).toHaveTextContent(label);
-    expect(container.querySelector(".leaflet-tooltip img")).toBeNull();
+    expect(container.querySelector(".maplibregl-popup-content")).toHaveTextContent(label);
+    expect(container.querySelector(".maplibregl-popup-content img")).toBeNull();
     fireEvent.blur(dot);
-    expect(container.querySelector(".leaflet-tooltip")).toBeNull();
+    expect(container.querySelector(".maplibregl-popup-content")).toBeNull();
   });
 
   it("keeps dots usable when map tiles fail and reports the error once", async () => {
-    const { container } = render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
+    render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
     const cluster = await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." });
-    const tile = container.querySelector("img.leaflet-tile");
-    if (!tile) throw new Error("Expected a map tile");
-    fireEvent.error(tile);
+    act(() => maps[0]?.fire("error", { error: new Error("offline") }));
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Some map tiles could not load. Check your connection.",
     );
-    fireEvent.error(tile);
+    act(() => maps[0]?.fire("error", { error: new Error("offline") }));
     expect(captureException).toHaveBeenCalledOnce();
     fireEvent.click(cluster);
     expect(
@@ -218,7 +184,7 @@ describe("ClimbingLocationMap", () => {
       />,
     );
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("Map unavailable: Invalid LatLng"),
+      expect(screen.getByRole("status")).toHaveTextContent("Map unavailable: Invalid LngLat"),
     );
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       component: "ClimbingLocationMap",
@@ -232,13 +198,27 @@ describe("ClimbingLocationMap", () => {
     expect(screen.getByText("No climbing locations match these dates and filters.")).toBeVisible();
   });
 
+  it("waits for the replacement map when corrected data follows an initialization error", async () => {
+    const view = render(
+      <ClimbingLocationMap
+        data={{ ...climbingLocationMapFixture, bounds: { south: NaN, west: 0, north: 1, east: 1 } }}
+      />,
+    );
+    await screen.findByText(/Map unavailable: Invalid LngLat/);
+    view.rerender(<ClimbingLocationMap data={climbingLocationMapFixture} />);
+    await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." });
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    act(() => maps[1]?.fire("load"));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("retains the rendered map and selection while refreshed data is loading", async () => {
     const view = render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
     fireEvent.click(await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." }));
     fireEvent.click(await screen.findByRole("button", { name: "2 climbs. Show climb details." }));
-    const pane = view.container.querySelector(".leaflet-map-pane");
+    const pane = view.container.querySelector(".maplibregl-map");
     view.rerender(<ClimbingLocationMap data={climbingLocationMapFixture} loading />);
-    expect(view.container.querySelector(".leaflet-map-pane")).toBe(pane);
+    expect(view.container.querySelector(".maplibregl-map")).toBe(pane);
     expect(screen.getByRole("list", { name: "Climbs at this location" })).toBeVisible();
     expect(screen.queryByText("Loading climbing locations…")).toBeNull();
     await waitFor(() => expect(screen.getByText("Left Arete")).toBeVisible());

@@ -40,7 +40,7 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("discards v19 training responses before restoring combined climbing progression", async () => {
+  it("discards v20 responses before restoring the MapLibre preview contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "climbing-owner";
     const queryKey = [["mobile", "training"], { input: { days: 90 }, type: "query" }];
@@ -69,7 +69,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v19`,
+        buster: `${userId}:v20`,
         clientState: dehydrate(seedClient),
       }),
     );

@@ -1,6 +1,6 @@
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { describe, expect, it } from "vitest";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import {
   activityRowSchema,
   createActiveCalendarEntry,
@@ -136,7 +136,7 @@ describe("activity calendar entries", () => {
       kind: "recorded_gps",
       centroidLat: 90,
       centroidLng: 180,
-      mapPreview: osmTilePreview([{ lat: 90, lng: 180 }]),
+      mapPreview: routeMapPreview([{ lat: 90, lng: 180 }]),
     });
   });
 
@@ -174,11 +174,11 @@ describe("activity calendar entries", () => {
       createActiveCalendarEntry(activityRowSchema.parse(row), {
         baseline,
         calculator: new TrainingStressCalculator(),
-        routePreview: osmTilePreview(routeRows),
+        routePreview: routeMapPreview(routeRows),
       }),
     );
     expect(entries[0]?.location).toMatchObject({
-      mapPreview: osmTilePreview([
+      mapPreview: routeMapPreview([
         { lat: 37.7749, lng: -122.4194 },
         { lat: 37.7752, lng: -122.4188 },
         { lat: 37.7756, lng: -122.4182 },
@@ -659,7 +659,7 @@ describe("activity calendar entries", () => {
       { lat: 37.7752, lng: -122.4188 },
       { lat: 37.7756, lng: -122.4182 },
     ];
-    const routePreview = osmTilePreview(routePoints);
+    const routePreview = routeMapPreview(routePoints);
     const rows = [
       makeActivityRow({
         id: "hidden-outdoor-route",
@@ -697,7 +697,7 @@ describe("activity calendar entries", () => {
         {
           baseline,
           calculator: new TrainingStressCalculator(),
-          routePreview: osmTilePreview(routeRows),
+          routePreview: routeMapPreview(routeRows),
         },
       ),
     );
@@ -765,7 +765,7 @@ describe("activity calendar entries", () => {
       kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
-      mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
+      mapPreview: routeMapPreview([{ lat: 37.8, lng: -122.4 }]),
     });
   });
 

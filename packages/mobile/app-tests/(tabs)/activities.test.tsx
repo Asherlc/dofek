@@ -12,7 +12,6 @@ import {
   type MockOverviewQuery,
   type MockQuery,
   recordedGpsLocation,
-  routeMapTiles,
   type WeekListQueryOptions,
 } from "../../app-fixtures/(tabs)/activities-test-helpers";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
@@ -986,7 +985,7 @@ describe("ActivitiesScreen", () => {
     expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
   });
 
-  it("replaces failed map tiles with a fallback", () => {
+  it("replaces a failed map snapshot with a fallback", async () => {
     mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation(),
@@ -999,12 +998,16 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    fireEvent.error(screen.getByTestId("activity-map-preview-tile"));
+    fireEvent(
+      screen.getByTestId("activity-map-panel"),
+      new CustomEvent("layout", { detail: { width: 320, height: 180 } }),
+    );
+    fireEvent.error(await screen.findByTestId("activity-map-preview"));
 
     expect(screen.getByLabelText("Activity location unavailable")).toBeDefined();
   });
 
-  it("draws a route overlay when a map tile includes route path points", () => {
+  it("draws a route overlay using server-projected path points", () => {
     mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation({
@@ -1013,7 +1016,6 @@ describe("ActivitiesScreen", () => {
             { x: 292.2, y: 370.88 },
             { x: 305.85, y: 359.36 },
           ],
-          tiles: routeMapTiles,
         }),
         distanceMeters: 5000,
         elevationGainM: 120,
@@ -1027,7 +1029,7 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
       "278.54,379.51 292.2,370.88 305.85,359.36",
     );
-    expect(screen.getAllByTestId("activity-map-preview-tile")).toHaveLength(2);
+    expect(screen.getByTestId("activity-route-viewport")).toBeTruthy();
   });
 
   it("does not duplicate distance and elevation badges over the map", () => {
@@ -1047,7 +1049,7 @@ describe("ActivitiesScreen", () => {
     expect(screen.getAllByText("120 m")).toHaveLength(1);
   });
 
-  it("aligns exported map tiles within the responsive preview", () => {
+  it("renders the native preview across the responsive viewport", async () => {
     mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation({
@@ -1065,12 +1067,13 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    const previewTile = screen.getByTestId("activity-map-preview-tile");
-    expect(screen.getByTestId("activity-route-viewport")).toBeDefined();
-    expect(previewTile.style.left).toBe("0%");
-    expect(previewTile.style.top).toBe("0%");
-    expect(previewTile.style.width).toBe("25%");
-    expect(Number.parseFloat(previewTile.style.height)).toBeCloseTo(44.44, 2);
+    fireEvent(
+      screen.getByTestId("activity-map-panel"),
+      new CustomEvent("layout", { detail: { width: 320, height: 180 } }),
+    );
+    const preview = await screen.findByTestId("activity-map-preview");
+    fireEvent.load(preview);
+    expect(screen.getByLabelText("Activity location map")).toBeTruthy();
   });
 
   it("shows a full-width map processing state while server map geometry is pending", () => {

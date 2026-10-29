@@ -65,6 +65,12 @@ function manualChunks(id: string): string | undefined {
     return "echarts.lazy";
   }
 
+  // Match the existing on-demand vendor boundary: map code is imported only
+  // when a visible map needs it, never by the initial application entry.
+  if (isPackage(id, "maplibre-gl") && /\.[cm]?js(?:\?|$)/.test(id)) {
+    return "maplibre.lazy";
+  }
+
   if (
     isPackage(id, "@trpc/client") ||
     isPackage(id, "@trpc/react-query") ||

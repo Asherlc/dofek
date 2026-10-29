@@ -1,32 +1,20 @@
 /** @vitest-environment jsdom */
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { maps, markers, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivityRouteMap } from "./ActivityRouteMap.tsx";
 
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
 const captureException = vi.hoisted(() => vi.fn());
 vi.mock("../lib/telemetry.ts", () => ({ captureException }));
-beforeEach(() => captureException.mockClear());
-afterEach(() => vi.unstubAllGlobals());
-
-// Leaflet detects SVG support through this browser API, which jsdom omits.
-const originalCreateSvgRect = Object.getOwnPropertyDescriptor(
-  SVGSVGElement.prototype,
-  "createSVGRect",
-);
-beforeAll(() => {
-  Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", {
-    configurable: true,
-    value: () => ({}),
-  });
+beforeEach(() => {
+  resetMaps();
+  captureException.mockClear();
 });
-afterAll(() => {
-  if (originalCreateSvgRect) {
-    Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", originalCreateSvgRect);
-  } else {
-    Reflect.deleteProperty(SVGSVGElement.prototype, "createSVGRect");
-  }
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
-
 const exact = {
   entryId: "tick-1",
   label: "Blue Arete",
@@ -40,342 +28,185 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
-  it("lists and selects every named climb sharing an area location", async () => {
-    const onSelectEntry = vi.fn();
-    const markers = ["Bits and Bits", "Kibbles and Bits", "Blue Arete", "Left Arete"].map(
-      (label, index) => ({
-        ...exact,
-        entryId: `area-log-${index}`,
-        label,
-        location: { ...exact.location, scope: "area" as const, name: "Johnny Wall" },
-      }),
-    );
-    const { container } = render(
-      <ActivityRouteMap points={[]} climbMarkers={markers} onSelectEntry={onSelectEntry} />,
-    );
-    const marker = await screen.findByRole("button", {
-      name: "4 climbs · Bits and Bits · Kibbles and Bits · Blue Arete · Left Arete · Area location: Johnny Wall · Mountain Project",
-    });
-    expect(marker).toHaveTextContent("4");
-    fireEvent.mouseOver(marker);
-    expect(container.querySelector(".leaflet-tooltip")?.textContent).toBe(
-      marker.getAttribute("aria-label"),
-    );
-    fireEvent.click(marker);
-    const choices = within(screen.getByRole("list", { name: "Climbing entries at this location" }));
-    for (const entry of markers) {
-      fireEvent.click(choices.getByRole("button", { name: entry.label }));
-      expect(onSelectEntry).toHaveBeenLastCalledWith(entry.entryId);
-    }
-  });
-
-  it("shows processing until the initial map tiles load", async () => {
-    const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
+  it("initializes the shared vector style and waits for map load", async () => {
+    render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    await waitFor(() => expect(container.querySelector("img.leaflet-tile")).not.toBeNull());
-    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    for (const tile of container.querySelectorAll("img.leaflet-tile")) fireEvent.load(tile);
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-  });
-
-  it.each(["click", "Enter", " "])(
-    "opens a unique location immediately with %s",
-    async (activation) => {
-      const onSelectEntry = vi.fn();
-      render(
-        <ActivityRouteMap
-          points={[]}
-          climbMarkers={[
-            exact,
-            {
-              ...exact,
-              entryId: "different-longitude",
-              location: { ...exact.location, coordinates: { latitude: 37.8, longitude: -122.5 } },
-            },
-            {
-              ...exact,
-              entryId: "different-latitude",
-              location: { ...exact.location, coordinates: { latitude: 37.9, longitude: -122.4 } },
-            },
-          ]}
-          onSelectEntry={onSelectEntry}
-        />,
-      );
-      const dots = await screen.findAllByRole("button", {
-        name: "Blue Arete · Climb location: Blue Arete · Mountain Project",
-      });
-      const dot = dots.find((element) => element.getAttribute("data-entry-id") === "tick-1");
-      if (!dot) throw new Error("Expected the first source marker");
-      fireEvent.keyDown(dot, { key: "Escape" });
-      expect(onSelectEntry).not.toHaveBeenCalled();
-      if (activation === "click") fireEvent.click(dot);
-      else fireEvent.keyDown(dot, { key: activation });
-      expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
-      expect(screen.queryByRole("list", { name: "Climbing entries at this location" })).toBeNull();
-    },
-  );
-
-  it("reserves an offscreen compact preview until it approaches the viewport, then mounts once", async () => {
-    let enterViewport = () => {};
-    const disconnect = vi.fn();
-    const observe = vi.fn();
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
-          enterViewport = () => callback([{ isIntersecting: true }]);
-        }
-        observe = observe;
-        disconnect = disconnect;
-      },
-    );
-    const markers = [exact];
-    const points: { lat: number; lng: number }[] = [];
-    const view = render(
-      <ActivityRouteMap points={points} climbMarkers={markers} presentation="compact" />,
-    );
-    await act(async () => {
-      await import("leaflet");
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.options.style).toMatchObject({
+      version: 8,
+      sources: { openmaptiles: expect.anything() },
     });
-    const region = screen.getByRole("region", { name: "Climbing locations" });
-    expect(region).toHaveClass("h-[160px]");
-    expect(region).not.toHaveClass("leaflet-container");
-    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    expect(view.container.querySelector("img.leaflet-tile")).toBeNull();
-    expect(observe).toHaveBeenCalledWith(region);
-    act(() => enterViewport());
-    await waitFor(() => expect(view.container.querySelector("img.leaflet-tile")).not.toBeNull());
-    const tile = view.container.querySelector("img.leaflet-tile");
-    view.rerender(
-      <ActivityRouteMap points={points} climbMarkers={markers} presentation="compact" />,
-    );
-    act(() => enterViewport());
-    expect(view.container.querySelector("img.leaflet-tile")).toBe(tile);
-    expect(observe).toHaveBeenCalledOnce();
-    expect(disconnect).toHaveBeenCalled();
+    act(() => maps[0]?.fire("load"));
+    expect(screen.queryByRole("status")).toBeNull();
   });
-
-  it("shows a counted marker for shared locations and selects each same-name log", async () => {
+  it.each(["click", "Enter", " "])("selects a unique climb using %s", async (key) => {
     const onSelectEntry = vi.fn();
-    const { container } = render(
-      <ActivityRouteMap
-        points={[]}
-        climbMarkers={[
-          { ...exact, entryNumber: 1 },
-          { ...exact, entryId: "repeat", entryNumber: 3 },
-        ]}
-        onSelectEntry={onSelectEntry}
-      />,
-    );
-    const group = await screen.findByRole("button", {
-      name: "2 climbs · Blue Arete · Blue Arete · Climb location: Blue Arete · Mountain Project",
-    });
-    expect(group).toHaveTextContent("2");
-    expect(container.querySelectorAll("[data-entry-ids]")).toHaveLength(1);
-    fireEvent.click(group);
-    expect(onSelectEntry).not.toHaveBeenCalled();
-    const chooser = screen.getByRole("list", { name: "Climbing entries at this location" });
-    const [first, second] = within(chooser).getAllByRole("button", { name: "Blue Arete" });
-    if (!first || !second) throw new Error("Expected both climbing logs");
-    fireEvent.click(first);
-    expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
-    fireEvent.click(second);
-    expect(onSelectEntry).toHaveBeenLastCalledWith("repeat");
-    expect(second).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: group.getAttribute("aria-label") ?? "" })).toBe(
-      group,
-    );
-  });
-
-  it.each(["Enter", " "])("opens coincident occurrences using the %s key", async (key) => {
-    const onSelectEntry = vi.fn();
-    render(
-      <ActivityRouteMap
-        points={[]}
-        climbMarkers={[exact, { ...exact, entryId: "repeat" }]}
-        onSelectEntry={onSelectEntry}
-      />,
-    );
-    const dot = await screen.findByRole("button", {
-      name: "2 climbs · Blue Arete · Blue Arete · Climb location: Blue Arete · Mountain Project",
-    });
-    expect(screen.queryByRole("list", { name: "Climbing entries at this location" })).toBeNull();
-    fireEvent.keyDown(dot, { key });
-    expect(onSelectEntry).not.toHaveBeenCalled();
-    const choices = within(
-      screen.getByRole("list", { name: "Climbing entries at this location" }),
-    ).getAllByRole("button", { name: "Blue Arete" });
-    expect(choices).toHaveLength(2);
-    const first = choices[0];
-    if (!first) throw new Error("Expected a climb choice");
-    fireEvent.click(first);
-    expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
-  });
-  it("keeps opaque tick identities separate from readable source-dot labels", async () => {
-    const firstId = "f0e5f441-1c6d-4e20-a2a3-41103e7314a0";
-    const secondId = "ab648e3e-5ec8-4ac8-817c-47edc84eddb4";
-    const label =
-      "2 climbs · Blue Arete · Blue Arete · Climb location: Blue Arete · Mountain Project";
-    const { container } = render(
-      <ActivityRouteMap
-        points={[]}
-        climbMarkers={[
-          { ...exact, entryId: firstId },
-          { ...exact, entryId: secondId },
-        ]}
-      />,
-    );
-    const group = await screen.findByRole("button", { name: label });
-    expect(group).toHaveAttribute("data-entry-ids", JSON.stringify([firstId, secondId]));
-    fireEvent.mouseOver(group);
-    expect(container.querySelector(".leaflet-tooltip")?.textContent).toBe(label);
-  });
-
-  it("exposes source dots and their labels to keyboard users", async () => {
-    const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
+    render(<ActivityRouteMap points={[]} climbMarkers={[exact]} onSelectEntry={onSelectEntry} />);
     const dot = await screen.findByRole("button", {
       name: "Blue Arete · Climb location: Blue Arete · Mountain Project",
     });
-    expect(dot).toHaveAttribute("tabindex", "0");
-    fireEvent.focus(dot);
-    expect(container.querySelector(".leaflet-tooltip")).toHaveTextContent("Blue Arete");
-    fireEvent.blur(dot);
-    expect(container.querySelector(".leaflet-tooltip")).toBeNull();
+    fireEvent.keyDown(dot, { key: "Escape" });
+    expect(onSelectEntry).not.toHaveBeenCalled();
+    if (key === "click") fireEvent.click(dot);
+    else fireEvent.keyDown(dot, { key });
+    expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
   });
-
-  it("reports map initialization errors with a usable error state", async () => {
+  it("offers all same-name occurrences from a counted, safely labelled marker", async () => {
+    const onSelectEntry = vi.fn();
+    const unsafe = '<img src=x onerror="alert(1)">';
+    const { container } = render(
+      <ActivityRouteMap
+        points={[]}
+        climbMarkers={[
+          { ...exact, label: unsafe },
+          { ...exact, entryId: "repeat", label: unsafe },
+        ]}
+        onSelectEntry={onSelectEntry}
+      />,
+    );
+    const group = await screen.findByRole("button", { name: /^2 climbs/ });
+    expect(group).toHaveTextContent("2");
+    expect(group).toHaveAttribute("data-entry-ids", JSON.stringify(["tick-1", "repeat"]));
+    fireEvent.focus(group);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(unsafe);
+    expect(container.querySelector("[role=tooltip] img")).toBeNull();
+    fireEvent.blur(group);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.keyDown(group, { key: "Enter" });
+    const choices = within(
+      screen.getByRole("list", { name: "Climbing entries at this location" }),
+    ).getAllByRole("button");
+    const repeat = choices[1];
+    if (!repeat) throw new Error("Expected repeated climb");
+    fireEvent.click(repeat);
+    expect(onSelectEntry).toHaveBeenCalledWith("repeat");
+    expect(choices[1]).toHaveAttribute("aria-pressed", "true");
+  });
+  it("preserves route, endpoints, source points and chart hover independently", async () => {
+    const hover = { current: (_position: { lat: number; lng: number } | null) => {} };
+    const view = render(
+      <ActivityRouteMap
+        points={[
+          { lat: 37, lng: -122 },
+          { lat: 38, lng: -123 },
+        ]}
+        climbMarkers={[exact]}
+        onRegisterHoverCallback={hover}
+      />,
+    );
+    await screen.findByRole("button", { name: /Blue Arete/ });
+    act(() => maps[0]?.fire("load"));
+    expect(maps[0]?.addSource).toHaveBeenCalledWith(
+      "activity-route",
+      expect.objectContaining({
+        data: expect.objectContaining({
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [-122, 37],
+              [-123, 38],
+            ],
+          },
+        }),
+      }),
+    );
+    expect(markers).toHaveLength(3);
+    act(() => hover.current({ lat: 39, lng: -124 }));
+    expect(markers.at(-1)?.coordinates).toEqual([-124, 39]);
+    act(() => hover.current({ lat: 40, lng: -125 }));
+    expect(markers).toHaveLength(4);
+    expect(markers.at(-1)?.coordinates).toEqual([-125, 40]);
+    act(() => hover.current(null));
+    expect(markers.at(-1)?.remove).toHaveBeenCalled();
+    view.unmount();
+    expect(maps[0]?.remove).toHaveBeenCalledOnce();
+  });
+  it("retains source selection on tile errors and reports each map error once", async () => {
+    const onSelectEntry = vi.fn();
+    render(<ActivityRouteMap points={[]} climbMarkers={[exact]} onSelectEntry={onSelectEntry} />);
+    const dot = await screen.findByRole("button", { name: /Blue Arete/ });
+    act(() => {
+      maps[0]?.fire("error", { error: new Error("offline") });
+      maps[0]?.fire("error", { error: new Error("offline") });
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Some map tiles could not load. Check your connection.",
+    );
+    fireEvent.click(dot);
+    expect(onSelectEntry).toHaveBeenCalledWith("tick-1");
+    expect(captureException).toHaveBeenCalledOnce();
+  });
+  it("reports initialization failures and removes partial maps", async () => {
     render(
       <ActivityRouteMap
         points={[]}
         climbMarkers={[
           {
             ...exact,
-            location: {
-              ...exact.location,
-              coordinates: { latitude: Number.NaN, longitude: -122.4 },
-            },
+            location: { ...exact.location, coordinates: { latitude: NaN, longitude: 0 } },
           },
         ]}
       />,
     );
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Map unavailable: Invalid LatLng object",
-      ),
-    );
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      component: "ActivityRouteMap",
-    });
+    expect(await screen.findByText(/Map unavailable: Invalid LngLat/)).toBeVisible();
+    expect(captureException).toHaveBeenCalled();
+    expect(maps[0]?.remove).toHaveBeenCalled();
   });
-
-  it("keeps the recorded route and source points usable after a tile fails", async () => {
-    const onAttach = vi.fn();
-    const onSelectEntry = vi.fn();
-    const { container } = render(
-      <div>
-        <ActivityRouteMap
-          points={[
-            { lat: 37.79, lng: -122.41 },
-            { lat: 37.81, lng: -122.39 },
-          ]}
-          climbMarkers={[exact]}
-          onSelectEntry={onSelectEntry}
-        />
-        <button type="button" onClick={onAttach}>
-          Attach
-        </button>
-      </div>,
-    );
-    await waitFor(() => expect(container.querySelector("img.leaflet-tile")).not.toBeNull());
-    const tile = container.querySelector("img.leaflet-tile");
-    if (!tile) throw new Error("Expected a map tile");
-    fireEvent.error(tile);
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Some map tiles could not load. Check your connection.",
-    );
-    const region = screen.getByRole("region", { name: "Climbing locations" });
-    expect(region).not.toHaveClass("hidden");
-    expect(region.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(4);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Blue Arete · Climb location: Blue Arete · Mountain Project",
-      }),
-    );
-    expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
-    fireEvent.click(screen.getByRole("button", { name: "Attach" }));
-    expect(onAttach).toHaveBeenCalledOnce();
-    fireEvent.error(tile);
-    expect(captureException).toHaveBeenCalledOnce();
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      component: "ActivityRouteMap",
-    });
-  });
-
-  it("renders a source dot without a sensor route or Start/Finish pins", async () => {
-    const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
-    const region = screen.getByRole("region", { name: "Climbing locations" });
-    await waitFor(() =>
-      expect(region.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(1),
-    );
-    expect(
-      screen.getByLabelText("Blue Arete · Climb location: Blue Arete · Mountain Project"),
-    ).toBeInTheDocument();
-    expect(container.querySelector(".leaflet-control-attribution")).toHaveTextContent(
-      "OpenStreetMap",
-    );
-    expect(container.querySelector("img.leaflet-tile")?.getAttribute("src")).toMatch(
-      /\/15\/[0-9]+\/[0-9]+\.png$/,
-    );
-  });
-
-  it("draws the sensor polyline and endpoints independently of source dots", async () => {
-    const { container } = render(
+  it("updates the system palette while preserving the camera, markers and route", async () => {
+    const events = new EventTarget();
+    const query = {
+      ...window.matchMedia("(prefers-color-scheme: dark)"),
+      matches: false,
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+    };
+    vi.spyOn(window, "matchMedia").mockReturnValue(query);
+    render(
       <ActivityRouteMap
         points={[
-          { lat: 37.79, lng: -122.41 },
-          { lat: 37.81, lng: -122.39 },
+          { lat: 37, lng: -122 },
+          { lat: 38, lng: -123 },
         ]}
         climbMarkers={[exact]}
       />,
     );
-    await waitFor(() =>
-      expect(container.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(4),
+    await screen.findByRole("button", { name: /Blue Arete/ });
+    act(() => maps[0]?.fire("load"));
+    query.matches = true;
+    act(() => events.dispatchEvent(new Event("change")));
+    expect(maps[0]?.setStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layers: expect.arrayContaining([
+          expect.objectContaining({ id: "background", paint: { "background-color": "#1a2a20" } }),
+        ]),
+      }),
     );
-    expect(
-      screen.getByLabelText("Blue Arete · Climb location: Blue Arete · Mountain Project"),
-    ).toBeInTheDocument();
+    act(() => maps[0]?.fire("style.load"));
+    expect(maps[0]?.addSource).toHaveBeenCalledTimes(2);
+    expect(maps[0]?.fitBounds).toHaveBeenCalledOnce();
+    expect(markers).toHaveLength(3);
   });
-
-  it("lists every climb and source at a shared point with safe tooltip text", async () => {
-    const label = '<img src=x onerror="alert(1)"> & ridge';
-    const area = {
-      ...exact,
-      entryId: "tick-2",
-      label,
-      location: { ...exact.location, scope: "area" as const, name: "Goat Rock" },
-    };
-    const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact, area]} />);
-    const groupLabel = `2 climbs · Blue Arete · ${label} · Climb location: Blue Arete · Mountain Project · Area location: Goat Rock · Mountain Project`;
-    const dot = await screen.findByRole("button", { name: groupLabel });
-    fireEvent.mouseOver(dot);
-    await waitFor(() =>
-      expect(container.querySelector(".leaflet-tooltip")).toHaveTextContent(groupLabel),
+  it("defers compact maps and releases them when offscreen", async () => {
+    let intersect = (_visible: boolean) => {};
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          intersect = (visible) => callback([{ isIntersecting: visible }]);
+        }
+        observe() {}
+        disconnect() {}
+      },
     );
-    expect(container.querySelector(".leaflet-tooltip img")).toBeNull();
+    render(<ActivityRouteMap points={[]} climbMarkers={[exact]} presentation="compact" />);
+    expect(maps).toHaveLength(0);
+    act(() => intersect(true));
+    await waitFor(() => expect(maps).toHaveLength(1));
+    act(() => intersect(false));
+    expect(maps[0]?.remove).toHaveBeenCalled();
   });
-
-  it("supports a compact single-point preview with exactly one source dot", async () => {
-    const { container } = render(
-      <ActivityRouteMap points={[]} climbMarkers={[exact]} presentation="compact" />,
-    );
-    await waitFor(() =>
-      expect(container.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(1),
-    );
-    expect(screen.getByRole("region", { name: "Climbing locations" })).toHaveClass("h-[160px]");
-  });
-
-  it("shows an explicit empty state when neither sensor nor source GPS is supplied", () => {
+  it("shows the empty state", () => {
     render(<ActivityRouteMap points={[]} />);
-    expect(screen.getByText("No GPS locations available.")).toBeInTheDocument();
+    expect(screen.getByText("No GPS locations available.")).toBeVisible();
   });
 });
