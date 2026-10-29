@@ -76,7 +76,15 @@ describe("activity data integrity repair", () => {
     artifactDirectory = await mkdtemp(join(tmpdir(), "activity-integrity-integration-"));
   }, 300_000);
 
-  beforeEach(async () => {
+  beforeEach(async ({ onTestFailed }) => {
+    onTestFailed(({ task }) => {
+      process.stderr.write(
+        `${JSON.stringify({
+          test: task.name,
+          errors: task.result?.errors?.map((error) => error.message.slice(0, 1200)),
+        })}\n`,
+      );
+    });
     await context.db.execute(
       sql`DELETE FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND provider_id='apple_health'`,
     );
@@ -141,7 +149,6 @@ describe("activity data integrity repair", () => {
       return result.json<{ activity_id: string; avg_cadence: number | null; is_deleted: number }>();
     };
     // Establish every old row before testing correction of the entire canonical scope.
-    await runActivityIntegrityDbtBuild(input, scopedClient);
     await runActivityIntegrityDbtBuild(input, scopedClient);
     const before = await cadenceRows();
     expect(before).toHaveLength(101);

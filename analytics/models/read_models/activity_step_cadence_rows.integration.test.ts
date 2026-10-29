@@ -22,13 +22,10 @@ function render(name: string, scopedIds?: string[], isIncremental = true, exactI
   return renderDbtModelSql(readModelSql(`${name}.sql`), {
     isIncremental,
     activityRefreshScoped: scopedIds !== undefined,
+    activityRefreshIds: scopedIds,
     activityStepCadenceRepairScoped: exactIds !== undefined,
   })
     .replaceAll('{{ var("activity_refresh_user_id") }}', user)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedIds ?? []).map((id) => `'${id}'`).join(",")}], 'Array(UUID)')`,
-    )
     .replaceAll(
       "{{ activity_step_cadence_repair_ids() }}",
       `CAST([${(exactIds ?? []).map((id) => `'${id}'`).join(",")}], 'Array(UUID)')`,

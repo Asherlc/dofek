@@ -11,7 +11,11 @@
 
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH target_state AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+target_state AS (
     SELECT
         coalesce(
             max(refreshed_at),

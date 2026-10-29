@@ -15,13 +15,13 @@ describe("activity source membership projection", () => {
     return renderDbtModelSql(readModelSql("activity_source_records.sql"), {
       isIncremental: incremental,
       activityRefreshScoped: scopedId !== undefined,
+    activityRefreshIds: [scopedId ?? memberId],
     })
       .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${database}.activity`)
       .replaceAll("{{ source('postgres_fitness', 'provider_priority') }}", `${database}.provider_priority`)
       .replaceAll("{{ source('postgres_fitness', 'device_priority') }}", `${database}.device_priority`)
       .replaceAll("{{ this }}", `${database}.activity_source_records`)
       .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-      .replaceAll("{{ activity_refresh_ids() }}", `CAST(['${scopedId ?? memberId}'], 'Array(UUID)')`)
       .replaceAll("{{ activity_source_mass_tombstone_min_existing }}", "10")
       .replaceAll("{{ activity_source_mass_tombstone_ratio }}", "0.95")
       .replaceAll("{{ (activity_source_mass_tombstone_ratio * 100) | int }}", "95")

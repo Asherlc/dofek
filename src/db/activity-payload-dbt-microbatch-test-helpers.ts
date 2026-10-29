@@ -7,6 +7,8 @@ import {
   createProducerDedupedSensorSql,
   createSourceActivitySql,
 } from "./activity-payload-dbt-source-test-helpers.ts";
+import { encodeActivityRefreshScope } from "./activity-refresh-scope.ts";
+import { withActivityScopeDbtProject } from "./activity-refresh-scope-dbt-test-helpers.ts";
 import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -702,57 +704,59 @@ export async function runDbtBatch(
   activityRefreshUserId = userId,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const url = new URL(requireClickHouseUrl());
-  const result = await runProcess(
-    "uv",
-    [
-      "run",
-      "--project",
-      "analytics",
-      "dbt",
-      "run",
-      "--project-dir",
-      "analytics",
-      "--profiles-dir",
-      "analytics",
-      "--threads",
-      "1",
-      "--no-use-colors",
-      "--target-path",
-      artifactDirectory,
-      "--event-time-start",
-      start,
-      "--event-time-end",
-      end,
-      "--vars",
-      JSON.stringify({
-        activity_sensor_sample_begin: start,
-        initial_lookback_days: 365,
-        ...(activityLocationBatchSize
-          ? { activity_location_batch_size: activityLocationBatchSize }
-          : {}),
-        ...(activityIds
-          ? {
-              activity_refresh_user_id: activityRefreshUserId,
-              activity_refresh_activity_ids: activityIds,
-            }
-          : {}),
-      }),
-      "--select",
-      models.join(" "),
-    ],
+  const result = await withActivityScopeDbtProject(
     {
-      ...process.env,
-      DBT_TARGET: "dev",
-      DBT_CLICKHOUSE_SCHEMA: database,
-      DBT_ANALYTICS_SOURCE_SCHEMA: database,
-      DBT_INGEST_SOURCE_SCHEMA: database,
-      DBT_POSTGRES_FITNESS_SOURCE_SCHEMA: database,
-      DBT_CLICKHOUSE_HOST: url.hostname,
-      DBT_CLICKHOUSE_PORT: url.port,
-      DBT_CLICKHOUSE_USER: decodeURIComponent(url.username),
-      DBT_CLICKHOUSE_PASSWORD: decodeURIComponent(url.password),
-      UV_PROJECT_ENVIRONMENT: "../.venv-analytics",
+      activity_sensor_sample_begin: start,
+      initial_lookback_days: 365,
+      ...(activityLocationBatchSize
+        ? { activity_location_batch_size: activityLocationBatchSize }
+        : {}),
+      ...(activityIds
+        ? {
+            activity_refresh_user_id: activityRefreshUserId,
+            activity_refresh_activity_ids_base64: encodeActivityRefreshScope(activityIds),
+          }
+        : {}),
     },
+    (project) =>
+      runProcess(
+        "uv",
+        [
+          "run",
+          "--project",
+          "analytics",
+          "dbt",
+          "run",
+          "--project-dir",
+          project,
+          "--profiles-dir",
+          "analytics",
+          "--threads",
+          "1",
+          "--no-use-colors",
+          "--target-path",
+          artifactDirectory,
+          "--event-time-start",
+          start,
+          "--event-time-end",
+          end,
+          "--select",
+          models.join(" "),
+        ],
+        {
+          ...process.env,
+          DBT_TARGET: "dev",
+          DBT_CLICKHOUSE_SCHEMA: database,
+          DBT_ANALYTICS_SOURCE_SCHEMA: database,
+          DBT_INGEST_SOURCE_SCHEMA: database,
+          DBT_POSTGRES_FITNESS_SOURCE_SCHEMA: database,
+          DBT_CLICKHOUSE_HOST: url.hostname,
+          DBT_CLICKHOUSE_PORT: url.port,
+          DBT_CLICKHOUSE_USER: decodeURIComponent(url.username),
+          DBT_CLICKHOUSE_PASSWORD: decodeURIComponent(url.password),
+          UV_PROJECT_ENVIRONMENT: "../.venv-analytics",
+        },
+      ),
   );
   expect(result.exitCode, result.stderr || result.stdout).toBe(0);
   return result;

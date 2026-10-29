@@ -16,6 +16,9 @@
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
 sample_source_versions AS MATERIALIZED (
     SELECT
         activity_id,

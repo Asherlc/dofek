@@ -11,7 +11,11 @@
     query_settings={'max_threads': 1, 'join_use_nulls': 1, 'enable_materialized_cte': 1}
 ) }}
 
-WITH groups AS MATERIALIZED (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+groups AS MATERIALIZED (
     SELECT * FROM {{ ref('deduped_activities') }} FINAL
 ),
 live_runs AS MATERIALIZED (

@@ -39,9 +39,7 @@ describe("production analytics read-model build", () => {
     ];
 
     expect(scopeMacro).toContain("activity_refresh_user_id");
-    expect(scopeMacro).toContain("activity_refresh_activity_ids");
-    expect(scopeMacro).toContain("activity_ids | length > 0");
-    expect(scopeMacro).toContain("user_id | string | trim | length > 0");
+    expect(scopeMacro).toContain("activity_refresh_activity_ids_base64");
     for (const model of scopedModels) {
       const sql = readModel(model);
       expect(sql, model).toContain("activity_refresh_scope_enabled()");

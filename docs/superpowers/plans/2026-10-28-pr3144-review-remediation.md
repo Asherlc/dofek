@@ -14,7 +14,7 @@
 
 - Start on existing branch `slimy-unicorn`, reviewed base `5f130c59067ed5e8f5edae95cfcfd7a94fb0c6dd`. Do not switch/rebase/create branches.
 - Keep all existing raw identity/overlap/association policies, 100-key batches and synchronous cleanup.
-- No new dependencies/env vars, stored aggregates, client metric computation, truncation, retries, timeout changes, or disabled checks.
+- No new application dependencies/env vars, stored aggregates, client metric computation, truncation, retries, timeout changes, or disabled checks. Task 6 permits the approved conditional replacement of the native development tool.
 - The user approved existing-API response negotiation: legacy default, explicit new response on both clients.
 - Only the controller commits/pushes and posts/resolves feedback after review; every new commit is pushed immediately. Preserve immutable per-task review artifacts.
 - Serialize real-database tests; no service/resource operations without controller coordination. Never repeat a resource-rejected test by tuning limits.
@@ -84,7 +84,62 @@ required on the final head; do not alter workflow settings or service limits.
 - [x] Update both clients to request version 2 and validate before card/table access. Preserve specific server errors and the accepted missing-metric UI.
 - [x] Run focused shared/server/web/mobile tests and affected package typechecks/lint; freeze artifact/report for independent review.
 
-## Final review, replies and merge
+## Task 5: Compact canonical dbt scope transport
+
+**Approved 2026-10-29.** Follow the finite staged repair from Task 3. Current
+head is `d14c21ec90d42bd9bf65b6e9a7c53d05dbd91b07`. Repeated scope literals
+exceed the unchanged query-size limit; the approved solution is one packed
+UUID input and shared scope expression per model, not a different phase plan.
+
+**Files:** scope and HealthKit revision macros; exact cadence macro; all 15
+scoped model headers; runner and canonical encoder; scoped production/test
+callers and actual engine fixtures. Controller owns human documentation.
+
+- [x] Add failing encoder/runner boundary tests and actual-engine maximum-scope
+  generated-statement coverage. Existing hosted query-size failure is preserved
+  as semantic evidence; local database execution remains stopped.
+- [x] Replace the internal literal-list input with one validated base64 value
+  containing complete 16-byte UUIDs. Reject invalid UUID/base64/length/cap inputs
+  explicitly; preserve byte order, zeros, high-bit values and exact membership.
+- [x] Emit the scope expression once per scoped model; preserve user fencing,
+  HealthKit sibling and historical alias expansion, global cadence association
+  checks, 10,000/32 closure caps, exact batches of 100 and explicit empty target.
+  Migrate every writer/reader/renderer in one canonical path with no dual input.
+- [ ] Run focused Docker-free unit/types/lint checks; freeze and independently
+  review the patch. In CI execute complete maximum-payload dbt statements with
+  sparse fixtures, plus all 101 correction and fault/rollback lifecycle cases.
+  Do not claim success from SELECT size or YAML transport alone.
+  Source checks and independent review are complete; actual hosted acceptance
+  remains pending.
+
+## Task 6: Evaluate and conditionally migrate native mutation tooling
+
+**Approved 2026-10-29.** An independent read-only repository / disposable-copy
+evaluation may run alongside Task 5. Keep exactly one repository source writer;
+begin migration only after Task 5 freezes and the evaluation evidence passes
+independent review. Evaluation may build the tool and run bounded disposable
+fixtures but must not modify product sources or run a broad native campaign.
+
+- [x] Verify official release identity/version/provenance and inspect the plan,
+  discovery/error and report/score contracts. Prove correct per-file candidates
+  for the actual Boolean fallback and unary negation; validate source inventory
+  and hashes, positive controls, zero sites, missing/unreadable/malformed source
+  and stale plans. Do not infer safety from a successful generic CLI command.
+- [ ] Prove generated mutations compile, change meaningful observable behavior
+  and are killed by relevant tests; characterize build-error/timeouts/skipped
+  outcomes and preserve current gate semantics. Freeze evaluation evidence for
+  independent review before deciding whether the migration condition is met.
+- [ ] If verified, migrate every Swift mutation consumer to one pinned canonical
+  MutantKit toolchain using TypeScript repository automation. Update wrapper,
+  tests, workflow/config/tool pins and human docs together. Retain strict source
+  validation, complete result inventory, positive work and unchanged score gates.
+  No Muter coexistence, local fork, source exclusions or zero-work acceptance.
+- [ ] Run focused wrapper/tool/native behavior checks and independent scoped
+  review; require actual existing native mutation CI acceptance on the final head.
+  If evaluation cannot meet the condition, record exact evidence and request
+  direction before selecting another strategy.
+
+## Final acceptance after approved follow-up
 
 - [ ] Controller consolidates task reviews and runs Docker-free pre-push lint, Knip, root/server/web/mobile types and unit/mobile tests. Run database-backed SQL lint and integrations on CI under the user's approved validation direction. Keep native archive, strict SwiftLint and mutation gates in exact-head CI.
 - [ ] Commit explicit reviewed paths in coherent commits and push every commit immediately; no force push or branch changes.

@@ -670,15 +670,12 @@ function renderModel(
   return renderDbtModelSql(readModelSql(file), {
     isIncremental: incremental,
     activityRefreshScoped: scopedActivityIds != null,
+    activityRefreshIds: scopedActivityIds,
   })
     .replaceAll("{{ initial_lookback_days }}", "365")
     .replaceAll("{{ var('activity_location_batch_size', 100) }}", "100")
     .replaceAll("{{ var('activity_sensor_summary_batch_size', 100) }}", "100")
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
-    )
     .replaceAll("{{ this }}", `${database}.${file.replace(".sql", "")}`)
     .replace(/\{\{ ref\('([^']+)'\) \}\}/g, `${database}.$1`)
     .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${database}.source_activity`)

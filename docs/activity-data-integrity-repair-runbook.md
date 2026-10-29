@@ -283,6 +283,14 @@ project on success or failure and leaves the repository project unchanged.
 This uses native [dbt project variables](https://docs.getdbt.com/docs/build/project-variables)
 without placing a large scope in one command-line argument; Linux documents
 its [argument-size limits](https://man7.org/linux/man-pages/man2/execve.2.html).
+The [canonical encoder](../src/db/activity-refresh-scope.ts) packs each UUID into
+16 bytes and supplies one `activity_refresh_activity_ids_base64` value. Each
+model references that payload once through its shared scope expression,
+preserving the full 10,000-ID capacity without repeating UUID text throughout
+the generated statement. UUID decoding uses ClickHouse's explicit big-endian
+[conversion](https://clickhouse.com/docs/reference/functions/regular-functions/uuid-functions#UUIDNumToString).
+Invalid, empty, incomplete or over-cap packed scopes fail explicitly; exact
+empty cadence batches retain their separate contract.
 The [executable lifecycle tests](../src/db/activity-data-integrity-repair.integration.test.ts)
 cover revision aliases, old-group tombstones and failure before downstream
 summaries. The snapshot still captures the eight projections listed below;

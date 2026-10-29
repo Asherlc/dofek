@@ -269,12 +269,9 @@ function renderActivitySummaryRowsSelectSql(
   return renderDbtModelSql(readModelSql("activity_summary_rows.sql"), {
     isIncremental: true,
     activityRefreshScoped: scopedActivityIds != null,
+    activityRefreshIds: scopedActivityIds,
   })
     .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
-    )
     .replace(/{{ initial_lookback_days }}/g, "120")
     .replaceAll(
       "{{ ref('activity_step_cadence_rows') }}",

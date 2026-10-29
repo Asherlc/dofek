@@ -12,7 +12,11 @@
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH current_activity AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+current_activity AS (
     SELECT
         activity_id,
         user_id,

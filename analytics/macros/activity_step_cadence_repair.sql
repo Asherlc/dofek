@@ -7,8 +7,8 @@
         {{ exceptions.raise_compiler_error('exact cadence repair requires an array of at most 100 UUIDs') }}
     {%- endif -%}
     {%- set uuid_pattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' -%}
-    {%- for activity_id in activity_ids + var('activity_refresh_activity_ids') + [var('activity_refresh_user_id')] -%}
-        {%- if activity_id is not string or not modules.re.match(uuid_pattern, activity_id) -%}
+    {%- for activity_id in activity_ids + [var('activity_refresh_user_id')] -%}
+        {%- if activity_id is not string or activity_id | length != 36 or not modules.re.match(uuid_pattern, activity_id) -%}
             {{ exceptions.raise_compiler_error('exact cadence repair requires valid user and activity UUIDs') }}
         {%- endif -%}
     {%- endfor -%}

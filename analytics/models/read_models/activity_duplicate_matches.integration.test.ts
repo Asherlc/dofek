@@ -153,11 +153,8 @@ function renderModel(
   return renderDbtModelSql(readModelSql("activity_duplicate_matches.sql"), {
     isIncremental: incremental,
     activityRefreshScoped: scopedActivityIds != null,
+    activityRefreshIds: scopedActivityIds,
   })
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
-    )
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${database}.activity_source_records`)
     .replace(
       /{{ source\('postgres_fitness', 'activity'\) }}/g,

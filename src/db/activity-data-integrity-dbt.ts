@@ -11,6 +11,7 @@ import {
 } from "./activity-data-integrity-cadence-scope.ts";
 import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 import type { ActivityIntegrityScopeInput } from "./activity-data-integrity-scope-policy.ts";
+import { encodeActivityRefreshScope } from "./activity-refresh-scope.ts";
 
 const UPSTREAM_MODELS = [
   "activity_source_records",
@@ -61,7 +62,7 @@ export async function runActivityIntegrityDbtBuild(
             vars: {
               ...z.record(z.string(), z.unknown()).parse(config.vars ?? {}),
               activity_refresh_user_id: input.userId,
-              activity_refresh_activity_ids: activityIds,
+              activity_refresh_activity_ids_base64: encodeActivityRefreshScope(activityIds),
               activity_sensor_sample_begin: input.eventTimeStart.toISOString().slice(0, 10),
               ...(cadenceIds === undefined
                 ? {}

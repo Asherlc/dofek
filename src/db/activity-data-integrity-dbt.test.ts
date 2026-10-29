@@ -39,7 +39,13 @@ const configSchema = z.object({
   "model-paths": z.array(z.string()),
   vars: z.object({
     activity_refresh_user_id: z.string(),
-    activity_refresh_activity_ids: z.array(z.string()),
+    activity_refresh_activity_ids_base64: z.string().transform((encoded) => {
+      const bytes = Buffer.from(encoded, "base64");
+      return Array.from({ length: bytes.length / 16 }, (_, index) => {
+        const hex = bytes.subarray(index * 16, (index + 1) * 16).toString("hex");
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      });
+    }),
     activity_sensor_sample_begin: z.string(),
     activity_step_cadence_repair_activity_ids: z.array(z.string()).optional(),
   }),
@@ -162,12 +168,12 @@ describe("runActivityIntegrityDbtBuild", () => {
       .map((phase) => phase.config.vars.activity_step_cadence_repair_activity_ids);
     expect(batches.map((batch) => batch?.length)).toEqual([100, 100, 1]);
     expect(batches.flat()).toEqual(keys);
-    expect(run.phases[0]?.config.vars.activity_refresh_activity_ids).toEqual([
+    expect(run.phases[0]?.config.vars.activity_refresh_activity_ids_base64).toEqual([
       id(1),
       id(2),
       ...keys,
     ]);
-    expect(run.phases.at(-1)?.config.vars.activity_refresh_activity_ids).toEqual([
+    expect(run.phases.at(-1)?.config.vars.activity_refresh_activity_ids_base64).toEqual([
       id(1),
       id(2),
       id(3),
@@ -284,7 +290,7 @@ describe("runActivityIntegrityDbtBuild", () => {
       downstream,
     ]);
     expect(run.phases[1]?.config.vars.activity_step_cadence_repair_activity_ids).toEqual([]);
-    expect(run.phases[1]?.config.vars.activity_refresh_activity_ids).toEqual([id(1)]);
+    expect(run.phases[1]?.config.vars.activity_refresh_activity_ids_base64).toEqual([id(1)]);
     expect(run.state.targetExists).toBe(true);
   });
   it("rejects an empty build that fails to create its target", async () => {
@@ -370,7 +376,7 @@ describe("runActivityIntegrityDbtBuild", () => {
     await runActivityIntegrityDbtBuild({ ...input, activityIds: ids }, run.client);
     expect(run.phases).toHaveLength(3);
     for (const phase of run.phases) {
-      expect(phase.config.vars.activity_refresh_activity_ids).toEqual(ids);
+      expect(phase.config.vars.activity_refresh_activity_ids_base64).toEqual(ids);
       expect(phase.config.vars.activity_refresh_user_id).toBe(input.userId);
       expect(phase.config.vars.activity_sensor_sample_begin).toBe("2026-09-01");
       expect(phase.args[phase.args.indexOf("--event-time-start") + 1]).toBe("2026-09-01T00:00:00");

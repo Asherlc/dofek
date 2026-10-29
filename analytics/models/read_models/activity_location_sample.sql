@@ -22,6 +22,9 @@
 ) }}
 
 WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
 activity_group_state AS (
     SELECT
         deduped.activity_id AS group_activity_id,

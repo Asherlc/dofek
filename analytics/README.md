@@ -196,7 +196,8 @@ provider/device provenance, and lifecycle watermark refresh only when an
 activity, deduplicated location state, altitude evidence, or explicit route evidence changes; a
 route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
 Scoped builds resolve `activity_refresh_user_id` and
-`activity_refresh_activity_ids` (canonical or member IDs) before reading route
+`activity_refresh_activity_ids_base64` (packed canonical or member IDs; see
+[scoped activity input](#scoped-activity-input)) before reading route
 points, and include scoped prior route keys so removed activities can be
 tombstoned. Unscoped incremental builds discover dirty keys from activity,
 location, altitude, and identity watermarks through per-activity source
@@ -890,6 +891,33 @@ active rows until ClickHouse background merges finish. This follows ClickHouse's
 documented `ReplacingMergeTree` behavior, where replacement occurs during merges
 and `FINAL` forces query-time replacement:
 <https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>.
+
+## Scoped activity input
+
+Scoped models accept the user UUID and one `activity_refresh_activity_ids_base64`
+value. Generate that value with the [canonical encoder](../src/db/activity-refresh-scope.ts),
+which validates and packs complete UUIDs in network byte order. For a small
+reviewed scope, replace the placeholder UUID and run from the repository root:
+
+```sh
+pnpm tsx -e 'import { encodeActivityRefreshScope } from "./src/db/activity-refresh-scope.ts"; console.log(encodeActivityRefreshScope(["<activity-or-group-uuid>"]));'
+```
+
+Use the printed value in the `activity_refresh_activity_ids_base64` variable of
+the small direct-dbt examples. The old UUID-list variable is no longer accepted.
+The encoding uses the standard [Node Buffer API](https://nodejs.org/api/buffer.html);
+models decode UUIDs with explicit big-endian
+[UUIDNumToString](https://clickhouse.com/docs/reference/functions/regular-functions/uuid-functions#UUIDNumToString).
+Each scoped model contains the packed payload once, retaining existing user
+fencing and related HealthKit workout expansion.
+
+The [operational repair runner](../src/db/activity-data-integrity-dbt.ts) transports
+all scopes through a private native dbt project, preserving the 10,000-ID limit
+without a large command-line argument. The inline examples above are for small
+scopes; a maximum-size scope must use that private-project transport. See the
+[repair procedure](../docs/activity-data-integrity-repair-runbook.md#cadence-completeness-during-rebuild),
+[dbt project variables](https://docs.getdbt.com/docs/build/project-variables) and
+[Linux argument limits](https://man7.org/linux/man-pages/man2/execve.2.html).
 
 ## Activity recording origin
 

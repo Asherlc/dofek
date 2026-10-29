@@ -51,9 +51,10 @@ remained unresolved. Administrator bypass is outside this chosen direction.
 
 ## Constraints and acceptance
 
-No new dependencies, environment variables, stored metric aggregates, branch
+No new application dependencies, environment variables, stored metric aggregates, branch
 switch, history rewrite, production operation, retries, timeout increases,
-disabled checks, or compatibility aliases. Existing native release/history-sync
+disabled checks, or compatibility aliases. The approved conditional replacement
+of the native development tool is described below. Existing native release/history-sync
 boundaries remain. Keep all new route tests under `app-tests`.
 
 Use real database engines for SQL/grouping behavior and unit tests for transport,
@@ -63,7 +64,38 @@ only successful dbt exit. Test reversed arrival and stable device-rule ties.
 Run all required CI on the final pushed head, address review threads with concrete
 evidence, and merge only after protections are satisfied.
 
-## Implementation calls and trade-offs
+## Approved verification follow-up — 2026-10-29
+
+The user approved replacing repeated UUID literals with one packed UUID input
+per scoped dbt model, retaining the full 10,000-ID capacity and requiring CI to
+verify complete generated statements. Encode UUIDs as 16 network-order bytes
+with the existing [Node Buffer API](https://nodejs.org/api/buffer.html), transport
+them as one base64 value, and decode with ClickHouse's explicit big-endian
+[UUID conversion](https://clickhouse.com/docs/reference/functions/regular-functions/uuid-functions#UUIDNumToString).
+Migrate the single internal scope contract and all consumers together. Preserve
+finite closure, user fencing, prior aliases, sibling expansion, exact cadence
+selection and global ambiguity checks. No old/new input bridge, truncation,
+parser-size increase or persistent scope table is authorized.
+
+The user also approved evaluating [MutantKit 1.3.2](https://github.com/juntaki/mutantkit/releases/tag/v1.3.2)
+and replacing Muter only if evaluation proves meaningful candidates for both
+affected files, explicit source failures and preservation of the existing gates.
+Its [official planning interface](https://github.com/juntaki/mutantkit/blob/v1.3.2/Sources/CLI/Commands/PlanCommand.swift)
+is an evaluation surface, not proof of suitability. Evaluate in disposable
+copies first; migrate all native mutation consumers to one canonical tool only
+after that evidence passes independent review. Retain positive-work, complete
+inventory/results and current score semantics. Do not silently accept malformed
+or missing source, unsupported files, empty work, incomplete reports or failed
+mutant builds/tests. A failed evaluation requires direction before another
+tooling strategy. This authorization permits replacing the development tool;
+it does not authorize a parallel parser, long-term fork or gate exemption.
+
+Final acceptance still requires real-engine maximum-scope transport, 101-key
+correction, empty target and repair/rollback fault-journal lifecycles, plus
+every exact-head required check and valid review finding. The existing CI
+12-minute step timeout remains unchanged; a timed-out suite is not GREEN.
+
+## Original implementation calls and trade-offs
 
 The controller selects the best configured device priority across retained names
 and a lexical tie-break, preserving the original bundle grain. A mixed bundle's
