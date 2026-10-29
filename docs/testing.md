@@ -39,6 +39,14 @@ discovery and every selected native job. Inspect individual matrix outcomes as
 well as the aggregate; see [CI wiring](../.github/workflows/test.yml) and official
 [report reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/ReportReverification.swift).
 
+Each recorded command retains separate `.command.stdout.log` and
+`.command.stderr.log` files; `.command.json` holds their paths and the command's
+status, signal and startup error when present. File-descriptor recording avoids
+the captured-output limit, while human diagnostics replay in bounded chunks
+after synchronous completion. Machine verification JSON remains separate; see
+[Node subprocess stdio](https://nodejs.org/api/child_process.html#optionsstdio)
+and the [runner](../scripts/run-swift-mutation.ts).
+
 Review surviving mutants and add tests for real coverage gaps. Assertion kills,
 confirmed crashes/timeouts, survivors, compile failures and inconclusive outcomes
 remain distinct under the official

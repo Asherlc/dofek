@@ -168,6 +168,18 @@ fixtures but must not modify product sources or run a broad native campaign.
   hosted gates, including every selected native job and all four full database
   shards with both capacity phases. Prior passing cases are checkpoint evidence.
 
+## Task 9: Newly reported subprocess and installed-view upgrade defects
+
+- [x] Independently confirm both concerns and write actual public-runner Node
+  overflow RED/GREEN. Retain full file-backed evidence and machine JSON; 104
+  focused tests and independent scoped review pass without increasing limits.
+- [x] Add and review the real legacy-view upgrade regression using full0107 and
+  the real running repository, preserving fresh-schema tests. Collection/types
+  pass; production `IF NOT EXISTS` remains unchanged for a hosted RED checkpoint.
+- [ ] Capture the exact hosted missing-column failure, then correct the
+  canonical view builder and affected statement-prefix expectations. Require
+  actual repeatable upgrade GREEN and all exact-head gates before merge.
+
 ## Final acceptance after approved follow-up
 
 - [ ] Controller consolidates task reviews and runs Docker-free pre-push lint, Knip, root/server/web/mobile types and unit/mobile tests. Run database-backed SQL lint and integrations on CI under the user's approved validation direction. Keep native archive, strict SwiftLint and mutation gates in exact-head CI.

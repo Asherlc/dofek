@@ -5,6 +5,7 @@ import {
   buildActivitySummaryRowsTableSql,
   buildActivitySummaryViewSql,
 } from "../../../../src/db/clickhouse-activity-summary.ts";
+import { createMigration } from "../../../../src/db/clickhouse-migrations/0107_running_step_cadence.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -182,5 +183,152 @@ describe("running summary query", () => {
       distanceKm: null,
       stanceTimeMs: 260,
     });
+  });
+});
+
+describe("running summary legacy-view upgrade", () => {
+  let context: TestContext;
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("upgrades the pre-0107 projection and preserves cadence through a repeated migration", async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "apple_health", "Apple Health", undefined, userId);
+    const legacyId = randomUUID();
+    const refreshedId = randomUUID();
+    const deletedId = randomUUID();
+    await context.db.insert(activity).values(
+      [legacyId, refreshedId, deletedId].map((id) => ({
+        id,
+        groupId: id,
+        userId,
+        providerId: "apple_health",
+        externalId: id,
+        canonicalType: "running" as const,
+        providerType: "running",
+        startedAt: new Date("2026-10-01T08:00:00Z"),
+        endedAt: new Date("2026-10-01T08:10:00Z"),
+      })),
+    );
+    const client = createClickHouseClientFromEnv();
+    const database = `running_upgrade_${randomUUID().replaceAll("-", "")}`;
+    const rewrite = (query: string) => query.replaceAll("analytics.", `${database}.`);
+    context.addCleanup(async () => {
+      try {
+        await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+      } finally {
+        await client.close?.();
+      }
+    });
+    const mappedClient = {
+      command: (options: Parameters<typeof client.command>[0]) =>
+        client.command({ ...options, query: rewrite(options.query) }),
+      query: (options: Parameters<typeof client.query>[0]) =>
+        client.query({ ...options, query: rewrite(options.query) }),
+    };
+    await client.command({ query: `CREATE DATABASE ${database} ENGINE = Atomic` });
+    await mappedClient.command({ query: buildActivitySummaryRowsTableSql() });
+    await mappedClient.command({ query: buildActivitySummaryViewSql() });
+    await mappedClient.command({ query: "DROP VIEW IF EXISTS analytics.activity_summary" });
+    await mappedClient.command({
+      query: `ALTER TABLE analytics.activity_summary_rows
+        DROP COLUMN cadence_coverage_percent,
+        DROP COLUMN cadence_observed_seconds,
+        DROP COLUMN cadence_basis`,
+    });
+    // Frozen pre-0107 projection: independent of the current view builder.
+    await mappedClient.command({
+      query: `CREATE VIEW analytics.activity_summary AS
+        SELECT activity_id, user_id,
+          assumeNotNull(canonical_type) AS canonical_type,
+          provider_type, modality, name,
+          assumeNotNull(started_at) AS started_at, ended_at,
+          avg_hr, max_hr, min_hr, avg_power, max_power, avg_speed, max_speed, avg_cadence,
+          elevation_gain_legacy, total_distance, centroid_lat, centroid_lng,
+          avg_left_balance, avg_left_torque_eff, avg_right_torque_eff,
+          avg_left_pedal_smooth, avg_right_pedal_smooth,
+          elevation_gain_m, elevation_loss_m, avg_stance_time, avg_vertical_osc,
+          avg_ground_contact_time, avg_stride_length, sample_count,
+          hr_sample_count, power_sample_count, first_sample_at, last_sample_at,
+          best_twenty_minute_power, normalized_power, smoothed_avg_power,
+          climbing_elevation_gain_m, climbing_seconds, refreshed_at
+        FROM analytics.activity_summary_rows FINAL
+        WHERE is_deleted = 0`,
+    });
+    const legacyRow = {
+      activity_id: legacyId,
+      user_id: userId,
+      canonical_type: "running",
+      name: "Legacy cadence",
+      started_at: "2026-10-01 08:00:00",
+      ended_at: "2026-10-01 08:10:00",
+      avg_cadence: 172,
+      refresh_version: 2,
+    };
+    await client.insert?.({
+      table: `${database}.activity_summary_rows`,
+      format: "JSONEachRow",
+      values: [
+        { ...legacyRow, avg_cadence: 100, refresh_version: 1 },
+        legacyRow,
+        { ...legacyRow, activity_id: deletedId, refresh_version: 1 },
+        { ...legacyRow, activity_id: deletedId, is_deleted: 1 },
+      ],
+    });
+    const migration = createMigration();
+    if (!migration.run) throw new Error("0107 must execute its full migration body");
+    await migration.run(mappedClient, context.connectionString);
+    const repository = new RunningRepository(
+      context.db,
+      userId,
+      "UTC",
+      new ClickHouseActivitySensorStore(mappedClient),
+    );
+    const legacyExpected = {
+      activityId: legacyId,
+      cadence: 172,
+      cadenceBasis: "unknown",
+      cadenceObservedSeconds: null,
+      cadenceCoveragePercent: null,
+    };
+    const upgraded = (await repository.getDynamics(null)).map((row) => row.toDetail());
+    expect(upgraded).toHaveLength(1);
+    expect(upgraded[0]).toMatchObject(legacyExpected);
+
+    await client.insert?.({
+      table: `${database}.activity_summary_rows`,
+      format: "JSONEachRow",
+      values: [
+        {
+          ...legacyRow,
+          activity_id: refreshedId,
+          name: "Step cadence",
+          avg_cadence: 188,
+          cadence_basis: "step_intervals",
+          cadence_observed_seconds: 432,
+          cadence_coverage_percent: 72,
+        },
+      ],
+    });
+    const refreshedExpected = {
+      activityId: refreshedId,
+      cadence: 188,
+      cadenceBasis: "step_intervals",
+      cadenceObservedSeconds: 432,
+      cadenceCoveragePercent: 72,
+    };
+    const refreshed = (await repository.getDynamics(null)).map((row) => row.toDetail());
+    expect(refreshed).toHaveLength(2);
+    expect(refreshed.find((row) => row.activityId === legacyId)).toMatchObject(legacyExpected);
+    expect(refreshed.find((row) => row.activityId === refreshedId)).toMatchObject(
+      refreshedExpected,
+    );
+
+    await migration.run(mappedClient, context.connectionString);
+    const repeated = (await repository.getDynamics(null)).map((row) => row.toDetail());
+    expect(repeated).toHaveLength(2);
+    expect(repeated.find((row) => row.activityId === legacyId)).toMatchObject(legacyExpected);
+    expect(repeated.find((row) => row.activityId === refreshedId)).toMatchObject(refreshedExpected);
   });
 });

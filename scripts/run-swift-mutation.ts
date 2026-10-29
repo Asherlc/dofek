@@ -1,7 +1,18 @@
-import { spawnSync } from "node:child_process";
+import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import {
@@ -24,13 +35,44 @@ if (args[0] !== "--base" || !args[1] || !(args.length === 2 || listFiles || requ
 
 const root = process.cwd();
 
-function run(command: string, commandArgs: string[], cwd: string, evidencePath?: string): string {
+function replay(path: string, print: (chunk: string) => void): void {
+  const fd = openSync(path, "r");
+  const buffer = Buffer.alloc(64 * 1024);
+  const decoder = new StringDecoder("utf8");
+  try {
+    for (let count = readSync(fd, buffer); count > 0; count = readSync(fd, buffer))
+      print(decoder.write(buffer.subarray(0, count)));
+    const tail = decoder.end();
+    if (tail) print(tail);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function run(
+  command: string,
+  commandArgs: string[],
+  cwd: string,
+  evidencePath?: string,
+  captureStdout = true,
+): string {
   const context = relative(root, cwd) || ".";
-  const result = spawnSync(command, commandArgs, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const stdoutPath = evidencePath?.replace(/\.json$/, ".stdout.log");
+  const stderrPath = evidencePath?.replace(/\.json$/, ".stderr.log");
+  const stdoutFd = stdoutPath ? openSync(stdoutPath, "w") : undefined;
+  let stderrFd: number | undefined;
+  let result: SpawnSyncReturns<string>;
+  try {
+    stderrFd = stderrPath ? openSync(stderrPath, "w") : undefined;
+    result = spawnSync(command, commandArgs, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", stdoutFd ?? "pipe", stderrFd ?? "pipe"],
+    });
+  } finally {
+    if (stdoutFd !== undefined) closeSync(stdoutFd);
+    if (stderrFd !== undefined) closeSync(stderrFd);
+  }
   if (evidencePath)
     writeFileSync(
       evidencePath,
@@ -42,14 +84,16 @@ function run(command: string, commandArgs: string[], cwd: string, evidencePath?:
           status: result.status,
           signal: result.signal,
           error: result.error?.message,
-          stdout: result.stdout,
-          stderr: result.stderr,
+          stdoutPath,
+          stderrPath,
         },
         null,
         2,
       ),
     );
-  if (result.stderr) console.error(result.stderr);
+  if (stderrPath) replay(stderrPath, (chunk) => console.error(chunk));
+  else if (result.stderr) console.error(result.stderr);
+  if (stdoutPath && !captureStdout) replay(stdoutPath, (chunk) => console.log(chunk));
   if (result.error) {
     throw new Error(`Could not start ${command} for ${context}: ${result.error.message}`);
   }
@@ -57,7 +101,11 @@ function run(command: string, commandArgs: string[], cwd: string, evidencePath?:
     console.error(`${command} failed for ${context}: ${result.signal ?? `exit ${result.status}`}`);
     process.exit(result.status ?? 1);
   }
-  return result.stdout ?? "";
+  return captureStdout
+    ? stdoutPath
+      ? readFileSync(stdoutPath, "utf8")
+      : (result.stdout ?? "")
+    : "";
 }
 
 function owningPackage(path: string): string {
@@ -133,19 +181,21 @@ function mutatePackage(executable: string, directory: string, selected: string[]
     ["-frontend", "-parse", ...selected.map((file) => join(directory, file))],
     directory,
     join(output, "compiler.command.json"),
+    false,
   );
   const common = ["--project-root", directory, "--config", configPath];
-  function command(name: string, commandArgs: string[]): string {
+  function command(name: string, commandArgs: string[], captureStdout = false): string {
     return run(
       executable,
       [name, ...common, ...commandArgs],
       directory,
       join(output, `${name}.command.json`),
+      captureStdout,
     );
   }
   function jsonCommand(name: string, commandArgs: string[]): unknown {
     const path = join(output, `${name}.json`);
-    writeFileSync(path, command(name, [...commandArgs, "--json"]));
+    writeFileSync(path, command(name, [...commandArgs, "--json"], true));
     return readJson(path);
   }
   const planPath = join(output, "plan.json");
@@ -155,9 +205,7 @@ function mutatePackage(executable: string, directory: string, selected: string[]
   const plan = validateMutationPlan(readJson(planPath), { projectRoot: directory, sources });
   validatePlanVerification(jsonCommand("verify", ["--plan", planPath]), plan);
   console.log(`Mutating ${relative(root, directory)}: ${selected.join(", ")}`);
-  console.log(
-    command("run", ["--plan", planPath, "--output", reportPath, "--no-resume", "--no-history"]),
-  );
+  command("run", ["--plan", planPath, "--output", reportPath, "--no-resume", "--no-history"]);
   const report = validateMutationReport(readJson(reportPath), plan);
   const archive = join(directory, ".mutantkit/evidence", report.evidenceArchive.runID);
   if (!existsSync(join(archive, "manifest.json")))

@@ -68,6 +68,8 @@ function createFixture() {
     missing: false,
     stale: false,
     corrupt: false,
+    verbose: false,
+    verboseExit: 0,
   };
   function addPackage(path: string, target = "ios", sources = ["Parser.swift"]) {
     write(root, `${path}/Package.swift`, "// package\n");
@@ -120,15 +122,23 @@ function createFixture() {
       calls.push({ tool, args: argv, cwd });
       if (tool === "git") return actualSpawn(tool, argv, { cwd, encoding: "utf8" });
       const command = tool === "mutantkit" ? argv[0] : tool;
+      const complete = (result: SpawnSyncReturns<string>) => {
+        const stdio = opts?.stdio;
+        if (Array.isArray(stdio)) {
+          if (typeof stdio[1] === "number") writeFileSync(stdio[1], result.stdout ?? "");
+          if (typeof stdio[2] === "number") writeFileSync(stdio[2], result.stderr ?? "");
+        }
+        return result;
+      };
       if (state.fail === command)
-        return {
+        return complete({
           status: state.exit,
           pid: 1,
           signal: null,
           output: [],
           stdout: "",
           stderr: `${command} rejected fixture`,
-        } satisfies SpawnSyncReturns<string>;
+        });
       let output = tool === "swift" ? JSON.stringify(inventories.get(cwd)) : "";
       if (tool === "swift" && state.malformed === "swift") output = "invalid-json";
       if (tool === "swift" && state.malformed === "inventory") output = "{}";
@@ -176,7 +186,19 @@ function createFixture() {
           output = state.malformed === "verify-run" ? "{}" : JSON.stringify(fixture.verification);
         else if (command === "trust") output = JSON.stringify(fixture.trust);
       }
-      return { status: 0, stdout: output, stderr: "", pid: 1, signal: null, output: [] };
+      if (command === "run" && state.verbose)
+        return actualSpawn(
+          process.execPath,
+          [
+            "-e",
+            `const fs = require("node:fs");
+             fs.writeSync(1, "o".repeat(2 * 1024 * 1024) + "STDOUT-END");
+             fs.writeSync(2, "e".repeat(2 * 1024 * 1024) + "STDERR-END");
+             process.exit(${state.verboseExit});`,
+          ],
+          { ...opts, encoding: "utf8" },
+        );
+      return complete({ status: 0, stdout: output, stderr: "", pid: 1, signal: null, output: [] });
     });
     let status = 0;
     try {
@@ -197,6 +219,37 @@ afterEach(() => {
 });
 
 describe("run-swift-mutation public CLI", () => {
+  it.each([0, 23])(
+    "retains complete verbose streams and exit %s from a real Node child",
+    async (exit) => {
+      const fixture = createFixture();
+      fixture.addPackage(whoop);
+      const base = fixture.commitBase();
+      fixture.change(`${whoop}/ios/Parser.swift`);
+      fixture.state.verboseExit = exit;
+      fixture.state.verbose = true;
+      const result = await fixture.run(base);
+      expect(result.status, result.stderr).toBe(exit);
+      const evidence = JSON.parse(
+        readFileSync(
+          join(fixture.root, "reports/swift-mutation/whoop-ble/run.command.json"),
+          "utf8",
+        ),
+      );
+      expect(evidence).toMatchObject({ status: exit, signal: null });
+      expect(readFileSync(evidence.stdoutPath, "utf8")).toBe(
+        `${"o".repeat(2 * 1024 * 1024)}STDOUT-END`,
+      );
+      expect(readFileSync(evidence.stderrPath, "utf8")).toBe(
+        `${"e".repeat(2 * 1024 * 1024)}STDERR-END`,
+      );
+      expect(JSON.stringify(evidence).length).toBeLessThan(4096);
+      expect(result.stdout).toContain("STDOUT-END");
+      expect(result.stderr).toContain("STDERR-END");
+      expect(fixture.calls.some((call) => call.args[0] === "verify-run")).toBe(exit === 0);
+      expect(fixture.calls.some((call) => call.args[0] === "trust")).toBe(exit === 0);
+    },
+  );
   it("lists changed compiled files without running the mutation tool", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Timer space.swift"]);
@@ -411,15 +464,21 @@ describe("run-swift-mutation public CLI", () => {
       fixture.state.exit = 42;
       const result = await fixture.run(base);
       expect(result.status, result.stderr).toBe(42);
-      if (command !== "swift" && command !== "swiftc")
-        expect(
-          JSON.parse(
-            readFileSync(
-              join(fixture.root, "reports/swift-mutation/whoop-ble", `${command}.command.json`),
-              "utf8",
+      if (command !== "swift") {
+        const evidence = JSON.parse(
+          readFileSync(
+            join(
+              fixture.root,
+              "reports/swift-mutation/whoop-ble",
+              `${command === "swiftc" ? "compiler" : command}.command.json`,
             ),
+            "utf8",
           ),
-        ).toMatchObject({ status: 42, stderr: `${command} rejected fixture` });
+        );
+        expect(evidence).toMatchObject({ status: 42, signal: null });
+        expect(readFileSync(evidence.stderrPath, "utf8")).toBe(`${command} rejected fixture`);
+        expect(readFileSync(evidence.stdoutPath, "utf8")).toBe("");
+      }
     },
   );
 });

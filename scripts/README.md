@@ -130,6 +130,13 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
     [planning](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift),
     [official reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/VerifyRunCommand.swift)
     and [native testing requirements](../docs/testing.md#native-swift-mutation-testing).
+  - Command metadata lives in `<name>.command.json`; `stdoutPath` and
+    `stderrPath` refer to the complete adjacent `<name>.command.stdout.log`
+    and `<name>.command.stderr.log` files. Evidence-bearing children write to
+    file descriptors, avoiding Node's aggregate capture limit. Human output is
+    replayed after completion in bounded chunks; parsed verification JSON stays
+    separate. See [Node stdio](https://nodejs.org/api/child_process.html#optionsstdio)
+    and the [runner](run-swift-mutation.ts).
 - Native mutation selection uses the [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift)
   and Git's [three-dot comparison](https://git-scm.com/docs/git-diff),
   rather than duplicating Swift manifest exclusions or comparing unrelated
