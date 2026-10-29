@@ -127,7 +127,9 @@ final class WhoopBleBackgroundUploader: NSObject {
         active.removeAll()
         tokenEpoch += 1; submittedEpoch.removeAll()
         authRetriedEpoch.removeAll()
-        retryAfter.removeAll(); firstArrival.removeAll(); lastSubmission.removeAll()
+        retryAfter.removeAll()
+        firstArrival.removeAll()
+        lastSubmission.removeAll()
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
         try store.purge()

@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-10-28 — WHOOP PR mutation build rejected generated syntax
+
+- **Symptoms / impact:** [PR 3147](https://github.com/Asherlc/dofek/pull/3147) failed Swift mutation testing before executing mutants; production was unaffected.
+- **Evidence / root cause:** The [failed job](https://github.com/Asherlc/dofek/actions/runs/40802094037/job/123212683778) ran `pnpm tsx scripts/run-swift-mutation.ts --base origin/main`. Its first compiler error was `WhoopBleBackgroundUploader.swift:203:37: error: consecutive statements on a line must be separated by ';'`. Muter removed a cleanup call from a semicolon-separated line and joined the preceding call to the next one as `authRetriedEpoch.removeAll()firstArrival.removeAll()`. A local Muter run reproduced the same generated-source error.
+- **Direct fix / validation:** Put the three cleanup calls on separate lines without changing behavior. Local Muter now compiles its generated source and executes mutants; all 145 native tests and strict SwiftLint pass. The full mutation result and hosted rerun remain pending. No gate, timeout, retry, or suppression changed.
+- **Retrospective / proposed improvement:** Native tests could not catch malformed mutation output. Follow the [CI debugging guide](ci-debugging.md) and run Swift mutation checks before pushing native changes; proposed testing-guide wording: “When Muter fails before mutant execution, inspect generated Swift and reproduce the first compiler error before changing tests or gates.”
+
 ## 2026-10-28 — Missing WHOOP Bluetooth heart rate for afternoon ride
 
 - **Status / impact:** Unresolved. The operator reported Bluetooth connected during activity `f1fbce7d-b995-487c-860e-d13f28f7b2f1`, but direct BLE heart rate is unavailable for its 21:01:46–21:28:09 UTC window. WHOOP cloud and WHOOP-through-Apple-Health observations are present.
