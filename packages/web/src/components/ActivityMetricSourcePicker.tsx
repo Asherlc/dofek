@@ -109,7 +109,7 @@ export function ActivityMetricSourcePicker({
             event.preventDefault();
             selectedRef.current?.focus();
           }}
-          className="z-50 w-max min-w-32 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface p-2 text-foreground shadow-xl"
+          className="z-50 w-max min-w-32 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface-solid p-2 text-foreground shadow-xl"
         >
           <fieldset className="space-y-1">
             <legend className="sr-only">Available recordings</legend>
