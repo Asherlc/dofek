@@ -81,6 +81,48 @@ import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
 describe("KayaSyncProvider", () => {
+  it.each(
+    [
+      { lead: true, routeLead: false, expected: "lead" },
+      { lead: true, routeLead: undefined, expected: "lead" },
+      { lead: false, routeLead: undefined, expected: "top_rope" },
+      { lead: false, routeLead: true, expected: "top_rope" },
+      { lead: null, routeLead: true, expected: "lead" },
+      { lead: undefined, routeLead: true, expected: "lead" },
+      { lead: null, routeLead: false, expected: "top_rope" },
+      { lead: undefined, routeLead: undefined, expected: null },
+      { lead: undefined, routeLead: false, expected: "top_rope" },
+      { lead: null, routeLead: null, expected: null },
+    ].flatMap((testCase) => [
+      { ...testCase, sessionId: "session-1" },
+      { ...testCase, sessionId: null },
+    ]),
+  )(
+    "uses ascent method $lead before route method $routeLead with session $sessionId",
+    async ({ lead, routeLead, expected, sessionId }) => {
+      const base = ascent("method", {
+        lead: false,
+        climbType: "Routes",
+        grade: "5.11a",
+        attempts: 1,
+      });
+      const source = {
+        ...base,
+        session_id: sessionId,
+        lead,
+        climb: { ...base.climb, lead: routeLead },
+      };
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      mocks.listSessions.mockResolvedValue([session("session-1")]);
+      mocks.ascents.mockResolvedValue([source]);
+      mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+      expect(await new KayaSyncProvider().sync(run(database()))).toMatchObject({ errors: [] });
+      expect(mocks.persist.mock.calls[0]?.[1].entries[0]?.attempts[0]?.ropeMethod).toBe(expected);
+    },
+  );
   it.each([
     [-20, "slab"],
     [0, "vertical"],
@@ -687,6 +729,7 @@ describe("KayaSyncProvider", () => {
         climb: { externalId: "climb-ungraded", kind: "route" },
         attempts: [
           { scope: "climb", ropeMethod: null, qualifier: "free-send", sourceResult: "Redpoint" },
+          { scope: "climb", ropeMethod: null },
         ],
       });
     },

@@ -1,21 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "./climbing-log-sync.ts";
-import type { TransactionDatabase } from "./index.ts";
 import { climb, climbingAttempt, climbingLogEntry } from "./schema/climbing.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
-import { MissingRouteMethodError } from "./source-attempt-facts.ts";
-import {
-  createTestBarrier,
-  hasDatabaseLockWaiter,
-  setupTestDatabase,
-  type TestContext,
-} from "./test-helpers.ts";
+import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 const providerId = "route-method-test";
 
-describe("required climbing route methods", () => {
+describe("recorded climbing route methods", () => {
   let context: TestContext;
   beforeAll(async () => {
     context = await setupTestDatabase();
@@ -58,22 +50,16 @@ describe("required climbing route methods", () => {
       .where(eq(climbingAttempt.climbingLogEntryId, logEntryId));
   }
 
-  it("rolls back the entire import when a route attempt has no method", async () => {
-    await expect(
-      write([
-        source({ externalId: "valid-first" }),
-        source({ externalId: "missing-method", attempts: [{ scope: "climb" }] }),
-      ]),
-    ).rejects.toThrow(MissingRouteMethodError);
-    expect(await context.db.select().from(climbingLogEntry)).toHaveLength(0);
-    expect(await context.db.select().from(climb)).toHaveLength(0);
-  });
-
-  it("requires method evidence for counted route attempts instead of copying one try's facts", async () => {
-    await expect(
-      write([source({ reportedAttemptCounts: [{ scope: "climb", count: 3 }] })]),
-    ).rejects.toThrow(MissingRouteMethodError);
-    expect(await context.db.select().from(climbingLogEntry)).toHaveLength(0);
+  it("preserves unknown methods on identified routes and counted occurrences", async () => {
+    await write([
+      source({
+        attempts: [{ scope: "climb" }],
+        reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+      }),
+    ]);
+    const attempts = await recorded((await log()).id);
+    expect(attempts).toHaveLength(3);
+    expect(attempts.map((attempt) => attempt.ropeMethod)).toEqual([null, null, null]);
   });
 
   it("retains every counted route method and updates counts without spreading send evidence", async () => {
@@ -131,6 +117,24 @@ describe("required climbing route methods", () => {
     );
   });
 
+  it("preserves recorded methods when a reduced count supplies no method evidence", async () => {
+    await write([
+      source({
+        attempts: Array.from({ length: 3 }, () => ({ scope: "climb", ropeMethod: "lead" })),
+        reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+      }),
+    ]);
+    await expect(
+      write([
+        source({
+          attempts: [{ scope: "climb" }],
+          reportedAttemptCounts: [{ scope: "climb", count: 2 }],
+        }),
+      ]),
+    ).rejects.toThrow("Source count is below its described recorded attempts.");
+    expect(await recorded((await log()).id)).toHaveLength(3);
+  });
+
   it("retains separately recorded methods when a count update cannot account for them", async () => {
     await write([
       source({
@@ -156,7 +160,7 @@ describe("required climbing route methods", () => {
     expect(await recorded((await log()).id)).toHaveLength(3);
   });
 
-  it("keeps bouldering counts exempt", async () => {
+  it("retains unknown methods on counted bouldering attempts", async () => {
     await write([
       source({
         climb: { externalId: "boulder", kind: "boulder" },
@@ -169,17 +173,13 @@ describe("required climbing route methods", () => {
     expect(attempts.every((attempt) => attempt.ropeMethod === null)).toBe(true);
   });
 
-  it("retains known methods on partial refreshes and rejects explicitly clearing them", async () => {
+  it("preserves omitted methods and clears explicitly unknown methods on refresh", async () => {
     await write([source()]);
     const entry = await log();
     await write([{ externalId: "route-log", attempts: [{ scope: "climb", notes: "Updated" }] }]);
-    expect(await recorded(entry.id)).toEqual([
-      expect.objectContaining({ ropeMethod: "lead", notes: "Updated" }),
-    ]);
-    await expect(
-      write([{ externalId: "route-log", attempts: [{ scope: "climb", ropeMethod: null }] }]),
-    ).rejects.toThrow(MissingRouteMethodError);
     expect((await recorded(entry.id))[0]?.ropeMethod).toBe("lead");
+    await write([{ externalId: "route-log", attempts: [{ scope: "climb", ropeMethod: null }] }]);
+    expect((await recorded(entry.id))[0]?.ropeMethod).toBeNull();
   });
 
   it.each(["lead", "top_rope", "follow", "unroped"] as const)(
@@ -198,82 +198,6 @@ describe("required climbing route methods", () => {
     },
   );
 
-  it("rejects direct inserts and updates that leave a route method empty", async () => {
-    await write([source()]);
-    const entry = await log();
-    for (const scope of ["climb", "pitch"] as const) {
-      await expect(
-        context.db.insert(climbingAttempt).values({ climbingLogEntryId: entry.id, scope }),
-      ).rejects.toMatchObject({
-        cause: { code: "23514", constraint: "climbing_attempt_route_method_required" },
-      });
-    }
-    await expect(
-      context.db
-        .update(climbingAttempt)
-        .set({ ropeMethod: null })
-        .where(eq(climbingAttempt.climbingLogEntryId, entry.id)),
-    ).rejects.toMatchObject({
-      cause: { code: "23514", constraint: "climbing_attempt_route_method_required" },
-    });
-  });
-
-  it("checks a route attempt without a method even if its ID changes before commit", async () => {
-    await write([source()]);
-    const entry = await log();
-    await expect(
-      context.db.transaction(async (tx) => {
-        const [created] = await tx
-          .insert(climbingAttempt)
-          .values({ climbingLogEntryId: entry.id, scope: "climb" })
-          .returning();
-        if (!created) throw new Error("Expected a pending test attempt.");
-        await tx
-          .update(climbingAttempt)
-          .set({ id: randomUUID() })
-          .where(eq(climbingAttempt.id, created.id));
-      }),
-    ).rejects.toMatchObject({
-      cause: { code: "23514", constraint: "climbing_attempt_route_method_required" },
-    });
-  });
-
-  it("checks method requirements when attempts, logs, or climb kinds change", async () => {
-    await write([
-      source(),
-      source({
-        externalId: "boulder-log",
-        climb: { externalId: "boulder", kind: "boulder" },
-        attempts: [{ scope: "climb" }],
-      }),
-    ]);
-    const route = await log();
-    const boulder = await log("boulder-log");
-    await expect(
-      context.db
-        .update(climbingAttempt)
-        .set({ climbingLogEntryId: route.id })
-        .where(eq(climbingAttempt.climbingLogEntryId, boulder.id)),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
-    await expect(
-      context.db
-        .update(climbingLogEntry)
-        .set({ climbId: route.climbId })
-        .where(eq(climbingLogEntry.id, boulder.id)),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
-    await expect(
-      context.db.update(climb).set({ kind: "route" }).where(eq(climb.id, boulder.climbId)),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
-    await context.db.transaction(async (tx) => {
-      await tx.update(climb).set({ kind: "route" }).where(eq(climb.id, boulder.climbId));
-      await tx
-        .update(climbingAttempt)
-        .set({ ropeMethod: "follow" })
-        .where(eq(climbingAttempt.climbingLogEntryId, boulder.id));
-    });
-    expect((await recorded(boulder.id))[0]?.ropeMethod).toBe("follow");
-  });
-
   it("supports an atomic import that enriches the climb kind and attempt method together", async () => {
     await write([
       source({ climb: { externalId: "route", kind: null }, attempts: [{ scope: "climb" }] }),
@@ -281,60 +205,4 @@ describe("required climbing route methods", () => {
     await write([source()]);
     expect((await recorded((await log()).id))[0]?.ropeMethod).toBe("lead");
   });
-
-  it.each(["climb-kind", "log-target"] as const)(
-    "serializes %s changes against concurrent writes without methods",
-    async (change) => {
-      await write([
-        source({ climb: { externalId: "unknown", kind: null } }),
-        source({ externalId: "target-log", climb: { externalId: "target", kind: "route" } }),
-      ]);
-      const entry = await log();
-      const target = await log("target-log");
-      for (const firstAction of ["attempt", "change"] as const) {
-        const locked = createTestBarrier();
-        const release = createTestBarrier();
-        const act = async (tx: TransactionDatabase, action: typeof firstAction) => {
-          if (action === "attempt")
-            return tx
-              .insert(climbingAttempt)
-              .values({ climbingLogEntryId: entry.id, scope: "climb" });
-          if (change === "climb-kind")
-            return tx.update(climb).set({ kind: "route" }).where(eq(climb.id, entry.climbId));
-          return tx
-            .update(climbingLogEntry)
-            .set({ climbId: target.climbId })
-            .where(eq(climbingLogEntry.id, entry.id));
-        };
-        const first = context.db.transaction(async (tx) => {
-          await act(tx, firstAction);
-          locked.resolve();
-          await release.promise;
-        });
-        await locked.promise;
-        const second = context.db.transaction((tx) =>
-          act(tx, firstAction === "attempt" ? "change" : "attempt"),
-        );
-        const settled = Promise.allSettled([first, second]);
-        try {
-          await expect.poll(() => hasDatabaseLockWaiter(context.db)).toBe(true);
-        } finally {
-          release.resolve();
-        }
-        expect((await settled).map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
-        // Reset only the isolated fixture before testing the opposite lock order.
-        await context.db
-          .delete(climbingAttempt)
-          .where(eq(climbingAttempt.climbingLogEntryId, entry.id));
-        await context.db.update(climb).set({ kind: null }).where(eq(climb.id, entry.climbId));
-        await context.db
-          .update(climbingLogEntry)
-          .set({ climbId: entry.climbId })
-          .where(eq(climbingLogEntry.id, entry.id));
-        await context.db
-          .insert(climbingAttempt)
-          .values({ climbingLogEntryId: entry.id, scope: "climb", ropeMethod: "lead" });
-      }
-    },
-  );
 });

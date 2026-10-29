@@ -88,9 +88,9 @@ V-scale/YDS notation and supported scale prefixes establish a
 grade system; ambiguous text retains an unknown system. theCrag documents its
 [grade systems](https://www.thecrag.com/en/article/gradesonthecrag) and
 [gear styles](https://www.thecrag.com/en/article/styles).
-Recorded rope method is required for route attempts; sport/trad protection
-alone does not prove a lead. Reported counts use the canonical model's
-method-only occurrences, with result/qualifier evidence attached only to the
+Recorded rope method remains unknown when the source supplies none; sport/trad
+protection alone does not prove a lead. Reported counts use the canonical model's
+partially described occurrences, with result/qualifier evidence attached only to the
 described try. Order, beta and other unreported outcomes remain unknown; see
 the [route-method contract](../src/db/climbing-route-method.integration.test.ts).
 For combined tick labels such as `Redpoint: Top rope`, the recorded result is

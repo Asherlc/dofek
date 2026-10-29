@@ -25,6 +25,32 @@ const emptyClimbContext = {
 };
 
 describe("KayaClient", () => {
+  it.each([true, false, null])("requests and retains ascent-level lead %s", async (lead) => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const { query } = JSON.parse(String(init?.body));
+      const ascentSelection = query.slice(
+        query.indexOf("{ id session_id"),
+        query.indexOf("climb {"),
+      );
+      return jsonResponse({
+        data: {
+          ascentsForUser: [
+            {
+              id: "ascent",
+              session_id: null,
+              date: "2026-08-01",
+              attempts: 1,
+              grade: null,
+              ascent_type: { id: "onsight", name: "Onsight" },
+              climb: attemptedClimb("2001", 1),
+              ...(ascentSelection.includes("lead") ? { lead } : {}),
+            },
+          ],
+        },
+      });
+    });
+    expect((await new KayaClient("token", fetchFn).listAscents("42"))[0]).toMatchObject({ lead });
+  });
   it("requests and retains grip tags and source metadata on both logbook feeds", async () => {
     const tags = [
       { id: "937", name: "Crimp", color: "#ff757e", icon: "hand-paper", tag_type_id: "3" },
