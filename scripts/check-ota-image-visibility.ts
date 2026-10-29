@@ -2,11 +2,8 @@ import { z } from "zod";
 
 async function main(): Promise<void> {
   const arguments_ = process.argv.slice(2);
-  if (
-    arguments_.length > 1 ||
-    (arguments_.length === 1 && arguments_[0] !== "--require-existing")
-  ) {
-    throw new Error("Usage: pnpm tsx scripts/check-ota-image-visibility.ts [--require-existing]");
+  if (arguments_.length) {
+    throw new Error("Usage: pnpm tsx scripts/check-ota-image-visibility.ts");
   }
   const repository = process.env.GITHUB_REPOSITORY;
   const token = process.env.GH_TOKEN;
@@ -15,7 +12,7 @@ async function main(): Promise<void> {
   }
   if (!token) throw new Error("GH_TOKEN is required to verify OTA image privacy");
   const [owner, repositoryName] = repository.split("/");
-  const packageName = `${repositoryName?.toLowerCase()}-ota`;
+  const packageName = `${repositoryName?.toLowerCase()}-ota-internal`;
   const response = await fetch(
     `https://api.github.com/users/${owner}/packages/container/${packageName}`,
     {
@@ -27,10 +24,7 @@ async function main(): Promise<void> {
     },
   );
   if (response.status === 404) {
-    if (arguments_[0] === "--require-existing") {
-      throw new Error("OTA image package was not found after publication");
-    }
-    return;
+    throw new Error("OTA image package must already exist and be private before publication");
   }
   if (response.status !== 200) {
     throw new Error(`Cannot verify OTA image privacy: GitHub returned HTTP ${response.status}`);

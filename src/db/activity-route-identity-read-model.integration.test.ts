@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { writeSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { queryLogDiagnostic } from "../test/ci-diagnostic-fields.ts";
 import {
   activityId,
   buildModel,
@@ -536,6 +538,7 @@ describe("activity route identity read model", () => {
       read_rows: string | number;
       projections: string[];
     }>();
+    writeSync(1, `${JSON.stringify(queryLogDiagnostic(queryId, executionRow))}\n`);
     expect(Number(executionRow?.read_rows)).toBeLessThan(50000);
     expect(executionRow?.projections).toEqual(
       expect.arrayContaining([

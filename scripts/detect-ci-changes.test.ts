@@ -37,7 +37,7 @@ describe("CI change detector", () => {
   it.each([
     "deploy/ota/Dockerfile",
     "deploy/ota/upstream.patch",
-    ".github/workflows/build-ota.yml",
+    ".github/workflows/build-private-ota.yml",
     "scripts/check-ota-image-visibility.ts",
     "package.json",
     "pnpm-lock.yaml",

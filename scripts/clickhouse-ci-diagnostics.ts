@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { safeErrorCode } from "../src/test/ci-diagnostic-fields.ts";
 
 const commandTimeoutMs = 15_000;
 const outputLimitBytes = 8 * 1024 * 1024;
@@ -119,11 +120,6 @@ export class ClickHouseDiagnosticsInputError extends Error {
   constructor(code: keyof typeof inputMessages) {
     super(inputMessages[code]);
   }
-}
-
-function safeErrorCode(error: unknown): string {
-  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-  return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(code) ? code : "UNKNOWN";
 }
 
 /** Carries only operation context and a bounded code, never the raw exception or path. */

@@ -14,7 +14,7 @@ vi.mock("./verify-ota-update.ts", () => ({ verifyOtaUpdate: vi.fn() }));
 const originalArguments = process.argv;
 const originalExitCode = process.exitCode;
 const execute = vi.mocked(execFileSync);
-const image = `ghcr.io/asherlc/dofek-ota@sha256:${"a".repeat(64)}`;
+const image = `ghcr.io/asherlc/dofek-ota-internal@sha256:${"a".repeat(64)}`;
 
 beforeEach(() => {
   vi.resetModules();
@@ -90,6 +90,9 @@ describe("CI OTA migration rehearsal", () => {
     const operations = execute.mock.calls
       .filter(([file]) => file === "pnpm")
       .map(([, args]) => z.array(z.string()).parse(args)[2]);
+    for (const [, , options] of execute.mock.calls.filter(([file]) => file === "pnpm")) {
+      expect(options?.stdio).toEqual(["pipe", "pipe", "inherit"]);
+    }
     expect(operations).toEqual([
       "verify-snapshot",
       "verify-rehearsal",

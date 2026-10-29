@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import IntegrationDiagnosticsReporter from "./scripts/integration-diagnostics-reporter.ts";
 import IntegrationTestSequencer from "./scripts/integration-test-sequencer.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -76,6 +77,7 @@ export default defineConfig({
   test: {
     ...sharedTestConfig,
     sequence: { sequencer: IntegrationTestSequencer },
+    reporters: ["default", new IntegrationDiagnosticsReporter()],
     projects: [
       {
         esbuild: {
@@ -110,6 +112,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "integration",
+          includeTaskLocation: true,
           setupFiles: [path.resolve(dirname, "src/test/early-msw-setup.ts")],
           fileParallelism: false,
           maxWorkers: 1,

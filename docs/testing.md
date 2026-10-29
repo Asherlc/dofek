@@ -218,6 +218,21 @@ runner files without external traffic.
 
 ### Hosted ClickHouse Failure Diagnostics
 
+Integration progress diagnostics supplement the default reporter with immediate
+module, suite, case and hook events through Vitest's [public reporter API](https://v4.vitest.dev/api/advanced/reporters).
+Start events are emitted before completion, so an unmatched start identifies the
+last active operation in a partial log. Events identify code by repository file,
+task ID and source location; dynamic test titles and fixture values are excluded.
+
+Seed-container diagnostics use Testcontainers' [documented lifecycle callbacks](https://node.testcontainers.org/features/containers/#lifecycle-callbacks).
+These bracket runtime/image resolution, creation, start/inspection and readiness;
+they do not identify an internal failing operation by themselves. Error events
+retain allowlisted codes, syscalls, observed status/abort metadata and bounded
+causal stack locations. They exclude raw error messages, request options, URLs,
+headers, credentials, SQL, bodies and environment. Raw [debug namespaces](https://node.testcontainers.org/quickstart/logging/)
+are outside this contract. Query-log observations retain only correlation IDs,
+row presence and field presence; missing evidence does not prove a query failed.
+
 On an integration-test failure, CI runs the
 [ClickHouse diagnostics collector](../scripts/collect-clickhouse-ci-diagnostics.ts)
 before GitHub removes the job's [service containers](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
