@@ -286,7 +286,7 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
-  it("discards v11 metric sources without structured presentation before restoration completes", async () => {
+  it("discards v21 metric sources with priority-only defaults before restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "metric-source-owner";
     const queryKey = [
@@ -299,14 +299,25 @@ describe("mobile query persistence", () => {
         key: "heartRate",
         label: "Heart Rate",
         defaultSourceId: "whoop",
-        sources: [{ id: "whoop", label: "WHOOP" }],
+        sources: [
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+        ],
       },
     ]);
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v11`,
+        buster: `${userId}:v21`,
         clientState: dehydrate(seedClient),
       }),
     );

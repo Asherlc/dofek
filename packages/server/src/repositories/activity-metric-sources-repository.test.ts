@@ -40,52 +40,62 @@ describe("heart-rate default ranking", () => {
     { name: "standalone samples", linked: false, role: null, expected: "whoop" },
     { name: "activity-linked samples", linked: true, role: null, expected: "watch" },
     { name: "reported recorder", linked: false, role: "recorder", expected: "watch" },
+    {
+      name: "recorder label without matching source identity",
+      linked: false,
+      role: "recorder",
+      expected: "whoop",
+    },
     { name: "file creator only", linked: false, role: "creator", expected: "whoop" },
     { name: "observed sensor only", linked: false, role: "sensor", expected: "whoop" },
-  ] as const)("prefers the appropriate source for $name", async ({ linked, role, expected }) => {
-    const hardware: ActivityHardware = {
-      items: role
-        ? [
-            {
-              id: "watch-recorder",
-              activityId: window.activityId,
-              providerId: "apple_health",
-              sourceName: "Watch",
-              role,
-              label: "Apple Watch",
-              model: null,
-              manufacturer: null,
-              evidence: "Reported hardware",
-              details: [],
-            },
-          ]
-        : [],
-      power: [],
-    };
-    const metrics = await getActivityMetricSources(
-      storeWithRows([
-        {
-          channel: "heart_rate",
-          provider_id: "whoop",
-          device_id: null,
-          source_id: "whoop",
-          activity_ids: [],
-          sample_count: 10,
-        },
-        {
-          channel: "heart_rate",
-          provider_id: "apple_health",
-          device_id: "Watch",
-          source_id: "watch",
-          activity_ids: linked ? [window.activityId] : [],
-          sample_count: 1,
-        },
-      ]),
-      window,
-      hardware,
-    );
-    expect(metrics[0]?.defaultSourceId).toBe(expected);
-  });
+  ] as const)(
+    "prefers the appropriate source for $name",
+    async ({ name, linked, role, expected }) => {
+      const hardware: ActivityHardware = {
+        items: role
+          ? [
+              {
+                id: "watch-recorder",
+                activityId: window.activityId,
+                providerId: "apple_health",
+                sourceName:
+                  name === "recorder label without matching source identity" ? null : "Watch",
+                role,
+                label: "Watch",
+                model: null,
+                manufacturer: null,
+                evidence: "Reported hardware",
+                details: [],
+              },
+            ]
+          : [],
+        power: [],
+      };
+      const metrics = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "whoop",
+            device_id: null,
+            source_id: "whoop",
+            activity_ids: [],
+            sample_count: 10,
+          },
+          {
+            channel: "heart_rate",
+            provider_id: "apple_health",
+            device_id: "Watch",
+            source_id: "watch",
+            activity_ids: linked ? [window.activityId] : [],
+            sample_count: 1,
+          },
+        ]),
+        window,
+        hardware,
+      );
+      expect(metrics[0]?.defaultSourceId).toBe(expected);
+    },
+  );
 
   it.each([false, true])(
     "uses sample count within the direct-recording tier (%s)",

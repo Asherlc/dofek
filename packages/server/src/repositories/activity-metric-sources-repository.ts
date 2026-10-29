@@ -165,7 +165,7 @@ export async function getActivityMetricSources(
             window.memberActivityIds.includes(item.activityId) &&
             item.providerId === row.provider_id &&
             row.device_id !== null &&
-            (row.device_id === item.sourceName || row.device_id === item.label),
+            row.device_id === item.sourceName,
         );
       // Stable sorting preserves provider priority for equal recording evidence and counts.
       metricRows.sort(
