@@ -98,6 +98,17 @@ describe("checkOtaManifest", () => {
     });
   });
 
+  it("rejects an unterminated multipart response", async () => {
+    const valid = createValidManifestResponse();
+    const body = (await valid.text()).replace(/--ota-health-check-boundary--\r\n$/, "");
+    await expect(
+      checkOtaManifest({
+        fetchImplementation: vi.fn(async () => new Response(body, { headers: valid.headers })),
+        timeoutMilliseconds: 5_000,
+      }),
+    ).rejects.toThrow();
+  });
+
   it("sends command-line URL and Expo request header overrides", async () => {
     let requestHeaders: IncomingHttpHeaders | undefined;
     let requestUrl: string | undefined;

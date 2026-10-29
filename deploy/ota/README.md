@@ -99,10 +99,39 @@ recovery point or remove retention merely to reuse its name.
 Existing Infisical `R2_ENDPOINT`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
 must permit both buckets; a denied list/read/write stops the operation.
 
-Start the candidate server against **only** `dofek-ota-backups`, with
-`BUCKET_KEY_PREFIX=rehearsals/<id>/` and `CACHE_MODE=local`, retaining the app
-ID and signing keys. Verify migration, manifests, signatures and asset bytes.
-Stop that rehearsal server before testing restoration:
+Dispatch the CI rehearsal with the private image digest recorded by the main
+image build:
+
+```sh
+gh workflow run ota-storage.yml -f operation=migration-rehearsal -f snapshot_id=2026-10-29-before-v3 -f image=ghcr.io/asherlc/dofek-ota@sha256:<digest>
+```
+
+The ARM64 job uses the [locked Infisical tool](../../mise.lock), loads existing
+keys through OIDC and runs the candidate against **only** `dofek-ota-backups`,
+with `BUCKET_KEY_PREFIX=rehearsals/<id>/` and `CACHE_MODE=local`. It observes the
+candidate's migration-ready log before making manifest requests. It verifies
+that the rehearsal copy still matches the original snapshot before starting
+the container; a dirty or previously migrated copy fails before launch. Restore
+that copy with `restore-rehearsal` before attempting another candidate.
+After readiness, it verifies
+the exact relocated object set and byte-checks moved and untouched objects
+against the snapshot using [rclone file lists](https://rclone.org/filtering/#files-from0-read-nul-separated-list-of-source-file-names).
+It then audits the latest complete main iOS update on both production and the
+candidate: retained update UUID/runtime, the signature against the installed
+device certificate, and SHA-256 hashes of the launch bundle and assets,
+following the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+The audit uses Remix's maintained
+[multipart parser](https://github.com/remix-run/remix/tree/main/packages/multipart-parser)
+to bind the signature to the manifest part's headers and exact bytes, and
+[structured-headers](https://github.com/evert/structured-header) for the signature
+dictionary. A signature on another MIME part does not certify the manifest.
+The legacy request omits `expo-app-id`, exercising the installed-client fallback.
+
+The job stops the candidate before restoring the mutable copy and refuses to
+restore if the stop fails. It byte-verifies restoration, then rechecks that
+production still matches the locked snapshot. The job summary records the
+image digest and retained update identity. For an explicit restore after a
+failed rehearsal, first confirm that its CI runner/container has stopped:
 
 ```sh
 gh workflow run ota-storage.yml -f operation=restore-rehearsal -f snapshot_id=2026-10-29-before-v3

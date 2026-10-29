@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
+import { OtaMigrationLayout } from "./ota-migration-layout.ts";
 
 const rcloneImage =
   "rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5";
@@ -11,26 +12,32 @@ function required(name: string): string {
   return value;
 }
 
-function requirePausedWriters(): void {
+async function requirePausedWriters(): Promise<void> {
   const repository = required("GITHUB_REPOSITORY");
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Invalid GITHUB_REPOSITORY");
-  required("GH_TOKEN");
+  const token = required("GH_TOKEN");
+  const get = async (path: string): Promise<unknown> => {
+    const response = await fetch(`https://api.github.com/${path}`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (!response.ok)
+      throw new Error(`Cannot verify paused OTA writers: GitHub returned HTTP ${response.status}`);
+    return response.json();
+  };
   for (const writer of writers) {
     const path = `repos/${repository}/actions/workflows/${writer}`;
-    const workflow = z
-      .object({ state: z.string() })
-      .parse(JSON.parse(execFileSync("gh", ["api", path], { encoding: "utf8" })));
+    const workflow = z.object({ state: z.string() }).parse(await get(path));
     if (workflow.state !== "disabled_manually") {
       throw new Error(`${writer} must be disabled before OTA storage operations`);
     }
     for (const status of ["queued", "in_progress", "waiting", "pending", "requested"]) {
-      const runs = z.object({ total_count: z.number().int().nonnegative() }).parse(
-        JSON.parse(
-          execFileSync("gh", ["api", `${path}/runs?status=${status}&per_page=1`], {
-            encoding: "utf8",
-          }),
-        ),
-      );
+      const runs = z
+        .object({ total_count: z.number().int().nonnegative() })
+        .parse(await get(`${path}/runs?status=${status}&per_page=1`));
       if (runs.total_count > 0) throw new Error(`${writer} still has ${status} runs`);
     }
   }
@@ -43,9 +50,14 @@ async function main(): Promise<void> {
   }
   if (
     extra.length ||
-    !["snapshot", "verify-snapshot", "rehearsal-copy", "restore-rehearsal"].includes(
-      operation ?? "",
-    )
+    ![
+      "snapshot",
+      "verify-snapshot",
+      "verify-rehearsal",
+      "verify-migration",
+      "rehearsal-copy",
+      "restore-rehearsal",
+    ].includes(operation ?? "")
   ) {
     throw new Error(
       "Usage: ota-storage.ts <snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal> <snapshot ID>",
@@ -60,18 +72,24 @@ async function main(): Promise<void> {
     RCLONE_CONFIG_OTA_SECRET_ACCESS_KEY: required("R2_SECRET_ACCESS_KEY"),
     RCLONE_CONFIG_OTA_NO_CHECK_BUCKET: "true",
   };
-  requirePausedWriters();
-  const run = (...arguments_: string[]): string =>
+  await requirePausedWriters();
+  const run = (arguments_: string[], input?: string): string =>
     execFileSync(
       "docker",
       [
         "run",
         "--rm",
+        "--interactive",
         ...Object.keys(environment).flatMap((name) => ["--env", name]),
         rcloneImage,
         ...arguments_,
       ],
-      { encoding: "utf8", env: { ...process.env, ...environment }, maxBuffer: 32 * 1024 * 1024 },
+      {
+        encoding: "utf8",
+        input,
+        env: { ...process.env, ...environment },
+        maxBuffer: 32 * 1024 * 1024,
+      },
     );
 
   const snapshot = `ota:dofek-ota-backups/snapshots/${snapshotId}`;
@@ -81,24 +99,68 @@ async function main(): Promise<void> {
   const destination = productionSource ? snapshot : rehearsal;
   const size = z
     .object({ count: z.number().int().nonnegative(), bytes: z.number().nonnegative() })
-    .parse(JSON.parse(run("size", source, "--json")));
+    .parse(JSON.parse(run(["size", source, "--json"])));
   if (size.count === 0) throw new Error("Source must contain objects before copy or restore");
-  if (operation === "verify-snapshot") {
-    run("check", source, destination, "--download");
-    console.log(`Verified unchanged production: ${snapshotId}`);
+  if (operation === "verify-snapshot" || operation === "verify-rehearsal") {
+    run(["check", source, destination, "--download"]);
+    console.log(`Verified ${operation}: ${snapshotId}`);
     return;
+  }
+  if (operation === "verify-migration") {
+    const appId = required("EXPO_APP_ID");
+    const listPaths = (remote: string) =>
+      z
+        .array(z.object({ Path: z.string() }))
+        .parse(JSON.parse(run(["lsjson", remote, "--recursive", "--files-only"])))
+        .map((object) => object.Path);
+    const originalPaths = listPaths(snapshot);
+    const layout = new OtaMigrationLayout(originalPaths, appId);
+    layout.assertMigratedPaths(listPaths(rehearsal));
+    for (const [paths, target] of [
+      [layout.movedPaths, `${rehearsal}/${appId}`],
+      [layout.unchangedPaths, rehearsal],
+    ] as const) {
+      if (paths.length)
+        run(
+          ["check", snapshot, target, "--download", "--files-from0", "-"],
+          `${paths.join("\0")}\0`,
+        );
+    }
+    const complete = new Set(originalPaths);
+    const metadataPaths = originalPaths
+      .filter(
+        (path) =>
+          /^main\/[^/]+\/\d+\/update-metadata\.json$/.test(path) &&
+          complete.has(path.replace(/update-metadata\.json$/, ".check")),
+      )
+      .sort((left, right) => Number(right.split("/")[2]) - Number(left.split("/")[2]));
+    for (const path of metadataPaths) {
+      const metadata = z
+        .object({ platform: z.enum(["ios", "android"]), updateUUID: z.string().min(1) })
+        .parse(JSON.parse(run(["cat", `${snapshot}/${path}`])));
+      if (metadata.platform === "ios") {
+        console.log(
+          JSON.stringify({
+            id: metadata.updateUUID,
+            runtimeVersion: z.string().min(1).parse(path.split("/")[1]),
+          }),
+        );
+        return;
+      }
+    }
+    throw new Error("Snapshot has no complete main iOS update to audit");
   }
   if (operation !== "restore-rehearsal") {
     const objects = z
       .array(z.object({ Path: z.string() }))
-      .parse(JSON.parse(run("lsjson", destination, "--recursive", "--files-only")));
+      .parse(JSON.parse(run(["lsjson", destination, "--recursive", "--files-only"])));
     if (objects.length) throw new Error(`Destination ${destination} must be empty`);
-    run("copy", source, destination, "--immutable");
+    run(["copy", source, destination, "--immutable"]);
   } else {
     // This destructive restore is restricted to the isolated rehearsal prefix.
-    run("sync", source, destination);
+    run(["sync", source, destination]);
   }
-  run("check", source, destination, "--download");
+  run(["check", source, destination, "--download"]);
   console.log(`Verified ${operation}: ${source} → ${destination}`);
 }
 

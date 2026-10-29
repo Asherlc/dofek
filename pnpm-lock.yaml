@@ -271,6 +271,9 @@ importers:
       '@redocly/cli':
         specifier: 2.39.0
         version: 2.39.0
+      '@remix-run/multipart-parser':
+        specifier: 1.1.0
+        version: 1.1.0
       '@size-limit/file':
         specifier: 12.0.1
         version: 12.0.1(size-limit@12.0.1)
@@ -349,6 +352,9 @@ importers:
       size-limit:
         specifier: 12.0.1
         version: 12.0.1(jiti@2.7.0)
+      structured-headers:
+        specifier: 2.1.1
+        version: 2.1.1
       stylelint:
         specifier: 17.14.0
         version: 17.14.0(supports-color@11.0.0)(typescript@6.0.3)
@@ -6170,6 +6176,12 @@ packages:
     resolution: {integrity: sha512-xA0Z9YMEhlzbpn/BVErlE2UzuKfahp9llBwEnVtAYuhWdF8UCIm+cgYX8f/gHQIJ/TKwB93awAewTOgEsbZFZw==}
     engines: {node: '>=22.12.0 || >=20.19.0 <21.0.0', npm: '>=10'}
     hasBin: true
+
+  '@remix-run/headers@1.0.1':
+    resolution: {integrity: sha512-C1iaFscxEcAVZl4g6u46aZqEvLUWrUaG2jliTgNW0wlqZRVemsTw7msOQ1UDBmhiqa4LzPK/l+7ynYHYUIxzaA==}
+
+  '@remix-run/multipart-parser@1.1.0':
+    resolution: {integrity: sha512-/iDclaeK2fAPLJQsAfLv5FPLJU/uVN+pONs+byyF4IXGMRP7of1Ke40k1keZ6pM6vmFqmY0p2Wuj0QzkR6ECew==}
 
   '@rolldown/binding-android-arm64@1.1.5':
     resolution: {integrity: sha512-lZg8fqIv2v7FF237bwMgzGZEJvGL79/s5knJ/i6FmsGF4XXlzccZ4jb+TrFIxtSSxFtIpdsgrPZeMk1I9AFcyQ==}
@@ -15976,6 +15988,10 @@ packages:
   structured-headers@0.4.1:
     resolution: {integrity: sha512-0MP/Cxx5SzeeZ10p/bZI0S6MpgD+yxAhi1BOQ34jgnMXsCq3j1t6tQnZu+KdlL7dvJTLT3g9xN8tl10TqgFMcg==}
 
+  structured-headers@2.1.1:
+    resolution: {integrity: sha512-Ub9mpW7mtzUC7yM7Vrl+CwvHvXa4WhKWROUM9YKmkOsI55dMSg2rhiA7Q5vwRixQk1ndQ2m8YiM6YhO+GJn9LQ==}
+    engines: {node: '>=18', npm: '>=6'}
+
   stylelint@17.14.0:
     resolution: {integrity: sha512-8xkHPpdqYryeIsOgfsYTmr6cIeC4nLYWk5S8BPxpodq8mIuepggkMljsHewWfuAjj/+qpRKou2QerhjMH3iasg==}
     engines: {node: '>=20.19.0'}
@@ -22953,6 +22969,12 @@ snapshots:
       '@types/react': 19.3.0
 
   '@redocly/cli@2.39.0': {}
+
+  '@remix-run/headers@1.0.1': {}
+
+  '@remix-run/multipart-parser@1.1.0':
+    dependencies:
+      '@remix-run/headers': 1.0.1
 
   '@rolldown/binding-android-arm64@1.1.5':
     optional: true
@@ -34590,6 +34612,8 @@ snapshots:
       '@types/node': 26.1.2
 
   structured-headers@0.4.1: {}
+
+  structured-headers@2.1.1: {}
 
   stylelint@17.14.0(supports-color@11.0.0)(typescript@6.0.3):
     dependencies:

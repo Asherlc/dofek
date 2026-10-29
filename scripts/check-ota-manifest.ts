@@ -1,3 +1,4 @@
+import { getMultipartBoundary, parseMultipart } from "@remix-run/multipart-parser";
 import { z } from "zod";
 
 const defaultCommandOptions = {
@@ -46,32 +47,16 @@ interface OtaManifestCheckOptions {
   requestOptions?: OtaManifestRequestOptions;
 }
 
-function extractBoundary(contentType: string): string | null {
-  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i);
-  return boundaryMatch?.[1] ?? boundaryMatch?.[2] ?? null;
-}
-
 function extractManifestPart(body: string, boundary: string): string | null {
-  const normalizedBody = body.replaceAll("\r\n", "\n");
-  for (const part of normalizedBody.split(`--${boundary}`)) {
-    const separatorIndex = part.indexOf("\n\n");
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const headers = part.slice(0, separatorIndex).toLowerCase();
-    if (
-      !headers.includes('content-disposition: form-data; name="manifest"') ||
-      (!headers.includes("content-type: application/json") &&
-        !headers.includes("content-type: application/expo+json"))
-    ) {
-      continue;
-    }
-
-    return part.slice(separatorIndex + 2).trim();
-  }
-
-  return null;
+  const parts = [...parseMultipart(Buffer.from(body), { boundary })];
+  const part = parts.find(
+    (part) =>
+      part.name === "manifest" &&
+      ["application/json", "application/expo+json"].includes(
+        part.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "",
+      ),
+  );
+  return part?.text ?? null;
 }
 
 function readOptionValue(arguments_: string[], index: number, optionName: string): string {
@@ -162,7 +147,7 @@ export async function checkOtaManifest({
     throw new Error("OTA manifest response is not multipart/mixed");
   }
 
-  const boundary = extractBoundary(contentType);
+  const boundary = getMultipartBoundary(contentType);
   if (!boundary) {
     throw new Error("OTA manifest response is missing a multipart boundary");
   }

@@ -7,16 +7,21 @@ on:
         description: Verified storage operation (restore affects rehearsal only)
         required: true
         type: choice
-        options: [snapshot, verify-snapshot, rehearsal-copy, restore-rehearsal]
+        options: [snapshot, verify-snapshot, rehearsal-copy, migration-rehearsal, restore-rehearsal]
       snapshot_id:
         description: Unique 8–64 character lowercase snapshot identifier
         required: true
+        type: string
+      image:
+        description: Private OTA image digest (required for migration-rehearsal)
+        required: false
         type: string
 
 permissions:
   contents: read
   actions: read
   id-token: write
+  packages: read
 
 concurrency:
   group: deploy-web-production
@@ -26,12 +31,17 @@ jobs:
   storage:
     name: Verify OTA storage copy
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: "2026.10.23"
+          install_args: infisical
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
@@ -39,8 +49,32 @@ jobs:
             R2_ACCESS_KEY_ID
             R2_SECRET_ACCESS_KEY
       - name: Copy and byte-verify storage
+        if: inputs.operation != 'migration-rehearsal'
         env:
           GH_TOKEN: ${{ github.token }}
           OPERATION: ${{ inputs.operation }}
           SNAPSHOT_ID: ${{ inputs.snapshot_id }}
         run: pnpm tsx scripts/ota-storage.ts "$OPERATION" "$SNAPSHOT_ID" >> "$GITHUB_STEP_SUMMARY"
+      - name: Load retained application identity and signing keys
+        if: inputs.operation == 'migration-rehearsal'
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            EXPO_APP_ID
+            EXPO_TOKEN
+            OTA_JWT_SECRET
+            OTA_PRIVATE_KEY_B64
+            OTA_PUBLIC_KEY_B64
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: inputs.operation == 'migration-rehearsal'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Rehearse candidate migration, signed delivery and restore
+        if: inputs.operation == 'migration-rehearsal'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OTA_REHEARSAL_IMAGE: ${{ inputs.image }}
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+        run: pnpm tsx scripts/rehearse-ota-storage.ts "$SNAPSHOT_ID" >> "$GITHUB_STEP_SUMMARY"

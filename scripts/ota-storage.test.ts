@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
@@ -11,6 +13,18 @@ let workflowState: string;
 let activeRuns: number;
 let failCommand: string | undefined;
 let sourceCount: number;
+let sourcePaths: string[];
+let migratedPaths: string[];
+const github = setupServer(
+  http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow", () =>
+    HttpResponse.json({ state: workflowState }),
+  ),
+  http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow/runs", () =>
+    HttpResponse.json({ total_count: activeRuns }),
+  ),
+);
+beforeAll(() => github.listen({ onUnhandledRequest: "error" }));
+afterAll(() => github.close());
 
 beforeEach(() => {
   vi.resetModules();
@@ -19,6 +33,12 @@ beforeEach(() => {
   activeRuns = 0;
   failCommand = undefined;
   sourceCount = 10;
+  sourcePaths = [
+    "main/runtime-current/123/.check",
+    "main/runtime-current/123/update-metadata.json",
+    "main/runtime-current/123/assets/bundle",
+  ];
+  migratedPaths = [...sourcePaths.map((path) => `example-app/${path}`), ".migrationhistory"];
   process.argv = ["node", "ota-storage.ts", "snapshot", snapshot];
   for (const [key, value] of Object.entries({
     GITHUB_REPOSITORY: "Asherlc/dofek",
@@ -26,22 +46,28 @@ beforeEach(() => {
     R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
     R2_ACCESS_KEY_ID: "test-key",
     R2_SECRET_ACCESS_KEY: "test-secret",
+    EXPO_APP_ID: "example-app",
   }))
     vi.stubEnv(key, value);
   execute.mockReset();
   execute.mockImplementation((_file, args) => {
     const command = z.array(z.string()).parse(args).join(" ");
     if (failCommand && command.includes(failCommand)) throw new Error("transfer failed");
-    if (_file === "gh") {
-      if (command.includes("/runs?")) return JSON.stringify({ total_count: activeRuns });
-      return JSON.stringify({ state: workflowState });
+    if (command.includes("lsjson")) {
+      if (process.argv[2] === "verify-migration")
+        return JSON.stringify(
+          (command.includes("/snapshots/") ? sourcePaths : migratedPaths).map((Path) => ({ Path })),
+        );
+      return JSON.stringify(existingObjects);
     }
-    if (command.includes("lsjson")) return JSON.stringify(existingObjects);
+    if (command.includes(" cat "))
+      return JSON.stringify({ platform: "ios", updateUUID: "retained-id" });
     if (command.includes("size")) return JSON.stringify({ count: sourceCount, bytes: 100 });
     return "";
   });
 });
 afterEach(() => {
+  github.resetHandlers();
   process.argv = originalArguments;
   vi.unstubAllEnvs();
 });
@@ -71,6 +97,15 @@ describe("OTA storage operator CLI", () => {
   it("refuses outstanding publisher or cleanup runs", async () => {
     activeRuns = 1;
     await expect(import("./ota-storage.ts")).rejects.toThrow("still has");
+    expect(transfers()).toEqual([]);
+  });
+  it("fails before storage access when GitHub permissions cannot be verified", async () => {
+    github.use(
+      http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow", () =>
+        HttpResponse.json({ message: "Forbidden" }, { status: 403 }),
+      ),
+    );
+    await expect(import("./ota-storage.ts")).rejects.toThrow("HTTP 403");
     expect(transfers()).toEqual([]);
   });
 
@@ -133,6 +168,44 @@ describe("OTA storage operator CLI", () => {
       `ota:dofek-ota-backups/snapshots/${snapshot}`,
       "--download",
     ]);
+  });
+  it("checks an untouched rehearsal copy against the original snapshot", async () => {
+    process.argv[2] = "verify-rehearsal";
+    await import("./ota-storage.ts");
+    expect(transfers()[1]?.slice(-4)).toEqual([
+      "check",
+      `ota:dofek-ota-backups/snapshots/${snapshot}`,
+      `ota:dofek-ota-backups/rehearsals/${snapshot}`,
+      "--download",
+    ]);
+  });
+
+  it("verifies relocated bytes and returns the retained latest iOS identity", async () => {
+    process.argv[2] = "verify-migration";
+    sourcePaths.push("orphan/file");
+    migratedPaths.push("orphan/file");
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await import("./ota-storage.ts");
+      expect(output).toHaveBeenCalledWith(
+        JSON.stringify({ id: "retained-id", runtimeVersion: "runtime-current" }),
+      );
+      expect(
+        transfers().some(
+          (command) =>
+            command.includes(`ota:dofek-ota-backups/rehearsals/${snapshot}/example-app`) &&
+            command.includes("--download"),
+        ),
+      ).toBe(true);
+    } finally {
+      output.mockRestore();
+    }
+  });
+
+  it("fails migration verification when an original key remains behind", async () => {
+    process.argv[2] = "verify-migration";
+    migratedPaths.push("main/runtime-current/123/.check");
+    await expect(import("./ota-storage.ts")).rejects.toThrow("object set");
   });
 
   it("rehearses restore with sync and byte verification, without targeting production", async () => {
