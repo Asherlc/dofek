@@ -88,6 +88,19 @@ and the Task 1 image digest. Use rclone copy/check rather than a custom copier.
 
 **Interfaces:** Task 1 image digest and Task 2 verified snapshot/rehearsal record.
 Publisher 3.2.7 must use app-scoped routes; clients keep their existing keys/URLs.
+The preparation restore operation targets only the rehearsal copy. It is not a
+production rollback tool; production migration is blocked until the following
+production recovery gate is implemented and validated.
+
+- [ ] **Blocking recovery gate:** Implement and test an executable main-only
+  production restore operation before changing production's server image.
+  Require publishers to be paused, actual OTA tasks to be quiesced through the
+  canonical deployment workflow, and a verified immutable snapshot. Refuse
+  writes while any OTA task can run. Restore the snapshot to the production
+  bucket with [rclone sync](https://rclone.org/commands/rclone_sync/), then
+  [byte-verify it](https://rclone.org/commands/rclone_check/) before deploying the
+  old image. Test destination selection, active-task refusal and failed copy/
+  verification paths; retain the existing rehearsal restore regression.
 
 - [ ] Update all publisher invocations to the matching 3.2.7 package and remove
   obsolete version comments. Pin production to the validated image digest.
@@ -99,8 +112,11 @@ Publisher 3.2.7 must use app-scoped routes; clients keep their existing keys/URL
   through the canonical workflow. Observe migration completion and validate
   manifest identity/signatures/assets before resuming publication.
 - [ ] Publish via EOAS 3.2.7 and verify the public update. If migration fails,
-  keep publishers paused and use the rehearsed restore procedure before the old
-  image; never claim image rollback restores data.
+  keep publishers paused, quiesce OTA through the canonical workflow, and use
+  the separately validated production restore operation above. Verify restored
+  bytes before deploying the old server/publisher release unit; image rollback
+  alone never restores data. The rehearsal-only command cannot perform this
+  recovery.
 - [ ] Update incident evidence and close PR review threads with code and
   validation links. Report remaining physical WHOOP validation explicitly.
 

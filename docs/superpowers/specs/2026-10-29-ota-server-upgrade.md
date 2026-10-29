@@ -35,5 +35,7 @@ not just object counts, in the backup and restore path; [rclone check --download
 provides an established object-store comparison tool.
 
 The iOS release proceeds independently after the Account Holder accepted Apple's
-agreement. A successful upload is distinct from processing and on-device capture.
+agreement. A successful upload is distinct from
+[Apple's processing stage](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+and on-device capture.
 The missing historical WHOOP ride samples remain unrecovered.

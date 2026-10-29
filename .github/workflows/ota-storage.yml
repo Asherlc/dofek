@@ -24,7 +24,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: deploy-web-production
+  group: ${{ github.ref == 'refs/heads/main' && 'deploy-web-production' || format('ota-storage-ineligible-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -34,11 +34,14 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out reviewed main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-node-pnpm
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Install locked native Infisical
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: "2026.10.23"
           install_args: infisical
@@ -47,7 +50,8 @@ jobs:
           export_path: "false"
       - name: Expose the Infisical binary
         run: dirname "$(mise which infisical)" >> "$GITHUB_PATH"
-      - uses: ./.github/actions/load-infisical-secrets
+      - name: Load R2 credentials through OIDC
+        uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
             R2_ENDPOINT
@@ -70,7 +74,8 @@ jobs:
             OTA_JWT_SECRET
             OTA_PRIVATE_KEY_B64
             OTA_PUBLIC_KEY_B64
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - name: Sign in to private GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: inputs.operation == 'migration-rehearsal'
         with:
           registry: ghcr.io
