@@ -2,7 +2,7 @@ import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ComponentProps, useMemo, useState } from "react";
 import { expect, within } from "storybook/test";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -307,7 +307,6 @@ export const RepeatedPoint: Story = {
       name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/,
     });
     const bounds = dot.getBoundingClientRect();
-    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
     dot.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,

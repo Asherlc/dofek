@@ -433,6 +433,7 @@ vi.mock("react-native", () => {
     LayoutAnimation,
     UIManager,
     DynamicColorIOS,
+    useColorScheme: vi.fn(() => "light"),
     useWindowDimensions: vi.fn(() => ({
       width: 390,
       height: 844,
@@ -723,8 +724,8 @@ vi.mock("./modules/ble-heart-rate", () => ({
   purgeAccountState: vi.fn(),
 }));
 
-// ── React Native Maps mock ──────────────────────────────────────────
-vi.mock("react-native-maps", () => {
+// ── MapLibre Native mock ────────────────────────────────────────────
+vi.mock("@maplibre/maplibre-react-native", () => {
   const React = require("react");
   function mapComponent(name: string) {
     const component = ({ children, testID, ...props }: Record<string, unknown>) =>
@@ -732,14 +733,13 @@ vi.mock("react-native-maps", () => {
     component.displayName = name;
     return component;
   }
-  const MapView = mapComponent("MapView");
-  const Polyline = mapComponent("Polyline");
-  const Marker = mapComponent("Marker");
   return {
-    __esModule: true,
-    default: MapView,
-    Polyline,
-    Marker,
+    Map: mapComponent("NativeMap"),
+    Camera: mapComponent("NativeCamera"),
+    GeoJSONSource: mapComponent("GeoJSONSource"),
+    Layer: mapComponent("MapLayer"),
+    Marker: mapComponent("MapMarker"),
+    StaticMapImageManager: { createImage: vi.fn(() => Promise.resolve("file:///map-preview.png")) },
   };
 });
 

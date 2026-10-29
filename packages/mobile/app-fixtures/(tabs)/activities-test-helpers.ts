@@ -107,23 +107,6 @@ export function activityListQuery(activities: ReturnType<typeof activity>[]): Mo
 
 type RecordedGpsLocation = Extract<ActivityLocation, { kind: "recorded_gps" }>;
 
-export const routeMapTiles = [
-  {
-    url: "https://tile.openstreetmap.org/15/5241/12665.png",
-    x: 0,
-    y: 0,
-    width: 256,
-    height: 256,
-  },
-  {
-    url: "https://tile.openstreetmap.org/15/5242/12665.png",
-    x: 256,
-    y: 0,
-    width: 256,
-    height: 256,
-  },
-];
-
 export function recordedGpsLocation(
   mapPreview: Partial<RecordedGpsLocation["mapPreview"]> = {},
 ): RecordedGpsLocation {
@@ -134,7 +117,8 @@ export function recordedGpsLocation(
     mapPreview: {
       width: 1024,
       height: 576,
-      tiles: routeMapTiles.slice(0, 1),
+      center: [-122.4194, 37.7749],
+      zoom: 14,
       routePath: null,
       ...mapPreview,
     },
@@ -147,15 +131,8 @@ export function climbingSourceLocation(pointCount: number): ActivityLocation {
     mapPreview: {
       width: 1024,
       height: 576,
-      tiles: [
-        {
-          url: "https://tile.openstreetmap.org/15/6800/12400.png",
-          x: 0,
-          y: 0,
-          width: 256,
-          height: 256,
-        },
-      ],
+      center: [-105.27099609, 40.03497508],
+      zoom: 14,
       routePath: null,
     },
     sourcePoints: (

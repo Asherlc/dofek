@@ -1,7 +1,11 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { createMapStyle, mapAttributionText } from "@dofek/training/map-style";
 import type { ActivityLocation } from "dofek-server/types";
-import { useState } from "react";
+import type { Map as MapLibreMap } from "maplibre-gl";
+import { useEffect, useRef, useState } from "react";
+import { loadMapLibre, mapColorMode, queueMapSnapshot } from "../lib/maplibre.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 
 export type ActivityMapLocation = ActivityLocation;
@@ -138,97 +142,199 @@ function ReadyActivityMapTile({
   location: ReadyActivityMapLocation;
   compact: boolean;
 }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const background = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [frame, setFrame] = useState<{ width: number; height: number; scale: number } | null>(null);
+  const [snapshot, setSnapshot] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [loadedTiles, setLoadedTiles] = useState<ReadonlySet<number>>(() => new Set());
-  const loading = loadedTiles.size < location.mapPreview.tiles.length;
+  const [mode, setMode] = useState(mapColorMode);
+  const { mapPreview } = location;
+  const { width: referenceWidth, height: referenceHeight, zoom } = mapPreview;
+  const [longitude, latitude] = mapPreview.center;
+  const frameReady = frame !== null;
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(
+      (entries) => setVisible(entries.some((entry) => entry.isIntersecting)),
+      { rootMargin: "200px" },
+    );
+    observer.observe(element);
+    const resize = () => {
+      const scale = Math.min(
+        element.clientWidth / referenceWidth,
+        element.clientHeight / referenceHeight,
+      );
+      if (scale <= 0) return;
+      setFrame((previous) =>
+        previous?.scale === scale
+          ? previous
+          : { width: referenceWidth * scale, height: referenceHeight * scale, scale },
+      );
+    };
+    resize();
+    const sizes = new ResizeObserver(resize);
+    sizes.observe(element);
+    return () => {
+      observer.disconnect();
+      sizes.disconnect();
+    };
+  }, [referenceWidth, referenceHeight]);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const change = () => {
+      setMode(query.matches ? "dark" : "light");
+      setSnapshot(null);
+    };
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
+    const element = background.current;
+    if (!visible || !frameReady || !element || snapshot) return;
+    setLoadFailed(false);
+    return queueMapSnapshot((done) => {
+      let cancelled = false;
+      let map: MapLibreMap | null = null;
+      let deadline: ReturnType<typeof setTimeout>;
+      const finish = () => {
+        cancelled = true;
+        clearTimeout(deadline);
+        map?.remove();
+        map = null;
+        done();
+      };
+      const fail = (error: unknown) => {
+        if (cancelled) return;
+        captureException(error, { component: "ActivityMapTile" });
+        setLoadFailed(true);
+        finish();
+      };
+      deadline = setTimeout(
+        () => fail(new Error("Map preview rendering exceeded 30 seconds")),
+        30_000,
+      );
+      loadMapLibre()
+        .then((M) => {
+          if (cancelled) return;
+          map = new M.Map({
+            container: element,
+            style: createMapStyle(mode),
+            center: [longitude, latitude],
+            zoom,
+            interactive: false,
+            attributionControl: false,
+            canvasContextAttributes: { preserveDrawingBuffer: true },
+          });
+          map.once("error", (event) => fail(event.error));
+          map.once("idle", () => {
+            if (cancelled || !map) return;
+            try {
+              setSnapshot(map.getCanvas().toDataURL("image/png"));
+              finish();
+            } catch (error) {
+              fail(error);
+            }
+          });
+        })
+        .catch(fail);
+      return () => {
+        cancelled = true;
+        clearTimeout(deadline);
+        map?.remove();
+        map = null;
+      };
+    });
+  }, [visible, frameReady, longitude, latitude, zoom, mode, snapshot]);
 
   return (
     <>
+      <div
+        ref={viewport}
+        data-testid="activity-route-viewport"
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        role="img"
+        aria-label={
+          location.kind === "climbing_source"
+            ? `Climbing source locations · ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
+            : compact
+              ? "Activity route map summary"
+              : "Activity location map"
+        }
+      >
+        <div
+          data-testid="activity-map-preview"
+          data-preview-width={referenceWidth}
+          data-preview-height={referenceHeight}
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+          style={{ width: frame ? frame.width : "100%", height: frame ? frame.height : "100%" }}
+        >
+          <div
+            ref={background}
+            aria-hidden="true"
+            className="absolute left-0 top-0"
+            style={{
+              width: referenceWidth,
+              height: referenceHeight,
+              transform: `scale(${frame?.scale ?? 1})`,
+              transformOrigin: "top left",
+            }}
+          />
+          {snapshot ? (
+            <img
+              data-testid="activity-map-snapshot"
+              src={snapshot}
+              alt=""
+              className="absolute inset-0 h-full w-full"
+            />
+          ) : null}
+          {location.kind === "climbing_source" ? (
+            <div className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
+              {location.sourcePoints.map((point) => (
+                <svg
+                  key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
+                  className="absolute -translate-x-1/2 -translate-y-1/2"
+                  width={16}
+                  height={16}
+                  viewBox="0 0 16 16"
+                  style={{
+                    left: `${(point.x / location.mapPreview.width) * 100}%`,
+                    top: `${(point.y / location.mapPreview.height) * 100}%`,
+                  }}
+                >
+                  <title>{sourceLocationLabel(point.location)}</title>
+                  <circle
+                    cx={8}
+                    cy={8}
+                    r={6}
+                    fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
+                    stroke="white"
+                    strokeWidth={2}
+                  />
+                </svg>
+              ))}
+            </div>
+          ) : (
+            <ActivityRouteOverlay mapPreview={location.mapPreview} />
+          )}
+        </div>
+      </div>
+      <span
+        className={`pointer-events-none absolute bottom-0 right-0 max-w-full break-words bg-white/80 px-1 text-black ${compact ? "text-[7px] leading-[8px] font-normal" : "text-[9px] leading-3"}`}
+      >
+        {mapAttributionText}
+      </span>
       {loadFailed ? (
         <div
           role="status"
-          className="absolute inset-0 flex items-center justify-center text-xs text-muted"
+          className="absolute inset-x-0 bottom-4 bg-surface-secondary/90 p-1 text-center text-xs text-muted"
         >
-          Map unavailable
+          Map unavailable. Check your connection.
         </div>
-      ) : (
-        <div
-          data-testid="activity-route-viewport"
-          className="absolute inset-0 h-full w-full"
-          role="img"
-          aria-label={
-            location.kind === "climbing_source"
-              ? `Climbing source locations · ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
-              : compact
-                ? "Activity route map summary"
-                : "Activity location map"
-          }
-        >
-          <div
-            data-testid="activity-map-preview"
-            data-preview-width={location.mapPreview.width}
-            data-preview-height={location.mapPreview.height}
-            className="absolute inset-0 brightness-[0.95] contrast-[0.92] saturate-[0.85]"
-            style={{
-              width: "100%",
-              height: "100%",
-            }}
-          >
-            {location.mapPreview.tiles.map((tile, tileIndex) => (
-              <img
-                key={`${tile.url}-${tile.x}-${tile.y}`}
-                data-testid="activity-map-preview-tile"
-                src={tile.url}
-                alt=""
-                className="absolute max-w-none"
-                loading="lazy"
-                referrerPolicy="origin"
-                onError={() => setLoadFailed(true)}
-                onLoad={() => setLoadedTiles((current) => new Set([...current, tileIndex]))}
-                style={{
-                  left: `${(tile.x / location.mapPreview.width) * 100}%`,
-                  top: `${(tile.y / location.mapPreview.height) * 100}%`,
-                  width: `${(tile.width / location.mapPreview.width) * 100}%`,
-                  height: `${(tile.height / location.mapPreview.height) * 100}%`,
-                }}
-              />
-            ))}
-            {location.kind === "climbing_source" ? (
-              <div
-                className="pointer-events-none absolute inset-0 h-full w-full"
-                aria-hidden="true"
-              >
-                {location.sourcePoints.map((point) => (
-                  <svg
-                    key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
-                    className="absolute -translate-x-1/2 -translate-y-1/2"
-                    width={16}
-                    height={16}
-                    viewBox="0 0 16 16"
-                    style={{
-                      left: `${(point.x / location.mapPreview.width) * 100}%`,
-                      top: `${(point.y / location.mapPreview.height) * 100}%`,
-                    }}
-                  >
-                    <title>{sourceLocationLabel(point.location)}</title>
-                    <circle
-                      cx={8}
-                      cy={8}
-                      r={6}
-                      fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
-                      stroke="white"
-                      strokeWidth={2}
-                    />
-                  </svg>
-                ))}
-              </div>
-            ) : (
-              <ActivityRouteOverlay mapPreview={location.mapPreview} />
-            )}
-          </div>
-        </div>
-      )}
-      {!loadFailed && loading ? <MapProcessingIndicator compact={compact} /> : null}
+      ) : !snapshot ? (
+        <MapProcessingIndicator compact={compact} />
+      ) : null}
     </>
   );
 }

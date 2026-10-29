@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, within } from "storybook/test";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { climbingMapLocations, climbingMapLogs } from "./climbing-log-map-test-helpers.ts";
 import { UnattachedClimbingLogEntries } from "./UnattachedClimbingLogEntries.tsx";
 

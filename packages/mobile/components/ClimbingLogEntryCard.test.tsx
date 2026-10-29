@@ -217,20 +217,18 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByText("Attempted")).toBeTruthy();
   });
 
-  it("shows a compact single-point map", () => {
+  it("shows a compact single-point map", async () => {
     const { container } = render(
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,
     );
-    expect(container.querySelector("mapview")).toBeNull();
+    expect(container.querySelector("nativemap")).toBeNull();
     const wrapper = container.querySelector('[style*="overflow: hidden"]')?.firstElementChild;
     if (!wrapper) throw new Error("Expected the compact map layout wrapper");
     fireEvent(wrapper, new CustomEvent("layout", { detail: { width: 280, height: 140 } }));
-    const map = container.querySelector("mapview");
-    expect(map?.getAttribute("style")).toContain("height: 140px");
-    expect(container.querySelectorAll("marker")).toHaveLength(1);
-    expect(container.querySelector("polyline")).toBeNull();
-    expect(container.querySelector('[title="Start"]')).toBeNull();
-    expect(container.querySelector('[title="Finish"]')).toBeNull();
+    const preview = await screen.findByTestId("compact-route-preview");
+    fireEvent.load(preview);
+    expect(preview.parentElement?.getAttribute("style")).toContain("height: 140px");
+    expect(preview.parentElement?.getAttribute("pointer-events")).toBe("none");
   });
 
   it("keeps the retry action available after an attachment error", () => {

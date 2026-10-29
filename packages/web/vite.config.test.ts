@@ -20,6 +20,8 @@ let clientsClaimCount = 0;
 let skipWaitingCount = 0;
 let indexHtml = "";
 let registrationScript = "";
+let initialChunkFiles: string[] = [];
+let deferredMapChunk: string | undefined;
 
 beforeAll(async () => {
   outputDirectory = await mkdtemp(path.join(tmpdir(), "dofek-web-pwa-"));
@@ -36,6 +38,7 @@ beforeAll(async () => {
       build: {
         outDir: outputDirectory,
         sourcemap: false,
+        manifest: true,
       },
     });
   } finally {
@@ -54,6 +57,22 @@ beforeAll(async () => {
   const serviceWorker = await readFile(path.join(outputDirectory, "sw.js"), "utf8");
   indexHtml = await readFile(path.join(outputDirectory, "index.html"), "utf8");
   registrationScript = await readFile(path.join(outputDirectory, "registerSW.js"), "utf8");
+  const manifest: Record<string, { file: string; imports?: string[] }> = JSON.parse(
+    await readFile(path.join(outputDirectory, ".vite/manifest.json"), "utf8"),
+  );
+  const initialChunks = new Set<string>();
+  function visitInitialChunk(key: string) {
+    if (initialChunks.has(key)) return;
+    initialChunks.add(key);
+    for (const dependency of manifest[key]?.imports ?? []) visitInitialChunk(dependency);
+  }
+  visitInitialChunk("index.html");
+  initialChunkFiles = [...initialChunks].flatMap((key) =>
+    manifest[key] ? [manifest[key].file] : [],
+  );
+  deferredMapChunk = Object.values(manifest).find(({ file }) =>
+    file.includes("maplibre.lazy-"),
+  )?.file;
 
   class NavigationRoute {
     constructor(
@@ -105,6 +124,12 @@ afterAll(async () => {
 });
 
 describe("production PWA build", () => {
+  it("defers the map engine until a visible map requests it", () => {
+    expect(deferredMapChunk).toBeDefined();
+    expect(initialChunkFiles).not.toContain(deferredMapChunk);
+    expect(indexHtml).not.toContain(deferredMapChunk);
+  });
+
   it("keeps the service worker and its registration on the application origin", () => {
     expect(indexHtml).toContain('src="/registerSW.js"');
     expect(indexHtml).toContain('href="/manifest.webmanifest"');

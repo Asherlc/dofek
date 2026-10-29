@@ -30,15 +30,8 @@ export const RecordedRoute: Story = {
       mapPreview: {
         width: 256,
         height: 256,
-        tiles: [
-          {
-            url: "https://tile.openstreetmap.org/12/655/1583.png",
-            x: 0,
-            y: 0,
-            width: 256,
-            height: 256,
-          },
-        ],
+        center: [-122.4194, 37.7749],
+        zoom: 11,
         routePath: [
           { x: 70, y: 190 },
           { x: 110, y: 130 },
@@ -57,15 +50,8 @@ export const ClimbingSourceLocations: Story = {
       mapPreview: {
         width: 256,
         height: 256,
-        tiles: [
-          {
-            url: "https://tile.openstreetmap.org/12/655/1583.png",
-            x: 0,
-            y: 0,
-            width: 256,
-            height: 256,
-          },
-        ],
+        center: [-122.4194, 37.7749],
+        zoom: 11,
         routePath: null,
       },
       sourcePoints: [

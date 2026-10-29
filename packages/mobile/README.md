@@ -86,13 +86,11 @@ offer a refresh action in the activity detail.
 
 Activity and training maps reserve space and show “Processing map…” while server geometry,
 preview images, or native map rendering are pending. Lists poll while any map's
-geometry is processing. Preview images become ready only after every tile
-reports a successful [Image `onLoad`](https://reactnative.dev/docs/image#onload);
-native overview and compact maps show the processing panel until
-[`onMapReady`](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#events),
-then retain the native renderer's
-[`loadingEnabled` indicator](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#props)
-while its initial map rendering completes.
+geometry is processing. Previews use MapLibre Native static images and retain the
+server-authored projected overlays; interactive maps show the processing panel until
+the native renderer reports a completed frame. Both use the [shared light/dark style](../training/src/map-style.ts)
+and [OpenFreeMap vector tiles](https://openfreemap.org/quick_start/). See the
+[MapLibre map lifecycle callbacks](https://maplibre.org/maplibre-react-native/docs/components/map/).
 Existing previews remain visible during background refreshes, and map failures
 retain their error state.
 
@@ -128,7 +126,7 @@ labels. Selecting it lists every log by climb name,
 including repeated names, without an entry-number heading. The
 [shared marker grouping](../training/src/climbing-map.ts) preserves source coordinates
 and log identities; the count renders inside a
-[custom native marker](https://github.com/react-native-maps/react-native-maps/blob/master/docs/marker.md).
+[MapLibre annotation](https://maplibre.org/maplibre-react-native/docs/components/annotations/).
 Selection opens the exact log's
 [record modal](./components/providers/provider-record-detail-modal.tsx) and
 highlights its card, including repeated names at the same point. The
@@ -197,9 +195,9 @@ Training dates and climbing filters to render [server-computed clusters](../trai
 Larger circles split into individual climb locations as the map zooms; repeated
 logs at one coordinate stay selectable together, with their grade, date, source,
 location scope, and activity link. Its native map preserves the viewport during
-refreshes and uses the cross-platform region API to zoom into clusters; the
-[native map camera documentation](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#types)
-distinguishes MapKit altitude from Google Maps zoom values.
+refreshes and uses the [MapLibre Camera](https://maplibre.org/maplibre-react-native/docs/components/camera/)
+to zoom into clusters. The server response retains 256-pixel zoom bands; the
+[renderer](components/ClimbingLocationMapCard.tsx) converts these at the MapLibre camera boundary.
 
 Unattached logs in the selected location list offer **Attach to activity**.
 The [activity picker](components/ClimbingLogAttachment.tsx) shows eligible
@@ -438,18 +436,12 @@ for the approved SDK dependency tree.
   version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
   AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
   [expo/expo#43757](https://github.com/expo/expo/issues/43757).
-- `react-native-maps@1.29.11` — the [stable release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
-  uses Fabric with React Native 0.81.1 or newer, matching this app's React Native
-  0.88 dependency ([upstream compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)).
-  Expo 58.0.14 recommends this version in its
-  [native dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.14/packages/expo/bundledNativeModules.json).
-  The tested native pin remains listed in Expo's documented
-  [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
-  setting. The existing Expo check validates the remaining SDK-managed
-  packages. Maps upgrades require a fresh native binary, its fingerprint-derived
-  runtime, and the signed simulator audit: route, Start/Finish pins, elevation
-  hover/release, navigation/remount, and session restoration after restart
-  ([native runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
+- `@maplibre/maplibre-react-native@11.5.0` renders the shared vector map style.
+  Its [Expo plugin](https://maplibre.org/maplibre-react-native/docs/setup/expo/)
+  is configured in `app.json` and requires a rebuilt native binary. Verify routes,
+  Start/Finish markers, chart hover/release, clustering and remount behavior in
+  the new binary before release. Native dependency changes produce a new
+  [fingerprint runtime](https://docs.expo.dev/eas-update/runtime-versions/).
 
 ## Testing
 
@@ -484,7 +476,7 @@ Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
-`expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
+`expo-apple-authentication@58.0.2`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves

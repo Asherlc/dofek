@@ -1,28 +1,14 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
 
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-      x: 0,
-      y: 0,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/15/5242/12665.png",
-      x: 256,
-      y: 0,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.4194, 37.7749] satisfies [number, number],
+  zoom: 14,
   routePath: null,
 };
 
@@ -38,67 +24,181 @@ function location(
   };
 }
 
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
+
+const captureException = vi.hoisted(() => vi.fn());
+vi.mock("../lib/telemetry.ts", () => ({ captureException }));
+beforeEach(() => {
+  resetMaps();
+  captureException.mockClear();
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get: () => 512,
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get: () => 288,
+  });
+});
+afterEach(() => vi.unstubAllGlobals());
 describe("ActivityMapTile", () => {
-  it("shows processing until every map tile has loaded", () => {
+  it("snapshots a non-interactive shared map then releases its WebGL context", async () => {
     render(<ActivityMapTile location={location()} />);
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    const tiles = screen.getAllByTestId("activity-map-preview-tile");
-    const first = tiles[0];
-    const second = tiles[1];
-    if (!first || !second) throw new Error("Expected two map tiles");
-    fireEvent.load(first);
-    fireEvent.load(first);
-    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    fireEvent.load(second);
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  it("resets processing and errors when the preview changes", () => {
-    const view = render(<ActivityMapTile location={location()} />);
-    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
-    expect(screen.queryByRole("status")).toBeNull();
-    const replacement = location({
-      mapPreview: {
-        ...mapPreview,
-        tiles: [
-          {
-            url: "https://tile.openstreetmap.org/15/5243/12665.png",
-            x: 0,
-            y: 0,
-            width: 256,
-            height: 256,
-          },
-        ],
-      },
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.options).toMatchObject({
+      center: mapPreview.center,
+      zoom: 14,
+      interactive: false,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
     });
-    view.rerender(<ActivityMapTile location={replacement} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    fireEvent.error(screen.getByTestId("activity-map-preview-tile"));
-    expect(screen.getByText("Map unavailable")).toBeInTheDocument();
-    expect(screen.queryByText("Processing map…")).toBeNull();
-    view.rerender(<ActivityMapTile location={location()} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
-    expect(screen.queryByText("Map unavailable")).toBeNull();
+    act(() => maps[0]?.fire("idle"));
+    expect(await screen.findByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
+    expect(maps[0]?.remove).toHaveBeenCalledOnce();
     expect(screen.queryByRole("status")).toBeNull();
   });
-
-  it("reserves the map panel while server location data is processing", () => {
+  it("bounds simultaneous thumbnail renderers and defers offscreen requests", async () => {
+    const intersections: ((visible: boolean) => void)[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          intersections.push((visible) => callback([{ isIntersecting: visible }]));
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    render(
+      <>
+        <ActivityMapTile location={location()} />
+        <ActivityMapTile location={location()} />
+      </>,
+    );
+    expect(maps).toHaveLength(0);
+    act(() => {
+      for (const enter of intersections) enter(true);
+    });
+    await waitFor(() => expect(maps).toHaveLength(1));
+    act(() => maps[0]?.fire("idle"));
+    await waitFor(() => expect(maps).toHaveLength(2));
+    expect(maps[0]?.remove).toHaveBeenCalledOnce();
+    act(() => maps[1]?.fire("idle"));
+  });
+  it("releases a stalled preview so the next visible map can render", async () => {
+    vi.useFakeTimers();
+    render(
+      <>
+        <ActivityMapTile location={location()} />
+        <ActivityMapTile location={location()} />
+      </>,
+    );
+    try {
+      await vi.waitFor(() => expect(maps).toHaveLength(1));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(maps[0]?.remove).toHaveBeenCalledOnce();
+      expect(captureException).toHaveBeenCalledOnce();
+      expect(maps).toHaveLength(2);
+      expect(screen.getByText("Map unavailable. Check your connection.")).toBeVisible();
+      act(() => maps[1]?.fire("idle"));
+      expect(screen.getByTestId("activity-map-snapshot")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("letterboxes the complete camera and overlays at differing panel proportions", async () => {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get: () => 512,
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get: () => 200,
+    });
+    render(<ActivityMapTile location={location()} variant="panel" />);
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.options.zoom).toBe(14);
+    expect(parseFloat(screen.getByTestId("activity-map-preview").style.width)).toBeCloseTo(
+      (1024 * 200) / 576,
+      2,
+    );
+    expect(screen.getByTestId("activity-map-preview")).toHaveStyle({ height: "200px" });
+    act(() => maps[0]?.fire("idle"));
+  });
+  it("renders a global route at its reference camera before shrinking a tiny thumbnail", async () => {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get: () => 64,
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get: () => 48,
+    });
+    render(
+      <ActivityMapTile
+        variant="thumbnail"
+        location={location({
+          mapPreview: {
+            ...mapPreview,
+            zoom: 0,
+            routePath: [
+              { x: 0, y: 288 },
+              { x: 1024, y: 288 },
+            ],
+          },
+        })}
+      />,
+    );
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.options.zoom).toBe(0);
+    expect(maps[0]?.container).toHaveStyle({
+      width: "1024px",
+      height: "576px",
+      transform: "scale(0.0625)",
+      transformOrigin: "top left",
+    });
+    expect(screen.getByTestId("activity-map-preview")).toHaveStyle({
+      width: "64px",
+      height: "36px",
+    });
+    expect(screen.getByTestId("activity-route-overlay")).toHaveAttribute("viewBox", "0 0 1024 576");
+    act(() => maps[0]?.fire("idle"));
+    expect(await screen.findByTestId("activity-map-snapshot")).toHaveClass("h-full", "w-full");
+  });
+  it("retains a snapshot across identical refetches and resets for a changed camera", async () => {
+    const view = render(<ActivityMapTile location={location()} />);
+    await waitFor(() => expect(maps).toHaveLength(1));
+    act(() => maps[0]?.fire("idle"));
+    const image = await screen.findByTestId("activity-map-snapshot");
+    view.rerender(<ActivityMapTile location={location({ mapPreview: { ...mapPreview } })} />);
+    expect(screen.getByTestId("activity-map-snapshot")).toBe(image);
+    view.rerender(
+      <ActivityMapTile location={location({ mapPreview: { ...mapPreview, zoom: 15 } })} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    await waitFor(() => expect(maps).toHaveLength(2));
+    act(() => maps[1]?.fire("idle"));
+  });
+  it("reports failed background requests while preserving source geometry", async () => {
+    render(<ActivityMapTile location={location()} />);
+    await waitFor(() => expect(maps).toHaveLength(1));
+    act(() => maps[0]?.fire("error", { error: new Error("offline") }));
+    expect(screen.getByRole("status")).toHaveTextContent("Map unavailable. Check your connection.");
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(maps[0]?.remove).toHaveBeenCalledOnce();
+  });
+  it("reserves the map panel during server processing", () => {
     render(<ActivityMapTile location={{ kind: "processing" }} variant="panel" />);
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    expect(screen.getByTestId("activity-map-tile")).toHaveClass("min-h-48");
-    expect(screen.queryByTestId("activity-map-preview-tile")).toBeNull();
+    expect(maps).toHaveLength(0);
   });
-
-  it("keeps a loaded map visible when a refetch returns the same preview", () => {
-    const view = render(<ActivityMapTile location={location()} />);
-    const tiles = screen.getAllByTestId("activity-map-preview-tile");
-    for (const tile of tiles) fireEvent.load(tile);
-    view.rerender(<ActivityMapTile location={location({ mapPreview: { ...mapPreview } })} />);
-    expect(screen.getAllByTestId("activity-map-preview-tile")[0]).toBe(tiles[0]);
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
   it("draws source-owned Area and Climb points without connecting them as a track", () => {
     render(
       <ActivityMapTile
@@ -185,33 +285,6 @@ describe("ActivityMapTile", () => {
     expect(tile.className).not.toContain("aspect-[16/9]");
   });
 
-  it("replaces failed map tiles with a fallback", () => {
-    render(<ActivityMapTile location={location()} />);
-    fireEvent.error(screen.getAllByTestId("activity-map-preview-tile")[0] ?? document.body);
-
-    expect(screen.getByText("Map unavailable")).toBeDefined();
-  });
-
-  it("allows map tile requests to include the page origin as the referrer", () => {
-    render(<ActivityMapTile location={location()} />);
-
-    expect(
-      screen.getAllByTestId("activity-map-preview-tile")[0]?.getAttribute("referrerpolicy"),
-    ).toBe("origin");
-  });
-
-  it("renders a positioned multi-tile map preview at exported pixel size", () => {
-    render(<ActivityMapTile location={location()} />);
-
-    expect(screen.getByTestId("activity-map-preview").getAttribute("data-preview-width")).toBe(
-      "1024",
-    );
-    expect(screen.getAllByTestId("activity-map-preview-tile")).toHaveLength(2);
-    expect(screen.getAllByTestId("activity-map-preview-tile")[1]?.getAttribute("style")).toContain(
-      "left: 25%",
-    );
-  });
-
   it("draws a smoothed route overlay when a map tile includes route path points", () => {
     render(
       <ActivityMapTile
@@ -258,24 +331,6 @@ describe("ActivityMapTile", () => {
 
     expect(screen.queryByText("5.0 km")).toBeNull();
     expect(screen.queryByText("120 m")).toBeNull();
-  });
-
-  it("keeps the map tile at its original scale so labels stay readable", () => {
-    render(
-      <ActivityMapTile
-        location={location({
-          mapPreview: {
-            ...mapPreview,
-            routePath: [
-              { x: 5, y: 5 },
-              { x: 15, y: 15 },
-            ],
-          },
-        })}
-      />,
-    );
-
-    expect(screen.getByTestId("activity-route-viewport").getAttribute("style")).toBeNull();
   });
 
   it("uses a restrained route stroke over the map tile", () => {

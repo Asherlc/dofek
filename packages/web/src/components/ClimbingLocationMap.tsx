@@ -1,6 +1,9 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingLocationMap as ClimbingLocationMapData } from "@dofek/training/climbing-location-map";
+import { createMapStyle } from "@dofek/training/map-style";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
+import { loadMapLibre, mapColorMode, mapDot, watchMapTheme } from "../lib/maplibre.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { ClimbingLogAttachment } from "./ClimbingLogAttachment.tsx";
 import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
@@ -17,7 +20,8 @@ export function ClimbingLocationMap({
 }) {
   const containerRef = useRef<HTMLElement>(null);
   const attachmentEntryElementRef = useRef<HTMLLIElement>(null);
-  const mapRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const themeCleanup = useRef<() => void>(() => {});
   const fittedBoundsRef = useRef<ClimbingLocationMapData["bounds"]>(null);
   const [mapLoading, setMapLoading] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -31,6 +35,7 @@ export function ClimbingLocationMap({
 
   useEffect(
     () => () => {
+      themeCleanup.current();
       mapRef.current?.remove();
       mapRef.current = null;
       fittedBoundsRef.current = null;
@@ -50,106 +55,91 @@ export function ClimbingLocationMap({
     let removeDots: (() => void) | undefined;
     setMapError(null);
 
-    import("leaflet")
-      .then((L) => {
+    loadMapLibre()
+      .then((M) => {
         if (cancelled) return;
         let map = mapRef.current;
         if (!map) {
-          map = L.map(container, { minZoom: 0, maxZoom: 19 });
+          setMapLoading(true);
+          setTileWarning(null);
+          map = new M.Map({
+            container,
+            style: createMapStyle(mapColorMode()),
+            minZoom: 0,
+            maxZoom: 18,
+            attributionControl: {},
+          });
           mapRef.current = map;
           const activeMap = map;
-          const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            maxZoom: 19,
-            attribution:
-              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          });
-          let tileErrorReported = false;
-          tiles.once("load", () => {
+          map.addControl(new M.NavigationControl({ showCompass: false }), "top-right");
+          themeCleanup.current = watchMapTheme(map);
+          map.once("load", () => {
             if (mapRef.current === activeMap) setMapLoading(false);
           });
-          tiles.on("tileerror", () => {
-            if (mapRef.current !== activeMap || tileErrorReported) return;
-            tileErrorReported = true;
-            const error = new Error("Map tiles could not load. Check your connection.");
-            captureException(error, { component: "ClimbingLocationMap" });
+          let errorReported = false;
+          map.on("error", (event) => {
+            if (mapRef.current !== activeMap || errorReported) return;
+            errorReported = true;
+            captureException(event.error, { component: "ClimbingLocationMap" });
             setTileWarning("Some map tiles could not load. Check your connection.");
             setMapLoading(false);
           });
-          tiles.addTo(map);
         }
         const activeMap = map;
-        activeMap.invalidateSize();
-        const fittedBounds = fittedBoundsRef.current;
+        activeMap.resize();
+        const fitted = fittedBoundsRef.current;
         if (
-          !fittedBounds ||
-          fittedBounds.south !== bounds.south ||
-          fittedBounds.west !== bounds.west ||
-          fittedBounds.north !== bounds.north ||
-          fittedBounds.east !== bounds.east
+          !fitted ||
+          fitted.south !== bounds.south ||
+          fitted.west !== bounds.west ||
+          fitted.north !== bounds.north ||
+          fitted.east !== bounds.east
         ) {
           activeMap.fitBounds(
             [
-              [bounds.south, bounds.west],
-              [bounds.north, bounds.east],
+              [bounds.west, bounds.south],
+              [bounds.east < bounds.west ? bounds.east + 360 : bounds.east, bounds.north],
             ],
-            { padding: [30, 30], maxZoom: 15, animate: false },
+            { padding: 30, maxZoom: 14, duration: 0 },
           );
           fittedBoundsRef.current = bounds;
         }
-
-        const dots = L.layerGroup().addTo(activeMap);
+        let dots: ReturnType<typeof mapDot>[] = [];
         const renderDots = () => {
-          dots.clearLayers();
-          const zoom = Math.floor(activeMap.getZoom());
+          for (const dot of dots) dot.remove();
+          dots = [];
+          // Server bands use the original 256px tile convention; MapLibre uses 512px.
+          const zoom = Math.floor(activeMap.getZoom() + 1);
           for (const node of data.nodes) {
             if (zoom < node.minZoom || zoom > node.maxZoom) continue;
             const { latitude, longitude } = node.coordinates;
-            const clustered = node.expansionZoom !== null;
             const name = node.count === 1 ? node.entries[0]?.label : `${node.count} climbs`;
-            const label = `${name ?? "Climb"}. ${clustered ? "Zoom in to explore." : "Show climb details."}`;
-            const tooltip = document.createElement("span");
-            tooltip.textContent = label;
-            Object.assign(tooltip.style, {
-              display: "block",
-              width: "max-content",
-              maxWidth: "240px",
-              whiteSpace: "normal",
-              overflowWrap: "anywhere",
-            });
-            const dot = L.circleMarker([latitude, longitude], {
-              radius: node.radius,
-              color: DOT_COLOR,
-              fillColor: DOT_COLOR,
-              fillOpacity: 0.8,
-              weight: 2,
-            })
-              .bindTooltip(tooltip)
-              .addTo(dots);
-            dot.on("click", () => {
-              if (node.expansionZoom !== null) {
-                setSelectedNodeId(null);
-                activeMap.setView([latitude, longitude], node.expansionZoom, { animate: false });
-              } else {
-                setSelectedNodeId(node.id);
-              }
-            });
-            const element = dot.getElement();
-            element?.setAttribute("role", "button");
-            element?.setAttribute("tabindex", "0");
-            element?.setAttribute("aria-label", label);
-            element?.addEventListener("focus", () => dot.openTooltip());
-            element?.addEventListener("blur", () => dot.closeTooltip());
-            element?.addEventListener("keydown", (event) => {
-              if (!(event instanceof KeyboardEvent)) return;
-              if (event.key !== "Enter" && event.key !== " ") return;
-              event.preventDefault();
-              dot.fire("click");
-            });
+            const label = `${name ?? "Climb"}. ${node.expansionZoom !== null ? "Zoom in to explore." : "Show climb details."}`;
+            dots.push(
+              mapDot(M, activeMap, [longitude, latitude], {
+                color: DOT_COLOR,
+                radius: node.radius,
+                label,
+                count: node.count,
+                onSelect: () => {
+                  if (node.expansionZoom !== null) {
+                    setSelectedNodeId(null);
+                    activeMap.jumpTo({
+                      center: [longitude, latitude],
+                      zoom: node.expansionZoom - 1,
+                    });
+                  } else setSelectedNodeId(node.id);
+                },
+              }),
+            );
           }
         };
+        const observer = new ResizeObserver(() => activeMap.resize());
+        observer.observe(container);
         removeDots = () => {
           activeMap.off("zoomend", renderDots);
-          dots.remove();
+          for (const dot of dots) dot.remove();
+          observer.disconnect();
         };
         renderDots();
         activeMap.on("zoomend", renderDots);
@@ -157,6 +147,11 @@ export function ClimbingLocationMap({
       .catch((error: unknown) => {
         if (cancelled) return;
         captureException(error, { component: "ClimbingLocationMap" });
+        removeDots?.();
+        themeCleanup.current();
+        mapRef.current?.remove();
+        mapRef.current = null;
+        fittedBoundsRef.current = null;
         setMapError(error instanceof Error ? error.message : String(error));
         setMapLoading(false);
       });

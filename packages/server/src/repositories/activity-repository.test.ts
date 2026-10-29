@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import { ActivityRepository, StreamPoint } from "./activity-repository.ts";
 import { getActivityMapReadiness } from "./activity-route-preview.ts";
 
@@ -294,7 +294,7 @@ describe("ActivityRepository", () => {
           kind: "recorded_gps",
           centroidLat: 37.8,
           centroidLng: -122.4,
-          mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
+          mapPreview: routeMapPreview([{ lat: 37.8, lng: -122.4 }]),
         },
       ]);
     });
@@ -816,7 +816,7 @@ describe("ActivityRepository", () => {
         location: {
           centroidLat: 37.7749,
           centroidLng: -122.4194,
-          mapPreview: osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]),
+          mapPreview: routeMapPreview([{ lat: 37.7749, lng: -122.4194 }]),
         },
         distance_meters: 5000,
         distance_state: { status: "available" },
@@ -918,7 +918,7 @@ describe("ActivityRepository", () => {
       const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
 
       expect(result.items[0]?.location).toMatchObject({
-        mapPreview: osmTilePreview([
+        mapPreview: routeMapPreview([
           { lat: 37.7749, lng: -122.4194 },
           { lat: 37.7752, lng: -122.4188 },
           { lat: 37.7756, lng: -122.4182 },
