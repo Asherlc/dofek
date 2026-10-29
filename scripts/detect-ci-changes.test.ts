@@ -38,6 +38,9 @@ describe("CI change detector", () => {
     "deploy/ota/Dockerfile",
     "deploy/ota/upstream.patch",
     ".github/workflows/build-ota.yml",
+    "scripts/check-ota-image-visibility.ts",
+    "package.json",
+    "pnpm-lock.yaml",
   ])("selects the OTA image for its build input %s", (changedFile) => {
     expect(detectChangedAreas(changedFile).docker_ota).toBe(true);
   });

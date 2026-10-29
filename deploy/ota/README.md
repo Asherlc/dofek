@@ -11,6 +11,11 @@ errors; the [upstream repository](https://github.com/mercuretechnologies/xprem/b
 still skips metadata errors. Executable HTTP tests cover both faults, malformed
 metadata, incomplete uploads, empty runtimes, and complete manifests. They use
 real filesystem failures and the normal server router.
+Corrupt metadata in a newer update also blocks older candidates in that
+branch/runtime with HTTP 500. This is intentional: storage corruption must not
+silently choose an older update or become a successful empty response. Inspect
+the failed object, preserve evidence, and repair or remove the invalid upload
+through an explicit storage operation before publishing again.
 
 ## Build
 
@@ -87,6 +92,10 @@ production bucket into `snapshots/<id>/`; the second copies that snapshot into
 1.75.2, [copy --immutable](https://rclone.org/commands/rclone_copy/) and
 [check --download](https://rclone.org/commands/rclone_check/) to compare bytes,
 rather than relying on S3 multipart ETags. Empty sources fail before copying.
+The destination is locked as objects arrive, before verification. A failed copy
+or verification consumes that snapshot ID; retain its run as failed evidence
+and use a fresh ID after resolving the error. Never treat a failed run as a
+recovery point or remove retention merely to reuse its name.
 Existing Infisical `R2_ENDPOINT`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
 must permit both buckets; a denied list/read/write stops the operation.
 

@@ -282,10 +282,12 @@ function classifyChanges(
     analytics: analyticsChange,
     docker_ml:
       mlChange || hasMatchingFile(changedFiles, /^\.github\/workflows\/build-docker-ml\.yml$/),
-    docker_ota: hasMatchingFile(
-      changedFiles,
-      /^(?:deploy\/ota\/|\.github\/workflows\/build-ota\.yml$)/,
-    ),
+    docker_ota:
+      globalPackageChange ||
+      hasMatchingFile(
+        changedFiles,
+        /^(?:deploy\/ota\/|\.github\/workflows\/build-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
+      ),
     docker_server: serverChange,
     e2e_web:
       serverChange ||
