@@ -194,8 +194,11 @@ function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
       ).values(),
     ];
     const chartAnnotations = [
-      ...(match.log.chartAnnotations ?? []),
-      ...(log.chartAnnotations ?? []),
+      ...new Map(
+        [...(match.log.chartAnnotations ?? []), ...(log.chartAnnotations ?? [])].map(
+          (annotation) => [JSON.stringify([annotation.startedAt, annotation.endedAt]), annotation],
+        ),
+      ).values(),
     ];
     Object.assign(match.log, preferred, {
       photoLogEntryId,

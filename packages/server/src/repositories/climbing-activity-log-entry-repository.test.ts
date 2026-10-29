@@ -39,6 +39,28 @@ function repository(logs: ClimbingLogEntryDetail[]) {
 }
 describe("ClimbingActivityLogEntryRepository", () => {
   it.each([false, true])(
+    "plots a consolidated API/export ascent once while retaining separate same-provider ascents (API first: %s)",
+    async (apiFirst) => {
+      const api = named("kaya");
+      api.externalId = "kaya:ascent:123";
+      api.raw = { date: "2026-07-06T22:21:59Z" };
+      const exported = named("kaya-export", "20000000-0000-4000-8000-000000000011");
+      exported.externalId = "kaya:entry:123";
+      exported.raw = { date: "Mon Jul 06 2026 22:21:59 GMT+0000 (GMT+00:00)" };
+      const repeated = named("kaya", "20000000-0000-4000-8000-000000000012");
+      repeated.externalId = "kaya:ascent:124";
+      repeated.raw = api.raw;
+      const logs = (
+        await repository([
+          ...(apiFirst ? [api, exported] : [exported, api]),
+          repeated,
+        ]).getActivityLogEntries("activity")
+      ).map((log) => log.toDetail());
+      expect(logs).toHaveLength(2);
+      expect(logs.map((log) => log.chartAnnotations?.length)).toEqual([1, 1]);
+    },
+  );
+  it.each([false, true])(
     "preserves timed climbs when a richer source wins (KAYA first: %s)",
     async (kayaFirst) => {
       const kaya = named("kaya");
