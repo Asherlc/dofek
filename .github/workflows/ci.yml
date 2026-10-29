@@ -57,7 +57,7 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [build-mobile, build-web, build-zepp, test]
+    needs: [build-mobile, build-web, build-zepp, build-ota, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -67,6 +67,7 @@ jobs:
             "${{ needs.build-mobile.result }}" \
             "${{ needs.build-web.result }}" \
             "${{ needs.build-zepp.result }}" \
+            "${{ needs.build-ota.result }}" \
             "${{ needs.test.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "CI gate failed"
@@ -92,6 +93,12 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' || needs.detect-changes.outputs.docker_server == 'true'
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
+
+  build-ota:
+    name: Build OTA
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docker_ota == 'true'
+    uses: ./.github/workflows/build-ota.yml
 
   build-docker-ml:
     name: Build Docker ML

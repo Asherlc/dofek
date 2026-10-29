@@ -1,0 +1,48 @@
+name: Build OTA
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build OTA server
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check out official xprem 3.2.7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mercuretechnologies/xprem
+          ref: 071f6d907527d7de1ba21dd0be23a6ba669a2b1c
+          path: .ota-upstream
+          persist-credentials: false
+      - name: Apply storage-error correction
+        working-directory: .ota-upstream
+        run: git apply ../deploy/ota/upstream.patch
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+      - name: Run upstream and storage-failure tests
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .ota-upstream
+          file: deploy/ota/Dockerfile
+          target: test
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=ota-server
+          cache-to: type=gha,scope=ota-server,mode=max
+      - name: Build runtime image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .ota-upstream
+          file: deploy/ota/Dockerfile
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=ota-server
+          cache-to: type=gha,scope=ota-server,mode=max
