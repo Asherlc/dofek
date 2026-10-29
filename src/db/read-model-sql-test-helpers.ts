@@ -18,7 +18,11 @@ export function compactWhitespace(value: string): string {
 
 export function renderDbtModelSql(
   modelSql: string,
-  options: { isIncremental: boolean; activityRefreshScoped?: boolean },
+  options: {
+    isIncremental: boolean;
+    activityRefreshScoped?: boolean;
+    activityStepCadenceRepairScoped?: boolean;
+  },
 ): string {
   const withOrigin = modelSql.replace(/\{\{\s*activity_origin\(\)\s*\}\}/g, () => {
     const macro = readFileSync(
@@ -60,7 +64,11 @@ interface DbtBooleanFrame {
 
 function renderDbtBooleanBranches(
   modelSql: string,
-  options: { isIncremental: boolean; activityRefreshScoped?: boolean },
+  options: {
+    isIncremental: boolean;
+    activityRefreshScoped?: boolean;
+    activityStepCadenceRepairScoped?: boolean;
+  },
 ): string {
   const frames: DbtBooleanFrame[] = [];
   let renderedSql = "";
@@ -103,6 +111,7 @@ function renderDbtBooleanBranches(
     frames.pop();
     const booleanConditions = new Map<string, boolean | undefined>([
       ["is_incremental()", options.isIncremental],
+      ["activity_step_cadence_repair_scoped", options.activityStepCadenceRepairScoped ?? false],
       ["activity_refresh_scoped", options.activityRefreshScoped],
       [
         "not activity_refresh_scoped",

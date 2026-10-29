@@ -1,4 +1,14 @@
 import { randomUUID } from "node:crypto";
+import type { createClient } from "@clickhouse/client";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import {
+  type ActivityIntegrityClickHouseClient,
+  queryClickHouseRows,
+} from "./activity-data-integrity-clickhouse.ts";
+import { TEST_USER_ID } from "./schema/core.ts";
+import type { TestContext } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 export function runningRevisionFixture(userId: string) {
   const records = Array.from({ length: 101 }, (_, index) => ({
@@ -71,5 +81,70 @@ export function runningRevisionFixture(userId: string) {
     revisedActivityRows: activityRows(true),
     initialStepRows: stepRows(false),
     revisedStepRows: stepRows(true),
+  };
+}
+
+export async function mirrorRunningLocalTime(
+  context: TestContext,
+  client: ReturnType<typeof createClient>,
+  database: string,
+  activityIds: readonly string[],
+): Promise<void> {
+  const states = await executeWithSchema(
+    context.db,
+    z.object({
+      id: z.string(),
+      timezone: z.string().nullable(),
+      start_utc_offset_minutes: z.number().nullable(),
+      end_utc_offset_minutes: z.number().nullable(),
+      local_time_source: z.string(),
+    }),
+    sql`SELECT id,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source
+    FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND id=ANY(${activityIds}::uuid[])`,
+  );
+  const current = await queryClickHouseRows(
+    client,
+    z.object({ id: z.string(), _peerdb_version: z.string() }).passthrough(),
+    `SELECT * REPLACE(toString(_peerdb_version) AS _peerdb_version) FROM ${database}.activity FINAL WHERE user_id={user:UUID} AND id IN {ids:Array(UUID)}`,
+    { user: TEST_USER_ID, ids: activityIds },
+  );
+  const byId = new Map(states.map((row) => [row.id, row]));
+  await client.insert({
+    table: `${database}.activity`,
+    format: "JSONEachRow",
+    values: current.map((row) => {
+      const state = byId.get(row.id);
+      if (!state) throw new Error(`Missing committed PostgreSQL fixture activity ${row.id}`);
+      return {
+        ...row,
+        ...state,
+        _peerdb_version: String(BigInt(row._peerdb_version) + 100n),
+        _peerdb_synced_at: "2026-09-02 17:00:00",
+      };
+    }),
+  });
+}
+
+export function failSecondCadenceBatch(
+  client: ReturnType<typeof createClient>,
+  scoped: ActivityIntegrityClickHouseClient,
+  database: string,
+): ActivityIntegrityClickHouseClient {
+  let injected = false;
+  return {
+    ...scoped,
+    query: async (options) => {
+      if (
+        !injected &&
+        options.query.includes(".activity_step_cadence_rows FINAL") &&
+        options.query.includes("toString(refresh_version)") &&
+        Array.isArray(options.query_params?.activityIds) &&
+        options.query_params.activityIds.length === 1
+      ) {
+        injected = true;
+        await client.command({ query: `DROP TABLE ${database}.metric_stream_day_change SYNC` });
+      }
+      return scoped.query(options);
+    },
   };
 }

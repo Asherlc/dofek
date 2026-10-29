@@ -18,15 +18,20 @@ const member = randomUUID();
 const workout = randomUUID();
 const database = `running_cadence_${randomUUID().replaceAll("-", "")}`;
 let client: ClickHouseClient;
-function render(name: string, scopedIds?: string[], isIncremental = true) {
+function render(name: string, scopedIds?: string[], isIncremental = true, exactIds?: string[]) {
   return renderDbtModelSql(readModelSql(`${name}.sql`), {
     isIncremental,
     activityRefreshScoped: scopedIds !== undefined,
+    activityStepCadenceRepairScoped: exactIds !== undefined,
   })
     .replaceAll('{{ var("activity_refresh_user_id") }}', user)
     .replaceAll(
       "{{ activity_refresh_ids() }}",
       `CAST([${(scopedIds ?? []).map((id) => `'${id}'`).join(",")}], 'Array(UUID)')`,
+    )
+    .replaceAll(
+      "{{ activity_step_cadence_repair_ids() }}",
+      `CAST([${(exactIds ?? []).map((id) => `'${id}'`).join(",")}], 'Array(UUID)')`,
     )
     .replaceAll("{{ initial_lookback_days }}", "10000")
     .replaceAll("{{ activity_step_cadence_batch_size }}", "100")
@@ -35,8 +40,10 @@ function render(name: string, scopedIds?: string[], isIncremental = true) {
     .replace(/{{ source\('[^']+', '([^']+)'\) }}/g, `${database}.$1`)
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1");
 }
-async function run(name: string, scopedIds?: string[]) {
-  await client.command({ query: `INSERT INTO ${database}.${name} ${render(name, scopedIds)}` });
+async function run(name: string, scopedIds?: string[], exactIds?: string[]) {
+  await client.command({
+    query: `INSERT INTO ${database}.${name} ${render(name, scopedIds, true, exactIds)}`,
+  });
 }
 async function rows(table: string, fields = "*") {
   const result = await client.query({
@@ -60,7 +67,7 @@ async function steps(
   options: {
     id?: string;
     bundle?: string;
-    device?: string;
+    device?: string | null;
     uuids?: string[];
     deleted?: number;
     version?: number;
@@ -78,7 +85,7 @@ async function steps(
         recorded_at: `2026-10-01 ${start}`,
         channel: "step_count",
         external_id: `hk:${id}`,
-        device_id: options.device ?? "Watch",
+        device_id: options.device === undefined ? "Watch" : options.device,
         scalar: count,
         metadata: JSON.stringify({
           interval_end: `2026-10-01T${end}Z`,
@@ -307,6 +314,87 @@ describe("running step cadence read model", () => {
     await run("activity_step_cadence_rows");
     expect((await rows("activity_step_cadence_rows"))[0]?.avg_cadence).toBe(200);
   });
+  it.each([false, true])(
+    "resolves all bundle names before choosing device priority (reverse=%s)",
+    async (reverse) => {
+      await client.command({
+        query: `INSERT INTO ${database}.sensor_device_priority VALUES
+      ('apple_health','cadence','Preferred%',40,0,1),
+      ('apple_health','cadence','Preferred Watch',2,0,1),
+      ('apple_health','cadence','Lesser Watch',20,0,1),
+      ('apple_health','cadence','Phone',10,0,1)`,
+      });
+      await client.command({
+        query: `INSERT INTO ${database}.sensor_provider_priority VALUES ('apple_health','cadence',0,0,1)`,
+      });
+      const intervals = [
+        { start: "08:00:00", end: "08:01:00", device: "Lesser Watch" },
+        { start: "08:01:00", end: "08:02:00", device: "Preferred Watch" },
+        { start: "08:02:00", end: "08:03:00", device: "Unmatched" },
+      ];
+      for (const interval of reverse ? intervals.reverse() : intervals) {
+        await steps(interval.start, interval.end, 180, { device: interval.device });
+      }
+      await steps("08:00:00", "08:01:00", 150, { bundle: "com.phone", device: "Phone" });
+      await run("activity_step_cadence_rows");
+      expect(
+        await rows("activity_step_cadence_rows", "avg_cadence,source_device,source_bundle"),
+      ).toEqual([
+        { avg_cadence: 180, source_device: "Preferred Watch", source_bundle: "com.apple.watch" },
+      ]);
+    },
+  );
+  it.each([false, true])(
+    "breaks device-name ties lexically and preserves nullable fallback (reverse=%s)",
+    async (reverse) => {
+      await client.command({
+        query: `INSERT INTO ${database}.sensor_device_priority VALUES
+      ('apple_health','cadence','Alpha',2,0,1),('apple_health','cadence','Zulu',2,0,1)`,
+      });
+      const names = reverse ? ["Alpha", "Zulu"] : ["Zulu", "Alpha"];
+      await steps("08:00:00", "08:01:00", 180, { device: names[0] });
+      await steps("08:01:00", "08:02:00", 180, { device: names[1] });
+      await run("activity_step_cadence_rows");
+      expect((await rows("activity_step_cadence_rows"))[0]).toMatchObject({
+        avg_cadence: 180,
+        source_device: "Alpha",
+      });
+      await client.command({ query: `TRUNCATE TABLE ${database}.sensor_device_priority` });
+      await run("activity_step_cadence_rows", [member]);
+      expect((await rows("activity_step_cadence_rows"))[0]).toMatchObject({
+        avg_cadence: 180,
+        source_device: "Alpha",
+      });
+    },
+  );
+  it("retains all-null names and matches the existing empty-name rule", async () => {
+    await steps("08:00:00", "08:01:00", 180, { device: null });
+    await steps("08:00:00", "08:01:00", 150, { bundle: "com.phone", device: "Phone" });
+    await client.command({
+      query: `INSERT INTO ${database}.sensor_device_priority VALUES
+      ('apple_health','cadence','',1,0,1),('apple_health','cadence','Phone',10,0,1)`,
+    });
+    await run("activity_step_cadence_rows");
+    expect((await rows("activity_step_cadence_rows"))[0]).toMatchObject({
+      avg_cadence: 180,
+      source_device: null,
+    });
+  });
+  it("uses actual bundle names ahead of absent metadata when matching device rules", async () => {
+    await steps("08:00:00", "08:01:00", 180, { device: null });
+    await steps("08:01:00", "08:02:00", 180, { device: "Named" });
+    await steps("08:00:00", "08:01:00", 150, { bundle: "com.phone", device: "Other" });
+    await client.command({
+      query: `INSERT INTO ${database}.sensor_device_priority VALUES
+      ('apple_health','cadence','',1,0,1),('apple_health','cadence','Named',10,0,1),('apple_health','cadence','Other',5,0,1)`,
+    });
+    await run("activity_step_cadence_rows");
+    expect((await rows("activity_step_cadence_rows"))[0]).toMatchObject({
+      avg_cadence: 150,
+      source_device: "Other",
+      source_bundle: "com.phone",
+    });
+  });
   it("consumes latest corrections, parent deletions, and restoration without retaining stale summary cadence", async () => {
     const id = await steps("08:00:00", "08:01:00", 150);
     await run("activity_step_cadence_rows");
@@ -485,6 +573,21 @@ describe("running step cadence read model", () => {
     expect(
       (await rows("activity_step_cadence_rows")).every((row) => row.avg_cadence === null),
     ).toBe(true);
+  });
+  it("keeps global association ambiguity outside an exact canonical repair batch", async () => {
+    const otherGroup = randomUUID(),
+      otherWorkout = randomUUID();
+    await activity(otherGroup, randomUUID(), otherWorkout);
+    await steps("08:00:00", "08:01:00", 150, { uuids: [workout, otherWorkout] });
+    await run("activity_step_cadence_rows", [member], [group]);
+    expect(await rows("activity_step_cadence_rows", "activity_id,avg_cadence")).toEqual([
+      { activity_id: group, avg_cadence: null },
+    ]);
+  });
+  it("selects zero keys for an explicitly empty exact batch", async () => {
+    await steps("08:00:00", "08:01:00", 150);
+    await run("activity_step_cadence_rows", [member], []);
+    expect(await rows("activity_step_cadence_rows")).toEqual([]);
   });
   it("invalidates previous membership, scoped member repairs and changed group bounds", async () => {
     await steps("08:00:00", "08:01:00", 150);

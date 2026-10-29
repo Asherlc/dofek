@@ -65,12 +65,12 @@ required on the final head; do not alter workflow settings or service limits.
 
 **Interfaces:** `runActivityIntegrityDbtBuild(input: ActivityIntegrityDbtBuildInput, clickHouse: ActivityIntegrityClickHouseClient): Promise<void>`. Keep injected `rebuildReadModels(input)` shape via production default closures. The identity resolver returns `{ activityIds: readonly string[]; cadenceActivityIds: readonly string[] }` for one user. Exact `activity_step_cadence_repair_activity_ids` dbt batches contain at most 100 canonical IDs; explicit `[]` selects zero.
 
-- [ ] Write RED engine tests for 101+ canonical keys reached through real member/revision aliases, stale cadence and summary correction, old-group tombstones, rollback and foreign-user fencing.
-- [ ] Write RED empty-initial-target and middle-batch failure cases; unit-test finite phase sequencing and failure propagation without substituting for engine tests.
-- [ ] Write RED mixed-name bundle selection with reversed input order, specificity/ties and unmatched fallback; assert cadence and selected display name.
-- [ ] Retain pre-upstream aliases, run upstream nine models, freeze expanded canonical scope, process disjoint verified 100-key cadence batches, then downstream five models. Preserve closure caps and fail on incomplete progress.
-- [ ] Replace arbitrary representative priority with all-name configured priority plus stable tie-break, preserving raw source grain.
-- [ ] Run controller-leased focused real-engine tests and relevant types/lint/SQL checks. Freeze review artifact/report.
+- [x] Write RED engine tests for 101+ canonical keys reached through real member/revision aliases, stale cadence and summary correction, old-group tombstones, rollback and foreign-user fencing.
+- [x] Write RED empty-initial-target and middle-batch failure cases; unit-test finite phase sequencing and failure propagation without substituting for engine tests.
+- [x] Write RED mixed-name bundle selection with reversed input order, specificity/ties and unmatched fallback; assert cadence and selected display name.
+- [x] Retain pre-upstream aliases, run upstream nine models, freeze expanded canonical scope, process disjoint verified 100-key cadence batches, then downstream five models. Preserve closure caps and fail on incomplete progress.
+- [x] Replace arbitrary representative priority with all-name configured priority plus stable tie-break, preserving raw source grain.
+- [ ] Run focused real-engine tests and SQL lint in the approved CI environment. Local types/lint and immutable source review pass; hosted engine acceptance remains required.
 
 ## Task 4: Versioned running wire contract and safe rendering
 
@@ -82,11 +82,11 @@ required on the final head; do not alter workflow settings or service limits.
 - [x] Write RED cold GET cache separation with actual running router/cache middleware, both-client request-version tests, malformed/old response rendering, Sentry reporting and valid stale-data preservation. A permissive legacy-first Zod union must not strip valid new metadata or downgrade malformed new payloads.
 - [x] Extract one canonical shared response validation contract, preserve server-only metric/availability computation, and implement version negotiation with the existing custom-range helper. Keep current-version unions first and legacy shapes strict. Move only availability schema/type into the shared training package; keep its computation factory on the server and its existing public imports valid.
 - [x] Update both clients to request version 2 and validate before card/table access. Preserve specific server errors and the accepted missing-metric UI.
-- [ ] Run focused shared/server/web/mobile tests and affected package typechecks/lint; freeze artifact/report for independent review.
+- [x] Run focused shared/server/web/mobile tests and affected package typechecks/lint; freeze artifact/report for independent review.
 
 ## Final review, replies and merge
 
-- [ ] Controller consolidates task reviews and runs Docker-free pre-push lint, root/server/web/mobile types and unit/mobile tests. Run database-backed SQL lint and integrations on CI under the user's approved validation direction. Keep native archive and mutation gates in exact-head CI.
+- [ ] Controller consolidates task reviews and runs Docker-free pre-push lint, Knip, root/server/web/mobile types and unit/mobile tests. Run database-backed SQL lint and integrations on CI under the user's approved validation direction. Keep native archive, strict SwiftLint and mutation gates in exact-head CI.
 - [ ] Commit explicit reviewed paths in coherent commits and push every commit immediately; no force push or branch changes.
 - [ ] Reply to all ten inline findings with concrete fix/evidence/commit links, correcting false premises without dismissing valid concerns; resolve those threads. Reply once to the review body for its native follow-up and three test nits.
 - [ ] Monitor exact final-head required checks and new actionable feedback; fix genuine issues and rerun required checks. Do not administrator-bypass protections.

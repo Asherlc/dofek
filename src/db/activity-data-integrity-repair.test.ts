@@ -1424,6 +1424,7 @@ describe("repairActivityDataIntegrity", () => {
       rollbackEligibility: "eligible",
       failure: { message: "dbt failed" },
     });
+    expect(repairJournalState.record?.phase).toBe("rebuild_failed");
     const rollbackRebuildReadModels = vi.fn(async () => undefined);
     await expect(
       rollbackActivityDataIntegrity(createDatabase(execute), clickhouse, artifactPath, {
@@ -1749,6 +1750,30 @@ describe("rollbackActivityDataIntegrity", () => {
     );
     return { directory, result, rollbackDb };
   }
+
+  it("preserves the committed rollback journal and artifact when rebuilding throws", async () => {
+    const { result, rollbackDb } = await executedArtifact();
+    const clickhouse = createClickHouse([[priorSourceRow]], [priorGroupRows], [], {
+      mirror: [[priorSourceRow]],
+    });
+    const failure = new Error("cadence batch verification failed");
+    const rebuildReadModels = vi.fn(async () => {
+      throw failure;
+    });
+    await expect(
+      rollbackActivityDataIntegrity(rollbackDb, clickhouse, result.artifactPath, {
+        now: () => now,
+        rebuildReadModels,
+      }),
+    ).rejects.toBe(failure);
+    expect(rebuildReadModels).toHaveBeenCalledOnce();
+    expect(repairJournalState.record?.phase).toBe("rollback_committed");
+    expect(JSON.parse(await readFile(result.artifactPath, "utf8"))).toMatchObject({
+      phase: "rollback_committed",
+      rollbackCommit: { updated: 1 },
+    });
+    expect(clickhouse.insert).not.toHaveBeenCalled();
+  });
 
   it("rejects a stale Postgres CAS before writing captured ClickHouse rows", async () => {
     const { result, rollbackDb } = await executedArtifact({ stalePostgres: true });

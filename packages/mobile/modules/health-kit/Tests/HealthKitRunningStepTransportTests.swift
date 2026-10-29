@@ -28,8 +28,10 @@ final class HealthKitRunningStepTransportTests: XCTestCase {
             queries.append(intervals)
             return []
         }
-        XCTAssertEqual(queries, [[DateInterval(start: origin, duration: 12),
-            DateInterval(start: origin.addingTimeInterval(30), duration: 1.125)]])
+        XCTAssertEqual(queries, [[
+            DateInterval(start: origin, duration: 12),
+            DateInterval(start: origin.addingTimeInterval(30), duration: 1.125)
+        ]])
     }
 
     func testDiscoveryRetainsEveryParentInAFullPage() async throws {

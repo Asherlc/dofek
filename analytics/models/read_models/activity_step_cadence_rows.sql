@@ -1,4 +1,5 @@
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+{% set activity_step_cadence_repair_scoped = var('activity_step_cadence_repair_activity_ids', none) is not none %}
 {% set activity_step_cadence_batch_size = var('activity_step_cadence_batch_size', 100) %}
 
 {{ config(
@@ -150,6 +151,10 @@ dirty_keys AS MATERIALIZED (
     FROM candidate_state AS c
     INNER JOIN raw_watermarks AS w ON w.user_id = c.user_id AND w.activity_id = c.activity_id
     WHERE
+        {% if activity_step_cadence_repair_scoped %}
+        c.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+            AND c.activity_id IN {{ activity_step_cadence_repair_ids() }}
+        {% else %}
         {% if activity_refresh_scoped %}
         c.user_id = toUUID('{{ var("activity_refresh_user_id") }}') AND (
             c.activity_id IN {{ activity_refresh_ids() }} OR c.activity_id IN (
@@ -163,6 +168,7 @@ dirty_keys AS MATERIALIZED (
         OR c.activity_source_refreshed_at > c.previous_activity_refreshed_at
         OR c.mapping_signature != c.previous_mapping_signature
         OR c.priority_signature != c.previous_priority_signature OR c.is_deleted != c.previous_deleted
+        {% endif %}
         {% endif %}
     ORDER BY c.previous_refreshed_at, c.user_id, c.activity_id
     LIMIT {{ activity_step_cadence_batch_size }}
@@ -262,7 +268,7 @@ source_totals AS MATERIALIZED (
         activity_id,
         provider_id,
         bundle,
-        any(device_id) AS device_id,
+        arraySort(groupUniqArray(device_id)) AS device_names,
         sum(steps) AS observed_steps,
         sum(dateDiff('microsecond', interval_start, interval_end) / 1000000.0) AS observed_seconds,
         count() AS interval_count,
@@ -273,16 +279,38 @@ source_totals AS MATERIALIZED (
     GROUP BY user_id, activity_id, provider_id, bundle
     HAVING countIf(interval_start < prior_end) = 0
 ),
-device_matches AS (
+source_names AS (
+    SELECT
+        user_id,
+        activity_id,
+        provider_id,
+        bundle,
+        arrayJoin(if(empty(device_names), [CAST(NULL, 'Nullable(String)')], device_names)) AS device_id
+    FROM source_totals
+),
+name_matches AS (
     SELECT
         t.user_id AS user_id,
         t.activity_id AS activity_id,
         t.provider_id AS provider_id,
         t.bundle AS bundle,
-        argMin(d.priority, tuple(-length(d.source_name_pattern), d.priority, d.source_name_pattern)) AS priority
-    FROM source_totals AS t INNER JOIN device_rules AS d
+        t.device_id AS device_id,
+        argMin(tuple(d.priority, d.source_name_pattern),
+            tuple(-length(d.source_name_pattern), d.priority, d.source_name_pattern)) AS rule
+    FROM source_names AS t INNER JOIN device_rules AS d
         ON d.provider_id = t.provider_id AND coalesce(t.device_id, '') LIKE d.source_name_pattern
-    GROUP BY t.user_id, t.activity_id, t.provider_id, t.bundle
+    GROUP BY t.user_id, t.activity_id, t.provider_id, t.bundle, t.device_id
+),
+device_matches AS (
+    SELECT
+        n.user_id AS user_id,
+        n.activity_id AS activity_id,
+        n.provider_id AS provider_id,
+        n.bundle AS bundle,
+        argMin(tuple(n.device_id), tuple(n.rule.1, coalesce(n.device_id, ''), n.rule.2)).1 AS device_id,
+        min(n.rule.1) AS priority
+    FROM name_matches AS n
+    GROUP BY n.user_id, n.activity_id, n.provider_id, n.bundle
 ),
 ranked_sources AS (
     SELECT
@@ -290,7 +318,7 @@ ranked_sources AS (
         t.activity_id AS activity_id,
         t.provider_id AS provider_id,
         t.bundle AS bundle,
-        t.device_id AS device_id,
+        if(d.priority IS NOT NULL, d.device_id, arrayElementOrNull(t.device_names, 1)) AS device_id,
         t.observed_steps AS observed_steps,
         t.observed_seconds AS observed_seconds,
         t.interval_count AS interval_count,

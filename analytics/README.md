@@ -233,6 +233,22 @@ source bundle wins by configured cadence priority, disjoint observed duration,
 then stable source identity. Rates use the ratio of total steps to observed
 seconds, retaining zero counts. These are derived values in ClickHouse only.
 
+All actual device names retained in a source bundle participate in priority
+selection. Each name uses its most-specific configured rule; the best configured
+priority across names wins, with stable lexical name/rule ties. Provider/default
+fallback applies only when no retained name has a configured match. Missing-name
+bundles keep nullable provenance and existing empty-name matching; the raw source
+grain remains unchanged. See the [model](models/read_models/activity_step_cadence_rows.sql)
+and [executable cases](models/read_models/activity_step_cadence_rows.integration.test.ts).
+
+The [activity-integrity repair runner](../src/db/activity-data-integrity-dbt.ts)
+retains historical aliases and verifies finite, exact cadence batches before
+dependent summaries. It uses the same 100-key ceiling without treating one
+successful dbt invocation as completion of an expanded scope. See the
+[repair rebuild contract](../docs/activity-data-integrity-repair-runbook.md#cadence-completeness-during-rebuild)
+for scope bounds, empty-target behavior and failure states. Ordinary analytics
+cycles retain their existing dirty-key selection.
+
 Each row independently consumes its raw day watermark, stable activity lifecycle
 watermark, per-user membership signature, and active cadence-priority signature.
 Routine source-row build timestamps do not trigger work. Processed-empty rows

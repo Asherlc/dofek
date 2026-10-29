@@ -4,7 +4,6 @@ import { runningCadenceLabel } from "@dofek/training/running-cadence";
 import {
   RUNNING_DYNAMICS_INVALID_RESPONSE_MESSAGE,
   type RunningDynamicsResponseV2,
-  type RunningDynamicsRow,
   runningDynamicsResponseV2Schema,
 } from "@dofek/training/running-response";
 import type { TrainingChartAvailability } from "@dofek/training/training-chart-availability";
@@ -26,8 +25,7 @@ import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
-type DynamicsRow = RunningDynamicsRow;
-export type RunningDynamicsData = RunningDynamicsResponseV2;
+type DynamicsRow = RunningDynamicsResponseV2["data"][number];
 export function RunningDynamics({
   data: rawData,
   loading,
