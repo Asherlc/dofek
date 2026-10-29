@@ -1,6 +1,6 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Linking } from "react-native";
+import { Linking, Text } from "react-native";
 import { userEvent } from "storybook/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -81,6 +81,23 @@ vi.mock("./ProviderLogo", () => ({
 }));
 
 describe("ActivitySourceDisclosure", () => {
+  it("opens header sources in a dismissible overlay", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={branchingActivitySourceTree}
+        heading={<Text>Morning Ride</Text>}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Activity sources" });
+    expect(within(dialog).getByText("Apple Health")).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close sources" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Morning Ride")).toBeDefined();
+  });
+
   it.each([
     ["whoop", "WHOOP (Cloud)"],
     ["whoop_ble", "WHOOP (Bluetooth)"],

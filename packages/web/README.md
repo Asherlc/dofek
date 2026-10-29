@@ -165,8 +165,10 @@ unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) uses the same
-disclosure in place of flat source links. Its required `sourceTree` comes from
+The [activity detail header](src/pages/ActivityDetailPage.tsx) places Sources
+beside the title and opens its tree in an anchored flyout. It reuses
+[Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+for positioning, outside-click dismissal, Escape, and focus restoration. Its required `sourceTree` comes from
 the [detail model](../server/src/models/activity.ts); removed records retain
 their removal information without an actionable source URL. Empty trees omit
 the source row, while unresolved trees with matching records remain expandable.

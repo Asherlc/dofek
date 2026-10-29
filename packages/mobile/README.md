@@ -688,8 +688,11 @@ unconnected records retain separate roots. Dofek remains implicit.
 See the [Activities screen](<app/(tabs)/activities.tsx>).
 
 The [activity detail header](components/activity/ActivityDetailHeader.tsx) uses
-the same disclosure inside the existing header, retaining its activity identity
-and removal notice. Its single [Sources disclosure](components/ActivitySourceDisclosure.tsx)
+the same source tree with a compact control beside the title, retaining its
+activity identity and removal notice. Opening Sources shows a scrollable overlay
+with a Close action, using React Native's
+[Modal](https://reactnative.dev/docs/modal) like the metric-source picker,
+so source details do not move the activity content. Its single [Sources disclosure](components/ActivitySourceDisclosure.tsx)
 groups provider ancestry and reported device/sensor facts, following the
 [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
 Expanding Sources reveals recording-device facts at the device root and reported

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   branchingSourceTree,
@@ -13,6 +13,22 @@ import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("opens header sources in a flyout and returns focus after Escape", async () => {
+    const { container } = render(
+      <ActivitySourceDisclosure tree={branchingSourceTree} heading={<h1>Morning Ride</h1>} />,
+    );
+    const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const flyout = screen.getByRole("dialog", { name: "Activity sources" });
+    expect(within(flyout).getByRole("link", { name: "Strava" })).toBeVisible();
+    expect(container.contains(flyout)).toBe(false);
+    fireEvent.keyDown(flyout, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(screen.getByRole("heading", { name: "Morning Ride" })).toBeVisible();
+  });
+
   it.each([
     ["whoop", "WHOOP (Cloud)"],
     ["whoop_ble", "WHOOP (Bluetooth)"],
