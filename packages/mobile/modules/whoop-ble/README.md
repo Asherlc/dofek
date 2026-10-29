@@ -167,6 +167,11 @@ Bluetooth delivery separately on a device.
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
 
+The workspace's [React Native patch](../../../../patches/react-native@0.88.0.patch)
+preserves build-flavor markers during [CocoaPods source cleanup](https://github.com/CocoaPods/CocoaPods/blob/1.16.2/lib/cocoapods/sandbox/pod_dir_cleaner.rb#L55).
+This retains the configuration metadata needed to select Debug frameworks after
+a Release archive and a test-dependency installation.
+
 ## Runtime, Stability, and Errors
 
 - Node.js 22.14 or later is required by the package tooling.
