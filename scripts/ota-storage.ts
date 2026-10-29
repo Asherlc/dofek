@@ -52,6 +52,7 @@ async function main(): Promise<void> {
   if (
     extra.length ||
     ![
+      "inventory",
       "snapshot",
       "verify-snapshot",
       "verify-rehearsal",
@@ -63,7 +64,7 @@ async function main(): Promise<void> {
     ].includes(operation ?? "")
   ) {
     throw new Error(
-      "Usage: ota-storage.ts <snapshot|verify-snapshot|verify-rehearsal|verify-migration|verify-production-migration|rehearsal-copy|restore-rehearsal|restore-production> <snapshot ID>",
+      "Usage: ota-storage.ts <inventory|snapshot|verify-snapshot|verify-rehearsal|verify-migration|verify-production-migration|rehearsal-copy|restore-rehearsal|restore-production> <snapshot ID>",
     );
   }
   if (operation === "restore-rehearsal" && process.env.OTA_REHEARSAL_STOPPED !== "true")
@@ -130,13 +131,19 @@ async function main(): Promise<void> {
   const snapshot = `ota:dofek-ota-backups/snapshots/${snapshotId}`;
   const receiptPath = `${snapshot}.verified.json`;
   const rehearsal = `ota:dofek-ota-backups/rehearsals/${snapshotId}`;
-  const productionSource = operation === "snapshot" || operation === "verify-snapshot";
+  const productionSource =
+    operation === "inventory" || operation === "snapshot" || operation === "verify-snapshot";
   const source = productionSource ? "ota:dofek-ota" : snapshot;
   const destination =
     operation === "restore-production" ? "ota:dofek-ota" : productionSource ? snapshot : rehearsal;
   const size = z
     .object({ count: z.number().int().nonnegative(), bytes: z.number().nonnegative() })
     .parse(JSON.parse(run(["size", source, "--json"])));
+  console.error(`OTA storage: source ${source} has ${size.count} objects, ${size.bytes} bytes`);
+  if (operation === "inventory") {
+    console.log(JSON.stringify({ source, ...size }));
+    return;
+  }
   if (size.count === 0) throw new Error("Source must contain objects before copy or restore");
   if (operation === "restore-production" || operation === "verify-production-migration") {
     const receipt = z

@@ -7,9 +7,9 @@ on:
         description: Verified storage operation (production restore requires stopped OTA)
         required: true
         type: choice
-        options: [snapshot, verify-snapshot, rehearsal-copy, migration-rehearsal, restore-rehearsal, restore-production, verify-production-migration]
+        options: [inventory, snapshot, verify-snapshot, rehearsal-copy, migration-rehearsal, restore-rehearsal, restore-production, verify-production-migration]
       snapshot_id:
-        description: Unique 8–64 character lowercase snapshot identifier
+        description: Planned snapshot identifier (inventory does not create it)
         required: true
         type: string
       image:
@@ -29,17 +29,17 @@ permissions:
   packages: read
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/main' && 'deploy-web-production' || format('ota-storage-ineligible-{0}', github.run_id) }}
+  group: ${{ (github.ref == 'refs/heads/main' || inputs.operation == 'inventory') && 'deploy-web-production' || format('ota-storage-ineligible-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
   storage:
     name: Verify OTA storage copy
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || inputs.operation == 'inventory'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
-      - name: Check out reviewed main
+      - name: Check out selected source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

@@ -98,11 +98,24 @@ not stop existing runs; GitHub documents
 [workflow management](https://docs.github.com/en/actions/managing-workflow-runs/disabling-and-enabling-a-workflow).
 Keep manual EAS/EOAS publication stopped for the same window.
 
-Generate a fresh snapshot ID and retain it throughout this sequence. Never
-reuse the failed `2026-10-29-before-v3` identifier. Dispatch on main, in order:
+Run a read-only inventory before sizing a backup. Inventory uses rclone's
+[size --json](https://rclone.org/commands/rclone_size/) to report production
+object and byte totals, including an empty bucket. It creates no snapshot and
+does not consume the supplied planned identifier. The manual workflow allows
+only this read-only operation on a reviewed non-main ref; every copy, restore,
+verification and rehearsal operation remains main-only. Set `REVIEWED_REF` to
+main or the reviewed branch containing this operation, and generate a fresh
+planned identifier:
 
 ```sh
 SNAPSHOT_ID="$(date -u +%Y%m%d-%H%M%S)-before-v3"
+gh workflow run ota-storage.yml --ref "$REVIEWED_REF" -f operation=inventory -f snapshot_id="$SNAPSHOT_ID"
+```
+
+Retain the same snapshot ID throughout this sequence. Never
+reuse the failed `2026-10-29-before-v3` identifier. Dispatch on main, in order:
+
+```sh
 gh workflow run ota-storage.yml -f operation=snapshot -f snapshot_id="$SNAPSHOT_ID"
 gh workflow run ota-storage.yml -f operation=rehearsal-copy -f snapshot_id="$SNAPSHOT_ID"
 ```

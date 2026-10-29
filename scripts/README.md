@@ -11,11 +11,13 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 - `ota-storage.ts`: Copies and byte-verifies OTA snapshots and isolated rehearsal
   storage using pinned [rclone](https://rclone.org/commands/rclone_check/).
+  Read-only inventory reports production object/byte totals without creating a
+  snapshot ([rclone size](https://rclone.org/commands/rclone_size/)).
   Production restore additionally requires stopped OTA tasks at the explicit
   production Docker endpoint and the locked successful-snapshot receipt.
   Requires paused publication/cleanup workflows and existing Infisical R2
   credentials. See the [OTA storage runbook](../deploy/ota/README.md#verified-storage-operations).
-  - Usage: `pnpm tsx scripts/ota-storage.ts <snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal|restore-production|verify-production-migration> <snapshot-id>`
+  - Usage: `pnpm tsx scripts/ota-storage.ts <inventory|snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal|restore-production|verify-production-migration> <snapshot-id>`
 - `rehearse-ota-storage.ts`: Runs the private candidate image against a verified
   rehearsal copy in CI, checks app-scoped key relocation and signed asset
   delivery, stops the container, restores the copy, and verifies production is

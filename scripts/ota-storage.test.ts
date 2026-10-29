@@ -93,7 +93,8 @@ beforeEach(() => {
       return JSON.stringify(snapshotReceipt);
     if (command.includes(" cat "))
       return JSON.stringify({ platform: "ios", updateUUID: "retained-id" });
-    if (command.includes("size")) return JSON.stringify({ count: sourceCount, bytes: 100 });
+    if (command.includes("size"))
+      return JSON.stringify({ count: sourceCount, bytes: sourceCount === 0 ? 0 : 100 });
     return "";
   });
 });
@@ -110,6 +111,22 @@ function transfers(): string[][] {
 }
 
 describe("OTA storage operator CLI", () => {
+  it.each([0, 10])("inventories %i production objects without writing storage", async (count) => {
+    process.argv[2] = "inventory";
+    sourceCount = count;
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await import("./ota-storage.ts");
+      expect(transfers()).toHaveLength(1);
+      expect(transfers()[0]?.slice(-3)).toEqual(["size", "ota:dofek-ota", "--json"]);
+      expect(output).toHaveBeenCalledWith(
+        JSON.stringify({ source: "ota:dofek-ota", count, bytes: count === 0 ? 0 : 100 }),
+      );
+    } finally {
+      output.mockRestore();
+    }
+  });
+
   it("requires confirmation of candidate shutdown before an explicit rehearsal restore", async () => {
     process.argv[2] = "restore-rehearsal";
     vi.stubEnv("OTA_REHEARSAL_STOPPED", "false");
