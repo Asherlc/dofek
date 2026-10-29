@@ -8,6 +8,7 @@ import {
   climbingLogEntrySchema,
 } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { recordedClimbingTags } from "dofek/climbing-tags";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -21,6 +22,8 @@ import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { displayGradeComponents, selectRockClimbingGrade } from "./climbing-grade-display.ts";
 import { climbingSourceLinks } from "./climbing-source-links.ts";
+
+type HydratedLogEntry = ClimbingLogEntryDetail & { tags: ReturnType<typeof recordedClimbingTags> };
 
 const databaseRowSchema = z.object({
   log: climbingLogEntrySchema.extend({
@@ -137,11 +140,11 @@ function identity(log: ClimbingLogEntryDetail): string | null {
     targets,
   ]);
 }
-function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
-  const output: ClimbingLogEntryDetail[] = [];
+function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
+  const output: HydratedLogEntry[] = [];
   const groups = new Map<
     string,
-    { log: ClimbingLogEntryDetail; providers: Set<string>; sources: Set<string> }[]
+    { log: HydratedLogEntry; providers: Set<string>; sources: Set<string> }[]
   >();
   const completeness = (log: ClimbingLogEntryDetail) => [
     Number(log.recordedClimbOutcome !== null),
@@ -181,10 +184,19 @@ function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
       ).values(),
     ];
     const photoLogEntryId = match.log.photoLogEntryId ?? log.photoLogEntryId;
+    const tags = [
+      ...new Map(
+        [...match.log.tags, ...log.tags].map((tag) => [
+          JSON.stringify([tag.providerId, tag.categoryKey, tag.sourceKey]),
+          tag,
+        ]),
+      ).values(),
+    ];
     Object.assign(match.log, preferred, {
       photoLogEntryId,
       sourceName: [...match.sources].join(", ") || null,
       sourceLinks,
+      tags,
     });
   }
   return output;
@@ -296,7 +308,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
   async #load(
     predicate: SQL,
     visibility: "active" | "retained" = "active",
-  ): Promise<ClimbingLogEntryDetail[]> {
+  ): Promise<HydratedLogEntry[]> {
     const eligibility =
       visibility === "retained"
         ? sql``
@@ -364,7 +376,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
           ),
         };
       });
-      return climbingLogEntryDetailSchema.parse({
+      const detail = climbingLogEntryDetailSchema.parse({
         ...row.log,
         raw: climbingDetailRaw(row.log),
         climb: row.climb,
@@ -390,6 +402,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ),
         sourceLinks: climbingSourceLinks(row.log.providerId, row.log.raw),
       });
+      return { ...detail, tags: recordedClimbingTags(row.log.providerId, row.log.raw) };
     });
   }
 }

@@ -23,9 +23,19 @@ canonical protocol and provenance reference.
   `WhoopBleFrameParser*` owns framing, CRC, packet decoding, and command
   construction. Do not duplicate either responsibility in the bridge or
   TypeScript.
-- `WhoopBleSampleBuffer` owns bounded, device-scoped buffering. Upload callers
-  rely on peek-then-confirm drains; do not remove samples during a peek or
-  before an upload is confirmed.
+- `WhoopBleSampleStore` owns the canonical transactional SQLite queue, persisted
+  account/server generation, immutable reservations, and erasure cutoff. Remove
+  rows only by the exact acknowledged batch identity; SQLite defines its
+  [transaction boundaries](https://sqlite.org/isolation.html).
+- `WhoopBleUploadRuntime` owns Dofek-only bootstrap and Sentry reporting; keep
+  it and the URLSession adapter excluded from the standalone SwiftPM target.
+  `WhoopBleBackgroundUploader` owns native scheduling, credentials in memory,
+  and task reconciliation. `WhoopURLSessionTransport` and the app-delegate
+  subscriber implement Apple's [background transfer lifecycle](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).
+  Keep stream progress independent and cancel captured retired identities.
+- Sign-out/account changes clear account counters and reservations. The device
+  erasure cutoff survives those changes. Tests must reopen real SQLite storage
+  and exercise late completion, failure, and owner-change ordering.
 
 ## Protocol changes
 
@@ -62,6 +72,8 @@ swift test
   require an iOS development build because the bridge is excluded from
   SwiftPM. Hardware streaming, bonding, background delivery, and firmware
   compatibility require a physical-device check.
-- Changes to upload scheduling or application lifecycle belong in
-  `packages/mobile/lib/background-whoop-ble-sync.ts` and its colocated tests,
-  not in this protocol module.
+- JavaScript authentication and foreground connection ownership belong in
+  `packages/mobile/lib/background-whoop-ble-sync.ts` and its colocated tests.
+  Durable queue scheduling belongs to the native uploader. Do not restore
+  JavaScript network drains or competing queue consumers; see the
+  [delivery design](../../../../docs/superpowers/specs/2026-10-28-whoop-durable-upload-design.md).

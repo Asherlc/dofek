@@ -74,7 +74,7 @@ describe("catalogue source composition", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ data: { webSearchForClimb: [source] } }))
       .mockResolvedValueOnce(
-        Response.json({ data: { climb: { ...source, lead: true, is_trad: false } } }),
+        Response.json({ data: { climb: { ...source, lead: true, is_trad: false, tags: [] } } }),
       );
     vi.stubGlobal("fetch", fetchFn);
     const adapter = createClimbingCatalogueAdapters("owner", Object.create(null)).find(

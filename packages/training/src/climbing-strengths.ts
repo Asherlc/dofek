@@ -74,12 +74,23 @@ const panel = profile.extend({
   ),
   coverage: z.object({ missingTraits: count, unknownOutcomes: count }),
 });
+const tagPanel = panel.extend({
+  dimension: z.literal("tag"),
+  category: z.object({
+    providerId: z.string(),
+    key: z.string().nullable(),
+    label: z.string(),
+  }),
+});
 export const climbingStrengthsSchema = z.object({
   panels: z.array(panel),
+  tagPanels: z.array(tagPanel).optional(),
   coverage: z.object({ unknownOutcomes: count, missingGrades: count, missingIdentity: count }),
 });
 export type ClimbingStrengths = z.infer<typeof climbingStrengthsSchema>;
 export type ClimbingStrengthsPanel = ClimbingStrengths["panels"][number];
+export type ClimbingStrengthsTagPanel = z.infer<typeof tagPanel>;
+export type ClimbingStrengthsDisplayPanel = ClimbingStrengthsPanel | ClimbingStrengthsTagPanel;
 export type ClimbingStrengthsCell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
 export type ClimbingStrengthsExample = ClimbingStrengthsCell["examples"][number];
 
@@ -89,10 +100,10 @@ export function climbingStrengthsBaselineLabel(grade: string): string {
 }
 
 /** Select server-computed values for rendering, without aggregating client-side. */
-export function climbingStrengthsGradePanel(
-  panel: ClimbingStrengthsPanel,
+export function climbingStrengthsGradePanel<Panel extends ClimbingStrengthsDisplayPanel>(
+  panel: Panel,
   grade: string,
-): ClimbingStrengthsPanel {
+): Panel {
   return grade === ALL_CLIMBING_GRADES ? { ...panel, ...panel.allGrades } : panel;
 }
 
@@ -132,7 +143,7 @@ export function climbingStrengthsDifferenceLabel(value: number | null): string {
 }
 
 export function climbingStrengthsAdjustedLabel(
-  strength: ClimbingStrengthsPanel["gradeAdjustedStrengths"][number] | undefined,
+  strength: ClimbingStrengthsDisplayPanel["gradeAdjustedStrengths"][number] | undefined,
 ): string {
   if (strength?.sampleStatus === "limited") return "Too few climbs to judge strengths yet";
   const difference = strength?.differencePercentagePoints;

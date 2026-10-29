@@ -13,6 +13,7 @@ import {
   toClimbingLogTraitsV1,
 } from "@dofek/training/climbing-log-response";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { climbingTagSchema } from "@dofek/training/climbing-tags";
 import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
 
@@ -49,12 +50,13 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
   pitchResults: z.array(climbingPitchResultSchema),
   displayGrade: z.string().nullable(),
   sourceLinks: z.array(climbingSourceLinkSchema),
+  tags: z.array(climbingTagSchema).optional(),
 });
 export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema>;
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
 
 export const legacyClimbingLogEntryDetailSchema = climbingLogEntryDetailSchema
-  .omit({ holdTypes: true })
+  .omit({ holdTypes: true, tags: true })
   .extend(climbingLogTraitsV1Schema.shape);
 export const climbingLogEntryDetailResponseSchema = z.union([
   climbingLogEntryDetailSchema,
@@ -66,8 +68,10 @@ export function serializeClimbingLogEntryDetailResponse(
   entry: ClimbingLogEntryDetail,
   version: ClimbingResponseVersion,
 ): z.infer<typeof climbingLogEntryDetailResponseSchema> {
-  if (version === 2) return entry;
-  const { holdTypes: _holdTypes, ...rest } = entry;
+  if (version === 3) return entry;
+  const { tags: _tags, ...withoutTags } = entry;
+  if (version === 2) return withoutTags;
+  const { holdTypes: _holdTypes, ...rest } = withoutTags;
   return { ...rest, ...toClimbingLogTraitsV1(entry) };
 }
 
@@ -79,7 +83,7 @@ function canonicalLogEntry(
   return { ...rest, holdTypes: holdType === null ? null : [holdType] };
 }
 
-/** Accept either supported wire contract during independent server/client releases. */
+/** Accept supported wire contracts during independent server/client releases. */
 export function decodeClimbingLogEntryDetailResponse(value: unknown): ClimbingLogEntryDetail {
   return canonicalLogEntry(climbingLogEntryDetailResponseSchema.parse(value));
 }

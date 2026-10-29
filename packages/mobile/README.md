@@ -35,10 +35,13 @@ Sign-out and account deletion remove the saved identity.
 
 First-time sign-in, and the first online restore after upgrading from a version
 that saved only the token, need internet to establish the saved identity.
-Bluetooth uploads retain unconfirmed samples during connection failures; see the
-[WHOOP buffer contract](modules/whoop-ble/README.md) and
-[heart-rate buffer implementation](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
-These sample buffers remain in memory and do not survive process termination.
+WHOOP capture commits samples to an account-bound native SQLite queue and uses
+file-backed [iOS background uploads](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).
+Unacknowledged samples survive process recreation. Sign-out/account changes
+cancel the former account's requests and purge its queue; see the
+[WHOOP durability contract](modules/whoop-ble/README.md).
+The separate standard Bluetooth heart-rate monitor still uses an in-memory
+[buffer](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
 
 ## Project Structure
 
@@ -160,13 +163,19 @@ attempt values and opens each activity, following the
 
 The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 `climbing.strengths` query using the current training dates and climbing filters.
-The [strengths chart](components/ClimbingStrengthsChart.tsx) offers Styles with the server-computed grade-adjusted radar and Progress with monthly send rates. Wall angle / Hold type apply to all tabs, with no grade picker or format menu. The radar places the context-specific same-grade baseline at zero; results outside its dashed outline are stronger and those inside weaker. It needs three scored styles; smaller samples remain accessible through the exact-value disclosure. Progress combines grades and says that changes may reflect difficulty mix. The existing page-wide filters define one selected view. The [server aggregation](../server/src/services/climbing-strengths.ts) supplies one panel per breakdown dimension, retaining context-specific grade baselines. Selecting a chart point or exact-value row reveals source climbs, with zeros, unknown outcomes, missing observations and limited known-result samples distinct. Exact-value controls use [React Native accessibility roles and state](https://reactnative.dev/docs/accessibility) through [AccessibleChart](components/AccessibleChart.tsx).
+The [strengths chart](components/ClimbingStrengthsChart.tsx) offers Styles with the server-computed grade-adjusted radar and Progress with monthly send rates. Wall angle, Hold type, and observed source tag categories apply to all tabs, with no grade picker or format menu. The radar places the context-specific same-grade baseline at zero; results outside its dashed outline are stronger and those inside weaker. It needs three scored styles; smaller samples remain accessible through the exact-value disclosure. Progress combines grades and says that changes may reflect difficulty mix. The existing page-wide filters define one selected view. The [server aggregation](../server/src/services/climbing-strengths.ts) supplies one panel per breakdown dimension, retaining context-specific grade baselines. Selecting a chart point or exact-value row reveals source climbs, with zeros, unknown outcomes, missing observations and limited known-result samples distinct. Exact-value controls use [React Native accessibility roles and state](https://reactnative.dev/docs/accessibility) through [AccessibleChart](components/AccessibleChart.tsx).
 
 Page-wide filters show a compact type/setting summary. Filters opens a [native modal](https://reactnative.dev/docs/modal) with independent checkbox groups for every filter; each All checkbox selects or clears its group and exposes partial selections with the [WAI mixed checkbox state](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Type includes Bouldering, Lead, Top rope, Follow, and Unroped, replacing the overlapping kind/method selectors. The broader Discipline selector is omitted. Attempt scope, Solo status, Protection used, and Route protection stay under More filters with the same checkbox style. The [shared server projection](../server/src/repositories/climbing-rock-observations.ts) matches any selected value within each group and intersects groups; Whole climb remains the default scope, with both scopes selectable explicitly.
 
 Values and source-climb details use the [server-computed contract](../training/src/climbing-strengths.ts). The card offers the current training period or All time through the [Training route](<app/(tabs)/strain.tsx>), preserving its explicit end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
 Unknown angle units remain
 unclassified, while known degrees retain their recorded numeric labels.
+Source categories retain provider attribution and use the same server-computed
+profiles as angle and hold breakdowns. Details show grouped recorded tags,
+including unfamiliar labels, through the
+[shared presentation helper](../training/src/climbing-tag-presentation.ts).
+Catalogue tags stay inside their reference disclosure and do not affect
+strengths, as defined by the [source coverage contract](../../docs/climbing-trait-coverage.md).
 The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date
 anchor in the query key, validates restored responses with the shared schema,
 and labels retained data while it refreshes. Successful attachment actions
@@ -568,7 +577,7 @@ runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
 
-WHOOP diagnostics connect native capture/buffer snapshots, per-stream workers,
+WHOOP diagnostics connect native capture/queue snapshots, background task state,
 upload batches, HTTP responses, and server broker publication without logging
 sensor values. A retained native checkpoint contains metadata only, has unknown
 prior-account provenance, and cannot restore samples. See the

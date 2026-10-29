@@ -686,6 +686,10 @@ vi.mock("expo-updates", () => ({
 
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
+  configureUpload: vi.fn(),
+  addCaptureErrorListener: vi.fn(() => ({ remove: vi.fn() })),
+  flushUploads: vi.fn(),
+  disableUploads: vi.fn(),
   getDataPathStats: vi.fn(() => makeWhoopCaptureStats()),
   isBluetoothAvailable: vi.fn(() => false),
   findWhoop: vi.fn(() => Promise.resolve(null)),

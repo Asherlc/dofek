@@ -107,6 +107,7 @@ patchedDependencies:
   expo-apple-authentication@58.0.2: patches/expo-apple-authentication@58.0.2.patch
   node-forge@1.4.0: patches/node-forge@1.4.0.patch
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
+  react-native@0.88.0: patches/react-native@0.88.0.patch
 
 allowBuilds:
   "@sentry/cli": true
@@ -223,3 +224,4 @@ minimumReleaseAgeExclude:
   - noxcturnal@0.1.8 || 0.1.11
   - '@expo/modules-macros-linux-arm64@0.27.1'
   - '@expo/modules-macros-linux-x64@0.27.1'
+  - expo-modules-test-core@58.0.5

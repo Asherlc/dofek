@@ -42,7 +42,7 @@ describe("get_activity_details response versions", () => {
     vi.clearAllMocks();
   });
 
-  it.each([undefined, 1, 2] as const)(
+  it.each([undefined, 1, 2, 3] as const)(
     "negotiates version %s before producing text and structured data",
     async (version) => {
       const id = "00000000-0000-4000-8000-000000000001";
@@ -93,7 +93,16 @@ describe("get_activity_details response versions", () => {
         { holdTypes: ["jam"], wallAngle: null },
         { holdTypes: ["no_grips"], wallAngle: null },
       ];
-      const logs = traits.map((trait) => ({ ...base, ...trait }));
+      const tags = [
+        {
+          providerId: "kaya",
+          sourceKey: "move-1",
+          label: "Source movement",
+          categoryKey: "2",
+          categoryLabel: "Movement",
+        },
+      ];
+      const logs = traits.map((trait) => ({ ...base, ...trait, tags }));
       mocks.logs.mockResolvedValue(logs.map((log) => ({ toDetail: () => log })));
       server = new McpServer({ name: "activity-details", version: "1.0.0" });
       registerActivityDetailsTool(server, {
@@ -117,15 +126,17 @@ describe("get_activity_details response versions", () => {
       const output = activityDetailsOutputSchema.parse(result.structuredContent).result;
       const { holdTypes: _holds, ...legacyBase } = base;
       expect(output.climbing_log_entries).toEqual(
-        version === 2
+        version === 3
           ? logs
-          : [
-              { ...legacyBase, holdType: "crimp", wallAngle: { value: 40, unit: "degrees" } },
-              { ...legacyBase, holdType: null, wallAngle: null },
-              { ...legacyBase, holdType: null, wallAngle: { value: -120, unit: null } },
-              { ...legacyBase, holdType: null, wallAngle: null },
-              { ...legacyBase, holdType: null, wallAngle: null },
-            ],
+          : version === 2
+            ? logs.map(({ tags: _tags, ...entry }) => entry)
+            : [
+                { ...legacyBase, holdType: "crimp", wallAngle: { value: 40, unit: "degrees" } },
+                { ...legacyBase, holdType: null, wallAngle: null },
+                { ...legacyBase, holdType: null, wallAngle: { value: -120, unit: null } },
+                { ...legacyBase, holdType: null, wallAngle: null },
+                { ...legacyBase, holdType: null, wallAngle: null },
+              ],
       );
       const text = result.content[0];
       if (text?.type !== "text") throw new Error("Expected JSON text");

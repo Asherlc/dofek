@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
+import { init, setPlatformAPI } from "echarts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const chartOptions = vi.hoisted(() => vi.fn());
@@ -113,6 +114,20 @@ describe("ClimbingVolumeByGradeChart", () => {
         ]),
       }),
     );
+
+    const option = chartOptions.mock.lastCall?.[0];
+    setPlatformAPI({ measureText: (text) => ({ width: String(text).length * 7 }) });
+    for (const width of [360, 1100]) {
+      const chart = init(null, null, { renderer: "svg", ssr: true, width, height: 280 });
+      try {
+        chart.setOption(option);
+        const svg = new DOMParser().parseFromString(chart.renderToSVGString(), "image/svg+xml");
+        const labels = Array.from(svg.querySelectorAll("text"), (node) => node.textContent);
+        expect(labels).toEqual(expect.arrayContaining(["V1", "V4"]));
+      } finally {
+        chart.dispose();
+      }
+    }
   });
 
   it("plots recorded attempts when the complete total is unknown", () => {

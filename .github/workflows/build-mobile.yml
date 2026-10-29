@@ -125,6 +125,20 @@ jobs:
             CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
             2>&1 | tee "$RUNNER_TEMP/ios-archive.log"
         timeout-minutes: 25
+      - name: Test WHOOP Expo bridge in Simulator
+        id: bridge-tests
+        run: |
+          set -o pipefail
+          pnpm --filter dofek-mobile test:ios:bridge 2>&1 | tee "$RUNNER_TEMP/ios-bridge-test.log"
+      - name: Upload bridge test diagnostics
+        if: failure() && steps.bridge-tests.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-bridge-test-diagnostics
+          path: |
+            ${{ runner.temp }}/ios-bridge-test.log
+            packages/mobile/ios/build/bridge-tests/Logs/Test/*.xcresult
+          retention-days: 7
       - name: Record native build resources
         if: always()
         run: |

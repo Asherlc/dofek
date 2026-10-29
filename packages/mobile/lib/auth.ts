@@ -10,6 +10,7 @@ import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { z } from "zod";
+import { disableUploads } from "../modules/whoop-ble";
 import {
   deleteSecureStoreItem,
   readSecureStoreItem,
@@ -153,15 +154,32 @@ export async function getSavedSessionUser(token: string): Promise<AuthUser | nul
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
-  await serializeSessionPersistence(async () => {
+  // The Promise executor runs synchronously, revoking native ownership before
+  // any credential operation can await, while retaining a failure for reporting.
+  const nativeCleanup = Promise.allSettled([
+    new Promise<void>((resolve) => {
+      disableUploads();
+      resolve();
+    }),
+  ]);
+  const credentialCleanup = await serializeSessionPersistence(async () => {
     cachedSessionToken = null;
-    await Promise.all([
+    return Promise.allSettled([
       deleteSecureStoreItem(SESSION_TOKEN_KEY),
       SecureStore.deleteItemAsync(SESSION_USER_KEY),
       deleteSecureStoreItem(SESSION_OWNER_NONCE_KEY),
     ]);
-    cachedSessionToken = null;
   });
+  cachedSessionToken = null;
+  const failures = [...(await nativeCleanup), ...credentialCleanup]
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length > 0) {
+    const error =
+      failures.length === 1 ? failures[0] : new AggregateError(failures, "Session cleanup failed");
+    captureException(error, { source: "auth-session-cleanup" });
+    throw error;
+  }
 }
 
 /** Generate an opaque local marker without retaining an account identifier. */

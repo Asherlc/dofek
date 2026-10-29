@@ -361,3 +361,42 @@ it("shows a single climb as a recorded result with too little evidence to judge 
     }),
   ).toBeTruthy();
 });
+
+it("keeps sparse source-tag rows distinct when equal labels are replaced on refresh", () => {
+  const rows = ["source-tag-1", "source-tag-2"].map((key) => ({
+    key,
+    label: "Crimp",
+    cells: [{ ...firstCell, grade: "All grades" }],
+  }));
+  const tagged = {
+    ...panel,
+    dimension: "tag" as const,
+    category: { providerId: "source", key: "grips", label: "Grip" },
+    rows,
+    gradeAdjustedStrengths: [],
+    coverage: { missingTraits: 0, unknownOutcomes: 0 },
+  };
+  const selected: string[] = [];
+  const onSelect = (key: string) => {
+    selected.push(key);
+  };
+  const result = render(
+    <ClimbingStrengthsChart panel={tagged} view="radar" grade="All grades" onSelect={onSelect} />,
+  );
+  expect(screen.getAllByRole("button", { name: /^Crimp:/ })).toHaveLength(2);
+  const retained = rows[1];
+  if (!retained) throw new Error("Missing retained source tag");
+  result.rerender(
+    <ClimbingStrengthsChart
+      panel={{ ...tagged, rows: [{ ...retained, key: "source-tag-3", label: "Sloper" }, retained] }}
+      view="radar"
+      grade="All grades"
+      onSelect={onSelect}
+    />,
+  );
+  const crimp = screen.getAllByRole("button", { name: /^Crimp:/ });
+  expect(crimp).toHaveLength(1);
+  if (!crimp[0]) throw new Error("Missing retained source tag button");
+  fireEvent.click(crimp[0]);
+  expect(selected).toEqual(["source-tag-2"]);
+});

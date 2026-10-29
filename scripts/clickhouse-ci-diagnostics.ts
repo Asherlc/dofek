@@ -73,6 +73,8 @@ function redact(text: string, secrets: string[], logRecords: boolean): string {
     .map((line) => {
       const header = logRecords ? logRecordHeader.exec(line) : null;
       if (header) sqlContinuation = false;
+      if (sqlContinuation && line && !/^\s*(?:\d+\.\s|at\s)/.test(line))
+        return "[SQL continuation redacted]";
       const sql = /\bquery(?:_text)?\s*[:=]\s*|\bIn scope\b\s*|\bwhile executing\b\s*/i.exec(line);
       const execution = /executeQuery:\s*(?:\([^\n)]*\)\s*)*/i.exec(line);
       const executionPayload = execution ? line.slice(execution.index + execution[0].length) : "";
@@ -89,8 +91,6 @@ function redact(text: string, secrets: string[], logRecords: boolean): string {
         sqlContinuation = true;
         return `${line.slice(0, payload.index)}[SQL payload redacted]`;
       }
-      if (sqlContinuation && line && !/^\s*(?:\d+\.\s|at\s)/.test(line))
-        return "[SQL continuation redacted]";
       return line;
     })
     .join("\n");

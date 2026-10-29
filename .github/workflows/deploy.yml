@@ -32,12 +32,15 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+
+concurrency:
+  group: ${{ (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') && 'deploy-web-production' || format('deploy-{0}-{1}', inputs.target, github.run_id) }}
+  cancel-in-progress: false
 
 jobs:
   terraform:
     name: Deploy Infra
-    if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'all'
+    if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -46,7 +49,7 @@ jobs:
 
   docker:
     name: Docker Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -54,13 +57,15 @@ jobs:
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Compute image tag
+      - name: Compute image name and tag
         id: tag
         env:
           SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -78,7 +83,7 @@ jobs:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
@@ -103,12 +108,12 @@ jobs:
             REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
+          cache-from: type=registry,ref=${{ steps.tag.outputs.image }}:server-buildcache
+          cache-to: type=registry,ref=${{ steps.tag.outputs.image }}:server-buildcache,mode=max
 
   docker_ml:
     name: Docker ML Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -116,13 +121,15 @@ jobs:
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Compute image tag
+      - name: Compute image name and tag
         id: tag
         env:
           SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')-ml" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -140,7 +147,7 @@ jobs:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-ml
+          images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
@@ -151,13 +158,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=ml
-          cache-to: type=gha,mode=max,scope=ml
+          cache-from: type=registry,ref=${{ steps.tag.outputs.image }}:buildcache
+          cache-to: type=registry,ref=${{ steps.tag.outputs.image }}:buildcache,mode=max
 
   web-stack:
     name: Deploy Web Stack
     needs: [terraform, docker, docker_ml]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    if: ${{ !cancelled() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
@@ -176,27 +183,28 @@ jobs:
 
   ios:
     name: Deploy iOS
-    if: inputs.target == 'ios' || inputs.target == 'all'
+    needs: web-stack
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
       id-token: write
+      deployments: write
     uses: ./.github/workflows/deploy-ios.yml
     with:
-      commit_sha: ${{ github.sha }}
+      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
 
   ota:
     name: Deploy OTA
-    if: inputs.target == 'ota' || inputs.target == 'all'
+    needs: web-stack
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ota' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
       id-token: write
     uses: ./.github/workflows/deploy-ota.yml
     with:
-      commit_sha: ${{ github.sha }}
+      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).

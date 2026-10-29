@@ -2,7 +2,9 @@ import { z } from "zod";
 import { numericWallAngleSchema } from "./climbing-experience.ts";
 import type { ClimbingLogEntry } from "./climbing-log.ts";
 
-export const climbingResponseVersionSchema = z.union([z.literal(1), z.literal(2)]).default(1);
+export const climbingResponseVersionSchema = z
+  .union([z.literal(1), z.literal(2), z.literal(3)])
+  .default(1);
 export type ClimbingResponseVersion = z.infer<typeof climbingResponseVersionSchema>;
 
 const holdTypeV1Schema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);

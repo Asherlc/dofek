@@ -2,6 +2,10 @@ name: Deploy Web Stack
 
 on:
   workflow_call:
+    outputs:
+      commit_sha:
+        description: "Source commit verified against the deployed immutable image"
+        value: ${{ jobs.web-stack.outputs.commit_sha }}
     inputs:
       commit_sha:
         description: "Commit SHA to deploy (used to compute image tag if image_tag not provided)"
@@ -94,42 +98,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
-        required: false
-        default: "latest"
-        type: string
-      server_host:
-        description: "Docker SSH host (defaults to ORACLE_SERVER_HOST variable)"
-        required: false
-        type: string
-      ssh_user:
-        description: "SSH user for the remote Docker context"
-        required: false
-        type: string
-        default: ubuntu
-      stack_override:
-        description: "Optional extra compose override appended to the stack deploy (e.g. deploy/stack.oracle.yml)"
-        required: false
-        type: string
-        default: ""
-      infisical_environment:
-        description: "Infisical environment to export for the stack"
-        required: false
-        default: prod
-        type: string
-      stack_name:
-        description: "Docker stack name"
-        required: false
-        default: dofek
-        type: string
-      public_url:
-        description: "Public app URL"
-        required: false
-        default: ""
-        type: string
 
 concurrency:
   # Key on the target host so deploys to different hosts (production vs staging) run in
@@ -141,6 +109,8 @@ jobs:
   web-stack:
     name: Deploy Web Stack
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.pull_images.outputs.sentry_release }}
     permissions:
       contents: read
       actions: read

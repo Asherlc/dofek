@@ -1,12 +1,52 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_CLIMBING_GRADES,
   climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
   climbingStrengthsDifferenceLabel,
+  climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSchema,
   climbingStrengthsSendLabel,
 } from "./climbing-strengths.ts";
+
+it("preserves additive recorded tag panels and selects their supplied pooled profile", () => {
+  const profile = { grades: [], rows: [], progress: [] };
+  const tagPanel = {
+    ...profile,
+    key: "tag-style",
+    contextKey: "boulder",
+    contextLabel: "Bouldering",
+    dimension: "tag" as const,
+    setting: null,
+    category: { providerId: "kaya", key: "style", label: "Style" },
+    allGrades: { ...profile, rows: [{ key: "technical", label: "Technical", cells: [] }] },
+    gradeAdjustedStrengths: [
+      {
+        key: "technical",
+        expectedSuccessRate: 50,
+        differencePercentagePoints: 50,
+        sampleStatus: "limited" as const,
+      },
+    ],
+    coverage: { missingTraits: 0, unknownOutcomes: 0 },
+  };
+  const parsed = climbingStrengthsSchema.parse({
+    panels: [],
+    tagPanels: [tagPanel],
+    coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+  });
+  expect(parsed.tagPanels).toEqual([tagPanel]);
+  expect(climbingStrengthsGradePanel(tagPanel, ALL_CLIMBING_GRADES)).toMatchObject({
+    dimension: "tag",
+    category: tagPanel.category,
+    rows: tagPanel.allGrades.rows,
+  });
+  expect(climbingStrengthsAdjustedLabel(parsed.tagPanels?.[0]?.gradeAdjustedStrengths[0])).toBe(
+    "Too few climbs to judge strengths yet",
+  );
+});
 
 describe("climbing strengths labels", () => {
   it.each([

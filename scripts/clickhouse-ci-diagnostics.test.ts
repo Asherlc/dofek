@@ -238,6 +238,67 @@ describe("ClickHouse CI diagnostics", () => {
 });
 
 describe("SQL continuation record boundaries", () => {
+  it.each(["query:", "query_text=", "In scope", "while executing", "executeQuery:"])(
+    "redacts active raw continuations containing another %s marker before retaining later diagnostics",
+    async (marker) => {
+      const { outputDirectory } = fixture(
+        "",
+        [
+          "2026.10.28 22:21:27.100 [ 42 ] {sql-id} <Debug> executeQuery: SELECT",
+          `2026-10-28 22:21:28 PRIVATE_TIMESTAMP_CONTINUATION_SENTINEL ${marker} more-sql`,
+          `PRIVATE_CONTINUATION_SENTINEL ${marker} more-sql`,
+          "0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x456",
+          "2026.10.28 22:21:30.123 [ 43 ] {later-id} <Information> DatabaseAtomic: waiting for lock",
+          "2026-10-28T22:21:31.000000000Z 2026.10.28 22:21:31.123 [ 44 ] {later-error-id} <Error> executeQuery: Code: 473. Cannot drop table: waiting for lock (in query: SELECT 'later-payload-secret')",
+          "0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x789",
+          "",
+        ].join("\n"),
+      );
+      await collectClickHouseDiagnostics({ containerId, outputDirectory });
+      for (const name of ["docker-logs", "server", "server-error"]) {
+        const artifact = readFileSync(join(outputDirectory, `${name}.stdout.log`), "utf8");
+        expect(artifact).not.toContain("PRIVATE_TIMESTAMP_CONTINUATION_SENTINEL");
+        expect(artifact).not.toContain("PRIVATE_CONTINUATION_SENTINEL");
+        expect(artifact).not.toContain("later-payload-secret");
+        expect(artifact).toContain("DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x456");
+        expect(artifact).toContain("{later-id} <Information> DatabaseAtomic: waiting for lock");
+        expect(artifact).toContain(
+          "{later-error-id} <Error> executeQuery: Code: 473. Cannot drop table: waiting for lock",
+        );
+        expect(artifact).toContain("DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x789");
+      }
+    },
+  );
+
+  it.each(["query:", "query_text=", "In scope", "while executing", "executeQuery:"])(
+    "redacts active structured continuations containing another %s marker while retaining error and stack evidence",
+    async (marker) => {
+      const { outputDirectory } = fixture(
+        "",
+        "",
+        [
+          "Code: 473. waiting for lock (in query: SELECT",
+          `2026-10-28 22:21:28 PRIVATE_STRUCTURED_TIMESTAMP_SENTINEL ${marker} more-sql`,
+          `2026.10.28 22:21:29.123 [ 42 ] {fake-id} <Error> fake: PRIVATE_STRUCTURED_HEADER_SENTINEL ${marker} more-sql`,
+          "0. DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x789",
+        ].join("\n"),
+      );
+      await collectClickHouseDiagnostics({ containerId, outputDirectory });
+      for (const name of ["query-log", "query-log-drops-errors", "mutations"]) {
+        const row = JSON.parse(readFileSync(join(outputDirectory, `${name}.stdout.log`), "utf8"));
+        expect(row).toMatchObject({
+          query_id: "drop-id",
+          query_duration_ms: 120000,
+          stack_trace: "DB::DatabaseAtomic::waitTableFinallyDropped()",
+        });
+        expect(row.exception).toContain("Code: 473. waiting for lock");
+        expect(row.exception).not.toContain("PRIVATE_STRUCTURED_TIMESTAMP_SENTINEL");
+        expect(row.exception).not.toContain("PRIVATE_STRUCTURED_HEADER_SENTINEL");
+        expect(row.exception).toContain("DB::DatabaseAtomic::waitTableFinallyDropped() @ 0x789");
+      }
+    },
+  );
+
   it("redacts timestamp-like SQL across every public log artifact and preserves later records", async () => {
     const { outputDirectory } = fixture(
       "",

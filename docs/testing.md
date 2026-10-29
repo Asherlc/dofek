@@ -39,6 +39,24 @@ than introducing a new score threshold:
 Native unit tests and a signed Simulator build remain separate checks;
 physical background reconnection and capture still require a device.
 
+## CI build caches
+
+Docker layers use the existing central GHCR registry caches:
+`ghcr.io/asherlc/dofek:server-buildcache`, `ghcr.io/asherlc/dofek:e2e-buildcache`,
+and `ghcr.io/asherlc/dofek-ml:buildcache`. PR checks import these caches without
+exporting; trusted main and manual builds publish them. See the
+[image builds](../.github/workflows/build-docker.yml),
+[ML build](../.github/workflows/build-docker-ml.yml),
+[PR checks](../.github/workflows/test.yml), and
+[manual builds](../.github/workflows/deploy.yml).
+The E2E producer and consumers use matching `DEPENDENCY_CACHE_BUST` inputs.
+Native build and dependency caches remain in GitHub Actions; its
+[storage limits and least-recently-used eviction](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#usage-limits-and-eviction-policy)
+make restored entries expendable. Docker's [registry cache backend](https://docs.docker.com/build/cache/backends/registry/)
+keeps layer caches separate from published images and permits builds without a cache hit.
+Caches are optional accelerators; successful cached builds do not establish cold-build
+correctness or completion within CI deadlines. Validate cold builds separately.
+
 ## Integration Dependencies
 
 The default and changed-test commands are intentionally Docker-free:

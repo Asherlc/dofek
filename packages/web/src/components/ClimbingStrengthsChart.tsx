@@ -1,10 +1,11 @@
-import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import type { ClimbingStrengthsDisplayPanel } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
   climbingStrengthsAdjustedLabel,
   climbingStrengthsBaselineLabel,
   climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsPanelLabel } from "@dofek/training/climbing-strengths-presentation";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import {
   climbingStrengthsChartOption,
@@ -19,7 +20,7 @@ export function ClimbingStrengthsChart({
   selectedRow,
   onSelectCell,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ClimbingStrengthsView;
   grade: string;
   selectedRow: string | null;
@@ -71,6 +72,7 @@ export function ClimbingStrengthsChart({
           : 340;
   const adjustedLabel = (key: string) =>
     climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === key));
+  const option = climbingStrengthsChartOption(panel, view, grade, selectedRow);
   const dataDisclosure = (
     <details className="text-xs text-muted" open={sparseRadar || undefined}>
       <summary className="cursor-pointer py-2 font-medium text-foreground">Exact values</summary>
@@ -163,7 +165,7 @@ export function ClimbingStrengthsChart({
         <>
           <p className="rounded-lg border border-border p-4 text-sm text-muted">
             {panel.coverage.missingTraits > 0
-              ? `${panel.dimension === "wall_angle" ? "Wall angle" : panel.dimension === "hold_type" ? "Hold type" : "Setting"} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
+              ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
               : ""}
             {adjustedRadar
               ? "Log results in at least three styles to see this chart. Your recorded climbs are listed below."
@@ -174,7 +176,7 @@ export function ClimbingStrengthsChart({
       ) : (
         <div className="overflow-auto">
           <DofekChart
-            option={climbingStrengthsChartOption(panel, view, grade, selectedRow)}
+            option={option}
             height={height}
             timeRangeMode="data"
             dataDisclosure={dataDisclosure}
@@ -185,7 +187,11 @@ export function ClimbingStrengthsChart({
                   event.componentType === "radar" &&
                   event.targetType === "axisName"
                 ) {
-                  const row = panel.rows.find((row) => row.label === event.name);
+                  const radar = "radar" in option ? option.radar : undefined;
+                  const axis = radar?.indicator.find(
+                    (axis) => radar.axisName.formatter(axis.name) === event.name,
+                  );
+                  const row = panel.rows.find((row) => row.key === axis?.name);
                   if (row?.cells.some((cell) => cell.grade === grade)) onSelectCell(row.key, grade);
                   return;
                 }

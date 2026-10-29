@@ -219,10 +219,7 @@ jobs:
           load: true
           tags: e2e-server:latest
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
-          cache-from: |
-            type=gha,scope=e2e
-            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
-          cache-to: type=gha,mode=max,scope=e2e
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Scan server image (Grype)
         env:
           GRYPE_IMAGE: mirror.gcr.io/anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
@@ -955,6 +952,7 @@ jobs:
       COMPOSE_PROJECT_NAME: dofek-ci-e2e
     permissions:
       contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -983,6 +981,18 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build E2E images with cache
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -991,9 +1001,7 @@ jobs:
           load: true
           tags: e2e-server:latest
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
-          cache-from: |
-            type=gha,scope=e2e
-          cache-to: type=gha,mode=max,scope=e2e
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Start e2e dependencies
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
       - name: Run e2e migrations
@@ -1334,11 +1342,35 @@ jobs:
           path: reports/mutation/
           retention-days: 7
 
-  mutation-swift:
-    name: Swift Mutation Testing
+  mutation-swift-prep:
+    name: Discover Swift mutation files
     needs: check-mobile-changes
     runs-on: macos-latest
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
+    outputs:
+      files: ${{ steps.discover.outputs.files }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Discover changed compiled Swift sources
+        id: discover
+        run: |
+          FILES=$(pnpm tsx scripts/run-swift-mutation.ts --base origin/main --list-files)
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+  mutation-swift:
+    name: Swift Mutation Testing (${{ matrix.file }})
+    needs: mutation-swift-prep
+    runs-on: macos-latest
+    if: needs.mutation-swift-prep.outputs.files != '' && needs.mutation-swift-prep.outputs.files != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.mutation-swift-prep.outputs.files) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1368,12 +1400,18 @@ jobs:
         run: brew link --overwrite muter 2>/dev/null || ln -sf /opt/homebrew/Cellar/muter/*/bin/muter /opt/homebrew/bin/muter
       - name: Run native mutation tests
         timeout-minutes: 30
-        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main
+        env:
+          MUTATION_FILE: ${{ matrix.file }}
+        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main --file "$MUTATION_FILE"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && hashFiles('reports/swift-mutation/*.json') != ''
+        if: always()
         with:
-          name: muter-report
-          path: reports/swift-mutation/
+          name: muter-report-${{ strategy.job-index }}
+          path: |
+            reports/swift-mutation/
+            packages/mobile/modules/*_mutated/*.log
+            packages/mobile/targets/*_mutated/*.log
+          if-no-files-found: ignore
           retention-days: 7
 
   mutation-gate:
@@ -1420,7 +1458,7 @@ jobs:
 
   test-all-gate:
     name: Test Gate
-    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, migration-lint]
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift-prep, mutation-swift, migration-lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1434,6 +1472,7 @@ jobs:
             "${{ needs.test-mobile.result }}" \
             "${{ needs.test-swift.result }}" \
             "${{ needs.mutation-gate.result }}" \
+            "${{ needs.mutation-swift-prep.result }}" \
             "${{ needs.mutation-swift.result }}" \
             "${{ needs.migration-lint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

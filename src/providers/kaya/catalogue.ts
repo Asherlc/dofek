@@ -6,6 +6,7 @@ import {
   catalogueCandidateSchema,
 } from "@dofek/training/climbing-catalogue";
 import { z } from "zod";
+import { decodeKayaClimbingTags } from "./climbing-tags.ts";
 
 const origin = "https://kaya-app.kayaclimb.com";
 const endpoint = "https://kaya-beta.kayaclimb.com/graphql";
@@ -42,7 +43,17 @@ const climbFields = `id slug name climb_type { name } grade { name } gym { id na
 const query = `query CatalogueClimbs($name:String!,$offset:Int!,$count:Int!) { webSearchForClimb(name:$name,offset:$offset,count:$count) { ${climbFields} } }`;
 const nativeSchema = z.object({
   data: z.object({
-    climb: climbSchema.extend({ lead: z.boolean().nullable(), is_trad: z.boolean().nullable() }),
+    climb: climbSchema.extend({
+      lead: z.boolean().nullable(),
+      is_trad: z.boolean().nullable(),
+      tags: z.array(
+        z.object({
+          id: z.union([z.string().min(1), z.number().int()]),
+          name: z.string().refine((name) => name.trim().length > 0),
+          tag_type_id: z.union([z.string().min(1), z.number().int()]),
+        }),
+      ),
+    }),
   }),
   errors: z.array(z.unknown()).optional(),
 });
@@ -52,6 +63,7 @@ const normalize = (name: string) =>
 type ClassifiedClimb = z.infer<typeof climbSchema> & {
   lead?: boolean | null;
   is_trad?: boolean | null;
+  tags?: z.infer<typeof nativeSchema>["data"]["climb"]["tags"];
 };
 
 function climbTypeTags(climb: ClassifiedClimb): CatalogueCandidate["tags"] {
@@ -110,6 +122,14 @@ function candidate(climb: ClassifiedClimb): CatalogueCandidate {
     angle: category || climb.angle === null ? null : { value: climb.angle, unit: null },
     tags: [
       ...climbTypeTags(climb),
+      ...decodeKayaClimbingTags(climb).map((tag) => ({
+        kind: tag.categoryKey === "3" ? "hold" : "other",
+        sourceKey: tag.sourceKey,
+        label: tag.label,
+        category: tag.categoryLabel ?? tag.categoryKey,
+        scope: "direct",
+        inheritedFrom: null,
+      })),
       ...(category
         ? [
             {
@@ -184,7 +204,7 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
   async #native(id: string, token: string): Promise<CatalogueCandidate> {
     const result = nativeSchema.safeParse(
       await this.#request(
-        `query CatalogueClimb { climb(id:"${id}") { ${climbFields} lead is_trad } }`,
+        `query CatalogueClimb { climb(id:"${id}") { ${climbFields} lead is_trad tags { id name tag_type_id } } }`,
         {},
         token,
       ),

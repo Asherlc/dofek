@@ -1,8 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { RadarComponentOption } from "echarts";
 import type { ComponentProps } from "react";
 import { afterEach, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import {
   climbingStrengthsSingleClimbFixture,
@@ -363,4 +365,47 @@ it("opens a radar style's climbs from its axis label without treating the baseli
   });
   captured.props?.onEvents?.click?.({ data: { name: "Same-grade baseline", value: [0, 0, 0] } });
   expect(onSelectCell).toHaveBeenCalledTimes(1);
+});
+
+it.each(["V3", "All grades"])("keeps duplicate-label radar tag cohorts distinct at %s", (grade) => {
+  const source = grade === "All grades" ? { ...panel, ...panel.allGrades } : panel;
+  const duplicateTags = {
+    ...source,
+    dimension: "tag" as const,
+    category: { providerId: "source", key: "grips", label: "Grip" },
+    rows: source.rows.map((row, index) => ({ ...row, label: index < 2 ? "Crimp" : "Sloper" })),
+  };
+  const onSelectCell = vi.fn();
+  render(
+    <ClimbingStrengthsChart
+      panel={duplicateTags}
+      view="radar"
+      grade={grade}
+      selectedRow={null}
+      onSelectCell={onSelectCell}
+    />,
+  );
+  const radarSchema = z.object({
+    indicator: z.array(z.object({ name: z.string() })),
+    axisName: z.object({
+      formatter: z.custom<(name?: string) => string>((value) => typeof value === "function"),
+    }),
+  }) satisfies z.ZodType<RadarComponentOption>;
+  const radar = radarSchema.parse(captured.props?.option.radar);
+  const secondAxis = radar.indicator?.[1];
+  if (!secondAxis) throw new Error("Missing second radar axis");
+  captured.props?.onEvents?.click?.({
+    componentType: "radar",
+    targetType: "axisName",
+    name: radar.axisName.formatter(secondAxis.name),
+  });
+  expect(onSelectCell).toHaveBeenCalledWith("overhang", grade);
+  const firstAxis = radar.indicator?.[0];
+  if (!firstAxis) throw new Error("Missing first radar axis");
+  captured.props?.onEvents?.click?.({
+    componentType: "radar",
+    targetType: "axisName",
+    name: radar.axisName.formatter(firstAxis.name),
+  });
+  expect(onSelectCell).toHaveBeenLastCalledWith("vertical", grade);
 });

@@ -7,6 +7,7 @@
     "ioredis": "6.0.0"
   },
   "exports": {
+    "./climbing-tags": "./src/climbing-tags.ts",
     "./climbing-catalogue": "./src/climbing-catalogue.ts",
     "./climbing-catalogue-sources": "./src/climbing-catalogue-sources.ts",
     "./db/climbing-catalogue-seed": "./src/db/climbing-catalogue-seed.ts",
@@ -307,7 +308,6 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@actions/expressions": "0.3.61",
     "@biomejs/biome": "2.5.10",
     "@opentelemetry/context-async-hooks": "2.10.0",
     "@redocly/cli": "2.39.0",

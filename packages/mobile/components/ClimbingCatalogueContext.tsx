@@ -1,5 +1,6 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type { ClimbingCatalogueContext as Context } from "@dofek/training/climbing-catalogue";
+import { climbingCatalogueTagLabel } from "@dofek/training/climbing-catalogue";
 import { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { captureException } from "../lib/telemetry";
@@ -89,24 +90,14 @@ export function ClimbingCatalogueContextView({
                   {candidate.grade && (
                     <Text style={styles.text}>Catalogue grade: {candidate.grade}</Text>
                   )}
-                  {candidate.tags
-                    .filter((tag) => tag.kind !== "other")
-                    .map((tag) => (
-                      <Text
-                        style={styles.text}
-                        key={`${tag.sourceKey}:${tag.label}:${tag.scope}:${tag.inheritedFrom}`}
-                      >
-                        {tag.kind === "hold"
-                          ? "Holds: "
-                          : tag.kind === "climb_type"
-                            ? "Climb type: "
-                            : "Wall: "}
-                        {tag.label}
-                        {tag.scope === "inherited"
-                          ? ` (inherited${tag.inheritedFrom ? ` from ${tag.inheritedFrom}` : ""})`
-                          : ""}
-                      </Text>
-                    ))}
+                  {candidate.tags.map((tag) => (
+                    <Text
+                      style={styles.text}
+                      key={`${tag.sourceKey}:${tag.category}:${tag.label}:${tag.scope}:${tag.inheritedFrom}`}
+                    >
+                      {climbingCatalogueTagLabel(tag)}
+                    </Text>
+                  ))}
                   {candidate.angle && (
                     <Text style={styles.text}>
                       Source angle: {candidate.angle.value}
