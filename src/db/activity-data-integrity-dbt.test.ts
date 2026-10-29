@@ -1,8 +1,18 @@
 import { ChildProcess, spawn } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { z } from "zod";
 import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 import {
@@ -172,6 +182,96 @@ describe("runActivityIntegrityDbtBuild", () => {
         run.state.verifiedBatches.filter((ids) => JSON.stringify(ids) === JSON.stringify(batch)),
       ).toHaveLength(2);
     expect(run.phases.every((phase) => !existsSync(phase.project))).toBe(true);
+  });
+  it.each([100, 200])("publishes %i cadence keys without an extra empty batch", async (count) => {
+    const keys = Array.from({ length: count }, (_, index) => id(index + 1));
+    const run = fixture(keys);
+    await runActivityIntegrityDbtBuild(input, run.client);
+    const batches = run.phases
+      .filter((phase) => phase.selection === "activity_step_cadence_rows")
+      .map((phase) => phase.config.vars.activity_step_cadence_repair_activity_ids);
+    expect(batches.map((batch) => batch?.length)).toEqual(Array(count / 100).fill(100));
+    expect(batches.flat()).toEqual(keys);
+    expect([...run.state.summaryVersions.values()]).toEqual(keys.map(() => 9007199254740994n));
+  });
+  it.each([
+    [new Date("invalid"), input.eventTimeEnd],
+    [input.eventTimeStart, new Date("invalid")],
+    [input.eventTimeStart, input.eventTimeStart],
+    [input.eventTimeEnd, input.eventTimeStart],
+  ])(
+    "rejects invalid or non-increasing event bounds %s to %s",
+    async (eventTimeStart, eventTimeEnd) => {
+      const run = fixture();
+      await expect(
+        runActivityIntegrityDbtBuild({ ...input, eventTimeStart, eventTimeEnd }, run.client),
+      ).rejects.toThrow("activity integrity dbt build requires valid increasing event-time bounds");
+      expect(run.phases).toEqual([]);
+    },
+  );
+  it("keeps the event-day string intact for dbt's YAML 1.1 loader", async () => {
+    const run = fixture();
+    const original = vi.mocked(spawn).getMockImplementation();
+    if (!original) throw new Error("Missing fixture spawn");
+    vi.mocked(spawn).mockImplementation((command, args, options) => {
+      const project = args?.[(args?.indexOf("--project-dir") ?? -1) + 1] ?? "";
+      const config: unknown = parse(readFileSync(join(project, "dbt_project.yml"), "utf8"), {
+        version: "1.1",
+      });
+      expect(config).toMatchObject({ vars: { activity_sensor_sample_begin: "2026-09-01" } });
+      return original(command, args, options);
+    });
+    await runActivityIntegrityDbtBuild(input, run.client);
+    expect(run.phases).toHaveLength(3);
+  });
+  it("makes every default project resource discoverable through the private project", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "activity-integrity-project-test-"));
+    const resourcePaths = {
+      "model-paths": "models",
+      "macro-paths": "macros",
+      "test-paths": "tests",
+      "analysis-paths": "analyses",
+      "seed-paths": "seeds",
+      "snapshot-paths": "snapshots",
+    };
+    for (const path of Object.values(resourcePaths)) {
+      mkdirSync(join(directory, "analytics", path), { recursive: true });
+      writeFileSync(join(directory, "analytics", path, "fixture.sql"), `resource:${path}`);
+    }
+    writeFileSync(
+      join(directory, "analytics", "dbt_project.yml"),
+      stringify({ name: "fixture", version: "1.0.0", profile: "fixture" }),
+    );
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(directory);
+    try {
+      const run = fixture();
+      const original = vi.mocked(spawn).getMockImplementation();
+      if (!original) throw new Error("Missing fixture spawn");
+      vi.mocked(spawn).mockImplementation((command, args, options) => {
+        const project = args?.[(args?.indexOf("--project-dir") ?? -1) + 1] ?? "";
+        const config = z
+          .record(z.string(), z.unknown())
+          .parse(parse(readFileSync(join(project, "dbt_project.yml"), "utf8")));
+        for (const [key, sourcePath] of Object.entries(resourcePaths)) {
+          const paths = z.array(z.string()).parse(config[key]);
+          expect(paths).toHaveLength(1);
+          const mountedPath = join(project, paths[0] ?? "");
+          expect(realpathSync(mountedPath)).toBe(
+            realpathSync(join(directory, "analytics", sourcePath)),
+          );
+          expect(readFileSync(join(mountedPath, "fixture.sql"), "utf8")).toBe(
+            `resource:${sourcePath}`,
+          );
+        }
+        return original(command, args, options);
+      });
+      await runActivityIntegrityDbtBuild(input, run.client);
+      expect(run.phases).toHaveLength(3);
+      expect(run.phases.every((phase) => !existsSync(phase.project))).toBe(true);
+    } finally {
+      cwd.mockRestore();
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
   it("creates an initially absent empty target with an exact empty batch and retained ordinary scope", async () => {
     const run = fixture([]);

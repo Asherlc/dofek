@@ -199,7 +199,7 @@ describe("activity data integrity repair", () => {
       query_params: { user: fixture.foreignUserId },
       format: "JSONEachRow",
     });
-    expect(await foreign.json()).toEqual([{ count: "0" }]);
+    expect(await foreign.json()).toEqual([{ count: 0 }]);
   }, 300_000);
 
   it("creates an empty exact cadence target without selecting another user's running group", async () => {
@@ -228,7 +228,7 @@ describe("activity data integrity repair", () => {
       query: `SELECT count() AS count FROM ${database}.activity_step_cadence_rows FINAL`,
       format: "JSONEachRow",
     });
-    expect(await result.json()).toEqual([{ count: "0" }]);
+    expect(await result.json()).toEqual([{ count: 0 }]);
   }, 300_000);
 
   it.each(["repair", "rollback"] as const)(
@@ -244,7 +244,7 @@ describe("activity data integrity repair", () => {
       SELECT id::uuid,group_id::uuid,user_id::uuid,provider_id,external_id,canonical_type,provider_type,
         started_at::timestamptz,ended_at::timestamptz,raw::jsonb,local_time_source
       FROM jsonb_to_recordset(${JSON.stringify(fixture.initialActivityRows.filter((row) => row.user_id === TEST_USER_ID))}::jsonb)
-      AS r(id text,group_id text,user_id text,provider_id text,external_id text,canonical_type text,provider_type text,
+      AS r(id text,group_id text,user_id text,provider_id text,external_id text,canonical_type fitness.canonical_activity_type,provider_type text,
         started_at text,ended_at text,raw text,local_time_source text)`);
       await client.insert({
         table: `${database}.activity`,

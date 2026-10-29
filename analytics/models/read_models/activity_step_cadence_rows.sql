@@ -307,7 +307,7 @@ device_matches AS (
         n.activity_id AS activity_id,
         n.provider_id AS provider_id,
         n.bundle AS bundle,
-        argMin(tuple(n.device_id), tuple(n.rule.1, coalesce(n.device_id, ''), n.rule.2)).1 AS device_id,
+        tupleElement(argMin(tuple(n.device_id), tuple(n.rule.1, coalesce(n.device_id, ''), n.rule.2)), 1) AS device_id,
         min(n.rule.1) AS priority
     FROM name_matches AS n
     GROUP BY n.user_id, n.activity_id, n.provider_id, n.bundle
