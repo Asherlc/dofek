@@ -101,7 +101,11 @@ Keep manual EAS/EOAS publication stopped for the same window.
 Run a read-only inventory before sizing a backup. Inventory uses rclone's
 [size --json](https://rclone.org/commands/rclone_size/) to report production
 object and byte totals, including an empty bucket. It creates no snapshot and
-does not consume the supplied planned identifier. The manual workflow allows
+does not consume the supplied planned identifier. Capacity inventory runs
+independently of deployments and publisher pauses. Its observed totals can
+change during publication and do not certify a backup. Copies, checks and
+restores retain the production lock and paused-writer requirements.
+The manual workflow allows
 only this read-only operation on a reviewed non-main ref; every copy, restore,
 verification and rehearsal operation remains main-only. Set `REVIEWED_REF` to
 main or the reviewed branch containing this operation, and generate a fresh

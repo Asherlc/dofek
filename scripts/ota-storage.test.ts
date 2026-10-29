@@ -127,6 +127,14 @@ describe("OTA storage operator CLI", () => {
     }
   });
 
+  it("reports capacity while a publisher is active", async () => {
+    process.argv[2] = "inventory";
+    workflowState = "active";
+    await import("./ota-storage.ts");
+    expect(transfers()).toHaveLength(1);
+    expect(transfers()[0]?.slice(-3)).toEqual(["size", "ota:dofek-ota", "--json"]);
+  });
+
   it("requires confirmation of candidate shutdown before an explicit rehearsal restore", async () => {
     process.argv[2] = "restore-rehearsal";
     vi.stubEnv("OTA_REHEARSAL_STOPPED", "false");

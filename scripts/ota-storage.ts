@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     operation === "snapshot"
       ? z.string().regex(/^\d+$/).parse(required("GITHUB_RUN_ID"))
       : undefined;
-  await requirePausedWriters();
+  if (operation !== "inventory") await requirePausedWriters();
   if (operation === "restore-production") {
     const context = required("OTA_DOCKER_CONTEXT");
     const expectedHost = `ssh://ubuntu@${required("ORACLE_SERVER_HOST")}`;
