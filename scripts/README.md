@@ -20,6 +20,19 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Database & Seeding
 
+- `ota-storage.ts`: Copies and byte-verifies OTA snapshots and isolated rehearsal
+  storage using pinned [rclone](https://rclone.org/commands/rclone_check/).
+  Requires paused publication/cleanup workflows and existing Infisical R2
+  credentials. See the [OTA storage runbook](../deploy/ota/README.md#verified-storage-operations).
+  - Usage: `pnpm tsx scripts/ota-storage.ts <snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal> <snapshot-id>`
+- `rehearse-ota-storage.ts`: Runs the private candidate image against a verified
+  rehearsal copy in CI, checks app-scoped key relocation and signed asset
+  delivery, stops the container, restores the copy, and verifies production is
+  unchanged. Uses the existing manifest validator and the
+  [Expo signature and asset-hash contract](https://docs.expo.dev/technical-specs/expo-updates-1/).
+  - Usage: `pnpm tsx scripts/rehearse-ota-storage.ts <snapshot-id>` through the
+    [main-only OTA Storage workflow](../.github/workflows/ota-storage.yml).
+
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
   - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans.
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.

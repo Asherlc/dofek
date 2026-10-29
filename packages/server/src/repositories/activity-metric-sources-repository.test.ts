@@ -27,12 +27,105 @@ function storeWithRows(rows: unknown[]) {
         rows.map((row) =>
           schema.parse({
             activity_ids: window.memberActivityIds,
+            sample_count: 1,
             ...z.record(z.string(), z.unknown()).parse(row),
           }),
         ),
     ),
   };
 }
+
+describe("heart-rate default ranking", () => {
+  it.each([
+    { name: "standalone samples", linked: false, role: null, expected: "whoop" },
+    { name: "activity-linked samples", linked: true, role: null, expected: "watch" },
+    { name: "reported recorder", linked: false, role: "recorder", expected: "watch" },
+    {
+      name: "recorder label without matching source identity",
+      linked: false,
+      role: "recorder",
+      expected: "whoop",
+    },
+    { name: "file creator only", linked: false, role: "creator", expected: "whoop" },
+    { name: "observed sensor only", linked: false, role: "sensor", expected: "whoop" },
+  ] as const)(
+    "prefers the appropriate source for $name",
+    async ({ name, linked, role, expected }) => {
+      const hardware: ActivityHardware = {
+        items: role
+          ? [
+              {
+                id: "watch-recorder",
+                activityId: window.activityId,
+                providerId: "apple_health",
+                sourceName:
+                  name === "recorder label without matching source identity" ? null : "Watch",
+                role,
+                label: "Watch",
+                model: null,
+                manufacturer: null,
+                evidence: "Reported hardware",
+                details: [],
+              },
+            ]
+          : [],
+        power: [],
+      };
+      const metrics = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "whoop",
+            device_id: null,
+            source_id: "whoop",
+            activity_ids: [],
+            sample_count: 10,
+          },
+          {
+            channel: "heart_rate",
+            provider_id: "apple_health",
+            device_id: "Watch",
+            source_id: "watch",
+            activity_ids: linked ? [window.activityId] : [],
+            sample_count: 1,
+          },
+        ]),
+        window,
+        hardware,
+      );
+      expect(metrics[0]?.defaultSourceId).toBe(expected);
+    },
+  );
+
+  it.each([false, true])(
+    "uses sample count within the direct-recording tier (%s)",
+    async (linked) => {
+      const activityIds = linked ? [window.activityId] : [];
+      const metrics = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "apple_health",
+            device_id: "Watch",
+            source_id: "watch",
+            activity_ids: activityIds,
+            sample_count: 1,
+          },
+          {
+            channel: "heart_rate",
+            provider_id: "whoop",
+            device_id: null,
+            source_id: "whoop",
+            activity_ids: activityIds,
+            sample_count: 10,
+          },
+        ]),
+        window,
+      );
+      expect(metrics[0]?.defaultSourceId).toBe("whoop");
+    },
+  );
+});
 
 describe("activity power work", () => {
   it("integrates fully covered power seconds while preserving zero and recording gaps", async () => {
@@ -564,7 +657,7 @@ it("uses the reported BLE name while keeping the peripheral UUID source identity
         source_id: '["ble_heart_rate","uuid"]',
         activity_ids: [],
       },
-    ].map((row) => schema.parse(row)),
+    ].map((row) => schema.parse({ sample_count: 1, ...row })),
   );
   store.query.mockImplementationOnce(async (schema) =>
     [{ provider_id: "ble_heart_rate", device_id: "uuid", device_name: "Polar H10" }].map((row) =>
@@ -761,7 +854,9 @@ describe("BLE peripheral label lookup", () => {
       },
     ];
     const store = storeWithRows([]);
-    store.query.mockImplementationOnce(async (schema) => rows.map((row) => schema.parse(row)));
+    store.query.mockImplementationOnce(async (schema) =>
+      rows.map((row) => schema.parse({ sample_count: 1, ...row })),
+    );
     store.query.mockImplementationOnce(async (schema) =>
       [
         { provider_id: "ble_heart_rate", device_id: "strap-b", device_name: "Polar H10" },
@@ -804,6 +899,7 @@ describe("BLE peripheral label lookup", () => {
           device_id: "strap-a",
           source_id: "source",
           activity_ids: [],
+          sample_count: 1,
         },
       ].map((row) => schema.parse(row)),
     );

@@ -41,7 +41,7 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("restores the combined v22 running contract", async () => {
+  it("restores the combined v23 running contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "combined-running-owner";
     const queryKey = [
@@ -55,7 +55,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v22`,
+        buster: `${userId}:v23`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -69,33 +69,36 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toEqual(data);
   });
 
-  it("discards an independently produced v21 cache before restoring the combined contract", async () => {
-    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-    const userId = "independent-v21-owner";
-    const queryKey = [
-      ["running", "dynamicsV2"],
-      { input: { days: 30, responseVersion: 2 }, type: "query" },
-    ];
-    const seedClient = createQueryClient();
-    seedClient.setQueryData(queryKey, runningData);
-    await AsyncStorage.setItem(
-      `dofek-query-cache:${userId}`,
-      JSON.stringify({
-        timestamp: Date.now(),
-        buster: `${userId}:v21`,
-        clientState: dehydrate(seedClient),
-      }),
-    );
-    const restoredClient = createQueryClient();
-    await persistQueryClientRestore({
-      queryClient: restoredClient,
-      persister: createMobileQueryPersister(userId),
-      maxAge: QUERY_CACHE_MAX_AGE_MS,
-      buster: mobileQueryCacheBuster(userId),
-    });
-    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
-    await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
-  });
+  it.each([21, 22])(
+    "discards an independently produced v%s cache before restoring the combined contract",
+    async (version) => {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      const userId = "independent-v21-owner";
+      const queryKey = [
+        ["running", "dynamicsV2"],
+        { input: { days: 30, responseVersion: 2 }, type: "query" },
+      ];
+      const seedClient = createQueryClient();
+      seedClient.setQueryData(queryKey, runningData);
+      await AsyncStorage.setItem(
+        `dofek-query-cache:${userId}`,
+        JSON.stringify({
+          timestamp: Date.now(),
+          buster: `${userId}:v${version}`,
+          clientState: dehydrate(seedClient),
+        }),
+      );
+      const restoredClient = createQueryClient();
+      await persistQueryClientRestore({
+        queryClient: restoredClient,
+        persister: createMobileQueryPersister(userId),
+        maxAge: QUERY_CACHE_MAX_AGE_MS,
+        buster: mobileQueryCacheBuster(userId),
+      });
+      expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+      await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
+    },
+  );
 
   it.each([17, 20])(
     "discards v%s running rows before restoring cadence evidence and availability",
@@ -377,7 +380,7 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
   });
-  it("discards v11 metric sources without structured presentation before restoration completes", async () => {
+  it("discards v21 metric sources with priority-only defaults before restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "metric-source-owner";
     const queryKey = [
@@ -390,14 +393,25 @@ describe("mobile query persistence", () => {
         key: "heartRate",
         label: "Heart Rate",
         defaultSourceId: "whoop",
-        sources: [{ id: "whoop", label: "WHOOP" }],
+        sources: [
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+        ],
       },
     ]);
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v11`,
+        buster: `${userId}:v21`,
         clientState: dehydrate(seedClient),
       }),
     );

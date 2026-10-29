@@ -10,6 +10,26 @@ resource "cloudflare_r2_bucket" "ota" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "ota_backups" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-ota-backups"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_lock" "ota_snapshots" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.ota_backups.name
+
+  rules = [{
+    id      = "preserve-verified-ota-snapshots"
+    enabled = true
+    prefix  = "snapshots/"
+    condition = {
+      type = "Indefinite"
+    }
+  }]
+}
+
 resource "cloudflare_r2_bucket" "storybook" {
   account_id = var.cloudflare_account_id
   name       = "dofek-storybook"

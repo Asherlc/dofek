@@ -38,6 +38,87 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("retains distinct recorded times from consolidated sources", async () => {
+    const api = named("kaya");
+    api.externalId = "kaya:ascent:123";
+    api.raw = { date: "2026-07-06T22:21:59Z" };
+    const exported = named("kaya-export", "20000000-0000-4000-8000-000000000011");
+    exported.externalId = "kaya:entry:123";
+    exported.raw = { date: "Mon Jul 06 2026 22:23:07 GMT+0000 (GMT+00:00)" };
+    const [result] = await repository([api, exported]).getActivityLogEntries("activity");
+    expect(result?.toDetail().chartAnnotations?.map((annotation) => annotation.startedAt)).toEqual([
+      "2026-07-06T22:21:59.000Z",
+      "2026-07-06T22:23:07.000Z",
+    ]);
+  });
+  it.each([false, true])(
+    "plots a consolidated API/export ascent once while retaining separate same-provider ascents (API first: %s)",
+    async (apiFirst) => {
+      const api = named("kaya");
+      api.externalId = "kaya:ascent:123";
+      api.raw = { date: "2026-07-06T22:21:59Z" };
+      const exported = named("kaya-export", "20000000-0000-4000-8000-000000000011");
+      exported.externalId = "kaya:entry:123";
+      exported.raw = { date: "Mon Jul 06 2026 22:21:59 GMT+0000 (GMT+00:00)" };
+      const repeated = named("kaya", "20000000-0000-4000-8000-000000000012");
+      repeated.externalId = "kaya:ascent:124";
+      repeated.raw = api.raw;
+      const logs = (
+        await repository([
+          ...(apiFirst ? [api, exported] : [exported, api]),
+          repeated,
+        ]).getActivityLogEntries("activity")
+      ).map((log) => log.toDetail());
+      expect(logs).toHaveLength(2);
+      expect(logs.map((log) => log.chartAnnotations?.length)).toEqual([1, 1]);
+    },
+  );
+  it.each([false, true])(
+    "preserves timed climbs when a richer source wins (KAYA first: %s)",
+    async (kayaFirst) => {
+      const kaya = named("kaya");
+      kaya.externalId = "kaya:ascent:123";
+      kaya.raw = { date: "2026-10-01T17:15:00-07:00" };
+      const richer = named("openbeta", "20000000-0000-4000-8000-000000000011", true);
+      const [result] = await repository(
+        kayaFirst ? [kaya, richer] : [richer, kaya],
+      ).getActivityLogEntries("activity");
+      expect(result?.toDetail().chartAnnotations).toEqual([
+        {
+          id: kaya.id,
+          label: "Corner · 5.10a",
+          startedAt: "2026-10-02T00:15:00.000Z",
+          endedAt: null,
+        },
+      ]);
+    },
+  );
+  it.each([
+    ["kaya", "kaya:ascent:123", "2026-10-01"],
+    ["kaya", "kaya:ascent:123", "2026-10-01T17:15:00"],
+    ["kaya", "kaya:ascent:123", "2026-02-30T17:15:00Z"],
+    ["kaya", "kaya:session:123:attempted:456", "2026-10-01T17:15:00Z"],
+    ["mountain-project", "tick", "2026-10-01T17:15:00Z"],
+  ])("does not invent timing for %s %s %s", async (providerId, externalId, date) => {
+    const log = named(providerId);
+    log.externalId = externalId;
+    log.raw = { date };
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().chartAnnotations).toEqual([]);
+  });
+  it("projects a precisely timed KAYA export using its title and reported grade", async () => {
+    const log = climbingLogEntryFixture({
+      providerId: "kaya-export",
+      externalId: "kaya:entry:123",
+      title: "Blue",
+      reportedGrades: [{ value: "V3", system: "v_scale" }],
+      raw: { date: "2026-10-01T17:15:00Z" },
+    });
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().chartAnnotations).toEqual([
+      { id: log.id, label: "Blue · V3", startedAt: "2026-10-01T17:15:00.000Z", endedAt: null },
+    ]);
+  });
   it.each([false, true])(
     "hydrates historical retained source tags (ascent: %s)",
     async (ascent) => {

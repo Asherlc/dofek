@@ -120,31 +120,31 @@ url = "https://github.com/rtk-ai/rtk/releases/download/v0.44.0/rtk-x86_64-apple-
 url_api = "https://api.github.com/repos/rtk-ai/rtk/releases/assets/490347168"
 
 [[tools.infisical]]
-version = "0.43.114"
+version = "0.44.10"
 backend = "github:Infisical/cli"
 
 [tools.infisical.options]
 asset_pattern = "cli_{{ version }}_{{ os(macos='darwin') }}_{{ arch(x64='amd64') }}.tar.gz"
 
 [tools.infisical."platforms.linux-arm64"]
-checksum = "sha256:8cea18cd32091cb3223b82fac9f2a9f71d9867bcc84a1a99e8028607d09e08bb"
-url = "https://github.com/Infisical/cli/releases/download/v0.43.114/cli_0.43.114_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/488896478"
+checksum = "sha256:97d49c74b16eb9d7d492e4825a941b0386d00de0bcdf0e4e023687cc754bd5b2"
+url = "https://github.com/Infisical/cli/releases/download/v0.44.10/cli_0.44.10_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/683122907"
 
 [tools.infisical."platforms.linux-x64"]
-checksum = "sha256:c35cdd1c4908b3ea6c0773279f8ae6993f9ec03b5e2d4a7cdc2f38ce89eb33d0"
-url = "https://github.com/Infisical/cli/releases/download/v0.43.114/cli_0.43.114_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/488896476"
+checksum = "sha256:3800bded850e00ce1c402a48f081c4b210cfbdf4f9a4a794cf159a2fef0a8efa"
+url = "https://github.com/Infisical/cli/releases/download/v0.44.10/cli_0.44.10_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/683122916"
 
 [tools.infisical."platforms.macos-arm64"]
-checksum = "sha256:0bb2cf9098e32038698250e4fcee2b6414476e11088d4ee24e574ecc039b51e4"
-url = "https://github.com/Infisical/cli/releases/download/v0.43.114/cli_0.43.114_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/488893012"
+checksum = "sha256:e7317e711ed899b20c828574166438b953c37dafe611fcda47233bb7d749b46e"
+url = "https://github.com/Infisical/cli/releases/download/v0.44.10/cli_0.44.10_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/683108814"
 
 [tools.infisical."platforms.macos-x64"]
-checksum = "sha256:5d66815077a9460fe995a1b5babbc0140dc7dabec62529a67c516f204394f218"
-url = "https://github.com/Infisical/cli/releases/download/v0.43.114/cli_0.43.114_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/488893011"
+checksum = "sha256:ee5ee786f3e28a752bc1bd5c566afe2d962bbd83c2c7300b76e99f06302b63a4"
+url = "https://github.com/Infisical/cli/releases/download/v0.44.10/cli_0.44.10_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/Infisical/cli/releases/assets/683108816"
 
 [[tools.jq]]
 version = "1.8.2"

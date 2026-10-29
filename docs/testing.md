@@ -201,6 +201,17 @@ configured sequencer without collecting database suites; see Vitest's
 [files-only listing path](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cli/cli-api.ts)
 and [advanced API](https://v4.vitest.dev/advanced/api/).
 
+### Integration request interception
+
+The integration project starts [MSW interception](../src/test/early-msw-setup.ts)
+before test modules load, so retained provider clients capture an intercepted
+fetch function. Each file retains its handlers and unhandled-request policy;
+the handler-free setup closes at file teardown. The lifecycle regression uses
+three real runner files and a guarded native transport to verify early capture,
+strict fixture handling and cleanup without external traffic. MSW documents the
+[client-construction ordering requirement](https://github.com/mswjs/msw/issues/2180),
+and Vitest documents [setup-file execution with cached modules](https://vitest.dev/config/setupfiles).
+
 ### Hosted ClickHouse Failure Diagnostics
 
 On an integration-test failure, CI runs the

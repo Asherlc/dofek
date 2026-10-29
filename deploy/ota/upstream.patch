@@ -1,0 +1,145 @@
+diff --git a/internal/repository/update_bucket.go b/internal/repository/update_bucket.go
+index b78d5b9..d384434 100644
+--- a/internal/repository/update_bucket.go
++++ b/internal/repository/update_bucket.go
+@@ -39,7 +39,10 @@ func (s *BucketUpdateRepository) GetLatestUpdate(ctx context.Context, appId stri
+ 	updates = sortNewestFirst(updates)
+ 	for i := range updates {
+ 		storedMetadata, metaErr := update2.RetrieveUpdateStoredMetadata(ctx, updates[i])
+-		if metaErr != nil || storedMetadata == nil || storedMetadata.Platform != platform {
++		if metaErr != nil {
++			return nil, fmt.Errorf("failed to read update metadata: %w", metaErr)
++		}
++		if storedMetadata == nil || storedMetadata.Platform != platform {
+ 			continue
+ 		}
+ 		valid, err := s.isUpdateValid(ctx, updates[i])
+diff --git a/test/manifest_storage_errors_test.go b/test/manifest_storage_errors_test.go
+new file mode 100644
+index 0000000..c837a12
+--- /dev/null
++++ b/test/manifest_storage_errors_test.go
+@@ -0,0 +1,123 @@
++package test
++
++import (
++	"bytes"
++	"encoding/json"
++	"mime"
++	"mime/multipart"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"testing"
++	"xprem/internal/bucket"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestManifestStorageFailuresRemainErrors(t *testing.T) {
++	for _, tc := range []struct {
++		name            string
++		fault           string
++		missing         string
++		corrupt         bool
++		empty           bool
++		status          int
++		noUpdate        bool
++		otherPlatform   bool
++		newerIncomplete bool
++	}{
++		{name: "metadata read failure", fault: "update-metadata.json", status: http.StatusInternalServerError},
++		{name: "marker read failure", fault: ".check", status: http.StatusInternalServerError},
++		{name: "malformed stored metadata", corrupt: true, status: http.StatusInternalServerError},
++		{name: "incomplete upload missing metadata", missing: "update-metadata.json", status: http.StatusOK, noUpdate: true},
++		{name: "incomplete upload missing marker", missing: ".check", status: http.StatusOK, noUpdate: true},
++		{name: "empty runtime", empty: true, status: http.StatusOK, noUpdate: true},
++		{name: "complete update", status: http.StatusOK},
++		{name: "other platform", otherPlatform: true, status: http.StatusOK, noUpdate: true},
++		{name: "complete update behind incomplete upload", newerIncomplete: true, status: http.StatusOK},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Setenv("STORAGE_MODE", "local")
++			t.Setenv("CACHE_MODE", "local")
++			t.Setenv("DB_URL", "")
++			teardown := setup(t)
++			defer teardown()
++			root := t.TempDir()
++			projectRoot, err := findProjectRoot()
++			require.NoError(t, err)
++			updateDir := filepath.Join(root, "test-app-id", "branch-1", "1", "1674170951")
++			if !tc.empty {
++				require.NoError(t, os.MkdirAll(updateDir, 0o755))
++				for _, name := range []string{"metadata.json", "expoConfig.json", "update-metadata.json", ".check"} {
++					contents, err := os.ReadFile(filepath.Join(projectRoot, "test", "test-updates", "test-app-id", "branch-1", "1", "1674170951", name))
++					require.NoError(t, err)
++					require.NoError(t, os.WriteFile(filepath.Join(updateDir, name), contents, 0o644))
++				}
++			}
++			if tc.fault != "" {
++				path := filepath.Join(updateDir, tc.fault)
++				require.NoError(t, os.Remove(path))
++				// A self-referential symlink produces a real storage read error
++				// even when tests execute as root inside a container.
++				require.NoError(t, os.Symlink(tc.fault, path))
++			}
++			if tc.missing != "" {
++				require.NoError(t, os.Remove(filepath.Join(updateDir, tc.missing)))
++			}
++			if tc.corrupt {
++				require.NoError(t, os.WriteFile(filepath.Join(updateDir, "update-metadata.json"), []byte("{"), 0o644))
++			}
++			if tc.otherPlatform {
++				require.NoError(t, os.WriteFile(filepath.Join(updateDir, "update-metadata.json"), []byte(`{"platform":"ios"}`), 0o644))
++			}
++			if tc.newerIncomplete {
++				newerDir := filepath.Join(root, "test-app-id", "branch-1", "1", "1674170952")
++				require.NoError(t, os.MkdirAll(newerDir, 0o755))
++				require.NoError(t, os.WriteFile(filepath.Join(newerDir, ".check"), []byte(".check"), 0o644))
++			}
++			t.Setenv("LOCAL_BUCKET_BASE_PATH", root)
++			bucket.ResetBucketInstance()
++			t.Cleanup(bucket.ResetBucketInstance)
++			mockWorkingExpoResponse("staging")
++			request := httptest.NewRequest(http.MethodGet, "http://localhost:3000/manifest", nil)
++			request.Header.Set("expo-platform", "android")
++			request.Header.Set("expo-runtime-version", "1")
++			request.Header.Set("expo-channel-name", "staging")
++			request.Header.Set("expo-app-id", "test-app-id")
++			request.Header.Set("expo-protocol-version", "1")
++			response := httptest.NewRecorder()
++			serveThroughRouter(response, request)
++			require.Equal(t, tc.status, response.Code, response.Body.String())
++			if tc.status == http.StatusOK {
++				if tc.noUpdate {
++					require.Contains(t, response.Body.String(), "noUpdateAvailable")
++				} else {
++					require.Contains(t, response.Body.String(), `name="manifest"`)
++					metadata, err := os.ReadFile(filepath.Join(updateDir, "update-metadata.json"))
++					require.NoError(t, err)
++					var expected struct {
++						UpdateUUID string `json:"updateUUID"`
++					}
++					require.NoError(t, json.Unmarshal(metadata, &expected))
++					_, parameters, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
++					require.NoError(t, err)
++					reader := multipart.NewReader(bytes.NewReader(response.Body.Bytes()), parameters["boundary"])
++					for {
++						part, err := reader.NextPart()
++						require.NoError(t, err)
++						if part.FormName() != "manifest" {
++							continue
++						}
++						var actual struct {
++							ID string `json:"id"`
++						}
++						require.NoError(t, json.NewDecoder(part).Decode(&actual))
++						require.Equal(t, expected.UpdateUUID, actual.ID)
++						break
++					}
++				}
++			}
++		})
++	}
++}

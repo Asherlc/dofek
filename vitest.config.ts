@@ -110,6 +110,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "integration",
+          setupFiles: [path.resolve(dirname, "src/test/early-msw-setup.ts")],
           fileParallelism: false,
           maxWorkers: 1,
           sequence: { groupOrder: 1 },
