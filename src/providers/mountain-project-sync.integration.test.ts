@@ -654,26 +654,36 @@ describe("MountainProjectProvider canonical persistence", () => {
     ]);
   });
 
-  it("rejects an Aid route tick without a method and preserves the prior import", async () => {
+  it("imports an Aid route tick with an unknown method while refreshing existing records", async () => {
     currentExport = fixtureCsv;
     serve();
     await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
     const previous = await records();
-    const previousAttempts = await ctx.db.select().from(climbingAttempt);
     currentExport = [
       fixtureCsv.split("\n")[0],
       fixtureCsv.split("\n")[1]?.replace("placeholder note", "Updated source note"),
       "2026-08-10,Aid route,5.10 A2,,https://www.mountainproject.com/route/123/aid-route,3,Crag,2,-1,Aid,Flash,Trad,5.9,,3000",
     ].join("\n");
-    await expect(run()).resolves.toMatchObject({
-      recordsSynced: 0,
-      errors: [
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+    const refreshed = await records();
+    expect(refreshed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ log: expect.objectContaining({ id: previous[0]?.log.id }) }),
         expect.objectContaining({
-          message: expect.stringMatching(/missing a rope method.*record.+source.+import/i),
+          log: expect.objectContaining({ raw: expect.objectContaining({ Route: "Aid route" }) }),
         }),
-      ],
-    });
-    expect(await records()).toEqual(previous);
-    expect(await ctx.db.select().from(climbingAttempt)).toEqual(previousAttempts);
+      ]),
+    );
+    const aid = refreshed.find(
+      (entry) => z.object({ Route: z.literal("Aid route") }).safeParse(entry.log.raw).success,
+    );
+    if (!aid) throw new Error("Expected imported Aid route");
+    const attempts = await ctx.db
+      .select()
+      .from(climbingAttempt)
+      .where(eq(climbingAttempt.climbingLogEntryId, aid.log.id));
+    expect(attempts).toEqual([
+      expect.objectContaining({ ropeMethod: null, sourceResult: "Flash" }),
+    ]);
   });
 });

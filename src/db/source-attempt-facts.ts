@@ -28,24 +28,6 @@ export type SourceAttemptQualifier =
   | "aid-flash"
   | "dab";
 
-export class MissingRouteMethodError extends Error {
-  constructor(sourceIdentity: string) {
-    super(
-      `Route log ${sourceIdentity} is missing a rope method for one or more attempts. Record lead, top rope, follow, or unroped in the source before importing.`,
-    );
-    this.name = "MissingRouteMethodError";
-  }
-}
-
-export function assertSourceAttemptRopeMethod(
-  climbKind: ClimbKind | null,
-  ropeMethod: RecordedClimbingAttempt["ropeMethod"],
-  sourceIdentity: string,
-): void {
-  if (climbKind === "route" && ropeMethod === null)
-    throw new MissingRouteMethodError(sourceIdentity);
-}
-
 /** Source qualifiers describe one try. They establish no facts about other tries. */
 export function normalizeSourceAttemptFacts(
   supplied: SourceAttemptFacts,

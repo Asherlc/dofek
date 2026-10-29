@@ -851,6 +851,14 @@ jobs:
         with:
           name: coverage-integration-${{ matrix.shard }}
           path: coverage/
+      - name: Export fresh integration timings
+        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-4
+      - name: Upload integration timings
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-${{ matrix.shard }}
+          path: reports/integration-sharding/${{ matrix.shard }}-of-4/
+          if-no-files-found: error
 
   test-peerdb-integration:
     name: PeerDB CDC Integration
@@ -921,6 +929,23 @@ jobs:
             cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
           fi
           exit ${DIFF_FAILED:-0}
+      - name: Download integration timings
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: integration-timings-*
+          path: integration-timings
+          merge-multiple: false
+      - name: Validate complete integration timings
+        run: >-
+          pnpm tsx scripts/update-integration-test-timings.ts merge integration-test-timings.json
+          integration-timings/integration-timings-1 integration-timings/integration-timings-2
+          integration-timings/integration-timings-3 integration-timings/integration-timings-4
+      - name: Upload complete integration timing refresh
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-complete
+          path: integration-test-timings.json
+          if-no-files-found: error
 
   test-gate:
     name: Unit & Integration Tests

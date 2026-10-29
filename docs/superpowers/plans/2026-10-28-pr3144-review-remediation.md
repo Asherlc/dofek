@@ -184,6 +184,34 @@ fixtures but must not modify product sources or run a broad native campaign.
 - [ ] Require actual repeatable upgrade GREEN and all exact-head gates before
   merge; the regression remains unchanged after its behavioral RED.
 
+## Task 10: Approved duration-balanced integration allocation
+
+**Approved 2026-10-29.** Keep the same four serial integration shards, every
+test, all coverage gates and the 12-minute step limit. Natural responsibility
+splitting passed once, but count-based hashing again concentrated 707 seconds
+of passing work before the remaining suites. Vitest's supported
+[sequencer extension](https://v4.vitest.dev/config/sequence) supplies the
+allocation hook; no new service, dependency, secret or runner is needed.
+
+- [x] Research existing runner APIs and hosted alternatives. Select the
+  existing Vitest BaseSequencer with one committed measured timing snapshot,
+  deterministic longest-duration-first allocation and explicit new-file estimates.
+- [x] Bootstrap all 339 measured files from the complete successful2838 run,
+  record provenance, and write tests first for exact/disjoint allocation,
+  stable ties, portable identities, invalid inputs and normal new files.
+- [x] Export fresh complete per-shard result-cache timings through the public
+  cache-path API, merge only a coherent successful four-shard exact union,
+  and publish a reviewable refresh artifact/TypeScript refresh command. Never
+  use independently restored live caches to choose shard membership.
+- [x] Resolve the ordinary merge from current main905e3d4aa into the existing
+  branch, preserving both incident histories, the approved exact RN0.88.1
+  exception and existing removal of obsolete RN0.88.0 exceptions. No switching
+  branches, rebasing or force pushing.
+- [ ] Independently review the complete change, verify actual Vitest discovery
+  across all four shards without executing local database hooks, run required
+  local checks, commit/push and require all exact-head gates and all four whole
+  integration jobs within the unchanged limits.
+
 ## Final acceptance after approved follow-up
 
 - [ ] Controller consolidates task reviews and runs Docker-free pre-push lint, Knip, root/server/web/mobile types and unit/mobile tests. Run database-backed SQL lint and integrations on CI under the user's approved validation direction. Keep native archive, strict SwiftLint and mutation gates in exact-head CI.

@@ -152,6 +152,55 @@ Sources:
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
 - Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
 
+### Duration-balanced integration shards
+
+The four integration jobs use one committed measured baseline,
+[`scripts/integration-test-timings.json`](../scripts/integration-test-timings.json).
+The [sequencer](../scripts/integration-test-sequencer.ts) allocates discovered
+files by descending duration to the least-loaded shard, with stable path and
+shard tie breaks. It preserves every discovered specification, existing serial
+execution, coverage and the 12-minute test-step limit. New or renamed files use
+the baseline's positive-duration median and appear explicitly as estimates.
+Removed files are never rediscovered from timing data. Other projects retain
+Vitest's allocation; see the [public sequence extension](https://v4.vitest.dev/config/sequence).
+
+Do not restore independent result caches as allocation input. All jobs must use
+the same checked-in baseline. Preserve the historical runner version that
+measured it; a runner upgrade can consume those weights, while all artifacts
+in a new complete refresh must match one current runtime. Each job records its assignment and exact public
+result-cache path, then exports timings only after successful tests from an
+absent-before, present-after cache with exactly the assigned successful files.
+The cache records whole-suite duration, including suite hooks, rather than JSON
+reporter intervals between individual tests; import, collection and coverage
+overhead remain outside that estimate. See Vitest's
+[results cache](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cache/results.ts)
+and [JSON reporter](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/reporters/json.ts).
+
+After a complete successful CI run, download `integration-timings-1` through
+`integration-timings-4` from the same run attempt into four separate directories.
+Refresh and review the committed baseline with:
+
+```bash
+pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>
+```
+
+The command requires coherent revision, run, attempt, runtime, baseline and
+inventory provenance, with an exact disjoint union of successful results. Invalid
+or incomplete input leaves the old file intact. The existing coverage job also
+publishes `integration-timings-complete` after its coverage gates; committing a
+baseline update remains an explicit reviewed change. Refresh when suite costs
+change materially or allocation diagnostics show skew or new-file estimates.
+See the [refresh implementation](../scripts/update-integration-test-timings.ts)
+and [CI wiring](../.github/workflows/test.yml).
+
+For Vitest 4.1.11, `list --filesOnly --shard` bypasses the sequencer and reports
+the full inventory; it does not prove shard membership. Verify allocation through
+actual runtime assignment manifests and their four-way union. A lightweight
+operator probe may use public `createVitest`, discovered specifications and the
+configured sequencer without collecting database suites; see Vitest's
+[files-only listing path](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cli/cli-api.ts)
+and [advanced API](https://v4.vitest.dev/advanced/api/).
+
 ### Hosted ClickHouse Failure Diagnostics
 
 On an integration-test failure, CI runs the

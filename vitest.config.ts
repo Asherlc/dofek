@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import IntegrationTestSequencer from "./scripts/integration-test-sequencer.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const zeppStubPath = path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js");
@@ -74,6 +75,7 @@ const testClickHouseUrl =
 export default defineConfig({
   test: {
     ...sharedTestConfig,
+    sequence: { sequencer: IntegrationTestSequencer },
     projects: [
       {
         esbuild: {

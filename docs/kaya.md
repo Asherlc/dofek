@@ -7,12 +7,22 @@ application API. `kaya-export` remains a separate CSV-import provider.
 The contract in [kaya-api.openapi.yaml](kaya-api.openapi.yaml) records responses
 observed from the authenticated [Kaya web app](https://kaya-app.kayaclimb.com/).
 
-For routes, Kaya’s explicit `climb.lead` boolean supplies the Attempt's rope
-method: `true` is lead and `false` is top-rope. Boulder methods remain unknown
-because that boolean does not establish a rope method for boulders. Published
-`climb.grade` belongs to Climb; an ascent's own grade belongs to its log. See
-the [adapter](../src/providers/kaya-sync.ts), [model](climbing-context.md), and
-observed [application API](https://kaya-beta.kayaclimb.com/graphql).
+For routes, the ascent's nullable `lead` Boolean takes precedence over
+`climb.lead`: explicit true means lead and explicit false means top rope.
+When ascent-level data is null or absent, Dofek falls back to the route flag.
+When both are missing, the method remains unknown; boulder methods remain null.
+This precedence was verified on 2026-10-29 through authenticated
+[ascentsForUser requests](https://kaya-beta.kayaclimb.com/graphql): two lead
+ascents returned `lead: true` while their nested climb definitions returned
+`lead: false`. Session attempted-climb records have no separate ascent value
+and use their route flag. The [client](../packages/kaya-client/src/client.ts)
+retains both fields, and the [adapter](../src/providers/kaya-sync.ts) resolves
+them before persistence. Sync again after deploying this fix to refresh
+existing logs while retaining their IDs and activity attachments.
+
+Published `climb.grade` belongs to Climb; an ascent's own grade belongs to its
+log. See the [model](climbing-context.md) and observed
+[application API](https://kaya-beta.kayaclimb.com/graphql).
 
 ## Attempt occurrences
 
@@ -30,7 +40,7 @@ known. The session query selects `attempts: session_attempts`, using a
 client's typed `attempts` property. The separate ascent feed uses its own
 `attempts` field, which can be null, including for Repeat ascents. Preserve
 the reported positive count by creating that many whole-Climb Attempt rows.
-A route's explicit `lead` flag supplies the recorded method on every counted
+The resolved ascent-first `lead` value supplies the method on every counted
 occurrence; source result, qualifier, and repeat facts describe only one try.
 The session query also requests the non-null `sent` Boolean. An explicit false
 records `Attempt` on every counted occurrence; true records one generic `Send`
@@ -80,7 +90,7 @@ rejected introspection during the 2026-10-27 audit.
 | Session | Dates, notes, gym and board/destination context; attempted climbs include `attempts: session_attempts` and `sent`. |
 | Shared climb | Identity, color, lead flag, catalogue grade, source locations including `wallarea`, native climb coordinates, board and angle; descriptions, source media references and other selected catalogue metadata remain raw on both feeds. See the [exact field inventory](climbing-trait-coverage.md#kaya-field-inventory). |
 | Climb tags | Request `tags { id name color icon tag_type_id }`; normalize explicit grip tags as a collection and retain all supplied tags raw. |
-| Ascent | Request its own grade separately from `climb.grade`, comments, rating, stiffness, attempts, result, photo and video metadata. The ascent grade belongs to the log's reported-grade collection. |
+| Ascent | Request its own nullable `lead` flag separately from `climb.lead`, its own grade separately from `climb.grade`, comments, rating, stiffness, attempts, result, photo and video metadata. The ascent grade belongs to the log's reported-grade collection. |
 
 The tag contract comes from the [Plastick Tag fragment](https://set.plastick.rocks/tag-11950.js.map)
 and authenticated reads of both feeds on 2026-10-27. Plastick's
@@ -153,12 +163,10 @@ name with unknown ID and normalize ascent labels and counts into Attempt facts.
 CSV grades are conservatively stored as separately reported grades because
 the row supplies no independently identified catalogue definition; this does
 not claim that Kaya labels the column as a personal grade opinion.
-CSV exports containing route attempts without a rope method cannot satisfy the
-[required route-method contract](climbing-context.md) and are rejected. The
-[CSV parser](../src/providers/kaya/import.ts) has no method column; use an API
-source with recorded route methods. Bouldering CSV imports remain supported.
-See the [context contract and migration](climbing-context.md) and
-[provider mapping](../src/providers/kaya-sync.ts).
+CSV exports do not provide a rope-method column; route methods remain
+unknown rather than being inferred from grades or results. See the
+[CSV parser](../src/providers/kaya/import.ts) and
+[nullable method contract](climbing-context.md).
 
 Successful API and CSV refreshes update source records in place, retaining
 entry IDs, activity associations, and detailed attempts. They preserve entries

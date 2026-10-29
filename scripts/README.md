@@ -113,6 +113,25 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `integration-test-sequencer.ts`: Uses Vitest's public
+  [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
+  existing four integration shards from one committed measured baseline.
+  Discovery and original specifications remain authoritative. New files use
+  the positive-duration median; estimates and all allocations are recorded in
+  `reports/integration-sharding/<index>-of-<count>/assignment.json`.
+- `update-integration-test-timings.ts`: Validates fresh successful whole-suite
+  result caches and combines exactly four coherent shard artifacts. Cache paths
+  come from Vitest's public
+  [results-cache getter](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cache/results.ts).
+  Allocation never consumes independently restored caches. Invalid refresh input
+  preserves the existing baseline.
+  - CI export, after tests pass:
+    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-4`
+  - Reviewed refresh from four downloaded directories from one successful run
+    attempt:
+    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>`
+  - See [duration-balanced integration shards](../docs/testing.md#duration-balanced-integration-shards)
+    for freshness, provenance, timing limitations and allocation verification.
 - `run-swift-mutation.ts`: Runs the pinned MutantKit tool for changed compiled
   Swift sources in their owning Swift packages. Git's merge-base comparison
   limits selection to the PR delta, and SwiftPM's source inventory respects
