@@ -43,6 +43,10 @@ vi.mock("maplibre-gl", async () => {
   };
 });
 
+vi.mock("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url", () => ({
+  default: "/maplibre-worker.js",
+}));
+
 vi.mock("echarts-for-react", () => ({
   default: (props: {
     option: Record<string, unknown>;
@@ -2266,7 +2270,20 @@ describe("ActivityDetailPage", () => {
           isLoading: false,
         });
         mockClimbingEntriesUseQuery.mockReturnValue({
-          data: [climbingLogEntryFixture({ id: "cached-log", title: "Cached climb" })],
+          data: [
+            climbingLogEntryFixture({
+              id: "cached-log",
+              title: "Cached climb",
+              chartAnnotations: [
+                {
+                  id: "cached-log",
+                  label: "Cached timed climb",
+                  startedAt: "2026-03-18T07:15:00Z",
+                  endedAt: null,
+                },
+              ],
+            }),
+          ],
           error: null,
           isError: false,
           isLoading: false,
@@ -2282,6 +2299,7 @@ describe("ActivityDetailPage", () => {
 
         expect(screen.queryByRole("heading", { name: "Climbs" })).not.toBeInTheDocument();
         expect(screen.queryByText("Cached climb")).not.toBeInTheDocument();
+        expect(screen.queryByText(/Cached timed climb/)).not.toBeInTheDocument();
         expect(screen.queryByText("Suggested climb")).not.toBeInTheDocument();
         expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(false);
         expect(getQueryEnabledFlag(mockEntrySuggestionsUseQuery.mock.calls[0]?.[1])).toBe(false);

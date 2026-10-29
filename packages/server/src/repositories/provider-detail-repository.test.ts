@@ -374,6 +374,7 @@ describe("ProviderDetailRepository", () => {
       expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual({
         ...log,
         tags: [],
+        chartAnnotations: [],
       });
     });
     it("returns null for a missing climbing log", async () => {
