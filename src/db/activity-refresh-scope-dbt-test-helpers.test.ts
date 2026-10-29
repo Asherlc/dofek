@@ -1,9 +1,190 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   dbtFailureDiagnostic,
+  readDbtCompiledQueries,
   readDbtStatementMessages,
   readDbtStatementTarget,
 } from "./activity-refresh-scope-dbt-test-helpers.ts";
+
+describe("readDbtCompiledQueries", () => {
+  const directories: string[] = [];
+  const models = ["activity_source_records", "activity_sensor_sample"];
+  const compiledRoot = "compiled/dofek_analytics/models-0/read_models";
+  const sourcePath = `${compiledRoot}/activity_source_records.sql`;
+  const firstBatchPath = `${compiledRoot}/activity_sensor_sample/activity_sensor_sample_2026-09-01.sql`;
+  const secondBatchPath = `${compiledRoot}/activity_sensor_sample/activity_sensor_sample_2026-09-02.sql`;
+
+  afterEach(async () => {
+    await Promise.all(
+      directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+    );
+  });
+
+  async function fixture() {
+    const target = await mkdtemp(join(tmpdir(), "compiled-scope-test-"));
+    directories.push(target);
+    const metadata = { invocation_id: "10000000-0000-4000-8000-000000000001" };
+    const manifest = {
+      metadata,
+      nodes: Object.fromEntries(
+        models.map((name) => [
+          `model.dofek_analytics.${name}`,
+          {
+            unique_id: `model.dofek_analytics.${name}`,
+            name,
+            resource_type: "model",
+            package_name: "dofek_analytics",
+            path: `read_models/${name}.sql`,
+            original_file_path: `models-0/read_models/${name}.sql`,
+            // Parent microbatch nodes have no compiled_code; normal nodes may have it.
+            ...(name === "activity_source_records" ? { compiled_code: "manifest decoy" } : {}),
+            raw_code: "{{ unrendered_source() }}",
+            config: {
+              incremental_strategy: name === "activity_sensor_sample" ? "microbatch" : "append",
+              batch_size: name === "activity_sensor_sample" ? "day" : null,
+              query_settings: { max_threads: 1, join_use_nulls: 1 },
+            },
+          },
+        ]),
+      ),
+    };
+    const failed: string[][] = [];
+    const results = {
+      metadata,
+      results: [
+        {
+          unique_id: "model.dofek_analytics.activity_source_records",
+          status: "success",
+          batch_results: null,
+        },
+        {
+          unique_id: "model.dofek_analytics.activity_sensor_sample",
+          status: "success",
+          batch_results: {
+            successful: [
+              ["2026-09-01T00:00:00+00:00", "2026-09-02T00:00:00+00:00"],
+              ["2026-09-02T00:00:00+00:00", "2026-09-03T00:00:00+00:00"],
+            ],
+            failed,
+          },
+        },
+      ],
+    };
+    await writeFile(join(target, "manifest.json"), JSON.stringify(manifest));
+    await writeFile(join(target, "run_results.json"), JSON.stringify(results));
+    for (const [path, sql] of [
+      [sourcePath, "\nSELECT 'normal' AS value\n"],
+      [firstBatchPath, "\nSELECT 'first batch' AS value\n"],
+      [secondBatchPath, "\nSELECT 'second batch' AS value\n"],
+    ]) {
+      if (!path || !sql) throw new Error("Incomplete compiled fixture");
+      await mkdir(dirname(join(target, path)), { recursive: true });
+      await writeFile(join(target, path), sql);
+    }
+    return { target, manifest, results };
+  }
+
+  it("reads verbatim compiled files for normal models and every successful batch without parent compiled SQL", async () => {
+    const { target } = await fixture();
+    expect(await readDbtCompiledQueries(target, models)).toEqual([
+      {
+        model: "activity_source_records",
+        batch: null,
+        path: sourcePath,
+        sql: "\nSELECT 'normal' AS value\n",
+        settings: { max_threads: 1, join_use_nulls: 1 },
+      },
+      {
+        model: "activity_sensor_sample",
+        batch: "2026-09-01",
+        path: firstBatchPath,
+        sql: "\nSELECT 'first batch' AS value\n",
+        settings: { max_threads: 1, join_use_nulls: 1 },
+      },
+      {
+        model: "activity_sensor_sample",
+        batch: "2026-09-02",
+        path: secondBatchPath,
+        sql: "\nSELECT 'second batch' AS value\n",
+        settings: { max_threads: 1, join_use_nulls: 1 },
+      },
+    ]);
+  });
+
+  it("reads the requested invocation directory rather than a previous phase", async () => {
+    const previous = await fixture();
+    const current = await fixture();
+    await writeFile(join(current.target, sourcePath), "SELECT 'incremental' AS value");
+    expect((await readDbtCompiledQueries(current.target, models))[0]?.sql).toBe(
+      "SELECT 'incremental' AS value",
+    );
+    expect(await readFile(join(previous.target, sourcePath), "utf8")).toBe(
+      "\nSELECT 'normal' AS value\n",
+    );
+  });
+
+  it("rejects artifacts from different invocations", async () => {
+    const { target, results } = await fixture();
+    results.metadata.invocation_id = "20000000-0000-4000-8000-000000000002";
+    await writeFile(join(target, "run_results.json"), JSON.stringify(results));
+    await expect(readDbtCompiledQueries(target, models)).rejects.toThrow("invocation");
+  });
+
+  it.each([sourcePath, firstBatchPath, secondBatchPath])(
+    "fails when the required compiled file %s is missing",
+    async (path) => {
+      const { target } = await fixture();
+      await rm(join(target, path));
+      await expect(readDbtCompiledQueries(target, models)).rejects.toThrow();
+    },
+  );
+
+  it("rejects an extra batch artifact rather than mixing stale SQL into the current inventory", async () => {
+    const { target } = await fixture();
+    await writeFile(
+      join(target, compiledRoot, "activity_sensor_sample/activity_sensor_sample_2026-08-31.sql"),
+      "SELECT 'stale batch'",
+    );
+    await expect(readDbtCompiledQueries(target, models)).rejects.toThrow(
+      "batch artifact inventory",
+    );
+  });
+
+  it("rejects a manifest entry attributed to a different model", async () => {
+    const { target, manifest } = await fixture();
+    const node = manifest.nodes["model.dofek_analytics.activity_sensor_sample"];
+    if (!node) throw new Error("Missing fixture model");
+    node.name = "another_model";
+    await writeFile(join(target, "manifest.json"), JSON.stringify(manifest));
+    await expect(readDbtCompiledQueries(target, models)).rejects.toThrow("identity");
+  });
+
+  it.each(["missing", "duplicate", "failed"])("rejects a %s model result", async (state) => {
+    const { target, results } = await fixture();
+    const result = results.results[0];
+    if (!result) throw new Error("Missing fixture result");
+    if (state === "missing") results.results.shift();
+    if (state === "duplicate") results.results.push(result);
+    if (state === "failed") result.status = "error";
+    await writeFile(join(target, "run_results.json"), JSON.stringify(results));
+    await expect(readDbtCompiledQueries(target, models)).rejects.toThrow("successful result");
+  });
+
+  it.each(["empty", "duplicate", "failed"])("rejects %s microbatch results", async (state) => {
+    const { target, results } = await fixture();
+    const batches = results.results[1]?.batch_results;
+    const first = batches?.successful[0];
+    if (!batches || !first) throw new Error("Missing fixture batches");
+    if (state === "empty") batches.successful = [];
+    if (state === "duplicate") batches.successful.push(first);
+    if (state === "failed") batches.failed = [first];
+    await writeFile(join(target, "run_results.json"), JSON.stringify(results));
+    await expect(readDbtCompiledQueries(target, models)).rejects.toThrow("batch results");
+  });
+});
 
 describe("readDbtStatementMessages", () => {
   it("retains the complete commented statement and settings from the pinned adapter event", () => {

@@ -3,14 +3,17 @@
 ## Native Swift mutation testing
 
 Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the
-repository root on macOS with Swift and Muter installed:
+repository root with Xcode's Swift toolchain on macOS ARM64. Install the
+checksum/provenance-pinned MutantKit declared in [mise.toml](../mise.toml)
+and [mise.lock](../mise.lock):
 
 ```bash
-pnpm tsx scripts/run-swift-mutation.ts --base origin/main
+mise install --locked github:juntaki/mutantkit
+mise exec -- pnpm tsx scripts/run-swift-mutation.ts --base origin/main
 ```
 
 The base comparison uses Git's merge base with `HEAD`, so unrelated commits on
-main and uncommitted-only paths are not selected. Muter tests the working
+main and uncommitted-only paths are not selected. MutantKit tests the working
 copy of each selected package. For each changed Swift file, the
 runner finds the owning `Package.swift`, reads SwiftPM's compiled source
 inventory, and keeps non-test Swift targets. Test files, manifests and excluded
@@ -18,25 +21,32 @@ Expo bridge files do not become mutation inputs. See the
 [Git comparison contract](https://git-scm.com/docs/git-diff) and
 [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift).
 
-Muter runs inside each affected package, with package-relative source paths.
-The [canonical configuration](../packages/mobile/muter.conf.yml) is shared by
-package-local symlinks; Muter loads it from its current working directory and
-copies that project to a sibling mutation directory:
-[configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
-[mutation project location](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/CreateTempDirectoryURL.swift).
-Only an empty compiled-source intersection skips mutation testing. A selected
-run must exit successfully and produce a valid positive-work JSON report under
-`reports/swift-mutation/`; missing configuration, invalid reports, and all
-nonzero statuses fail. Exit 255 does not identify benign empty work:
-[Muter error handling](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/CLICommands/RunCommand/Run.swift).
+The [canonical configuration](../packages/mobile/mutantkit.yml) is shared by
+package-local symlinks. Each run derives an exact source scope while retaining
+the owning package's full tests. The runner validates source with the official
+Swift compiler, matches the plan's complete source inventory and hashes, and
+requires measurable candidates for every selected file. Missing, malformed or
+unmeasurable selected source fails explicitly. Only an empty changed compiled
+intersection skips the campaign. See MutantKit's
+[planning interface](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift)
+and [configuration loading](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/ConfigurationLoader.swift).
 
-Inspect the actual JSON mutation results for surviving mutants and build
-errors. A successful Muter process means the run completed; it does not imply
-every mutation was killed. The runner preserves this tool contract rather
-than introducing a new score threshold:
-[Muter report schema](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/MuterTestReport.swift),
-[mutation scoring](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/mutationScoring.swift).
-Native unit tests and a signed Simulator build remain separate checks;
+Keep the plan, derived configuration, JSON report, official verification output
+and raw evidence archive under `reports/swift-mutation/`. Fresh complete results,
+a passing baseline, positive measured work and all mandatory source/archive
+checks are required. The required CI mutation aggregate includes native
+discovery and every selected native job. Inspect individual matrix outcomes as
+well as the aggregate; see [CI wiring](../.github/workflows/test.yml) and official
+[report reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/ReportReverification.swift).
+
+Review surviving mutants and add tests for real coverage gaps. Assertion kills,
+confirmed crashes/timeouts, survivors, compile failures and inconclusive outcomes
+remain distinct under the official
+[outcome model](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/MutationOutcome.swift).
+The native runner retains its existing positive-work policy without adding a
+numeric threshold. Default optional independent assertion confirmation can
+remain unverified; that status does not establish named-test attribution.
+Native unit tests, app builds and Simulator checks remain separate;
 physical background reconnection and capture still require a device.
 
 ## CI build caches

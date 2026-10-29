@@ -113,28 +113,65 @@ final class HealthKitQueriesTests: XCTestCase {
         XCTAssertEqual(sampleType?.identifier, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
     }
 
+    func testSampleTypeResolvesQuantityType() throws {
+        let identifier = HKQuantityTypeIdentifier.heartRate.rawValue
+        let sampleType = try XCTUnwrap(
+            HealthKitQueries.sampleType(for: identifier) as? HKQuantityType
+        )
+        XCTAssertEqual(sampleType.identifier, identifier)
+    }
+
     func testTransportSamplePreservesMenstrualCycleStartMetadata() {
         let type = HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
         let start = Date(timeIntervalSince1970: 1_786_140_000)
         let end = start.addingTimeInterval(300)
+        let cases: [(metadata: [String: Any]?, expected: Bool)] = [
+            ([HKMetadataKeyMenstrualCycleStart: false], false),
+            ([HKMetadataKeyMenstrualCycleStart: true], true),
+        ]
+        for testCase in cases {
+            let sample = HKCategorySample(
+                type: type,
+                value: HKCategoryValueMenstrualFlow.medium.rawValue,
+                start: start,
+                end: end,
+                metadata: testCase.metadata
+            )
+
+            let result = HealthKitQueries.transportSample(
+                sample,
+                typeIdentifier: HKCategoryTypeIdentifier.menstrualFlow.rawValue
+            )
+
+            XCTAssertEqual(result?["type"] as? String, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
+            XCTAssertEqual(result?["unit"] as? String, "category")
+            XCTAssertEqual(result?["value"] as? Int, HKCategoryValueMenstrualFlow.medium.rawValue)
+            let metadata = result?["metadata"] as? [String: Bool]
+            XCTAssertEqual(metadata?[HKMetadataKeyMenstrualCycleStart], testCase.expected)
+        }
+    }
+
+    func testTransportSampleDefaultsMissingCategoryCycleMetadataToFalse() {
+        let type = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!
+        let start = Date(timeIntervalSince1970: 1_786_140_000)
         let sample = HKCategorySample(
             type: type,
-            value: HKCategoryValueMenstrualFlow.medium.rawValue,
+            value: HKCategoryValueSleepAnalysis.inBed.rawValue,
             start: start,
-            end: end,
-            metadata: [HKMetadataKeyMenstrualCycleStart: true]
+            end: start.addingTimeInterval(300),
+            metadata: nil
         )
 
         let result = HealthKitQueries.transportSample(
             sample,
-            typeIdentifier: HKCategoryTypeIdentifier.menstrualFlow.rawValue
+            typeIdentifier: HKCategoryTypeIdentifier.sleepAnalysis.rawValue
         )
 
-        XCTAssertEqual(result?["type"] as? String, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
+        XCTAssertEqual(result?["type"] as? String, HKCategoryTypeIdentifier.sleepAnalysis.rawValue)
         XCTAssertEqual(result?["unit"] as? String, "category")
-        XCTAssertEqual(result?["value"] as? Int, HKCategoryValueMenstrualFlow.medium.rawValue)
+        XCTAssertEqual(result?["value"] as? Int, HKCategoryValueSleepAnalysis.inBed.rawValue)
         let metadata = result?["metadata"] as? [String: Bool]
-        XCTAssertEqual(metadata?[HKMetadataKeyMenstrualCycleStart], true)
+        XCTAssertEqual(metadata?[HKMetadataKeyMenstrualCycleStart], false)
     }
 
     // MARK: - parseDate

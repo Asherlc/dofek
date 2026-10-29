@@ -113,20 +113,23 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
-- `run-swift-mutation.ts`: Runs the existing Muter tool for changed compiled
+- `run-swift-mutation.ts`: Runs the pinned MutantKit tool for changed compiled
   Swift sources in their owning Swift packages. Git's merge-base comparison
   limits selection to the PR delta, and SwiftPM's source inventory respects
   each manifest's test and Expo bridge exclusions. Each selected package runs
   from its own directory with package-relative source paths and writes an
-  absolute JSON report under `reports/swift-mutation/`.
-  - Usage: `pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
-  - The shared [Muter configuration](../packages/mobile/muter.conf.yml) is
-    linked into each package. The runner skips only an empty compiled-source
-    intersection, propagates every nonzero tool exit, and requires a valid
-    positive-work report after a selected run. Muter 16 uses its working
-    directory's configuration and filenames:
-    [configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
-    [file selection](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/DiscoverSourceFiles.swift).
+  absolute plan, configuration, JSON report and verification/archive evidence
+  under `reports/swift-mutation/`.
+  - Install: `mise install --locked github:juntaki/mutantkit` on macOS ARM64.
+  - Usage: `mise exec -- pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
+  - The shared [configuration](../packages/mobile/mutantkit.yml) is linked into
+    each package. The runner compiler-validates every selected source, checks
+    exact plan hashes/inventory, runs full owning-package tests and verifies
+    complete official raw observations. It skips only an empty compiled-source
+    intersection and propagates every nonzero tool exit. See
+    [planning](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift),
+    [official reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/VerifyRunCommand.swift)
+    and [native testing requirements](../docs/testing.md#native-swift-mutation-testing).
 - Native mutation selection uses the [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift)
   and Git's [three-dot comparison](https://git-scm.com/docs/git-diff),
   rather than duplicating Swift manifest exclusions or comparing unrelated

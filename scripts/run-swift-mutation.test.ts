@@ -1,7 +1,5 @@
-import { spawnSync } from "node:child_process";
+import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import {
-  chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -10,127 +8,196 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
+import { hash, mutationFixture, requiredItem } from "./swift-mutation-test-helpers.ts";
 
-const scriptPath = resolve("scripts/run-swift-mutation.ts");
-const tsxPath = createRequire(import.meta.url).resolve("tsx/cli");
+vi.mock("node:child_process", async (original) => ({
+  ...(await original<typeof import("node:child_process")>()),
+  spawnSync: vi.fn(),
+}));
+vi.mock("./swift-mutation-tool.ts", () => ({
+  getMutantKitExecutable: () => "mutantkit",
+  mutantKitIdentity: {
+    toolVersion: "1.3.2",
+    toolCommitSHA: "1e345263e36e1658adeed6ae919b7f5875a2601b",
+    swiftSyntaxVersion: "604.0.0",
+  },
+}));
+const actualSpawn = (
+  await vi.importActual<typeof import("node:child_process")>("node:child_process")
+).spawnSync;
 const fixtures: string[] = [];
 const whoop = "packages/mobile/modules/whoop-ble";
 const healthKit = "packages/mobile/modules/health-kit";
-const positiveReport = {
-  globalMutationScore: 50,
-  totalAppliedMutationOperators: 2,
-  numberOfKilledMutants: 1,
-  fileReports: [{ fileName: "Parser.swift", mutationScore: 50, appliedOperators: [{}] }],
-};
-
 interface Invocation {
   tool: string;
   cwd: string;
   args: string[];
 }
-
 function write(root: string, path: string, text: string) {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), text);
 }
-
 function git(root: string, args: string[]) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = actualSpawn("git", args, { cwd: root, encoding: "utf8" });
   expect(result.status, result.stderr).toBe(0);
   return result.stdout.trim();
 }
-
 function createFixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "swift-mutation-test-")));
   fixtures.push(root);
   git(root, ["init", "--quiet"]);
   git(root, ["config", "user.name", "Mutation Fixture"]);
   git(root, ["config", "user.email", "mutation@example.test"]);
-  write(root, "packages/mobile/muter.conf.yml", "executable: /usr/bin/swift\narguments: [test]\n");
-  const log = join(root, "invocations.jsonl");
-  mkdirSync(join(root, "bin"));
-  symlinkSync(process.execPath, join(root, "bin/node"));
-  symlinkSync("/usr/bin/git", join(root, "bin/git"));
-  for (const tool of ["swift", "muter"]) {
-    const source = `#!${process.execPath}
-const fs = require('node:fs');
-const path = require('node:path');
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({tool: ${JSON.stringify(tool)}, cwd: process.cwd(), args: process.argv.slice(2)}) + '\\n');
-const statePath = path.join(process.cwd(), '${tool}-fixture.json');
-const state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, 'utf8')) : {};
-if (state.exit) { console.error('${tool} fixture failure'); process.exit(state.exit); }
-if (${JSON.stringify(tool)} === 'swift') {
-  process.stdout.write(state.raw ?? JSON.stringify(state.description));
-} else {
-  const reportPath = process.argv[process.argv.indexOf('--output') + 1];
-  if (!state.omitReport) fs.writeFileSync(reportPath, state.raw ?? JSON.stringify(state.report ?? ${JSON.stringify(positiveReport)}));
-}
-`;
-    write(root, `bin/${tool}`, source);
-    chmodSync(join(root, `bin/${tool}`), 0o755);
-  }
-  function addPackage(path: string, targetPath = "ios", sources = ["Parser.swift"]) {
-    write(root, `${path}/Package.swift`, "// fixture package\n");
-    for (const source of sources) write(root, `${path}/${targetPath}/${source}`, "// source\n");
-    write(root, `${path}/ios/ExpoModule.swift`, "// excluded Expo bridge\n");
+  write(
+    root,
+    "packages/mobile/mutantkit.yml",
+    "project:\n  kind: swiftPackageMacOS\nreports: [console, json]\nevidence:\n  archive: true\n",
+  );
+  const inventories = new Map<string, unknown>();
+  const calls: Invocation[] = [];
+  const state = {
+    fail: "",
+    exit: 0,
+    omit: "",
+    malformed: "",
+    zero: false,
+    missing: false,
+    stale: false,
+    corrupt: false,
+  };
+  function addPackage(path: string, target = "ios", sources = ["Parser.swift"]) {
+    write(root, `${path}/Package.swift`, "// package\n");
+    for (const file of sources) write(root, `${path}/${target}/${file}`, "// source\n");
+    write(root, `${path}/ios/ExpoModule.swift`, "// bridge\n");
     write(root, `${path}/Tests/ParserTests.swift`, "// tests\n");
-    write(
-      root,
-      `${path}/swift-fixture.json`,
-      JSON.stringify({
-        description: {
-          targets: [
-            { type: "library", module_type: "SwiftTarget", path: targetPath, sources },
-            {
-              type: "test",
-              module_type: "SwiftTarget",
-              path: "Tests",
-              sources: ["ParserTests.swift"],
-            },
-          ],
-        },
-      }),
-    );
-    symlinkSync("../../muter.conf.yml", join(root, path, "muter.conf.yml"));
+    symlinkSync("../../mutantkit.yml", join(root, path, "mutantkit.yml"));
+    inventories.set(join(root, path), {
+      targets: [
+        { type: "library", module_type: "SwiftTarget", path: target, sources },
+        { type: "test", module_type: "SwiftTarget", path: "Tests", sources: ["ParserTests.swift"] },
+      ],
+    });
   }
   function commitBase() {
     git(root, ["add", "."]);
-    git(root, ["commit", "--quiet", "-m", "fixture"]);
+    git(root, ["commit", "--quiet", "--allow-empty", "-m", "fixture"]);
     return git(root, ["rev-parse", "HEAD"]);
   }
   function change(path: string) {
     write(root, path, "// changed\n");
   }
-  function run(base: string, options: string[] = []) {
-    git(root, ["add", "."]);
-    git(root, ["commit", "--quiet", "--allow-empty", "-m", "feature changes"]);
-    return spawnSync(process.execPath, [tsxPath, scriptPath, "--base", base, ...options], {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...process.env, PATH: join(root, "bin") },
+  async function run(base: string, options: string[] = []) {
+    commitBase();
+    if (state.missing) rmSync(join(root, whoop, "ios/Parser.swift"));
+    vi.resetModules();
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args) => {
+      stdout.push(args.join(" "));
     });
+    vi.spyOn(console, "error").mockImplementation((...args) => {
+      stderr.push(args.join(" "));
+    });
+    vi.stubGlobal(
+      "process",
+      Object.create(process, {
+        argv: { value: [process.execPath, "run-swift-mutation.ts", "--base", base, ...options] },
+        cwd: { value: () => root },
+        exit: {
+          value: (status: number) => {
+            throw Object.assign(new Error("command exited"), { status });
+          },
+        },
+      }),
+    );
+    vi.mocked(spawnSync).mockImplementation((tool, args, opts) => {
+      const cwd = String(opts?.cwd ?? root);
+      const argv = [...(args ?? [])];
+      calls.push({ tool, args: argv, cwd });
+      if (tool === "git") return actualSpawn(tool, argv, { cwd, encoding: "utf8" });
+      const command = tool === "mutantkit" ? argv[0] : tool;
+      if (state.fail === command)
+        return {
+          status: state.exit,
+          pid: 1,
+          signal: null,
+          output: [],
+          stdout: "",
+          stderr: `${command} rejected fixture`,
+        } satisfies SpawnSyncReturns<string>;
+      let output = tool === "swift" ? JSON.stringify(inventories.get(cwd)) : "";
+      if (tool === "swift" && state.malformed === "swift") output = "invalid-json";
+      if (tool === "swift" && state.malformed === "inventory") output = "{}";
+      if (tool === "mutantkit") {
+        const config = parse(
+          readFileSync(requiredItem(argv[argv.indexOf("--config") + 1]), "utf8"),
+        );
+        const selected: string[] = config.sources.include;
+        const fixture = mutationFixture(
+          cwd,
+          Object.fromEntries(
+            selected.map((file) => [file, hash(readFileSync(join(cwd, file), "utf8"))]),
+          ),
+        );
+        const outputPath = requiredItem(argv[argv.indexOf("--output") + 1]);
+        if (command === "plan") {
+          if (state.zero) fixture.plan.mutations = [];
+          if (state.stale) fixture.plan.sourceFileHashes[requiredItem(selected[0])] = hash("stale");
+          if (state.omit !== "plan")
+            writeFileSync(
+              outputPath,
+              state.malformed === "plan" ? "invalid-json" : JSON.stringify(fixture.plan),
+            );
+        } else if (command === "verify")
+          output = JSON.stringify({
+            schemaVersion: 1,
+            planID: fixture.plan.planID,
+            mutationCount: selected.length,
+            valid: true,
+            compatibility: "match",
+            idViolations: [],
+            missingFiles: [],
+            anchorViolations: [],
+          });
+        else if (command === "run") {
+          if (state.corrupt) fixture.report.score.killed = 999;
+          if (state.omit !== "report")
+            writeFileSync(
+              outputPath,
+              state.malformed === "report" ? "invalid-json" : JSON.stringify(fixture.report),
+            );
+          if (state.omit !== "archive")
+            write(cwd, ".mutantkit/evidence/fixture-run/manifest.json", "{}");
+        } else if (command === "verify-run")
+          output = state.malformed === "verify-run" ? "{}" : JSON.stringify(fixture.verification);
+        else if (command === "trust") output = JSON.stringify(fixture.trust);
+      }
+      return { status: 0, stdout: output, stderr: "", pid: 1, signal: null, output: [] };
+    });
+    let status = 0;
+    try {
+      await import("./run-swift-mutation.ts");
+    } catch (error) {
+      status = error instanceof Error && "status" in error ? Number(error.status) : 1;
+      stderr.push(String(error));
+    }
+    return { status, stdout: stdout.join("\n"), stderr: stderr.join("\n") };
   }
-  function invocations(): Invocation[] {
-    return existsSync(log)
-      ? readFileSync(log, "utf8")
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line))
-      : [];
-  }
-  return { root, addPackage, commitBase, change, run, invocations };
+  return { root, addPackage, commitBase, change, run, calls, state };
 }
-
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
   for (const root of fixtures.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe("run-swift-mutation public CLI", () => {
-  it("lists only changed compiled files as JSON without running Muter", () => {
+  it("lists changed compiled files without running the mutation tool", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Timer space.swift"]);
     fixture.addPackage(healthKit);
@@ -139,297 +206,220 @@ describe("run-swift-mutation public CLI", () => {
       `${whoop}/ios/Parser.swift`,
       `${whoop}/ios/nested/Timer space.swift`,
       `${healthKit}/ios/Parser.swift`,
-      `${whoop}/ios/ExpoModule.swift`,
       `${whoop}/Tests/ParserTests.swift`,
+      `${whoop}/ios/ExpoModule.swift`,
     ])
       fixture.change(path);
-    const result = fixture.run(base, ["--list-files"]);
+    const result = await fixture.run(base, ["--list-files"]);
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual([
       `${healthKit}/ios/Parser.swift`,
       `${whoop}/ios/Parser.swift`,
       `${whoop}/ios/nested/Timer space.swift`,
     ]);
-    expect(fixture.invocations().map((call) => call.tool)).toEqual(["swift", "swift"]);
-    expect(existsSync(join(fixture.root, "reports"))).toBe(false);
+    expect(fixture.calls.map((call) => call.tool)).toEqual(["git", "swift", "swift"]);
   });
-
-  it("lists no work as an empty JSON array", () => {
-    const fixture = createFixture();
-    fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    fixture.change(`${whoop}/ios/ExpoModule.swift`);
-    const result = fixture.run(base, ["--list-files"]);
-    expect(result.status, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual([]);
-  });
-
-  it("runs only the requested changed compiled file using its package's full test configuration", () => {
+  it("scopes the official plan to the requested file and retains full-package tests", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Timer space.swift"]);
     const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
     fixture.change(`${whoop}/ios/nested/Timer space.swift`);
-    const result = fixture.run(base, ["--file", `${whoop}/ios/nested/Timer space.swift`]);
+    const result = await fixture.run(base, ["--file", `${whoop}/ios/nested/Timer space.swift`]);
     expect(result.status, result.stderr).toBe(0);
-    const runs = fixture.invocations().filter((call) => call.tool === "muter");
-    expect(runs).toHaveLength(1);
-    expect(runs[0]?.cwd).toBe(join(fixture.root, whoop));
-    expect(runs[0]?.args).toEqual([
-      "run",
-      "--files-to-mutate",
-      "ios/nested/Timer space.swift",
-      "--format",
-      "json",
-      "--output",
-      join(fixture.root, "reports/swift-mutation/whoop-ble.json"),
-    ]);
-    expect(readFileSync(join(fixture.root, whoop, "muter.conf.yml"), "utf8")).toContain(
-      "arguments: [test]",
+    expect(
+      fixture.calls.filter((call) => call.tool === "mutantkit").map((call) => call.args[0]),
+    ).toEqual(["config", "plan", "verify", "run", "verify-run", "trust"]);
+    const run = requiredItem(
+      fixture.calls.find((call) => call.tool === "mutantkit" && call.args[0] === "run"),
+    );
+    expect(
+      parse(readFileSync(requiredItem(run.args[run.args.indexOf("--config") + 1]), "utf8")),
+    ).toEqual({
+      project: { kind: "swiftPackageMacOS" },
+      reports: ["console", "json"],
+      evidence: { archive: true },
+      sources: { include: ["ios/nested/Timer space.swift"] },
+    });
+    expect(run.args).toContain("--no-resume");
+    expect(run.args).toContain("--no-history");
+    expect(fixture.calls.find((call) => call.tool === "swiftc")?.args).toContain(
+      join(fixture.root, whoop, "ios/nested/Timer space.swift"),
     );
   });
-
+  it("routes each package's changed compiled sources to its own full test run", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    fixture.addPackage(healthKit);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.change(`${healthKit}/ios/Parser.swift`);
+    const result = await fixture.run(base);
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      fixture.calls
+        .filter((call) => call.tool === "mutantkit" && call.args[0] === "run")
+        .map((call) => call.cwd),
+    ).toEqual([join(fixture.root, healthKit), join(fixture.root, whoop)]);
+  });
+  it("selects from the merge base when the base branch has diverged", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    fixture.addPackage(healthKit);
+    const common = fixture.commitBase();
+    fixture.change(`${healthKit}/ios/Parser.swift`);
+    const main = fixture.commitBase();
+    write(fixture.root, `${healthKit}/ios/Parser.swift`, "// source\n");
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    git(fixture.root, ["add", "."]);
+    const tree = git(fixture.root, ["write-tree"]);
+    git(fixture.root, [
+      "update-ref",
+      "HEAD",
+      git(fixture.root, ["commit-tree", tree, "-p", common, "-m", "feature"]),
+    ]);
+    expect((await fixture.run(main)).status).toBe(0);
+    expect(fixture.calls[0]?.args).toContain(`${main}...HEAD`);
+    expect(
+      fixture.calls
+        .filter((call) => call.tool === "mutantkit" && call.args[0] === "run")
+        .map((call) => call.cwd),
+    ).toEqual([join(fixture.root, whoop)]);
+  });
   it.each([
     "ios/ExpoModule.swift",
     "Tests/ParserTests.swift",
-    "ios/Unchanged.swift",
     "ios/Missing.swift",
-  ])("rejects single-file selection outside changed compiled sources: %s", (file) => {
+    "ios/Unchanged.swift",
+  ])("rejects an unselected file %s", async (path) => {
     const fixture = createFixture();
     fixture.addPackage(whoop, "ios", ["Parser.swift", "Unchanged.swift"]);
     const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
-    fixture.change(`${whoop}/ios/ExpoModule.swift`);
-    fixture.change(`${whoop}/Tests/ParserTests.swift`);
-    const result = fixture.run(base, ["--file", `${whoop}/${file}`]);
+    const result = await fixture.run(base, ["--file", `${whoop}/${path}`]);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("Requested file is not a changed compiled Swift source");
-    expect(fixture.invocations().filter((call) => call.tool === "muter")).toEqual([]);
   });
-
-  it("rejects combining list and single-file modes", () => {
+  it("rejects combined list and file modes", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    const result = fixture.run(base, ["--list-files", "--file", `${whoop}/ios/Parser.swift`]);
+    const result = await fixture.run(fixture.commitBase(), [
+      "--list-files",
+      "--file",
+      `${whoop}/ios/Parser.swift`,
+    ]);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("Usage:");
-    expect(fixture.invocations()).toEqual([]);
   });
-
-  it("selects committed PR changes from the merge base when main has diverged", () => {
+  it("fails before mutation when the owning package configuration is missing", async () => {
     const fixture = createFixture();
-    const backgroundRefresh = "packages/mobile/modules/background-refresh";
     fixture.addPackage(whoop);
-    fixture.addPackage(backgroundRefresh);
-    const commonBase = fixture.commitBase();
-    fixture.change(`${backgroundRefresh}/ios/Parser.swift`);
-    const mainTip = fixture.commitBase();
-
-    write(fixture.root, `${backgroundRefresh}/ios/Parser.swift`, "// source\n");
+    const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
-    git(fixture.root, ["add", "."]);
-    const featureTree = git(fixture.root, ["write-tree"]);
-    const featureTip = git(fixture.root, [
-      "commit-tree",
-      featureTree,
-      "-p",
-      commonBase,
-      "-m",
-      "feature",
-    ]);
-    git(fixture.root, ["update-ref", "HEAD", featureTip]);
-
-    const result = fixture.run(mainTip);
-
-    expect(result.status, result.stderr).toBe(0);
-    expect(
-      fixture
-        .invocations()
-        .filter((invocation) => invocation.tool === "muter")
-        .map((invocation) => invocation.cwd),
-    ).toEqual([join(fixture.root, whoop)]);
+    rmSync(join(fixture.root, whoop, "mutantkit.yml"));
+    const result = await fixture.run(base);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Missing MutantKit configuration");
+    expect(fixture.calls.some((call) => call.tool === "mutantkit")).toBe(false);
   });
-
-  it("routes changed compiled Swift sources to each owning package with relative paths", () => {
+  it("fails for changed native sources without an owning package", async () => {
     const fixture = createFixture();
-    fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Connection+Timer space.swift"]);
-    fixture.addPackage(healthKit);
+    write(fixture.root, "Unsupported.swift", "// base\n");
     const base = fixture.commitBase();
-    for (const path of [
-      `${whoop}/ios/Parser.swift`,
-      `${whoop}/ios/nested/Connection+Timer space.swift`,
-      `${whoop}/ios/ExpoModule.swift`,
-      `${whoop}/Tests/ParserTests.swift`,
-      `${whoop}/Package.swift`,
-      `${healthKit}/ios/Parser.swift`,
-    ])
-      fixture.change(path);
-
-    const result = fixture.run(base);
-
-    expect(result.status, result.stderr).toBe(0);
-    const runs = fixture.invocations().filter((invocation) => invocation.tool === "muter");
-    expect(runs).toHaveLength(2);
-    for (const [path, files] of [
-      [whoop, ["ios/Parser.swift", "ios/nested/Connection+Timer space.swift"]],
-      [healthKit, ["ios/Parser.swift"]],
-    ] as const) {
-      const run = runs.find((invocation) => invocation.cwd === join(fixture.root, path));
-      expect(run?.args).toEqual([
-        "run",
-        "--files-to-mutate",
-        files.join(","),
-        "--format",
-        "json",
-        "--output",
-        join(fixture.root, "reports/swift-mutation", `${path.split("/").at(-1)}.json`),
-      ]);
-    }
-    expect(
-      fixture
-        .invocations()
-        .filter((invocation) => invocation.tool === "swift")
-        .every((invocation) => invocation.args.join(" ") === "package describe --type json"),
-    ).toBe(true);
-    expect(result.stdout).toContain("2 mutants, 1 killed, score 50%");
+    fixture.change("Unsupported.swift");
+    const result = await fixture.run(base);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("No owning Package.swift");
   });
-
-  it("uses root-relative target inventories such as the watch package", () => {
-    const fixture = createFixture();
-    const watch = "packages/mobile/targets/DofekWatch";
-    fixture.addPackage(watch, ".", ["Cursor.swift"]);
-    const base = fixture.commitBase();
-    fixture.change(`${watch}/Cursor.swift`);
-    const result = fixture.run(base);
-    expect(result.status, result.stderr).toBe(0);
-    expect(fixture.invocations().find((invocation) => invocation.tool === "muter")?.args).toContain(
-      "Cursor.swift",
-    );
-  });
-
-  it("skips an authoritative empty source intersection including manifest, test and bridge changes", () => {
+  it("rejects malformed Swift through the real compiler boundary before mutation", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
-    for (const path of ["Package.swift", "Tests/ParserTests.swift", "ios/ExpoModule.swift"]) {
-      fixture.change(`${whoop}/${path}`);
-    }
-    const result = fixture.run(base);
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("No changed compiled Swift sources");
-    expect(fixture.invocations().map((invocation) => invocation.tool)).toEqual(["swift"]);
+    write(fixture.root, `${whoop}/ios/Parser.swift`, "struct Unclosed {\n");
+    fixture.state.fail = "swiftc";
+    fixture.state.exit = 1;
+    const result = await fixture.run(base);
+    expect(result.status).toBe(1);
+    expect(fixture.calls.some((call) => call.tool === "mutantkit")).toBe(false);
   });
-
-  it("ignores deleted Swift files", () => {
+  it("requires the actual evidence archive rather than accepting the reference alone", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.omit = "archive";
+    const result = await fixture.run(base);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Missing mutation evidence archive");
+  });
+  it("returns an explicit empty intersection and ignores deleted files", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/Tests/ParserTests.swift`);
     rmSync(join(fixture.root, whoop, "ios/Parser.swift"));
-    const result = fixture.run(base);
+    expect((await fixture.run(base, ["--list-files"])).stdout).toBe("[]");
+    expect(fixture.calls.some((call) => call.tool === "mutantkit")).toBe(false);
+  });
+  it("supports root-relative watch target inventories", async () => {
+    const fixture = createFixture();
+    const path = "packages/mobile/targets/DofekWatch";
+    fixture.addPackage(path, ".", ["Cursor.swift"]);
+    const base = fixture.commitBase();
+    fixture.change(`${path}/Cursor.swift`);
+    const result = await fixture.run(base);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("No changed compiled Swift sources");
-    expect(fixture.invocations()).toEqual([]);
   });
-
-  it.each([1, 42, 255])("preserves Muter failure status %i", (exit) => {
+  it.each(["plan", "report"])("rejects stale %s after output omission", async (omitted) => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
-    write(fixture.root, `${whoop}/muter-fixture.json`, JSON.stringify({ exit }));
-    const result = fixture.run(base);
-    expect(result.status).toBe(exit);
-    expect(result.stderr).toContain(`muter failed for ${whoop}`);
-  });
-
-  it("fails on SwiftPM discovery errors instead of treating them as no work", () => {
-    const fixture = createFixture();
-    fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    fixture.change(`${whoop}/ios/Parser.swift`);
-    write(fixture.root, `${whoop}/swift-fixture.json`, JSON.stringify({ exit: 7 }));
-    const result = fixture.run(base);
-    expect(result.status).toBe(7);
-    expect(result.stderr).toContain(`swift failed for ${whoop}`);
-  });
-
-  it.each([
-    ["malformed JSON", { raw: "invalid-json" }],
-    ["missing inventory", { description: {} }],
-  ])("fails on %s from SwiftPM", (_label, state) => {
-    const fixture = createFixture();
-    fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    fixture.change(`${whoop}/ios/Parser.swift`);
-    write(fixture.root, `${whoop}/swift-fixture.json`, JSON.stringify(state));
-    const result = fixture.run(base);
+    write(fixture.root, `reports/swift-mutation/whoop-ble/${omitted}.json`, "{}");
+    fixture.state.omit = omitted;
+    const result = await fixture.run(base);
     expect(result.status).not.toBe(0);
-    expect(`${result.stdout}${result.stderr}`).toContain(`SwiftPM description for ${whoop}`);
+    expect(result.stderr).toContain(`${omitted}.json`);
   });
-
-  it("fails explicitly for changed native Swift without an owning package", () => {
-    const fixture = createFixture();
-    write(fixture.root, "packages/mobile/native/Unsupported.swift", "// source\n");
-    const base = fixture.commitBase();
-    fixture.change("packages/mobile/native/Unsupported.swift");
-    const result = fixture.run(base);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(
-      "No owning Package.swift for packages/mobile/native/Unsupported.swift",
-    );
-  });
-
-  it("fails before mutation when package configuration is missing", () => {
+  it.each(["swift", "inventory", "plan", "report", "verify-run"])(
+    "rejects malformed %s",
+    async (malformed) => {
+      const fixture = createFixture();
+      fixture.addPackage(whoop);
+      const base = fixture.commitBase();
+      fixture.change(`${whoop}/ios/Parser.swift`);
+      fixture.state.malformed = malformed;
+      expect((await fixture.run(base)).status).not.toBe(0);
+    },
+  );
+  it.each(["zero", "stale", "missing", "corrupt"] as const)("rejects %s work", async (problem) => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
-    rmSync(join(fixture.root, whoop, "muter.conf.yml"));
-    const result = fixture.run(base);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(`${whoop}/muter.conf.yml`);
-    expect(fixture.invocations().filter((invocation) => invocation.tool === "muter")).toEqual([]);
+    fixture.state[problem] = true;
+    expect((await fixture.run(base)).status).not.toBe(0);
   });
-
-  it("fails explicitly when Muter is unavailable", () => {
-    const fixture = createFixture();
-    fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    fixture.change(`${whoop}/ios/Parser.swift`);
-    // An executable with a missing interpreter reproduces spawn ENOENT without using installed Muter.
-    write(fixture.root, "bin/muter", "#!/nonexistent/muter-interpreter\n");
-    const result = fixture.run(base);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(`Could not start muter for ${whoop}`);
-  });
-
-  it.each([
-    ["missing", { omitReport: true }],
-    ["malformed", { raw: "invalid-json" }],
-    ["zero work", { report: { ...positiveReport, totalAppliedMutationOperators: 0 } }],
-    ["missing fields", { report: {} }],
-    ["empty files", { report: { ...positiveReport, fileReports: [] } }],
-  ])("fails when a successful selected-source run returns a %s report", (_label, state) => {
-    const fixture = createFixture();
-    fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    fixture.change(`${whoop}/ios/Parser.swift`);
-    write(fixture.root, `${whoop}/muter-fixture.json`, JSON.stringify(state));
-    const result = fixture.run(base);
-    expect(result.status).not.toBe(0);
-    expect(`${result.stdout}${result.stderr}`).toContain("whoop-ble.json");
-  });
-
-  it("does not accept a stale report when the selected run emits no report", () => {
-    const fixture = createFixture();
-    fixture.addPackage(whoop);
-    const base = fixture.commitBase();
-    fixture.change(`${whoop}/ios/Parser.swift`);
-    write(fixture.root, "reports/swift-mutation/whoop-ble.json", JSON.stringify(positiveReport));
-    write(fixture.root, `${whoop}/muter-fixture.json`, JSON.stringify({ omitReport: true }));
-    const result = fixture.run(base);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("whoop-ble.json");
-  });
+  it.each(["swift", "swiftc", "config", "plan", "verify", "run", "verify-run", "trust"])(
+    "preserves %s failure status and command evidence",
+    async (command) => {
+      const fixture = createFixture();
+      fixture.addPackage(whoop);
+      const base = fixture.commitBase();
+      fixture.change(`${whoop}/ios/Parser.swift`);
+      fixture.state.fail = command;
+      fixture.state.exit = 42;
+      const result = await fixture.run(base);
+      expect(result.status, result.stderr).toBe(42);
+      if (command !== "swift" && command !== "swiftc")
+        expect(
+          JSON.parse(
+            readFileSync(
+              join(fixture.root, "reports/swift-mutation/whoop-ble", `${command}.command.json`),
+              "utf8",
+            ),
+          ),
+        ).toMatchObject({ status: 42, stderr: `${command} rejected fixture` });
+    },
+  );
 });

@@ -81,6 +81,20 @@ url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegr
 url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052593"
 provenance = "github-attestations"
 
+[[tools."github:juntaki/mutantkit"]]
+version = "1.3.2"
+backend = "github:juntaki/mutantkit"
+
+[tools."github:juntaki/mutantkit".options]
+asset_pattern = "mutantkit-macos-arm64.tar.gz"
+
+[tools."github:juntaki/mutantkit"."platforms.macos-arm64"]
+checksum = "sha256:a17b35e25ddf01b275f6824f28aace364d67f2f989cf43ed894d435f7dd5a159"
+url = "https://github.com/juntaki/mutantkit/releases/download/v1.3.2/mutantkit-macos-arm64.tar.gz"
+url_api = "https://api.github.com/repos/juntaki/mutantkit/releases/assets/673022164"
+provenance = "github-attestations"
+provenance_verified = true
+
 [[tools."github:rtk-ai/rtk"]]
 version = "0.44.0"
 backend = "github:rtk-ai/rtk"

@@ -125,11 +125,11 @@ fixtures but must not modify product sources or run a broad native campaign.
   for the actual Boolean fallback and unary negation; validate source inventory
   and hashes, positive controls, zero sites, missing/unreadable/malformed source
   and stale plans. Do not infer safety from a successful generic CLI command.
-- [ ] Prove generated mutations compile, change meaningful observable behavior
+- [x] Prove generated mutations compile, change meaningful observable behavior
   and are killed by relevant tests; characterize build-error/timeouts/skipped
   outcomes and preserve current gate semantics. Freeze evaluation evidence for
   independent review before deciding whether the migration condition is met.
-- [ ] If verified, migrate every Swift mutation consumer to one pinned canonical
+- [x] If verified, migrate every Swift mutation consumer to one pinned canonical
   MutantKit toolchain using TypeScript repository automation. Update wrapper,
   tests, workflow/config/tool pins and human docs together. Retain strict source
   validation, complete result inventory, positive work and unchanged score gates.

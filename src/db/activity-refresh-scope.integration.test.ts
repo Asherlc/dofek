@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
@@ -13,6 +13,7 @@ import { runProcess } from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { encodeActivityRefreshScope } from "./activity-refresh-scope.ts";
 import {
   dbtFailureDiagnostic,
+  readDbtCompiledQueries,
   readDbtStatementMessages,
   readDbtStatementTarget,
   withActivityScopeDbtProject,
@@ -226,34 +227,30 @@ SELECT {{ activity_refresh_requested_ids() }} AS requested, {{ activity_refresh_
           // execute/add_query logs include the query comment and model SETTINGS. The
           // adapter's columns_in_query bypasses this logger; exercise that exact wrapper
           // separately, including clickhouse-connect 1.4.1's LIMIT 0 FORMAT JSON path.
-          const manifest = z
-            .object({
-              nodes: z.record(
-                z.string(),
-                z
-                  .object({
-                    name: z.string(),
-                    compiled_code: z.string().optional(),
-                    config: z.object({
-                      query_settings: z
-                        .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-                        .optional(),
-                    }),
-                  })
-                  .passthrough(),
-              ),
-            })
-            .parse(JSON.parse(await readFile(join(artifacts, phase, "manifest.json"), "utf8")));
+          const compiledQueries = await readDbtCompiledQueries(join(artifacts, phase), models);
+          expect(compiledQueries.map(({ model, batch }) => ({ model, batch }))).toEqual(
+            models.flatMap<{ model: string; batch: string | null }>((model) =>
+              model === "activity_sensor_sample"
+                ? [
+                    { model, batch: "2026-09-01" },
+                    { model, batch: "2026-09-02" },
+                  ]
+                : [{ model, batch: null }],
+            ),
+          );
           const introspectionEvidence = [];
-          for (const model of models) {
-            const node = Object.values(manifest.nodes).find((node) => node.name === model);
-            if (!node?.compiled_code) throw new Error(`Missing compiled SQL for ${model}`);
-            const query = `SELECT * FROM ( \n${node.compiled_code} \n) LIMIT 0\n FORMAT JSON`;
-            const item = { model, ...statementEvidence(query) };
+          for (const compiled of compiledQueries) {
+            const query = `SELECT * FROM ( \n${compiled.sql} \n) LIMIT 0\n FORMAT JSON`;
+            const item = {
+              model: compiled.model,
+              batch: compiled.batch,
+              path: compiled.path,
+              ...statementEvidence(query),
+            };
             expect(item.bytes, JSON.stringify(item)).toBeLessThan(maximumQueryBytes);
             const response = await client.command({
               query,
-              clickhouse_settings: node.config.query_settings,
+              clickhouse_settings: compiled.settings,
             });
             expect(response.query_id).toBeTruthy();
             introspectionEvidence.push(item);

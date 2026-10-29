@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { createClient } from "@clickhouse/client";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   type ActivityIntegrityClickHouseClient,
   queryClickHouseRows,
 } from "./activity-data-integrity-clickhouse.ts";
+import { activity } from "./schema/activity.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import type { TestContext } from "./test-helpers.ts";
-import { executeWithSchema } from "./typed-sql.ts";
 
 export function runningRevisionFixture(userId: string) {
   const records = Array.from({ length: 101 }, (_, index) => ({
@@ -90,21 +90,28 @@ export async function mirrorRunningLocalTime(
   database: string,
   activityIds: readonly string[],
 ): Promise<void> {
-  const states = await executeWithSchema(
-    context.db,
-    z.object({
-      id: z.string(),
-      timezone: z.string().nullable(),
-      start_utc_offset_minutes: z.number().nullable(),
-      end_utc_offset_minutes: z.number().nullable(),
-      local_time_source: z.string(),
-    }),
-    sql`SELECT id,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source
-    FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND id=ANY(ARRAY[${sql.join(
-      activityIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    )}]::uuid[])`,
-  );
+  const states = z
+    .array(
+      z.object({
+        id: z.string(),
+        timezone: z.string().nullable(),
+        start_utc_offset_minutes: z.number().nullable(),
+        end_utc_offset_minutes: z.number().nullable(),
+        local_time_source: z.string(),
+      }),
+    )
+    .parse(
+      await context.db
+        .select({
+          id: activity.id,
+          timezone: activity.timezone,
+          start_utc_offset_minutes: activity.startUtcOffsetMinutes,
+          end_utc_offset_minutes: activity.endUtcOffsetMinutes,
+          local_time_source: activity.localTimeSource,
+        })
+        .from(activity)
+        .where(and(eq(activity.userId, TEST_USER_ID), inArray(activity.id, activityIds))),
+    );
   const current = await queryClickHouseRows(
     client,
     z.object({ id: z.string(), _peerdb_version: z.string() }).passthrough(),
