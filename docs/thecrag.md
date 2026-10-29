@@ -47,6 +47,23 @@ pagination. All discovered details must validate before any records are saved.
 Cloudflare blocks, nonpublic redirects and malformed or failed pages surface
 errors and preserve existing entries; they do not prove login is required.
 
+For non-200 responses, the [provider](../src/providers/thecrag/provider.ts)
+reports Sentry tags `phase=public_request` and `requestKind` (`profile_lookup`,
+`feed`, or `ascent`), with `httpStatus` in extra data. For 3xx responses,
+`redirectTarget` classifies the Location header as `thecrag` (the exact public
+HTTPS origin), `thecrag_processing` (the exact
+`https://swamp.processing.thecrag.com` origin), `external`, `invalid`, or
+`missing`. Relative locations resolve against the requested URL. These are
+diagnostic categories, not permitted redirect destinations: requests still
+never follow redirects. Raw locations, arbitrary hostnames, paths, queries,
+credentials and response bodies are excluded from this diagnostic.
+
+For a public-request 3xx failure, compare the destination status using the
+deployed transport before proposing a redirect-policy change. On 2026-10-29,
+production lookup/feed probes returned 200, but the feed's ascent page
+redirected to the processing origin and that destination returned 403; see the
+[incident record](production-incident-baseline.md#2026-10-29--thecrag-ascent-requests-redirected-to-a-forbidden-host).
+
 The provider-local [HTTP transport](../src/providers/thecrag/public-transport.ts)
 uses Impit 0.14.7 with the tested `chrome` networking profile through Dofek's
 shared rate-limit, diagnostic and two-minute deadline boundary. TLS verification
