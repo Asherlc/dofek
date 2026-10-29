@@ -212,6 +212,44 @@ final class HealthKitRunningStepTransportTests: XCTestCase {
         XCTAssertTrue(parentFiltered.samples.isEmpty)
     }
 
+    func testCutoffExcludesDiscoveredRunningWorkoutFromParentReadsAndAssociations() async throws {
+        let initialRun = HKWorkout(activityType: .running,
+            start: origin.addingTimeInterval(10), end: origin.addingTimeInterval(30))
+        let excludedRun = HKWorkout(activityType: .running,
+            start: origin, end: origin.addingTimeInterval(30))
+        let eligibleRun = HKWorkout(activityType: .running,
+            start: origin.addingTimeInterval(12), end: origin.addingTimeInterval(20))
+        let selectedParent = parent(15, 16)
+        let entry = HealthKitQuantitySeriesEntry(parent: selectedParent,
+            quantity: HKQuantity(unit: .count(), doubleValue: 2),
+            dateInterval: DateInterval(start: selectedParent.startDate, duration: 0.5))
+        var parentReadWorkoutIds = Set<UUID>()
+        let result = try await HealthKitRunningStepTransport.snapshot(workouts: [initialRun],
+            shouldInclude: { $0 > self.origin }, discoverWorkouts: { parents in
+                XCTAssertEqual(parents.map(\.uuid), [selectedParent.uuid])
+                return [excludedRun, eligibleRun]
+            }, readParents: { workout in
+                parentReadWorkoutIds.insert(workout.uuid)
+                return [selectedParent]
+            }, readSeries: { parents in
+                XCTAssertEqual(parents.map(\.uuid), [selectedParent.uuid])
+                return [entry]
+            })
+        XCTAssertEqual(parentReadWorkoutIds, Set([initialRun.uuid, eligibleRun.uuid]))
+        let expectedWorkoutIds = Set([initialRun.uuid.uuidString, eligibleRun.uuid.uuidString])
+        let returnedWorkoutIds = try result.workouts.map { try XCTUnwrap($0["uuid"] as? String) }
+        XCTAssertEqual(Set(returnedWorkoutIds), expectedWorkoutIds)
+        XCTAssertEqual(result.samples.count, 1)
+        let sample = try XCTUnwrap(result.samples.first)
+        XCTAssertEqual(Set(try XCTUnwrap(sample["workoutUuids"] as? [String])), expectedWorkoutIds)
+        XCTAssertEqual(sample["uuid"] as? String, selectedParent.uuid.uuidString)
+        XCTAssertEqual(sample["value"] as? Double, 2)
+        XCTAssertEqual(sample["unit"] as? String, "count")
+        XCTAssertEqual(sample["sourceBundle"] as? String, selectedParent.sourceRevision.source.bundleIdentifier)
+        XCTAssertEqual(HealthKitQueries.parseDate(try XCTUnwrap(sample["startDate"] as? String)), entry.dateInterval.start)
+        XCTAssertEqual(HealthKitQueries.parseDate(try XCTUnwrap(sample["endDate"] as? String)), entry.dateInterval.end)
+    }
+
     func testSeriesFailurePreventsSnapshotCompletion() async throws {
         let run = HKWorkout(activityType: .running, start: Date(), end: Date().addingTimeInterval(10))
         let parent = HKQuantitySample(type: .quantityType(forIdentifier: .stepCount)!,

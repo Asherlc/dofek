@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { createClient } from "@clickhouse/client";
 import { buildIngestMetricStreamCreateTableSql } from "../metric-stream/clickhouse-table.ts";
+import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 import {
   buildPostgresFitnessProviderFieldPriorityRawTableStatement,
   buildPostgresFitnessRawTableStatements,
@@ -227,4 +228,36 @@ export async function bootstrapActivityIntegrityIdentityModels(): Promise<void> 
     child.once("close", (value) => resolveExit(value ?? 1));
   });
   if (code !== 0) throw new Error(`Identity fixture dbt bootstrap failed with exit code ${code}`);
+}
+
+export const dbtEnvironmentKeys = [
+  "DBT_TARGET",
+  "DBT_CLICKHOUSE_SCHEMA",
+  "DBT_ANALYTICS_SOURCE_SCHEMA",
+  "DBT_INGEST_SOURCE_SCHEMA",
+  "DBT_POSTGRES_FITNESS_SOURCE_SCHEMA",
+] as const;
+
+export function configureDbtEnvironment(database: string): void {
+  process.env.DBT_TARGET = "dev";
+  process.env.DBT_CLICKHOUSE_SCHEMA = database;
+  process.env.DBT_ANALYTICS_SOURCE_SCHEMA = database;
+  process.env.DBT_INGEST_SOURCE_SCHEMA = database;
+  process.env.DBT_POSTGRES_FITNESS_SOURCE_SCHEMA = database;
+}
+
+export function scopeClickHouseClient(
+  client: NativeClickHouseClient,
+  database: string,
+): ActivityIntegrityClickHouseClient {
+  const scope = (query: string) =>
+    query.replaceAll("analytics.", `${database}.`).replaceAll("postgres_fitness.", `${database}.`);
+  return {
+    query: async (options) => {
+      const result = await client.query({ ...options, query: scope(options.query) });
+      return { json: () => result.json() };
+    },
+    insert: (options) =>
+      client.insert({ ...options, table: scope(options.table), values: [...options.values] }),
+  };
 }

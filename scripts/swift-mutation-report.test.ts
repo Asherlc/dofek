@@ -180,8 +180,10 @@ describe("Swift mutation report boundary", () => {
 
 describe("official evidence acceptance", () => {
   it("accepts optional unknown assertion confirmation with complete raw re-derivation", () => {
-    const { plan, verification, trust } = mutationFixture();
-    expect(() => validateRunVerification(verification, plan)).not.toThrow();
+    const { plan, report, verification, trust } = mutationFixture();
+    expect(() =>
+      validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+    ).not.toThrow();
     expect(() => validateMutationTrust(trust, plan)).not.toThrow();
   });
   it.each([
@@ -194,8 +196,11 @@ describe("official evidence acceptance", () => {
     "omission",
     "counts",
   ])("rejects %s verification even when passed is true", (kind) => {
-    const { plan, verification } = mutationFixture();
-    if (kind === "missing") verification.checks.shift();
+    const { plan, report, verification } = mutationFixture();
+    if (kind === "missing") {
+      verification.checks.shift();
+      verification.passCount -= 1;
+    }
     if (kind === "required unknown") requiredItem(verification.checks[0]).status = "notVerifiable";
     if (kind === "failed") requiredItem(verification.checks[0]).status = "fail";
     if (kind === "duplicate") verification.checks.push(requiredItem(verification.checks[0]));
@@ -203,11 +208,190 @@ describe("official evidence acceptance", () => {
     if (kind === "mismatch") verification.tierB.mismatchedCount = 1;
     if (kind === "omission") verification.tierB.reverifiedCount = 0;
     if (kind === "counts") verification.passCount = 0;
-    expect(() => validateRunVerification(verification, plan)).toThrow();
+    expect(() =>
+      validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+    ).toThrow();
   });
   it("requires trust's mandatory-check verdict", () => {
     const { plan, trust } = mutationFixture();
     Reflect.set(trust.verification, "unverifiedRequiredChecks", ["plan.identity"]);
     expect(() => validateMutationTrust(trust, plan)).toThrow();
+  });
+});
+
+// The two captured CI subsets come from b06 artifacts12912061956 and12912616786.
+// Plan identities are normalized to the local boundary fixture; check membership is retained.
+function outcomeVerificationFixture(
+  outcome: "killedByAssertion" | "killedByCrash" | "verifiedTimeout" | "survived",
+) {
+  const fixture = mutationFixture();
+  const result = requiredItem(fixture.report.results[0]);
+  result.outcome = outcome;
+  const checks = fixture.verification.checks;
+  if (outcome !== "killedByAssertion") {
+    fixture.verification.checks = checks.filter(
+      (check) =>
+        !["evidence.killAttribution", "evidence.assertionConfirmation"].includes(check.name),
+    );
+  }
+  if (outcome === "killedByCrash" || outcome === "verifiedTimeout") {
+    fixture.verification.checks.push(
+      {
+        name:
+          outcome === "killedByCrash"
+            ? "evidence.crashConfirmation"
+            : "evidence.timeoutConfirmation",
+        status: "pass",
+      },
+      { name: "evidence.confirmationChain", status: "pass" },
+    );
+    Reflect.set(result, "evidence", {
+      confirmationChain: [{ kind: outcome === "killedByCrash" ? "crash" : "timeout" }],
+      ...(outcome === "killedByCrash"
+        ? { crashConfirmation: { crashedAgain: true } }
+        : { timeoutConfirmation: { timedOutAgain: true } }),
+    });
+  }
+  if (outcome === "verifiedTimeout")
+    fixture.verification.checks = fixture.verification.checks.filter(
+      (check) => !["evidence.activation", "evidence.buildProduct"].includes(check.name),
+    );
+  if (outcome === "survived")
+    fixture.report.score = { killed: 0, survived: 1, noCoverage: 0, excluded: {} };
+  fixture.verification.passCount = fixture.verification.checks.filter(
+    (check) => check.status === "pass",
+  ).length;
+  fixture.verification.notVerifiableCount = fixture.verification.checks.filter(
+    (check) => check.status === "notVerifiable",
+  ).length;
+  return fixture;
+}
+
+describe("outcome-specific official verification", () => {
+  it("accepts the real crash-only18-pass subset without assertion attribution", () => {
+    const { plan, report, verification } = outcomeVerificationFixture("killedByCrash");
+    expect(verification.passCount).toBe(18);
+    expect(() =>
+      validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+    ).not.toThrow();
+  });
+  it("accepts the real assertion-only subset without crash or chain findings", () => {
+    const { plan, report, verification } = outcomeVerificationFixture("killedByAssertion");
+    expect(verification.passCount).toBe(17);
+    expect(verification.notVerifiableCount).toBe(1);
+    expect(() =>
+      validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+    ).not.toThrow();
+  });
+  it.each(["verifiedTimeout", "survived"] as const)(
+    "accepts the pinned verifier's %s subset",
+    (outcome) => {
+      const { plan, report, verification } = outcomeVerificationFixture(outcome);
+      expect(() =>
+        validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+      ).not.toThrow();
+    },
+  );
+  it.each([
+    ["killedByAssertion", "evidence.killAttribution"],
+    ["killedByCrash", "evidence.crashConfirmation"],
+    ["killedByCrash", "evidence.confirmationChain"],
+    ["verifiedTimeout", "evidence.timeoutConfirmation"],
+    ["verifiedTimeout", "evidence.confirmationChain"],
+    ["killedByAssertion", "evidence.activation"],
+    ["survived", "evidence.activation"],
+    ["survived", "evidence.buildProduct"],
+  ] as const)("requires applicable %s check %s", (outcome, name) => {
+    for (const status of ["missing", "fail", "notVerifiable", "unknown"]) {
+      const { plan, report, verification } = outcomeVerificationFixture(outcome);
+      if (status === "missing")
+        verification.checks = verification.checks.filter((check) => check.name !== name);
+      else requiredItem(verification.checks.find((check) => check.name === name)).status = status;
+      verification.passCount = verification.checks.filter(
+        (check) => check.status === "pass",
+      ).length;
+      verification.notVerifiableCount = verification.checks.filter(
+        (check) => check.status === "notVerifiable",
+      ).length;
+      expect(() =>
+        validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+      ).toThrow();
+    }
+  });
+  it.each(["killedByAssertion", "killedByCrash", "verifiedTimeout", "survived"] as const)(
+    "retains universal/source/archive requirements for %s",
+    (outcome) => {
+      for (const name of [
+        "report.results",
+        "source.anchors",
+        "archive.integrity",
+        "archive.policy",
+        "tierB.outcome",
+      ]) {
+        const { plan, report, verification } = outcomeVerificationFixture(outcome);
+        verification.checks = verification.checks.filter((check) => check.name !== name);
+        verification.passCount -= 1;
+        expect(() =>
+          validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+        ).toThrow();
+      }
+    },
+  );
+  it("retains Types' three nonmaterialized exclusions and one measured kill", () => {
+    const { verification } = outcomeVerificationFixture("killedByAssertion");
+    const { plan, report } = mutationFixture(
+      "/",
+      Object.fromEntries(
+        [0, 1, 2, 3].map((index) => [`${index}.swift`, `sha256:${"0".repeat(64)}`]),
+      ),
+    );
+    report.results.forEach((result, index) => {
+      result.outcome = index === 0 ? "killedByAssertion" : "notMaterialized";
+    });
+    report.integrity.executed = 1;
+    report.score = { killed: 1, survived: 0, noCoverage: 0, excluded: { notMaterialized: 3 } };
+    verification.resultCount = 4;
+    verification.tierB.reverifiedCount = 4;
+    verification.tierB.matchedCount = 4;
+    const validated = validateMutationReport(report, plan);
+    expect(validated.score).toEqual({
+      killed: 1,
+      survived: 0,
+      noCoverage: 0,
+      excluded: { notMaterialized: 3 },
+    });
+    expect(() => validateRunVerification(verification, plan, validated)).not.toThrow();
+  });
+  it("does not score an entirely nonmaterialized campaign as measured work", () => {
+    const { plan, report } = mutationFixture();
+    requiredItem(report.results[0]).outcome = "notMaterialized";
+    report.integrity.executed = 0;
+    report.score = { killed: 0, survived: 0, noCoverage: 0, excluded: { notMaterialized: 1 } };
+    expect(() => validateMutationReport(report, plan)).toThrow(/positive measured/);
+  });
+  it("requires a recorded confirmation chain on an indeterminate result", () => {
+    const { plan, report, verification } = mutationFixture("/", {
+      "first.swift": `sha256:${"0".repeat(64)}`,
+      "second.swift": `sha256:${"1".repeat(64)}`,
+    });
+    const result = requiredItem(report.results[1]);
+    result.outcome = "flaky";
+    Reflect.set(result, "evidence", { confirmationChain: [{ kind: "crash" }] });
+    report.score = { killed: 1, survived: 0, noCoverage: 0, excluded: { flaky: 1 } };
+    const validated = validateMutationReport(report, plan);
+    expect(() => validateRunVerification(verification, plan, validated)).toThrow(
+      /confirmationChain/,
+    );
+    verification.checks.push({ name: "evidence.confirmationChain", status: "pass" });
+    verification.passCount += 1;
+    expect(() => validateRunVerification(verification, plan, validated)).not.toThrow();
+  });
+  it("does not waive an unknown assertion-confirmation check on a crash-only report", () => {
+    const { plan, report, verification } = outcomeVerificationFixture("killedByCrash");
+    verification.checks.push({ name: "evidence.assertionConfirmation", status: "notVerifiable" });
+    verification.notVerifiableCount += 1;
+    expect(() =>
+      validateRunVerification(verification, plan, validateMutationReport(report, plan)),
+    ).toThrow(/Unverified/);
   });
 });

@@ -18,8 +18,6 @@ export const requiredChecks = [
   "evidence.activation",
   "evidence.buildProduct",
   "evidence.sourceDiff",
-  "evidence.crashConfirmation",
-  "evidence.confirmationChain",
   "evidence.killAttribution",
   "integrity.recompute",
   "score.recompute",

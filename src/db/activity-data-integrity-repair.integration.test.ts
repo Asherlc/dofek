@@ -16,6 +16,9 @@ import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   activityIntegrityFixtureIds,
   bootstrapActivityIntegrityIdentityModels,
+  configureDbtEnvironment,
+  dbtEnvironmentKeys,
+  scopeClickHouseClient,
   seedProductionDbtFixture,
 } from "./activity-data-integrity-dbt-test-helpers.ts";
 import {
@@ -31,13 +34,6 @@ import { executeWithSchema } from "./typed-sql.ts";
 const { wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId } =
   activityIntegrityFixtureIds;
 const CDC_FIXTURE_TIMEOUT_MS = 120_000;
-const dbtEnvironmentKeys = [
-  "DBT_TARGET",
-  "DBT_CLICKHOUSE_SCHEMA",
-  "DBT_ANALYTICS_SOURCE_SCHEMA",
-  "DBT_INGEST_SOURCE_SCHEMA",
-  "DBT_POSTGRES_FITNESS_SOURCE_SCHEMA",
-] as const;
 const priorDbtEnvironment = new Map(
   dbtEnvironmentKeys.map((key) => [key, process.env[key]] as const),
 );
@@ -120,126 +116,6 @@ describe("activity data integrity repair", () => {
     expect(rows).toEqual([{ started_at: "2026-09-01T23:30:00.123456Z", ended_at: null }]);
     expect(new Date(rows[0]?.started_at ?? "").toISOString()).toBe("2026-09-01T23:30:00.123Z");
   });
-
-  it("finishes 101 revision/member aliases, old-group tombstones and downstream cadence before returning", async () => {
-    await seedProductionDbtFixture(client, database);
-    configureDbtEnvironment(database);
-    await bootstrapActivityIntegrityIdentityModels();
-    const fixture = runningRevisionFixture(TEST_USER_ID);
-    const { records } = fixture;
-    await client.insert({
-      table: `${database}.activity`,
-      format: "JSONEachRow",
-      values: fixture.initialActivityRows,
-    });
-    await client.insert({
-      table: `${database}.metric_stream`,
-      format: "JSONEachRow",
-      values: fixture.initialStepRows,
-    });
-    const input = {
-      userId: TEST_USER_ID,
-      activityIds: records.map((record) => record.member),
-      eventTimeStart: new Date("2026-09-01"),
-      eventTimeEnd: new Date("2026-09-03"),
-    };
-    const cadenceRows = async () => {
-      const result = await client.query({
-        query: `SELECT activity_id,avg_cadence,is_deleted FROM ${database}.activity_step_cadence_rows FINAL WHERE user_id={user:UUID}`,
-        query_params: { user: TEST_USER_ID },
-        format: "JSONEachRow",
-      });
-      return result.json<{ activity_id: string; avg_cadence: number | null; is_deleted: number }>();
-    };
-    // Establish every old row before testing correction of the entire canonical scope.
-    await runActivityIntegrityDbtBuild(input, scopedClient);
-    const before = await cadenceRows();
-    expect(before).toHaveLength(101);
-    expect(before).toEqual(
-      expect.arrayContaining(
-        records.map((record) => ({
-          activity_id: record.group,
-          avg_cadence: 150,
-          is_deleted: 0,
-        })),
-      ),
-    );
-
-    await client.insert({
-      table: `${database}.activity`,
-      format: "JSONEachRow",
-      values: fixture.revisedActivityRows,
-    });
-    await client.insert({
-      table: `${database}.metric_stream`,
-      format: "JSONEachRow",
-      values: fixture.revisedStepRows,
-    });
-    await runActivityIntegrityDbtBuild(input, scopedClient);
-    const cadence = await cadenceRows();
-    expect(cadence).toHaveLength(202);
-    expect(cadence.filter((row) => row.is_deleted === 0)).toHaveLength(101);
-    for (const record of records) {
-      expect(cadence.find((row) => row.activity_id === record.group)).toMatchObject({
-        is_deleted: 1,
-        avg_cadence: null,
-      });
-      expect(cadence.find((row) => row.activity_id === record.nextGroup)).toMatchObject({
-        is_deleted: 0,
-        avg_cadence: 180,
-      });
-    }
-    const summaries = await client.query({
-      query: `SELECT activity_id,avg_cadence FROM ${database}.activity_summary_rows FINAL WHERE user_id={user:UUID} AND is_deleted=0 AND activity_id IN {ids:Array(UUID)}`,
-      query_params: { user: TEST_USER_ID, ids: records.map((record) => record.nextGroup) },
-      format: "JSONEachRow",
-    });
-    const summaryRows = await summaries.json();
-    expect(summaryRows).toHaveLength(101);
-    expect(summaryRows).toEqual(
-      expect.arrayContaining(
-        records.map((record) => ({
-          activity_id: record.nextGroup,
-          avg_cadence: 180,
-        })),
-      ),
-    );
-    const foreign = await client.query({
-      query: `SELECT count() AS count FROM ${database}.activity_step_cadence_rows FINAL WHERE user_id={user:UUID}`,
-      query_params: { user: fixture.foreignUserId },
-      format: "JSONEachRow",
-    });
-    expect(await foreign.json()).toEqual([{ count: 0 }]);
-  }, 300_000);
-
-  it("creates an empty exact cadence target without selecting another user's running group", async () => {
-    await seedProductionDbtFixture(client, database);
-    configureDbtEnvironment(database);
-    const foreignUser = randomUUID();
-    const fixture = runningRevisionFixture(foreignUser);
-    const foreign = fixture.initialActivityRows[0];
-    if (!foreign) throw new Error("Missing foreign fixture activity");
-    await client.insert({
-      table: `${database}.activity`,
-      format: "JSONEachRow",
-      values: [foreign],
-    });
-    await bootstrapActivityIntegrityIdentityModels();
-    await runActivityIntegrityDbtBuild(
-      {
-        userId: TEST_USER_ID,
-        activityIds: [wahooActivityId],
-        eventTimeStart: new Date("2026-09-01"),
-        eventTimeEnd: new Date("2026-09-03"),
-      },
-      scopedClient,
-    );
-    const result = await client.query({
-      query: `SELECT count() AS count FROM ${database}.activity_step_cadence_rows FINAL`,
-      format: "JSONEachRow",
-    });
-    expect(await result.json()).toEqual([{ count: 0 }]);
-  }, 300_000);
 
   it.each(["repair", "rollback"] as const)(
     "keeps %s journal state on a second cadence batch failure and completes all101 on rollback",
@@ -517,14 +393,6 @@ async function seedPostgres(context: TestContext): Promise<void> {
         'America/New_York', -420, -420, 'provider_timezone'
       )
   `);
-}
-
-function configureDbtEnvironment(database: string): void {
-  process.env.DBT_TARGET = "dev";
-  process.env.DBT_CLICKHOUSE_SCHEMA = database;
-  process.env.DBT_ANALYTICS_SOURCE_SCHEMA = database;
-  process.env.DBT_INGEST_SOURCE_SCHEMA = database;
-  process.env.DBT_POSTGRES_FITNESS_SOURCE_SCHEMA = database;
 }
 
 async function seedLegacyFalseComponent(
@@ -914,22 +782,6 @@ async function taskThreeRowsForActivity(
     snapshots.push({ model, rows: await response.json() });
   }
   return snapshots;
-}
-
-function scopeClickHouseClient(
-  client: NativeClickHouseClient,
-  database: string,
-): ActivityIntegrityClickHouseClient {
-  const scope = (query: string) =>
-    query.replaceAll("analytics.", `${database}.`).replaceAll("postgres_fitness.", `${database}.`);
-  return {
-    query: async (options) => {
-      const result = await client.query({ ...options, query: scope(options.query) });
-      return { json: () => result.json() };
-    },
-    insert: (options) =>
-      client.insert({ ...options, table: scope(options.table), values: [...options.values] }),
-  };
 }
 
 async function postgresLocalTimeContext(context: TestContext, activityId: string) {

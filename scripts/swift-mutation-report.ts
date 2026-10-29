@@ -68,7 +68,27 @@ const reportSchema = z
     projectRoot: z.string(),
     toolchain,
     baseline: z.object({ passed: z.literal(true) }).passthrough(),
-    results: z.array(z.object({ point, outcome }).passthrough()).min(1),
+    results: z
+      .array(
+        z
+          .object({
+            point,
+            outcome,
+            evidence: z
+              .object({
+                confirmationChain: z.array(z.unknown()).optional(),
+                crashConfirmation: z.object({ crashedAgain: z.boolean() }).passthrough().optional(),
+                timeoutConfirmation: z
+                  .object({ timedOutAgain: z.boolean() })
+                  .passthrough()
+                  .optional(),
+              })
+              .passthrough()
+              .optional(),
+          })
+          .passthrough(),
+      )
+      .min(1),
     integrity: z
       .object({
         discovered: count,
@@ -98,6 +118,7 @@ const reportSchema = z
     }),
   })
   .passthrough();
+type Report = z.infer<typeof reportSchema>;
 
 function requireCondition(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -268,12 +289,7 @@ const requiredChecks = [
   "result.identity",
   "result.provenance",
   "evidence.sourceApplication",
-  "evidence.activation",
-  "evidence.buildProduct",
   "evidence.sourceDiff",
-  "evidence.crashConfirmation",
-  "evidence.confirmationChain",
-  "evidence.killAttribution",
   "integrity.recompute",
   "score.recompute",
   "archive.integrity",
@@ -281,7 +297,7 @@ const requiredChecks = [
   "tierB.outcome",
 ];
 
-export function validateRunVerification(value: unknown, plan: Plan): void {
+export function validateRunVerification(value: unknown, plan: Plan, report: Report): void {
   const verified = z
     .object({
       schemaVersion: z.literal(1),
@@ -311,7 +327,26 @@ export function validateRunVerification(value: unknown, plan: Plan): void {
     checks.size === verified.checks.length,
     "Duplicate official verification checks",
   );
-  for (const name of requiredChecks)
+  const applicableChecks = new Set(requiredChecks);
+  const hasAssertionKill = report.results.some((result) => result.outcome === "killedByAssertion");
+  for (const result of report.results) {
+    if (["killedByAssertion", "killedByCrash", "survived"].includes(result.outcome)) {
+      applicableChecks.add("evidence.activation");
+      applicableChecks.add("evidence.buildProduct");
+    }
+    if (result.outcome === "killedByAssertion") applicableChecks.add("evidence.killAttribution");
+    if (result.outcome === "killedByCrash") applicableChecks.add("evidence.crashConfirmation");
+    if (result.outcome === "verifiedTimeout") applicableChecks.add("evidence.timeoutConfirmation");
+    if (
+      result.outcome === "killedByCrash" ||
+      result.outcome === "verifiedTimeout" ||
+      (result.evidence?.confirmationChain?.length ?? 0) > 0 ||
+      result.evidence?.crashConfirmation ||
+      result.evidence?.timeoutConfirmation
+    )
+      applicableChecks.add("evidence.confirmationChain");
+  }
+  for (const name of applicableChecks)
     requireCondition(
       checks.get(name) === "pass",
       `Required mutation verification check did not pass: ${name}`,
@@ -319,7 +354,9 @@ export function validateRunVerification(value: unknown, plan: Plan): void {
   for (const check of verified.checks)
     requireCondition(
       check.status === "pass" ||
-        (check.name === "evidence.assertionConfirmation" && check.status === "notVerifiable"),
+        (hasAssertionKill &&
+          check.name === "evidence.assertionConfirmation" &&
+          check.status === "notVerifiable"),
       `Unverified mutation evidence: ${check.name}`,
     );
   requireCondition(

@@ -33,6 +33,113 @@ function runningSample(type: string, unit: string, value: number) {
 }
 
 describe("syncHealthKitToServer", () => {
+  it.each([
+    ["full", "snapshot"],
+    ["full", "delta"],
+    ["observer", "snapshot"],
+    ["observer", "delta"],
+  ] as const)(
+    "uploads existing health records before %s sync rejects a running %s upload",
+    async (mode, stage) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const failure = new Error("Running upload rejected");
+      const sleep = {
+        uuid: "sleep-1",
+        startDate: "2026-03-20T22:00:00Z",
+        endDate: "2026-03-21T06:00:00Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      };
+      const clinical = {
+        uuid: "lab-1",
+        clinicalType: "labResult",
+        displayName: "CBC",
+        sourceName: "Example Health System",
+        fhirVersion: "4.0.1",
+        fhir: { resourceType: "DiagnosticReport" },
+        downloadedAt: "2026-04-25T17:15:30.000Z",
+      };
+      const workout = {
+        uuid: "run",
+        workoutType: "running",
+        startDate: "2026-03-21T07:00:00Z",
+        endDate: "2026-03-21T08:00:00Z",
+        duration: 3600,
+        totalDistance: null,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      };
+      const samples = [
+        {
+          ...runningSample("HKQuantityTypeIdentifierStepCount", "count", 3),
+          startDate: "2026-03-21T07:00:00Z",
+          endDate: "2026-03-21T07:00:01Z",
+          workoutUuids: ["run"],
+        },
+      ];
+      healthKit.queryClinicalRecords.mockImplementation(async (type) =>
+        type === "HKClinicalTypeIdentifierLabResultRecord" ? [clinical] : [],
+      );
+      healthKit.querySleepSamples.mockResolvedValue([sleep]);
+      if (stage === "snapshot") {
+        healthKit.queryRunningStepSamples.mockResolvedValue({ workouts: [workout], samples });
+      } else {
+        healthKit.queryRunningStepChanges.mockResolvedValue({
+          hasMore: false,
+          workouts: [workout],
+          samples,
+          deletedUUIDs: [],
+          queryId: "pending",
+        });
+      }
+      client.healthKitSync.pushRunningStepSamples.mutate.mockRejectedValue(failure);
+
+      const sync =
+        mode === "full"
+          ? syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: null })
+          : syncHealthKitObserverChanges({
+              trpcClient: client,
+              healthKit,
+              typeIdentifiers: [
+                "HKQuantityTypeIdentifierStepCount",
+                "HKCategoryTypeIdentifierSleepAnalysis",
+              ],
+            });
+      await expect(sync).rejects.toBe(failure);
+      expect(client.healthKitSync.pushSleepSamples.mutate).toHaveBeenCalledWith({
+        samples: [sleep],
+      });
+      expect(client.healthKitSync.pushSleepSamples.mutate.mock.invocationCallOrder[0]).toBeLessThan(
+        client.healthKitSync.pushRunningStepSamples.mutate.mock.invocationCallOrder[0] ?? 0,
+      );
+      if (mode === "full") {
+        const { uuid, ...record } = clinical;
+        expect(client.clinicalRecords.push.mutate).toHaveBeenCalledWith({
+          records: [{ ...record, externalId: uuid }],
+        });
+        expect(client.clinicalRecords.push.mutate.mock.invocationCallOrder[0]).toBeLessThan(
+          client.healthKitSync.pushRunningStepSamples.mutate.mock.invocationCallOrder[0] ?? 0,
+        );
+      }
+      if (stage === "delta") {
+        expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+          "HKQuantityTypeIdentifierStepCount",
+          "pending",
+          false,
+        );
+        expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalledWith(
+          "HKQuantityTypeIdentifierStepCount",
+          "pending",
+          true,
+        );
+      } else {
+        expect(healthKit.queryRunningStepChanges).not.toHaveBeenCalled();
+        expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("flushes every raw type before querying the next and accumulates resolved partial errors", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

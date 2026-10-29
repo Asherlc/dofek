@@ -411,13 +411,6 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     }
   }
 
-  const runningSteps = await syncRunningSteps(
-    { trpcClient, healthKit, minimumSampleDate, onStage },
-    startDate,
-    endDate,
-  );
-  totalInserted += runningSteps.inserted;
-
   // Sync sleep
   onProgress?.("Querying sleep...");
   onStage?.({ operation: "querySleepSamples" });
@@ -470,6 +463,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       totalInserted += result.upserted;
     }
   }
+
+  const runningSteps = await syncRunningSteps(
+    { trpcClient, healthKit, minimumSampleDate, onStage },
+    startDate,
+    endDate,
+  );
+  totalInserted += runningSteps.inserted;
 
   return { deleted: runningSteps.deleted, inserted: totalInserted, errors };
 }
@@ -746,16 +746,6 @@ export async function syncHealthKitObserverChanges(
     errors.push(...result.errors);
   }
 
-  if (
-    typeIdentifiers.has("HKQuantityTypeIdentifierStepCount") ||
-    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
-    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
-  ) {
-    const result = await syncRunningSteps(options, startDate, endDate);
-    inserted += result.inserted;
-    deleted += result.deleted;
-  }
-
   if (typeIdentifiers.has(SLEEP_TYPE_IDENTIFIER)) {
     onStage?.({ operation: "querySleepSamples" });
     const samples = (await healthKit.querySleepSamples(startDate, endDate)).filter(
@@ -768,6 +758,16 @@ export async function syncHealthKitObserverChanges(
       const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples });
       inserted += result.inserted;
     }
+  }
+
+  if (
+    typeIdentifiers.has("HKQuantityTypeIdentifierStepCount") ||
+    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
+    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
+  ) {
+    const result = await syncRunningSteps(options, startDate, endDate);
+    inserted += result.inserted;
+    deleted += result.deleted;
   }
 
   return { deleted, inserted, errors };

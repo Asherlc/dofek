@@ -139,6 +139,35 @@ fixtures but must not modify product sources or run a broad native campaign.
   If evaluation cannot meet the condition, record exact evidence and request
   direction before selecting another strategy.
 
+## Task 7: Newly reported sync and import failure boundaries
+
+- [x] Independently triage both new review findings. Preserve original step
+  rejection/anchor behavior and strict XML unit normalization.
+- [x] Prove RED/GREEN public-path regressions for independent sleep/clinical
+  uploads on step failure and whole-window XML validation before destructive
+  replacement. Move the new step stage after existing stages and use the
+  existing parser/normalizer for a bounded-memory read-only preflight.
+- [ ] Independently review the bounded four-file correction and consolidate
+  checks before push. Resolve both feedback threads with concrete evidence.
+
+## Task 8: Final hosted verification boundaries
+
+- [x] Correct the wrapper's outcome-specific official check applicability while
+  retaining every applicable source/archive/identity/count/positive-work gate.
+  Actual crash-only and assertion-only archives replay and pass trust; 102
+  focused tests and independent scoped review pass.
+- [x] Correct the capacity fixture's native UUID versus string ordering and
+  separate direct runner contracts from repair/rollback lifecycle tests. All
+  six complete cases remain byte-identical; scoped review and local static
+  checks pass. Preserve the existing four serial shards and every time budget.
+- [x] Triage all six native RunningStep survivors. Add the concrete discovered
+  workout cutoff regression: 121 baseline tests pass and the exact OR mutant
+  fails three assertions. Preserve the five consumer-equivalent comparator
+  outcomes without suppression or a new score policy.
+- [ ] Complete the final native regression scoped review and all exact-head
+  hosted gates, including every selected native job and all four full database
+  shards with both capacity phases. Prior passing cases are checkpoint evidence.
+
 ## Final acceptance after approved follow-up
 
 - [ ] Controller consolidates task reviews and runs Docker-free pre-push lint, Knip, root/server/web/mobile types and unit/mobile tests. Run database-backed SQL lint and integrations on CI under the user's approved validation direction. Keep native archive, strict SwiftLint and mutation gates in exact-head CI.

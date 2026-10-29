@@ -165,7 +165,11 @@ function mutatePackage(executable: string, directory: string, selected: string[]
   const copiedArchive = join(output, "evidence");
   cpSync(archive, copiedArchive, { recursive: true });
   const verificationArgs = ["--plan", planPath, "--evidence", copiedArchive];
-  validateRunVerification(jsonCommand("verify-run", [reportPath, ...verificationArgs]), plan);
+  validateRunVerification(
+    jsonCommand("verify-run", [reportPath, ...verificationArgs]),
+    plan,
+    report,
+  );
   validateMutationTrust(jsonCommand("trust", ["--report", reportPath, ...verificationArgs]), plan);
   console.log(
     `${basename(directory)}: ${report.results.length} mutants; ${JSON.stringify(report.score)}. All required source/archive checks passed; optional assertion confirmation may remain unverified.`,

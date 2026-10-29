@@ -274,7 +274,7 @@ SELECT {{ activity_refresh_requested_ids() }} AS requested, {{ activity_refresh_
           // ForeignMember is deliberately in the requested payload. The model user fence
           // must still prevent that foreign activity from appearing in serving output.
           const source = await client.query({
-            query: `SELECT activity_id, user_id FROM ${database}.activity_source_records FINAL WHERE is_deleted=0 ORDER BY activity_id`,
+            query: `SELECT activity_id, user_id FROM ${database}.activity_source_records FINAL WHERE is_deleted=0 ORDER BY toString(activity_id)`,
             format: "JSONEachRow",
           });
           expect(await source.json()).toEqual(
