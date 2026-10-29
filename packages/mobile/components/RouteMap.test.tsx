@@ -1,84 +1,13 @@
 import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { createElement, type ReactNode, useEffect, useRef, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nativeSnapshot } from "./native-map-test-helpers";
 import { RouteMap } from "./RouteMap";
 
-vi.mock("react-native-maps", () => ({
-  default: ({
-    children,
-    initialRegion,
-    region,
-    style,
-    scrollEnabled,
-    zoomEnabled,
-    pointerEvents,
-    onMapReady,
-    loadingEnabled,
-  }: {
-    children: ReactNode;
-    initialRegion?: unknown;
-    region?: unknown;
-    style: { width: number; height: number };
-    scrollEnabled?: boolean;
-    zoomEnabled?: boolean;
-    pointerEvents?: string;
-    onMapReady?: () => void;
-    loadingEnabled?: boolean;
-  }) => {
-    const [mountedRegion] = useState(initialRegion);
-    const mapRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-      const map = mapRef.current;
-      if (!map || !onMapReady) return;
-      map.addEventListener("mapready", onMapReady);
-      return () => map.removeEventListener("mapready", onMapReady);
-    }, [onMapReady]);
-    return createElement(
-      "div",
-      {
-        "data-testid": "map",
-        "data-region": JSON.stringify(region ?? mountedRegion),
-        "data-scroll": String(scrollEnabled),
-        "data-zoom": String(zoomEnabled),
-        "data-pointer-events": pointerEvents,
-        "data-native-loading-enabled": String(loadingEnabled),
-        style,
-        ref: mapRef,
-      },
-      children,
-    );
-  },
-  Marker: ({
-    coordinate,
-    title,
-    description,
-    children,
-    onPress,
-  }: {
-    coordinate: unknown;
-    title?: string;
-    description?: string;
-    children?: ReactNode;
-    onPress?: () => void;
-  }) =>
-    createElement(
-      "div",
-      {
-        "data-testid": "marker",
-        "data-coordinate": JSON.stringify(coordinate),
-        title,
-        onClick: onPress,
-      },
-      description,
-      children,
-    ),
-  Polyline: ({ coordinates }: { coordinates: unknown }) =>
-    createElement("div", {
-      "data-testid": "polyline",
-      "data-coordinates": JSON.stringify(coordinates),
-    }),
-}));
+vi.mock("@maplibre/maplibre-react-native", async () => {
+  const { nativeMapMock } = await import("./native-map-test-helpers");
+  return nativeMapMock;
+});
 
 const climbMarkers: ClimbingMapMarker[] = [
   {
@@ -119,6 +48,9 @@ const gpsPoints = [
 ];
 
 describe("RouteMap", () => {
+  beforeEach(() => {
+    nativeSnapshot.mockClear();
+  });
   it("lists and selects every named climb sharing an area location", () => {
     const first = climbMarkers[0];
     if (!first) throw new Error("Expected a climb marker fixture");
@@ -138,7 +70,9 @@ describe("RouteMap", () => {
     const marker = screen.getByTitle(
       "4 climbs · Bits and Bits · Kibbles and Bits · Blue Arete · Left Arete",
     );
-    expect(marker.textContent).toBe("Area location: Johnny Wall · Mountain Project4");
+    expect(marker.getAttribute("aria-description")).toBe(
+      "Area location: Johnny Wall · Mountain Project",
+    );
     expect(screen.getAllByTestId("marker")).toHaveLength(1);
     fireEvent.click(marker);
     for (const entry of markers) {
@@ -161,22 +95,25 @@ describe("RouteMap", () => {
     expect(screen.getByTestId("map").getAttribute("data-zoom")).toBe("true");
   });
 
-  it("keeps compact maps noninteractive", () => {
+  it("keeps compact maps image-like and noninteractive", async () => {
     const onSelectEntry = vi.fn();
     const { container } = render(
-      <RouteMap
-        points={[]}
-        climbMarkers={climbMarkers.slice(0, 1)}
-        compact
-        onSelectEntry={onSelectEntry}
-      />,
+      <RouteMap points={[]} climbMarkers={climbMarkers} compact onSelectEntry={onSelectEntry} />,
     );
     measure(container);
-    fireEvent.click(screen.getByTestId("marker"));
+    const image = await screen.findByTestId("compact-route-preview");
+    fireEvent.load(image);
+    expect(image.parentElement?.getAttribute("pointer-events")).toBe("none");
+    fireEvent.click(image);
     expect(onSelectEntry).not.toHaveBeenCalled();
-    expect(screen.getByTestId("map").getAttribute("data-scroll")).toBe("false");
-    expect(screen.getByTestId("map").getAttribute("data-zoom")).toBe("false");
-    expect(screen.getByTestId("map").getAttribute("data-pointer-events")).toBe("none");
+    expect(nativeSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bounds: expect.any(Array),
+        width: 320,
+        height: 140,
+        output: "base64",
+      }),
+    );
   });
 
   it("shows one counted marker and selects every same-name log at its coordinate", () => {
@@ -212,14 +149,14 @@ describe("RouteMap", () => {
     expect(screen.getByText("Route Map")).toBeTruthy();
   });
 
-  it("defers MapView until the wrapper is measured via onLayout", () => {
-    const { container } = render(<RouteMap points={gpsPoints} />);
-    // MapView should not render until onLayout fires and provides pixel width.
-    // In jsdom the native layout event never fires, so MapView stays unmounted.
-    expect(container.querySelector("MapView")).toBeNull();
+  it("defers MapLibre until the wrapper is measured via onLayout", () => {
+    render(<RouteMap points={gpsPoints} />);
+    // MapLibre should not render until onLayout fires and provides pixel width.
+    // In jsdom the native layout event never fires, so MapLibre stays unmounted.
+    expect(screen.queryByTestId("map")).toBeNull();
   });
 
-  it.each([false, true])(
+  it.each([false])(
     "shows map processing through layout and native readiness (compact: %s)",
     (compact) => {
       const view = render(<RouteMap points={gpsPoints} compact={compact} />);
@@ -235,7 +172,9 @@ describe("RouteMap", () => {
       const mountedMap = screen.getByTestId("map");
       fireEvent(mountedMap, new Event("mapready"));
       expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
-      expect(mountedMap.getAttribute("data-native-loading-enabled")).toBe("true");
+      expect(
+        JSON.parse(mountedMap.getAttribute("data-map-style") ?? "null").sources.openmaptiles,
+      ).toBeTruthy();
 
       view.rerender(
         <RouteMap points={[...gpsPoints, { lat: 40.752, lng: -73.981 }]} compact={compact} />,
@@ -244,6 +183,16 @@ describe("RouteMap", () => {
       expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
     },
   );
+
+  it("reports native loading failures and shows an actionable map error", () => {
+    const { container } = render(<RouteMap points={gpsPoints} />);
+    measure(container);
+    fireEvent(screen.getByTestId("map"), new Event("maperror"));
+    expect(
+      screen.getByText("Map unavailable. Check your connection and reopen this activity."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
 
   it("renders nothing when given an empty array", () => {
     const { container } = render(<RouteMap points={[]} />);
@@ -278,18 +227,22 @@ describe("RouteMap", () => {
     measure(container);
     expect(screen.getAllByTestId("marker")).toHaveLength(2);
     expect(screen.getAllByTestId("marker")[0]?.getAttribute("data-coordinate")).toBe(
-      '{"latitude":40.752,"longitude":-73.98}',
+      "[-73.98,40.752]",
     );
     expect(screen.getAllByTestId("marker")[1]?.getAttribute("data-coordinate")).toBe(
-      '{"latitude":40.753,"longitude":-73.979}',
+      "[-73.979,40.753]",
     );
     expect(screen.queryByTestId("polyline")).toBeNull();
     expect(screen.queryByTitle("Start")).toBeNull();
     expect(screen.queryByTitle("Finish")).toBeNull();
-    expect(screen.getByTestId("map").getAttribute("data-region")).toBe(
-      '{"latitude":40.7525,"longitude":-73.9795,"latitudeDelta":0.005,"longitudeDelta":0.005}',
+    expect(
+      JSON.parse(screen.getByTestId("camera").getAttribute("data-view") ?? "null"),
+    ).toMatchObject({
+      bounds: expect.arrayContaining([expect.any(Number)]),
+    });
+    expect(screen.getAllByTestId("marker")[1]?.getAttribute("aria-description")).toContain(
+      "Area location: Goat Rock · OpenBeta",
     );
-    expect(screen.getByText(/Area location.*Goat Rock.*OpenBeta/)).toBeTruthy();
   });
 
   it("keeps all repeated logs in a counted marker alongside the sensor route and hover marker", () => {
@@ -311,20 +264,29 @@ describe("RouteMap", () => {
     expect(screen.getByTitle("Start")).toBeTruthy();
     expect(screen.getByTitle("Finish")).toBeTruthy();
     expect(screen.getByTestId("polyline").getAttribute("data-coordinates")).toContain(
-      '"latitude":40.748',
+      "-73.985,40.748",
     );
     expect(screen.getByTestId("map").style.width).toBe("410px");
   });
 
-  it("uses a compact single-point source preview", () => {
+  it("waits for compact snapshot images to decode before exposing their source labels", async () => {
+    const first = climbMarkers[0];
+    if (!first) throw new Error("Expected source marker");
     const { container } = render(
-      <RouteMap points={[]} climbMarkers={climbMarkers.slice(0, 1)} compact />,
+      <RouteMap
+        points={gpsPoints}
+        climbMarkers={[first, { ...first, entryId: "repeat" }, climbMarkers[1]].filter(
+          (item) => item !== undefined,
+        )}
+        compact
+        hoveredPosition={{ lat: 40.75, lng: -73.983 }}
+      />,
     );
     measure(container);
-    expect(screen.getAllByTestId("marker")).toHaveLength(1);
-    expect(screen.getByTestId("map").style.height).toBe("140px");
-    expect(screen.queryByTitle("Start")).toBeNull();
-    expect(screen.queryByTitle("Finish")).toBeNull();
+    await waitFor(() => expect(nativeSnapshot).toHaveBeenCalledOnce());
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+    fireEvent.load(await screen.findByTestId("compact-route-preview"));
+    expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
   });
 
   it("updates the mounted native viewport when source coordinates change", () => {
@@ -348,11 +310,8 @@ describe("RouteMap", () => {
       />,
     );
     expect(screen.getByTestId("map")).toBe(mountedMap);
-    expect(JSON.parse(mountedMap.getAttribute("data-region") ?? "null")).toMatchObject({
-      latitude: expect.closeTo(40.757, 10),
-      longitude: expect.closeTo(-73.975, 10),
-      latitudeDelta: expect.closeTo(0.013, 10),
-      longitudeDelta: expect.closeTo(0.013, 10),
-    });
+    expect(
+      JSON.parse(screen.getByTestId("camera").getAttribute("data-view") ?? "null").bounds[0],
+    ).toBeCloseTo(-73.9815);
   });
 });

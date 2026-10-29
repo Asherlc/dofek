@@ -59,7 +59,7 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-primary-title-v8",
+      keyVersion: "activity-calendar-maplibre-v9",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
@@ -287,15 +287,8 @@ describe("calendarRouter", () => {
               mapPreview: {
                 width: 1024,
                 height: 576,
-                tiles: [
-                  {
-                    url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                    x: 256,
-                    y: 160,
-                    width: 256,
-                    height: 256,
-                  },
-                ],
+                center: [-122.40966797, 37.77505678],
+                zoom: 14,
                 routePath: [
                   { x: 400, y: 250 },
                   { x: 480, y: 220 },
@@ -334,15 +327,8 @@ describe("calendarRouter", () => {
               mapPreview: {
                 width: 1024,
                 height: 576,
-                tiles: [
-                  {
-                    url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                    x: 256,
-                    y: 160,
-                    width: 256,
-                    height: 256,
-                  },
-                ],
+                center: [-122.40966797, 37.77505678],
+                zoom: 14,
                 routePath: [
                   { x: 400, y: 250 },
                   { x: 480, y: 220 },

@@ -17,6 +17,10 @@
   ],
   "dictionaries": ["typescript", "node", "npm", "html", "css", "en_US"],
   "words": [
+    "maplibre",
+    "maplibregl",
+    "openmaptiles",
+    "landcover",
     "Arapiles",
     "Offwidth",
     "Plastick",

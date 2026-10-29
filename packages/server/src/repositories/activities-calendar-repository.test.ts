@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import {
   expectDedupedActivitiesDriveActivityListIdentity,
@@ -492,7 +492,7 @@ describe("ActivitiesCalendarRepository", () => {
       kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
-      mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
+      mapPreview: routeMapPreview([{ lat: 37.8, lng: -122.4 }]),
     });
     expect(sensorStore.query).toHaveBeenCalledTimes(3);
     expect(sensorStore.query).not.toHaveBeenCalledWith(

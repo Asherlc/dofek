@@ -13,7 +13,7 @@ import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import type { ActivityLocation } from "../contracts/activity-location.ts";
-import { osmPointMapPreview, osmTilePreview } from "../lib/osm-tile.ts";
+import { pointMapPreview, routeMapPreview } from "../lib/map-preview.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import {
   activityOriginColumnsSchema,
@@ -148,7 +148,7 @@ export interface WeekListInput {
 interface CalendarEntryContext {
   baseline: z.infer<typeof baselineRowSchema>;
   calculator: TrainingStressCalculator;
-  routePreview?: ReturnType<typeof osmTilePreview>;
+  routePreview?: ReturnType<typeof routeMapPreview>;
   mapReadiness?: "processing" | "awaiting_summary" | "unavailable";
 }
 
@@ -159,7 +159,7 @@ export function createActiveCalendarEntry(
   const sourceLocations = context.sourceLocations;
   let sourceLocation: ActivityLocation | null = null;
   if (sourceLocations?.length) {
-    const sourcePreview = osmPointMapPreview(
+    const sourcePreview = pointMapPreview(
       sourceLocations.map((location) => ({
         lat: location.coordinates.latitude,
         lng: location.coordinates.longitude,
@@ -271,7 +271,7 @@ function projectCalendarEntry(
             centroidLng: row.centroid_lng,
             mapPreview:
               context.routePreview ??
-              osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
+              routeMapPreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
           }
         : sourceLocation,
     tss: tss != null ? Math.round(tss * 10) / 10 : null,

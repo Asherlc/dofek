@@ -105,36 +105,8 @@ const mappedActivity: ActivityCardData = {
     mapPreview: {
       width: 512,
       height: 512,
-      tiles: [
-        {
-          url: "https://tile.openstreetmap.org/19/83858/202646.png",
-          x: 0,
-          y: 0,
-          width: 256,
-          height: 256,
-        },
-        {
-          url: "https://tile.openstreetmap.org/19/83859/202646.png",
-          x: 256,
-          y: 0,
-          width: 256,
-          height: 256,
-        },
-        {
-          url: "https://tile.openstreetmap.org/19/83858/202647.png",
-          x: 0,
-          y: 256,
-          width: 256,
-          height: 256,
-        },
-        {
-          url: "https://tile.openstreetmap.org/19/83859/202647.png",
-          x: 256,
-          y: 256,
-          width: 256,
-          height: 256,
-        },
-      ],
+      center: [-122.41859436, 37.77559952],
+      zoom: 18,
       routePath: [
         { x: 82, y: 410 },
         { x: 178, y: 332 },

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import {
   makeActivityRow,
   makeDatabase,
@@ -114,7 +114,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
       { lat: 37.801, lng: -122.399 },
       { lat: 37.802, lng: -122.398 },
     ];
-    const routePreview = osmTilePreview(routePoints);
+    const routePreview = routeMapPreview(routePoints);
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [

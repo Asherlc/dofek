@@ -1,9 +1,25 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import type { Activity } from "./ActivityList.tsx";
 import { RecentActivitiesSection } from "./RecentActivitiesSection.tsx";
+
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+beforeEach(() => {
+  resetMaps();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
+});
+
+async function finishMapSnapshot() {
+  await waitFor(() => expect(maps.length).toBeGreaterThan(0));
+  act(() => {
+    for (const map of maps) map.fire("idle");
+  });
+}
 
 const mutate = vi.fn();
 const mutateAsync = vi.fn();
@@ -150,7 +166,7 @@ describe("RecentActivitiesSection", () => {
     expect(queryOptions?.refetchInterval?.({ state: {} })).toBe(false);
   });
 
-  it("keeps cached maps visible when a background poll fails", () => {
+  it("keeps cached map snapshots visible when a background poll fails", async () => {
     const first = items[0];
     if (!first) throw new Error("Expected an activity");
     items = [
@@ -164,26 +180,20 @@ describe("RecentActivitiesSection", () => {
             width: 256,
             height: 256,
             routePath: null,
-            tiles: [
-              {
-                url: "https://tile.openstreetmap.org/1/0/0.png",
-                x: 0,
-                y: 0,
-                width: 256,
-                height: 256,
-              },
-            ],
+            center: [-90, 66.51326044],
+            zoom: 0,
           },
         },
       },
     ];
     const view = render(<RecentActivitiesSection />);
-    const tile = screen.getByTestId("activity-map-preview-tile");
-    fireEvent.load(tile);
+    await finishMapSnapshot();
+    const snapshot = screen.getByTestId("activity-map-snapshot");
+    expect(snapshot).toHaveAttribute("src", "data:image/png;base64,map");
     queryError = new Error("Map refresh failed. Try again.");
     view.rerender(<RecentActivitiesSection />);
     expect(screen.getByText("Map refresh failed. Try again.")).toBeInTheDocument();
-    expect(screen.getByTestId("activity-map-preview-tile")).toBe(tile);
+    expect(screen.getByTestId("activity-map-snapshot")).toBe(snapshot);
     expect(screen.queryByText("Processing map…")).toBeNull();
   });
 });

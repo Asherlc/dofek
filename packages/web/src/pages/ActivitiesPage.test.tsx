@@ -196,8 +196,23 @@ vi.mock("../lib/unitContext.ts", () => ({
 }));
 
 import { branchingSourceTree } from "../components/ActivitySourceDisclosure.fixtures.ts";
-
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivitiesPage } from "./ActivitiesPage.tsx";
+
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+beforeEach(() => {
+  resetMaps();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
+});
+
+async function finishMapSnapshot() {
+  await waitFor(() => expect(maps.length).toBeGreaterThan(0));
+  act(() => {
+    for (const map of maps) map.fire("idle");
+  });
+}
 
 function activity(overrides: Record<string, unknown> = {}) {
   return {
@@ -236,15 +251,8 @@ function activity(overrides: Record<string, unknown> = {}) {
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-      x: 0,
-      y: 0,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.39868164, 37.76962919],
+  zoom: 14,
   routePath: [
     { x: 278.54, y: 379.51 },
     { x: 292.2, y: 370.88 },
@@ -716,7 +724,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByLabelText("Indoor Cycling activity")).toBeDefined();
   });
 
-  it("renders a map tile when an activity includes location data", () => {
+  it("renders a map snapshot when an activity includes location data", async () => {
     mockQuery = {
       data: [
         {
@@ -744,10 +752,15 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
   });
 
-  it("links a climbing source-point preview to its activity while retaining climbing metrics", () => {
+  it("links a climbing source-point preview to its activity while retaining climbing metrics", async () => {
     mockQuery = {
       data: [
         {
@@ -784,6 +797,11 @@ describe("ActivitiesPage", () => {
       error: null,
     };
     render(<ActivitiesPage />);
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
     const map = screen.getByRole("img", {
       name: /Climbing source locations.*North Wall.*Mountain Project/,
     });
