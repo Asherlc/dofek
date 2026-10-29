@@ -26,7 +26,7 @@ const commandOptionsSchema = z.object({
   channel: z.string().min(1),
   platform: z.enum(["android", "ios"]),
   runtimeVersion: z
-    .string()
+    .string({ error: "--runtime-version is required; resolve the app runtime before checking OTA" })
     .min(1, "--runtime-version is required; resolve the app runtime before checking OTA"),
   url: z.url(),
 });
@@ -87,9 +87,9 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
   const options: {
     channel: string;
     platform: string;
-    runtimeVersion: string;
+    runtimeVersion?: string;
     url: string;
-  } = { ...defaultCommandOptions, runtimeVersion: "" };
+  } = { ...defaultCommandOptions };
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];

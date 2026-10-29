@@ -129,7 +129,9 @@ describe("checkOtaManifest", () => {
   });
 
   it("fails before requesting a manifest when the CLI runtime is missing", async () => {
+    let requestCount = 0;
     const server = createServer((_request, response) => {
+      requestCount += 1;
       response.writeHead(204).end();
     });
     server.listen(0, "127.0.0.1");
@@ -140,6 +142,7 @@ describe("checkOtaManifest", () => {
       const result = await runMobileUpdateCheck(["--url", `http://127.0.0.1:${address.port}`]);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("--runtime-version is required");
+      expect(requestCount).toBe(0);
     } finally {
       server.close();
       await once(server, "close");
