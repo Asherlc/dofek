@@ -2,8 +2,8 @@
 
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitUploadClient, WhoopBleSyncDeps } from "./whoop-ble-sync-types";
-import { makeWhoopCaptureStats } from "./whoop-ble-test-helpers";
+import type { WhoopBleSyncDeps, WhoopUploadContext } from "./whoop-ble-sync-types";
+import { makeMockDeps } from "./whoop-ble-test-helpers";
 
 const { mockInit, mockTeardown } = vi.hoisted(() => ({
   mockInit: vi.fn().mockResolvedValue(undefined),
@@ -15,56 +15,29 @@ vi.mock("./background-whoop-ble-sync", () => ({
   teardownBackgroundWhoopBleSync: () => mockTeardown(),
 }));
 
-function makeMockDeps(): WhoopBleSyncDeps {
-  return {
-    getDataPathStats: vi.fn().mockImplementation(makeWhoopCaptureStats),
-    isBluetoothAvailable: vi.fn().mockReturnValue(true),
-    findWhoop: vi.fn().mockResolvedValue({ id: "whoop-123", name: "WHOOP 4.0" }),
-    connect: vi.fn().mockResolvedValue(true),
-    startImuStreaming: vi.fn().mockResolvedValue(true),
-    stopImuStreaming: vi.fn().mockResolvedValue(true),
-    peekBufferedSamples: vi.fn().mockResolvedValue([]),
-    confirmSamplesDrain: vi.fn(),
-    peekBufferedRealtimeData: vi.fn().mockResolvedValue([]),
-    confirmRealtimeDataDrain: vi.fn(),
-    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
-    disconnect: vi.fn(),
-  };
-}
-
-function makeMockUploadClient(): InertialMeasurementUnitUploadClient {
-  return {
-    inertialMeasurementUnitSync: {
-      pushSamples: {
-        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
-      },
-    },
-  };
-}
-
 describe("useWhoopBleSync", () => {
-  let uploadClient: InertialMeasurementUnitUploadClient;
+  let context: WhoopUploadContext;
   let whoopDeps: WhoopBleSyncDeps;
 
   beforeEach(() => {
     mockInit.mockClear().mockResolvedValue(undefined);
     mockTeardown.mockClear();
-    uploadClient = makeMockUploadClient();
+    context = { userId: "user", token: "session", serverURL: "https://example.com", headers: {} };
     whoopDeps = makeMockDeps();
   });
 
   it("starts sync immediately on mount", async () => {
     const { useWhoopBleSync } = await import("./useWhoopBleSync");
 
-    renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
+    renderHook(() => useWhoopBleSync(context, whoopDeps));
 
-    expect(mockInit).toHaveBeenCalledWith(uploadClient, whoopDeps, undefined);
+    expect(mockInit).toHaveBeenCalledWith(context, whoopDeps);
   });
 
   it("tears down on unmount", async () => {
     const { useWhoopBleSync } = await import("./useWhoopBleSync");
 
-    const { unmount } = renderHook(() => useWhoopBleSync(uploadClient, whoopDeps));
+    const { unmount } = renderHook(() => useWhoopBleSync(context, whoopDeps));
 
     mockTeardown.mockClear();
     unmount();

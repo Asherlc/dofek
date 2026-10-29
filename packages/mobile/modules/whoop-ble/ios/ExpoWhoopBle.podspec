@@ -13,5 +13,7 @@ Pod::Spec.new do |s|
   s.source_files   = '**/*.swift'
 
   s.dependency 'ExpoModulesCore'
+  s.dependency 'RNSentry'
+  s.libraries      = 'sqlite3'
   s.frameworks     = 'CoreBluetooth'
 end

@@ -1,10 +1,6 @@
 import { vi } from "vitest";
 import type { WhoopCaptureStats } from "./whoop-ble-diagnostics";
-import type {
-  InertialMeasurementUnitUploadClient,
-  WhoopBleRealtimeUploadClient,
-  WhoopBleSyncDeps,
-} from "./whoop-ble-sync-types";
+import type { WhoopBleSyncDeps } from "./whoop-ble-sync-types";
 
 export function makeWhoopCaptureStats(): WhoopCaptureStats {
   const stream = {
@@ -32,49 +28,29 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
     lastValidHeartRateAt: null,
     lastKnownDeviceId: null,
     buffers: {
+      activeUploadCount: 0,
+      blockedUploadStreams: [],
+      lastUploadError: null,
       bufferInstanceId: "11111111-1111-4111-8111-111111111111",
       bufferCreatedAt: "2026-10-23T00:00:00.000Z",
       checkpointAt: "2026-10-23T01:00:00.000Z",
       imu: { ...stream },
       realtime: { ...stream },
-      previousCheckpoint: null,
     },
   };
 }
 
 export function makeMockDeps(): WhoopBleSyncDeps {
   return {
-    isBluetoothAvailable: vi.fn().mockReturnValue(true),
+    addCaptureErrorListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
+    configureUpload: vi.fn(),
+    flushUploads: vi.fn(),
     findWhoop: vi.fn().mockResolvedValue({ id: "whoop-123", name: "WHOOP 4.0" }),
     connect: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
-    peekBufferedSamples: vi.fn().mockResolvedValue([]),
-    confirmSamplesDrain: vi.fn(),
-    peekBufferedRealtimeData: vi.fn().mockResolvedValue([]),
-    confirmRealtimeDataDrain: vi.fn(),
-    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
     disconnect: vi.fn(),
+    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
     getDataPathStats: vi.fn().mockImplementation(makeWhoopCaptureStats),
-  };
-}
-
-export function makeMockTrpcClient(): InertialMeasurementUnitUploadClient {
-  return {
-    inertialMeasurementUnitSync: {
-      pushSamples: {
-        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
-      },
-    },
-  };
-}
-
-export function makeMockRealtimeClient(): WhoopBleRealtimeUploadClient {
-  return {
-    whoopBleSync: {
-      pushRealtimeData: {
-        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
-      },
-    },
   };
 }

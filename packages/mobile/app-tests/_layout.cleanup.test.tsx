@@ -241,6 +241,10 @@ vi.mock("../modules/background-refresh", () => ({
 }));
 
 vi.mock("../modules/whoop-ble", () => ({
+  configureUpload: vi.fn(),
+  flushUploads: vi.fn(),
+  addCaptureErrorListener: vi.fn(),
+  retryConnection: vi.fn(),
   getDataPathStats: vi.fn(),
   addConnectionStateListener: vi.fn(),
   confirmRealtimeDataDrain: vi.fn(),
@@ -346,6 +350,29 @@ describe("RootLayout background cleanup", () => {
       rootAppStateCallback = callback;
       return { remove: vi.fn() };
     });
+  });
+
+  it("passes the authenticated owner and transport headers to native WHOOP sync", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockUseWhoopBleSync).toHaveBeenCalled());
+    expect(mockUseWhoopBleSync).toHaveBeenLastCalledWith(
+      {
+        userId: "user-1",
+        token: "session-token",
+        serverURL: "https://dofek.test",
+        headers: expect.objectContaining({
+          "x-app-version": expect.any(String),
+          "x-assets-version": expect.any(String),
+          "x-timezone": expect.any(String),
+        }),
+      },
+      expect.objectContaining({
+        configureUpload: expect.any(Function),
+        flushUploads: expect.any(Function),
+      }),
+    );
+    rendered.unmount();
   });
 
   it("owns diagnostics alongside the authenticated refresh listener and retires them on cleanup", async () => {

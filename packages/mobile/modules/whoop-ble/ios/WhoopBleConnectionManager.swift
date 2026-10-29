@@ -77,11 +77,11 @@ final class WhoopBleConnectionManager {
         }
     }
 
-    func syncOnBleQueue<T>(_ work: () -> T) -> T {
+    func syncOnBleQueue<T>(_ work: () throws -> T) rethrows -> T {
         if DispatchQueue.getSpecific(key: Self.bleQueueKey) == true {
-            return work()
+            return try work()
         }
-        return bleQueue.sync(execute: work)
+        return try bleQueue.sync(execute: work)
     }
 
     // MARK: - Public API

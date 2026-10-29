@@ -61,14 +61,12 @@ import {
   peekBufferedSamples as peekHeartRateSamples,
 } from "../modules/ble-heart-rate";
 import {
+  addCaptureErrorListener,
   addConnectionStateListener as addWhoopConnectionStateListener,
-  confirmRealtimeDataDrain as confirmWhoopRealtimeDataDrain,
-  confirmSamplesDrain as confirmWhoopSamplesDrain,
+  configureUpload,
   findWhoop,
+  flushUploads,
   getDataPathStats as getWhoopDataPathStats,
-  isBluetoothAvailable,
-  peekBufferedRealtimeData as peekWhoopRealtimeData,
-  peekBufferedSamples as peekWhoopSamples,
   startImuStreaming,
   stopImuStreaming,
   connect as whoopConnect,
@@ -97,52 +95,41 @@ SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
  * Headless component that manages WHOOP BLE accelerometer sync.
  * Must be rendered inside the tRPC provider tree so it can use tRPC query hooks.
  */
-function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trpc.createClient> }) {
-  const whoopSyncClient = useMemo(
+const whoopDeps = {
+  configureUpload,
+  flushUploads,
+  addCaptureErrorListener,
+  getDataPathStats: getWhoopDataPathStats,
+  findWhoop,
+  connect: whoopConnect,
+  startImuStreaming,
+  stopImuStreaming,
+  addConnectionStateListener: addWhoopConnectionStateListener,
+  disconnect: whoopDisconnect,
+};
+
+function WhoopBleSyncManager({
+  userId,
+  token,
+  serverURL,
+}: {
+  userId: string;
+  token: string;
+  serverURL: string;
+}) {
+  const context = useMemo(
     () => ({
-      inertialMeasurementUnitSync: {
-        pushSamples: {
-          mutate: (
-            input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0],
-          ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
-        },
+      userId,
+      token,
+      serverURL,
+      headers: {
+        ...getVersionHeaders(),
+        "x-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
     }),
-    [trpcClient],
+    [userId, token, serverURL],
   );
-
-  const whoopRealtimeClient = useMemo(
-    () => ({
-      whoopBleSync: {
-        pushRealtimeData: {
-          mutate: (input: Parameters<typeof trpcClient.whoopBleSync.pushRealtimeData.mutate>[0]) =>
-            trpcClient.whoopBleSync.pushRealtimeData.mutate(input),
-        },
-      },
-    }),
-    [trpcClient],
-  );
-
-  const whoopDeps = useMemo(
-    () => ({
-      getDataPathStats: getWhoopDataPathStats,
-      isBluetoothAvailable,
-      findWhoop,
-      connect: whoopConnect,
-      startImuStreaming,
-      stopImuStreaming,
-      peekBufferedSamples: peekWhoopSamples,
-      confirmSamplesDrain: confirmWhoopSamplesDrain,
-      peekBufferedRealtimeData: peekWhoopRealtimeData,
-      confirmRealtimeDataDrain: confirmWhoopRealtimeDataDrain,
-      addConnectionStateListener: addWhoopConnectionStateListener,
-      disconnect: whoopDisconnect,
-    }),
-    [],
-  );
-
-  useWhoopBleSync(whoopSyncClient, whoopDeps, whoopRealtimeClient);
-
+  useWhoopBleSync(context, whoopDeps);
   return null;
 }
 
@@ -441,16 +428,6 @@ function AuthGate() {
     // never opens the app.
     const refreshDiagnostics = createBackgroundRefreshDiagnostics();
     const refreshSubscription = addBackgroundRefreshListener(() => {
-      // Upload any WHOOP BLE samples buffered since last sync
-      const whoopRealtimeSyncClient = {
-        whoopBleSync: {
-          pushRealtimeData: {
-            mutate: (
-              input: Parameters<typeof trpcClient.whoopBleSync.pushRealtimeData.mutate>[0],
-            ) => trpcClient.whoopBleSync.pushRealtimeData.mutate(input),
-          },
-        },
-      };
       return runRequiredBackgroundRefreshWork([
         {
           source: "bg-refresh-watch-sync",
@@ -469,25 +446,7 @@ function AuthGate() {
         },
         {
           source: "bg-refresh-whoop-flush",
-          run: () =>
-            syncWhoopBle(
-              imuSyncClient,
-              {
-                getDataPathStats: getWhoopDataPathStats,
-                isBluetoothAvailable,
-                findWhoop,
-                connect: whoopConnect,
-                startImuStreaming,
-                stopImuStreaming,
-                peekBufferedSamples: peekWhoopSamples,
-                confirmSamplesDrain: confirmWhoopSamplesDrain,
-                peekBufferedRealtimeData: peekWhoopRealtimeData,
-                confirmRealtimeDataDrain: confirmWhoopRealtimeDataDrain,
-                addConnectionStateListener: addWhoopConnectionStateListener,
-                disconnect: whoopDisconnect,
-              },
-              whoopRealtimeSyncClient,
-            ),
+          run: () => syncWhoopBle(),
         },
         {
           source: "bg-refresh-ble-heart-rate-flush",
@@ -616,7 +575,9 @@ function AuthGate() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <TelemetryRouteSync isAuthenticated isLoading={false} />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
-        {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
+        {backgroundSyncReady && userId && sessionToken && (
+          <WhoopBleSyncManager userId={userId} token={sessionToken} serverURL={serverUrl} />
+        )}
         {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

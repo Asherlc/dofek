@@ -215,7 +215,7 @@ WHOOP's [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files
 explains that its heart-rate estimate can remain available without an R-R
 estimate, particularly during movement. The native buffer therefore exports
 `heartRateBpm` independently of `rrIntervalMs`; see the
-[capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift).
+[capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleSerializerTests.swift).
 
 ## Full REALTIME_DATA (0x28, 116-byte payload)
 
@@ -264,7 +264,7 @@ For captured R18 and R21 records, combine the timestamp as
 In the [capture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv),
 the fractional word `14090` means approximately `0.43` seconds. Treating it as
 milliseconds incorrectly adds `14.09` seconds. The
-[buffer regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift)
+[buffer regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleSerializerTests.swift)
 verify matching captured live/history readings and use the same conversion for
 serialization and account-erasure cutoffs. The independently maintained
 [R21 protocol reference](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_SENSORS.md#inertial-record-timestamps)
@@ -340,119 +340,88 @@ For history outside the normal ingestion-time microbatch lookback, use the
 
 ### Independent upload streams and retention
 
-The [mobile uploader](../packages/mobile/lib/background-whoop-ble-sync.ts)
-drains IMU and realtime samples independently, with one active worker per
-stream and sequential batches of at most 500 samples within each worker.
-Foreground, periodic, and native background-refresh callers share existing
-workers within the current sync lifetime. Teardown retires that lifetime, so a
-new login can upload without waiting for an old HTTP request. Cursor handoff
-waits for any pending native peek and releases it with a zero-count confirmation;
-retired requests cannot remove samples or change replacement-worker state.
-A periodic tick can start a new realtime drain while an earlier IMU
-drain is still catching up. Each worker confirms only its own successfully
-uploaded samples; upload failures leave unconfirmed samples in the native
-buffer. The sync waits for both workers to settle before propagating unexpected
-errors. These scheduling and confirmation boundaries are exercised by the
-[uploader regressions](../packages/mobile/lib/background-whoop-ble-sync.test.ts).
+The [native sample store](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore.swift)
+commits realtime and IMU samples to SQLite, bound to one authenticated account,
+server origin, and generation. Samples survive process recreation. Each stream
+reserves at most 500 rows from one peripheral; the reservation identity and body
+remain stable until acknowledgment. SQLite provides [atomic transactions](https://sqlite.org/isolation.html).
+No JavaScript uploader competes with the native queue, and the former in-memory
+overflow limits no longer discard unacknowledged samples.
 
-Foreground drains check app state before each upload. A native background
-refresh grants upload permission for its lifetime, including when it joins a
-worker started in the foreground. This preserves the existing distinction
-between foreground work and an explicit native background wake; see the
-[uploader](../packages/mobile/lib/background-whoop-ble-sync.ts) and
-[React Native AppState](https://reactnative.dev/docs/appstate).
+The [background uploader](../packages/mobile/modules/whoop-ble/ios/WhoopBleBackgroundUploader.swift)
+uses independent native transfers for the two streams. Actual BLE arrivals
+coalesce scheduling checks to five seconds. Full batches are eligible immediately
+at a scheduling check; partial batches are eligible after 30 seconds, or an
+authenticated configuration/foreground/refresh flush. A transient transport
+failure retains the reservation and delays capture-triggered reattempts by
+30 seconds to avoid a per-notification retry loop. Explicit lifecycle flushes
+may retry sooner. Authentication failures block the affected stream until new
+configuration; a restored task with unknown credentials may retry the currently
+configured token once, then blocks if that attempt is rejected.
 
-In the [mobile transport](../packages/mobile/lib/trpc-links.ts), the two upload
-mutations, `inertialMeasurementUnitSync.pushSamples` and
-`whoopBleSync.pushRealtimeData`, use separate HTTP requests so either response
-can settle independently. Other mobile operations retain their existing
-transport routing.
-tRPC's [`httpLink`](https://trpc.io/docs/client/links/httpLink) sends individual
-operations, whereas
-[`httpBatchLink`](https://trpc.io/docs/client/links/httpBatchLink) combines
-concurrent operations into one HTTP request. Parallel workers therefore also
-need independent transport to avoid coupling their response completion.
+The [URLSession adapter](../packages/mobile/modules/whoop-ble/ios/WhoopURLSessionTransport.swift)
+uses file-backed background uploads to the existing authenticated tRPC routes.
+A transport file is a disposable projection of the reserved SQLite rows. Startup
+reconciles OS task identities before resubmission, reconstructs missing body
+files, and cancels orphan task identities. A successful HTTP response must also
+contain the valid tRPC result before the exact reservation is acknowledged.
+The existing routers filter invalid/future samples, and a realtime sample can
+produce several metric rows; `inserted` is therefore not a prefix length or a
+promise that every source sample produced a row. See the
+[realtime writer](../packages/server/src/repositories/whoop-ble-sync-repository.ts)
+and [IMU router](../packages/server/src/routers/inertial-measurement-unit-sync.ts).
 
-The [native sample buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
-stores samples in memory, with a 500,000-sample IMU limit and an 86,400-sample
-realtime limit. At the observed 100 Hz and 1 Hz rates, those limits correspond
-to approximately 83 minutes and 24 hours respectively. Overflow evicts the
-oldest samples. Creating a new
-[native module instance](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
-creates empty buffers; there is no disk-backed sample queue. Connection and
-streaming changes preserve the existing buffer, while account erasure applies
-its recorded cutoff. Consequently, a current connection or nonzero buffer
-count does not establish that samples from an earlier workout were captured
-or remain recoverable. Check the sample timestamps and account-scoped server
-arrival before making that claim.
+Apple's [background transfer service](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background)
+controls actual delivery timing and requires file-backed tasks. Submitted
+requests may survive app process recreation. The native app-delegate subscriber
+restores completion handling independently of React. Session tokens remain in
+application memory; iOS owns the submitted request headers. Native callbacks
+can acknowledge restored tasks before JavaScript supplies credentials for new
+requests. Canonical server routes must serve directly: background URLSession
+automatically follows redirects, and a final origin mismatch prevents local
+acknowledgment rather than preventing the redirect itself.
+
+Sign-out and account/server changes cancel captured old task identities, rotate
+the generation, and purge old rows, projections, and account counters. Late
+callbacks cannot consume a replacement account's rows. Account erasure preserves
+the monotonic device cutoff across reconfiguration. Ordinary BLE disconnection
+and app suspension preserve the queue. Queue storage and transport projections
+are excluded from backups and use locked-device-accessible
+[file protection](https://developer.apple.com/documentation/foundation/fileprotectiontype/completeuntilfirstuserauthentication).
+Unexpected storage failures stop capture, report to Sentry, and emit a capture
+error to the authenticated app; there is no memory-only fallback.
 
 ### Diagnosing capture, upload, and visibility
 
 Use a bounded UTC incident window and the authenticated account ID. The
-[mobile telemetry boundary](../packages/mobile/lib/telemetry.ts) adds canonical
-`userId`, `appVersion`, native `appBuild`, `assetsVersion`, `runtimeVersion`,
-and JavaScript-lifetime `runtimeId` to logs/errors. Authentication changes clear
-or replace that identity immediately through the
-[auth context](../packages/mobile/lib/auth-context.tsx); caller attributes cannot
-override it. Buffer and batch IDs connect the stages below. This is operational
-correlation metadata, following
-[OpenTelemetry's context model](https://opentelemetry.io/docs/concepts/context-propagation/),
-without logging sensor values.
+[mobile telemetry boundary](../packages/mobile/lib/telemetry.ts) supplies the
+account and app/runtime versions. Follow the
+[native diagnostics contract](../packages/mobile/modules/whoop-ble/index.ts)
+and [reporter](../packages/mobile/lib/whoop-ble-diagnostics.ts):
 
 | Evidence | Fields and events | Interpretation |
 | --- | --- | --- |
-| Native connection history | `native_connection_event`: `eventId`, `nativeEvent`, `nativeOccurredAt`, `nativeSessionId`, `processId`, `connectionState`, `centralState`, `reconnectIntent`, `errorDomain`, `errorCode`, `errorDescription`, `connectionHistoryOverflowCount` | Native occurrence time can precede log emission when JavaScript was unavailable. Stable event IDs identify replay after a restart; unknown account provenance must not be treated as proven ownership. An application handshake failure is separate from a CoreBluetooth disconnect error. |
-| Capture | `capture_snapshot`: `lastKnownDeviceId`, `connectionState`, `isNotifying`, `dataNotificationCount`, `totalFramesParsed`, `malformedFrames`, `lastDataNotificationAt`, `lastParsedImuAt`, `lastParsedRealtimeAt`, `lastValidHeartRateAt` | Compare successive observations within one buffer/runtime. Notification and parsed timestamps are phone observation times; `lastValidHeartRateAt` is a device sample timestamp. A connected state alone does not prove usable capture; last-known identity does not prove a current connection. |
-| Retained queue | `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`; stream-prefixed `imuCount`/`realtimeCount`, `OldestTimestamp`, `NewestTimestamp`, `ReceivedCount`, `ConfirmedCount`, `OverflowDiscardedCount`, `ErasureDiscardedCount`, `ClearedCount`, `LegacyDrainedCount`, `LastConfirmedAt` | Counts and true minimum/maximum sample times distinguish retained backlog from explicit removals, including out-of-order samples. Native confirmation counters describe actual removals. |
-| Scheduling | `worker_started`, `worker_joined`, `worker_finished`, `upload_skipped`; snapshot fields such as `realtimeWorkerActive`, `realtimeWorkerAgeMs`, `realtimeRequestPending`, `realtimePendingRequestAgeMs`, `realtimePendingBatchId` | Growing queue with no upload attempt points to scheduling/permission decisions; an aging pending request points farther along the upload path. Inspect `trigger`, `appState`, and skipped `reason`. |
-| Request and confirmation | `upload_started`, `upload_http_response`, `upload_acknowledged`, `upload_failed`, `buffer_confirmed`; `stream`, `deviceId`, `batchId`, `sampleCount`, `firstTimestamp`, `lastTimestamp`, `elapsedMs` | Follow the same batch from attempt through acknowledgment and native confirmation. HTTP diagnostics report actual `httpStatus`; a response alone is not successful tRPC completion. |
-| Server receipt/publication | `upload_received`, `upload_published`, `upload_failed`; `inputSampleCount`, `acceptedSampleCount`, `filteredSampleCount`, `publishedRowCount`, timestamp bounds, `boundary` | `boundary=redpanda` means the awaited broker publication completed. `boundary=no_metric_rows` means no metric rows were published, even if the request succeeded. Neither proves ClickHouse or chart visibility. |
+| Connection | `native_connection_event`, `nativeOccurredAt`, `nativeSessionId`, `processId`, error domain/code, subscription/handshake state | Retained native events can arrive later. Deduplicate by event ID and distinguish native occurrence from export time. Retained connection history has unknown account provenance. |
+| Capture | `capture_snapshot`, notification/parsed/valid-heart-rate timestamps and counts | A connected state alone does not establish new valid heart rate. Compare observations and the activity window. |
+| Durable queue | `bufferInstanceId`, stream counts, oldest/newest timestamps, received/confirmed/erased/cleared counters | The generation persists across ordinary app recreation; a new account/server binding rotates it. `bufferCreatedAt` describes the current native uploader instance and `checkpointAt` the snapshot time. |
+| Native delivery | `activeUploadCount`, `blockedUploadStreams`, `lastUploadError` | A growing queue and no active task differs from a server-rejected stream. Inspect the reported error and native Sentry event before choosing remediation. |
+| Server | `upload_received`, `upload_published`, `upload_failed`, `batchId`, accepted/filtered sample bounds, `boundary` | A stable batch UUID joins the request to the reservation. Broker publication is distinct from downstream chart visibility. |
 
-`buffer_confirmed.requestedConfirmationCount` and
-`requestedErasureDiscardCount` describe what JavaScript requested, not the
-number actually removed. Concurrent overflow can reduce a subsequent native
-confirmation; use snapshot `imuConfirmedCount`/`realtimeConfirmedCount` and
-discard-counter deltas for actual removals.
+Use the live service names and `attributes.custom` map documented in the
+[Axiom runbook](axiom-observability-runbook.md). Server publication includes
+`telemetry.batchId` from the native body and the authenticated account/device.
+Published row counts can exceed source sample counts because one realtime
+sample produces several channels. The
+[server helper](../packages/server/src/lib/sensor-upload-telemetry.ts) defines
+these fields; KafkaJS documents the producer's
+[acknowledgment boundary](https://kafka.js.org/docs/producing#producing-messages).
 
-The [diagnostics model](../packages/mobile/lib/whoop-ble-diagnostics.ts),
-[native contract](../packages/mobile/modules/whoop-ble/index.ts),
-[HTTP boundary](../packages/mobile/lib/trpc-fetch.ts), and
-[server helper](../packages/server/src/lib/sensor-upload-telemetry.ts) define the
-exact fields. Each grouped request carries `telemetry.batchId` and optional
-`telemetry.bufferInstanceId`; the
-[transport](../packages/mobile/lib/trpc-links.ts) copies the same batch UUID to
-`x-dofek-upload-id`. Server receipt/publication uses the authenticated account,
-device and request metadata, with true accepted-sample timestamp bounds.
-Published row counts can differ from sample counts because one realtime sample
-can produce multiple channels, as defined by the
-[upload repository](../packages/server/src/repositories/whoop-ble-sync-repository.ts).
-Broker acknowledgment follows the producer's configured KafkaJS
-[`send` acknowledgment boundary](https://kafka.js.org/docs/producing#producing-messages),
-not downstream consumer completion.
-
-In the log explorer, discover the live service/attribute names first, then use
-these exact attribute filters with the incident's UTC start/end:
-
-| Search | Filters |
-| --- | --- |
-| Disconnect and recovery | Service `dofek-mobile`, `event=native_connection_event`; correlate `nativeSessionId`, sort by `nativeOccurredAt`, and deduplicate by `eventId`. Inspect disconnect error metadata, reconnect intent and subsequent handshake/restoration events. `connectionAccountProvenance=unknown` marks retained native history without account attribution. |
-| Capture and queue progression | Service `dofek-mobile`, `userId=<account>`, `event=capture_snapshot`; group observations by `runtimeId` and `bufferInstanceId`. |
-| One upload's mobile lifecycle | Service `dofek-mobile`, `userId=<account>`, `batchId=<UUID>`; inspect `upload_started`, `upload_http_response`, `upload_acknowledged`, and `upload_failed`. `buffer_confirmed` carries the correlated UUIDs in `batchIds`. |
-| Server receipt and publication | Service `dofek-web`, `userId=<account>`, `deviceId=<device>`, `batchId=<UUID>`; inspect `upload_received`, `upload_published`, and `upload_failed`. |
-| Restart evidence | Service `dofek-mobile`, `event=previous_buffer_checkpoint`; compare current/previous buffer IDs and checkpoint time. `checkpointAccountProvenance=unknown` prohibits treating previous data as proven history of the currently logged-in account. |
-
-Capture snapshots use `lastKnownDeviceId`; upload events use `deviceId` for the
-actual grouped request. A previous checkpoint
-is reported once per observed new buffer instance. The
-[native buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
-retains one metadata checkpoint, updated during capture at most once per 30
-seconds and at explicit diagnostic/discard boundaries. Positive confirmations
-that empty a stream also checkpoint the resulting queue state. It does not persist
-sensor samples. A changed buffer ID with an earlier nonempty checkpoint is
-evidence of a reset since that observation, not an exact loss count, prior
-account identity, or termination cause. Apple does not guarantee a final
-[`applicationWillTerminate` callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
-Missing logs therefore do not prove capture stopped.
+Older mobile builds used memory-only queues and emitted `previous_buffer_checkpoint`,
+JavaScript `worker_started`/`upload_started`/`buffer_confirmed` events.
+Those historical events do not describe the native durable queue. Consult the
+incident's app/runtime version before applying either interpretation. The
+[October 28 incident](production-incident-baseline.md#2026-10-28--missing-whoop-bluetooth-heart-rate-for-afternoon-ride)
+records the transition and validation limits.
 
 ### Native background refresh evidence
 
@@ -534,9 +503,10 @@ Interpret the last observed boundary conservatively:
   records after releasing its state lock, so simultaneous transitions can appear
   out of decision order. Use task IDs and completion reasons together; timestamp
   order alone does not establish causality between concurrent records.
-- A complete refresh followed by no `upload_started` requires looking at the
-  existing WHOOP connection, worker, and queue events; refresh completion alone
-  does not establish sample publication or chart visibility.
+- A complete refresh without native upload activity or server receipt requires
+  looking at the WHOOP connection, durable queue, blocked-stream state, and last
+  upload error; refresh completion alone does not establish sample publication
+  or chart visibility.
 
 The additive bridge requires a new native build. Keep the existing Expo
 fingerprint runtime policy so updates target compatible binaries
@@ -652,7 +622,7 @@ be unavailable during sport in its [research FAQ](https://sensorlab.arizona.edu/
 Check the reported-BPM and interval channels independently, retain the provider
 and device identities, and compare live/history copies for timestamp shifts.
 Use captured packets to distinguish an absent interval from an absent BPM;
-the [native capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift)
+the [native capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleSerializerTests.swift)
 exercise both cases. The [server chart regression](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts)
 executes the reported-BPM path through an interval gap against ClickHouse.
 
