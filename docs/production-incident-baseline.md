@@ -1,5 +1,13 @@
 # Production Incident Baseline
 
+## 2026-10-29 — Disabled deploy workflow left passing merges unreleased
+
+- **Symptoms / impact:** Main CI passed for multiple daytime merges without subsequent production deploy runs. Production web containers still reported release `cf421b73aaec8e637e2a8085ed2f10490d5a118b`, starting at 05:41 UTC on October 29 (22:41 PDT October 28).
+- **Evidence / root cause:** `gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml` returned `state: disabled_manually` and `updated_at: 2026-10-29T11:18:24-07:00`. The [main CI run for PR 3154](https://github.com/Asherlc/dofek/actions/runs/40957712868) passed at 22:26 UTC without a subsequent parent deploy run. GitHub documents [disabled workflows](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows). Who disabled it and why remain unverified.
+- **Release evidence correction:** Listing only standalone `deploy-web-stack.yml` runs incorrectly suggested the last deploy was September 30. The [actual parent run](https://github.com/Asherlc/dofek/actions/runs/40823968838) contains a successful [server stack job](https://github.com/Asherlc/dofek/actions/runs/40823968838/job/123467068995) completed at 05:54:50 UTC October 29 (22:54:50 PDT October 28); its OTA job failed afterward. Container start time is distinct from deployment completion.
+- **Fix / validation / remaining risk:** Updated the [deployment verification procedure](../deploy/README.md#checking-the-latest-production-deployment) and root README navigation. Read-only workflow API, parent-job history, and live container revision checks confirmed the diagnosis. Automatic deployment remains disabled; no workflow state or production service was changed. No resilience tuning applies.
+- **Retrospective / follow-up:** Live revision checks resolved the misleading standalone workflow history. Reuse systematic debugging for similar release questions. The runbook now distinguishes server, mobile, and parent conclusions and checks workflow state first when passing merges do not release. Establish the reason for the disablement before deciding whether to restore automatic deployment.
+
 ## 2026-10-29 — WHOOP release blocked by Apple agreement and historical OTA runtime
 
 - **Symptoms / impact:** WHOOP durable native capture merged in [PR 3147](https://github.com/Asherlc/dofek/pull/3147); [main CI passed](https://github.com/Asherlc/dofek/actions/runs/40821425944) and the production server rollout succeeded. Both mobile publishers initially failed. After agreement acceptance, the signed native release succeeded; the OTA release remains unresolved.
