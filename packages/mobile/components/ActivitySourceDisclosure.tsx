@@ -5,8 +5,8 @@ import {
   type ActivitySourceTreeNode,
   activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
-import { useId, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { type ReactNode, useId, useState } from "react";
+import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SERVER_URL } from "../lib/server";
 import { captureException } from "../lib/telemetry";
 import { colors, spacing } from "../theme";
@@ -16,6 +16,7 @@ import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
 interface Props {
   tree: ActivitySourceTree;
+  heading?: ReactNode;
   hardware?: ActivityHardware;
   hardwareLoading?: boolean;
   hardwareError?: unknown;
@@ -99,6 +100,7 @@ function SourceBranches({ nodes }: { nodes: ActivitySourceTreeNode[] }) {
 
 export function ActivitySourceDisclosure({
   tree,
+  heading,
   hardware,
   hardwareLoading = false,
   hardwareError,
@@ -108,16 +110,44 @@ export function ActivitySourceDisclosure({
   const contentId = useId();
   const sourceTree = hardware ? activitySourceTreeWithHardware(tree, hardware) : tree;
   const { primary, otherSources } = sourceTree;
-  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError) return null;
+  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError)
+    return <>{heading}</>;
+
+  const details = (
+    <>
+      {!hardware && hardwareLoading && !hardwareError ? (
+        <QueryStatePanel variant="loading" minHeight={72} />
+      ) : null}
+      {primary ? (
+        <View>
+          {primary.description ? (
+            <Text style={styles.description}>{primary.description}</Text>
+          ) : null}
+          <SourceLink node={primary} />
+          <SourceDetails node={primary} />
+          <SourceBranches nodes={primary.children} />
+        </View>
+      ) : null}
+      {otherSources.length > 0 ? (
+        <View style={styles.otherSources}>
+          {otherSources.map((node) => (
+            <SourceNode key={node.id} node={node} />
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
 
   return (
-    <View style={styles.container}>
+    <View style={heading ? styles.headerContainer : styles.container}>
+      {heading ? <View style={styles.heading}>{heading}</View> : null}
       <Pressable
-        style={styles.trigger}
+        style={[styles.trigger, heading ? styles.headerTrigger : undefined]}
         accessibilityRole="button"
         accessibilityLabel={primary ? `Sources: ${primary.label}` : "Sources"}
         accessibilityHint={open ? "Hide activity sources" : "Show activity sources"}
         accessibilityState={{ expanded: open }}
+        aria-haspopup={heading ? "dialog" : undefined}
         aria-expanded={open}
         aria-controls={contentId}
         onPress={() => setOpen((expanded) => !expanded)}
@@ -141,43 +171,75 @@ export function ActivitySourceDisclosure({
         </View>
       </Pressable>
       {hardwareError ? (
-        <QueryStatePanel
-          variant="error"
-          title="Could not load device metadata"
-          message={getQueryErrorMessage(hardwareError)}
-          onRetry={onRetryHardware}
-          minHeight={72}
-        />
+        <View style={styles.fullWidth}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load device metadata"
+            message={getQueryErrorMessage(hardwareError)}
+            onRetry={onRetryHardware}
+            minHeight={72}
+          />
+        </View>
       ) : null}
       {open ? (
-        <View id={contentId} style={styles.details}>
-          {!hardware && hardwareLoading && !hardwareError ? (
-            <QueryStatePanel variant="loading" minHeight={72} />
-          ) : null}
-          {primary ? (
-            <View>
-              {primary.description ? (
-                <Text style={styles.description}>{primary.description}</Text>
-              ) : null}
-              <SourceLink node={primary} />
-              <SourceDetails node={primary} />
-              <SourceBranches nodes={primary.children} />
+        heading ? (
+          <Modal visible transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+            <View style={styles.overlay}>
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss sources"
+                onPress={() => setOpen(false)}
+              />
+              <View
+                id={contentId}
+                style={styles.dialog}
+                role="dialog"
+                accessibilityLabel="Activity sources"
+                accessibilityViewIsModal
+              >
+                <View style={styles.dialogHeader}>
+                  <Text style={styles.dialogTitle} accessibilityRole="header">
+                    Sources
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Close sources"
+                    onPress={() => setOpen(false)}
+                    style={styles.closeButton}
+                  >
+                    <Text style={styles.controlLabel}>Close</Text>
+                  </Pressable>
+                </View>
+                <ScrollView>{details}</ScrollView>
+              </View>
             </View>
-          ) : null}
-          {otherSources.length > 0 ? (
-            <View style={styles.otherSources}>
-              {otherSources.map((node) => (
-                <SourceNode key={node.id} node={node} />
-              ))}
-            </View>
-          ) : null}
-        </View>
+          </Modal>
+        ) : (
+          <View id={contentId} style={styles.details}>
+            {details}
+          </View>
+        )
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.5)" },
+  dialog: { maxHeight: "80%", backgroundColor: colors.surface, borderRadius: 16, padding: 16 },
+  dialogHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  dialogTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  closeButton: { minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" },
+  headerContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  heading: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
+  headerTrigger: { maxWidth: "50%", paddingHorizontal: 0 },
+  fullWidth: { width: "100%" },
   container: {
     borderTopWidth: 1,
     borderTopColor: colors.surfaceSecondary,

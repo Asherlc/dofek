@@ -1,0 +1,77 @@
+name: Build OTA
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Test and build OTA server
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Check out Dofek
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Require a private OTA package before publication
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm tsx scripts/check-ota-image-visibility.ts
+      - name: Check out official xprem 3.2.7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mercuretechnologies/xprem
+          ref: 071f6d907527d7de1ba21dd0be23a6ba669a2b1c
+          path: .ota-upstream
+          persist-credentials: false
+      - name: Apply storage-error correction
+        working-directory: .ota-upstream
+        run: git apply ../deploy/ota/upstream.patch
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+      - name: Sign in to private GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Resolve image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}-ota" >> "$GITHUB_OUTPUT"
+      - name: Run upstream and storage-failure tests
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .ota-upstream
+          file: deploy/ota/Dockerfile
+          target: test
+          platforms: linux/arm64
+          push: false
+      - name: Build runtime image
+        id: runtime
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .ota-upstream
+          file: deploy/ota/Dockerfile
+          platforms: linux/arm64
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          tags: ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+      - name: Verify published image remains private
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm tsx scripts/check-ota-image-visibility.ts --require-existing
+      - name: Record immutable image
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.runtime.outputs.digest }}
+        run: echo "Private OTA image — $IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"

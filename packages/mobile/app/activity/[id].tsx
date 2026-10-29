@@ -841,6 +841,11 @@ export default function ActivityDetailScreen() {
         ))}
       {hasHr && (
         <LineChart
+          climbAnnotations={
+            isClimbingActivity
+              ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+              : undefined
+          }
           data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
           color={CHART_COLORS.heartRate}
           label="Heart Rate"

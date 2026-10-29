@@ -64,6 +64,20 @@ async function runMobileUpdateCheck(arguments_: string[]): Promise<{
 }
 
 describe("checkOtaManifest", () => {
+  it("rejects ambiguous duplicate manifest parts", async () => {
+    const valid = createValidManifestResponse();
+    const body = await valid.text();
+    const first = body.replace(/--ota-health-check-boundary--\r\n$/, "");
+    const second = body.replace("a2018e93-2f3e-45aa-8556-aa8b3c38380c", "different-update-id");
+    await expect(
+      checkOtaManifest({
+        fetchImplementation: vi.fn(
+          async () => new Response(first + second, { headers: valid.headers }),
+        ),
+        timeoutMilliseconds: 5_000,
+      }),
+    ).rejects.toThrow("exactly one manifest");
+  });
   it("accepts a 204 response and sends the production Expo request headers", async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
@@ -96,6 +110,17 @@ describe("checkOtaManifest", () => {
       id: "a2018e93-2f3e-45aa-8556-aa8b3c38380c",
       runtimeVersion: "1.0",
     });
+  });
+
+  it("rejects an unterminated multipart response", async () => {
+    const valid = createValidManifestResponse();
+    const body = (await valid.text()).replace(/--ota-health-check-boundary--\r\n$/, "");
+    await expect(
+      checkOtaManifest({
+        fetchImplementation: vi.fn(async () => new Response(body, { headers: valid.headers })),
+        timeoutMilliseconds: 5_000,
+      }),
+    ).rejects.toThrow();
   });
 
   it("sends command-line URL and Expo request header overrides", async () => {

@@ -367,6 +367,11 @@ export function ActivityDetailPage() {
               </p>
             )}
           <MetricsChart
+            climbAnnotations={
+              isClimbingActivity
+                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                : undefined
+            }
             points={points}
             activityType={activity.activityType}
             hasHr={hasHr}
@@ -618,20 +623,27 @@ export function ActivityHeader({
 
   return (
     <div>
-      <div className="flex items-baseline gap-3 mb-1">
-        <h1 className="text-xl font-semibold text-foreground">
-          {activity.name ??
-            formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
-        </h1>
-        <span className="text-xs text-subtle">
-          {formatActivityTypeLabel(activity.activityType)}
-        </span>
-      </div>
-      <p className="text-sm text-subtle">
-        {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
-        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
-      </p>
-      <ActivitySourceDisclosure tree={activity.sourceTree} {...sourceDetails} />
+      <ActivitySourceDisclosure
+        tree={activity.sourceTree}
+        {...sourceDetails}
+        heading={
+          <div className="min-w-0 pb-3">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+              <h1 className="text-xl font-semibold text-foreground">
+                {activity.name ??
+                  formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
+              </h1>
+              <span className="text-xs text-subtle">
+                {formatActivityTypeLabel(activity.activityType)}
+              </span>
+            </div>
+            <p className="text-sm text-subtle">
+              {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
+              {localStartTime === "--" ? "Local time unavailable" : localStartTime}
+            </p>
+          </div>
+        }
+      />
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
