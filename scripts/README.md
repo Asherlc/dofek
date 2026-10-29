@@ -9,6 +9,12 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Database & Seeding
 
+- `ota-storage.ts`: Copies and byte-verifies OTA snapshots and isolated rehearsal
+  storage using pinned [rclone](https://rclone.org/commands/rclone_check/).
+  Requires paused publication/cleanup workflows and existing Infisical R2
+  credentials. See the [OTA storage runbook](../deploy/ota/README.md#verified-storage-operations).
+  - Usage: `pnpm tsx scripts/ota-storage.ts <snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal> <snapshot-id>`
+
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
   - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans.
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
@@ -321,12 +327,8 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   request](https://docs.expo.dev/technical-specs/expo-updates-1/) and prints
   the deployed update metadata, or reports that no update is available.
   URL, channel, runtime version, and platform have explicit command-line
-  options for local and preview checks. Runtime version is required; the
-  deployment resolves it with the installed Expo Updates CLI rather than
-  probing a historical runtime. A valid `noUpdateAvailable` directive is a
-  healthy empty runtime; malformed responses and mismatched runtime manifests
-  fail the check, following the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-  - Usage: `pnpm check:mobile-update --runtime-version <runtime>`
+  overrides for local and preview checks.
+  - Usage: `pnpm check:mobile-update`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
 - `validate-deploy-env.ts`: Validates the rendered production dotenv and calls
   the same account-erasure keyring parser used by web and worker startup.

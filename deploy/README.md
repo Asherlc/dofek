@@ -302,12 +302,7 @@ publishing. Manually dispatched `Deploy Web` runs deploy only the server. GitHub
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
 After rollout, OTA publication performs one
-[manifest validation](../scripts/check-ota-manifest.ts) for the iOS runtime resolved
-by the installed Expo Updates CLI. It does not probe a retired runtime as a
-general server health check. The validator accepts a valid empty-runtime
-directive before the first upload and requires returned manifests to match the
-requested runtime, following the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-An unavailable or invalid
+[manifest validation](../scripts/check-ota-manifest.ts). An unavailable or invalid
 manifest stops publication before upload, including when a transient request
 failure causes the check to fail. Inspect the failed check and server availability,
 address the cause, then rerun the failed publication job; the check does not retry

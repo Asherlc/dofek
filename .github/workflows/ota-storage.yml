@@ -1,0 +1,45 @@
+name: OTA Storage
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Verified storage operation (restore affects rehearsal only)
+        required: true
+        type: choice
+        options: [snapshot, verify-snapshot, rehearsal-copy, restore-rehearsal]
+      snapshot_id:
+        description: Unique 8–64 character lowercase snapshot identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: deploy-web-production
+  cancel-in-progress: false
+
+jobs:
+  storage:
+    name: Verify OTA storage copy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            R2_ENDPOINT
+            R2_ACCESS_KEY_ID
+            R2_SECRET_ACCESS_KEY
+      - name: Copy and byte-verify storage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+        run: pnpm tsx scripts/ota-storage.ts "$OPERATION" "$SNAPSHOT_ID" >> "$GITHUB_STEP_SUMMARY"
