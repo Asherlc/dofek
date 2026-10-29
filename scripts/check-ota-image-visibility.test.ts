@@ -21,6 +21,13 @@ afterEach(() => {
 afterAll(() => server.close());
 
 describe("OTA image privacy gate", () => {
+  it.each([
+    { name: "another-package", package_type: "container" },
+    { name: "dofek-ota", package_type: "npm" },
+  ])("rejects a private package with the wrong identity: %j", async (identity) => {
+    server.use(http.get(endpoint, () => HttpResponse.json({ ...identity, visibility: "private" })));
+    await expect(import("./check-ota-image-visibility.ts")).rejects.toThrow();
+  });
   it("accepts an existing private container package", async () => {
     server.use(
       http.get(endpoint, () =>

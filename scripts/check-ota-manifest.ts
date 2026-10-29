@@ -49,14 +49,17 @@ interface OtaManifestCheckOptions {
 
 function extractManifestPart(body: string, boundary: string): string | null {
   const parts = [...parseMultipart(Buffer.from(body), { boundary })];
-  const part = parts.find(
-    (part) =>
-      part.name === "manifest" &&
-      ["application/json", "application/expo+json"].includes(
-        part.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "",
-      ),
-  );
-  return part?.text ?? null;
+  const manifests = parts.filter((part) => part.name === "manifest");
+  if (manifests.length > 1) throw new Error("OTA response requires exactly one manifest part");
+  const part = manifests[0];
+  if (
+    !part ||
+    !["application/json", "application/expo+json"].includes(
+      part.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "",
+    )
+  )
+    return null;
+  return part.text;
 }
 
 function readOptionValue(arguments_: string[], index: number, optionName: string): string {

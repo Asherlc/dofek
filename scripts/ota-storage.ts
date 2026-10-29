@@ -63,6 +63,8 @@ async function main(): Promise<void> {
       "Usage: ota-storage.ts <snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal> <snapshot ID>",
     );
   }
+  if (operation === "restore-rehearsal" && process.env.OTA_REHEARSAL_STOPPED !== "true")
+    throw new Error("Confirm the rehearsal candidate has stopped before restoring its copy");
   const environment = {
     RCLONE_CONFIG_OTA_TYPE: "s3",
     RCLONE_CONFIG_OTA_PROVIDER: "Cloudflare",

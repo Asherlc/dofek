@@ -59,9 +59,10 @@ export async function verifyOtaUpdate(options: AuditOptions): Promise<string> {
   const dictionary = parseDictionary(signatureHeader);
   const signature = z.string().min(1).parse(dictionary.get("sig")?.[0]);
   z.literal("main").parse(dictionary.get("keyid")?.[0]);
-  if (
-    !verify("RSA-SHA256", Buffer.from(raw), options.certificate, Buffer.from(signature, "base64"))
-  ) {
+  const signatureBytes = Buffer.from(signature, "base64");
+  if (signatureBytes.toString("base64") !== signature)
+    throw new Error("OTA manifest signature must use canonical base64 encoding");
+  if (!verify("RSA-SHA256", Buffer.from(raw), options.certificate, signatureBytes)) {
     throw new Error("OTA manifest signature does not match the installed device certificate");
   }
   for (const asset of [manifest.launchAsset, ...manifest.assets]) {

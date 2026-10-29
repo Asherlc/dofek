@@ -134,7 +134,7 @@ image digest and retained update identity. For an explicit restore after a
 failed rehearsal, first confirm that its CI runner/container has stopped:
 
 ```sh
-gh workflow run ota-storage.yml -f operation=restore-rehearsal -f snapshot_id=2026-10-29-before-v3
+gh workflow run ota-storage.yml -f operation=restore-rehearsal -f snapshot_id=2026-10-29-before-v3 -f candidate_stopped=true
 ```
 
 Restoration uses [rclone sync](https://rclone.org/commands/rclone_sync/) followed

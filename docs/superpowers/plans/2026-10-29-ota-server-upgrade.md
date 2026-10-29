@@ -1,6 +1,6 @@
 # OTA server upgrade implementation plan
 
-> **For agentic workers:** Use superpowers:executing-plans inline, with TDD and a fresh whole-branch review. Track evidence and rulings in the plan workspace ledger.
+Execute each task with regression tests before implementation and obtain an independent review before deployment. Record commands, results, image digests, snapshot identifiers and workflow run links in the [production incident record](../../production-incident-baseline.md).
 
 **Goal:** Upgrade the OTA server/publisher to 3.2.7, propagate storage failures,
 and migrate production with a verified backup and rehearsed restore path.

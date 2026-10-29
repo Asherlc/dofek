@@ -16,12 +16,17 @@ index b78d5b9..d384434 100644
  		valid, err := s.isUpdateValid(ctx, updates[i])
 diff --git a/test/manifest_storage_errors_test.go b/test/manifest_storage_errors_test.go
 new file mode 100644
+index 0000000..c837a12
 --- /dev/null
 +++ b/test/manifest_storage_errors_test.go
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,123 @@
 +package test
 +
 +import (
++	"bytes"
++	"encoding/json"
++	"mime"
++	"mime/multipart"
 +	"net/http"
 +	"net/http/httptest"
 +	"os"
@@ -111,6 +116,28 @@ new file mode 100644
 +					require.Contains(t, response.Body.String(), "noUpdateAvailable")
 +				} else {
 +					require.Contains(t, response.Body.String(), `name="manifest"`)
++					metadata, err := os.ReadFile(filepath.Join(updateDir, "update-metadata.json"))
++					require.NoError(t, err)
++					var expected struct {
++						UpdateUUID string `json:"updateUUID"`
++					}
++					require.NoError(t, json.Unmarshal(metadata, &expected))
++					_, parameters, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
++					require.NoError(t, err)
++					reader := multipart.NewReader(bytes.NewReader(response.Body.Bytes()), parameters["boundary"])
++					for {
++						part, err := reader.NextPart()
++						require.NoError(t, err)
++						if part.FormName() != "manifest" {
++							continue
++						}
++						var actual struct {
++							ID string `json:"id"`
++						}
++						require.NoError(t, json.NewDecoder(part).Decode(&actual))
++						require.Equal(t, expected.UpdateUUID, actual.ID)
++						break
++					}
 +				}
 +			}
 +		})

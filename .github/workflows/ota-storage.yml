@@ -16,6 +16,11 @@ on:
         description: Private OTA image digest (required for migration-rehearsal)
         required: false
         type: string
+      candidate_stopped:
+        description: Confirm the rehearsal candidate/runner stopped before an explicit restore
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -63,6 +68,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OPERATION: ${{ inputs.operation }}
           SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          OTA_REHEARSAL_STOPPED: ${{ inputs.candidate_stopped }}
         run: pnpm tsx scripts/ota-storage.ts "$OPERATION" "$SNAPSHOT_ID" >> "$GITHUB_STEP_SUMMARY"
       - name: Load retained application identity and signing keys
         if: inputs.operation == 'migration-rehearsal'

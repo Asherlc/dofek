@@ -67,9 +67,10 @@ async function main(): Promise<void> {
     PORT: "3000",
     CACHE_MODE: "local",
   };
-  const storage = (operation: string) =>
+  const storage = (operation: string, confirmedStopped = false) =>
     execFileSync("pnpm", ["tsx", "scripts/ota-storage.ts", operation, snapshotId], {
       encoding: "utf8",
+      env: { ...process.env, OTA_REHEARSAL_STOPPED: String(confirmedStopped) },
     });
   storage("verify-snapshot");
   storage("verify-rehearsal");
@@ -119,7 +120,7 @@ async function main(): Promise<void> {
     }
   }
   if (!stopped) throw new Error("Cannot quiesce rehearsal candidate; storage restore refused");
-  storage("restore-rehearsal");
+  storage("restore-rehearsal", true);
   storage("verify-snapshot");
   console.log(`Migration and byte-verified restore rehearsal passed for ${image}`);
 }

@@ -11,6 +11,7 @@ const snapshot = "2026-10-29-rehearsal";
 let existingObjects: unknown[];
 let workflowState: string;
 let activeRuns: number;
+let activeStatus: string;
 let failCommand: string | undefined;
 let sourceCount: number;
 let sourcePaths: string[];
@@ -19,8 +20,13 @@ const github = setupServer(
   http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow", () =>
     HttpResponse.json({ state: workflowState }),
   ),
-  http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow/runs", () =>
-    HttpResponse.json({ total_count: activeRuns }),
+  http.get(
+    "https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow/runs",
+    ({ request }) =>
+      HttpResponse.json({
+        total_count:
+          new URL(request.url).searchParams.get("status") === activeStatus ? activeRuns : 0,
+      }),
   ),
 );
 beforeAll(() => github.listen({ onUnhandledRequest: "error" }));
@@ -31,6 +37,7 @@ beforeEach(() => {
   existingObjects = [];
   workflowState = "disabled_manually";
   activeRuns = 0;
+  activeStatus = "queued";
   failCommand = undefined;
   sourceCount = 10;
   sourcePaths = [
@@ -47,6 +54,7 @@ beforeEach(() => {
     R2_ACCESS_KEY_ID: "test-key",
     R2_SECRET_ACCESS_KEY: "test-secret",
     EXPO_APP_ID: "example-app",
+    OTA_REHEARSAL_STOPPED: "true",
   }))
     vi.stubEnv(key, value);
   execute.mockReset();
@@ -79,6 +87,14 @@ function transfers(): string[][] {
 }
 
 describe("OTA storage operator CLI", () => {
+  it("requires confirmation of candidate shutdown before an explicit rehearsal restore", async () => {
+    process.argv[2] = "restore-rehearsal";
+    vi.stubEnv("OTA_REHEARSAL_STOPPED", "false");
+    await expect(import("./ota-storage.ts")).rejects.toThrow(
+      "Confirm the rehearsal candidate has stopped",
+    );
+    expect(transfers()).toEqual([]);
+  });
   it.each(["../production", "", "a/b", "UPPERCASE-ID"])(
     "rejects unsafe snapshot ID %j",
     async (id) => {
@@ -94,11 +110,15 @@ describe("OTA storage operator CLI", () => {
     expect(transfers()).toEqual([]);
   });
 
-  it("refuses outstanding publisher or cleanup runs", async () => {
-    activeRuns = 1;
-    await expect(import("./ota-storage.ts")).rejects.toThrow("still has");
-    expect(transfers()).toEqual([]);
-  });
+  it.each(["queued", "in_progress", "waiting", "pending", "requested"])(
+    "refuses outstanding %s publisher or cleanup runs",
+    async (status) => {
+      activeRuns = 1;
+      activeStatus = status;
+      await expect(import("./ota-storage.ts")).rejects.toThrow(`still has ${status} runs`);
+      expect(transfers()).toEqual([]);
+    },
+  );
   it("fails before storage access when GitHub permissions cannot be verified", async () => {
     github.use(
       http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow", () =>

@@ -33,6 +33,7 @@ function serve(
     alteredAsset?: boolean;
     alteredImage?: boolean;
     misplacedSignature?: boolean;
+    invalidBase64?: boolean;
   } = {},
 ) {
   server.use(
@@ -45,7 +46,7 @@ function serve(
         Buffer.from(options.invalidSignature ? "wrong" : body),
         keys.privateKey,
       ).toString("base64");
-      const header = `expo-signature: sig="${signature}", keyid="main"\r\n`;
+      const header = `expo-signature: sig="${signature}${options.invalidBase64 ? "!" : ""}", keyid="main"\r\n`;
       const extensions = options.misplacedSignature
         ? `--boundary\r\nContent-Disposition: form-data; name="extensions"\r\nContent-Type: application/json\r\n${header}\r\n{}\r\n`
         : "";
@@ -96,6 +97,10 @@ describe("signed OTA update audit", () => {
   it("rejects invalid manifest signatures", async () => {
     serve({ invalidSignature: true });
     await expect(verifyOtaUpdate(options)).rejects.toThrow("signature");
+  });
+  it("rejects a valid signature with invalid base64 characters", async () => {
+    serve({ invalidBase64: true });
+    await expect(verifyOtaUpdate(options)).rejects.toThrow("base64");
   });
   it("rejects a signature on another MIME part even when it signs the manifest bytes", async () => {
     serve({ misplacedSignature: true });
