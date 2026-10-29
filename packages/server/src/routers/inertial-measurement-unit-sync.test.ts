@@ -435,6 +435,39 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       }
     });
 
+    it("publishes valid IMU readings while filtering raw future-clock samples in the same batch", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-25T10:00:00.000Z"));
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({ db: makeDatabase(), metricStreamPublisher, userId: "user-1" });
+      try {
+        const sample = makeSample();
+        const result = await caller.pushSamples({
+          deviceId: "WHOOP Strap",
+          deviceType: "whoop",
+          samples: [sample, makeSample({ timestamp: "2106-02-07T06:28:16.490Z", x: 99 })],
+        });
+        expect(result).toEqual({ inserted: 1 });
+        expect(getPublishedRows(metricStreamPublisher)).toEqual([
+          expect.objectContaining({
+            recordedAt: sample.timestamp,
+            channel: "accel",
+            vector: [sample.x, sample.y, sample.z],
+          }),
+        ]);
+        expect(logger.info).toHaveBeenCalledWith(
+          "[sensor-upload] upload_published",
+          expect.objectContaining({
+            inputSampleCount: 2,
+            acceptedSampleCount: 1,
+            filteredSampleCount: 1,
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("filters out malformed sample timestamps", async () => {
       const execute = makeExecute();
       const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });

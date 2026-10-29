@@ -1109,3 +1109,67 @@ describe("logout", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(logoutError, { source: "logout" });
   });
 });
+
+describe("native upload signout boundary", () => {
+  beforeEach(async () => {
+    const native = await import("../modules/whoop-ble");
+    const storage = await import("expo-secure-store");
+    vi.mocked(native.disableUploads).mockReset();
+    vi.mocked(storage.deleteItemAsync).mockReset().mockResolvedValue(undefined);
+    vi.mocked(storage.getItemAsync).mockReset().mockResolvedValue(null);
+    resetSessionTokenCacheForTests();
+  });
+  it("deletes persisted credentials even when native disable fails", async () => {
+    const native = await import("../modules/whoop-ble");
+    const storage = await import("expo-secure-store");
+    const persisted = new Map<string, string>([
+      ["dofek_session_token", "token"],
+      ["dofek_session_user_v1", JSON.stringify({ id: "user", name: "User", email: null })],
+      ["dofek_session_owner_nonce_v1", "owner"],
+    ]);
+    vi.clearAllMocks();
+    vi.mocked(storage.getItemAsync).mockImplementation(async (key) => persisted.get(key) ?? null);
+    vi.mocked(storage.deleteItemAsync).mockImplementation(async (key) => {
+      persisted.delete(key);
+    });
+    vi.mocked(native.disableUploads).mockImplementationOnce(() => {
+      throw new Error("Native queue could not be purged");
+    });
+    await expect(clearSessionToken()).rejects.toThrow("Native queue could not be purged");
+    expect(persisted.size).toBe(0);
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    expect(mockCaptureException.mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(storage.deleteItemAsync).mock.invocationCallOrder.at(-1) ?? 0,
+    );
+    resetSessionTokenCacheForTests();
+    await expect(getSessionToken()).resolves.toBeNull();
+  });
+  it("preserves native and credential cleanup failures after attempting every deletion", async () => {
+    const native = await import("../modules/whoop-ble");
+    const storage = await import("expo-secure-store");
+    vi.clearAllMocks();
+    const nativeFailure = new Error("Native queue could not be purged");
+    const credentialFailure = new Error("Keychain unavailable");
+    vi.mocked(native.disableUploads).mockImplementationOnce(() => {
+      throw nativeFailure;
+    });
+    vi.mocked(storage.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "dofek_session_token") throw credentialFailure;
+    });
+    const clearing = clearSessionToken();
+    await expect(clearing).rejects.toMatchObject({ errors: [nativeFailure, credentialFailure] });
+    expect(storage.deleteItemAsync).toHaveBeenCalledWith("dofek_session_user_v1");
+    expect(storage.deleteItemAsync).toHaveBeenCalledWith("dofek_session_owner_nonce_v1");
+  });
+  it("disables native upload before credential deletion can await", async () => {
+    const native = await import("../modules/whoop-ble");
+    const storage = await import("expo-secure-store");
+    vi.clearAllMocks();
+    const clearing = clearSessionToken();
+    expect(native.disableUploads).toHaveBeenCalledOnce();
+    await clearing;
+    expect(vi.mocked(native.disableUploads).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(storage.deleteItemAsync).mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+});

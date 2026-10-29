@@ -3,8 +3,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
 const args = process.argv.slice(2);
-if (args.length !== 2 || args[0] !== "--base" || !args[1]) {
-  throw new Error("Usage: pnpm tsx scripts/run-swift-mutation.ts --base <git-ref>");
+const listFiles = args.length === 3 && args[2] === "--list-files";
+const requestedFile = args.length === 4 && args[2] === "--file" ? args[3] : undefined;
+if (args[0] !== "--base" || !args[1] || !(args.length === 2 || listFiles || requestedFile)) {
+  throw new Error(
+    "Usage: pnpm tsx scripts/run-swift-mutation.ts --base <git-ref> [--list-files | --file <repo-relative-path>]",
+  );
 }
 
 const root = process.cwd();
@@ -42,7 +46,7 @@ function owningPackage(path: string): string {
 
 function compiledSources(directory: string): Set<string> {
   const context = `SwiftPM description for ${relative(root, directory)}`;
-  console.log(`Reading ${context}`);
+  console.error(`Reading ${context}`);
   const description: unknown = JSON.parse(
     run("swift", ["package", "describe", "--type", "json"], directory),
   );
@@ -119,26 +123,45 @@ for (const path of changedPaths) {
   packages.set(directory, paths);
 }
 
-let selectedPackages = 0;
+const selectedByPackage = new Map<string, string[]>();
 for (const [directory, paths] of packages) {
   const inventory = compiledSources(directory);
   const selected = paths.filter((path) => inventory.has(path));
   if (selected.length === 0) continue;
   const configPath = join(directory, "muter.conf.yml");
   if (!existsSync(configPath)) throw new Error(`Missing Muter configuration ${configPath}`);
-  const reportsDirectory = join(root, "reports/swift-mutation");
-  mkdirSync(reportsDirectory, { recursive: true });
-  const reportPath = join(reportsDirectory, `${basename(directory)}.json`);
-  rmSync(reportPath, { force: true });
-  console.log(`Mutating ${relative(root, directory)}: ${selected.join(", ")}`);
-  run(
-    "muter",
-    ["run", "--files-to-mutate", selected.join(","), "--format", "json", "--output", reportPath],
-    directory,
-    true,
-  );
-  verifyReport(reportPath);
-  selectedPackages += 1;
+  selectedByPackage.set(directory, selected);
 }
-if (selectedPackages === 0)
-  console.log("No changed compiled Swift sources; skipping mutation testing.");
+const selectedFiles = [...selectedByPackage].flatMap(([directory, paths]) =>
+  paths.map((path) => relative(root, resolve(directory, path))),
+);
+if (requestedFile && !selectedFiles.includes(requestedFile)) {
+  throw new Error(`Requested file is not a changed compiled Swift source: ${requestedFile}`);
+}
+
+if (listFiles) {
+  console.log(JSON.stringify(selectedFiles));
+} else {
+  let selectedPackages = 0;
+  for (const [directory, paths] of selectedByPackage) {
+    const selected = requestedFile
+      ? paths.filter((path) => relative(root, resolve(directory, path)) === requestedFile)
+      : paths;
+    if (selected.length === 0) continue;
+    const reportsDirectory = join(root, "reports/swift-mutation");
+    mkdirSync(reportsDirectory, { recursive: true });
+    const reportPath = join(reportsDirectory, `${basename(directory)}.json`);
+    rmSync(reportPath, { force: true });
+    console.log(`Mutating ${relative(root, directory)}: ${selected.join(", ")}`);
+    run(
+      "muter",
+      ["run", "--files-to-mutate", selected.join(","), "--format", "json", "--output", reportPath],
+      directory,
+      true,
+    );
+    verifyReport(reportPath);
+    selectedPackages += 1;
+  }
+  if (selectedPackages === 0)
+    console.log("No changed compiled Swift sources; skipping mutation testing.");
+}

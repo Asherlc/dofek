@@ -10,16 +10,29 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     ) {
-        lastKnownDeviceId = peripheral.identifier.uuidString
-        lastKnownDeviceName = peripheral.name
+        publishReadyConnection(
+            peripheralId: peripheral.identifier.uuidString,
+            peripheralName: peripheral.name,
+            wasStreaming: wasStreaming
+        )
+    }
+
+    /// Publish and activate notification readiness on the connection manager's BLE queue.
+    func publishReadyConnection(peripheralId: String, peripheralName: String?, wasStreaming: Bool) {
+        guard !captureSuspended, captureFailure == nil else {
+            connectionManager.disconnect()
+            return
+        }
+        lastKnownDeviceId = peripheralId
+        lastKnownDeviceName = peripheralName
+        emitDeviceState()
+        guard !captureSuspended, captureFailure == nil else { return }
         MainThreadEventEmitter.emit([
             "state": "connected",
-            "peripheralId": peripheral.identifier.uuidString,
+            "peripheralId": peripheralId,
         ]) { [weak self] payload in
             self?.sendEvent("onConnectionStateChanged", payload)
         }
-        emitDeviceState()
-
         sendActivationCommands(includeImu: false)
         watchdog.start()
 
@@ -66,6 +79,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         _ manager: WhoopBleConnectionManager,
         didReceiveData data: Data
     ) {
+        guard !captureSuspended, captureFailure == nil else { return }
         guard let deviceId = manager.connectedPeripheral?.identifier.uuidString else { return }
 
         dataNotificationCount += 1
@@ -103,7 +117,6 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             imuCount: newImuSamples.count,
             realtimeSamples: newRealtimeData
         )
-        sampleBuffer.appendRealtimeData(newRealtimeData, deviceId: deviceId)
 
         if newImuSamples.isEmpty && newRealtimeData.isEmpty {
             emptyExtractions += 1
@@ -126,7 +139,17 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         }
 
-        sampleBuffer.appendImuSamples(newImuSamples, deviceId: deviceId)
+        do {
+            if !newRealtimeData.isEmpty {
+                try uploader.append(stream: .realtime, deviceId: deviceId, samples: WhoopBleSampleSerializer.realtime(newRealtimeData))
+            }
+            if !newImuSamples.isEmpty {
+                try uploader.append(stream: .imu, deviceId: deviceId, samples: WhoopBleSampleSerializer.imu(newImuSamples))
+            }
+        } catch {
+            failCapture(error)
+            return
+        }
         scheduleDeviceStatePublication()
     }
 

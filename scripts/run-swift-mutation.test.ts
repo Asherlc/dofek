@@ -105,10 +105,10 @@ if (${JSON.stringify(tool)} === 'swift') {
   function change(path: string) {
     write(root, path, "// changed\n");
   }
-  function run(base: string) {
+  function run(base: string, options: string[] = []) {
     git(root, ["add", "."]);
     git(root, ["commit", "--quiet", "--allow-empty", "-m", "feature changes"]);
-    return spawnSync(process.execPath, [tsxPath, scriptPath, "--base", base], {
+    return spawnSync(process.execPath, [tsxPath, scriptPath, "--base", base, ...options], {
       cwd: root,
       encoding: "utf8",
       env: { ...process.env, PATH: join(root, "bin") },
@@ -130,6 +130,93 @@ afterEach(() => {
 });
 
 describe("run-swift-mutation public CLI", () => {
+  it("lists only changed compiled files as JSON without running Muter", () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Timer space.swift"]);
+    fixture.addPackage(healthKit);
+    const base = fixture.commitBase();
+    for (const path of [
+      `${whoop}/ios/Parser.swift`,
+      `${whoop}/ios/nested/Timer space.swift`,
+      `${healthKit}/ios/Parser.swift`,
+      `${whoop}/ios/ExpoModule.swift`,
+      `${whoop}/Tests/ParserTests.swift`,
+    ])
+      fixture.change(path);
+    const result = fixture.run(base, ["--list-files"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([
+      `${healthKit}/ios/Parser.swift`,
+      `${whoop}/ios/Parser.swift`,
+      `${whoop}/ios/nested/Timer space.swift`,
+    ]);
+    expect(fixture.invocations().map((call) => call.tool)).toEqual(["swift", "swift"]);
+    expect(existsSync(join(fixture.root, "reports"))).toBe(false);
+  });
+
+  it("lists no work as an empty JSON array", () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/ExpoModule.swift`);
+    const result = fixture.run(base, ["--list-files"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([]);
+  });
+
+  it("runs only the requested changed compiled file using its package's full test configuration", () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Timer space.swift"]);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.change(`${whoop}/ios/nested/Timer space.swift`);
+    const result = fixture.run(base, ["--file", `${whoop}/ios/nested/Timer space.swift`]);
+    expect(result.status, result.stderr).toBe(0);
+    const runs = fixture.invocations().filter((call) => call.tool === "muter");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.cwd).toBe(join(fixture.root, whoop));
+    expect(runs[0]?.args).toEqual([
+      "run",
+      "--files-to-mutate",
+      "ios/nested/Timer space.swift",
+      "--format",
+      "json",
+      "--output",
+      join(fixture.root, "reports/swift-mutation/whoop-ble.json"),
+    ]);
+    expect(readFileSync(join(fixture.root, whoop, "muter.conf.yml"), "utf8")).toContain(
+      "arguments: [test]",
+    );
+  });
+
+  it.each([
+    "ios/ExpoModule.swift",
+    "Tests/ParserTests.swift",
+    "ios/Unchanged.swift",
+    "ios/Missing.swift",
+  ])("rejects single-file selection outside changed compiled sources: %s", (file) => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop, "ios", ["Parser.swift", "Unchanged.swift"]);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.change(`${whoop}/ios/ExpoModule.swift`);
+    fixture.change(`${whoop}/Tests/ParserTests.swift`);
+    const result = fixture.run(base, ["--file", `${whoop}/${file}`]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Requested file is not a changed compiled Swift source");
+    expect(fixture.invocations().filter((call) => call.tool === "muter")).toEqual([]);
+  });
+
+  it("rejects combining list and single-file modes", () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    const result = fixture.run(base, ["--list-files", "--file", `${whoop}/ios/Parser.swift`]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Usage:");
+    expect(fixture.invocations()).toEqual([]);
+  });
+
   it("selects committed PR changes from the merge base when main has diverged", () => {
     const fixture = createFixture();
     const backgroundRefresh = "packages/mobile/modules/background-refresh";

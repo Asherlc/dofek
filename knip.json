@@ -44,6 +44,7 @@
         "modules/*/index.ts",
         "plugins/*.js",
         "scripts/capture-app-store-screenshots.ts",
+        "scripts/test-ios-bridge.ts",
         "types/api.ts",
         "theme.ts",
         "theme.ios.ts"
@@ -57,6 +58,7 @@
         "!.rnstorybook/**"
       ],
       "ignore": [".rnstorybook/**", ".storybook/mocks/**"],
+      "ignoreBinaries": ["pod", "xcrun"],
       "ignoreDependencies": [
         "@sentry/cli",
         "expo-system-ui"

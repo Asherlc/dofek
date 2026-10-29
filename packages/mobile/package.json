@@ -24,6 +24,7 @@
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "prebuild": "expo prebuild --platform ios --clean",
+    "test:ios:bridge": "pnpm tsx scripts/test-ios-bridge.ts",
     "lint": "biome check . && pnpm --dir ../.. lint:mobile-telemetry && pnpm --dir ../.. check:mobile-app-routes",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
@@ -105,6 +106,7 @@
     "@storybook/react-native-web-vite": "10.6.0",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.3.0",
+    "expo-modules-test-core": "58.0.5",
     "playwright": "1.62.1",
     "react-dom": "19.3.0",
     "react-native-web": "0.21.4",

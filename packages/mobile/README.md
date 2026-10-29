@@ -35,10 +35,13 @@ Sign-out and account deletion remove the saved identity.
 
 First-time sign-in, and the first online restore after upgrading from a version
 that saved only the token, need internet to establish the saved identity.
-Bluetooth uploads retain unconfirmed samples during connection failures; see the
-[WHOOP buffer contract](modules/whoop-ble/README.md) and
-[heart-rate buffer implementation](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
-These sample buffers remain in memory and do not survive process termination.
+WHOOP capture commits samples to an account-bound native SQLite queue and uses
+file-backed [iOS background uploads](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).
+Unacknowledged samples survive process recreation. Sign-out/account changes
+cancel the former account's requests and purge its queue; see the
+[WHOOP durability contract](modules/whoop-ble/README.md).
+The separate standard Bluetooth heart-rate monitor still uses an in-memory
+[buffer](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
 
 ## Project Structure
 
@@ -574,7 +577,7 @@ runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
 
-WHOOP diagnostics connect native capture/buffer snapshots, per-stream workers,
+WHOOP diagnostics connect native capture/queue snapshots, background task state,
 upload batches, HTTP responses, and server broker publication without logging
 sensor values. A retained native checkpoint contains metadata only, has unknown
 prior-account provenance, and cannot restore samples. See the

@@ -31,6 +31,10 @@ WHOOP can report BPM when beat intervals are unavailable during movement; see
 its [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
 Captured R18/R21 fractional clock words use 1/32768-second ticks, and buffer
 timestamps use that scale; see the [capture-backed protocol reference](../../../../docs/whoop-ble-protocol.md).
+The [serializer](ios/WhoopBleSampleSerializer.swift) preserves device time,
+including early and future values. The [server filter](../../../server/src/routers/sample-validation.ts)
+rejects future samples individually; an acknowledged batch removes those rows
+from the queue too. Reported times determine sample identities.
 Native changes require a new iOS build, following Expo's
 [native development workflow](https://docs.expo.dev/workflow/customizing/).
 
@@ -48,22 +52,27 @@ and Apple's
 import {
   connect,
   findWhoop,
-  peekBufferedRealtimeData,
+  configureUpload,
+  flushUploads,
   startRealtimeHr,
 } from "@dofek/whoop-ble";
 
+// Supply the authenticated account and its current session from your app.
+configureUpload({ userId, serverURL, token: sessionToken, headers: {} });
 const device = await findWhoop();
 if (device) {
   await connect(device.id);
   await startRealtimeHr();
-  const samples = await peekBufferedRealtimeData();
+  flushUploads();
 }
 ```
 
 The root module also exports connection-state diagnostics, IMU and optical
-stream controls, orientation events, reconnect support, and peek-then-confirm
-buffer drains. Use the peek/confirm pair when uploading samples so data is only
-removed after the upload succeeds.
+stream controls, orientation events, and reconnect support. The native
+[transactional queue](ios/WhoopBleSampleStore.swift) is the canonical sample
+store. The [uploader](ios/WhoopBleBackgroundUploader.swift) removes reserved
+rows only after a valid server acknowledgment; failures retain the rows.
+SQLite provides [atomic commits](https://sqlite.org/isolation.html).
 
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription
@@ -85,25 +94,33 @@ preserves it only for automatic recovery, and the
 a command characteristic.
 
 `getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
-snapshot: `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`, `imu`,
-`realtime`, and `previousCheckpoint`. Each stream reports its count, true
-minimum/maximum sample timestamps, received and confirmed counts, discard counts
-for overflow/erasure/clear/legacy drains, and `lastConfirmedAt`. Notification and
-parsed-sample timestamps use phone observation time; `lastValidHeartRateAt` uses
-the device timestamp of the latest positive reported BPM whose clock is between
-year 2000 and five minutes after phone observation time. See the
-[TypeScript contract](index.ts) and
-[native capture diagnostics](ios/WhoopBleCaptureDiagnostics.swift).
+snapshot containing `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`,
+`imu`, `realtime`, `activeUploadCount`, `blockedUploadStreams`, and
+`lastUploadError`. Stream counters describe persisted queue changes. The buffer
+identity is the persisted account/server generation; it survives ordinary process
+recreation. Creation/checkpoint times describe the current native uploader and
+snapshot. Capture timestamps distinguish phone-observed notifications from the
+strap's latest valid reported heart rate; see the [bridge contract](index.ts).
 
-The [buffer](ios/WhoopBleSampleBuffer.swift) checkpoints bounded metadata during
-capture at most once per 30 seconds, and when diagnostics or explicit discard
-boundaries request a snapshot. A positive confirmation that empties a stream also
-checkpoints the resulting queue state; releasing a peek with count zero retains
-every sample. One previous checkpoint is available after a
-new buffer instance starts. Samples remain in memory and are never restored
-from that checkpoint; prior account ownership is unknown. It is last-observed
-evidence, not an exact loss count or termination reason. Apple does not guarantee
-a final [termination callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
+Captured samples are committed to [SQLite](ios/WhoopBleSampleStore.swift) before
+scheduling delivery. Rows survive app recreation and are not evicted at the old
+memory limits. Account changes and sign-out purge the old queue and cancel its
+tasks; account erasure also retains its monotonic device cutoff. Queue files and
+transport bodies are excluded from backups and use locked-device-accessible
+[iOS file protection](https://developer.apple.com/documentation/foundation/fileprotectiontype/completeuntilfirstuserauthentication).
+
+The [native uploader](ios/WhoopBleBackgroundUploader.swift) uses independent
+500-sample batches per stream and the existing authenticated ingestion routes.
+Actual BLE arrivals coalesce scheduling checks to five seconds, and partial
+batches become eligible after 30 seconds or a lifecycle flush. Submitted requests
+use Apple's [background URLSession service](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background),
+which requires file-backed uploads and controls actual delivery timing. Tokens
+remain in application memory; iOS owns submitted request headers. After a restart,
+native callbacks acknowledge existing batches without React; authenticated app
+configuration supplies credentials for new work. Canonical mutation endpoints
+must serve directly: Apple's background service follows redirects, and a
+cross-origin final response is rejected as an acknowledgment.
+
 `getDataPathStats().connectionDiagnostics` exposes the latest 64 native
 connection events and a cumulative `overflowCount` for older events removed
 from that bounded history. The [native connection journal](ios/WhoopBleConnectionDiagnostics.swift)
@@ -125,6 +142,39 @@ following [Expo runtime compatibility guidance](https://docs.expo.dev/eas-update
 The
 [diagnostic procedure](../../../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
 describes correlation with upload and server events.
+
+## Native bridge tests
+
+On macOS with Xcode and an installed iPhone Simulator runtime, run from
+`packages/mobile`:
+
+```sh
+EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id pnpm prebuild --no-install
+pnpm test:ios:bridge
+```
+
+The public DSN placeholder follows the app's
+[local simulator setup](../../README.md#signed-release-simulator-audit).
+The bridge suite runs the real Expo registration and JavaScript promise path in
+a UIKit test host. CocoaPods generates its host and XCTest target from the
+module's [test specification](https://guides.cocoapods.org/using/test-specs.html).
+It uses Expo's official
+[TestAppContext](https://github.com/expo/expo/tree/main/packages/expo-modules-test-core/ios/Runtime)
+with a Hermes runtime and JavaScript scheduling. The runner installs source
+Expo modules because that helper imports ExpoModulesCore with `@testable`.
+This changes the generated local Pods installation; ordinary `pnpm prebuild`
+regenerates the normal app project. No Metro server or authenticated account
+is needed. The [test cases](ios/BridgeTests/WhoopBleModuleTests.swift) exercise
+bridge state transitions; validate physical strap capture and background
+Bluetooth delivery separately on a device.
+
+The standalone `swift test` suite remains separate: its target excludes the Expo
+bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
+
+The workspace's [React Native patch](../../../../patches/react-native@0.88.0.patch)
+preserves build-flavor markers during [CocoaPods source cleanup](https://github.com/CocoaPods/CocoaPods/blob/1.16.2/lib/cocoapods/sandbox/pod_dir_cleaner.rb#L55).
+This retains the configuration metadata needed to select Debug frameworks after
+a Release archive and a test-dependency installation.
 
 ## Runtime, Stability, and Errors
 

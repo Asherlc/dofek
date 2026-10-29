@@ -176,6 +176,61 @@ describe("metric stream ClickHouse sink (integration)", () => {
     expect(Number(rows[0]?.count)).toBe(1);
   });
 
+  it("retains distinct device timestamp identities while coalescing repeated timestamp identities", async () => {
+    const userId = randomUUID();
+    const reading = (deviceId: string, recordedAt: string, scalar: number) =>
+      createCurrentMetricStreamEvent({
+        userId,
+        providerId: "whoop_ble",
+        deviceId,
+        recordedAt,
+        externalId: `whoop_ble:${deviceId}:heart_rate:${recordedAt}`,
+        sourceType: "ble",
+        channel: "heart_rate",
+        scalar,
+      });
+    const sameTime = "2026-10-28T12:05:00.000Z";
+    const clamped = [reading("clamped", sameTime, 60), reading("clamped", sameTime, 61)];
+    const raw = [
+      reading("raw", "2026-10-28T12:00:00.000Z", 60),
+      reading("raw", "2026-10-28T12:00:01.000Z", 61),
+    ];
+    expect(clamped[0]?.id).toBe(clamped[1]?.id);
+    expect(raw[0]?.id).not.toBe(raw[1]?.id);
+    try {
+      await insertMetricStreamEventsIntoClickHouse(client, [...clamped, ...raw]);
+      const counts = await client.query({
+        query: `SELECT device_id, count() AS count FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} GROUP BY device_id ORDER BY device_id`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(
+        z
+          .array(z.object({ device_id: z.string(), count: z.coerce.number() }))
+          .parse(await counts.json()),
+      ).toEqual([
+        { device_id: "clamped", count: 1 },
+        { device_id: "raw", count: 2 },
+      ]);
+      const readings = await client.query({
+        query: `SELECT scalar FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} AND device_id = 'raw' ORDER BY recorded_at`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(z.array(z.object({ scalar: z.number() })).parse(await readings.json())).toEqual([
+        { scalar: 60 },
+        { scalar: 61 },
+      ]);
+    } finally {
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+    }
+  });
+
   it("tombstones the latest provider-scoped metric version", async () => {
     const event = createCurrentMetricStreamEvent({
       id: testEventId,

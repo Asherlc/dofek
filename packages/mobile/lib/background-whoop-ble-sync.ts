@@ -1,222 +1,119 @@
 import * as Sentry from "@sentry/react-native";
-import { AppState, type AppStateStatus } from "react-native";
+import { Alert, AppState } from "react-native";
 import { captureException, logger } from "./telemetry";
 import { WhoopBleDiagnostics, type WhoopSyncTrigger } from "./whoop-ble-diagnostics";
-import type {
-  InertialMeasurementUnitUploadClient,
-  WhoopBleRealtimeUploadClient,
-  WhoopBleSyncDeps,
-} from "./whoop-ble-sync-types";
-import { WhoopBleUploadWorkers } from "./whoop-ble-upload-workers";
+import type { WhoopBleSyncDeps, WhoopUploadContext } from "./whoop-ble-sync-types";
 
-const PERIODIC_DRAIN_INTERVAL_MS = 30_000;
 const LOG_CATEGORY = "whoop-ble";
-
 interface WhoopBleSyncSession {
   deps: WhoopBleSyncDeps;
-  realtimeClient: WhoopBleRealtimeUploadClient | undefined;
-  workers: WhoopBleUploadWorkers;
   diagnostics: WhoopBleDiagnostics;
+  active: boolean;
   connected: boolean;
   connectionIntent: boolean;
   syncing: boolean;
+  captureErrorSubscription?: { remove(): void };
   appStateSubscription?: { remove(): void };
   connectionStateSubscription?: { remove(): void };
-  periodicDrainTimer?: ReturnType<typeof setInterval>;
 }
-
 let currentSession: WhoopBleSyncSession | null = null;
-
-function createSession(
-  client: InertialMeasurementUnitUploadClient,
-  deps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
-): WhoopBleSyncSession {
-  const diagnostics = new WhoopBleDiagnostics();
-  const session: WhoopBleSyncSession = {
-    deps,
-    realtimeClient,
-    diagnostics,
-    workers: new WhoopBleUploadWorkers(client, deps, diagnostics),
-    connected: false,
-    connectionIntent: false,
-    syncing: false,
-  };
-  currentSession = session;
-  return session;
-}
 
 function captureSnapshot(
   session: WhoopBleSyncSession,
   trigger: WhoopSyncTrigger,
   appState = AppState.currentState ?? "unknown",
 ): void {
-  if (!session.workers.active) return;
+  if (!session.active) return;
   try {
     session.diagnostics.snapshot(session.deps.getDataPathStats(), trigger, appState);
   } catch (error: unknown) {
     captureException(error, { source: "whoop-ble-capture-diagnostics", trigger });
   }
 }
-
-function shouldRunForegroundPeriodicDrain(): boolean {
+function foreground(): boolean {
   return AppState.currentState === "active";
 }
 
-function stopPeriodicDrainTimer(session: WhoopBleSyncSession): void {
-  if (session.periodicDrainTimer === undefined) return;
-  clearInterval(session.periodicDrainTimer);
-  session.periodicDrainTimer = undefined;
-}
-
-function startPeriodicDrainTimer(session: WhoopBleSyncSession): void {
-  if (
-    !session.workers.active ||
-    !shouldRunForegroundPeriodicDrain() ||
-    session.periodicDrainTimer !== undefined
-  )
-    return;
-  session.periodicDrainTimer = setInterval(() => {
-    if (!session.workers.active || !shouldRunForegroundPeriodicDrain()) {
-      stopPeriodicDrainTimer(session);
-      return;
-    }
-    captureSnapshot(session, "periodic");
-    if (!session.connected) {
-      session.diagnostics.skipped("imu", "not_connected", "periodic");
-      session.diagnostics.skipped("realtime", "not_connected", "periodic");
-      return;
-    }
-    session.workers
-      .drain(session.realtimeClient, shouldRunForegroundPeriodicDrain, "periodic")
-      .catch((error: unknown) => {
-        captureException(error, {
-          source: "whoop-ble-periodic-drain",
-          ...(session.workers.active ? {} : { retiredLifetime: true }),
-        });
-        if (session.workers.active) logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
-      });
-  }, PERIODIC_DRAIN_INTERVAL_MS);
-}
-
-/** Start the WHOOP connection and upload lifecycle for the current client. */
+/** Configure native account ownership before any BLE capture can begin. */
 export async function initBackgroundWhoopBleSync(
-  client: InertialMeasurementUnitUploadClient,
+  context: WhoopUploadContext,
   deps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
   teardownBackgroundWhoopBleSync();
-  const session = createSession(client, deps, realtimeClient);
-  captureSnapshot(session, "initial");
-  session.connectionStateSubscription = deps.addConnectionStateListener((event) => {
-    if (!session.workers.active) return;
-    captureSnapshot(session, "connection");
-    if (event.state === "disconnected") {
-      logger.info(LOG_CATEGORY, `BLE disconnected (${event.error ?? "no error"}), will reconnect`);
-      session.connected = false;
-    } else if (event.state === "connected") {
-      logger.info(LOG_CATEGORY, "BLE reconnected");
-      session.connected = true;
-    }
-  });
-  session.appStateSubscription = AppState.addEventListener(
-    "change",
-    (nextState: AppStateStatus) => {
-      if (!session.workers.active) return;
-      captureSnapshot(session, "app_state", nextState);
-      if (nextState !== "active") {
-        stopPeriodicDrainTimer(session);
-        return;
+  deps.configureUpload(context);
+  const session: WhoopBleSyncSession = {
+    deps,
+    diagnostics: new WhoopBleDiagnostics(),
+    active: true,
+    connected: false,
+    connectionIntent: false,
+    syncing: false,
+  };
+  currentSession = session;
+  try {
+    session.captureErrorSubscription = deps.addCaptureErrorListener(({ message }) => {
+      if (!session.active) return;
+      captureException(new Error(message), { source: "whoop-ble-native-capture" });
+      Alert.alert("WHOOP capture stopped", message);
+    });
+    captureSnapshot(session, "initial");
+    session.connectionStateSubscription = deps.addConnectionStateListener((event) => {
+      if (!session.active) return;
+      if (event.state === "connected") session.connected = true;
+      else if (event.state === "disconnected") session.connected = false;
+      captureSnapshot(session, "connection");
+    });
+    session.appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (!session.active) return;
+      captureSnapshot(session, "app_state", state);
+      if (state !== "active") return;
+      try {
+        deps.flushUploads();
+      } catch (error: unknown) {
+        captureException(error, { source: "whoop-ble-foreground-flush" });
       }
-      startPeriodicDrainTimer(session);
-      if (session.syncing) {
-        session.diagnostics.skipped("imu", "already_syncing", "foreground");
-        session.diagnostics.skipped("realtime", "already_syncing", "foreground");
-        return;
-      }
+      if (session.syncing) return;
       session.syncing = true;
-      syncOnForeground(session, shouldRunForegroundPeriodicDrain, "foreground")
+      syncOnForeground(session, foreground)
         .catch((error: unknown) => {
           captureException(error, {
             source: "whoop-ble-foreground-sync",
-            ...(session.workers.active ? {} : { retiredLifetime: true }),
+            retiredLifetime: !session.active,
           });
-          if (session.workers.active) logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
         })
         .finally(() => {
           session.syncing = false;
         });
-    },
-  );
-  startPeriodicDrainTimer(session);
-  if (!shouldRunForegroundPeriodicDrain()) {
-    logger.info(LOG_CATEGORY, "initial sync deferred until app foregrounds");
-    return;
-  }
-  session.syncing = true;
-  try {
-    await syncOnForeground(session, shouldRunForegroundPeriodicDrain, "initial");
-    if (session.workers.active) logger.info(LOG_CATEGORY, "initial sync complete");
-  } catch (error: unknown) {
-    captureException(error, {
-      source: "whoop-ble-init-sync",
-      ...(session.workers.active ? {} : { retiredLifetime: true }),
     });
-    if (session.workers.active) logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
-  } finally {
-    session.syncing = false;
-  }
-}
-
-/** Flush during an authorized native background refresh, sharing only this lifetime's workers. */
-export async function syncWhoopBle(
-  client: InertialMeasurementUnitUploadClient,
-  deps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
-): Promise<void> {
-  const session = currentSession ?? createSession(client, deps, realtimeClient);
-  if (realtimeClient) session.realtimeClient = realtimeClient;
-  const finishBackgroundRefresh = session.workers.authorizeBackgroundRefresh();
-  try {
-    captureSnapshot(session, "background");
-    await syncOnForeground(session, () => true, "background");
-    if (session.workers.active) logger.info(LOG_CATEGORY, "background refresh — sync complete");
-  } catch (error: unknown) {
-    if (session.workers.active && isWhoopBleConnectionTimeout(error)) {
-      logger.warn(
-        LOG_CATEGORY,
-        "background refresh — connect timed out, uploading buffered samples without a strap",
-      );
-      Sentry.addBreadcrumb({
-        category: "whoop-ble",
-        message: "Background refresh connect timed out",
-        level: "warning",
-      });
-      await session.workers.drain(session.realtimeClient, () => true, "background");
-      return;
+    deps.flushUploads();
+    if (!foreground()) return;
+    session.syncing = true;
+    try {
+      await syncOnForeground(session, foreground);
+    } catch (error: unknown) {
+      captureException(error, { source: "whoop-ble-init-sync", retiredLifetime: !session.active });
+    } finally {
+      session.syncing = false;
     }
-    captureException(error, {
-      source: "whoop-ble-background-refresh",
-      ...(session.workers.active ? {} : { retiredLifetime: true }),
-    });
-    if (session.workers.active)
-      logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
+  } catch (error: unknown) {
+    teardownBackgroundWhoopBleSync();
     throw error;
-  } finally {
-    finishBackgroundRefresh();
   }
 }
 
-function isWhoopBleConnectionTimeout(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "TIMEOUT";
+/** Ask iOS to deliver the current account's durable queue, independently of BLE connection. */
+export async function syncWhoopBle(): Promise<void> {
+  const session = currentSession;
+  if (!session?.active) return;
+  captureSnapshot(session, "background");
+  session.deps.flushUploads();
 }
 
 async function syncOnForeground(
   session: WhoopBleSyncSession,
-  shouldContinueUploading: () => boolean,
-  trigger: WhoopSyncTrigger,
+  shouldContinueConnecting: () => boolean,
 ): Promise<void> {
-  const { deps: whoopDeps, workers } = session;
+  const { deps: whoopDeps } = session;
   // Connect if not already connected.
   //
   // Note: we skip the isBluetoothAvailable() pre-check because it suffers
@@ -227,12 +124,12 @@ async function syncOnForeground(
   // the sync before findWhoop() can even run. Instead, we let findWhoop()
   // handle unavailable Bluetooth by returning null (it checks state internally
   // after the manager has had time to initialize).
-  if (!workers.active || !shouldContinueUploading()) return;
+  if (!session.active || !shouldContinueConnecting()) return;
 
   if (!session.connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
-    if (!workers.active) return;
+    if (!session.active || !shouldContinueConnecting()) return;
     if (!device) {
       logger.warn(LOG_CATEGORY, "no WHOOP strap found");
       Sentry.addBreadcrumb({
@@ -242,7 +139,7 @@ async function syncOnForeground(
       });
       return;
     }
-    if (!workers.active || !shouldContinueUploading()) return;
+    if (!session.active || !shouldContinueConnecting()) return;
 
     const deviceLabel = device.name ?? device.id;
     logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
@@ -253,8 +150,8 @@ async function syncOnForeground(
     });
     session.connectionIntent = true;
     await whoopDeps.connect(device.id);
-    if (!workers.active) return;
-    if (!shouldContinueUploading()) {
+    if (!session.active) return;
+    if (!shouldContinueConnecting()) {
       whoopDeps.disconnect();
       session.connected = false;
       return;
@@ -265,18 +162,18 @@ async function syncOnForeground(
     // WHOOP app sync, but this ensures continuous capture regardless.
     try {
       await whoopDeps.startImuStreaming();
-      if (workers.active) logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
+      if (session.active) logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
     } catch (error: unknown) {
       captureException(error, {
         source: "whoop-ble-start-streaming",
-        ...(workers.active ? {} : { retiredLifetime: true }),
+        ...(session.active ? {} : { retiredLifetime: true }),
       });
-      if (!workers.active) return;
+      if (!session.active) return;
       // Best-effort — passive data may still flow without the command
       logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
     }
-    if (!workers.active) return;
-    if (!shouldContinueUploading()) {
+    if (!session.active) return;
+    if (!shouldContinueConnecting()) {
       whoopDeps.disconnect();
       session.connected = false;
       return;
@@ -289,22 +186,20 @@ async function syncOnForeground(
       level: "info",
     });
   } else {
-    logger.info(LOG_CATEGORY, "already connected, uploading buffer");
+    logger.info(LOG_CATEGORY, "already connected");
   }
-
-  await workers.drain(session.realtimeClient, shouldContinueUploading, trigger);
 }
 
-/** Retire upload ownership immediately; native cursor handoff waits only for pending peeks. */
+/** Retire JavaScript connection work while preserving native account ownership and queued uploads. */
 export function teardownBackgroundWhoopBleSync(): void {
   const session = currentSession;
   if (!session) return;
   currentSession = null;
   captureSnapshot(session, "teardown");
-  session.workers.retire();
+  session.active = false;
+  session.captureErrorSubscription?.remove();
   session.appStateSubscription?.remove();
   session.connectionStateSubscription?.remove();
-  stopPeriodicDrainTimer(session);
   if (session.connected) {
     try {
       session.deps.stopImuStreaming().catch((error: unknown) => {
