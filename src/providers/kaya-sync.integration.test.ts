@@ -85,6 +85,51 @@ describe("KayaSyncProvider canonical persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
 
+  it("refreshes ascent methods from source facts while preserving identities and attachments", async () => {
+    sessions = [kayaSessionFixture({ attempted_climbs: [] })];
+    ascents = [
+      kayaAscentFixture({
+        attempts: 1,
+        lead: true,
+        climb: kayaClimbFixture({
+          climb_type: { id: "2", name: "Routes" },
+          lead: false,
+          grade: { id: "25", name: "5.11a", climb_type_group: "3" },
+        }),
+      }),
+    ];
+    expect(await run()).toMatchObject({ errors: [] });
+    const [entry] = await logs();
+    const [attempt] = await context.db.select().from(climbingAttempt);
+    expect(attempt?.ropeMethod).toBe("lead");
+    expect(entry?.raw).toMatchObject({ lead: true, climb: { lead: false } });
+
+    ascents = [{ ...ascents[0], lead: null }];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect(await logs()).toEqual([
+      expect.objectContaining({ id: entry?.id, activityId: entry?.activityId }),
+    ]);
+    expect(await context.db.select().from(climbingAttempt)).toEqual([
+      expect.objectContaining({ id: attempt?.id, ropeMethod: "top_rope" }),
+    ]);
+
+    ascents = [
+      kayaAscentFixture({
+        attempts: 1,
+        lead: null,
+        climb: kayaClimbFixture({
+          climb_type: { id: "2", name: "Routes" },
+          lead: null,
+          grade: { id: "25", name: "5.11a", climb_type_group: "3" },
+        }),
+      }),
+    ];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect(await context.db.select().from(climbingAttempt)).toEqual([
+      expect.objectContaining({ id: attempt?.id, ropeMethod: null }),
+    ]);
+  });
+
   it("discovers historical and standalone photos during normal sync without per-ascent requests", async () => {
     sessions = [kayaSessionFixture({ attempted_climbs: [] })];
     ascents = [

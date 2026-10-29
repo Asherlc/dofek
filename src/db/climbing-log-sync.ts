@@ -22,11 +22,7 @@ import {
   pitch,
   pitchGrade,
 } from "./schema/climbing.ts";
-import {
-  assertSourceAttemptRopeMethod,
-  normalizeSourceAttemptFacts,
-  type SourceAttemptFacts,
-} from "./source-attempt-facts.ts";
+import { normalizeSourceAttemptFacts, type SourceAttemptFacts } from "./source-attempt-facts.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
 export type { SourceAttemptFacts } from "./source-attempt-facts.ts";
@@ -814,12 +810,6 @@ async function reconcileAttempts(
       rows.push(...created);
     }
   }
-  for (const row of rows)
-    assertSourceAttemptRopeMethod(
-      entry.climb?.kind ?? null,
-      row.ropeMethod,
-      entry.source.externalId,
-    );
 }
 
 async function removeSupersededObjects(

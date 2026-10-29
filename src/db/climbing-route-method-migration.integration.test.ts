@@ -85,6 +85,24 @@ describe("required route method upgrade", () => {
     return { logId, attemptId };
   }
 
+  it("upgrades existing route attempts to permit unknown methods without losing records", async () => {
+    const { attemptId } = await seed("route", "lead");
+    await migrate();
+    const before = (await client.query("SELECT * FROM fitness.climbing_log_entry")).rows;
+    const nullableMigration = readFileSync(
+      new URL("../../drizzle/0171_nullable_climbing_route_methods.sql", import.meta.url),
+      "utf8",
+    );
+    await client.query(nullableMigration.replaceAll("--> statement-breakpoint", ""));
+    await client.query("UPDATE fitness.climbing_attempt SET rope_method = NULL WHERE id = $1", [
+      attemptId,
+    ]);
+    expect((await client.query("SELECT * FROM fitness.climbing_log_entry")).rows).toEqual(before);
+    expect(
+      (await client.query("SELECT id, rope_method FROM fitness.climbing_attempt")).rows,
+    ).toEqual([{ id: attemptId, rope_method: null }]);
+  });
+
   it("blocks unresolved legacy routes while preserving their identities and raw evidence", async () => {
     const { logId, attemptId } = await seed("route", null);
     const before = (await client.query("SELECT * FROM fitness.climbing_log_entry")).rows;
