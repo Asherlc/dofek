@@ -3,7 +3,42 @@ import {
   activityDataStateLabel,
   activityDataStateSchema,
   formatActivityMetric,
+  groupActivityMetrics,
 } from "./activity-data-state.ts";
+
+describe("groupActivityMetrics", () => {
+  const average: import("./activity-data-state.ts").ActivityMetric = {
+    label: "Avg Power",
+    status: "available",
+    value: "149 W",
+  };
+  const maximum: import("./activity-data-state.ts").ActivityMetric = {
+    label: "Max Power",
+    status: "available",
+    value: "202 W",
+  };
+  it("places a maximum with its average and preserves other metrics in order", () => {
+    const duration = { label: "Duration", value: "26m" };
+    expect(groupActivityMetrics([duration, average, maximum])).toEqual([
+      { primary: duration, secondary: null },
+      { primary: average, secondary: maximum },
+    ]);
+  });
+  it("retains a maximum on its own when the average is missing", () => {
+    expect(
+      groupActivityMetrics([
+        { label: "Avg Power", status: "missing", reason: "Not recorded" },
+        maximum,
+      ]),
+    ).toEqual([{ primary: maximum, secondary: null }]);
+  });
+  it("preserves an unavailable maximum's status and reason in its group", () => {
+    const failed = { label: "Max Power", status: "failed", reason: "Recompute this activity." };
+    expect(groupActivityMetrics([average, failed])).toEqual([
+      { primary: average, secondary: failed },
+    ]);
+  });
+});
 
 describe("activityDataStateSchema", () => {
   it.each(["missing", "stale", "failed", "processing", "conflicting"] as const)(

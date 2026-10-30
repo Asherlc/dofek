@@ -2,6 +2,7 @@ import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import { activityPhotoFixture } from "../components/ActivityPhoto.fixtures.ts";
 import {
   walkingHardware,
   walkingSourceTree,
@@ -301,6 +302,48 @@ export const Minimal: HeaderStory = {
       sourceProviders: [],
       sourceLinks: [],
       sourceTree: { primary: null, otherSources: [] },
+    },
+  },
+};
+
+export const WithPhoto: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    ...IndoorCycling.args,
+    activity: {
+      ...baseActivity,
+      ...IndoorCycling.args?.activity,
+      name: "45 min Power Zone Endurance Ride",
+    },
+    photos: {
+      images: [activityPhotoFixture],
+      loading: false,
+      error: null,
+      onRetry: () => undefined,
+    },
+  },
+};
+export const WithMultiplePhotos: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    ...WithPhoto.args,
+    photos: {
+      images: [activityPhotoFixture, { ...activityPhotoFixture, id: "photo-2" }],
+      loading: false,
+      error: null,
+      onRetry: () => undefined,
+    },
+  },
+};
+export const PhotoRefreshError: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    ...WithPhoto.args,
+    photos: {
+      images: [activityPhotoFixture],
+      loading: false,
+      error: new Error("Photo storage is unavailable. Try again."),
+      onRetry: () => undefined,
     },
   },
 };

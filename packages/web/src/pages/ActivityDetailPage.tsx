@@ -2,6 +2,7 @@ import {
   type ActivityMetric,
   activityDataStateLabel,
   formatActivityMetric,
+  groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
 import { formatDateLong, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
@@ -297,7 +298,15 @@ export function ActivityDetailPage() {
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
 
       <ActivityHeader
+        key={id}
         activity={activity}
+        photos={{
+          images: images.data?.images ?? [],
+          loading: images.isLoading,
+          error: images.error,
+          retrying: images.isFetching,
+          onRetry: () => void images.refetch(),
+        }}
         powerWork={isCycling ? powerWork.data : undefined}
         units={units}
         hardware={hardware.data}
@@ -309,17 +318,6 @@ export function ActivityDetailPage() {
         <QueryStatePanel error={powerWork.error} height={72} />
       ) : null}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
-
-      <ActivityPhotos
-        key={id}
-        images={images.data?.images ?? []}
-        loading={images.isLoading}
-        error={images.error}
-        retrying={images.isFetching}
-        onRetry={() => {
-          void images.refetch();
-        }}
-      />
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
@@ -556,11 +554,13 @@ export function ActivityHeader({
   activity,
   powerWork,
   units,
+  photos,
   ...sourceDetails
 }: {
   activity: ActivityDetail;
   powerWork?: ActivityPowerWork;
   units: UnitConverter;
+  photos?: Omit<ComponentProps<typeof ActivityPhotos>, "heading">;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
   const durationMin =
     activity.startedAt && activity.endedAt
@@ -651,62 +651,79 @@ export function ActivityHeader({
     ),
   );
 
+  const heading = (
+    <ActivitySourceDisclosure
+      tree={activity.sourceTree}
+      {...sourceDetails}
+      heading={
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+              {activity.name ??
+                formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
+            </h1>
+            <span className="text-xs text-subtle">
+              {formatActivityTypeLabel(activity.activityType)}
+            </span>
+          </div>
+          <p className="text-sm text-subtle">
+            {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
+            {localStartTime === "--" ? "Local time unavailable" : localStartTime}
+          </p>
+        </div>
+      }
+    />
+  );
+
   return (
     <div>
-      <ActivitySourceDisclosure
-        tree={activity.sourceTree}
-        {...sourceDetails}
-        heading={
-          <div className="min-w-0 pb-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
-              <h1 className="text-xl font-semibold text-foreground">
-                {activity.name ??
-                  formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
-              </h1>
-              <span className="text-xs text-subtle">
-                {formatActivityTypeLabel(activity.activityType)}
-              </span>
-            </div>
-            <p className="text-sm text-subtle">
-              {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
-              {localStartTime === "--" ? "Local time unavailable" : localStartTime}
-            </p>
-          </div>
-        }
-      />
+      {photos ? <ActivityPhotos {...photos} heading={heading} /> : heading}
 
       {stats.length > 0 && (
-        <div className="flex flex-wrap gap-4">
-          {stats
-            .filter((stat) => !("status" in stat) || stat.status !== "missing")
-            .map((s) => {
-              const metric = "status" in s ? s : null;
-              const unavailableMetric = metric?.status !== "available" ? metric : null;
-              const displayedValue =
-                "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
-              return (
-                <section
-                  key={s.label}
-                  className="card px-4 py-3"
-                  data-state={metric?.status}
-                  aria-label={
+        <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border/60 pt-4 sm:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] sm:gap-x-0">
+          {groupActivityMetrics(stats).map(({ primary: s, secondary }) => {
+            const metric = "status" in s ? s : null;
+            const unavailableMetric = metric?.status !== "available" ? metric : null;
+            const displayedValue =
+              "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+            return (
+              <section
+                key={s.label}
+                className="min-w-0 border-border/60 sm:border-l sm:px-6 sm:first:border-l-0 sm:first:pl-0"
+                data-state={metric?.status}
+                aria-label={
+                  unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                    : undefined
+                }
+              >
+                <div className="text-xs text-subtle mb-0.5">
+                  {unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                    : s.label}
+                </div>
+                <div
+                  className={
                     unavailableMetric
-                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-                      : undefined
+                      ? "text-sm font-medium"
+                      : "whitespace-nowrap text-2xl font-semibold tracking-tight tabular-nums"
                   }
                 >
-                  <div className="text-xs text-subtle mb-0.5">
-                    {unavailableMetric
-                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                      : s.label}
+                  {displayedValue}
+                </div>
+                {secondary ? (
+                  <div className="mt-1 text-xs text-subtle">
+                    {"value" in secondary
+                      ? `Max ${secondary.value}`
+                      : `${secondary.label} ${activityDataStateLabel(secondary.status)}: ${secondary.reason}`}
                   </div>
-                  <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
-                  {"description" in s && s.description ? (
-                    <div className="text-xs text-subtle">{s.description}</div>
-                  ) : null}
-                </section>
-              );
-            })}
+                ) : null}
+                {"description" in s && s.description ? (
+                  <div className="text-xs text-subtle">{s.description}</div>
+                ) : null}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
