@@ -17,6 +17,13 @@ silently choose an older update or become a successful empty response. Inspect
 the failed object, preserve evidence, and repair or remove the invalid upload
 through an explicit storage operation before publishing again.
 
+The patch also emits exactly one `Content-Type: application/json; charset=utf-8`
+field in each manifest or directive part. [Expo's multipart response specification](https://docs.expo.dev/technical-specs/expo-updates-1/#multipart-response)
+requires a JSON media type for these parts, and [RFC 2045's entity-header grammar](https://www.rfc-editor.org/rfc/rfc2045.html#section-3)
+defines a single optional `Content-Type` field. The HTTP regression tests check
+the field count and parsed JSON media type for empty-runtime directives and
+complete manifests.
+
 ## Build
 
 Check out the immutable upstream revision into a separate build directory,
@@ -25,12 +32,12 @@ build context:
 
 ```sh
 docker build --target test -f deploy/ota/Dockerfile <patched-upstream-directory>
-docker build -t dofek-ota:3.2.7-dofek.1 -f deploy/ota/Dockerfile <patched-upstream-directory>
+docker build -t dofek-ota:3.2.7-dofek.2 -f deploy/ota/Dockerfile <patched-upstream-directory>
 ```
 
 The compiler and runtime image are pinned by version and digest. The compiler
 is [Go 1.27.3](https://go.dev/dl/); the upstream runtime remains non-root. The
-result reports `3.2.7-dofek.1` so normal version-scoped caches identify this
+result reports `3.2.7-dofek.2` so normal version-scoped caches identify this
 binary separately. CI verifies the upstream tests and builds the runtime image.
 On main, the workflow publishes source-commit tags to the private `dofek-ota-internal`
 GHCR package and records its digest. The package must already exist and be
