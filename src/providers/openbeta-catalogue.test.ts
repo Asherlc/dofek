@@ -907,7 +907,7 @@ describe("OpenBeta bounded local-area discovery", () => {
   });
 });
 
-it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
   "retains presentation and approximate discovery suggestion %s with qualifiers intact",
   async (name) => {
     const fetchFn = client([

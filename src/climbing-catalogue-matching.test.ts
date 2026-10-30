@@ -86,7 +86,7 @@ describe("catalogue name discovery", () => {
   });
   it.each([
     [" Great Roof, The ", "the great roof"],
-    ["L’Arête!", "larête"],
+    ["Café’s!", "cafés"],
     ["  SWISS\t CHEESE  ", "swiss cheese"],
     ["Ａ Crack", "a crack"],
     ["Corner (Left Start)", "corner left start"],
@@ -96,7 +96,7 @@ describe("catalogue name discovery", () => {
   it.each([
     ["The Great Roof", { name: "Great Roof, The" }, "exact"],
     ["Corner Route", { name: "Cheddar Corner", aliases: ["Corner Route"] }, "alias"],
-    ["Swiss Cheese", { name: "Swis Cheese" }, "approximate"],
+    ["Swiss Cheese", { name: "Swish Cheese" }, "approximate"],
     ["Corner", { name: "Corner route" }, "approximate"],
     ["Corner", { name: "Gouda Arete" }, null],
     ["Corner Left", { name: "Corner Right" }, null],
@@ -291,7 +291,7 @@ describe("evidence-based catalogue matching", () => {
     });
   });
   it.each([
-    "Swis Cheese",
+    "Swish Cheese",
     "Swiss Cheese Extension",
     "Swiss Cheese Left Start",
     "Swiss Cheese Traverse",

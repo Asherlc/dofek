@@ -113,7 +113,7 @@ describe("KayaCatalogueAdapter", () => {
       ["Cragmont Crack", 20],
     ]);
   });
-  it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+  it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
     "retains name-related result %s without removing qualifiers",
     async (name) => {
       const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([{ ...climb, name }]));

@@ -144,7 +144,7 @@ describe("MountainProjectCatalogueAdapter", () => {
       "https://www.mountainproject.com/api/v2/routes/105736399",
     );
   });
-  it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+  it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
     "retains name-related result %s without removing qualifiers",
     async (title) => {
       const result = await new MountainProjectCatalogueAdapter(

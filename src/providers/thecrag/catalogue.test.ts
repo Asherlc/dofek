@@ -132,7 +132,7 @@ describe("TheCragCatalogueAdapter", () => {
       ["Cragmont Crack", "2"],
     ]);
   });
-  it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+  it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
     "retains name-related suggestion %s with qualifiers intact",
     async (name) => {
       const fetchFn = client([
