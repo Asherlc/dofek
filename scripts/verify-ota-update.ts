@@ -12,15 +12,17 @@ const signedManifest = z.object({
   assets: z.array(signedAsset),
 });
 
-interface AuditOptions {
+type AuditOptions = {
   appId: string;
   url: string;
   runtimeVersion: string;
   channel: string;
-  expectedId: string;
   certificate: string;
   fetchImplementation: typeof fetch;
-}
+} & (
+  | { expectedId: string; expectedContent?: never }
+  | { expectedId?: never; expectedContent: { launchAssetHash: string; assetHashes: string[] } }
+);
 
 /** Audit the exact signed manifest and asset bytes an installed client receives. */
 export async function verifyOtaUpdate(options: AuditOptions): Promise<string> {
@@ -54,7 +56,8 @@ export async function verifyOtaUpdate(options: AuditOptions): Promise<string> {
     throw new Error("OTA audit requires exactly one manifest part");
   const raw = part.bytes;
   const manifest = signedManifest.parse(JSON.parse(part.text));
-  if (manifest.id !== options.expectedId) throw new Error("OTA update identity changed");
+  if (options.expectedId !== undefined && manifest.id !== options.expectedId)
+    throw new Error("OTA update identity changed");
   if (manifest.runtimeVersion !== options.runtimeVersion) throw new Error("OTA runtime changed");
   const signatureHeader = part.headers["expo-signature"];
   if (!signatureHeader) throw new Error("OTA manifest signature is missing");
@@ -66,6 +69,14 @@ export async function verifyOtaUpdate(options: AuditOptions): Promise<string> {
     throw new Error("OTA manifest signature must use canonical base64 encoding");
   if (!verify("RSA-SHA256", Buffer.from(raw), options.certificate, signatureBytes)) {
     throw new Error("OTA manifest signature does not match the installed device certificate");
+  }
+  if (
+    options.expectedContent &&
+    (manifest.launchAsset.hash !== options.expectedContent.launchAssetHash ||
+      JSON.stringify(manifest.assets.map((asset) => asset.hash).sort()) !==
+        JSON.stringify([...options.expectedContent.assetHashes].sort()))
+  ) {
+    throw new Error("OTA content does not match the local export");
   }
   for (const asset of [manifest.launchAsset, ...manifest.assets]) {
     const response = await options.fetchImplementation(asset.url, {

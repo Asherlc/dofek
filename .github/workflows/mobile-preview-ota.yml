@@ -54,6 +54,7 @@ jobs:
         run: pnpm tsx scripts/ensure-mobile-preview-channel.ts "pr-$PR_NUMBER"
 
       - name: Publish OTA to PR branch
+        id: publish
         if: steps.mobile-changes.outputs.changed == 'true'
         working-directory: packages/mobile
         env:
@@ -63,6 +64,7 @@ jobs:
           PREVIEW_CHANNEL: pr-${{ github.event.number }}
         run: |
           RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
+          echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
           pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --channel "$PREVIEW_CHANNEL" --runtime-version "$RUNTIME_VERSION"
           pnpm exec eoas publish --branch "$PREVIEW_CHANNEL" --platform ios --nonInteractive --packageRunner "pnpm exec" --emitMetadata
 
@@ -70,7 +72,7 @@ jobs:
         if: steps.mobile-changes.outputs.changed == 'true'
         env:
           PREVIEW_CHANNEL: pr-${{ github.event.number }}
-        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json "$PREVIEW_CHANNEL"
+        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json "$PREVIEW_CHANNEL" "${{ steps.publish.outputs.runtime_version }}"
 
       - name: Generate comment body
         if: steps.mobile-changes.outputs.changed == 'true'

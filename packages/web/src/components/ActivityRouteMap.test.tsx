@@ -28,6 +28,62 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it("does not refocus an unchanged selection when marker data refreshes", async () => {
+    const points: { lat: number; lng: number }[] = [];
+    const climbMarkers = [exact];
+    const view = render(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    await waitFor(() => expect(maps[0]?.easeTo).toHaveBeenCalledOnce());
+    maps[0]?.easeTo.mockClear();
+    view.rerender(
+      <ActivityRouteMap
+        points={points}
+        climbMarkers={structuredClone(climbMarkers)}
+        selectedEntryId="tick-1"
+      />,
+    );
+    await waitFor(() => expect(maps).toHaveLength(2));
+    await screen.findByRole("button", { name: /Blue Arete/ });
+    for (const map of maps) expect(map.easeTo).not.toHaveBeenCalled();
+  });
+  it("centers and zooms on selection, including selections made before initialization", async () => {
+    const points: { lat: number; lng: number }[] = [];
+    const area = {
+      ...exact,
+      entryId: "area",
+      location: {
+        ...exact.location,
+        scope: "area" as const,
+        coordinates: { latitude: 38, longitude: -123 },
+      },
+    };
+    const climbMarkers = [exact, area];
+    const view = render(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    await waitFor(() =>
+      expect(maps[0]?.easeTo).toHaveBeenCalledWith({
+        center: [-122.4, 37.8],
+        zoom: 16,
+        duration: 600,
+      }),
+    );
+    view.rerender(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="area" />,
+    );
+    expect(maps[0]?.easeTo).toHaveBeenLastCalledWith({
+      center: [-123, 38],
+      zoom: 16,
+      duration: 600,
+    });
+    view.rerender(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="unlocated" />,
+    );
+    expect(maps[0]?.easeTo).toHaveBeenCalledTimes(2);
+    expect(maps).toHaveLength(1);
+    expect(maps[0]?.fitBounds).toHaveBeenCalledOnce();
+  });
   it("initializes the shared vector style and waits for map load", async () => {
     render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
@@ -192,10 +248,18 @@ describe("ActivityRouteMap", () => {
         disconnect() {}
       },
     );
-    render(<ActivityRouteMap points={[]} climbMarkers={[exact]} presentation="compact" />);
+    render(
+      <ActivityRouteMap
+        points={[]}
+        climbMarkers={[exact]}
+        presentation="compact"
+        selectedEntryId="tick-1"
+      />,
+    );
     expect(maps).toHaveLength(0);
     act(() => intersect(true));
     await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.easeTo).not.toHaveBeenCalled();
     act(() => intersect(false));
     expect(maps[0]?.remove).toHaveBeenCalled();
   });

@@ -5,6 +5,11 @@ repository fixtures; it does not change matching behavior or establish new
 cross-provider identities. Fixtures below are constructed examples from tests,
 not independently verified production matches or a measured accuracy benchmark.
 
+The [offline matching tools](../packages/ml/README.md#offline-cross-source-matching)
+provide executable training/inference for the four researched algorithm families,
+active-learning label rounds, held-out pair reports, and a directed GPS example.
+They do not change live application matching or establish production accuracy.
+
 ## Distinguish the question being answered
 
 | Question | Existing evidence and behavior |
@@ -26,7 +31,7 @@ intent, not proof that every existing rule is optimal.
 | C2 | Kaya and theCrag `Cragmont Crack`, outdoor route, same `Cragmont Park` area coordinates; one candidate and complete search. | `corroborated` | Multiple independent attributes and candidate uniqueness. |
 | C3 | C2 but search is incomplete, or two distinct candidate IDs survive. | `possible` | Observed uniqueness is insufficient when retrieval is incomplete; multiple candidates retain ambiguity. |
 | C4 | Same climb/area names but candidate coordinates are `(10, 10)` instead of `(37.8921, -122.2637)`. | `possible` | Geographic conflict blocks corroboration while preserving the candidate. |
-| C5 | Matching names with indoor setting, unknown setting, or unknown/mismatched kind. | `possible` | Reused names and incomplete classification weaken identity evidence. |
+| C5 | Matching names with indoor setting, both settings unknown, a known setting conflict, or unknown/mismatched kind. | `possible` | Reused names and incomplete classification weaken identity evidence. |
 | C6 | Case and repeated whitespace differ; separately, `Masse` and `Maße` differ. | Formatting variants corroborate with other evidence; distinct names are filtered out. | Conservative normalization rather than destructive transliteration. |
 | A1 | Mountain Project and OpenBeta paths normalize to `Donner Summit / Green Phantom Rock`. | One display group, all entries retained. | Hierarchy-aware presentation grouping. |
 | A2 | `North Canyon / Wall` versus `South Canyon / Wall`. | Separate groups. | Parent context disambiguates common leaf names. |
@@ -62,19 +67,22 @@ techniques and repository cases, not measured improvements.
 
 ## Gaps to measure before selecting an implementation
 
-The catalogue currently filters candidates to an exact provider/ID or an exact
-normalized name. This excludes genuine aliases and typos if the provider search
-returns them. Location corroboration compares each coordinate axis against
-0.001 degrees; it does not compute distance in meters or distinguish coordinate
-accuracy within the same scope. These are observed properties of the
-[implementation](../src/climbing-catalogue.ts), not demonstrated production bugs.
+The current [catalogue matcher](../src/climbing-catalogue-matching.ts) already
+supports exact provider identities, explicit cross-provider references,
+source-declared aliases, normalized names, and fuzzy discovery suggestions.
+Approximate names alone stay `possible`. Geography uses a 100 m great-circle
+comparison and nearest-area hierarchy alignment; ambiguity and conflicts remain
+explicit. The original research text incorrectly described aliases and physical
+distance comparison as absent. The
+[matching tests](../src/climbing-catalogue-matching.test.ts) are the executable
+reference for these existing rules.
 
 The fixtures do not provide independently labeled examples of aliases, different
 hierarchy depths, nearby distinct climbs with identical names, source copying,
 or versioned indoor resets. They also cannot establish real-world precision,
 recall, probability calibration, or an appropriate automatic-match threshold.
 The current confidence labels are rule categories, not calibrated probabilities;
-see the [catalogue decision logic](../src/climbing-catalogue.ts).
+see the [catalogue decision logic](../src/climbing-catalogue-matching.ts).
 
 ## Evaluation procedure
 
@@ -100,5 +108,7 @@ see the [catalogue decision logic](../src/climbing-catalogue.ts).
 
 Recommendation: preserve existing exact identities and explicit ambiguity while
 building the labeled evaluation set. Start any implementation proposal from the
-observed error category. This fixture review does not justify a universal matcher,
-a new persistent identity graph, or a learned-model dependency.
+observed error category. The user requested implementing all four approaches as
+offline tools; their [approved design](superpowers/specs/2026-10-30-cross-source-matching-tools-design.md)
+keeps them out of live matching. This fixture review does not justify a universal
+production matcher, a persistent identity graph, or automatic model promotion.

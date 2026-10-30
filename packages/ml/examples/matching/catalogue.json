@@ -1,0 +1,748 @@
+{
+  "domain": "climbing",
+  "relationship": "catalogue_identity",
+  "records": [
+    {
+      "id": "alpha:train-0",
+      "provider": "alpha",
+      "name": "Swiss Cheese",
+      "context": "Area train 0",
+      "kind": "route",
+      "entity_group": "train-0",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-0",
+      "provider": "beta",
+      "name": "Swiss Cheese",
+      "context": "Area train 0",
+      "kind": "route",
+      "entity_group": "train-0",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-1",
+      "provider": "alpha",
+      "name": "Goat Corner",
+      "context": "Area train 1",
+      "kind": "route",
+      "entity_group": "train-1",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-1",
+      "provider": "beta",
+      "name": "Goat Corner alias",
+      "context": "Area train 1 lower wall",
+      "kind": "boulder",
+      "entity_group": "train-1",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-2",
+      "provider": "alpha",
+      "name": "North Crack",
+      "context": "Area train 2",
+      "kind": "route",
+      "entity_group": "train-2",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-2",
+      "provider": "beta",
+      "name": "North Crack",
+      "context": "Area train 2",
+      "kind": "route",
+      "entity_group": "train-2",
+      "split": "train"
+    },
+    {
+      "id": "alpha:validation-0",
+      "provider": "alpha",
+      "name": "Birch Slab",
+      "context": "Area validation 0",
+      "kind": "route",
+      "entity_group": "validation-0",
+      "split": "validation"
+    },
+    {
+      "id": "beta:validation-0",
+      "provider": "beta",
+      "name": "Birch Slab",
+      "context": "Area validation 0",
+      "kind": "route",
+      "entity_group": "validation-0",
+      "split": "validation"
+    },
+    {
+      "id": "alpha:validation-1",
+      "provider": "alpha",
+      "name": "Oak Corner",
+      "context": "Area validation 1",
+      "kind": "route",
+      "entity_group": "validation-1",
+      "split": "validation"
+    },
+    {
+      "id": "beta:validation-1",
+      "provider": "beta",
+      "name": "Oak Corner",
+      "context": "Area validation 1",
+      "kind": "route",
+      "entity_group": "validation-1",
+      "split": "validation"
+    },
+    {
+      "id": "alpha:validation-2",
+      "provider": "alpha",
+      "name": "Elm Crack",
+      "context": "Area validation 2",
+      "kind": "route",
+      "entity_group": "validation-2",
+      "split": "validation"
+    },
+    {
+      "id": "beta:validation-2",
+      "provider": "beta",
+      "name": "Elm Crack",
+      "context": "Area validation 2",
+      "kind": "route",
+      "entity_group": "validation-2",
+      "split": "validation"
+    },
+    {
+      "id": "alpha:test-0",
+      "provider": "alpha",
+      "name": "Granite Roof",
+      "context": "Area test 0",
+      "kind": "route",
+      "entity_group": "test-0",
+      "split": "test"
+    },
+    {
+      "id": "beta:test-0",
+      "provider": "beta",
+      "name": "Granite Roof",
+      "context": "Area test 0",
+      "kind": "route",
+      "entity_group": "test-0",
+      "split": "test"
+    },
+    {
+      "id": "alpha:test-1",
+      "provider": "alpha",
+      "name": "Sandstone Edge",
+      "context": "Area test 1",
+      "kind": "route",
+      "entity_group": "test-1",
+      "split": "test"
+    },
+    {
+      "id": "beta:test-1",
+      "provider": "beta",
+      "name": "Sandstone Edge",
+      "context": "Area test 1",
+      "kind": "route",
+      "entity_group": "test-1",
+      "split": "test"
+    },
+    {
+      "id": "alpha:test-2",
+      "provider": "alpha",
+      "name": "Basalt Slab",
+      "context": "Area test 2",
+      "kind": "route",
+      "entity_group": "test-2",
+      "split": "test"
+    },
+    {
+      "id": "beta:test-2",
+      "provider": "beta",
+      "name": "Basalt Slab",
+      "context": "Area test 2",
+      "kind": "route",
+      "entity_group": "test-2",
+      "split": "test"
+    },
+    {
+      "id": "alpha:train-3",
+      "provider": "alpha",
+      "name": "Granite 3 Arete",
+      "context": "Wall 3",
+      "kind": "boulder",
+      "entity_group": "train-3",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-3",
+      "provider": "beta",
+      "name": "Granit 3 Arete",
+      "context": "Wall 3",
+      "kind": "boulder",
+      "entity_group": "train-3",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-4",
+      "provider": "alpha",
+      "name": "Granite 4 Arete",
+      "context": "Wall 4",
+      "kind": "route",
+      "entity_group": "train-4",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-4",
+      "provider": "beta",
+      "name": "Granite 4 Arete",
+      "context": "Wall 4",
+      "kind": "route",
+      "entity_group": "train-4",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-5",
+      "provider": "alpha",
+      "name": "Granite 5 Arete",
+      "context": "Wall 5",
+      "kind": "boulder",
+      "entity_group": "train-5",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-5",
+      "provider": "beta",
+      "name": "Granite 5 Arete",
+      "context": "Wall 5",
+      "kind": "boulder",
+      "entity_group": "train-5",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-6",
+      "provider": "alpha",
+      "name": "Granite 6 Arete",
+      "context": "Wall 6",
+      "kind": "route",
+      "entity_group": "train-6",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-6",
+      "provider": "beta",
+      "name": "Granite 6 Arete",
+      "context": "Wall 6",
+      "kind": "route",
+      "entity_group": "train-6",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-7",
+      "provider": "alpha",
+      "name": "Granite 7 Arete",
+      "context": "Wall 7",
+      "kind": "boulder",
+      "entity_group": "train-7",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-7",
+      "provider": "beta",
+      "name": "Granit 7 Arete",
+      "context": "Wall 7",
+      "kind": "boulder",
+      "entity_group": "train-7",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-8",
+      "provider": "alpha",
+      "name": "Granite 8 Arete",
+      "context": "Wall 8",
+      "kind": "route",
+      "entity_group": "train-8",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-8",
+      "provider": "beta",
+      "name": "Granite 8 Arete",
+      "context": "Wall 8",
+      "kind": "route",
+      "entity_group": "train-8",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-9",
+      "provider": "alpha",
+      "name": "Granite 9 Arete",
+      "context": "Wall 9",
+      "kind": "boulder",
+      "entity_group": "train-9",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-9",
+      "provider": "beta",
+      "name": "Granite 9 Arete",
+      "context": "Wall 9",
+      "kind": "boulder",
+      "entity_group": "train-9",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-10",
+      "provider": "alpha",
+      "name": "Granite 10 Arete",
+      "context": "Wall 10",
+      "kind": "route",
+      "entity_group": "train-10",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-10",
+      "provider": "beta",
+      "name": "Granite 10 Arete",
+      "context": "Wall 10",
+      "kind": "route",
+      "entity_group": "train-10",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-11",
+      "provider": "alpha",
+      "name": "Granite 11 Arete",
+      "context": "Wall 11",
+      "kind": "boulder",
+      "entity_group": "train-11",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-11",
+      "provider": "beta",
+      "name": "Granit 11 Arete",
+      "context": "Wall 11",
+      "kind": "boulder",
+      "entity_group": "train-11",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-12",
+      "provider": "alpha",
+      "name": "Granite 12 Arete",
+      "context": "Wall 12",
+      "kind": "route",
+      "entity_group": "train-12",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-12",
+      "provider": "beta",
+      "name": "Granite 12 Arete",
+      "context": "Wall 12",
+      "kind": "route",
+      "entity_group": "train-12",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-13",
+      "provider": "alpha",
+      "name": "Granite 13 Arete",
+      "context": "Wall 13",
+      "kind": "boulder",
+      "entity_group": "train-13",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-13",
+      "provider": "beta",
+      "name": "Granite 13 Arete",
+      "context": "Wall 13",
+      "kind": "boulder",
+      "entity_group": "train-13",
+      "split": "train"
+    },
+    {
+      "id": "alpha:train-14",
+      "provider": "alpha",
+      "name": "Granite 14 Arete",
+      "context": "Wall 14",
+      "kind": "route",
+      "entity_group": "train-14",
+      "split": "train"
+    },
+    {
+      "id": "beta:train-14",
+      "provider": "beta",
+      "name": "Granite 14 Arete",
+      "context": "Wall 14",
+      "kind": "route",
+      "entity_group": "train-14",
+      "split": "train"
+    }
+  ],
+  "pairs": [
+    {
+      "left": "alpha:train-0",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-1",
+      "right": "beta:train-1"
+    },
+    {
+      "left": "alpha:train-2",
+      "right": "beta:train-2"
+    },
+    {
+      "left": "alpha:train-0",
+      "right": "beta:train-1"
+    },
+    {
+      "left": "alpha:validation-0",
+      "right": "beta:validation-0"
+    },
+    {
+      "left": "alpha:validation-1",
+      "right": "beta:validation-1"
+    },
+    {
+      "left": "alpha:validation-2",
+      "right": "beta:validation-2"
+    },
+    {
+      "left": "alpha:validation-0",
+      "right": "beta:validation-1"
+    },
+    {
+      "left": "alpha:test-0",
+      "right": "beta:test-0"
+    },
+    {
+      "left": "alpha:test-1",
+      "right": "beta:test-1"
+    },
+    {
+      "left": "alpha:test-2",
+      "right": "beta:test-2"
+    },
+    {
+      "left": "alpha:test-0",
+      "right": "beta:test-1"
+    },
+    {
+      "left": "alpha:train-3",
+      "right": "beta:train-3"
+    },
+    {
+      "left": "alpha:train-3",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-4",
+      "right": "beta:train-4"
+    },
+    {
+      "left": "alpha:train-4",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-5",
+      "right": "beta:train-5"
+    },
+    {
+      "left": "alpha:train-5",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-6",
+      "right": "beta:train-6"
+    },
+    {
+      "left": "alpha:train-6",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-7",
+      "right": "beta:train-7"
+    },
+    {
+      "left": "alpha:train-7",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-8",
+      "right": "beta:train-8"
+    },
+    {
+      "left": "alpha:train-8",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-9",
+      "right": "beta:train-9"
+    },
+    {
+      "left": "alpha:train-9",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-10",
+      "right": "beta:train-10"
+    },
+    {
+      "left": "alpha:train-10",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-11",
+      "right": "beta:train-11"
+    },
+    {
+      "left": "alpha:train-11",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-12",
+      "right": "beta:train-12"
+    },
+    {
+      "left": "alpha:train-12",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-13",
+      "right": "beta:train-13"
+    },
+    {
+      "left": "alpha:train-13",
+      "right": "beta:train-0"
+    },
+    {
+      "left": "alpha:train-14",
+      "right": "beta:train-14"
+    },
+    {
+      "left": "alpha:train-14",
+      "right": "beta:train-0"
+    }
+  ],
+  "labels": [
+    {
+      "left": "alpha:train-0",
+      "right": "beta:train-0",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-1",
+      "right": "beta:train-1",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-2",
+      "right": "beta:train-2",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-0",
+      "right": "beta:train-1",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:validation-0",
+      "right": "beta:validation-0",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:validation-1",
+      "right": "beta:validation-1",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:validation-2",
+      "right": "beta:validation-2",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:validation-0",
+      "right": "beta:validation-1",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:test-0",
+      "right": "beta:test-0",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:test-1",
+      "right": "beta:test-1",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:test-2",
+      "right": "beta:test-2",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:test-0",
+      "right": "beta:test-1",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-3",
+      "right": "beta:train-3",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-3",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-4",
+      "right": "beta:train-4",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-4",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-5",
+      "right": "beta:train-5",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-5",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-6",
+      "right": "beta:train-6",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-6",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-7",
+      "right": "beta:train-7",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-7",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-8",
+      "right": "beta:train-8",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-8",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-9",
+      "right": "beta:train-9",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-9",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-10",
+      "right": "beta:train-10",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-10",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-11",
+      "right": "beta:train-11",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-11",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-12",
+      "right": "beta:train-12",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-12",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-13",
+      "right": "beta:train-13",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-13",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-14",
+      "right": "beta:train-14",
+      "label": "same",
+      "provenance": "synthetic fixture"
+    },
+    {
+      "left": "alpha:train-14",
+      "right": "beta:train-0",
+      "label": "different",
+      "provenance": "synthetic fixture"
+    }
+  ]
+}

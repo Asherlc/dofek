@@ -86,6 +86,12 @@ const sourceDots = [
 export const PointsOnly: Story = {
   args: { points: [], climbMarkers: sourceDots, onSelectEntry: fn() },
 };
+export const SelectedClimb: Story = {
+  args: { points: [], climbMarkers: sourceDots, selectedEntryId: "tick-1", onSelectEntry: fn() },
+};
+export const SelectedArea: Story = {
+  args: { points: [], climbMarkers: sourceDots, selectedEntryId: "tick-2", onSelectEntry: fn() },
+};
 export const RoutePlusDots: Story = {
   args: {
     points: [

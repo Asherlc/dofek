@@ -34,6 +34,7 @@ export function ActivityRouteMap({
   const [previewVisible, setPreviewVisible] = useState(presentation === "detail");
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [markerElements, setMarkerElements] = useState<HTMLElement[]>([]);
+  const lastFocusedMarker = useRef<ClimbingMapMarker | null>(null);
   const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
   const selectRef = useRef(onSelectEntry);
   selectRef.current = onSelectEntry;
@@ -225,6 +226,28 @@ export function ActivityRouteMap({
         selected || highlighted ? "0 0 0 4px #ffffff, 0 0 0 7px #15803d" : "0 1px 4px #0004";
     }
   }, [markerElements, activeEntryId, highlightedEntryId, presentation]);
+
+  const selectedMarker = climbMarkers.find((marker) => marker.entryId === activeEntryId);
+  useEffect(() => {
+    if (presentation !== "detail" || markerElements.length === 0 || !mapInstanceRef.current) return;
+    const previous = lastFocusedMarker.current;
+    lastFocusedMarker.current = selectedMarker ?? null;
+    if (
+      !selectedMarker ||
+      (previous?.entryId === selectedMarker.entryId &&
+        previous.location.coordinates.longitude === selectedMarker.location.coordinates.longitude &&
+        previous.location.coordinates.latitude === selectedMarker.location.coordinates.latitude)
+    )
+      return;
+    mapInstanceRef.current?.easeTo({
+      center: [
+        selectedMarker.location.coordinates.longitude,
+        selectedMarker.location.coordinates.latitude,
+      ],
+      zoom: 16,
+      duration: 600,
+    });
+  }, [selectedMarker, markerElements, presentation]);
 
   const empty = points.length === 0 && climbMarkers.length === 0;
   return (
