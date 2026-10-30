@@ -30,6 +30,10 @@ jobs:
   terraform:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
     outputs:
@@ -39,6 +43,10 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - name: Load OTA lifecycle identity through OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_APP_ID
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -56,6 +64,8 @@ jobs:
         run: |
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub variable ORACLE_SERVER_HOST" >&2; exit 1; }
+          test -n "$EXPO_APP_ID" || { echo "ERROR: EXPO_APP_ID is required" >&2; exit 1; }
+          export TF_VAR_expo_app_id="$EXPO_APP_ID"
           # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
