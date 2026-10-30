@@ -73,7 +73,7 @@ jobs:
           RELEASE_CHANNEL: production
           SENTRY_RELEASE: ${{ inputs.commit_sha }}
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
-        run: pnpm dlx eoas@3.2.7 publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
+        run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
       - name: Verify published device update
         run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production
       - name: Upload OTA sourcemaps to Sentry

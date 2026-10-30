@@ -64,7 +64,7 @@ jobs:
         run: |
           RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
           pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --channel "$PREVIEW_CHANNEL" --runtime-version "$RUNTIME_VERSION"
-          pnpm dlx eoas@3.2.7 publish --branch "$PREVIEW_CHANNEL" --platform ios --nonInteractive --packageRunner "pnpm exec" --emitMetadata
+          pnpm exec eoas publish --branch "$PREVIEW_CHANNEL" --platform ios --nonInteractive --packageRunner "pnpm exec" --emitMetadata
 
       - name: Verify published device preview
         if: steps.mobile-changes.outputs.changed == 'true'
