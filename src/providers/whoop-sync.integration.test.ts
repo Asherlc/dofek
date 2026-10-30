@@ -8,13 +8,13 @@ import type {
 import { parseDuringRange } from "@dofek/whoop/utils";
 import { and, desc, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { syncLog } from "../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -279,7 +279,7 @@ function whoopHandlers(
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 const TEST_SYNC_UNTIL = new Date("2026-03-15T23:59:59.999Z");
 
@@ -292,7 +292,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "whoop", "WHOOP");
     // Store a fake refresh token so the provider can authenticate
     await saveTokens(ctx.db, "whoop", {
@@ -312,7 +312,7 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -1266,10 +1266,10 @@ describe("WhoopProvider.sync() (integration)", () => {
 });
 
 describe("WhoopClient — verifyCode", () => {
-  const clientServer = setupServer();
+  const clientServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    clientServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    clientServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1277,7 +1277,7 @@ describe("WhoopClient — verifyCode", () => {
   });
 
   afterAll(() => {
-    clientServer.close();
+    clientServer.deactivate();
   });
 
   it("verifies code via SMS_MFA challenge", async () => {
@@ -1373,10 +1373,10 @@ describe("WhoopClient — verifyCode", () => {
 });
 
 describe("WhoopClient — cognitoCall error paths", () => {
-  const cognitoServer = setupServer();
+  const cognitoServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    cognitoServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    cognitoServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1384,7 +1384,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
   });
 
   afterAll(() => {
-    cognitoServer.close();
+    cognitoServer.deactivate();
   });
 
   it("throws on non-JSON Cognito response", async () => {
@@ -1437,10 +1437,10 @@ describe("WhoopClient — cognitoCall error paths", () => {
 });
 
 describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
-  const mfaServer = setupServer();
+  const mfaServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    mfaServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    mfaServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1448,7 +1448,7 @@ describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
   });
 
   afterAll(() => {
-    mfaServer.close();
+    mfaServer.deactivate();
   });
 
   it("returns totp method for SOFTWARE_TOKEN_MFA challenge", async () => {
@@ -1471,10 +1471,10 @@ describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
 });
 
 describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
-  const bootstrapServer = setupServer();
+  const bootstrapServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    bootstrapServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    bootstrapServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1482,7 +1482,7 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
   });
 
   afterAll(() => {
-    bootstrapServer.close();
+    bootstrapServer.deactivate();
   });
 
   it("returns null when bootstrap returns non-200", async () => {
@@ -1498,10 +1498,10 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
 });
 
 describe("WhoopClient — getCycles response shapes", () => {
-  const cyclesServer = setupServer();
+  const cyclesServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    cyclesServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    cyclesServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1509,7 +1509,7 @@ describe("WhoopClient — getCycles response shapes", () => {
   });
 
   afterAll(() => {
-    cyclesServer.close();
+    cyclesServer.deactivate();
   });
 
   it("handles wrapped object with 'records' key", async () => {
@@ -1599,10 +1599,10 @@ describe("WhoopClient — getCycles response shapes", () => {
 });
 
 describe("WhoopClient — API error handling", () => {
-  const apiServer = setupServer();
+  const apiServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    apiServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    apiServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1610,7 +1610,7 @@ describe("WhoopClient — API error handling", () => {
   });
 
   afterAll(() => {
-    apiServer.close();
+    apiServer.deactivate();
   });
 
   it("throws on non-200 API response", async () => {

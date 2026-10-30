@@ -29,7 +29,11 @@
     }
 ) }}
 
-WITH batch_samples AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+batch_samples AS (
     SELECT *
     FROM {{ ref('deduped_sensor') }}
     ORDER BY refresh_version DESC

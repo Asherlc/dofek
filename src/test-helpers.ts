@@ -8,12 +8,12 @@
  */
 import { S3Client } from "@aws-sdk/client-s3";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { vi } from "vitest";
 import * as winston from "winston";
 import Transport from "winston-transport";
 import { logger } from "./logger.ts";
 import { R2ProviderArtifactStorage } from "./provider-artifact-storage.ts";
+import { createIntegrationMswFixture } from "./test/early-msw-lifecycle.ts";
 
 export function createProviderArtifactStorageTestContext(endpoint: string, bucket = "imports") {
   const originals = new Map<string, Buffer>();
@@ -26,7 +26,7 @@ export function createProviderArtifactStorageTestContext(endpoint: string, bucke
     requestChecksumCalculation: "WHEN_REQUIRED",
     credentials: { accessKeyId: "test-key", secretAccessKey: "test-secret" },
   });
-  const server = setupServer(
+  const server = createIntegrationMswFixture(
     http.head(`${endpoint}/${bucket}/*`, ({ request }) => {
       const bytes = originals.get(new URL(request.url).pathname.slice(bucket.length + 2));
       return new HttpResponse(null, {

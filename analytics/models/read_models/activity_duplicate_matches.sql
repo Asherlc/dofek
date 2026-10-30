@@ -10,7 +10,11 @@
 
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH source_records AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+source_records AS (
     SELECT
         activity_id,
         provider_id,

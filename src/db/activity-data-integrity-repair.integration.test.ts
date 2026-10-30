@@ -1,36 +1,39 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import {
+  failSecondCadenceBatch,
+  mirrorRunningLocalTime,
+  runningRevisionFixture,
+} from "./activity-data-integrity-cadence-test-helpers.ts";
 import { queryClickHouseRows } from "./activity-data-integrity-clickhouse.ts";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
+import {
+  activityIntegrityFixtureIds,
+  bootstrapActivityIntegrityIdentityModels,
+  configureDbtEnvironment,
+  dbtEnvironmentKeys,
+  scopeClickHouseClient,
+  seedProductionDbtFixture,
+} from "./activity-data-integrity-dbt-test-helpers.ts";
 import {
   type ActivityIntegrityClickHouseClient,
   repairActivityDataIntegrity,
   rollbackActivityDataIntegrity,
 } from "./activity-data-integrity-repair.ts";
-import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
-const wahooActivityId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
-const pelotonActivityId = "761483e6-0000-4000-8000-000000000001";
-const namedZoneActivityId = "894ce621-0000-4000-8000-000000000001";
-const unrelatedActivityId = "9f99f9a7-0000-4000-8000-000000000001";
+const { wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId } =
+  activityIntegrityFixtureIds;
 const CDC_FIXTURE_TIMEOUT_MS = 120_000;
-const dbtEnvironmentKeys = [
-  "DBT_TARGET",
-  "DBT_CLICKHOUSE_SCHEMA",
-  "DBT_ANALYTICS_SOURCE_SCHEMA",
-  "DBT_INGEST_SOURCE_SCHEMA",
-  "DBT_POSTGRES_FITNESS_SOURCE_SCHEMA",
-] as const;
 const priorDbtEnvironment = new Map(
   dbtEnvironmentKeys.map((key) => [key, process.env[key]] as const),
 );
@@ -59,6 +62,7 @@ describe("activity data integrity repair", () => {
     context = await setupTestDatabase();
     await ensureProvider(context.db, "wahoo", "Wahoo");
     await ensureProvider(context.db, "peloton", "Peloton");
+    await ensureProvider(context.db, "apple_health", "Apple Health");
     const clickHouseUrl = process.env.CLICKHOUSE_URL?.trim();
     if (!clickHouseUrl)
       throw new Error("CLICKHOUSE_URL is required for activity repair integration tests");
@@ -68,7 +72,21 @@ describe("activity data integrity repair", () => {
     artifactDirectory = await mkdtemp(join(tmpdir(), "activity-integrity-integration-"));
   }, 300_000);
 
-  beforeEach(async () => {
+  beforeEach(async ({ onTestFailed }) => {
+    onTestFailed(({ task }) => {
+      process.stderr.write(
+        `${JSON.stringify({
+          test: task.name,
+          errors: task.result?.errors?.map((error) => error.message.slice(0, 1200)),
+        })}\n`,
+      );
+    });
+    await context.db.execute(
+      sql`DELETE FROM fitness.activity_integrity_repair_journal WHERE user_id=${TEST_USER_ID}::uuid`,
+    );
+    await context.db.execute(
+      sql`DELETE FROM fitness.activity WHERE user_id=${TEST_USER_ID}::uuid AND provider_id='apple_health'`,
+    );
     await seedPostgres(context);
     await rm(artifactDirectory, { recursive: true, force: true });
     await mkdir(artifactDirectory, { mode: 0o700 });
@@ -99,15 +117,164 @@ describe("activity data integrity repair", () => {
     expect(new Date(rows[0]?.started_at ?? "").toISOString()).toBe("2026-09-01T23:30:00.123Z");
   });
 
+  it.each(["repair", "rollback"] as const)(
+    "keeps %s journal state on a second cadence batch failure and completes all101 on rollback",
+    async (failureStage) => {
+      await seedProductionDbtFixture(client, database);
+      configureDbtEnvironment(database);
+      await bootstrapActivityIntegrityIdentityModels();
+      const fixture = runningRevisionFixture(TEST_USER_ID);
+      const ids = fixture.records.map((record) => record.member);
+      await context.db.execute(sql`INSERT INTO fitness.activity
+      (id,group_id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,ended_at,raw,local_time_source)
+      SELECT id::uuid,group_id::uuid,user_id::uuid,provider_id,external_id,canonical_type,provider_type,
+        started_at::timestamptz,ended_at::timestamptz,raw::jsonb,local_time_source
+      FROM jsonb_to_recordset(${JSON.stringify(fixture.initialActivityRows.filter((row) => row.user_id === TEST_USER_ID))}::jsonb)
+      AS r(id text,group_id text,user_id text,provider_id text,external_id text,canonical_type fitness.canonical_activity_type,provider_type text,
+        started_at text,ended_at text,raw text,local_time_source text)`);
+      await client.insert({
+        table: `${database}.activity`,
+        format: "JSONEachRow",
+        values: fixture.initialActivityRows,
+      });
+      await client.insert({
+        table: `${database}.metric_stream`,
+        format: "JSONEachRow",
+        values: fixture.initialStepRows,
+      });
+      await runActivityIntegrityDbtBuild(
+        {
+          userId: TEST_USER_ID,
+          activityIds: ids,
+          eventTimeStart: new Date("2026-09-01"),
+          eventTimeEnd: new Date("2026-09-03"),
+        },
+        scopedClient,
+      );
+      const snapshot = async (table: string) => {
+        const result = await client.query({
+          query: `SELECT activity_id,avg_cadence,toString(refresh_version) AS refresh_version FROM ${database}.${table} FINAL WHERE user_id={user:UUID} AND activity_id IN {ids:Array(UUID)} ORDER BY activity_id`,
+          query_params: { user: TEST_USER_ID, ids: fixture.records.map((record) => record.group) },
+          format: "JSONEachRow",
+        });
+        return result.json<{
+          activity_id: string;
+          avg_cadence: number | null;
+          refresh_version: string;
+        }>();
+      };
+      const correctSteps = async (value: number, version: number) =>
+        client.insert({
+          table: `${database}.metric_stream`,
+          format: "JSONEachRow",
+          values: fixture.initialStepRows.map((row) => ({
+            ...row,
+            scalar: value,
+            version,
+            ingested_at: `2026-09-02 17:00:0${version}`,
+          })),
+        });
+      await correctSteps(180, 2);
+      const runId = randomUUID();
+      const dependencies = {
+        artifactDirectory,
+        now: () => new Date("2026-09-02T18:01:00Z"),
+        generateRunId: () => runId,
+        sleep: () => mirrorRunningLocalTime(context, client, database, ids),
+      };
+      const options = {
+        userId: TEST_USER_ID,
+        startAt: new Date("2026-09-01T07:00:00Z"),
+        endAt: new Date("2026-09-01T09:00:00Z"),
+        execute: true,
+        batchSize: 1000,
+        maxBatches: 1,
+        artifactDirectory,
+        acceptanceOwner: "data-on-call@example.com",
+        acceptanceDeadline: new Date("2026-09-03T18:00:00Z"),
+      };
+      let summaryBefore = await snapshot("activity_summary_rows");
+      let cadenceBefore = await snapshot("activity_step_cadence_rows");
+      expect(cadenceBefore).toHaveLength(101);
+      if (failureStage === "repair") {
+        await expect(
+          repairActivityDataIntegrity(
+            context.db,
+            failSecondCadenceBatch(client, scopedClient, database),
+            options,
+            dependencies,
+          ),
+        ).rejects.toThrow("failed with exit code");
+        await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe("rebuild_failed");
+      } else {
+        await repairActivityDataIntegrity(context.db, scopedClient, options, dependencies);
+        await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe("executed");
+        expect((await snapshot("activity_summary_rows")).map((row) => row.avg_cadence)).toEqual(
+          Array(101).fill(180),
+        );
+        summaryBefore = await snapshot("activity_summary_rows");
+        cadenceBefore = await snapshot("activity_step_cadence_rows");
+        await correctSteps(200, 3);
+      }
+      const [artifactName] = await readdir(artifactDirectory);
+      if (!artifactName) throw new Error("Missing repair artifact");
+      const artifactPath = join(artifactDirectory, artifactName);
+      if (failureStage === "rollback") {
+        await expect(
+          rollbackActivityDataIntegrity(
+            context.db,
+            failSecondCadenceBatch(client, scopedClient, database),
+            artifactPath,
+            dependencies,
+          ),
+        ).rejects.toThrow("failed with exit code");
+        await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe(
+          "rollback_committed",
+        );
+      }
+      const partial = await snapshot("activity_step_cadence_rows");
+      const beforeVersions = new Map(
+        cadenceBefore.map((row) => [row.activity_id, BigInt(row.refresh_version)]),
+      );
+      expect(
+        partial.filter(
+          (row) => BigInt(row.refresh_version) > (beforeVersions.get(row.activity_id) ?? 0n),
+        ),
+      ).toHaveLength(100);
+      expect(await snapshot("activity_summary_rows")).toEqual(summaryBefore);
+      expect(JSON.parse(await readFile(artifactPath, "utf8"))).toMatchObject({
+        phase: failureStage === "repair" ? "rebuild_failed" : "rollback_committed",
+      });
+      await client.command({
+        query: `CREATE TABLE ${database}.metric_stream_day_change (
+      user_id UUID,provider_id String,recorded_date Date,changed_at SimpleAggregateFunction(max,DateTime64(9,'UTC'))
+    ) ENGINE=AggregatingMergeTree ORDER BY (user_id,provider_id,recorded_date)`,
+      });
+      await rollbackActivityDataIntegrity(context.db, scopedClient, artifactPath, dependencies);
+      await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe("rolled_back");
+      expect((await snapshot("activity_step_cadence_rows")).map((row) => row.avg_cadence)).toEqual(
+        Array(101).fill(failureStage === "repair" ? 180 : 200),
+      );
+      expect((await snapshot("activity_summary_rows")).map((row) => row.avg_cadence)).toEqual(
+        Array(101).fill(failureStage === "repair" ? 180 : 200),
+      );
+    },
+    300_000,
+  );
+
   it("uses the production dbt path to split a legacy Wahoo/Peloton component, preserve its valid B-C edge, and roll back only local time", async () => {
     await seedProductionDbtFixture(client, database);
     configureDbtEnvironment(database);
-    await runActivityIntegrityDbtBuild({
-      userId: TEST_USER_ID,
-      activityIds: [wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId],
-      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
-      eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
-    });
+    await bootstrapActivityIntegrityIdentityModels();
+    await runActivityIntegrityDbtBuild(
+      {
+        userId: TEST_USER_ID,
+        activityIds: [wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId],
+        eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+        eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
+      },
+      scopedClient,
+    );
     await seedLegacyFalseComponent(client, database);
     const unrelatedBefore = await taskThreeRowsForActivity(client, database, unrelatedActivityId);
     const [repaired] = await Promise.all([
@@ -226,191 +393,6 @@ async function seedPostgres(context: TestContext): Promise<void> {
         'America/New_York', -420, -420, 'provider_timezone'
       )
   `);
-}
-
-function configureDbtEnvironment(database: string): void {
-  process.env.DBT_TARGET = "dev";
-  process.env.DBT_CLICKHOUSE_SCHEMA = database;
-  process.env.DBT_ANALYTICS_SOURCE_SCHEMA = database;
-  process.env.DBT_INGEST_SOURCE_SCHEMA = database;
-  process.env.DBT_POSTGRES_FITNESS_SOURCE_SCHEMA = database;
-}
-
-async function seedProductionDbtFixture(
-  client: NativeClickHouseClient,
-  database: string,
-): Promise<void> {
-  const statements = [
-    `DROP DATABASE IF EXISTS ${database} SYNC`,
-    `CREATE DATABASE ${database}`,
-    buildPostgresFitnessProviderFieldPriorityRawTableStatement().replaceAll(
-      "postgres_fitness.",
-      `${database}.`,
-    ),
-    `CREATE TABLE ${database}.activity (
-      id UUID,
-      provider_id String,
-      user_id UUID,
-      external_id String,
-      canonical_type String,
-      provider_type String,
-      modality Nullable(String),
-      started_at DateTime64(6, 'UTC'),
-      ended_at Nullable(DateTime64(6, 'UTC')),
-      source_name Nullable(String),
-      name Nullable(String),
-      notes Nullable(String),
-      timezone Nullable(String),
-      start_utc_offset_minutes Nullable(Int16),
-      end_utc_offset_minutes Nullable(Int16),
-      local_time_source String,
-      rejected_provider_timezone Nullable(String),
-      rejected_provider_start_utc_offset_minutes Nullable(Int64),
-      rejected_provider_end_utc_offset_minutes Nullable(Int64),
-      raw String,
-      provider_absent_at Nullable(DateTime64(6, 'UTC')),
-      deleted_at Nullable(DateTime64(6, 'UTC')),
-      _peerdb_is_deleted UInt8,
-      _peerdb_synced_at DateTime64(9, 'UTC'),
-      _peerdb_version UInt64,
-      group_id UUID,
-      created_at DateTime64(6, 'UTC')
-    ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`,
-    `CREATE TABLE ${database}.provider_priority (
-      provider_id String,
-      priority Int16,
-      _peerdb_is_deleted UInt8
-    ) ENGINE = ReplacingMergeTree() ORDER BY provider_id`,
-    `CREATE TABLE ${database}.device_priority (
-      provider_id String,
-      source_name_pattern String,
-      priority Int16,
-      _peerdb_is_deleted UInt8
-    ) ENGINE = ReplacingMergeTree() ORDER BY (provider_id, source_name_pattern)`,
-    `CREATE TABLE ${database}.deduped_sensor (
-      user_id UUID,
-      recorded_at DateTime64(6, 'UTC'),
-      recorded_date Date,
-      channel String,
-      scalar Nullable(Float64),
-      provider_id Nullable(String),
-      member_activity_id Nullable(UUID),
-      device_id Nullable(String),
-      source_external_id Nullable(String),
-      source_type Nullable(String),
-      source_metric_stream_id Nullable(UUID),
-      measurement_kind LowCardinality(String),
-      source_activity_id Nullable(UUID),
-      refresh_version UInt64,
-      is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, channel, recorded_date, recorded_at)`,
-    `CREATE TABLE ${database}.metric_stream (
-      id UUID,
-      activity_id Nullable(UUID),
-      user_id UUID,
-      recorded_at DateTime64(9, 'UTC'),
-      provider_id String,
-      channel String,
-      point Point,
-      external_id Nullable(String),
-      device_id Nullable(String),
-      source_type Nullable(String),
-      metadata String,
-      ingested_at DateTime64(9, 'UTC'),
-      version UInt64,
-      is_deleted UInt8
-    ) ENGINE = ReplacingMergeTree()
-      ORDER BY (user_id, activity_id)
-      SETTINGS allow_nullable_key = 1`,
-    `CREATE TABLE ${database}.activity_location_summary_rows (
-      activity_id UUID,
-      user_id UUID,
-      total_distance Nullable(Float64),
-      centroid_lat Nullable(Float64),
-      centroid_lng Nullable(Float64),
-      refresh_version UInt64,
-      is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
-    `CREATE TABLE ${database}.body_measurement_sample (
-      user_id UUID,
-      channel String,
-      _peerdb_synced_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree() ORDER BY user_id`,
-    `CREATE TABLE ${database}.body_measurement (
-      user_id UUID,
-      recorded_at DateTime64(6, 'UTC'),
-      weight_kg Nullable(Float64),
-      is_deleted UInt8
-    ) ENGINE = ReplacingMergeTree() ORDER BY (user_id, recorded_at)`,
-    `CREATE TABLE ${database}.user_profile (
-      id UUID,
-      _peerdb_synced_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree() ORDER BY id`,
-    `CREATE TABLE ${database}.user_profile_current (
-      id UUID,
-      max_hr Nullable(Int32)
-    ) ENGINE = MergeTree ORDER BY id`,
-    `CREATE TABLE ${database}.resting_heart_rate_sleep_window (
-      user_id UUID,
-      ended_at Nullable(DateTime64(6, 'UTC')),
-      resting_hr Nullable(Int32),
-      is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree() ORDER BY (user_id, ended_at)
-      SETTINGS allow_nullable_key = 1`,
-    `INSERT INTO ${database}.deduped_sensor VALUES
-      (
-        '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
-        toDate('2026-09-01'), 'heart_rate', 150, 'wahoo', '${wahooActivityId}',
-        NULL, 'heart-rate-1', 'activity', '10000000-0000-0000-0000-000000000001',
-        'direct', '${wahooActivityId}', 1, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
-      ),
-      (
-        '${TEST_USER_ID}', toDateTime64('2026-09-01 15:15:00', 6, 'UTC'),
-        toDate('2026-09-01'), 'heart_rate', 145, 'peloton', '${pelotonActivityId}',
-        NULL, 'heart-rate-2', 'activity', '10000000-0000-0000-0000-000000000002',
-        'direct', '${pelotonActivityId}', 1, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
-      )`,
-    `INSERT INTO ${database}.activity VALUES
-      (
-        '${wahooActivityId}', 'wahoo', '${TEST_USER_ID}', 'wahoo-ride', 'other',
-        'workout', NULL, toDateTime64('2026-09-01 14:50:00', 6, 'UTC'),
-        toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Wahoo ride', NULL,
-        NULL, NULL, NULL, 'unknown', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${wahooActivityId}',
-        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
-      ),
-      (
-        '${pelotonActivityId}', 'peloton', '${TEST_USER_ID}', 'peloton-ride', 'cycling',
-        'cycling', 'indoor', toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
-        toDateTime64('2026-09-01 15:25:54', 6, 'UTC'), NULL, 'Peloton ride', NULL,
-        'Etc/GMT+4', -300, -300, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}',
-        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
-      ),
-      (
-        '${namedZoneActivityId}', 'wahoo', '${TEST_USER_ID}', 'named-zone-ride', 'cycling',
-        'cycling', NULL, toDateTime64('2026-09-01 15:00:00', 6, 'UTC'),
-        toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Named zone ride', NULL,
-        'America/New_York', -420, -420, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}',
-        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
-      ),
-      (
-        '${unrelatedActivityId}', 'wahoo', '${TEST_USER_ID}', 'unrelated-ride', 'cycling',
-        'cycling', NULL, toDateTime64('2026-08-01 16:00:00', 6, 'UTC'),
-        toDateTime64('2026-08-01 17:00:00', 6, 'UTC'), NULL, 'Unrelated ride', NULL,
-        'America/New_York', -240, -240, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${unrelatedActivityId}',
-        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
-      )`,
-  ];
-  for (const statement of statements) await client.command({ query: statement });
 }
 
 async function seedLegacyFalseComponent(
@@ -800,22 +782,6 @@ async function taskThreeRowsForActivity(
     snapshots.push({ model, rows: await response.json() });
   }
   return snapshots;
-}
-
-function scopeClickHouseClient(
-  client: NativeClickHouseClient,
-  database: string,
-): ActivityIntegrityClickHouseClient {
-  const scope = (query: string) =>
-    query.replaceAll("analytics.", `${database}.`).replaceAll("postgres_fitness.", `${database}.`);
-  return {
-    query: async (options) => {
-      const result = await client.query({ ...options, query: scope(options.query) });
-      return { json: () => result.json() };
-    },
-    insert: (options) =>
-      client.insert({ ...options, table: scope(options.table), values: [...options.values] }),
-  };
 }
 
 async function postgresLocalTimeContext(context: TestContext, activityId: string) {

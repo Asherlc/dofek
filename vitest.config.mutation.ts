@@ -37,6 +37,7 @@ const sharedTestConfig = {
   fileParallelism: true,
   pool: "forks" as const,
   execArgv: ["--no-experimental-webstorage"],
+  clearMocks: false,
   env: {
     ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: JSON.stringify({
       activeKeyId: "test-v1",
@@ -99,6 +100,7 @@ export default defineConfig({
   test: {
     projects: [
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "node",
@@ -108,6 +110,7 @@ export default defineConfig({
         },
       },
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "web",
@@ -117,6 +120,7 @@ export default defineConfig({
         },
       },
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "mobile",

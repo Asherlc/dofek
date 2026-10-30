@@ -2,9 +2,12 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
 
+import {
+  MAXIMUM_EXPANDED_ACTIVITY_IDS,
+  MAXIMUM_EXPANSION_ITERATIONS,
+} from "./activity-data-integrity-scope-policy.ts";
+
 const MAXIMUM_UINT64 = (1n << 64n) - 1n;
-const MAXIMUM_EXPANSION_ITERATIONS = 32;
-const MAXIMUM_EXPANDED_ACTIVITY_IDS = 10_000;
 const DEFAULT_CDC_READINESS_TIMEOUT_MS = 120_000;
 const DEFAULT_CDC_READINESS_POLL_INTERVAL_MS = 2_000;
 const postgresUuidSchema = z

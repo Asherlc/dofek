@@ -730,11 +730,11 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       renderDbtModelSql(readModelSql("deduped_activity_members.sql"), {
         isIncremental: incremental,
         activityRefreshScoped: true,
+        activityRefreshIds: [groupId],
       })
         .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.deduped_activities`)
         .replaceAll("{{ this }}", `${targetSchema}.deduped_activity_members`)
         .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
-        .replaceAll("{{ activity_refresh_ids() }}", `CAST(['${groupId}'], 'Array(UUID)')`)
         .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1");
     await activeClient.command({
       query: `CREATE TABLE ${targetSchema}.deduped_activity_members

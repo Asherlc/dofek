@@ -48,9 +48,11 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
     }
     upsert = providerActivitySyncMocks.upsert;
     reconcile = providerActivitySyncMocks.reconcile;
+    trackPresent = vi.fn();
   },
   finishProviderActivityListSync: vi.fn(),
-  upsertProviderActivity: vi.fn(),
+  upsertProviderActivity: (db: unknown, values: unknown, update: unknown) =>
+    providerActivitySyncMocks.upsert(values, update, db),
 }));
 
 vi.mock("../../../../src/providers/apple-health/hang-ten-intervals.ts", () => ({
@@ -69,6 +71,95 @@ const heartRateSample = {
 } satisfies HealthKitSample;
 
 describe("processMetricStream", () => {
+  it.each([
+    ["RunningSpeed", "m/s", 4.5, "speed", 4.5],
+    ["RunningSpeed", "km/h", 18, "speed", 5],
+    ["RunningSpeed", "km/hr", 18, "speed", 5],
+    ["RunningSpeed", "mi/h", 10, "speed", 4.4704],
+    ["RunningSpeed", "mi/hr", 10, "speed", 4.4704],
+    ["RunningSpeed", "mph", 10, "speed", 4.4704],
+    ["RunningSpeed", "ft/s", 10, "speed", 3.048],
+    ["RunningSpeed", "cm/s", 350, "speed", 3.5],
+    ["RunningPower", "W", 250.5, "power", 250.5],
+    ["RunningPower", "mW", 250500, "power", 250.5],
+    ["RunningStrideLength", "m", 1.25, "stride_length", 1.25],
+    ["RunningStrideLength", "mm", 1250, "stride_length", 1.25],
+    ["RunningStrideLength", "km", 0.00125, "stride_length", 1.25],
+    ["RunningStrideLength", "ft", 4, "stride_length", 1.2192],
+    ["RunningStrideLength", "in", 50, "stride_length", 1.27],
+    ["RunningStrideLength", "yd", 1, "stride_length", 0.9144],
+    ["RunningStrideLength", "mi", 0.001, "stride_length", 1.609344],
+    ["RunningGroundContactTime", "ms", 245, "ground_contact_time", 245],
+    ["RunningGroundContactTime", "min", 0.004, "ground_contact_time", 240],
+    ["RunningGroundContactTime", "h", 0.0001, "ground_contact_time", 360],
+    ["RunningVerticalOscillation", "mm", 75, "vertical_oscillation", 75],
+    ["RunningPower", "kW", 0.2505, "power", 250.5],
+    ["RunningStrideLength", "cm", 125, "stride_length", 1.25],
+    ["RunningGroundContactTime", "s", 0.245, "ground_contact_time", 245],
+    ["RunningVerticalOscillation", "cm", 7.5, "vertical_oscillation", 75],
+  ])(
+    "normalizes %s and preserves series point identity",
+    async (suffix, unit, value, channel, scalar) => {
+      const publisher: MetricStreamEventPublisher = { publishRows: vi.fn(async () => []) };
+      const samples = ["2026-10-28T10:00:00.125Z", "2026-10-28T10:00:00.875Z"].map((startDate) => ({
+        ...heartRateSample,
+        type: `HKQuantityTypeIdentifier${suffix}`,
+        unit: String(unit),
+        value: Number(value),
+        startDate,
+        uuid: "parent-running-sample",
+      }));
+      expect(
+        await processMetricStream(
+          makeTransactionalTestDatabase({ execute: vi.fn(async () => []) }),
+          "user-1",
+          samples,
+          publisher,
+        ),
+      ).toBe(2);
+      expect(publisher.publishRows).toHaveBeenCalledWith(
+        samples.map((sample) =>
+          expect.objectContaining({
+            recordedAt: sample.startDate,
+            externalId: "hk:parent-running-sample",
+            deviceId: "Apple Watch",
+            providerId: "apple_health",
+            generation: 0,
+            sourceType: "api",
+            channel,
+            scalar: expect.closeTo(Number(scalar), 8),
+          }),
+        ),
+        { operationRevision: "1000000000000000" },
+      );
+    },
+  );
+
+  it.each([
+    "RunningSpeed",
+    "RunningPower",
+    "RunningStrideLength",
+    "RunningGroundContactTime",
+    "RunningVerticalOscillation",
+  ])("rejects incompatible units for %s before publication", async (suffix) => {
+    const publisher: MetricStreamEventPublisher = { publishRows: vi.fn(async () => []) };
+    await expect(
+      processMetricStream(
+        makeTransactionalTestDatabase({ execute: vi.fn(async () => []) }),
+        "user-1",
+        [
+          {
+            ...heartRateSample,
+            type: `HKQuantityTypeIdentifier${suffix}`,
+            unit: "kg",
+          },
+        ],
+        publisher,
+      ),
+    ).rejects.toThrow(/Unsupported.*kg.*Running.*Expected/);
+    expect(publisher.publishRows).not.toHaveBeenCalled();
+  });
+
   it("publishes HealthKit metric stream samples through the Redpanda writer boundary", async () => {
     const execute = vi.fn(async () => []);
     const publisher: MetricStreamEventPublisher = {

@@ -138,6 +138,12 @@ stage to compensate for an earlier-stage failure.
    `0600`.
 6. Identify the acceptance owner and deadline. The same individual must be
    available to verify, roll back, or retire the repair.
+7. Verify the current activity identity read models are available. The
+   [scope resolver](../src/db/activity-data-integrity-cadence-scope.ts) treats
+   missing upstream tables as prerequisite errors; only the cadence target may
+   legitimately be absent before its first build. Use the
+   [read-model deployment runbook](clickhouse-read-model-deploy-runbook.md) for
+   missing infrastructure before starting a repair.
 
 ## 1. Dry run
 
@@ -240,12 +246,55 @@ The command writes a private snapshot, then atomically applies the Postgres
 timestamp/local-time CAS and creates a `postgres_committed` journal row. It
 waits for the exact changed timestamps, resolved context, and rejected-value
 audit fields in the ClickHouse Postgres mirror before rebuilding the bounded
-eight-model dbt scope. On success the journal is
+[staged read-model scope](#cadence-completeness-during-rebuild). On success the journal is
 `executed`; a CDC, dbt, or verification failure records `rebuild_failed` and
 remains a rollback target.
 
 Do not rerun a failed execute. Preserve the artifact and use
 `--rollback-artifact=<artifact-path>` to restore the captured local-time state.
+
+### Cadence completeness during rebuild
+
+The [repair runner](../src/db/activity-data-integrity-dbt.ts) resolves related
+identities before rebuilding, retaining old canonical aliases. It builds nine
+upstream identity, sensor and route models, resolves the expanded scope again,
+then freezes the current running keys and prior cadence keys that need cleanup.
+Related historical aliases can extend the read-model scope; the approved
+Postgres mutation selection remains unchanged. The
+[scope resolver](../src/db/activity-data-integrity-cadence-scope.ts) uses the
+existing bounds of 10,000 identities and 32 expansion rounds; exceeding either
+bound fails the operation.
+
+Cadence rebuilds use disjoint exact batches of at most 100 canonical keys.
+Every expected key must exist and have an advanced version before the next
+batch or the five downstream summary/stream models can run. Verification reads
+use `FINAL` and compare versions losslessly; ClickHouse documents
+[query-time replacement](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree#query-time-de-duplication--final)
+and the [UInt64 range](https://clickhouse.com/docs/sql-reference/data-types/int-uint).
+Successful dbt subprocesses alone do not establish complete cadence output.
+An empty cadence-key set still creates/verifies the target through an exact
+empty batch; an empty ordinary activity scope is an error. The normal
+[cadence model](../analytics/models/read_models/activity_step_cadence_rows.sql)
+keeps its 100-key limit and global association-ambiguity checks.
+
+Runtime variables use a private temporary dbt project for every scope, with
+the original source directories and profile. The runner removes that temporary
+project on success or failure and leaves the repository project unchanged.
+This uses native [dbt project variables](https://docs.getdbt.com/docs/build/project-variables)
+without placing a large scope in one command-line argument; Linux documents
+its [argument-size limits](https://man7.org/linux/man-pages/man2/execve.2.html).
+The [canonical encoder](../src/db/activity-refresh-scope.ts) packs each UUID into
+16 bytes and supplies one `activity_refresh_activity_ids_base64` value. Each
+model references that payload once through its shared scope expression,
+preserving the full 10,000-ID capacity without repeating UUID text throughout
+the generated statement. UUID decoding uses ClickHouse's explicit big-endian
+[conversion](https://clickhouse.com/docs/reference/functions/regular-functions/uuid-functions#UUIDNumToString).
+Invalid, empty, incomplete or over-cap packed scopes fail explicitly; exact
+empty cadence batches retain their separate contract.
+The [executable lifecycle tests](../src/db/activity-data-integrity-repair.integration.test.ts)
+cover revision aliases, old-group tombstones and failure before downstream
+summaries. The snapshot still captures the eight projections listed below;
+it does not become a second source of raw facts.
 
 ## 3. Verify
 
@@ -454,9 +503,10 @@ the captured repaired values no longer match, rollback fails loudly rather
 than overwriting a later provider update.
 
 After the Postgres rollback transaction commits, the command waits for the
-restored fields in the ClickHouse Postgres mirror and then runs the same bounded
-eight-model dbt rebuild. It verifies the resulting source state through
-`FINAL`, records `rolled_back`, and ends rollback eligibility. No direct
+restored fields in the ClickHouse Postgres mirror and then runs the same
+[staged read-model rebuild](#cadence-completeness-during-rebuild). A rebuild or
+verification failure preserves `rollback_committed`; successful verification
+through `FINAL` records `rolled_back` and ends rollback eligibility. No direct
 ClickHouse snapshot restoration, stale-row comparison, or tombstone operation
 is part of this protocol.
 
