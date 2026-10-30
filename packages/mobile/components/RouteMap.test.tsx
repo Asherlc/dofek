@@ -51,7 +51,7 @@ describe("RouteMap", () => {
   beforeEach(() => {
     nativeSnapshot.mockClear();
   });
-  it("lists and selects every named climb sharing an area location", () => {
+  it("preserves names and provenance while selecting the first climb at a shared location", () => {
     const first = climbMarkers[0];
     if (!first) throw new Error("Expected a climb marker fixture");
     const markers = ["Bits and Bits", "Kibbles and Bits", "Blue Arete", "Left Arete"].map(
@@ -75,10 +75,7 @@ describe("RouteMap", () => {
     );
     expect(screen.getAllByTestId("marker")).toHaveLength(1);
     fireEvent.click(marker);
-    for (const entry of markers) {
-      fireEvent.click(screen.getByRole("button", { name: entry.label }));
-      expect(onSelectEntry).toHaveBeenLastCalledWith(entry.entryId);
-    }
+    expect(onSelectEntry).toHaveBeenLastCalledWith("area-log-0");
   });
 
   it("opens a uniquely located entry directly and permits overview pan and zoom", () => {
@@ -116,7 +113,7 @@ describe("RouteMap", () => {
     );
   });
 
-  it("shows one counted marker and selects every same-name log at its coordinate", () => {
+  it("shows one counted marker and selects its first logged occurrence", () => {
     const first = climbMarkers[0];
     if (!first) throw new Error("Expected a source fixture");
     const onSelectEntry = vi.fn();
@@ -135,13 +132,7 @@ describe("RouteMap", () => {
     expect(screen.getAllByTestId("marker")).toHaveLength(1);
     expect(group.textContent).toContain("2");
     fireEvent.click(group);
-    const [firstChoice, secondChoice] = screen.getAllByRole("button", { name: "Swiss Cheese" });
-    if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
-    fireEvent.click(firstChoice);
     expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
-    fireEvent.click(secondChoice);
-    expect(onSelectEntry).toHaveBeenLastCalledWith("repeat");
-    expect(secondChoice.getAttribute("aria-selected")).toBe("true");
     expect(screen.getAllByTestId("marker")).toHaveLength(1);
   });
   it("renders the title when given GPS points", () => {

@@ -45,130 +45,47 @@ that default is insufficient evidence for uploading licensed code.
 Do not export OTA build layers to GitHub Actions caches: this repository is
 public, and [fork pull requests can read base-branch caches](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
 
-Storage operations stream child stderr directly to CI while retaining stdout
-for JSON results, using [Node subprocess stdio](https://nodejs.org/api/child_process.html#optionsstdio).
-Phase boundaries and [rclone transfer statistics](https://rclone.org/flags/#logging)
-identify work in progress without changing retries or deadlines. A cancelled
-snapshot is unverified; use a new identifier and retain the failed prefix for
-investigation.
+## Release storage and publication
 
-## Migration boundary
+Production serves new updates from the Terraform-managed `dofek-ota-releases`
+bucket. The old `dofek-ota` bucket and partial locked snapshots in
+`dofek-ota-backups` remain untouched. They are historical artifacts, not
+prerequisites for publication or verified recovery points. Old updates are not
+copied into the serving bucket.
 
-Do not replace the production image until backup and rehearsal are complete.
-The upstream [bucket migration](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/internal/bucket/v2_migration.go)
-copies objects under the app ID and deletes their old paths. Reverting an image
-does not restore those paths. Retain the signing key pair and app ID, and use
-the matching 3.2.7 EOAS publisher with its app-scoped publication endpoints.
+Retain the public OTA URL, application ID and signing keys. Version 3.2.7
+supports installed clients without an app-ID header through its
+[legacy application fallback](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/config/apps.go).
+New native configuration includes `expo-app-id`, required by the matching
+[EOAS publisher](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/lib/expoConfig.ts).
+The header changes the [fingerprint runtime](https://docs.expo.dev/eas-update/runtime-versions/),
+so this release requires the matching TestFlight binary before a device can
+receive its OTA updates. Older installs retain their embedded/cached app; no
+old-runtime update is republished into the fresh store.
+Publication uses app-scoped keys; preview deletion and the new bucket's
+14-day lifecycle target only `<app-id>/pr-`, preserving shared assets.
+See the [upstream key layout](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/internal/bucket/keys.go)
+and [R2 lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
 
-Pause publishers before taking a byte-verified snapshot in the separate backup
-bucket. Rehearse using a second, mutable copy under a disjoint
-`BUCKET_KEY_PREFIX`, with local cache. Compare manifest identities, verify
-signatures with the retained public key, and verify asset bytes before cutover.
-Keep the original snapshot unchanged for explicit restore if the migration
-fails; the upstream [prefix wrapper](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/internal/objectstore/prefixed.go)
-scopes migration reads, copies, and deletions to the configured prefix.
+The canonical Terraform workflow creates the bucket before the stack workflow
+switches the pinned private image and bucket together. Deploy OTA resolves the
+current iOS runtime, validates the server within five seconds, publishes with
+EOAS 3.2.7, then verifies the exact published UUID/runtime, manifest signature
+and all asset hashes using the retained device certificate. An empty runtime is
+accepted only through the [Expo no-update protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+Storage read/decode failures remain fatal. The gate and receipt audit send the
+same `expo-app-id` header as the configured client.
 
-## Verified storage operations
-
-Terraform provisions `dofek-ota-backups` separately from the serving bucket.
-Its `snapshots/` prefix has an indefinite
-[R2 bucket lock](https://developers.cloudflare.com/r2/buckets/bucket-locks/),
-preventing overwrite or deletion of recovery objects. The mutable `rehearsals/`
-prefix has no lock. Keep snapshots until recovery is no longer required;
-removing their retention policy requires a separately reviewed Terraform change.
-
-Before dispatching **OTA Storage**, disable these workflows using
-`gh workflow disable <file>` and wait for their existing runs to finish:
-
-- `deploy-web.yml` (automatic releases)
-- `deploy.yml` (manual releases)
-- `mobile-preview-ota.yml` (preview publication)
-- `cleanup-pr-r2.yml` (preview deletion)
-
-The operator CLI checks that every workflow is manually disabled and has no
-queued, running, pending, requested or waiting runs. Disabling a workflow does
-not stop existing runs; GitHub documents
-[workflow management](https://docs.github.com/en/actions/managing-workflow-runs/disabling-and-enabling-a-workflow).
-Keep manual EAS/EOAS publication stopped for the same window.
-
-Use a unique snapshot ID, for example `2026-10-29-before-v3`. Dispatch the
-workflow on main, in this order:
-
-```sh
-gh workflow run ota-storage.yml -f operation=snapshot -f snapshot_id=2026-10-29-before-v3
-gh workflow run ota-storage.yml -f operation=rehearsal-copy -f snapshot_id=2026-10-29-before-v3
-```
-
-Wait for each run to succeed before the next operation. The first copies the
-production bucket into `snapshots/<id>/`; the second copies that snapshot into
-`rehearsals/<id>/`. Existing destinations are refused. Both use pinned rclone
-1.75.2, [copy --immutable](https://rclone.org/commands/rclone_copy/) and
-[check --download](https://rclone.org/commands/rclone_check/) to compare bytes,
-rather than relying on S3 multipart ETags. Empty sources fail before copying.
-The destination is locked as objects arrive, before verification. A failed copy
-or verification consumes that snapshot ID; retain its run as failed evidence
-and use a fresh ID after resolving the error. Never treat a failed run as a
-recovery point or remove retention merely to reuse its name.
-Existing Infisical `R2_ENDPOINT`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
-must permit both buckets; a denied list/read/write stops the operation.
-
-Dispatch the CI rehearsal with the private image digest recorded by the main
-image build:
-
-```sh
-gh workflow run ota-storage.yml -f operation=migration-rehearsal -f snapshot_id=2026-10-29-before-v3 -f image=ghcr.io/asherlc/dofek-ota-internal@sha256:<digest>
-```
-
-The ARM64 job uses the [locked Infisical tool](../../mise.lock), loads existing
-keys through OIDC and runs the candidate against **only** `dofek-ota-backups`,
-with `BUCKET_KEY_PREFIX=rehearsals/<id>/` and `CACHE_MODE=local`. It observes the
-candidate's migration-ready log before making manifest requests. It verifies
-that the rehearsal copy still matches the original snapshot before starting
-the container; a dirty or previously migrated copy fails before launch. Restore
-that copy with `restore-rehearsal` before attempting another candidate.
-After readiness, it verifies
-the exact relocated object set and byte-checks moved and untouched objects
-against the snapshot using [rclone file lists](https://rclone.org/filtering/#files-from0-read-nul-separated-list-of-source-file-names).
-It then audits the latest complete main iOS update on both production and the
-candidate: retained update UUID/runtime, the signature against the installed
-device certificate, and SHA-256 hashes of the launch bundle and assets,
-following the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-The audit uses Remix's maintained
-[multipart parser](https://github.com/remix-run/remix/tree/main/packages/multipart-parser)
-to bind the signature to the manifest part's headers and exact bytes, and
-[structured-headers](https://github.com/evert/structured-header) for the signature
-dictionary. A signature on another MIME part does not certify the manifest.
-The legacy request omits `expo-app-id`, exercising the installed-client fallback.
-The audit bounds each asset fetch and body read to 60 seconds. Expo's
-[iOS downloader](https://github.com/expo/expo/blob/expo%4058.0.21/packages/expo-updates/ios/EXUpdates/AppLoader/FileDownloader.swift)
-uses a 60-second request timeout; the audit applies a total deadline so a stalled
-body fails through normal candidate cleanup. The manifest deadline remains five
-seconds.
-
-The job stops the candidate before restoring the mutable copy and refuses to
-restore if the stop fails. It byte-verifies restoration, then rechecks that
-production still matches the locked snapshot. The job summary records the
-image digest and retained update identity. For an explicit restore after a
-failed rehearsal, first confirm that its CI runner/container has stopped:
-
-```sh
-gh workflow run ota-storage.yml -f operation=restore-rehearsal -f snapshot_id=2026-10-29-before-v3 -f candidate_stopped=true
-```
-
-Restoration uses [rclone sync](https://rclone.org/commands/rclone_sync/) followed
-by byte verification. It deletes migrated objects **only in the rehearsal
-prefix** and restores the original layout from the locked snapshot. The tool
-does not provide a production restore command: production recovery requires
-quiescing the migrated server through the canonical deployment workflow before
-any destructive restore, followed by verification and the old image. Never
-run a restore while a server can continue migrating or a publisher can write.
-
-After successful cutover and validation, re-enable each paused workflow with
-`gh workflow enable <file>`. Retain the workflow run links, snapshot ID and
-candidate image digest in the incident record.
-Before cutover, dispatch `operation=verify-snapshot` with the same ID to prove
-production still matches the locked snapshot after rehearsal. This operation
-only lists and reads objects; it fails on any byte or object-set difference.
+The audit detects failures after publication; it does not make publication
+atomic. A failed audit leaves that release advertised until explicit repair.
+[Expo clients verify manifest signatures and asset hashes](https://docs.expo.dev/technical-specs/expo-updates-1/)
+and reject invalid downloads. Keep the failed UUID/runtime and evidence,
+diagnose whether the cause is transport, configuration or corruption, then
+perform targeted remediation. Do not automatically delete a potentially valid
+release or shared immutable assets merely because a network audit failed. A publication failure leaves the
+installed app's embedded or cached update available; diagnose the failed step
+before retrying. Restore normal automatic and preview workflows after the
+release; no migration freeze is required.
 
 The [licensing guide](https://mercure-technologies.gitbook.io/xprem/references/open-core-and-licensing.md)
 documents stateless community self-hosting. The full image includes EE code and

@@ -29,6 +29,7 @@ import type {
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
@@ -41,7 +42,6 @@ import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHe
 import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
-import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MapProcessingState } from "../../components/MapProcessingState";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -442,9 +442,10 @@ export default function ActivityDetailScreen() {
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
-  const selectedClimbingEntry = climbingEntries.data?.find(
-    (entry) => entry.id === selectedClimbingEntryId,
-  );
+  const selectedClimbingEntry = [
+    ...(climbingEntries.data ?? []),
+    ...(entrySuggestions.data ?? []),
+  ].find((entry) => entry.id === selectedClimbingEntryId);
   const climbingLocations = useMemo(
     () =>
       buildClimbingMapLocations([
@@ -454,8 +455,14 @@ export default function ActivityDetailScreen() {
     [climbingEntries.data, entrySuggestions.data],
   );
   const climbMarkers = useMemo(
-    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
-    [climbingEntries.data],
+    () =>
+      isClimbingActivity
+        ? buildClimbingMapMarkers([
+            ...(climbingEntries.data ?? []),
+            ...(entrySuggestions.data ?? []),
+          ])
+        : [],
+    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
   );
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
@@ -755,14 +762,18 @@ export default function ActivityDetailScreen() {
           <MapProcessingState />
         </View>
       ) : null}
-      {hasMap && (
-        <RouteMap
-          points={routePoints}
-          climbMarkers={climbMarkers}
-          onSelectEntry={setSelectedClimbingEntryId}
-          hoveredPosition={hoveredPosition}
-        />
-      )}
+      {hasMap &&
+        !(
+          isClimbingActivity &&
+          ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
+        ) && (
+          <RouteMap
+            points={routePoints}
+            climbMarkers={climbMarkers}
+            onSelectEntry={setSelectedClimbingEntryId}
+            hoveredPosition={hoveredPosition}
+          />
+        )}
 
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
@@ -776,18 +787,26 @@ export default function ActivityDetailScreen() {
             <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
           )}
           {climbingEntriesLoading && <QueryStatePanel variant="loading" minHeight={72} />}
-          {(climbingEntries.data?.length ?? 0) > 0 && (
-            <ClimbingLogEntryBreakdown
+          {((climbingEntries.data?.length ?? 0) > 0 ||
+            (entrySuggestions.data?.length ?? 0) > 0) && (
+            <ActivityClimbingPanel
+              points={routePoints}
+              hoveredPosition={hoveredPosition}
+              onOpenEntry={setSelectedClimbingEntryId}
+              suggestions={entrySuggestions.data}
+              attachmentStates={entryAttachState}
+              onAttach={handleAttachEntry}
               entries={climbingEntries.data ?? []}
               locations={climbingLocations}
-              selectedEntryId={selectedClimbingEntryId}
             />
           )}
           {(entrySuggestions.error ||
-            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
-            (entrySuggestions.data?.length ?? 0) > 0 ||
-            climbingEntries.data?.length === 0) && (
+            (!climbingEntriesLoading &&
+              entrySuggestions.isLoading &&
+              entrySuggestions.data === undefined) ||
+            (climbingEntries.data?.length === 0 && entrySuggestions.data?.length === 0)) && (
             <UnattachedClimbingLogEntries
+              showEntries={false}
               suggestions={entrySuggestions.data}
               locations={climbingLocations}
               selectedEntryId={selectedClimbingEntryId}

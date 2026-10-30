@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { maps, markers, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivityRouteMap } from "./ActivityRouteMap.tsx";
@@ -51,7 +51,7 @@ describe("ActivityRouteMap", () => {
     else fireEvent.keyDown(dot, { key });
     expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
   });
-  it("offers all same-name occurrences from a counted, safely labelled marker", async () => {
+  it("selects the first occurrence from a counted, safely labelled marker", async () => {
     const onSelectEntry = vi.fn();
     const unsafe = '<img src=x onerror="alert(1)">';
     const { container } = render(
@@ -73,14 +73,8 @@ describe("ActivityRouteMap", () => {
     fireEvent.blur(group);
     expect(screen.queryByRole("tooltip")).toBeNull();
     fireEvent.keyDown(group, { key: "Enter" });
-    const choices = within(
-      screen.getByRole("list", { name: "Climbing entries at this location" }),
-    ).getAllByRole("button");
-    const repeat = choices[1];
-    if (!repeat) throw new Error("Expected repeated climb");
-    fireEvent.click(repeat);
-    expect(onSelectEntry).toHaveBeenCalledWith("repeat");
-    expect(choices[1]).toHaveAttribute("aria-pressed", "true");
+    expect(onSelectEntry).toHaveBeenCalledWith("tick-1");
+    expect(group).toHaveAttribute("aria-pressed", "true");
   });
   it("preserves route, endpoints, source points and chart hover independently", async () => {
     const hover = { current: (_position: { lat: number; lng: number } | null) => {} };

@@ -1,6 +1,7 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
 import { selectClimbingSources } from "@dofek/training/climbing-sources";
+import type { ReactElement } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors } from "../theme";
@@ -10,7 +11,9 @@ export function ClimbingLogEntrySources({
   sourceName,
   links,
   selected,
+  titleControl,
 }: {
+  titleControl?: ReactElement;
   name: string;
   sourceName: string | null;
   links: ClimbingSourceLink[];
@@ -27,28 +30,37 @@ export function ClimbingLogEntrySources({
       Alert.alert("Unable to open source", `Open this source in your browser: ${url}`);
     }
   }
+  const routeLinks =
+    titleControl && primaryRoute ? [primaryRoute, ...additionalRoutes] : additionalRoutes;
+  const visibleSources = titleControl
+    ? sources.filter(
+        ({ label, tickSource }) =>
+          tickSource || !routeLinks.some((link) => providerSourceLabel(link.providerId) === label),
+      )
+    : sources;
   return (
     <View style={styles.container}>
-      {primaryRoute ? (
-        <Pressable
-          accessible
-          accessibilityRole="link"
-          accessibilityState={selectionState}
-          accessibilityLabel={`${name} on ${providerSourceLabel(primaryRoute.providerId)}`}
-          onPress={() => {
-            void openSource(primaryRoute.url);
-          }}
-        >
-          <Text style={[styles.name, styles.link]}>{name}</Text>
-        </Pressable>
-      ) : (
-        <Text accessible accessibilityState={selectionState} style={styles.name}>
-          {name}
-        </Text>
-      )}
-      {sources.length > 0 && (
+      {titleControl ??
+        (primaryRoute ? (
+          <Pressable
+            accessible
+            accessibilityRole="link"
+            accessibilityState={selectionState}
+            accessibilityLabel={`${name} on ${providerSourceLabel(primaryRoute.providerId)}`}
+            onPress={() => {
+              void openSource(primaryRoute.url);
+            }}
+          >
+            <Text style={[styles.name, styles.link]}>{name}</Text>
+          </Pressable>
+        ) : (
+          <Text accessible accessibilityState={selectionState} style={styles.name}>
+            {name}
+          </Text>
+        ))}
+      {visibleSources.length > 0 && (
         <View style={styles.links}>
-          {sources.map(({ label, tickSource }) =>
+          {visibleSources.map(({ label, tickSource }) =>
             tickSource ? (
               <Pressable
                 key={label}
@@ -68,9 +80,9 @@ export function ClimbingLogEntrySources({
           )}
         </View>
       )}
-      {additionalRoutes.length > 0 && (
+      {routeLinks.length > 0 && (
         <View style={styles.links}>
-          {additionalRoutes.map((link) => (
+          {routeLinks.map((link) => (
             <Pressable
               key={`${link.providerId}:${link.url}`}
               accessibilityRole="link"

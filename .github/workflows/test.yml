@@ -505,6 +505,7 @@ jobs:
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
           EXPO_PUBLIC_SENTRY_DSN: https://public@example.invalid/1
+          EXPO_APP_ID: dependency-analysis-fixture
 
   spellcheck:
     name: Spell Check

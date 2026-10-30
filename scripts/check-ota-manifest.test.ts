@@ -4,7 +4,36 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { checkOtaManifest } from "./check-ota-manifest.ts";
 
+const requestOptions = {
+  appId: "release-app-id",
+  channel: "production",
+  platform: "ios",
+  runtimeVersion: "1.0",
+  url: "https://ota.dofek.asherlc.com/manifest",
+} as const;
+
 const manifestUrl = "https://ota.dofek.asherlc.com/manifest";
+
+function createDirectiveResponse(value: unknown): Response {
+  const boundary = "new-runtime-boundary";
+  return new Response(
+    [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="directive"',
+      "Content-Type: application/json",
+      "",
+      JSON.stringify(value),
+      `--${boundary}--`,
+      "",
+    ].join("\r\n"),
+    {
+      headers: {
+        "content-type": `multipart/mixed; boundary=${boundary}`,
+        "expo-protocol-version": "1",
+      },
+    },
+  );
+}
 
 function createValidManifestResponse(): Response {
   const boundary = "ota-health-check-boundary";
@@ -71,6 +100,7 @@ describe("checkOtaManifest", () => {
     const second = body.replace("a2018e93-2f3e-45aa-8556-aa8b3c38380c", "different-update-id");
     await expect(
       checkOtaManifest({
+        requestOptions,
         fetchImplementation: vi.fn(
           async () => new Response(first + second, { headers: valid.headers }),
         ),
@@ -78,18 +108,86 @@ describe("checkOtaManifest", () => {
       }),
     ).rejects.toThrow("exactly one manifest");
   });
+  it("accepts a protocol directive when the requested runtime has no published update", async () => {
+    const response = createDirectiveResponse({ type: "noUpdateAvailable" });
+    await expect(
+      checkOtaManifest({
+        requestOptions,
+        fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(response),
+        timeoutMilliseconds: 5_000,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it.each([{ type: "rollBackToEmbedded" }, { type: "unknown" }, {}])(
+    "rejects directives that do not establish a valid empty runtime: %j",
+    async (directive) => {
+      await expect(
+        checkOtaManifest({
+          requestOptions,
+          fetchImplementation: vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(createDirectiveResponse(directive)),
+          timeoutMilliseconds: 5_000,
+        }),
+      ).rejects.toThrow();
+    },
+  );
+
+  it("rejects a manifest for a different runtime than the requested release", async () => {
+    await expect(
+      checkOtaManifest({
+        requestOptions: { ...requestOptions, runtimeVersion: "new-native-fingerprint" },
+        fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(createValidManifestResponse()),
+        timeoutMilliseconds: 5_000,
+      }),
+    ).rejects.toThrow("OTA manifest runtime does not match requested runtime");
+  });
+
+  it.each([
+    { arguments: [], message: "--runtime-version is required" },
+    { arguments: ["--runtime-version", "runtime"], message: "--app-id is required" },
+  ])(
+    "fails before requesting a manifest when required CLI context is missing: $message",
+    async (missing) => {
+      let requestCount = 0;
+      const server = createServer((_request, response) => {
+        requestCount += 1;
+        response.writeHead(204).end();
+      });
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing test server port");
+      try {
+        const result = await runMobileUpdateCheck([
+          "--url",
+          `http://127.0.0.1:${address.port}`,
+          ...missing.arguments,
+        ]);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(missing.message);
+        expect(requestCount).toBe(0);
+      } finally {
+        server.close();
+        await once(server, "close");
+      }
+    },
+  );
+
   it("accepts a 204 response and sends the production Expo request headers", async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(null, { status: 204 }));
 
     await expect(
-      checkOtaManifest({ fetchImplementation, timeoutMilliseconds: 5_000 }),
+      checkOtaManifest({ requestOptions, fetchImplementation, timeoutMilliseconds: 5_000 }),
     ).resolves.toBeNull();
 
     expect(fetchImplementation).toHaveBeenCalledWith(manifestUrl, {
       headers: {
         accept: "application/expo+json, application/json, multipart/mixed",
+        "expo-app-id": "release-app-id",
         "expo-channel-name": "production",
         "expo-platform": "ios",
         "expo-protocol-version": "1",
@@ -105,7 +203,7 @@ describe("checkOtaManifest", () => {
       .mockResolvedValue(createValidManifestResponse());
 
     await expect(
-      checkOtaManifest({ fetchImplementation, timeoutMilliseconds: 5_000 }),
+      checkOtaManifest({ requestOptions, fetchImplementation, timeoutMilliseconds: 5_000 }),
     ).resolves.toMatchObject({
       id: "a2018e93-2f3e-45aa-8556-aa8b3c38380c",
       runtimeVersion: "1.0",
@@ -117,6 +215,7 @@ describe("checkOtaManifest", () => {
     const body = (await valid.text()).replace(/--ota-health-check-boundary--\r\n$/, "");
     await expect(
       checkOtaManifest({
+        requestOptions,
         fetchImplementation: vi.fn(async () => new Response(body, { headers: valid.headers })),
         timeoutMilliseconds: 5_000,
       }),
@@ -142,6 +241,8 @@ describe("checkOtaManifest", () => {
 
     try {
       const result = await runMobileUpdateCheck([
+        "--app-id",
+        "release-app-id",
         "--url",
         url,
         "--channel",
@@ -160,6 +261,7 @@ describe("checkOtaManifest", () => {
       });
       expect(requestUrl).toBe("/manifest");
       expect(requestHeaders).toMatchObject({
+        "expo-app-id": "release-app-id",
         "expo-channel-name": "preview-pr-1783",
         "expo-platform": "android",
         "expo-protocol-version": "1",
@@ -177,7 +279,7 @@ describe("checkOtaManifest", () => {
       .mockResolvedValue(new Response("No channel name provided", { status: 400 }));
 
     await expect(
-      checkOtaManifest({ fetchImplementation, timeoutMilliseconds: 5_000 }),
+      checkOtaManifest({ requestOptions, fetchImplementation, timeoutMilliseconds: 5_000 }),
     ).rejects.toThrow("OTA manifest request returned HTTP 400");
   });
 
@@ -193,7 +295,7 @@ describe("checkOtaManifest", () => {
     );
 
     await expect(
-      checkOtaManifest({ fetchImplementation, timeoutMilliseconds: 5_000 }),
+      checkOtaManifest({ requestOptions, fetchImplementation, timeoutMilliseconds: 5_000 }),
     ).rejects.toThrow("OTA manifest response is not multipart/mixed");
   });
 
@@ -209,8 +311,8 @@ describe("checkOtaManifest", () => {
         }),
     );
 
-    await expect(checkOtaManifest({ fetchImplementation, timeoutMilliseconds: 1 })).rejects.toThrow(
-      "OTA manifest request timed out after 1ms",
-    );
+    await expect(
+      checkOtaManifest({ requestOptions, fetchImplementation, timeoutMilliseconds: 1 }),
+    ).rejects.toThrow("OTA manifest request timed out after 1ms");
   });
 });
