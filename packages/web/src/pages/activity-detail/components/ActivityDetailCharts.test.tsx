@@ -132,7 +132,7 @@ it("emphasizes only the active climb line or band and restores it on exit", () =
   expect(hrSeries().markArea.data[0][0].label.show).toBe(false);
   expect(hrSeries().markLine.data[1].label.show).toBe(false);
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="untimed" />,
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="no-timing" />,
   );
   expect(
     hrSeries().markLine.data.every((line: { label: { show: boolean } }) => !line.label.show),

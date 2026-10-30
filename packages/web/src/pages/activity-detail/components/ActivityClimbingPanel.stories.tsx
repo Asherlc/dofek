@@ -135,7 +135,7 @@ export const WithHeartRateChart: Story = {
     const canvas = within(canvasElement);
     const row = canvas.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
     await userEvent.hover(row);
-    await userEvent.unhover(row);
+    await userEvent.hover(canvas.getByRole("heading", { name: "Climbs", level: 2 }));
     row.focus();
   },
 };
