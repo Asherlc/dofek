@@ -35,6 +35,7 @@
         "NSHealthUpdateUsageDescription": "Dofek removes dietary nutrition entries it previously created in Apple Health when you erase your Dofek account.",
         "NSHealthClinicalHealthRecordsShareUsageDescription": "Dofek reads your clinical health records (like lab results) to provide a complete picture of your health.",
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
+        "NSLocationWhenInUseUsageDescription": "Dofek uses your location to show your position on activity maps while you use the app.",
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to Bluetooth heart-rate monitors to record your heart rate during workouts.",
         "UIBackgroundModes": ["bluetooth-central", "fetch"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
