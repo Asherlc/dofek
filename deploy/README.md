@@ -22,7 +22,7 @@ infrastructure has been retired.
     UIs are scaled to zero by the Oracle production override.
   - **S3 (R2)**: Cloudflare R2 buckets for training data
     (`dofek-training-data`), private direct file imports (`dofek-imports`), web
-    build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook
+    build assets (`dofek-web-assets`), OTA updates (`dofek-ota-releases`), Storybook
     (`dofek-storybook`), scheduled PostgreSQL backups
     (`dofek-db-backups`), and the durable metric-stream archive
     (`dofek-metric-stream-archive`).
