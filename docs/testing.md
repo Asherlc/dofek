@@ -231,6 +231,16 @@ and [close](https://nodejs.org/api/child_process.html#event-close) metadata with
 printing commands, arguments or environment. Correlate a missing end event with
 the failure events before deciding whether an operation stalled or rejected.
 
+The integration setup also observes Node's [HTTP request diagnostic channels](https://nodejs.org/download/release/v26.7.0/docs/api/diagnostics_channel.html#built-in-channels).
+Local request failures include a fixed method and operation bucket with the
+canonical sanitized error fields; successful traffic contributes only numeric
+summary counts. Dynamic routes, queries, headers, bodies and exception messages
+are excluded. A Docker-shaped operation identifies a matching route, not a
+proven server or Unix socket: classification uses documented request fields and
+does not infer Unix versus TCP. Match a request error to the surrounding setup
+events before assigning a transport cause. Reproductions should record the exact
+Node version and operating system used by the failing job.
+
 Seed-container diagnostics use Testcontainers' [documented lifecycle callbacks](https://node.testcontainers.org/features/containers/#lifecycle-callbacks).
 These bracket runtime/image resolution, creation, start/inspection and readiness;
 they do not identify an internal failing operation by themselves. Error events

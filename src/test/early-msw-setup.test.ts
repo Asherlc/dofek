@@ -29,6 +29,10 @@ process.env.GARMIN_CLIENT_SECRET = "fixture-secret";
         "first.test.ts",
         `
 import { it } from "vitest";
+import { channel } from "node:diagnostics_channel";
+const request = { host: "localhost", path: "/_ping", method: "GET" };
+channel("http.client.request.created").publish({ request });
+channel("http.client.request.error").publish({ request, error: Object.assign(new Error("private"), { code: "EPIPE" }) });
 import { GarminProvider } from ${JSON.stringify(path.join(process.cwd(), "src/providers/garmin/provider.ts"))};
 globalThis.retainedProvider = new GarminProvider();
 it("constructs the retained client", () => {});
@@ -115,6 +119,9 @@ export default defineConfig({ test: { ...integration, include: [${JSON.stringify
         { cwd: process.cwd(), encoding: "utf8", stdio: "pipe" },
       );
       expect(output).toContain("5 passed");
+      expect(output).toContain('"event":"http.request.error"');
+      expect(output).toContain('"operation":"docker.ping"');
+      expect(output).toContain('"event":"http.request.summary"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
