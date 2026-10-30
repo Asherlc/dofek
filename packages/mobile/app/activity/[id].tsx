@@ -2,6 +2,7 @@ import {
   type ActivityMetric,
   activityDataStateLabel,
   formatActivityMetric,
+  groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
 import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
@@ -30,7 +31,6 @@ import type {
 } from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
-import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
   AreaChart,
@@ -65,37 +65,51 @@ type StatItem = ActivityMetric | { label: string; value: string; qualifier?: str
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats
-        .filter((stat) => !("status" in stat) || stat.status !== "missing")
-        .map((stat) => {
-          const metric = "status" in stat ? stat : null;
-          const unavailableMetric = metric && metric.status !== "available" ? metric : null;
-          const isUnavailable = unavailableMetric !== null;
-          const accessibleLabel = unavailableMetric
-            ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-            : undefined;
-          const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
-          return (
-            <View
-              key={stat.label}
-              style={statsStyles.card}
-              accessible={isUnavailable}
-              accessibilityLabel={accessibleLabel}
-            >
-              <Text style={statsStyles.label}>
-                {unavailableMetric
-                  ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                  : stat.label}
+      {groupActivityMetrics(stats).map(({ primary: stat, secondary }) => {
+        const metric = "status" in stat ? stat : null;
+        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+        const isUnavailable = unavailableMetric !== null;
+        const accessibleLabel = unavailableMetric
+          ? [
+              `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`,
+              secondary
+                ? "value" in secondary
+                  ? `${secondary.label}: ${secondary.value}`
+                  : `${secondary.label} ${activityDataStateLabel(secondary.status)}: ${secondary.reason}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(". ")
+          : undefined;
+        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+        return (
+          <View
+            key={stat.label}
+            style={statsStyles.card}
+            accessible={isUnavailable}
+            accessibilityLabel={accessibleLabel}
+          >
+            <Text style={statsStyles.label}>
+              {unavailableMetric
+                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                : stat.label}
+            </Text>
+            <Text style={statsStyles.value}>{displayedValue}</Text>
+            {secondary && (
+              <Text style={statsStyles.secondary}>
+                {"value" in secondary
+                  ? `Max ${secondary.value}`
+                  : `${secondary.label} ${activityDataStateLabel(secondary.status)}: ${secondary.reason}`}
               </Text>
-              <Text style={statsStyles.value}>{displayedValue}</Text>
-              {"qualifier" in stat && stat.qualifier && (
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
-                  {stat.qualifier}
-                </Text>
-              )}
-            </View>
-          );
-        })}
+            )}
+            {"qualifier" in stat && stat.qualifier && (
+              <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                {stat.qualifier}
+              </Text>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -709,7 +723,15 @@ export default function ActivityDetailScreen() {
     >
       {/* Activity Header */}
       <ActivityDetailHeader
+        key={id}
         activity={activity}
+        photos={{
+          images: images.data?.images ?? [],
+          loading: images.isLoading,
+          error: images.error,
+          retrying: images.isFetching,
+          onRetry: () => void images.refetch(),
+        }}
         hardware={hardware.data}
         hardwareLoading={hardware.isLoading}
         hardwareError={hardware.error}
@@ -722,14 +744,6 @@ export default function ActivityDetailScreen() {
         <QueryStatePanel variant="error" message={powerWork.error.message} />
       )}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
-      <ActivityImages
-        key={id}
-        images={images.data?.images ?? []}
-        loading={images.isLoading}
-        error={images.error}
-        retrying={images.isFetching}
-        onRetry={() => void images.refetch()}
-      />
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>
