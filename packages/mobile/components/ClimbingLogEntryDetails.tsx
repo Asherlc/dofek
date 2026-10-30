@@ -13,6 +13,7 @@ import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
+import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 import { ClimbingPhotos } from "./ClimbingPhotos";
 
@@ -143,6 +144,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           })}
         </View>
       )}
+      <ClimbingCatalogueContext id={entry.id} />
       {entry.photoLogEntryId !== null && <ClimbingPhotos id={entry.photoLogEntryId} />}
       {entry.notes && (
         <View style={styles.section}>

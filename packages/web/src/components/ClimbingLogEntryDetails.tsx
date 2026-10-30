@@ -13,6 +13,7 @@ import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntrySources } from "../pages/activity-detail/components/ClimbingLogEntrySources.tsx";
 
+import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 import { ClimbingPhotos } from "./ClimbingPhotos";
 
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
@@ -142,6 +143,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           })}
         </section>
       )}
+      <ClimbingCatalogueContext id={entry.id} />
       {entry.photoLogEntryId !== null && <ClimbingPhotos id={entry.photoLogEntryId} />}
       {entry.notes && (
         <section>
