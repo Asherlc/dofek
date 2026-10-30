@@ -1,5 +1,6 @@
 import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProviderAuthError, ProviderTokenRejectedError } from "../auth-errors.ts";
 import { TheCragClient } from "./client.ts";
 import { apiAscent, logbookPage } from "./test-helpers.ts";
 
@@ -50,6 +51,11 @@ describe("theCrag official logbook client", () => {
       const fetchFn = vi.fn<typeof fetch>();
       expect(() => new TheCragClient(fetchFn, key)).toThrow(/personal API key/);
       expect(fetchFn).not.toHaveBeenCalled();
+      if (key) {
+        expect(captureException).toHaveBeenCalledWith(expect.any(ProviderTokenRejectedError), {
+          tags: { provider: "thecrag", phase: "key_validation" },
+        });
+      }
     },
   );
 
@@ -68,6 +74,17 @@ describe("theCrag official logbook client", () => {
       expect(failure).toBeInstanceOf(Error);
       expect(inspect(failure)).not.toMatch(/private-key|private notes/);
       expect(inspect(failure)).toContain(String(status));
+      if (status === 401) {
+        expect(failure).toBeInstanceOf(ProviderTokenRejectedError);
+        expect(failure).toHaveProperty("authFailureReason", "authentication_failed");
+        expect(failure).toHaveProperty("message", expect.stringContaining("reconnect"));
+      } else if (status === 400 || status === 403) {
+        expect(failure).toBeInstanceOf(ProviderAuthError);
+        expect(failure).toHaveProperty("authFailureReason", "authorization_failed");
+        expect(failure).toHaveProperty("message", expect.stringContaining("supporter status"));
+      } else if (status === 429) {
+        expect(failure).toHaveProperty("message", expect.stringContaining("weekly usage budget"));
+      }
     },
   );
 
@@ -93,7 +110,9 @@ describe("theCrag official logbook client", () => {
     await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toThrow(
       /invalid logbook JSON/,
     );
-    expect(captureException).toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "thecrag", phase: "logbook_response" },
+    });
     expect(inspect(captureException.mock.calls, { depth: null })).not.toMatch(
       /private-key|private notes/,
     );
@@ -103,5 +122,58 @@ describe("theCrag official logbook client", () => {
     const ascent = apiAscent({ pitch: [{ opaque: true }] });
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json(logbookPage([ascent])));
     expect((await new TheCragClient(fetchFn, "key").fetchPage(1)).ascents).toEqual([ascent]);
+  });
+
+  it.each(["1", "123", 123])("normalizes account identity %j and pagination", async (id) => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        logbookPage([apiAscent({ epoch: "1791676800" })], {
+          account: { id },
+          numberAscents: "1234",
+          page: "12",
+          perPage: "250",
+        }),
+      ),
+    );
+    expect(await new TheCragClient(fetchFn, "key").fetchPage(12)).toEqual({
+      account: { id: String(id) },
+      ascents: [apiAscent({ epoch: 1791676800 })],
+      numberAscents: 1234,
+      page: 12,
+      perPage: 250,
+    });
+  });
+
+  it.each(["x123", "123x", "0", "0123", "1x", 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects malformed account identity %j",
+    async (id) => {
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json(logbookPage([], { account: { id } })));
+      await expect(new TheCragClient(fetchFn, "key").fetchPage(1)).rejects.toThrow(
+        /invalid logbook response/,
+      );
+    },
+  );
+
+  it.each(["x12", "12x", "abc", -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects malformed source epoch %j",
+    async (epoch) => {
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json(logbookPage([apiAscent({ epoch })])));
+      await expect(new TheCragClient(fetchFn, "key").fetchPage(1)).rejects.toThrow(
+        /invalid logbook response/,
+      );
+    },
+  );
+
+  it("requires source progress on each ascent", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(logbookPage([{ id: "123" }])));
+    await expect(new TheCragClient(fetchFn, "key").fetchPage(1)).rejects.toThrow(
+      /invalid logbook response/,
+    );
   });
 });
