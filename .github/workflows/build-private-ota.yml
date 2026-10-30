@@ -32,7 +32,7 @@ jobs:
           ref: 071f6d907527d7de1ba21dd0be23a6ba669a2b1c
           path: .ota-upstream
           persist-credentials: false
-      - name: Apply storage-error correction
+      - name: Apply storage and protocol corrections
         working-directory: .ota-upstream
         run: git apply ../deploy/ota/upstream.patch
       - name: Set up Docker Buildx
@@ -47,7 +47,7 @@ jobs:
       - name: Resolve image name
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}-ota-internal" >> "$GITHUB_OUTPUT"
-      - name: Run upstream and storage-failure tests
+      - name: Run upstream and HTTP regression tests
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .ota-upstream
