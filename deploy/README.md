@@ -253,7 +253,6 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> validate the final schema; write and observe exact causal markers
               -> final deploy restores analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation
               -> verify backup freshness and record Sentry release
-         -> publish matching mobile OTA and eligible signed iOS build from the verified server-image source commit
 ```
 
 Production web deployments are serialized and never cancel an in-progress
@@ -284,8 +283,7 @@ Requests triggered by unsuccessful CI use an isolated concurrency group so they
 cannot replace valid pending production work. They cancel their own workflow
 before deployment and retain a nonzero step result while cancellation is
 processed. Superseded pending requests are cancelled by GitHub concurrency;
-inspect the server deployment job separately from the overall release conclusion,
-because mobile publishing follows the server rollout. GitHub documents
+inspect the server deployment job to confirm the rollout outcome. GitHub documents
 the cancellation API and its required Actions write permission:
 <https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run>.
 For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
@@ -334,18 +332,21 @@ of a completed deployment: tasks can restart and service specifications can
 change independently. Correlate the live revision and digest with the parent
 run's selected release and server stack job. Report the server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
-and the overall run conclusion. A mobile failure can leave a successful server
-rollout in a failed parent run; see the [publisher dependencies](../.github/workflows/deploy-web.yml)
+and the overall run conclusion. `Deploy Web` contains only server deployment;
+mobile releases use the separate [Deploy workflow](../.github/workflows/deploy.yml).
+See the [web deployment jobs](../.github/workflows/deploy-web.yml)
 and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Production mobile OTA and signed iOS publishing follow a successful server
-rollout in the same release run. Automatic `Deploy Web` releases pass the server
-image's validated `SENTRY_RELEASE` commit to both reusable mobile publishers;
-signed iOS publishes when its native-change check selects a build. Each publisher
+Automatic and manually dispatched `Deploy Web` runs deploy only the server;
+they do not publish mobile OTA updates or signed iOS builds. Mobile releases
+require an explicit dispatch of the [Deploy workflow](../.github/workflows/deploy.yml)
+with target `ota`, `ios`, or `all`. That workflow completes the matching server
+rollout before publishing and passes the server image's validated
+`SENTRY_RELEASE` commit to the selected reusable mobile publishers. Each publisher
 checks out that exact commit. A failed or cancelled server rollout prevents
-publishing. Manually dispatched `Deploy Web` runs deploy only the server. GitHub documents reusable workflow
+publishing. GitHub documents reusable workflow
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
