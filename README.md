@@ -245,6 +245,11 @@ Do not deploy production manually from this overview. Follow
 [`deploy/README.md`](deploy/README.md) for migration ordering, Infisical
 injection, health gates, rollback boundaries, and diagnostics.
 
+To check when production last deployed or why merged changes have not released,
+follow [Checking the Latest Production Deployment](deploy/README.md#checking-the-latest-production-deployment).
+Correlate the parent workflow's server job with the running image; the procedure
+also checks whether automatic deployment is disabled.
+
 ## Documentation Policy
 
 `docs/README.md` separates current reference documentation from dated design
