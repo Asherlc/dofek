@@ -1,7 +1,7 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
 import { selectClimbingSources } from "@dofek/training/climbing-sources";
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 
 export function ClimbingLogEntrySources({
   name,
@@ -9,7 +9,7 @@ export function ClimbingLogEntrySources({
   links,
   titleControl,
 }: {
-  titleControl?: ReactNode;
+  titleControl?: ReactElement;
   name: string;
   sourceName: string | null;
   links: ClimbingSourceLink[];

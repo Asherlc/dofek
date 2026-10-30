@@ -456,8 +456,13 @@ export default function ActivityDetailScreen() {
   );
   const climbMarkers = useMemo(
     () =>
-      buildClimbingMapMarkers([...(climbingEntries.data ?? []), ...(entrySuggestions.data ?? [])]),
-    [climbingEntries.data, entrySuggestions.data],
+      isClimbingActivity
+        ? buildClimbingMapMarkers([
+            ...(climbingEntries.data ?? []),
+            ...(entrySuggestions.data ?? []),
+          ])
+        : [],
+    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
   );
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
@@ -796,9 +801,10 @@ export default function ActivityDetailScreen() {
             />
           )}
           {(entrySuggestions.error ||
-            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
-            (entrySuggestions.data?.length ?? 0) > 0 ||
-            climbingEntries.data?.length === 0) && (
+            (!climbingEntriesLoading &&
+              entrySuggestions.isLoading &&
+              entrySuggestions.data === undefined) ||
+            (climbingEntries.data?.length === 0 && entrySuggestions.data?.length === 0)) && (
             <UnattachedClimbingLogEntries
               showEntries={false}
               suggestions={entrySuggestions.data}

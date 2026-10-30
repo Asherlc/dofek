@@ -162,8 +162,13 @@ export function ActivityDetailPage() {
   );
   const climbMarkers = useMemo(
     () =>
-      buildClimbingMapMarkers([...(climbingEntries.data ?? []), ...(entrySuggestions.data ?? [])]),
-    [climbingEntries.data, entrySuggestions.data],
+      isClimbingActivity
+        ? buildClimbingMapMarkers([
+            ...(climbingEntries.data ?? []),
+            ...(entrySuggestions.data ?? []),
+          ])
+        : [],
+    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
   );
   const trpcUtils = trpc.useUtils();
   const [entryAttachState, setEntryAttachState] = useState<
@@ -442,9 +447,12 @@ export function ActivityDetailPage() {
             />
           )}
           {(entrySuggestions.error ||
-            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
-            (entrySuggestions.data?.length ?? 0) > 0 ||
-            (climbingEntries.data !== undefined && climbingEntries.data.length === 0)) && (
+            (!climbingEntriesLoading &&
+              entrySuggestions.isLoading &&
+              entrySuggestions.data === undefined) ||
+            (climbingEntries.data !== undefined &&
+              climbingEntries.data.length === 0 &&
+              entrySuggestions.data?.length === 0)) && (
             <div
               className={
                 climbingEntries.error ||

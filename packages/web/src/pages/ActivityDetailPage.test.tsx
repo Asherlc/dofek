@@ -1118,6 +1118,52 @@ describe("ActivityDetailPage", () => {
     }
   });
 
+  it("fits a cycling route to its own points when climbing suggestions remain cached", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "cycling" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockRouteUseQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 7, lng: 8 },
+          { lat: 9, lng: 10 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    mockEntrySuggestionsUseQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "cached-suggestion",
+          mapLocation: {
+            coordinates: { latitude: 42, longitude: -100 },
+            scope: "area",
+            objectId: "cached-area",
+            providerId: "openbeta",
+            name: "Cached area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.fitBounds).toHaveBeenCalledWith(
+      [
+        [8, 7],
+        [10, 9],
+      ],
+      { padding: 30, duration: 0 },
+    );
+  });
+
   it("shows a loading state before route freshness is known", async () => {
     mockRouteUseQuery.mockReturnValue({
       data: { status: "unavailable" },

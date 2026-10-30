@@ -1,6 +1,6 @@
 # Activity climbing layout implementation plan
 
-> **For agentic workers:** Use superpowers:executing-plans to implement task by task.
+> **Execution:** Complete the tasks in order and check off each step as it is finished.
 
 **Goal:** Deliver the approved grouped list and one shared activity map on web/iOS.
 **Architecture:** Reuse domain area/coordinate grouping, existing cards and MapLibre renderers. Panel owns selection; source details remain a separate explicit action.

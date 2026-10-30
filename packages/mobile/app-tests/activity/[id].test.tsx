@@ -1057,6 +1057,41 @@ describe("ActivityDetailScreen", () => {
     }
   });
 
+  it("keeps the cycling route scoped to its activity when climbing suggestions remain cached", async () => {
+    mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
+    mockRouteQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 7, lng: 8 },
+          { lat: 9, lng: 10 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    mockEntrySuggestionsQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "cached-suggestion",
+          mapLocation: {
+            coordinates: { latitude: 42, longitude: -100 },
+            scope: "area",
+            objectId: "cached-area",
+            providerId: "openbeta",
+            name: "Cached area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
+    expect(overview?.climbMarkers).toEqual([]);
+  });
+
   it("opens the exact repeated climb in a detail modal and can reopen it after closing", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing" },
