@@ -6,7 +6,7 @@ const endpoint = "https://api.github.com/users/Asherlc/packages/container/dofek-
 const server = setupServer();
 const originalArguments = process.argv;
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 beforeEach(() => {
   vi.resetModules();
   vi.stubEnv("GITHUB_REPOSITORY", "Asherlc/dofek");

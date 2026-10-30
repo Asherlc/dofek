@@ -1,12 +1,12 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { foodEntry } from "../../db/schema/nutrition.ts";
 import { oauthToken, userProfile } from "../../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
+import { createIntegrationMswFixture } from "../../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
@@ -71,7 +71,7 @@ function fatsecretHandlers(responsesByDateInt: Map<string, FatSecretFoodEntriesR
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 // ============================================================
 // Tests
@@ -84,7 +84,7 @@ describe("FatSecretProvider.sync() (integration)", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-consumer-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-consumer-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fatsecret", "FatSecret");
   }, 60_000);
 
@@ -93,7 +93,7 @@ describe("FatSecretProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 

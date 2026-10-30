@@ -40,10 +40,8 @@ test-results/
 # Swift Package Manager
 .build/
 .swiftpm/
-# Muter mutation testing
-muter_logs/
-packages/mobile/modules/*_mutated/
-packages/mobile/targets/*_mutated/
+# Native mutation testing
+.mutantkit/
 # Python
 .venv/
 .venv-analytics/

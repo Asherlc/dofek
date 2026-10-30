@@ -1,5 +1,0 @@
-executable: /usr/bin/swift
-arguments:
-  - test
-  - --package-path
-  - .

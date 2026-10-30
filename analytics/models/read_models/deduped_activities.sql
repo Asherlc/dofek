@@ -11,7 +11,11 @@
 
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH apple_health_revisions AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+apple_health_revisions AS (
     {{ apple_health_workout_revisions(activity_refresh_scoped) }}
 ),
 

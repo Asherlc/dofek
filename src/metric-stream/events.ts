@@ -208,6 +208,19 @@ function createDeterministicMetricStreamId(
     .update(row.channel)
     .update("\0")
     .update(row.recordedAt);
+  const metadata = row.metadata;
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    typeof metadata.interval_end === "string"
+  ) {
+    hash.update("\0interval_end:").update(new Date(metadata.interval_end).toISOString());
+    hash.update("\0source_type:").update(row.sourceType);
+    hash
+      .update("\0source_bundle:")
+      .update(typeof metadata.source_bundle === "string" ? metadata.source_bundle : "");
+  }
   if (row.generation > 0) {
     hash.update("\0generation:").update(String(row.generation));
   }

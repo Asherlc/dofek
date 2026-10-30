@@ -323,15 +323,12 @@ function renderModel(database: string, incremental: boolean, scopedIds?: string[
   return renderDbtModelSql(readModelSql("activity_effort_identity.sql"), {
     isIncremental: incremental,
     activityRefreshScoped: scopedIds !== undefined,
+    activityRefreshIds: scopedIds,
   })
     .replaceAll("{{ ref('activity_source_records') }}", `${database}.activity_source_records`)
     .replaceAll("{{ ref('deduped_activity_members') }}", `${database}.deduped_activity_members`)
     .replaceAll("{{ this }}", `${database}.activity_effort_identity`)
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `[${(scopedIds ?? []).map((id) => `toUUID('${id}')`).join(",")}]`,
-    )
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1");
 }
 

@@ -18,6 +18,7 @@ export default defineProject({
       },
     },
     retry: 2,
+    clearMocks: false,
     name: "mobile",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["**/*.integration.test.ts", "**/node_modules/**"],

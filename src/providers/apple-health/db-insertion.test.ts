@@ -323,6 +323,66 @@ describe("type routing constants", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertMetricStreamBatch", () => {
+  it.each([
+    ["RunningSpeed", "mi/hr", 10, "speed", 4.4704],
+    ["RunningPower", "kW", 0.2505, "power", 250.5],
+    ["RunningStrideLength", "ft", 4, "stride_length", 1.2192],
+    ["RunningGroundContactTime", "s", 0.245, "ground_contact_time", 245],
+    ["RunningVerticalOscillation", "m", 0.075, "vertical_oscillation", 75],
+  ])(
+    "publishes XML %s in canonical units with its source and timestamp",
+    async (suffix, unit, value, channel, scalar) => {
+      const { db, capture } = createMockDb();
+      const record = parseRecord({
+        type: `HKQuantityTypeIdentifier${suffix}`,
+        unit: String(unit),
+        value: String(value),
+        sourceName: "My running watch",
+        startDate: "2026-10-28 10:00:00.125 +0000",
+        endDate: "2026-10-28 10:00:00.125 +0000",
+      });
+      expect(record).not.toBeNull();
+      if (!record) throw new Error("Expected parsed XML record");
+      const scope = {
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "apple_health",
+      };
+      expect(await upsertMetricStreamBatch(db, "apple_health", [record], scope)).toBe(1);
+      expect(capture.values.flat()).toEqual([
+        expect.objectContaining({
+          recordedAt: "2026-10-28T10:00:00.125Z",
+          deviceId: "My running watch",
+          channel,
+          scalar,
+          sourceType: "file",
+          providerId: "apple_health",
+          generation: 0,
+          externalId: `apple_health:no-activity:My running watch:${channel}:2026-10-28T10:00:00.125Z`,
+        }),
+      ]);
+    },
+  );
+
+  it.each([
+    "RunningSpeed",
+    "RunningPower",
+    "RunningStrideLength",
+    "RunningGroundContactTime",
+    "RunningVerticalOscillation",
+  ])("rejects incompatible XML units for %s", async (suffix) => {
+    const { db, capture } = createMockDb();
+    await expect(
+      upsertMetricStreamBatch(db, "apple_health", [
+        makeRecord({
+          type: `HKQuantityTypeIdentifier${suffix}`,
+          value: 10,
+          unit: "kg",
+        }),
+      ]),
+    ).rejects.toThrow(/Unsupported.*kg.*Running.*Expected/);
+    expect(capture.values).toEqual([]);
+  });
+
   it("routes heart rate records with rounding", async () => {
     const { db, capture } = createMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierHeartRate", value: 72.6 })];

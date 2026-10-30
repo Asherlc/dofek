@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -88,7 +88,7 @@ function withingsHandlers(opts?: { measureGroups?: WithingsMeasureGroup[]; hasMo
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WithingsProvider.sync() (integration)", () => {
@@ -98,7 +98,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     process.env.WITHINGS_CLIENT_ID = "test-withings-client";
     process.env.WITHINGS_CLIENT_SECRET = "test-withings-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 
@@ -111,7 +111,7 @@ describe("WithingsProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 

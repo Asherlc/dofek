@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query-persist-client";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runningData } from "../components/running-training-test-helpers";
 import {
   createMobileQueryPersister,
   MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES,
@@ -40,7 +41,100 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("discards v20 responses before restoring the MapLibre preview contract", async () => {
+  it("restores the combined v23 running contract", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "combined-running-owner";
+    const queryKey = [
+      ["running", "dynamicsV2"],
+      { input: { days: 30, responseVersion: 2 }, type: "query" },
+    ];
+    const data = runningData;
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, data);
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v23`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toEqual(data);
+  });
+
+  it.each([21, 22])(
+    "discards an independently produced v%s cache before restoring the combined contract",
+    async (version) => {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      const userId = "independent-v21-owner";
+      const queryKey = [
+        ["running", "dynamicsV2"],
+        { input: { days: 30, responseVersion: 2 }, type: "query" },
+      ];
+      const seedClient = createQueryClient();
+      seedClient.setQueryData(queryKey, runningData);
+      await AsyncStorage.setItem(
+        `dofek-query-cache:${userId}`,
+        JSON.stringify({
+          timestamp: Date.now(),
+          buster: `${userId}:v${version}`,
+          clientState: dehydrate(seedClient),
+        }),
+      );
+      const restoredClient = createQueryClient();
+      await persistQueryClientRestore({
+        queryClient: restoredClient,
+        persister: createMobileQueryPersister(userId),
+        maxAge: QUERY_CACHE_MAX_AGE_MS,
+        buster: mobileQueryCacheBuster(userId),
+      });
+      expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+      await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
+    },
+  );
+
+  it.each([17, 20])(
+    "discards v%s running rows before restoring cadence evidence and availability",
+    async (version) => {
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+      const userId = "running-owner";
+      const queryKey = [["running", "dynamicsV2"], { input: { days: 30 }, type: "query" }];
+      const seedClient = createQueryClient();
+      seedClient.setQueryData(queryKey, {
+        data: [{ activityId: "run-1", cadence: 172 }],
+        availability: { status: "available" },
+      });
+      await AsyncStorage.setItem(
+        `dofek-query-cache:${userId}`,
+        JSON.stringify({
+          timestamp: Date.now(),
+          buster: `${userId}:v${version}`,
+          clientState: dehydrate(seedClient),
+        }),
+      );
+      const restoredClient = createQueryClient();
+      await persistQueryClientRestore({
+        queryClient: restoredClient,
+        persister: createMobileQueryPersister(userId),
+        maxAge: QUERY_CACHE_MAX_AGE_MS,
+        buster: mobileQueryCacheBuster(userId),
+      });
+      expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+      expect(AsyncStorage.removeItem).toHaveBeenCalledWith(`dofek-query-cache:${userId}`);
+    },
+  );
+
+  it.each([
+    [19, "combined climbing progression"],
+    [20, "the MapLibre preview contract"],
+  ])("discards v%i training responses before restoring %s", async (version) => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "climbing-owner";
     const queryKey = [["mobile", "training"], { input: { days: 90 }, type: "query" }];
@@ -69,7 +163,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v20`,
+        buster: `${userId}:v${version}`,
         clientState: dehydrate(seedClient),
       }),
     );

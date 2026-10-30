@@ -5,6 +5,18 @@ import XCTest
 
 final class HealthKitTypesTests: XCTestCase {
 
+    func testRunningQuantitiesAreAuthorizedAndObserved() {
+        let identifiers: [HKQuantityTypeIdentifier] = [
+            .runningSpeed, .runningPower, .runningStrideLength,
+            .runningGroundContactTime, .runningVerticalOscillation,
+        ]
+        for identifier in identifiers {
+            let type = HKQuantityType.quantityType(forIdentifier: identifier)!
+            XCTAssertTrue(readTypes.contains(type), identifier.rawValue)
+            XCTAssertTrue(backgroundDeliveryTypes.contains(type), identifier.rawValue)
+        }
+    }
+
     func testClinicalRecordIdentifiersMapEverySupportedType() {
         let expectedTypes = [
             "HKClinicalTypeIdentifierAllergyRecord": "allergy",
@@ -130,8 +142,8 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testReadTypesTotalCount() {
-        // 49 quantity types + 5 category types + 1 workout type + 1 workout route = 56
-        var expectedCount = 56
+        // 54 quantity types + 5 category types + 1 workout type + 1 workout route = 61
+        var expectedCount = 61
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
@@ -176,8 +188,8 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testBackgroundDeliveryTypesTotalCount() {
-        // 18 quantity types + sleep + menstrual flow + workout + workout route.
-        XCTAssertEqual(backgroundDeliveryTypes.count, 22)
+        // 23 quantity types + sleep + menstrual flow + workout + workout route.
+        XCTAssertEqual(backgroundDeliveryTypes.count, 27)
     }
 
     // MARK: - writeTypes

@@ -132,7 +132,9 @@ history. Follow the deployment environment and diagnostics prerequisites in the
 2. From the target release's production analytics environment, run the following
    scoped build with the verified user and group UUIDs. Scope variables are
    defined by the [activity refresh macro](../analytics/macros/activity_refresh_scope.sql).
-   Keep the UUID list bounded and process additional groups in separate builds.
+   Encode the reviewed UUID with the
+   [canonical scope encoder](../analytics/README.md#scoped-activity-input) and use
+   its printed base64 value below. This direct command is for a small scope.
 
    ```sh
    pnpm tsx scripts/with-env.ts -- env \
@@ -140,7 +142,7 @@ history. Follow the deployment environment and diagnostics prerequisites in the
      UV_PROJECT_ENVIRONMENT=../.venv-analytics \
      uv run --project analytics dbt build \
      --project-dir analytics --profiles-dir analytics --threads 1 \
-     --vars '{"activity_refresh_user_id":"<user-uuid>","activity_refresh_activity_ids":["<canonical-activity-uuid>"]}' \
+     --vars '{"activity_refresh_user_id":"<user-uuid>","activity_refresh_activity_ids_base64":"<encoded-reviewed-scope>"}' \
      --select "activity_sensor_summary_rows activity_summary_rows cycling_activity hiking_activity"
    ```
 

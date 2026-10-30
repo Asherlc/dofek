@@ -9,6 +9,8 @@ import {
   queryClinicalRecords,
   queryDailyStatistics,
   queryQuantitySamples,
+  queryRunningStepChanges,
+  queryRunningStepSamples,
   querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
@@ -19,14 +21,13 @@ import {
   isBackgroundHealthKitTransientNetworkError,
   isHealthKitDatabaseInaccessible,
 } from "./health-kit-errors";
-import {
-  type HealthKitAdapter,
-  type SyncOptions,
-  type SyncResult,
-  type SyncTrpcClient,
-  syncHealthKitObserverChanges,
-  syncHealthKitToServer,
-} from "./health-kit-sync";
+import { syncHealthKitObserverChanges, syncHealthKitToServer } from "./health-kit-sync";
+import type {
+  HealthKitAdapter,
+  SyncOptions,
+  SyncResult,
+  SyncTrpcClient,
+} from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 export type AppleHealthRequestStatus = "unnecessary" | "shouldRequest" | "unavailable" | "unknown";
@@ -429,6 +430,8 @@ export const defaultAppleHealthAdapter: HealthKitAdapter = {
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,
+  queryRunningStepSamples,
+  queryRunningStepChanges,
   querySleepSamples,
   queryWorkoutRoutes,
 };
