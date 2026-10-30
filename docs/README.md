@@ -40,6 +40,7 @@ the exact section.
 | [climbing-ascent-photo-retrieval.md](climbing-ascent-photo-retrieval.md) | Provider photo retrieval evidence and limits on ascent attribution. |
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
 | [climbing-context.md](climbing-context.md) | Canonical climbing graph, grade ownership, scoped attempts, execution facts and server projections. |
+| [cross-source-matching-evaluation.md](cross-source-matching-evaluation.md) | Fixture-backed matching cases, cross-domain research, and an evaluation procedure for source identity and ambiguity. |
 | [climbing-trait-coverage.md](climbing-trait-coverage.md) | Observed climbing source fields, verified Kaya metadata, intentional exclusions, and hold/angle interpretation. |
 | [climbing-log-model-cutover.md](climbing-log-model-cutover.md) | Tested preparation, bounded conversion, validation and finalization for populated upgrades. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
