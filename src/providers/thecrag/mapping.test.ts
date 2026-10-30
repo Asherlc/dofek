@@ -104,3 +104,32 @@ describe("theCrag official ascent mapping", () => {
     expect(inspect(failure, { depth: null })).not.toMatch(/private-key|private notes/);
   });
 });
+
+it("maps documented ancestor identities in depth order without duplicating the parent crag", () => {
+  const record = mapTheCragAscent(
+    apiAscent({
+      route: {
+        id: "2001",
+        style: "Sport",
+        ancestors: {
+          parent: { id: "30", name: "Crag", depth: 3 },
+          country: { id: "10", name: "Country", depth: 1 },
+          TLC: { id: "30", name: "Crag", depth: 3 },
+        },
+      },
+    }),
+    "123",
+  );
+  expect(record.climb?.areas).toEqual([
+    { externalId: "10", name: "Country" },
+    { externalId: "30", name: "Crag" },
+  ]);
+});
+
+it.each([null, undefined, ""])(
+  "preserves an unavailable source date (%j) rather than clearing an existing date",
+  (date) => {
+    const source = JSON.parse(JSON.stringify(apiAscent({ date })));
+    expect(mapTheCragAscent(source, "123").climbedOn).toBeUndefined();
+  },
+);

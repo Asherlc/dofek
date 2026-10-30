@@ -144,6 +144,7 @@ export function TokenAuthModal({
   providerName,
   tokenLabel,
   instructionsUrl,
+  description,
   onClose,
   onSuccess,
 }: {
@@ -152,6 +153,7 @@ export function TokenAuthModal({
   providerName: string;
   tokenLabel: string;
   instructionsUrl: string;
+  description?: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -238,10 +240,13 @@ export function TokenAuthModal({
             </View>
           ) : null}
 
+          {description ? <Text style={styles.modalDescription}>{description}</Text> : null}
           <TextInput
             ref={tokenRef}
             style={styles.input}
             placeholder={tokenLabel}
+            accessibilityLabel={tokenLabel}
+            accessibilityHint={description}
             placeholderTextColor={colors.textTertiary}
             value={token}
             onChangeText={setToken}
@@ -293,6 +298,7 @@ export function ProviderDetailAuthModals({ modals }: { modals: ProviderDetailMod
           providerName={modals.tokenAuthProvider.name}
           tokenLabel={modals.tokenAuthProvider.label}
           instructionsUrl={modals.tokenAuthProvider.instructionsUrl}
+          description={modals.tokenAuthProvider.description}
           onClose={modals.closeTokenAuth}
           onSuccess={modals.handleTokenSuccess}
         />

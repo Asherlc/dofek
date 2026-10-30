@@ -13,26 +13,28 @@ beforeEach(() => {
   mocks.connect.mockResolvedValue({ success: true });
 });
 
-describe("theCrag public profile connection", () => {
-  it("shows and submits a visible public identity", async () => {
+describe("theCrag personal key connection", () => {
+  it("conceals and submits a personal key with its access disclosure", async () => {
     const onSuccess = vi.fn();
     render(
       <TokenAuthModal
-        kind="public-profile"
+        kind="access-token"
         providerId="thecrag"
         providerName="theCrag"
-        tokenLabel="theCrag profile URL or username"
-        instructionsUrl="https://www.thecrag.com/"
+        tokenLabel="Personal API key"
+        instructionsUrl="https://www.thecrag.com/en/article/logbookreadapi"
+        description="This key imports your public and private ascent notes."
         onClose={vi.fn()}
         onSuccess={onSuccess}
       />,
     );
-    const input = screen.getByPlaceholderText("theCrag profile URL or username");
-    expect(input.getAttribute("type")).toBe("text");
-    fireEvent.change(input, { target: { value: "sampleclimber" } });
+    const input = screen.getByPlaceholderText("Personal API key");
+    expect(input.getAttribute("type")).toBe("password");
+    expect(screen.getByText("This key imports your public and private ascent notes.")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "personal-key" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect theCrag" }));
     await waitFor(() =>
-      expect(mocks.connect).toHaveBeenCalledWith({ providerId: "thecrag", token: "sampleclimber" }),
+      expect(mocks.connect).toHaveBeenCalledWith({ providerId: "thecrag", token: "personal-key" }),
     );
     expect(onSuccess).toHaveBeenCalledOnce();
   });

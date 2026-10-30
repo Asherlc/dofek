@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+  parseRetryAfterHeader,
+} from "@dofek/provider-http/rate-limit";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../../db/tokens.ts";
@@ -24,7 +29,25 @@ export class TheCragProvider implements SyncProvider {
   readonly name = "theCrag";
   readonly #fetchFn: typeof fetch;
   constructor(fetchFn: typeof fetch = globalThis.fetch) {
-    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn);
+    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn, {
+      createRateLimitError: (response) =>
+        new ProviderRateLimitError({
+          message:
+            "theCrag limited logbook access (429). Check your weekly usage budget in theCrag Settings > API Keys and try again when access is available.",
+          providerId: this.id,
+          statusCode: response.status,
+          responseBody: "",
+          retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
+        }),
+      createServiceUnavailableError: (response) =>
+        new ProviderServiceUnavailableError({
+          message: `theCrag logbook service is unavailable (${response.status}). Try again when the service is available.`,
+          providerId: this.id,
+          statusCode: response.status,
+          responseBody: "",
+          retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
+        }),
+    });
   }
   validate(): string | null {
     return null;
@@ -34,7 +57,9 @@ export class TheCragProvider implements SyncProvider {
       apiBaseUrl: API_BASE_URL,
       manualToken: {
         kind: "access-token",
-        label: "Personal API key (active supporter required)",
+        description:
+          "Requires an active theCrag supporter subscription. This key imports public and private ascents and notes into Dofek. Revoke it in theCrag Settings > API Keys when you stop using it.",
+        label: "Personal API key",
         instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
         exchangeToken: async (input): Promise<TokenSet> => {
           const key = input.trim();

@@ -56,7 +56,7 @@ describe("theCrag official API provider", () => {
     expect(provider.validate()).toBeNull();
     expect(provider.authSetup().manualToken).toMatchObject({
       kind: "access-token",
-      label: "Personal API key (active supporter required)",
+      label: "Personal API key",
       instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
     const tokens = await provider.authSetup().manualToken?.exchangeToken(" personal-key ");
@@ -181,3 +181,45 @@ describe("theCrag official API provider", () => {
     ).rejects.toMatchObject({ code: "ETIMEDOUT", providerId: "thecrag" });
   });
 });
+
+it.each([429, 502, 503, 504])(
+  "sanitizes HTTP %s through the complete transport wrapper and token exchange",
+  async (status) => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(
+      async () =>
+        new Response("personal-key private-upstream-notes", {
+          status,
+          headers: { "Retry-After": "17" },
+        }),
+    );
+    const provider = new TheCragProvider(fetchFn);
+    const output = await provider.sync(makeRun(createMockDatabase().db)).then(
+      (result) => result,
+      (error: Error) => error,
+    );
+    const syncFailure = output instanceof Error ? output : output.errors[0]?.cause;
+    expect(syncFailure).toMatchObject({
+      providerId: "thecrag",
+      statusCode: status,
+      retryAfterSeconds: 17,
+    });
+    const connectFailure = await provider
+      .authSetup()
+      .manualToken?.exchangeToken("personal-key")
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(connectFailure).toMatchObject({
+      providerId: "thecrag",
+      statusCode: status,
+      retryAfterSeconds: 17,
+    });
+    expect(
+      inspect(
+        { syncFailure, connectFailure, calls: mocks.captureException.mock.calls },
+        { depth: null },
+      ),
+    ).not.toMatch(/personal-key|private-upstream-notes/);
+  },
+);

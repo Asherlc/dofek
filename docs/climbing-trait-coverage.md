@@ -7,7 +7,7 @@ are separate questions. The current mappings are the
 [Kaya adapter](../src/providers/kaya-sync.ts),
 [Mountain Project adapter](../src/providers/mountain-project.ts),
 [OpenBeta adapter](../src/providers/openbeta.ts), and
-[theCrag parser](../src/providers/thecrag/public-parsing.ts).
+[theCrag parser](../src/providers/thecrag/mapping.ts).
 
 ## Evidence and audit limits
 
@@ -158,7 +158,7 @@ could expose through another endpoint or page. See the existing
 | --- | --- | --- |
 | Mountain Project | Tick CSV plus route/Area identity and location enrichment; retained source rows and route responses. | The checked tick export and route API response have no structured hold or wall-angle field. Descriptions and protection text are present in route JSON; full route JSON remains in `raw.sourceEnrichment.route`. Gear/ascent style and description text do not establish recorded grip categories or measured angles. Sources: observed [route API](https://www.mountainproject.com/api/v2/routes/105734660), [tick-export contract](mountain-project.md#tick-export-contract), and [client](../packages/mountain-project-client/src/client.ts). |
 | OpenBeta | Public ticks, recorded result/style, grades, identified climbs/pitches and Area ancestry/coordinates. | The current query selects no grip or wall-angle field. This describes Dofek's selection, not an assertion that every upstream surface lacks those facts. [Importer query](../src/providers/openbeta.ts); [upstream GraphQL source](https://github.com/OpenBeta/openbeta-graphql). |
-| theCrag | Public ascent feed and ascent pages; public route/method/result/grade fields retained per ascent. | Public route pages expose structured categorical steepness and style tags, including multiple and inherited tags. The present parser does not fetch that route catalogue metadata, so this is a known enrichment gap. Ascent gear style is distinct from those traits. [Current parser](../src/providers/thecrag/public-parsing.ts); upstream [structured-tag definitions](https://www.thecrag.com/en/article/tagging), [gear-style definitions](https://www.thecrag.com/en/article/styles), and [feed discussion](https://github.com/theCrag/website/issues/1997). |
+| theCrag | Official personal logbook API; source route/method/result/grade fields and private notes retained per ascent. | Public route pages expose structured categorical steepness and style tags, including multiple and inherited tags. The present parser does not fetch that route catalogue metadata, so this is a known enrichment gap. Ascent gear style is distinct from those traits. [Current parser](../src/providers/thecrag/mapping.ts); upstream [structured-tag definitions](https://www.thecrag.com/en/article/tagging), [gear-style definitions](https://www.thecrag.com/en/article/styles), and [personal logbook API](https://www.thecrag.com/en/article/logbookreadapi). |
 
 The 2026-10-27 theCrag audit verified public route tags independently of the
 current importer. [When Your Luck Runs Out](https://www.thecrag.com/en/climbing/australia/south-australia/adelaide/route/521786997)

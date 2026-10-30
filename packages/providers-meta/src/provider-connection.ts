@@ -6,6 +6,7 @@ export interface ProviderManualConnectionMetadata {
   kind: ProviderManualConnectionKind;
   label: string;
   instructionsUrl: string;
+  description?: string;
 }
 
 export function isCloudPushProvider(provider: { pushOnly: boolean; authType: string }): boolean {

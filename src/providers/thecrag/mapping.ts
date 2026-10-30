@@ -11,6 +11,11 @@ import type { SourceClimbingAttempt, SourceClimbingLogEntry } from "../../db/cli
 const identifier = z
   .union([z.string().regex(/^[1-9]\d*$/), z.number().int().positive().safe()])
   .transform(String);
+const locationSchema = z.object({
+  id: identifier,
+  name: z.string().trim().min(1),
+  depth: z.number().int().nonnegative(),
+});
 const ascentSchema = z.object({
   id: identifier,
   epoch: z.number().int().nonnegative().safe(),
@@ -23,6 +28,7 @@ const ascentSchema = z.object({
     name: z.string().nullish(),
     grade: z.string().nullish(),
     style: z.string().nullish(),
+    ancestors: z.record(z.string(), locationSchema.nullable()).nullish(),
   }),
 });
 function method(value: string): NonNullable<SourceClimbingAttempt["ropeMethod"]> | null {
@@ -92,6 +98,16 @@ export function mapTheCragAscent(raw: unknown, accountId: string): SourceClimbin
         "theCrag returned an incomplete or invalid climb date. Record the exact climb day in theCrag and sync again.",
       );
   }
+  const locationIds = new Set<string>();
+  const areas = Object.values(ascent.route.ancestors ?? {})
+    .filter((location) => location !== null)
+    .sort((first, second) => first.depth - second.depth)
+    .filter((location) => {
+      if (locationIds.has(location.id)) return false;
+      locationIds.add(location.id);
+      return true;
+    })
+    .map((location) => ({ externalId: location.id, name: location.name }));
   const attempt: SourceClimbingAttempt = {
     scope: "climb",
     ...(label ? { sourceResult: label } : {}),
@@ -110,7 +126,7 @@ export function mapTheCragAscent(raw: unknown, accountId: string): SourceClimbin
     throw new Error("theCrag returned invalid ascent provenance. Contact support before syncing.");
   return {
     externalId: `thecrag:${ascent.id}`,
-    climbedOn: day,
+    ...(day ? { climbedOn: day } : {}),
     sourceName: "theCrag",
     ...(kind ? { discipline: "rock_climbing" } : {}),
     attempts: [attempt],
@@ -118,6 +134,7 @@ export function mapTheCragAscent(raw: unknown, accountId: string): SourceClimbin
     raw: { accountId, ascent: json.data },
     climb: {
       externalId: ascent.route.id,
+      ...(areas.length ? { areas } : {}),
       ...(ascent.route.name == null ? {} : { name: ascent.route.name.trim() || null }),
       ...(kind ? { kind } : {}),
       ...(routeStyle === "sport" || routeStyle === "trad" ? { routeProtection: [routeStyle] } : {}),

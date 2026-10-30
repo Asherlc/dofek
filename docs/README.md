@@ -74,7 +74,7 @@ the exact section.
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |
 | Kaya | [kaya.md](kaya.md) | Authenticated logbook sync, separate ascent grades, grip tags, categorical outdoor angles and source metadata coverage. |
-| theCrag | [thecrag.md](thecrag.md) | Public-profile tick sync, browser-free HTTP, additive climbing logs and feed limitations. |
+| theCrag | [thecrag.md](thecrag.md) | Official personal-key logbook sync, incremental updates, supporter requirements and private notes. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |

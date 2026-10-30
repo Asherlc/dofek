@@ -160,6 +160,7 @@ export function TokenAuthModal({
   providerName,
   tokenLabel,
   instructionsUrl,
+  description,
   onClose,
   onSuccess,
 }: {
@@ -168,6 +169,7 @@ export function TokenAuthModal({
   providerName: string;
   tokenLabel: string;
   instructionsUrl: string;
+  description?: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -244,6 +246,11 @@ export function TokenAuthModal({
         </a>{" "}
         and paste your {tokenLabel} below.
       </p>
+      {description ? (
+        <p id={`${providerId}-token-description`} className="mb-3 text-xs text-muted">
+          {description}
+        </p>
+      ) : null}
 
       {error && (
         <div role="alert" className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
@@ -259,6 +266,7 @@ export function TokenAuthModal({
           <input
             ref={tokenRef}
             id={`${providerId}-token`}
+            aria-describedby={description ? `${providerId}-token-description` : undefined}
             type={kind === "public-profile" ? "text" : "password"}
             value={token}
             onChange={(event) => setToken(event.target.value)}

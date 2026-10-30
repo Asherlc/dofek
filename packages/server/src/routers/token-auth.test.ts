@@ -514,3 +514,30 @@ describe("tokenAuthRouter", () => {
     expect(exchangeToken).not.toHaveBeenCalled();
   });
 });
+
+describe("theCrag official access failures", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each([400, 403])("returns safe actionable checks for an HTTP %s rejection", async (status) => {
+    const { TheCragProvider } = await import("dofek/providers/thecrag");
+    const provider = new TheCragProvider(
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response("private-key private notes", { status })),
+    );
+    mockGetAllProviders.mockReturnValue([provider]);
+    const caller = createTestCallerFactory(tokenAuthRouter)({
+      db: {},
+      userId: "user-123",
+      timezone: "UTC",
+    });
+    await expect(
+      caller.connect({ providerId: "thecrag", token: "private-key" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringMatching(
+        /Check your API key, active supporter status and weekly usage budget/,
+      ),
+    });
+    expect(mockConnectProviderWithTokens).not.toHaveBeenCalled();
+  });
+});

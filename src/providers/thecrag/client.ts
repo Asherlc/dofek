@@ -1,7 +1,7 @@
 import { validateHeaderValue } from "node:http";
 import { z } from "zod";
 import { captureException } from "../../lib/error-reporting.ts";
-import { ProviderTokenRejectedError } from "../auth-errors.ts";
+import { ProviderAuthError, ProviderTokenRejectedError } from "../auth-errors.ts";
 
 const integer = z
   .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
@@ -60,7 +60,8 @@ export class TheCragClient {
         "The logbook API returned 401. Check your key in theCrag Settings > API Keys and reconnect.",
       );
     if (response.status === 400 || response.status === 403)
-      throw new Error(
+      throw new ProviderAuthError(
+        "authorization_failed",
         `theCrag denied logbook access (${response.status}). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.`,
       );
     if (response.status === 429)
