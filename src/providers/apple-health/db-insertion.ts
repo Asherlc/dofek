@@ -19,6 +19,7 @@ import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
+import { normalizeRunningQuantity, RUNNING_QUANTITY_TYPES } from "./running-quantities.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
 
@@ -58,6 +59,9 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
 
 // Records that map to metric stream channels (granular time-series)
 export const METRIC_STREAM_TYPES: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(RUNNING_QUANTITY_TYPES).map(([type, mapping]) => [type, mapping.field]),
+  ),
   HKQuantityTypeIdentifierHeartRate: "heartRate",
   HKQuantityTypeIdentifierOxygenSaturation: "spo2",
   HKQuantityTypeIdentifierRespiratoryRate: "respiratoryRate",
@@ -173,6 +177,12 @@ export async function upsertMetricStreamBatch(
       recordedAt: record.startDate,
       sourceName: record.sourceName,
     };
+
+    const runningValue = normalizeRunningQuantity(record.type, record.value, record.unit);
+    if (runningValue !== undefined) {
+      rows.push({ ...base, [field]: runningValue });
+      continue;
+    }
 
     switch (field) {
       case "heartRate":

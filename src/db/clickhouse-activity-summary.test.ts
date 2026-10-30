@@ -19,7 +19,7 @@ describe("ClickHouse activity summary read model", () => {
   it("keeps analytics.activity_summary as a thin compatibility view", () => {
     const sql = buildActivitySummaryViewSql();
 
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("CREATE OR REPLACE VIEW analytics.activity_summary\nAS");
     expect(sql).toContain("FROM analytics.activity_summary_rows FINAL");
     expect(sql).toContain("WHERE is_deleted = 0");
     expect(sql).toContain("climbing_seconds,\n  refreshed_at");
@@ -31,6 +31,6 @@ describe("ClickHouse activity summary read model", () => {
     const sql = buildIncrementalActivitySummaryStatements().join("\n");
 
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("CREATE OR REPLACE VIEW analytics.activity_summary\nAS");
   });
 });

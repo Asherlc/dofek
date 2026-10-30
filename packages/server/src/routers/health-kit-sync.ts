@@ -5,8 +5,10 @@ import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { z } from "zod";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { processRunningStepSamples } from "../repositories/health-kit-running-steps-repository.ts";
 import {
   HealthKitDeletionTombstonesUnsupportedError,
   HealthKitSyncRepository,
@@ -32,6 +34,7 @@ import {
   metricStreamTypes,
   PROVIDER_ID,
   pointInTimeDailyMetricTypes,
+  runningStepSampleSchema,
   sleepSampleSchema,
   workoutRouteSchema,
   workoutSampleSchema,
@@ -140,6 +143,60 @@ export const healthKitSyncRouter = router({
       return { deleted };
     }),
 
+  pushRunningStepSamples: protectedProcedure
+    .input(
+      z.object({
+        workouts: z.array(workoutSampleSchema).max(500),
+        samples: z
+          .array(healthKitSampleSchema.extend({ workoutUuids: z.array(z.string()) }))
+          .max(500),
+      }),
+    )
+    .output(z.object({ inserted: z.number().int().nonnegative() }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db, ctx.userId);
+      try {
+        const samples = input.samples.map((sample) => {
+          const parsed = runningStepSampleSchema.safeParse(sample);
+          if (!parsed.success) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Running step sample ${sample.uuid} is invalid: ${parsed.error.issues.map((issue) => issue.message).join("; ")}. Resync Apple Health running steps.`,
+            });
+          }
+          return parsed.data;
+        });
+        const publisher =
+          ctx.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
+        const inserted = await processRunningStepSamples(
+          ctx.db,
+          ctx.userId,
+          input.workouts,
+          samples,
+          publisher,
+        );
+        await invalidateAllUserQueries(ctx.userId);
+        healthKitPushTotal.add(1, { endpoint: "pushRunningStepSamples", status: "success" });
+        healthKitRecordsTotal.add(inserted, {
+          endpoint: "pushRunningStepSamples",
+          category: "runningStepInterval",
+        });
+        return { inserted };
+      } catch (error) {
+        captureException(error, {
+          tags: { endpoint: "pushRunningStepSamples" },
+          extra: { userId: ctx.userId },
+        });
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Apple Health running steps could not be saved. Retry sync; your step cursor has not advanced.",
+          cause: error,
+        });
+      }
+    }),
+
   pushQuantitySamples: protectedProcedure
     .input(z.object({ samples: z.array(healthKitSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
@@ -231,6 +288,7 @@ export const healthKitSyncRouter = router({
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        captureException(error, { tags: { healthKitSyncStep: "metricStream" } });
         errors.push(`Metric stream: ${message}`);
       }
 

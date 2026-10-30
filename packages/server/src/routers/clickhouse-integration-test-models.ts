@@ -17,7 +17,7 @@ export function rewriteClickHouseDatabaseNames(
 }
 
 export const CLICKHOUSE_TEST_VIEW_REGEX =
-  /^CREATE (?:MATERIALIZED )?VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\n[\s\S]*?)?\nAS\n?([\s\S]*)$/;
+  /^CREATE (?:(?:MATERIALIZED )?VIEW IF NOT EXISTS|OR REPLACE VIEW) ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\n[\s\S]*?)?\nAS\n?([\s\S]*)$/;
 export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.v_activity",
   "analytics.v_activity_members",

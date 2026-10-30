@@ -3,14 +3,17 @@
 ## Native Swift mutation testing
 
 Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the
-repository root on macOS with Swift and Muter installed:
+repository root with Xcode's Swift toolchain on macOS ARM64. Install the
+checksum/provenance-pinned MutantKit declared in [mise.toml](../mise.toml)
+and [mise.lock](../mise.lock):
 
 ```bash
-pnpm tsx scripts/run-swift-mutation.ts --base origin/main
+mise install --locked github:juntaki/mutantkit
+mise exec -- pnpm tsx scripts/run-swift-mutation.ts --base origin/main
 ```
 
 The base comparison uses Git's merge base with `HEAD`, so unrelated commits on
-main and uncommitted-only paths are not selected. Muter tests the working
+main and uncommitted-only paths are not selected. MutantKit tests the working
 copy of each selected package. For each changed Swift file, the
 runner finds the owning `Package.swift`, reads SwiftPM's compiled source
 inventory, and keeps non-test Swift targets. Test files, manifests and excluded
@@ -18,25 +21,40 @@ Expo bridge files do not become mutation inputs. See the
 [Git comparison contract](https://git-scm.com/docs/git-diff) and
 [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift).
 
-Muter runs inside each affected package, with package-relative source paths.
-The [canonical configuration](../packages/mobile/muter.conf.yml) is shared by
-package-local symlinks; Muter loads it from its current working directory and
-copies that project to a sibling mutation directory:
-[configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
-[mutation project location](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/CreateTempDirectoryURL.swift).
-Only an empty compiled-source intersection skips mutation testing. A selected
-run must exit successfully and produce a valid positive-work JSON report under
-`reports/swift-mutation/`; missing configuration, invalid reports, and all
-nonzero statuses fail. Exit 255 does not identify benign empty work:
-[Muter error handling](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/CLICommands/RunCommand/Run.swift).
+The [canonical configuration](../packages/mobile/mutantkit.yml) is shared by
+package-local symlinks. Each run derives an exact source scope while retaining
+the owning package's full tests. The runner validates source with the official
+Swift compiler, matches the plan's complete source inventory and hashes, and
+requires measurable candidates for every selected file. Missing, malformed or
+unmeasurable selected source fails explicitly. Only an empty changed compiled
+intersection skips the campaign. See MutantKit's
+[planning interface](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift)
+and [configuration loading](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/ConfigurationLoader.swift).
 
-Inspect the actual JSON mutation results for surviving mutants and build
-errors. A successful Muter process means the run completed; it does not imply
-every mutation was killed. The runner preserves this tool contract rather
-than introducing a new score threshold:
-[Muter report schema](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/MuterTestReport.swift),
-[mutation scoring](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/mutationScoring.swift).
-Native unit tests and a signed Simulator build remain separate checks;
+Keep the plan, derived configuration, JSON report, official verification output
+and raw evidence archive under `reports/swift-mutation/`. Fresh complete results,
+a passing baseline, positive measured work and all mandatory source/archive
+checks are required. The required CI mutation aggregate includes native
+discovery and every selected native job. Inspect individual matrix outcomes as
+well as the aggregate; see [CI wiring](../.github/workflows/test.yml) and official
+[report reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/ReportReverification.swift).
+
+Each recorded command retains separate `.command.stdout.log` and
+`.command.stderr.log` files; `.command.json` holds their paths and the command's
+status, signal and startup error when present. File-descriptor recording avoids
+the captured-output limit, while human diagnostics replay in bounded chunks
+after synchronous completion. Machine verification JSON remains separate; see
+[Node subprocess stdio](https://nodejs.org/api/child_process.html#optionsstdio)
+and the [runner](../scripts/run-swift-mutation.ts).
+
+Review surviving mutants and add tests for real coverage gaps. Assertion kills,
+confirmed crashes/timeouts, survivors, compile failures and inconclusive outcomes
+remain distinct under the official
+[outcome model](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/MutationOutcome.swift).
+The native runner retains its existing positive-work policy without adding a
+numeric threshold. Default optional independent assertion confirmation can
+remain unverified; that status does not establish named-test attribution.
+Native unit tests, app builds and Simulator checks remain separate;
 physical background reconnection and capture still require a device.
 
 ## CI build caches
@@ -117,6 +135,15 @@ integration shards instead of being counted as uncovered Docker-free mutants.
 Use `pnpm test:integration` for integration behavior and `pnpm test:mutation`
 for mutation quality; do not mix the two execution models.
 
+For dbt first-build schema tests, execute the adapter's actual
+[`CREATE TABLE ... EMPTY AS` path](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/include/clickhouse/macros/materializations/table.sql),
+then compare the created table's complete schema with the canonical table and
+verify inserted rows. On pinned ClickHouse 26.6.1.1193,
+[`DESCRIBE TABLE (SELECT ...)`](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Interpreters/InterpreterDescribeQuery.cpp#L155-L173)
+can build unexecuted materialized CTE plans that retain source tables and block
+synchronous cleanup; the [incident record](production-incident-baseline.md#2026-10-28--describe-subquery-retained-cadence-source-tables-during-ci-teardown)
+documents the executable reproduction and ownership evidence.
+
 Sources:
 
 - PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
@@ -124,6 +151,148 @@ Sources:
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
 - Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
+
+### Duration-balanced integration shards
+
+The four integration jobs use one committed measured baseline,
+[`scripts/integration-test-timings.json`](../scripts/integration-test-timings.json).
+The [sequencer](../scripts/integration-test-sequencer.ts) allocates discovered
+files by descending duration to the least-loaded shard, with stable path and
+shard tie breaks. It preserves every discovered specification, existing serial
+execution, coverage and the 12-minute test-step limit. New or renamed files use
+the baseline's positive-duration median and appear explicitly as estimates.
+Removed files are never rediscovered from timing data. Other projects retain
+Vitest's allocation; see the [public sequence extension](https://v4.vitest.dev/config/sequence).
+
+Do not restore independent result caches as allocation input. All jobs must use
+the same checked-in baseline. Preserve the historical runner version that
+measured it; a runner upgrade can consume those weights, while all artifacts
+in a new complete refresh must match one current runtime. Each job records its
+assignment and checks the public per-specification cache before execution. The
+[timing reporter](../scripts/integration-timing-reporter.ts) publishes an owned
+artifact only after a successful complete run of exactly the assigned files,
+with current-run timestamps and matching assignment identity. The export command
+validates this artifact before publishing `results.json`; Vitest's internal
+cache filename and disk schema are not part of the contract.
+The public cache records whole-suite duration, including suite hooks, rather than JSON
+reporter intervals between individual tests; import, collection and coverage
+overhead remain outside that estimate. See Vitest's
+[per-specification cache](https://vitest.dev/api/advanced/vitest#cache)
+and [reporter API](https://vitest.dev/api/advanced/reporters).
+
+After a complete successful CI run, download `integration-timings-1` through
+`integration-timings-4` from the same run attempt into four separate directories.
+Refresh and review the committed baseline with:
+
+```bash
+pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>
+```
+
+The command requires coherent revision, run, attempt, runtime, baseline and
+inventory provenance, with an exact disjoint union of successful results. Invalid
+or incomplete input leaves the old file intact. The existing coverage job also
+publishes `integration-timings-complete` after its coverage gates; committing a
+baseline update remains an explicit reviewed change. Refresh when suite costs
+change materially or allocation diagnostics show skew or new-file estimates.
+See the [refresh implementation](../scripts/update-integration-test-timings.ts)
+and [CI wiring](../.github/workflows/test.yml).
+
+For Vitest 4.1.11, `list --filesOnly --shard` bypasses the sequencer and reports
+the full inventory; it does not prove shard membership. Verify allocation through
+actual runtime assignment manifests and their four-way union. A lightweight
+operator probe may use public `createVitest`, discovered specifications and the
+configured sequencer without collecting database suites; see Vitest's
+[files-only listing path](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cli/cli-api.ts)
+and [advanced API](https://v4.vitest.dev/advanced/api/).
+
+### Integration request interception
+
+The integration project starts its single [MSW server](../src/test/early-msw-setup.ts)
+before test modules load, so retained provider clients capture an intercepted
+fetch function. Integration setup owns listening and closing; fixtures select
+their handler baselines and unhandled-request policies without opening another
+server. Resets must restore each fixture's baseline, and teardown must clear its
+handlers and policy before the next file. MSW recommends [one global or individual
+server pattern](https://mswjs.io/api/setup-server/), and documents the
+[client-construction ordering requirement](https://github.com/mswjs/msw/issues/2180).
+Vitest documents [setup-file execution with cached modules](https://vitest.dev/config/setupfiles).
+The guarded lifecycle regression checks early capture, exactly-once request
+effects, strictness, baseline restoration and independent cleanup across real
+runner files without external traffic.
+
+### Hosted ClickHouse Failure Diagnostics
+
+Integration progress diagnostics supplement the default reporter with immediate
+module, suite, case and hook events through Vitest's [public reporter API](https://v4.vitest.dev/api/advanced/reporters).
+Start events are emitted before completion, so an unmatched start identifies the
+last active operation in a partial log. Events identify code by repository file,
+task ID and source location; dynamic test titles and fixture values are excluded.
+Failed module, suite and case events include bounded error metadata immediately,
+so a hard stop need not erase the original failure before the final summary.
+Fixture statement stages identify pending drop/create/seed awaits; bootstrap
+events record the child's [spawn](https://nodejs.org/api/child_process.html#event-spawn)
+and [close](https://nodejs.org/api/child_process.html#event-close) metadata without
+printing commands, arguments or environment. Correlate a missing end event with
+the failure events before deciding whether an operation stalled or rejected.
+
+The integration setup also observes Node's [HTTP request diagnostic channels](https://nodejs.org/download/release/v26.7.0/docs/api/diagnostics_channel.html#built-in-channels).
+Local request failures include a fixed method and operation bucket with the
+canonical sanitized error fields; successful traffic contributes only numeric
+summary counts. Dynamic routes, queries, headers, bodies and exception messages
+are excluded. A Docker-shaped operation identifies a matching route, not a
+proven server or Unix socket: classification uses documented request fields and
+does not infer Unix versus TCP. Match a request error to the surrounding setup
+events before assigning a transport cause. Reproductions should record the exact
+Node version and operating system used by the failing job.
+
+Seed-container diagnostics use Testcontainers' [documented lifecycle callbacks](https://node.testcontainers.org/features/containers/#lifecycle-callbacks).
+These bracket runtime/image resolution, creation, start/inspection and readiness;
+they do not identify an internal failing operation by themselves. Error events
+retain allowlisted codes, syscalls, observed status/abort metadata and bounded
+causal stack locations. They exclude raw error messages, request options, URLs,
+headers, credentials, SQL, bodies and environment. Raw [debug namespaces](https://node.testcontainers.org/quickstart/logging/)
+are outside this contract. Query-log observations retain only correlation IDs,
+row presence and field presence; missing evidence does not prove a query failed.
+
+On an integration-test failure, CI runs the
+[ClickHouse diagnostics collector](../scripts/collect-clickhouse-ci-diagnostics.ts)
+before GitHub removes the job's [service containers](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
+The `clickhouse-diagnostics-<shard>` artifact uploads even if the collector fails;
+the original test failure remains a failure. Inspect `manifest.json` first for
+capture failures and collection bounds, then correlate query IDs and timestamps
+across the snapshots and actual server log tails. ClickHouse's
+[query log](https://clickhouse.com/docs/reference/system-tables/query_log) records
+query starts, finishes and exceptions; [dropped tables](https://clickhouse.com/docs/reference/system-tables/dropped_tables)
+identifies Atomic tables awaiting physical removal. A synchronous drop can wait
+for table users, as described by the [Atomic engine](https://clickhouse.com/docs/reference/engines/database-engines/atomic#dropdetach-table);
+a client timeout alone does not establish that cause.
+
+The collector uses Docker's [formatted inspection](https://docs.docker.com/reference/cli/docker/container/inspect/)
+to select identity, image, state, health status and resource limits without Env,
+health commands or health output. It collects resource stats, the last 4,000
+lines of Docker/server/error logs, and bounded read-only process, query-log,
+drop, merge, mutation, active-DROP raw-stack and settings snapshots. The stack
+query selects at most 100 active DROP thread IDs before sampling, retaining raw
+addresses without enabling symbolization settings; see the
+[pinned stack-table implementation](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Storages/System/StorageSystemStackTrace.cpp).
+An empty snapshot can mean the query finished before capture. Each subprocess is capped at 15
+seconds and 8 MiB per output stream; native queries additionally have execution,
+memory, row and connection bounds. The query-log window covers 20 minutes, with
+separate drop/error records so a busy shard's recent queries do not crowd out
+the drop evidence. Capture errors remain explicit and do not suppress the
+test failure. These are diagnostic bounds; test and cleanup timeouts are unchanged.
+
+Before artifact writes, known credential values from the existing URL,
+credential URLs, authorization values, labeled secrets and recognized SQL log
+payloads are redacted at their structural boundaries, including leading dbt
+comments and `EXPLAIN`. Query-text columns are omitted, while structured query
+IDs, timestamps, error codes and stack fields remain available. Redaction can
+remove context and cannot guarantee detection of unknown sensitive free text;
+the manifest records this limitation. Use these artifacts for CI diagnosis,
+and do not add raw environment/config dumps or unredacted SQL to extend them.
+Known prerequisite failures identify usage, container ID or `CLICKHOUSE_URL`
+without echoing supplied values; unexpected errors keep a generic message and
+safe telemetry.
 
 ### Isolated browser end-to-end stack
 

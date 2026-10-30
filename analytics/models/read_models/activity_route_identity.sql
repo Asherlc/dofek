@@ -13,7 +13,11 @@
     }
 ) }}
 
-WITH route_activity_state AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+route_activity_state AS (
     SELECT
         activity_id,
         user_id,

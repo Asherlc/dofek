@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncResult } from "./health-kit-sync";
+import type { SyncResult } from "./health-kit-sync-types";
 
 vi.mock("../modules/health-kit", () => ({
   completeAnchoredQuery: vi.fn(async () => true),
@@ -18,6 +18,14 @@ vi.mock("../modules/health-kit", () => ({
   queryQuantitySamples: vi.fn(async () => []),
   querySleepSamples: vi.fn(async () => []),
   queryWorkoutRoutes: vi.fn(async () => []),
+  queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+  queryRunningStepChanges: vi.fn().mockResolvedValue({
+    hasMore: false,
+    workouts: [],
+    samples: [],
+    deletedUUIDs: [],
+    queryId: null,
+  }),
   queryWorkouts: vi.fn(async () => []),
   requestPermissions: vi.fn(async () => true),
 }));
@@ -67,6 +75,7 @@ function createTrpcClient(): AppleHealthTrpcClient {
       pushQuantitySamples: {
         mutate: vi.fn(async () => ({ inserted: 0, errors: [] })),
       },
+      pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
       pushWorkouts: {
         mutate: vi.fn(async () => ({ inserted: 0 })),
       },
@@ -315,6 +324,14 @@ describe("AppleHealthSyncService", () => {
         queryDailyStatistics: vi.fn(async () => []),
         queryCategorySamples: vi.fn(async () => []),
         queryQuantitySamples: vi.fn(async () => []),
+        queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+        queryRunningStepChanges: vi.fn().mockResolvedValue({
+          hasMore: false,
+          workouts: [],
+          samples: [],
+          deletedUUIDs: [],
+          queryId: null,
+        }),
         queryWorkouts: vi.fn(async () => []),
         querySleepSamples: vi.fn(async () => []),
         queryWorkoutRoutes: vi.fn(async () => []),

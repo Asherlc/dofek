@@ -17,12 +17,17 @@ silently choose an older update or become a successful empty response. Inspect
 the failed object, preserve evidence, and repair or remove the invalid upload
 through an explicit storage operation before publishing again.
 
-The patch also emits exactly one `Content-Type: application/json; charset=utf-8`
-field in each manifest or directive part. [Expo's multipart response specification](https://docs.expo.dev/technical-specs/expo-updates-1/#multipart-response)
-requires a JSON media type for these parts, and [RFC 2045's entity-header grammar](https://www.rfc-editor.org/rfc/rfc2045.html#section-3)
-defines a single optional `Content-Type` field. The HTTP regression tests check
-the field count and parsed JSON media type for empty-runtime directives and
-complete manifests.
+The patch also emits one canonical Content-Type field per multipart JSON part.
+The [upstream response writer](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/internal/services/expo_protocol_service.go)
+emits both `Content-Type` and `content-type`. A case-insensitive MIME parser
+combines those into `application/json, application/json; charset=utf-8`, which
+is not the JSON media type required by the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+[RFC 2045's entity-header grammar](https://www.rfc-editor.org/rfc/rfc2045.html#section-3)
+defines a single optional `Content-Type` field per MIME entity.
+Real-router regressions assert one parseable JSON Content-Type for complete
+manifests and empty/incomplete update directives, as well as the existing
+storage fault cases. Keep the client parser strict. The production image pin
+in [stack.yml](../stack.yml) is the release source of truth.
 
 ## Build
 
@@ -75,7 +80,10 @@ See the [upstream key layout](https://github.com/mercuretechnologies/xprem/blob/
 and [R2 lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
 
 The canonical Terraform workflow creates the bucket before the stack workflow
-switches the pinned private image and bucket together. Deploy OTA resolves the
+switches the pinned private image and bucket together. The existing Swarm
+convergence gate includes OTA and checks both its desired digest and every
+running task against the canonical stack pin before reporting success; it
+retains the existing startup stability window. Deploy OTA resolves the
 current iOS runtime, validates the server within five seconds, publishes with
 EOAS 3.2.7, then verifies the exact published UUID/runtime, manifest signature
 and all asset hashes using the retained device certificate. An empty runtime is
@@ -91,8 +99,10 @@ diagnose whether the cause is transport, configuration or corruption, then
 perform targeted remediation. Do not automatically delete a potentially valid
 release or shared immutable assets merely because a network audit failed. A publication failure leaves the
 installed app's embedded or cached update available; diagnose the failed step
-before retrying. Restore normal automatic and preview workflows after the
-release; no migration freeze is required.
+before retrying. Keep automatic and preview workflows enabled throughout this fresh-store
+rollout. A failed gate stops the affected run for diagnosis; it does not
+authorize disabling publishers. Any pause requires fresh explicit operator
+approval naming that pause. No migration freeze is required.
 
 The [licensing guide](https://mercure-technologies.gitbook.io/xprem/references/open-core-and-licensing.md)
 documents stateless community self-hosting. The full image includes EE code and

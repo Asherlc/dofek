@@ -764,7 +764,7 @@ services:
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
-    image: ghcr.io/asherlc/dofek-ota-internal@sha256:d69f50f5107fc34dcb09b4f329959b23c0b2aa391daddb258d39491c37e9a482
+    image: ghcr.io/asherlc/dofek-ota-internal@sha256:420673223d2df3741f5f390a8427d494e7070e4f6a2f293826f748df07cf95dd
     environment:
       EXPO_APP_ID: ${EXPO_APP_ID:?EXPO_APP_ID is required}
       EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}

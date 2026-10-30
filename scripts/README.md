@@ -2,6 +2,17 @@
 
 Utility and maintenance scripts for development, infrastructure, and reverse engineering.
 
+`collect-clickhouse-ci-diagnostics.ts <container-id> <output-directory>` captures
+bounded, read-only ClickHouse CI failure evidence before the service is removed.
+It writes a manifest, allowlisted container state, resource usage, redacted log
+tails and system-table snapshots. Run it with `pnpm tsx`; the existing
+`CLICKHOUSE_URL`, when present, supplies only an in-memory password redaction
+value. Query authentication uses the container's existing password internally.
+Failed captures retain partial artifacts and make the command exit nonzero.
+See [integration failure diagnostics](../docs/testing.md#hosted-clickhouse-failure-diagnostics).
+Docker supports [formatted inspection](https://docs.docker.com/reference/cli/docker/container/inspect/),
+and GitHub removes [service containers at job completion](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
+
 `pnpm check:dependency-security` runs `check-node-forge-security.ts` and
 `check-braces-security.ts` against the installed Expo/Metro dependencies before
 the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)
@@ -102,20 +113,53 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
-- `run-swift-mutation.ts`: Runs the existing Muter tool for changed compiled
+- `integration-test-sequencer.ts`: Uses Vitest's public
+  [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
+  existing four integration shards from one committed measured baseline.
+  Discovery and original specifications remain authoritative. New files use
+  the positive-duration median; estimates and all allocations are recorded in
+  `reports/integration-sharding/<index>-of-<count>/assignment.json`.
+- `integration-timing-reporter.ts`: Publishes completed whole-suite timings using
+  Vitest's public [per-specification cache API](https://vitest.dev/api/advanced/vitest#cache)
+  after the run ends. It requires successful complete current-run results for
+  exactly the assigned files.
+- `update-integration-test-timings.ts`: Validates the reporter-owned artifacts
+  and combines exactly four coherent shard exports. It does not parse Vitest's
+  internal cache files; the [public reporter API](https://vitest.dev/api/advanced/reporters)
+  supplies completed modules.
+  Allocation never consumes independently restored caches. Invalid refresh input
+  preserves the existing baseline.
+  - CI export, after tests pass:
+    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-4`
+  - Reviewed refresh from four downloaded directories from one successful run
+    attempt:
+    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>`
+  - See [duration-balanced integration shards](../docs/testing.md#duration-balanced-integration-shards)
+    for freshness, provenance, timing limitations and allocation verification.
+- `run-swift-mutation.ts`: Runs the pinned MutantKit tool for changed compiled
   Swift sources in their owning Swift packages. Git's merge-base comparison
   limits selection to the PR delta, and SwiftPM's source inventory respects
   each manifest's test and Expo bridge exclusions. Each selected package runs
   from its own directory with package-relative source paths and writes an
-  absolute JSON report under `reports/swift-mutation/`.
-  - Usage: `pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
-  - The shared [Muter configuration](../packages/mobile/muter.conf.yml) is
-    linked into each package. The runner skips only an empty compiled-source
-    intersection, propagates every nonzero tool exit, and requires a valid
-    positive-work report after a selected run. Muter 16 uses its working
-    directory's configuration and filenames:
-    [configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
-    [file selection](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/DiscoverSourceFiles.swift).
+  absolute plan, configuration, JSON report and verification/archive evidence
+  under `reports/swift-mutation/`.
+  - Install: `mise install --locked github:juntaki/mutantkit` on macOS ARM64.
+  - Usage: `mise exec -- pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
+  - The shared [configuration](../packages/mobile/mutantkit.yml) is linked into
+    each package. The runner compiler-validates every selected source, checks
+    exact plan hashes/inventory, runs full owning-package tests and verifies
+    complete official raw observations. It skips only an empty compiled-source
+    intersection and propagates every nonzero tool exit. See
+    [planning](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift),
+    [official reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/VerifyRunCommand.swift)
+    and [native testing requirements](../docs/testing.md#native-swift-mutation-testing).
+  - Command metadata lives in `<name>.command.json`; `stdoutPath` and
+    `stderrPath` refer to the complete adjacent `<name>.command.stdout.log`
+    and `<name>.command.stderr.log` files. Evidence-bearing children write to
+    file descriptors, avoiding Node's aggregate capture limit. Human output is
+    replayed after completion in bounded chunks; parsed verification JSON stays
+    separate. See [Node stdio](https://nodejs.org/api/child_process.html#optionsstdio)
+    and the [runner](run-swift-mutation.ts).
 - Native mutation selection uses the [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift)
   and Git's [three-dot comparison](https://git-scm.com/docs/git-diff),
   rather than duplicating Swift manifest exclusions or comparing unrelated
@@ -325,6 +369,10 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm check:mobile-update --app-id <app-id> --runtime-version <resolved-runtime>`
   - Required: `--app-id <app-id> --runtime-version <version>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+- `stack-service-image.ts`: Reads a service’s canonical immutable image from a Compose
+  stack, including [YAML merge keys](https://yaml.org/type/merge.html), for the existing
+  Swarm running-task verifier. Missing or mutable references fail explicitly.
+  - Usage: `pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota`
 - `verify-published-ota.ts`: Audits the exact published UUID/runtime, signed manifest,
   and asset hashes against the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
   - Usage: `pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production`

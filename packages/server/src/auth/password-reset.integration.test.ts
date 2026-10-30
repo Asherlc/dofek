@@ -1,11 +1,11 @@
 import { initiateAccountErasure } from "dofek/db/account-erasure";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { authenticatePasswordUser, registerPasswordUser } from "./password-credential.ts";
@@ -43,7 +43,7 @@ const brevoEmailInputSchema = z.object({
 });
 const sentEmails: Array<z.infer<typeof brevoEmailInputSchema>> = [];
 
-const emailServer = setupServer(
+const emailServer = createIntegrationMswFixture(
   http.post(BREVO_EMAIL_URL, async ({ request }) => {
     sentEmails.push(brevoEmailInputSchema.parse(await request.json()));
     return HttpResponse.json({ messageId: "test-email" }, { status: 201 });
@@ -149,13 +149,13 @@ describe("password reset service", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    emailServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    emailServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     ctx = await setupTestDatabase();
   }, 120_000);
 
   afterAll(async () => {
     await ctx?.cleanup();
-    emailServer.close();
+    emailServer.deactivate();
   });
 
   beforeEach(async () => {

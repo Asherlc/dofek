@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CLICKHOUSE_DEFAULT_SETTINGS } from "./clickhouse.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
+import { buildActivityStepCadenceRowsTableSql } from "./clickhouse-activity-step-cadence.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import {
   buildPostgresFitnessActivityRawTableStatement,
@@ -189,6 +190,7 @@ describe("dbt merged activity field priorities", () => {
       refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'))
       ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
     });
+    await runIsolated(buildActivityStepCadenceRowsTableSql());
     await runIsolated(buildActivitySummaryRowsTableSql());
     await insertSources([
       {

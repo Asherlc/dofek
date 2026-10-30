@@ -2,8 +2,6 @@ import type {
   ClinicalRecordSample,
   DailyStatistic,
   HealthKitSample,
-  RouteLocation,
-  SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
@@ -11,6 +9,15 @@ import {
   isBackgroundHealthKitTransientNetworkError,
   isHealthKitDatabaseInaccessible,
 } from "./health-kit-errors";
+import { syncRunningSteps } from "./health-kit-running-steps-sync";
+import type {
+  HealthKitSyncStage,
+  ObserverSyncOptions,
+  SyncOptions,
+  SyncResult,
+  SyncTrpcClient,
+  WorkoutRoutePayload,
+} from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
@@ -36,6 +43,11 @@ export const NON_ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierRespiratoryRate",
   "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
   "HKQuantityTypeIdentifierWalkingSpeed",
+  "HKQuantityTypeIdentifierRunningSpeed",
+  "HKQuantityTypeIdentifierRunningPower",
+  "HKQuantityTypeIdentifierRunningStrideLength",
+  "HKQuantityTypeIdentifierRunningGroundContactTime",
+  "HKQuantityTypeIdentifierRunningVerticalOscillation",
   "HKQuantityTypeIdentifierWalkingStepLength",
   "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
   "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
@@ -66,6 +78,11 @@ const ANCHORED_SAMPLE_TYPES = new Set([
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierRespiratoryRate",
+  "HKQuantityTypeIdentifierRunningSpeed",
+  "HKQuantityTypeIdentifierRunningPower",
+  "HKQuantityTypeIdentifierRunningStrideLength",
+  "HKQuantityTypeIdentifierRunningGroundContactTime",
+  "HKQuantityTypeIdentifierRunningVerticalOscillation",
   MENSTRUAL_FLOW_TYPE_IDENTIFIER,
 ]);
 
@@ -154,135 +171,6 @@ function isAuthorizationNotDetermined(error: unknown): boolean {
   return error.code === "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED";
 }
 
-/** Abstraction over HealthKit native module for testability */
-export interface HealthKitAdapter {
-  completeAnchoredQuery(typeId: string, queryId: string, succeeded: boolean): Promise<boolean>;
-  queryAnchoredSamples(
-    typeId: string,
-    initialStartDate: string,
-  ): Promise<{
-    queryId: string | null;
-    samples: HealthKitSample[];
-    deletedUUIDs: string[];
-  }>;
-  queryDailyStatistics(
-    typeId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<DailyStatistic[]>;
-  queryQuantitySamples(
-    typeId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<HealthKitSample[]>;
-  queryCategorySamples(
-    typeId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<HealthKitSample[]>;
-  queryClinicalRecords(
-    typeId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<ClinicalRecordSample[]>;
-  queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]>;
-  querySleepSamples(startDate: string, endDate: string): Promise<SleepSample[]>;
-  queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]>;
-}
-
-/** Route data to push for a single workout */
-interface WorkoutRoutePayload {
-  workoutUuid: string;
-  sourceName?: string | null;
-  locations: RouteLocation[];
-}
-
-/** Abstraction over tRPC client for testability */
-export interface SyncTrpcClient {
-  clinicalRecords: {
-    push: {
-      mutate(input: {
-        records: Array<Omit<ClinicalRecordSample, "uuid"> & { externalId: string }>;
-      }): Promise<{ upserted: number }>;
-    };
-  };
-  healthKitSync: {
-    recordSync: {
-      mutate(input: {
-        status: "success" | "degraded" | "error";
-        recordCount: number;
-        durationMs: number;
-        errorMessage?: string;
-        origin: "manual" | "unknown";
-      }): Promise<{ recorded: true }>;
-    };
-    pushQuantitySamples: {
-      mutate(input: {
-        samples: HealthKitSample[];
-      }): Promise<{ inserted: number; errors: string[] }>;
-    };
-    deleteQuantitySamples: {
-      mutate(input: {
-        deletedUUIDs: string[];
-        typeIdentifier: string;
-      }): Promise<{ deleted: number }>;
-    };
-    pushWorkouts: {
-      mutate(input: {
-        workouts: WorkoutSample[];
-        windowStart: string;
-        windowEnd: string;
-      }): Promise<{ inserted: number }>;
-    };
-    pushWorkoutRoutes: {
-      mutate(input: { routes: WorkoutRoutePayload[] }): Promise<{ inserted: number }>;
-    };
-    pushSleepSamples: {
-      mutate(input: { samples: SleepSample[] }): Promise<{ inserted: number }>;
-    };
-  };
-}
-
-export interface SyncOptions {
-  trpcClient: SyncTrpcClient;
-  healthKit: HealthKitAdapter;
-  /** Device-wide lower bound retained across deleted accounts. */
-  minimumSampleDate?: string | null;
-  /** Number of days to sync, or null for all-time */
-  syncRangeDays: number | null;
-  onProgress?: (message: string) => void;
-  onStage?: (stage: HealthKitSyncStage) => void;
-}
-
-export interface SyncResult {
-  deleted: number;
-  inserted: number;
-  errors: string[];
-}
-
-export interface HealthKitSyncStage {
-  operation:
-    | "completeAnchoredQuery"
-    | "deleteQuantitySamples"
-    | "queryAnchoredSamples"
-    | "queryDailyStatistics"
-    | "queryCategorySamples"
-    | "queryQuantitySamples"
-    | "pushQuantitySamples"
-    | "queryWorkouts"
-    | "pushWorkouts"
-    | "queryWorkoutRoutes"
-    | "pushWorkoutRoutes"
-    | "querySleepSamples"
-    | "pushSleepSamples"
-    | "queryClinicalRecords"
-    | "pushClinicalRecords";
-  typeIdentifier?: string;
-  batchIndex?: number;
-  batchCount?: number;
-  itemCount?: number;
-}
-
 async function pushQuantitySampleBatches(
   trpcClient: SyncTrpcClient,
   samples: HealthKitSample[],
@@ -326,6 +214,8 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     minimumSampleDate === null ? null : localCalendarDate(minimumSampleDate);
 
   const allSamples: HealthKitSample[] = [];
+  let totalInserted = 0;
+  const errors: string[] = [];
   const totalTypes = ALL_QUANTITY_TYPES.length;
   let typeIndex = 0;
 
@@ -375,13 +265,17 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     });
 
     const samples = await healthKit.queryQuantitySamples(typeId, startDate, endDate);
-    allSamples.push(
-      ...samples.filter(
-        (sample) =>
-          minimumSampleDate === null ||
-          isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
-      ),
+    const retainedSamples = samples.filter(
+      (sample) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     );
+    if (retainedSamples.length > 0) {
+      onProgress?.(`Pushing ${retainedSamples.length} samples...`);
+      const result = await pushQuantitySampleBatches(trpcClient, retainedSamples, onStage);
+      totalInserted += result.inserted;
+      errors.push(...result.errors);
+    }
     typeIndex++;
   }
 
@@ -416,9 +310,6 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     ),
   );
-
-  let totalInserted = 0;
-  const errors: string[] = [];
 
   // Push quantity samples in batches
   if (allSamples.length > 0) {
@@ -573,16 +464,14 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     }
   }
 
-  return { deleted: 0, inserted: totalInserted, errors };
-}
+  const runningSteps = await syncRunningSteps(
+    { trpcClient, healthKit, minimumSampleDate, onStage },
+    startDate,
+    endDate,
+  );
+  totalInserted += runningSteps.inserted;
 
-export interface ObserverSyncOptions {
-  trpcClient: SyncTrpcClient;
-  healthKit: HealthKitAdapter;
-  /** Device-wide lower bound retained across deleted accounts. */
-  minimumSampleDate?: string | null;
-  typeIdentifiers: readonly string[];
-  onStage?: (stage: HealthKitSyncStage) => void;
+  return { deleted: runningSteps.deleted, inserted: totalInserted, errors };
 }
 
 function dailyStatisticsSamples(
@@ -869,6 +758,16 @@ export async function syncHealthKitObserverChanges(
       const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples });
       inserted += result.inserted;
     }
+  }
+
+  if (
+    typeIdentifiers.has("HKQuantityTypeIdentifierStepCount") ||
+    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
+    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
+  ) {
+    const result = await syncRunningSteps(options, startDate, endDate);
+    inserted += result.inserted;
+    deleted += result.deleted;
   }
 
   return { deleted, inserted, errors };

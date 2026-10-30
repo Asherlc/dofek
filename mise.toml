@@ -12,6 +12,7 @@ gh = "2.96.0"
 jq = "1.8.2"
 "github:colbymchenry/codegraph" = "1.5.0"
 "github:rtk-ai/rtk" = "0.44.0"
+"github:juntaki/mutantkit" = { version = "1.3.2", os = ["macos/arm64"], asset_pattern = "mutantkit-macos-arm64.tar.gz", checksum = "sha256:a17b35e25ddf01b275f6824f28aace364d67f2f989cf43ed894d435f7dd5a159" }
 
 [tasks.dependencies]
 description = "Install frozen pnpm dependencies"

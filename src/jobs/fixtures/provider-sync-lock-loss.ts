@@ -88,7 +88,7 @@ const server = setupServer(
     });
   }),
 );
-server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+server.listen({ onUnhandledFrame: failOnUnhandledExternalRequest });
 const database = createDatabase(input.connectionString);
 const workLockPool = createAccountErasureWorkLockPool(input.connectionString);
 try {

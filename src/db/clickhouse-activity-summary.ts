@@ -1,5 +1,3 @@
-import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
-
 export function buildActivitySummaryRowsTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows (
   activity_id UUID,
@@ -18,6 +16,9 @@ export function buildActivitySummaryRowsTableSql(): string {
   avg_speed Nullable(Float64),
   max_speed Nullable(Float64),
   avg_cadence Nullable(Float64),
+  cadence_basis String DEFAULT 'unknown',
+  cadence_observed_seconds Nullable(Float64),
+  cadence_coverage_percent Nullable(Float64),
   elevation_gain_legacy Nullable(Float64),
   total_distance Nullable(Float64),
   centroid_lat Nullable(Float64),
@@ -52,7 +53,8 @@ ORDER BY (user_id, activity_id)`;
 }
 
 export function buildActivitySummaryViewSql(): string {
-  return `${standardViewHeader("analytics.activity_summary")}
+  return `CREATE OR REPLACE VIEW analytics.activity_summary
+AS
 SELECT
   activity_id,
   user_id,
@@ -70,6 +72,9 @@ SELECT
   avg_speed,
   max_speed,
   avg_cadence,
+  cadence_basis,
+  cadence_observed_seconds,
+  cadence_coverage_percent,
   elevation_gain_legacy,
   total_distance,
   centroid_lat,

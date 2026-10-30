@@ -3,9 +3,9 @@ import { ensureProvider, loadTokens, saveTokens } from "dofek/db/tokens";
 import { and, eq, sql } from "drizzle-orm";
 import express from "express";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../../src/db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../../src/test/msw.ts";
 import { SyncRepository } from "../../repositories/sync-repository.ts";
 
@@ -24,7 +24,7 @@ const GARMIN_EXISTING_TOKENS = {
   scopes: "HEALTH_EXPORT ACTIVITY_EXPORT",
 };
 
-const mswServer = setupServer();
+const mswServer = createIntegrationMswFixture();
 
 describe("data provider OAuth reconnect", () => {
   let appServer: ReturnType<import("express").Express["listen"]>;
@@ -44,7 +44,7 @@ describe("data provider OAuth reconnect", () => {
     process.env.GARMIN_CLIENT_SECRET = "test-garmin-secret";
     process.env.GARMIN_WEBHOOK_SECRET = "test-garmin-webhook-secret-at-least-32-characters";
 
-    mswServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    mswServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     vi.resetModules();
     ({ createAuthRouter } = await import("./index.ts"));
     ({ getOAuthStateStoreRef } = await import("./shared.ts"));
@@ -76,7 +76,7 @@ describe("data provider OAuth reconnect", () => {
   });
 
   afterAll(async () => {
-    mswServer.close();
+    mswServer.deactivate();
     if (appServer) {
       appServer.closeAllConnections();
       await new Promise<void>((resolve) => appServer.close(() => resolve()));
