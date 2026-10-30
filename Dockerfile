@@ -7,7 +7,7 @@ COPY package.json ./
 # Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.13.16-alpine3.24 AS dbt-tools
+FROM python:3.13.18-alpine3.24 AS dbt-tools
 # dbt 1.12.6 requires parser wheels unavailable on Alpine; use the compatible 1.11 line.
 # https://pypi.org/project/dbt-core-experimental-parser/2.0.8/
 RUN apk add --no-cache build-base && \

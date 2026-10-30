@@ -1,6 +1,9 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type { ClimbingCatalogueContext as Context } from "@dofek/training/climbing-catalogue";
-import { climbingCatalogueTagLabel } from "@dofek/training/climbing-catalogue";
+import {
+  climbingCatalogueConfidenceLabel,
+  climbingCatalogueTagLabel,
+} from "@dofek/training/climbing-catalogue";
 import { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { captureException } from "../lib/telemetry";
@@ -33,7 +36,7 @@ export function ClimbingCatalogueContextView({
     <View style={styles.container}>
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
+        aria-expanded={open}
         onPress={onToggle}
         style={styles.button}
       >
@@ -54,18 +57,20 @@ export function ClimbingCatalogueContextView({
           {context?.sources.map((source) => (
             <View key={source.providerId} style={styles.content}>
               <Text style={styles.heading}>{providerLabel(source.providerId)}</Text>
-              {!source.searchComplete && (
-                <Text style={styles.muted}>Search incomplete; more matches may exist.</Text>
+              {source.searchArea && (
+                <Text style={styles.muted}>Search area: {source.searchArea.name}</Text>
               )}
-              {source.matches.map(({ candidate, confidence }) => (
+              {!source.searchComplete && (
+                <Text style={styles.muted}>Search incomplete; more candidates may exist.</Text>
+              )}
+              {source.matches.map(({ candidate, confidence, evidence }) => (
                 <View key={candidate.externalId} style={styles.match}>
-                  <Text style={styles.muted}>
-                    {confidence === "source"
-                      ? "Own source"
-                      : confidence === "corroborated"
-                        ? "Location corroborated"
-                        : "Possible match"}
-                  </Text>
+                  <Text style={styles.muted}>{climbingCatalogueConfidenceLabel(confidence)}</Text>
+                  {evidence?.map((reason) => (
+                    <Text key={reason} style={styles.muted}>
+                      {reason}
+                    </Text>
+                  ))}
                   <Pressable
                     accessibilityRole="link"
                     onPress={() => {
@@ -110,7 +115,7 @@ export function ClimbingCatalogueContextView({
           ))}
           {context?.status === "ready" &&
             context.sources.every((source) => source.matches.length === 0) && (
-              <Text style={styles.text}>No exact-name catalogue matches found.</Text>
+              <Text style={styles.text}>No catalogue candidates to display.</Text>
             )}
           {pending ? (
             <Text accessibilityLiveRegion="polite" style={styles.text}>

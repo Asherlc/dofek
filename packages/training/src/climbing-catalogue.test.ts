@@ -1,5 +1,91 @@
 import { describe, expect, it } from "vitest";
-import { catalogueCandidateSchema, climbingCatalogueTagLabel } from "./climbing-catalogue.ts";
+import {
+  catalogueCandidateSchema,
+  catalogueSearchResultSchema,
+  catalogueSeedSchema,
+  climbingCatalogueConfidenceLabel,
+  climbingCatalogueContextSchema,
+  climbingCatalogueTagLabel,
+} from "./climbing-catalogue.ts";
+
+const references = [{ providerId: "mountain-project", externalId: "105736399" }];
+const aliases = ["Cheddar Corner"];
+const searchArea = { externalId: null, name: "Goat Rock", scope: "area", coordinates: null };
+const candidate = {
+  providerId: "openbeta",
+  externalId: "corner",
+  name: "Corner Route",
+  url: "https://openbeta.io/climb/corner",
+  kind: "route",
+  setting: null,
+  locations: [searchArea],
+  grade: "5.6",
+  angle: null,
+  tags: [],
+  references,
+  aliases,
+};
+
+it("carries explicit identity evidence and local coverage through the shared response", () => {
+  expect(
+    catalogueSearchResultSchema.parse({ candidates: [candidate], complete: true, searchArea }),
+  ).toEqual({ candidates: [candidate], complete: true, searchArea });
+  expect(
+    catalogueSeedSchema.parse({
+      userId: "user",
+      logEntryId: "log",
+      providerId: "kaya",
+      externalId: "id",
+      sourceUrl: null,
+      name: "Cheddar Corner",
+      kind: "route",
+      setting: "outdoor",
+      locations: [],
+      references,
+      aliases,
+    }).references,
+  ).toEqual(references);
+  expect(
+    climbingCatalogueContextSchema.parse({
+      status: "ready",
+      fetchedAt: null,
+      expiresAt: null,
+      error: null,
+      sources: [
+        {
+          providerId: "openbeta",
+          searchComplete: true,
+          searchArea,
+          matches: [
+            {
+              confidence: "reference",
+              candidate,
+              evidence: ["Explicit Mountain Project reference."],
+            },
+          ],
+        },
+      ],
+    }).sources[0]?.matches[0]?.evidence,
+  ).toEqual(["Explicit Mountain Project reference."]);
+});
+
+it("accepts independently released response clients without the optional evidence field", () => {
+  expect(
+    climbingCatalogueContextSchema.safeParse({
+      status: "ready",
+      fetchedAt: null,
+      expiresAt: null,
+      error: null,
+      sources: [
+        {
+          providerId: "openbeta",
+          searchComplete: false,
+          matches: [{ confidence: "possible", candidate }],
+        },
+      ],
+    }).success,
+  ).toBe(true);
+});
 
 describe("catalogue tag labels", () => {
   it.each([
@@ -116,4 +202,13 @@ describe("informational catalogue observations", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it.each([
+  ["source", "Own source"],
+  ["reference", "Provider reference"],
+  ["corroborated", "Location corroborated"],
+  ["possible", "Possible match"],
+] as const)("labels %s confidence for both clients", (confidence, label) => {
+  expect(climbingCatalogueConfidenceLabel(confidence)).toBe(label);
 });

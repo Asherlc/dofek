@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
 import { MemoryCacheStore } from "./lib/cache.ts";
 import { captureException } from "./lib/error-reporting.ts";
+import { MountainProjectCatalogueAdapter } from "./providers/mountain-project-catalogue.ts";
 
 vi.mock("./lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
@@ -54,6 +55,217 @@ const candidate: CatalogueCandidate = {
 };
 
 describe("ClimbingCatalogueService", () => {
+  it("keeps local alias competitors possible after a native rename", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const name = new URL(String(input)).searchParams.get("q");
+      const id = name === "New Official Name" ? "1" : "2";
+      return Response.json({
+        total: { value: 1, relation: "eq" },
+        hits: [
+          {
+            _source: {
+              id: `routes.${id}`,
+              type: "Route",
+              title: name,
+              url: `https://www.mountainproject.com/route/${id}/climb`,
+              breadcrumbs: "Cragmont Park",
+              location: [-122.2637, 37.8921],
+              tags: ["Trad"],
+            },
+          },
+        ],
+      });
+    });
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      {
+        providerId: "thecrag",
+        search: async () => ({
+          candidates: [{ ...candidate, name: "New Official Name" }],
+          complete: true,
+        }),
+      },
+      new MountainProjectCatalogueAdapter(fetchFn),
+    ]);
+    const result = await service.refresh({
+      ...seed,
+      providerId: "thecrag",
+      externalId: candidate.externalId,
+      locations: candidate.locations,
+    });
+    expect(result.sources[1]?.searchComplete).toBe(true);
+    expect(
+      result.sources[1]?.matches.map((match) => [match.candidate.name, match.confidence]),
+    ).toEqual([
+      ["New Official Name", "possible"],
+      ["Cragmont Crack", "possible"],
+    ]);
+    expect(
+      result.sources[1]?.matches.every((match) =>
+        match.evidence?.some((reason) => reason.includes("Another plausible")),
+      ),
+    ).toBe(true);
+  });
+  it.each([
+    { reference: false, candidateGeography: true },
+    { reference: true, candidateGeography: true },
+    { reference: true, candidateGeography: false },
+  ])(
+    "preserves logged/native geography conflicts while using native context for discovery: %j",
+    async ({ reference, candidateGeography }) => {
+      const nativeLocations = [
+        {
+          externalId: "chew-tooth",
+          name: "Chew Tooth",
+          scope: "area" as const,
+          coordinates: { latitude: 37.24, longitude: -122.096 },
+        },
+      ];
+      const native = {
+        ...candidate,
+        name: "Current Name",
+        locations: nativeLocations,
+        ...(reference
+          ? { references: [{ providerId: "openbeta" as const, externalId: "linked" }] }
+          : {}),
+      };
+      const linked = {
+        ...candidate,
+        name: "Current Name",
+        providerId: "openbeta" as const,
+        externalId: "linked",
+        url: "https://openbeta.io/climb/linked",
+        locations: candidateGeography ? nativeLocations : [],
+      };
+      const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+        { providerId: "thecrag", search: async () => ({ candidates: [native], complete: true }) },
+        {
+          providerId: "openbeta",
+          search: async (discovery) => {
+            expect(discovery.locations).toEqual(nativeLocations);
+            return { candidates: [linked], complete: true };
+          },
+        },
+      ]);
+      const result = await service.refresh({
+        ...seed,
+        providerId: "thecrag",
+        externalId: candidate.externalId,
+      });
+      expect(result.sources[0]?.matches[0]).toMatchObject({
+        confidence: "source",
+        evidence: expect.arrayContaining([
+          expect.stringMatching(/conflict.*Cragmont Park.*Chew Tooth/i),
+        ]),
+      });
+      expect(result.sources[1]?.matches[0]).toMatchObject({
+        confidence: "possible",
+        evidence: expect.arrayContaining([
+          expect.stringMatching(/conflict.*Cragmont Park.*Chew Tooth/i),
+        ]),
+      });
+    },
+  );
+  it.each(["no area", "no area coordinates"])(
+    "supplements missing logged geography from native context: %s",
+    async (missing) => {
+      const linked = {
+        ...candidate,
+        providerId: "openbeta" as const,
+        externalId: "linked",
+        url: "https://openbeta.io/climb/linked",
+      };
+      const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+        {
+          providerId: "thecrag",
+          search: async () => ({ candidates: [candidate], complete: true }),
+        },
+        { providerId: "openbeta", search: async () => ({ candidates: [linked], complete: true }) },
+      ]);
+      const result = await service.refresh({
+        ...seed,
+        providerId: "thecrag",
+        externalId: candidate.externalId,
+        locations:
+          missing === "no area"
+            ? []
+            : seed.locations.map((location) => ({ ...location, coordinates: null })),
+      });
+      expect(result.sources[0]?.matches[0]?.confidence).toBe("source");
+      expect(result.sources[1]?.matches[0]).toMatchObject({
+        confidence: "corroborated",
+        evidence: expect.arrayContaining([expect.stringMatching(/Cragmont Park/)]),
+      });
+    },
+  );
+  it("uses the same final native observation for discovery and returned source context", async () => {
+    const observed: string[] = [];
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      {
+        providerId: "thecrag",
+        search: async () => ({
+          candidates: [candidate, { ...candidate, name: "Current Name" }],
+          complete: true,
+        }),
+      },
+      {
+        providerId: "openbeta",
+        search: async (enriched) => {
+          observed.push(enriched.name);
+          return { candidates: [], complete: true };
+        },
+      },
+    ]);
+    const result = await service.refresh({
+      ...seed,
+      providerId: "thecrag",
+      externalId: candidate.externalId,
+    });
+    expect(observed).toEqual(["Current Name"]);
+    expect(result.sources[0]?.matches[0]?.candidate.name).toBe("Current Name");
+  });
+  it("discovers native source context first and keeps enrichment out of the cache fingerprint", async () => {
+    const cache = new MemoryCacheStore();
+    const original = {
+      ...seed,
+      providerId: "thecrag",
+      externalId: candidate.externalId,
+      locations: candidate.locations,
+    };
+    const linked = {
+      ...candidate,
+      providerId: "openbeta" as const,
+      externalId: "linked",
+      url: "https://openbeta.io/climb/linked",
+      name: "Corner Route",
+    };
+    const native = {
+      ...candidate,
+      name: "Current Name",
+      aliases: [seed.name],
+      references: [{ providerId: "openbeta" as const, externalId: "linked" }],
+    };
+    const discovery = vi.fn(async (enriched: CatalogueSeed) => {
+      expect(enriched).toMatchObject({
+        name: "Current Name",
+        references: native.references,
+        aliases: expect.arrayContaining([seed.name]),
+      });
+      return { candidates: [linked], complete: true, searchArea: candidate.locations[0] };
+    });
+    const service = new ClimbingCatalogueService(cache, [
+      { providerId: "openbeta", search: discovery },
+      { providerId: "thecrag", search: async () => ({ candidates: [native], complete: true }) },
+    ]);
+    const result = await service.refresh(original);
+    expect(result.sources[0]).toMatchObject({
+      searchArea: candidate.locations[0],
+      matches: [{ confidence: "reference", evidence: expect.any(Array) }],
+    });
+    expect(result.sources[1]?.matches[0]?.confidence).toBe("source");
+    expect(await service.read(original)).toEqual(result);
+    expect((await service.read({ ...original, name: "Current Name" })).status).toBe("missing");
+    expect(original.name).toBe("Cragmont Crack");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -93,7 +305,9 @@ describe("ClimbingCatalogueService", () => {
   it("corroborates a unique complete name/kind/location match and preserves all source facts", async () => {
     const { service } = setup();
     const result = await service.refresh(seed);
-    expect(result.sources[0]?.matches).toEqual([{ confidence: "corroborated", candidate }]);
+    expect(result.sources[0]?.matches).toEqual([
+      { confidence: "corroborated", candidate, evidence: expect.any(Array) },
+    ]);
     expect(result.expiresAt).toBe("2026-11-03T12:00:00.000Z");
     expect(await service.read(seed)).toEqual(result);
   });
@@ -105,7 +319,9 @@ describe("ClimbingCatalogueService", () => {
       providerId: "thecrag",
       externalId: candidate.externalId,
     });
-    expect(result.sources[0]?.matches).toEqual([{ confidence: "source", candidate: renamed }]);
+    expect(result.sources[0]?.matches).toEqual([
+      { confidence: "source", candidate: renamed, evidence: expect.any(Array) },
+    ]);
   });
   it.each([false, true])(
     "does not establish identity from incomplete results or conflicting locations: complete=%s",
@@ -192,18 +408,18 @@ describe("ClimbingCatalogueService", () => {
   });
 
   it.each([
-    { seedSetting: "indoor", candidateSetting: "outdoor" },
-    { seedSetting: "outdoor", candidateSetting: "indoor" },
-    { seedSetting: null, candidateSetting: "outdoor" },
-    { seedSetting: "outdoor", candidateSetting: null },
+    { seedSetting: "indoor", candidateSetting: "outdoor", confidence: "possible" },
+    { seedSetting: "outdoor", candidateSetting: "indoor", confidence: "possible" },
+    { seedSetting: null, candidateSetting: "outdoor", confidence: "corroborated" },
+    { seedSetting: "outdoor", candidateSetting: null, confidence: "corroborated" },
   ] as const)(
-    "does not corroborate setting $seedSetting against $candidateSetting",
-    async ({ seedSetting, candidateSetting }) => {
+    "distinguishes unknown from incompatible setting $seedSetting against $candidateSetting",
+    async ({ seedSetting, candidateSetting, confidence }) => {
       const { service } = setup([{ ...candidate, setting: candidateSetting }]);
       expect(
         (await service.refresh({ ...seed, setting: seedSetting })).sources[0]?.matches[0]
           ?.confidence,
-      ).toBe("possible");
+      ).toBe(confidence);
     },
   );
 
@@ -269,14 +485,14 @@ describe("ClimbingCatalogueService", () => {
   });
 
   it.each([
-    { latitude: 0.001, longitude: 0, confidence: "corroborated" },
-    { latitude: -0.001, longitude: 0, confidence: "corroborated" },
-    { latitude: 0, longitude: 0.001, confidence: "corroborated" },
-    { latitude: 0, longitude: -0.001, confidence: "corroborated" },
-    { latitude: 0.001001, longitude: 0, confidence: "possible" },
-    { latitude: -0.001001, longitude: 0, confidence: "possible" },
-    { latitude: 0, longitude: 0.001001, confidence: "possible" },
-    { latitude: 0, longitude: -0.001001, confidence: "possible" },
+    { latitude: 0.000899, longitude: 0, confidence: "corroborated" },
+    { latitude: -0.000899, longitude: 0, confidence: "corroborated" },
+    { latitude: 0, longitude: 0.000899, confidence: "corroborated" },
+    { latitude: 0, longitude: -0.000899, confidence: "corroborated" },
+    { latitude: 0.0009, longitude: 0, confidence: "possible" },
+    { latitude: -0.0009, longitude: 0, confidence: "possible" },
+    { latitude: 0, longitude: 0.0009, confidence: "possible" },
+    { latitude: 0, longitude: -0.0009, confidence: "possible" },
   ])(
     "checks each coordinate boundary: $latitude, $longitude",
     async ({ latitude, longitude, confidence }) => {
@@ -301,25 +517,30 @@ describe("ClimbingCatalogueService", () => {
   );
 
   it.each([
-    { providerId: "thecrag", externalId: "another-id" },
-    { providerId: "kaya", externalId: candidate.externalId },
+    { providerId: "thecrag", externalId: "another-id", confidence: "possible" },
+    { providerId: "kaya", externalId: candidate.externalId, confidence: "corroborated" },
   ])(
     "does not treat a partial source identity as recorded: $providerId/$externalId",
-    async (identity) => {
+    async ({ providerId, externalId, confidence }) => {
+      const identity = { providerId, externalId };
       const { service } = setup();
       const result = await service.refresh({ ...seed, ...identity });
-      expect(result.sources[0]?.matches[0]?.confidence).toBe("corroborated");
+      expect(result.sources[0]?.matches[0]?.confidence).toBe(confidence);
       const renamed = setup([{ ...candidate, name: "An unrelated name" }]);
-      expect((await renamed.service.refresh({ ...seed, ...identity })).sources[0]?.matches).toEqual(
-        [],
-      );
+      const renamedMatches = (await renamed.service.refresh({ ...seed, ...identity })).sources[0]
+        ?.matches;
+      expect(renamedMatches).toEqual([]);
     },
   );
 
   it("deduplicates repeated source IDs without turning them into ambiguous matches", async () => {
     const { service } = setup([candidate, { ...candidate, grade: "5.7" }]);
     expect((await service.refresh(seed)).sources[0]?.matches).toEqual([
-      { confidence: "corroborated", candidate: { ...candidate, grade: "5.7" } },
+      {
+        confidence: "corroborated",
+        candidate: { ...candidate, grade: "5.7" },
+        evidence: expect.any(Array),
+      },
     ]);
   });
 

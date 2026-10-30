@@ -1,14 +1,17 @@
 import type {
   CatalogueCandidate,
+  CatalogueLocation,
   CatalogueSearchResult,
   CatalogueSeed,
   ClimbingCatalogueAdapter,
 } from "@dofek/training/climbing-catalogue";
 import { load } from "cheerio";
+import { catalogueNameMatch, catalogueSearchNames } from "../../climbing-catalogue-matching.ts";
 
 const ORIGIN = "https://www.thecrag.com";
 const SEARCH_PATH = "/en/climbing/world/search";
 const MAX_PAGES = 3;
+const MAX_ROUTES = 60;
 const steepness: Record<string, string> = {
   Ramp: "slab",
   Vertical: "vertical",
@@ -16,10 +19,6 @@ const steepness: Record<string, string> = {
   Roof: "roof",
   Tufa: "tufa",
 };
-
-function normalizedName(value: string): string {
-  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-}
 
 function routeUrl(value: string): URL {
   const url = URL.canParse(value, ORIGIN) ? new URL(value, ORIGIN) : null;
@@ -42,7 +41,46 @@ function routeId(url: URL): string {
   return url.pathname.split("/").filter(Boolean).at(-1) ?? "";
 }
 
-function parseDetail(html: string, expected: URL): CatalogueCandidate {
+function areaUrl(value: string, id: string | null): URL | null {
+  const url = URL.canParse(value, ORIGIN) ? new URL(value, ORIGIN) : null;
+  return url &&
+    url.origin === ORIGIN &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    /^\/en\/climbing\/(?:[^/]+\/)*area\/[1-9]\d*\/?$/.test(url.pathname) &&
+    routeId(url) === id
+    ? url
+    : null;
+}
+
+function areaCoordinates(html: string, expected: URL): CatalogueLocation["coordinates"] {
+  const $ = load(html);
+  const canonical = $('link[rel="canonical"]');
+  if (canonical.length !== 1 || !areaUrl(canonical.attr("href") ?? "", routeId(expected)))
+    throw new Error(
+      "theCrag catalogue parent area identity is unavailable or invalid. Retry later.",
+    );
+  const latitude = $('meta[property="place:location:latitude"]');
+  const longitude = $('meta[property="place:location:longitude"]');
+  const lat = latitude.attr("content") ?? "";
+  const lon = longitude.attr("content") ?? "";
+  if (
+    latitude.length !== 1 ||
+    longitude.length !== 1 ||
+    !/^-?\d+(?:\.\d+)?$/.test(lat) ||
+    !/^-?\d+(?:\.\d+)?$/.test(lon)
+  )
+    return null;
+  const point = { latitude: Number(lat), longitude: Number(lon) };
+  return Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180 ? point : null;
+}
+
+function parseDetail(
+  html: string,
+  expected: URL,
+): { candidate: CatalogueCandidate; parent: URL | null } {
   const $ = load(html);
   const name = $("h1 [itemprop=name]").text().trim();
   const canonical = $('link[rel="canonical"]');
@@ -123,6 +161,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
     });
   }
   const locations: CatalogueCandidate["locations"] = [];
+  let parent: URL | null = null;
   for (const element of $("a.crumb__a").toArray()) {
     const anchor = $(element);
     const href = anchor.attr("href") ?? "";
@@ -143,12 +182,43 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
       scope: "area",
       coordinates: null,
     });
+    parent = areaUrl(href, locations.at(-1)?.externalId ?? null);
   }
-  return {
+  const displayed = $("#location")
+    .closest("h3")
+    .next("dl.areaInfo")
+    .find("dd")
+    .toArray()
+    .map((element) =>
+      /^\s*Lat\/Lon:\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\s*$/.exec($(element).text()),
+    )
+    .filter((match) => match !== null);
+  let hasDisplayedPoint = false;
+  if (displayed.length === 1) {
+    const latitude = Number(displayed[0]?.[1]);
+    const longitude = Number(displayed[0]?.[2]);
+    if (
+      Number.isFinite(latitude) &&
+      Math.abs(latitude) <= 90 &&
+      Number.isFinite(longitude) &&
+      Math.abs(longitude) <= 180
+    )
+      hasDisplayedPoint = true;
+  }
+  const aliases = $('.headline__guts > ul.stats > li[title="Alternate name"]')
+    .toArray()
+    .map((element) => {
+      const alias = $(element).clone();
+      alias.find("strong").remove();
+      return alias.text().replace(/\s+/g, " ").trim();
+    })
+    .filter(Boolean);
+  const candidate: CatalogueCandidate = {
     providerId: "thecrag",
     externalId: routeId(identity),
     url: identity.href,
     name,
+    ...(aliases.length ? { aliases: [...new Set(aliases)] } : {}),
     kind,
     setting: null,
     locations,
@@ -156,6 +226,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
     angle: null,
     tags,
   };
+  return { candidate, parent: hasDisplayedPoint ? parent : null };
 }
 
 /** Public catalogue reads only; the caller owns request telemetry and transport. */
@@ -181,7 +252,22 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
     return response.text();
   }
 
+  async #detail(
+    url: URL,
+    areas: Map<string, CatalogueLocation["coordinates"]>,
+  ): Promise<CatalogueCandidate> {
+    const { candidate, parent } = parseDetail(await this.#page(url), url);
+    const nearest = candidate.locations.at(-1);
+    if (parent && nearest) {
+      const id = routeId(parent);
+      if (!areas.has(id)) areas.set(id, areaCoordinates(await this.#page(parent), parent));
+      nearest.coordinates = areas.get(id) ?? null;
+    }
+    return candidate;
+  }
+
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
+    const areas = new Map<string, CatalogueLocation["coordinates"]>();
     if (seed.providerId === this.providerId && (seed.sourceUrl || seed.externalId)) {
       const url = routeUrl(
         seed.sourceUrl ?? `${ORIGIN}/en/climbing/world/route/${seed.externalId}`,
@@ -190,35 +276,43 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         throw new Error(
           "theCrag catalogue source identity does not match the recorded climb. Check its source URL.",
         );
-      return { candidates: [parseDetail(await this.#page(url), url)], complete: false };
+      return { candidates: [await this.#detail(url, areas)], complete: false };
     }
-    const initial = new URL(
-      `${ORIGIN}${SEARCH_PATH}?S=${encodeURIComponent(seed.name)}&only=routes`,
-    );
-    let current = initial;
-    const visited = new Set<string>();
+    const names = catalogueSearchNames(seed);
+    const pending = names.map((name) => ({
+      name,
+      url: new URL(`${ORIGIN}${SEARCH_PATH}?S=${encodeURIComponent(name)}&only=routes`),
+      visited: new Set<string>(),
+      seen: new Set<string>(),
+    }));
     const routes = new Map<string, URL>();
-    let complete = false;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      if (visited.has(current.href)) break;
-      visited.add(current.href);
+    let partial = false;
+    for (let page = 0; page < MAX_PAGES && pending.length; page++) {
+      const query = pending.shift();
+      if (!query) break;
+      const current = query.url;
+      query.visited.add(current.href);
       const $ = load(await this.#page(current));
       if ($("table.routetable").length !== 1)
         throw new Error(
           "theCrag catalogue search page is blocked or unsupported. Retry when public access is available.",
         );
       for (const element of $("table.routetable .rt_name .route a[href]").toArray()) {
-        const anchor = $(element).clone();
-        anchor.find(".star").remove();
-        if (normalizedName(anchor.text()) !== normalizedName(seed.name)) continue;
-        const url = routeUrl(anchor.attr("href") ?? "");
+        const url = routeUrl($(element).attr("href") ?? "");
+        if (query.seen.has(routeId(url))) {
+          partial = true;
+          continue;
+        }
+        query.seen.add(routeId(url));
+        if (routes.has(routeId(url))) continue;
+        if (routes.size >= MAX_ROUTES) {
+          partial = true;
+          continue;
+        }
         routes.set(routeId(url), url);
       }
       const next = $(".pagination li.next:not(.disabled) a[href]");
-      if (!next.length) {
-        complete = true;
-        break;
-      }
+      if (!next.length) continue;
       const href = next.attr("href") ?? "";
       const url = URL.canParse(href, current) ? new URL(href, current) : null;
       if (
@@ -229,7 +323,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         url.password ||
         url.pathname !== SEARCH_PATH ||
         url.hash ||
-        url.searchParams.get("S") !== seed.name ||
+        url.searchParams.get("S") !== query.name ||
         url.searchParams.get("only") !== "routes" ||
         !/^[1-9]\d*$/.test(url.searchParams.get("page") ?? "") ||
         [...url.searchParams.keys()].some((key) => !["S", "only", "page"].includes(key)) ||
@@ -238,10 +332,18 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         throw new Error(
           "theCrag returned an invalid catalogue pagination URL. Retry or contact support.",
         );
-      current = url;
+      if (query.visited.has(url.href)) partial = true;
+      else {
+        query.url = url;
+        pending.push(query);
+      }
     }
     const candidates: CatalogueCandidate[] = [];
-    for (const url of routes.values()) candidates.push(parseDetail(await this.#page(url), url));
-    return { candidates, complete };
+    for (const url of routes.values()) {
+      const candidate = await this.#detail(url, areas);
+      if (names.some((name) => catalogueNameMatch(name, candidate) !== null))
+        candidates.push(candidate);
+    }
+    return { candidates, complete: pending.length === 0 && !partial };
   }
 }
