@@ -22,6 +22,8 @@ The [upstream response writer](https://github.com/mercuretechnologies/xprem/blob
 emits both `Content-Type` and `content-type`. A case-insensitive MIME parser
 combines those into `application/json, application/json; charset=utf-8`, which
 is not the JSON media type required by the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+[RFC 2045's entity-header grammar](https://www.rfc-editor.org/rfc/rfc2045.html#section-3)
+defines a single optional `Content-Type` field per MIME entity.
 Real-router regressions assert one parseable JSON Content-Type for complete
 manifests and empty/incomplete update directives, as well as the existing
 storage fault cases. Keep the client parser strict. The production image pin
