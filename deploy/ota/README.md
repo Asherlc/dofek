@@ -103,6 +103,13 @@ same `expo-app-id` header as the configured client.
 
 The audit detects failures after publication; it does not make publication
 atomic. A failed audit leaves that release advertised until explicit repair.
+EOAS [omits its receipt when the bundle is unchanged](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
+The audit then compares the served launch bundle hash and complete asset hash set
+against the fresh local export for the explicitly resolved runtime. It verifies
+the device signature and every downloaded asset before writing the existing
+update's verified identity as a receipt. Missing exports, content differences,
+signature failures and unreadable assets remain fatal; a present receipt still
+requires its exact UUID, runtime and branch.
 [Expo clients verify manifest signatures and asset hashes](https://docs.expo.dev/technical-specs/expo-updates-1/)
 and reject invalid downloads. Keep the failed UUID/runtime and evidence,
 diagnose whether the cause is transport, configuration or corruption, then

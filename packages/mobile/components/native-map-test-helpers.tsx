@@ -73,11 +73,15 @@ function MockNativeMap({
 export const nativeMapMock = {
   StaticMapImageManager: { createImage: nativeSnapshot },
   Map: MockNativeMap,
-  Camera: forwardRef(function Camera({ initialViewState }: { initialViewState: unknown }, ref) {
+  Camera: forwardRef(function Camera(
+    { initialViewState, bounds }: { initialViewState: unknown; bounds?: unknown },
+    ref,
+  ) {
     useImperativeHandle(ref, () => nativeCamera);
     return createElement("div", {
       "data-testid": "camera",
       "data-view": JSON.stringify(initialViewState),
+      "data-bounds": JSON.stringify(bounds),
     });
   }),
   Marker: ({
