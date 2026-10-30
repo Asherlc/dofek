@@ -49,6 +49,11 @@ def test_manifest_detects_changed_model_content_and_missing_weights(tmp_path: Pa
     seal_artifact(tmp_path / "model")
     initial = fingerprint(tmp_path / "model")
     load_artifact(dataset, tmp_path / "model", "splink", "test")
+    unexpected = tmp_path / "model" / "added_tokens.json"
+    unexpected.write_text('{"changed-token": 17}')
+    with pytest.raises(ValueError, match="fingerprint"):
+        load_artifact(dataset, tmp_path / "model", "splink", "test")
+    unexpected.unlink()
     weights.write_text('{"model": "changed"}')
     with pytest.raises(ValueError, match="fingerprint"):
         load_artifact(dataset, tmp_path / "model", "splink", "test")

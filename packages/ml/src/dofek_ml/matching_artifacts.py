@@ -60,6 +60,13 @@ def seal_artifact(directory: Path) -> None:
 
 def fingerprint(directory: Path) -> str:
     manifest = Manifest.model_validate_json((directory / "manifest.json").read_text())
+    present = {
+        path.relative_to(directory).as_posix()
+        for path in directory.rglob("*")
+        if path.is_file() and path.relative_to(directory).as_posix() != "manifest.json"
+    }
+    if present != manifest.files.keys():
+        raise ValueError("Model file fingerprint mismatch: artifact file inventory changed")
     for name, expected in manifest.files.items():
         path = directory / name
         if not path.is_file() or path.is_symlink() or _file_digest(path) != expected:

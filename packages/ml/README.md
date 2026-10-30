@@ -136,6 +136,9 @@ the model, detecting changed or missing model content. Evaluation refuses a
 different dataset. Saved-model inference also checks domain, relationship, library
 version, and overlap with recorded training IDs/groups. The caller must label
 entity groups correctly: invented group IDs cannot prove real-world separation.
+Sealed model directories are immutable: added files also invalidate their
+fingerprint, since tokenizer/model loaders may consult additional configuration.
+Write prediction and evaluation reports outside the model directory.
 
 ### GPS input and result
 
@@ -184,3 +187,18 @@ uv run --locked --extra matching pytest --cov
 Python CI executes the matching extra, including real minimal algorithm fits and
 save/load cycles. No engine is substituted with mock scores; synthetic examples
 and a one-epoch pretrained smoke cannot establish production accuracy.
+
+Observed smoke results on 2026-10-30 using the committed
+[catalogue fixture](examples/matching/catalogue.json), seed 42, thresholds
+0.2/0.8, Splink prior 0.01, and one transformer epoch:
+
+| Engine | Same decisions | Different decisions | Abstentions |
+| --- | ---: | ---: | ---: |
+| Splink | 3 | 1 | 0 |
+| Dedupe | 0 | 0 | 4 |
+| Pretrained DistilBERT after fine-tuning | 0 | 0 | 4 |
+
+The held-out fixture has three positives and one negative. The
+[GPS fixture](examples/matching/trace.json) matched all five observations and
+both expected directed edges. These observations demonstrate executable paths;
+the abstentions do not justify relaxing thresholds using held-out outcomes.
