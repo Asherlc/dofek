@@ -28,6 +28,25 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it("does not refocus an unchanged selection when marker data refreshes", async () => {
+    const points: { lat: number; lng: number }[] = [];
+    const climbMarkers = [exact];
+    const view = render(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    await waitFor(() => expect(maps[0]?.easeTo).toHaveBeenCalledOnce());
+    maps[0]?.easeTo.mockClear();
+    view.rerender(
+      <ActivityRouteMap
+        points={points}
+        climbMarkers={structuredClone(climbMarkers)}
+        selectedEntryId="tick-1"
+      />,
+    );
+    await waitFor(() => expect(maps).toHaveLength(2));
+    await screen.findByRole("button", { name: /Blue Arete/ });
+    for (const map of maps) expect(map.easeTo).not.toHaveBeenCalled();
+  });
   it("centers and zooms on selection, including selections made before initialization", async () => {
     const points: { lat: number; lng: number }[] = [];
     const area = {
