@@ -659,14 +659,12 @@ describe("activityRouter", () => {
         ]);
       try {
         const store = makeSensorStoreStub({
-          getStream: vi
-            .fn()
-            .mockImplementation(async (_window, _maxPoints, sources) => [
-              {
-                recorded_at: "2026-04-01T09:55:00.000Z",
-                heart_rate: sources.heartRate === "whoop" ? 91 : 192,
-              },
-            ]),
+          getStream: vi.fn().mockImplementation(async (_window, _maxPoints, sources) => [
+            {
+              recorded_at: "2026-04-01T09:55:00.000Z",
+              heart_rate: sources.heartRate === "whoop" ? 91 : 192,
+            },
+          ]),
         });
         const caller = makeResolvedCaller(
           [
