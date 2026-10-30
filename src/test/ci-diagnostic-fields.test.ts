@@ -87,6 +87,21 @@ function stackResult(stack: string) {
 }
 
 describe("diagnostic field contracts", () => {
+  it("preserves the ancestry of dependencies nested under root node_modules", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "diagnostic-dependency-"));
+    const file = path.join(root, "node_modules/outer/node_modules/inner/index.js");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "");
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(root);
+    try {
+      expect(
+        projectDiagnosticError({ stack: `Error\n    at ${file}:12:3` }).errors[0]?.locations,
+      ).toEqual(["node_modules/outer/node_modules/inner/index.js:12:3"]);
+    } finally {
+      cwd.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("assigns sequential numeric operation IDs", () => {
     const first = diagnosticOperationId();
     expect(Number.isSafeInteger(first)).toBe(true);

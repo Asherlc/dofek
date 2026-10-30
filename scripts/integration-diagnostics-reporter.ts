@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { Reporter, TestCase, TestModule, TestSuite } from "vitest/node";
-import { diagnosticOperationId } from "../src/test/ci-diagnostic-fields.ts";
+import { diagnosticOperationId, projectDiagnosticError } from "../src/test/ci-diagnostic-fields.ts";
 
 const started = performance.now();
 type Entity = TestModule | TestSuite | TestCase;
@@ -24,9 +24,22 @@ export default class IntegrationDiagnosticsReporter implements Reporter {
       operationId = diagnosticOperationId();
       this.#operations.set(entity.id, operationId);
     }
+    let error: ReturnType<typeof projectDiagnosticError> | undefined;
+    if (event.endsWith(".failed")) {
+      const failures = entity.type === "test" ? (entity.result().errors ?? []) : entity.errors();
+      const projections = failures.slice(0, 8).map(projectDiagnosticError);
+      const errors = projections.flatMap((projection) => projection.errors);
+      error = {
+        errors: errors.slice(0, 8),
+        truncated:
+          failures.length > 8 ||
+          errors.length > 8 ||
+          projections.some((projection) => projection.truncated),
+      };
+    }
     fs.writeSync(
       1,
-      `${JSON.stringify({ event, timestamp: new Date().toISOString(), elapsedMs: Math.max(0, performance.now() - started), project: "integration", operationId, file, taskId: entity.id, ...(entity.location ? { line: entity.location.line, column: entity.location.column } : {}), ...(hook ? { hook } : {}) })}\n`,
+      `${JSON.stringify({ event, timestamp: new Date().toISOString(), elapsedMs: Math.max(0, performance.now() - started), project: "integration", operationId, file, taskId: entity.id, ...(entity.location ? { line: entity.location.line, column: entity.location.column } : {}), ...(hook ? { hook } : {}), ...(error ? { error } : {}) })}\n`,
     );
   }
   onTestModuleQueued(entity: TestModule) {

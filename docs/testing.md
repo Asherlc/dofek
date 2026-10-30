@@ -223,6 +223,13 @@ module, suite, case and hook events through Vitest's [public reporter API](https
 Start events are emitted before completion, so an unmatched start identifies the
 last active operation in a partial log. Events identify code by repository file,
 task ID and source location; dynamic test titles and fixture values are excluded.
+Failed module, suite and case events include bounded error metadata immediately,
+so a hard stop need not erase the original failure before the final summary.
+Fixture statement stages identify pending drop/create/seed awaits; bootstrap
+events record the child's [spawn](https://nodejs.org/api/child_process.html#event-spawn)
+and [close](https://nodejs.org/api/child_process.html#event-close) metadata without
+printing commands, arguments or environment. Correlate a missing end event with
+the failure events before deciding whether an operation stalled or rejected.
 
 Seed-container diagnostics use Testcontainers' [documented lifecycle callbacks](https://node.testcontainers.org/features/containers/#lifecycle-callbacks).
 These bracket runtime/image resolution, creation, start/inspection and readiness;

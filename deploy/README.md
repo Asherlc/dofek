@@ -284,13 +284,61 @@ Requests triggered by unsuccessful CI use an isolated concurrency group so they
 cannot replace valid pending production work. They cancel their own workflow
 before deployment and retain a nonzero step result while cancellation is
 processed. Superseded pending requests are cancelled by GitHub concurrency;
-green indicates that the production release ran successfully. GitHub documents
+inspect the server deployment job separately from the overall release conclusion,
+because mobile publishing follows the server rollout. GitHub documents
 the cancellation API and its required Actions write permission:
 <https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run>.
 For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
 the selected workflow tag, verify the running Swarm image digest matches the
 resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
 [canonical deployment workflow](../.github/workflows/deploy-web-stack.yml).
+
+### Checking the Latest Production Deployment
+
+Start with the parent [Deploy Web workflow](../.github/workflows/deploy-web.yml),
+which calls the environment and stack workflows. Listing only
+`deploy-web-stack.yml` runs can return old standalone runs and miss deployments
+inside parent runs. GitHub describes how called jobs appear in the caller's run
+in its [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+
+```bash
+gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml \
+  --jq '{name, state, updated_at, html_url}'
+gh run list --repo Asherlc/dofek --workflow deploy-web.yml --limit 10
+gh run view RUN_ID --repo Asherlc/dofek --json jobs
+```
+
+If passing main CI runs have no subsequent deployment, check the workflow's
+`state` before investigating a queue. `disabled_manually` means automatic
+deployment is disabled; `updated_at` alone does not identify who disabled it or
+why. GitHub documents [workflow state](https://docs.github.com/en/rest/actions/workflows#get-a-workflow)
+and [disabling workflows](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+
+Confirm the live image and each running web container's revision using read-only
+inspection. Print only the selected fields, never the complete container
+environment:
+
+```bash
+ssh dofek-server 'docker service inspect dofek_web \
+  --format "{{.UpdatedAt}} {{.Spec.TaskTemplate.ContainerSpec.Image}}"'
+ssh dofek-server 'docker service ps dofek_web --no-trunc'
+ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_web \
+  | xargs -r docker inspect \
+  | jq '\''map({startedAt: .State.StartedAt,
+    revision: .Config.Labels["org.opencontainers.image.revision"],
+    release: [.Config.Env[] | select(startswith("SENTRY_RELEASE="))]})'\'''
+```
+
+Container start times and service update times are supporting evidence, not proof
+of a completed deployment: tasks can restart and service specifications can
+change independently. Correlate the live revision and digest with the parent
+run's selected release and server stack job. Report the server job's completion
+time separately from container start times, OTA publication, signed iOS upload,
+and the overall run conclusion. A mobile failure can leave a successful server
+rollout in a failed parent run; see the [publisher dependencies](../.github/workflows/deploy-web.yml)
+and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
+and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
+references.
 
 Production mobile OTA and signed iOS publishing follow a successful server
 rollout in the same release run. Automatic `Deploy Web` releases pass the server

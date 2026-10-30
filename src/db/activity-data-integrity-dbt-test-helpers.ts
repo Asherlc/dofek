@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import type { createClient } from "@clickhouse/client";
+import { captureException } from "../lib/error-reporting.ts";
 import { buildIngestMetricStreamCreateTableSql } from "../metric-stream/clickhouse-table.ts";
+import { diagnosticOperationId, projectDiagnosticError } from "../test/ci-diagnostic-fields.ts";
 import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 import {
   buildPostgresFitnessProviderFieldPriorityRawTableStatement,
@@ -193,11 +196,46 @@ export async function seedProductionDbtFixture(
         toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
       )`,
   ];
-  for (const statement of statements) await client.command({ query: statement });
+  const operationId = diagnosticOperationId();
+  for (const [statementIndex, statement] of statements.entries()) {
+    const started = performance.now();
+    const stage =
+      statementIndex === 0 ? "drop_database" : statementIndex === 1 ? "create_database" : "seed";
+    const emit = (event: "fixture.statement.start" | "fixture.statement.end") =>
+      fs.writeSync(
+        1,
+        `${JSON.stringify({ event, timestamp: new Date().toISOString(), elapsedMs: Math.max(0, performance.now() - started), operationId, stage, statementIndex })}\n`,
+      );
+    emit("fixture.statement.start");
+    await client.command({ query: statement });
+    emit("fixture.statement.end");
+  }
 }
 
 /** Build current upstream prerequisite tables; never replay production migrations. */
 export async function bootstrapActivityIntegrityIdentityModels(): Promise<void> {
+  const operationId = diagnosticOperationId();
+  const started = performance.now();
+  const emit = (
+    event:
+      | "fixture.bootstrap.start"
+      | "fixture.bootstrap.spawn"
+      | "fixture.bootstrap.close"
+      | "fixture.bootstrap.end",
+    fields: { pid?: number; code?: number | null; signal?: NodeJS.Signals | null } = {},
+  ) => {
+    try {
+      fs.writeSync(
+        1,
+        `${JSON.stringify({ event, timestamp: new Date().toISOString(), elapsedMs: Math.max(0, performance.now() - started), operationId, ...fields })}\n`,
+      );
+    } catch (error) {
+      captureException(new Error("Identity fixture bootstrap diagnostics failed"), {
+        extra: { diagnostic: projectDiagnosticError(error) },
+      });
+    }
+  };
+  emit("fixture.bootstrap.start");
   const code = await new Promise<number>((resolveExit, reject) => {
     const child = spawn(
       "uv",
@@ -224,10 +262,15 @@ export async function bootstrapActivityIntegrityIdentityModels(): Promise<void> 
         stdio: "inherit",
       },
     );
+    child.once("spawn", () => emit("fixture.bootstrap.spawn", { pid: child.pid }));
     child.once("error", reject);
-    child.once("close", (value) => resolveExit(value ?? 1));
+    child.once("close", (value, signal) => {
+      emit("fixture.bootstrap.close", { pid: child.pid, code: value, signal });
+      resolveExit(value ?? 1);
+    });
   });
   if (code !== 0) throw new Error(`Identity fixture dbt bootstrap failed with exit code ${code}`);
+  emit("fixture.bootstrap.end");
 }
 
 export const dbtEnvironmentKeys = [
