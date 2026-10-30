@@ -11,6 +11,7 @@
         "scripts/warm-query-cache.ts",
         "scripts/check-ota-image-visibility.ts",
         "scripts/verify-published-ota.ts",
+        "scripts/stack-service-image.ts",
         "vitest.config.mutation.ts"
       ],
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}", "scripts/verify-ota-update.ts"],
