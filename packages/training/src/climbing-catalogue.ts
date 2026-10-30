@@ -3,6 +3,12 @@ import { numericWallAngleSchema } from "./climbing-experience.ts";
 import { gpsCoordinatesSchema } from "./gps-coordinates.ts";
 
 export const catalogueProviderSchema = z.enum(["kaya", "mountain-project", "thecrag", "openbeta"]);
+const identityEvidence = {
+  references: z
+    .array(z.strictObject({ providerId: catalogueProviderSchema, externalId: z.string().min(1) }))
+    .optional(),
+  aliases: z.array(z.string().trim().min(1)).optional(),
+};
 export const catalogueLocationSchema = z.strictObject({
   externalId: z.string().nullable(),
   name: z.string(),
@@ -19,6 +25,7 @@ export const catalogueSeedSchema = z.strictObject({
   kind: z.enum(["route", "boulder"]).nullable(),
   setting: z.enum(["indoor", "outdoor"]).nullable(),
   locations: z.array(catalogueLocationSchema),
+  ...identityEvidence,
 });
 export const catalogueTagSchema = z.strictObject({
   kind: z.enum(["steepness", "hold", "climb_type", "other"]),
@@ -46,6 +53,7 @@ export const catalogueCandidateSchema = z
     grade: z.string().nullable(),
     angle: numericWallAngleSchema.nullable(),
     tags: z.array(catalogueTagSchema),
+    ...identityEvidence,
   })
   .refine(
     (candidate) => {
@@ -57,6 +65,7 @@ export const catalogueCandidateSchema = z
 export const catalogueSearchResultSchema = z.strictObject({
   candidates: z.array(catalogueCandidateSchema),
   complete: z.boolean(),
+  searchArea: catalogueLocationSchema.optional(),
 });
 export const climbingCatalogueContextSchema = z.strictObject({
   status: z.enum(["missing", "pending", "ready", "error"]),
@@ -67,16 +76,19 @@ export const climbingCatalogueContextSchema = z.strictObject({
     z.strictObject({
       providerId: catalogueProviderSchema,
       searchComplete: z.boolean(),
+      searchArea: catalogueLocationSchema.optional(),
       matches: z.array(
         z.strictObject({
-          confidence: z.enum(["source", "corroborated", "possible"]),
+          confidence: z.enum(["source", "reference", "corroborated", "possible"]),
           candidate: catalogueCandidateSchema,
+          evidence: z.array(z.string()).optional(),
         }),
       ),
     }),
   ),
 });
 export type CatalogueProviderId = z.infer<typeof catalogueProviderSchema>;
+export type CatalogueLocation = z.infer<typeof catalogueLocationSchema>;
 export type CatalogueSeed = z.infer<typeof catalogueSeedSchema>;
 export type CatalogueCandidate = z.infer<typeof catalogueCandidateSchema>;
 export type CatalogueSearchResult = z.infer<typeof catalogueSearchResultSchema>;
