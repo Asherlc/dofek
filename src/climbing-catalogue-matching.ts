@@ -13,6 +13,16 @@ type AttributedMatch = ClimbingCatalogueContext["sources"][number]["matches"][nu
   evidence: string[];
 };
 
+/** Distinct upstream queries: preserve meaningful words and punctuation. */
+export function catalogueSearchNames(seed: CatalogueSeed): string[] {
+  const names = new Map<string, string>();
+  for (const value of [seed.name, ...(seed.aliases ?? [])]) {
+    const name = value.trim().replace(/\s+/gu, " ");
+    if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+  }
+  return [...names.values()];
+}
+
 /** Normalize presentation, retaining directional, start, extension and pitch words. */
 export function normalizeCatalogueName(value: string): string {
   const article = value.normalize("NFKC").replace(/^(.*),\s*(the|a|an)\s*$/iu, "$2 $1");
@@ -180,7 +190,7 @@ export function matchCatalogueCandidates(
       (found.searchArea.scope === "area" &&
         (geography(seed.locations, [found.searchArea]) === "compatible" ||
           geography(recordedLocations, [found.searchArea]) === "compatible")));
-  return assessed.map(
+  const matches = assessed.map<AttributedMatch>(
     ({ candidate, native, reference, name, place, supportingLocations, conflicts }) => {
       if (native)
         return {
@@ -220,4 +230,6 @@ export function matchCatalogueCandidates(
       return { candidate, confidence: corroborated ? "corroborated" : "possible", evidence };
     },
   );
+  const order = { source: 0, reference: 1, corroborated: 2, possible: 3 };
+  return matches.sort((left, right) => order[left.confidence] - order[right.confidence]);
 }

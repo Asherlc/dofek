@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
 import { MemoryCacheStore } from "./lib/cache.ts";
 import { captureException } from "./lib/error-reporting.ts";
+import { MountainProjectCatalogueAdapter } from "./providers/mountain-project-catalogue.ts";
 
 vi.mock("./lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
@@ -54,6 +55,55 @@ const candidate: CatalogueCandidate = {
 };
 
 describe("ClimbingCatalogueService", () => {
+  it("keeps local alias competitors possible after a native rename", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const name = new URL(String(input)).searchParams.get("q");
+      const id = name === "New Official Name" ? "1" : "2";
+      return Response.json({
+        total: { value: 1, relation: "eq" },
+        hits: [
+          {
+            _source: {
+              id: `routes.${id}`,
+              type: "Route",
+              title: name,
+              url: `https://www.mountainproject.com/route/${id}/climb`,
+              breadcrumbs: "Cragmont Park",
+              location: [-122.2637, 37.8921],
+              tags: ["Trad"],
+            },
+          },
+        ],
+      });
+    });
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      {
+        providerId: "thecrag",
+        search: async () => ({
+          candidates: [{ ...candidate, name: "New Official Name" }],
+          complete: true,
+        }),
+      },
+      new MountainProjectCatalogueAdapter(fetchFn),
+    ]);
+    const result = await service.refresh({
+      ...seed,
+      providerId: "thecrag",
+      externalId: candidate.externalId,
+    });
+    expect(result.sources[1]?.searchComplete).toBe(true);
+    expect(
+      result.sources[1]?.matches.map((match) => [match.candidate.name, match.confidence]),
+    ).toEqual([
+      ["New Official Name", "possible"],
+      ["Cragmont Crack", "possible"],
+    ]);
+    expect(
+      result.sources[1]?.matches.every((match) =>
+        match.evidence?.some((reason) => reason.includes("Another plausible")),
+      ),
+    ).toBe(true);
+  });
   it.each([
     { reference: false, candidateGeography: true },
     { reference: true, candidateGeography: true },

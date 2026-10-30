@@ -11,6 +11,7 @@ import {
   catalogueAreasAreNearby,
   catalogueLocalArea,
   catalogueNameMatch,
+  catalogueSearchNames,
   normalizeCatalogueName,
 } from "../climbing-catalogue-matching.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -396,14 +397,21 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
     const local = catalogueLocalArea(seed.locations);
     if (local?.coordinates) return this.#local(seed, { ...local, coordinates: local.coordinates });
     const ids = new Set<string>();
-    let complete = false;
-    for (let page = 1; page <= MAX_PAGES; page++) {
+    const pending = catalogueSearchNames(seed).map((name) => ({
+      name,
+      page: 1,
+      seen: new Set<string>(),
+    }));
+    let partial = false;
+    for (let request = 0; request < MAX_PAGES && pending.length; request++) {
+      const current = pending.shift();
+      if (!current) break;
       const url = new URL(SEARCH);
       url.search = new URLSearchParams({
-        q: seed.name,
+        q: current.name,
         query_by: "climbName",
         per_page: String(PAGE_SIZE),
-        page: String(page),
+        page: String(current.page),
       }).toString();
       const response = searchSchema.safeParse(
         await this.#request(url.href, {
@@ -416,21 +424,31 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
           "OpenBeta catalogue search response is invalid. Retry when public access is available.",
         );
       const result = response.data;
-      if (result.page !== page) break;
-      for (const hit of result.hits)
+      if (result.page !== current.page) {
+        partial = true;
+        continue;
+      }
+      let repeated = false;
+      for (const hit of result.hits) {
+        if (current.seen.has(hit.document.climbUUID)) repeated = true;
+        current.seen.add(hit.document.climbUUID);
         if (
           [seed.name, ...(seed.aliases ?? [])].some(
             (name) => catalogueNameMatch(name, { name: hit.document.climbName }) !== null,
           )
         )
           ids.add(hit.document.climbUUID);
-      if (result.search_cutoff || result.found <= page * PAGE_SIZE) {
-        complete = !result.search_cutoff;
-        break;
+      }
+      if (result.search_cutoff || repeated) partial = true;
+      else if (current.seen.size >= result.found) continue;
+      else if (result.hits.length < PAGE_SIZE) partial = true;
+      else {
+        current.page++;
+        pending.push(current);
       }
     }
     const candidates: CatalogueCandidate[] = [];
     for (const id of ids) candidates.push(await this.#climb(id));
-    return { candidates, complete };
+    return { candidates, complete: !partial && pending.length === 0 };
   }
 }

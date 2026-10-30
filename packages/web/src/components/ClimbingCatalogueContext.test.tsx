@@ -4,6 +4,63 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 
+it.each([false, true])(
+  "renders mixed confidence candidates in the supplied server order (reversed=%s)",
+  (reversed) => {
+    const source = ready.sources[0];
+    const match = source?.matches[0];
+    if (!source || !match) throw new Error("Missing fixture match");
+    const mixed = [
+      { confidence: "corroborated" as const, name: "Swiss Cheese at Goat Rock" },
+      { confidence: "possible" as const, name: "Swiss Cheese at Distant Wall" },
+      { confidence: "possible" as const, name: "Swiss Cheese at Other Crag" },
+    ];
+    if (reversed) mixed.reverse();
+    useQuery.mockReturnValue({
+      isFetchedAfterMount: true,
+      refetch,
+      error: null,
+      isLoading: false,
+      data: {
+        ...ready,
+        sources: [
+          {
+            ...source,
+            matches: mixed.map((item, index) => ({
+              ...match,
+              confidence: item.confidence,
+              evidence: [
+                item.confidence === "corroborated"
+                  ? "Local areas align within 100 m: Goat Rock / Goat Rock."
+                  : "Nearest local areas conflict.",
+              ],
+              candidate: { ...match.candidate, externalId: String(index), name: item.name },
+            })),
+          },
+        ],
+      },
+    });
+    render(<ClimbingCatalogueContext id="log-1" />);
+    open();
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(
+      reversed
+        ? [
+            "Swiss Cheese at Other Crag",
+            "Swiss Cheese at Distant Wall",
+            "Swiss Cheese at Goat Rock",
+          ]
+        : [
+            "Swiss Cheese at Goat Rock",
+            "Swiss Cheese at Distant Wall",
+            "Swiss Cheese at Other Crag",
+          ],
+    );
+    expect(screen.getByText("Location corroborated")).toBeTruthy();
+    expect(screen.getAllByText("Possible match")).toHaveLength(2);
+    expect(screen.getByText("Local areas align within 100 m: Goat Rock / Goat Rock.")).toBeTruthy();
+  },
+);
+
 const { useQuery, useMutation, mutate, setData, refetch } = vi.hoisted(() => ({
   useQuery: vi.fn(),
   useMutation: vi.fn(),

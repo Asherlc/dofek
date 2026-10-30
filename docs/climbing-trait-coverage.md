@@ -244,8 +244,24 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   credential is public and search-only; no new private credential or service is
   provisioned. Upstream 502 responses remain actionable lookup errors.
 
-Searches are bounded to three pages. Capped or repeated pages remain explicitly
-incomplete and cannot establish a unique corroborated match. Indoor candidates
+Global name searches share at most three page requests per provider across the
+current name and all meaningful logged/source aliases, rather than three pages
+per alias. Empty and case/whitespace-equivalent queries are removed; punctuation
+and route qualifiers remain available to upstream search. Each distinct query
+gets its first page before any query receives another page. Unqueried aliases,
+unfinished pagination, repeated or omitted results, and detail caps keep combined
+coverage incomplete and cannot establish a unique corroborated match. Query
+pagination/repetition state is separate from global source-ID deduplication, so
+overlap between aliases does not itself imply incomplete coverage. Exact native
+and reference lookups, and independently complete OpenBeta local-area discovery,
+retain their separate paths. See the [shared query-name policy](../src/climbing-catalogue-matching.ts)
+and the provider readers linked above; their upstream protocols are documented by
+the [MP search client](https://www.mountainproject.com/dist/search/block.js?v.5),
+[KAYA consumer query](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js),
+[theCrag route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes),
+and [OpenBeta search client](https://github.com/OpenBeta/open-tacos/blob/develop/src/js/typesense/TypesenseClient.ts).
+
+Indoor candidates
 are possible matches unless the exact recorded provider identity is found;
 matching names or recycled colors never establish the same gym set. Failed
 refreshes retain still-unexpired context with an actionable error instead of
@@ -253,6 +269,13 @@ becoming an empty successful lookup. See the
 [shared response](../packages/training/src/climbing-catalogue.ts),
 [cache/matching tests](../src/climbing-catalogue.test.ts) and
 [database ownership tests](../src/db/climbing-catalogue-seed.integration.test.ts).
+
+Within each provider, the [server matcher](../src/climbing-catalogue-matching.ts)
+stably orders matches as source, explicit reference, corroborated, then possible.
+It preserves order within each class, every candidate and all evidence; provider
+order is unchanged. The [web](../packages/web/src/components/ClimbingCatalogueContext.tsx)
+and [mobile](../packages/mobile/components/ClimbingCatalogueContext.tsx) views render
+that server order without a client-side score or winner selection.
 
 ### Local discovery and identity evidence (2026-10-29)
 
@@ -304,7 +327,8 @@ and [Fuse.js search documentation](https://www.fusejs.io/api/options.html).
 theCrag search hydrates at most 60 unique route details over three pages before
 checking names and literal route AKA labels, so a route returned under an alias
 is not discarded solely because its displayed title differs. A repeated page,
-repeated route or omitted detail keeps discovery incomplete. AKA labels come
+repeated route within one query or omitted detail keeps discovery incomplete;
+overlapping route IDs from different name queries share one detail read. AKA labels come
 only from `.headline__guts > ul.stats > li[title="Alternate name"]`, as observed
 on [this route's "Up" alias](https://www.thecrag.com/en/climbing/thailand/krabi/route/7257755094);
 breadcrumb abbreviations are not route aliases. The displayed `Lat/Lon:` pair

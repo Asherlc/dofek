@@ -44,6 +44,94 @@ function lookup(html: string) {
 }
 
 describe("TheCragCatalogueAdapter", () => {
+  it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockImplementation(
+        async (input) =>
+          new Response(
+            search(
+              new URL(String(input)).searchParams.get("S") === "Left start"
+                ? row("Left start")
+                : "",
+            ),
+          ),
+      );
+    expect(
+      await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["Up", "Down", "Left start"],
+      }),
+    ).toEqual({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])(
+    "discovers historical names with request-sensitive results (overlap=%s)",
+    async (overlap) => {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname.includes("/route/"))
+          return new Response(
+            detail().replace('itemprop="name">Cragmont Crack', 'itemprop="name">Up'),
+          );
+        return new Response(search(url.searchParams.get("S") === "Up" || overlap ? row("Up") : ""));
+      });
+      const result = await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
+      });
+      expect(result.candidates.map((candidate) => candidate.name)).toEqual(["Up"]);
+      expect(result.complete).toBe(true);
+      expect(
+        fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("S")),
+      ).toEqual(["Cragmont Crack", "Up", null]);
+    },
+  );
+  it("shares three pages across aliases before paginating and reports uncovered names", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return new Response(
+        search(
+          "",
+          url.searchParams.get("S") === seed.name ? "?S=Cragmont%20Crack&only=routes&page=2" : "",
+        ),
+      );
+    });
+    const result = await new TheCragCatalogueAdapter(fetchFn).search({
+      ...seed,
+      aliases: ["Up", "Down", "Left start"],
+    });
+    expect(result.complete).toBe(false);
+    expect(
+      fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("S")),
+    ).toEqual(["Cragmont Crack", "Up", "Down"]);
+  });
+  it("resumes validated per-query pagination after giving aliases an initial page", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return new Response(
+        search(
+          "",
+          url.searchParams.get("S") === seed.name && !url.searchParams.has("page")
+            ? "?S=Cragmont%20Crack&only=routes&page=2"
+            : "",
+        ),
+      );
+    });
+    expect(
+      (await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] })).complete,
+    ).toBe(true);
+    expect(
+      fetchFn.mock.calls.map(([input]) => {
+        const url = new URL(String(input));
+        return [url.searchParams.get("S"), url.searchParams.get("page")];
+      }),
+    ).toEqual([
+      ["Cragmont Crack", null],
+      ["Up", null],
+      ["Cragmont Crack", "2"],
+    ]);
+  });
   it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
     "retains name-related suggestion %s with qualifiers intact",
     async (name) => {

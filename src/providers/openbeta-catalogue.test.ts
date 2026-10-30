@@ -39,6 +39,14 @@ function page(
 ) {
   return { found, page: current, hits, search_cutoff: false };
 }
+function unrelatedHits(offset = 0) {
+  return Array.from({ length: 20 }, (_, index) => ({
+    document: {
+      climbUUID: `6cc9b5d5-02d5-555a-948b-${String(offset + index).padStart(12, "0")}`,
+      climbName: "Unrelated summit",
+    },
+  }));
+}
 function client(values: unknown[]) {
   return vi.fn<typeof fetch>().mockImplementation(async () => Response.json(values.shift()));
 }
@@ -51,6 +59,105 @@ function lookup(overrides = {}) {
 }
 
 describe("OpenBetaCatalogueAdapter", () => {
+  it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) =>
+        Response.json(
+          new URL(String(input)).searchParams.get("q") === "Left start" ? page() : page(0, 1, []),
+        ),
+      );
+    expect(
+      await new OpenBetaCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["Up", "Down", "Left start"],
+      }),
+    ).toEqual({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])(
+    "discovers historical names with request-sensitive results (overlap=%s)",
+    async (overlap) => {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.openbeta.io")
+          return Response.json({ data: { climb: climb({ name: "Up" }) } });
+        const hits =
+          url.searchParams.get("q") === "Up" || overlap
+            ? [{ document: { climbUUID: id, climbName: "Up" } }]
+            : [];
+        return Response.json(page(hits.length, 1, hits));
+      });
+      const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
+      });
+      expect(result.candidates.map((candidate) => candidate.name)).toEqual(["Up"]);
+      expect(result.complete).toBe(true);
+      expect(
+        fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("q")),
+      ).toEqual(["Cragmont Crack", "Up", null]);
+    },
+  );
+  it("shares three pages across aliases before paginating and reports uncovered names", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return Response.json(page(url.searchParams.get("q") === seed.name ? 100 : 0, 1, []));
+    });
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...seed,
+      aliases: ["Up", "Down", "Left start"],
+    });
+    expect(result.complete).toBe(false);
+    expect(
+      fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("q")),
+    ).toEqual(["Cragmont Crack", "Up", "Down"]);
+  });
+  it("marks missing and repeated per-query results incomplete", async () => {
+    for (const repeated of [false, true]) {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.openbeta.io") return Response.json({ data: { climb: climb() } });
+        return Response.json(
+          page(21, Number(url.searchParams.get("page")), repeated ? unrelatedHits() : []),
+        );
+      });
+      expect((await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).complete).toBe(false);
+      expect(fetchFn).toHaveBeenCalledTimes(repeated ? 2 : 1);
+    }
+  });
+  it("resumes each alias at its own page while deduplicating overlapping global IDs", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.openbeta.io") return Response.json({ data: { climb: climb() } });
+      const current = Number(url.searchParams.get("page"));
+      return Response.json(
+        url.searchParams.get("q") === seed.name
+          ? page(
+              21,
+              current,
+              current === 1
+                ? unrelatedHits()
+                : [{ document: { climbUUID: id, climbName: seed.name } }],
+            )
+          : page(),
+      );
+    });
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] });
+    expect(result.complete).toBe(true);
+    expect(result.candidates).toHaveLength(1);
+    expect(
+      fetchFn.mock.calls.map(([input]) => {
+        const url = new URL(String(input));
+        return [url.searchParams.get("q"), url.searchParams.get("page")];
+      }),
+    ).toEqual([
+      ["Cragmont Crack", "1"],
+      ["Up", "1"],
+      ["Cragmont Crack", "2"],
+      [null, null],
+    ]);
+  });
   it.each(["  CRAGMONT  CRACK  ", "Ｃｒａｇｍｏｎｔ Crack", "Cragmont\t\nCrack"])(
     "finds the only exact normalized name %s",
     async (name) => {
@@ -310,7 +417,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
 
   it("marks repeated page responses incomplete before reading their hits", async () => {
-    const fetchFn = client([page(100, 1, []), page(100, 1)]);
+    const fetchFn = client([page(100, 1, unrelatedHits()), page(100, 1)]);
     expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
       candidates: [],
       complete: false,
@@ -319,7 +426,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
 
   it("stops at an exact full-page result-count boundary", async () => {
-    const fetchFn = client([page(20, 1, [])]);
+    const fetchFn = client([page(20, 1, unrelatedHits())]);
     expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
       candidates: [],
       complete: true,
@@ -453,9 +560,9 @@ describe("OpenBetaCatalogueAdapter", () => {
     expect(result.candidates[0]?.tags).toEqual([]);
   });
 
-  it("follows bounded pages and deduplicates only exact normalized names", async () => {
+  it("follows full pages and retains the normalized name on the final page", async () => {
     const fetchFn = client([
-      page(21),
+      page(21, 1, unrelatedHits()),
       page(21, 2, [{ document: { climbUUID: id, climbName: " CRAGMONT  CRACK " } }]),
       { data: { climb: climb() } },
     ]);
@@ -466,7 +573,11 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
 
   it("marks capped and cutoff search results incomplete", async () => {
-    const fetchFn = client([page(100, 1, []), page(100, 2, []), page(100, 3, [])]);
+    const fetchFn = client([
+      page(100, 1, unrelatedHits()),
+      page(100, 2, unrelatedHits(20)),
+      page(100, 3, unrelatedHits(40)),
+    ]);
     expect((await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).complete).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(3);
     const cutoff = client([{ ...page(0, 1, []), search_cutoff: true }]);

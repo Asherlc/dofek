@@ -9,6 +9,7 @@ import {
   catalogueAreasAreNearby,
   catalogueLocalArea,
   catalogueNameMatch,
+  catalogueSearchNames,
   matchCatalogueCandidates,
   normalizeCatalogueName,
 } from "./climbing-catalogue-matching.ts";
@@ -63,6 +64,26 @@ function matches(
 }
 
 describe("catalogue name discovery", () => {
+  it("keeps meaningful alias punctuation and qualifiers while merging case/whitespace duplicates", () => {
+    expect(
+      catalogueSearchNames({
+        ...seed,
+        name: " The Great Roof ",
+        aliases: [
+          "",
+          " THE  GREAT\tROOF ",
+          "Great Roof, The",
+          "The Great Roof extension",
+          "The Great Roof left start",
+        ],
+      }),
+    ).toEqual([
+      "The Great Roof",
+      "Great Roof, The",
+      "The Great Roof extension",
+      "The Great Roof left start",
+    ]);
+  });
   it.each([
     [" Great Roof, The ", "the great roof"],
     ["L’Arête!", "larête"],
@@ -87,6 +108,48 @@ describe("catalogue name discovery", () => {
 });
 
 describe("evidence-based catalogue matching", () => {
+  it("stably orders native and reference matches before possible suggestions without losing evidence", () => {
+    const native = {
+      ...candidate,
+      providerId: "mountain-project" as const,
+      externalId: seed.externalId ?? "",
+      name: "Renamed",
+    };
+    const linked = {
+      ...candidate,
+      externalId: "linked",
+      references: [{ providerId: "mountain-project" as const, externalId: seed.externalId ?? "" }],
+    };
+    const other = { ...candidate, externalId: "other", locations: [area("Distant", 40)] };
+    const result = matches([
+      other,
+      linked,
+      { ...other, externalId: "other-2" },
+      native,
+      { ...linked, externalId: "linked-2" },
+    ]);
+    expect(result.map((match) => [match.candidate.externalId, match.confidence])).toEqual([
+      ["105734732", "source"],
+      ["linked", "reference"],
+      ["linked-2", "reference"],
+      ["other", "possible"],
+      ["other-2", "possible"],
+    ]);
+    expect(result.every((match) => match.evidence.length > 0)).toBe(true);
+  });
+  it("places the corroborated local route before distant suggestions while preserving their order", () => {
+    const distant = { ...candidate, externalId: "distant", locations: [area("Distant", 40)] };
+    expect(
+      matches([distant, candidate, { ...distant, externalId: "distant-2" }]).map((match) => [
+        match.candidate.externalId,
+        match.confidence,
+      ]),
+    ).toEqual([
+      ["openbeta-route", "corroborated"],
+      ["distant", "possible"],
+      ["distant-2", "possible"],
+    ]);
+  });
   it("keeps an exact local complete match possible when its explicit native-provider ID conflicts", () => {
     const wrongReference = {
       ...candidate,

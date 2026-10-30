@@ -6,7 +6,7 @@ import {
   catalogueCandidateSchema,
 } from "@dofek/training/climbing-catalogue";
 import { z } from "zod";
-import { catalogueNameMatch } from "../climbing-catalogue-matching.ts";
+import { catalogueNameMatch, catalogueSearchNames } from "../climbing-catalogue-matching.ts";
 
 const origin = "https://www.mountainproject.com";
 const coordinates = z.tuple([
@@ -164,11 +164,18 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
     }
     const candidates: CatalogueCandidate[] = [];
     const seen = new Set<string>();
-    let from = 0;
-    for (let page = 0; page < 3; page++) {
+    const pending = catalogueSearchNames(seed).map((name) => ({
+      name,
+      from: 0,
+      seen: new Set<string>(),
+    }));
+    let partial = false;
+    for (let page = 0; page < 3 && pending.length; page++) {
+      const current = pending.shift();
+      if (!current) break;
       const parsed = searchSchema.safeParse(
         await this.#request(
-          `${origin}/api/v2/search?q=${encodeURIComponent(seed.name)}&from=${from}`,
+          `${origin}/api/v2/search?q=${encodeURIComponent(current.name)}&from=${current.from}`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -183,13 +190,15 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
       const { hits, total } = parsed.data;
       let repeated = false;
       for (const { _source: hit } of hits) {
-        if (seen.has(hit.id)) {
+        if (current.seen.has(hit.id)) {
           repeated = true;
           continue;
         }
-        seen.add(hit.id);
+        current.seen.add(hit.id);
         if (new URL(hit.url).pathname.split("/")[2] !== hit.id.slice(7))
           throw new Error("Mountain Project catalogue returned inconsistent route identity.");
+        if (seen.has(hit.id)) continue;
+        seen.add(hit.id);
         if (
           [seed.name, ...(seed.aliases ?? [])].some(
             (name) => catalogueNameMatch(name, { name: hit.title }) !== null,
@@ -197,11 +206,12 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
         )
           candidates.push(hitCandidate(hit));
       }
-      from += hits.length;
-      if (repeated) return { candidates, complete: false };
-      if (total.relation === "eq" && from >= total.value) return { candidates, complete: true };
-      if (!hits.length) return { candidates, complete: false };
+      current.from += hits.length;
+      if (repeated) partial = true;
+      else if (total.relation === "eq" && current.from >= total.value) continue;
+      else if (!hits.length) partial = true;
+      else pending.push(current);
     }
-    return { candidates, complete: false };
+    return { candidates, complete: !partial && pending.length === 0 };
   }
 }

@@ -29,6 +29,81 @@ const response = (rows: unknown[], total = rows.length) =>
     hits: rows.map((row) => ({ _source: row })),
   });
 describe("MountainProjectCatalogueAdapter", () => {
+  it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) =>
+        response(
+          new URL(String(input)).searchParams.get("q") === "Left start"
+            ? [{ ...route, title: "Left start" }]
+            : [],
+        ),
+      );
+    expect(
+      await new MountainProjectCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["Up", "Down", "Left start"],
+      }),
+    ).toEqual({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])(
+    "discovers historical names with request-sensitive results (overlap=%s)",
+    async (overlap) => {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const name = new URL(String(input)).searchParams.get("q");
+        return response(name === "Up" || overlap ? [{ ...route, title: "Up" }] : []);
+      });
+      const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
+      });
+      expect(result.candidates.map((candidate) => candidate.name)).toEqual(["Up"]);
+      expect(result.complete).toBe(true);
+      expect(
+        fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("q")),
+      ).toEqual(["Cragmont Crack", "Up"]);
+    },
+  );
+  it("shares three pages across aliases before paginating and reports uncovered names", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return response(url.searchParams.get("q") === seed.name ? [route] : [], 100);
+    });
+    const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+      ...seed,
+      aliases: ["Up", "Down", "Left start"],
+    });
+    expect(result.complete).toBe(false);
+    expect(
+      fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("q")),
+    ).toEqual(["Cragmont Crack", "Up", "Down"]);
+  });
+  it("resumes each query at its own offset after giving aliases an initial page", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return response(
+        url.searchParams.get("q") === seed.name && url.searchParams.get("from") === "0"
+          ? [route]
+          : [],
+        url.searchParams.get("q") === seed.name && url.searchParams.get("from") === "0" ? 2 : 0,
+      );
+    });
+    expect(
+      (await new MountainProjectCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] }))
+        .complete,
+    ).toBe(true);
+    expect(
+      fetchFn.mock.calls.map(([input]) => {
+        const url = new URL(String(input));
+        return [url.searchParams.get("q"), url.searchParams.get("from")];
+      }),
+    ).toEqual([
+      ["Cragmont Crack", "0"],
+      ["Up", "0"],
+      ["Cragmont Crack", "1"],
+    ]);
+  });
   it("follows an explicit reference when an MP source lacks a native ID", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
@@ -80,7 +155,15 @@ describe("MountainProjectCatalogueAdapter", () => {
   );
   it("uses the seed's source-declared aliases for discovery", async () => {
     const result = await new MountainProjectCatalogueAdapter(
-      vi.fn<typeof fetch>().mockResolvedValue(response([{ ...route, title: "Up" }])),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (input) =>
+          response(
+            new URL(String(input)).searchParams.get("q") === "Up"
+              ? [{ ...route, title: "Up" }]
+              : [],
+          ),
+        ),
     ).search({ ...seed, aliases: ["Up"] });
     expect(result.candidates[0]?.name).toBe("Up");
   });

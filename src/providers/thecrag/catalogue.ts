@@ -6,7 +6,7 @@ import type {
   ClimbingCatalogueAdapter,
 } from "@dofek/training/climbing-catalogue";
 import { load } from "cheerio";
-import { catalogueNameMatch } from "../../climbing-catalogue-matching.ts";
+import { catalogueNameMatch, catalogueSearchNames } from "../../climbing-catalogue-matching.ts";
 
 const ORIGIN = "https://www.thecrag.com";
 const SEARCH_PATH = "/en/climbing/world/search";
@@ -278,17 +278,19 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         );
       return { candidates: [await this.#detail(url, areas)], complete: false };
     }
-    const initial = new URL(
-      `${ORIGIN}${SEARCH_PATH}?S=${encodeURIComponent(seed.name)}&only=routes`,
-    );
-    let current = initial;
-    const visited = new Set<string>();
+    const pending = catalogueSearchNames(seed).map((name) => ({
+      name,
+      url: new URL(`${ORIGIN}${SEARCH_PATH}?S=${encodeURIComponent(name)}&only=routes`),
+      visited: new Set<string>(),
+      seen: new Set<string>(),
+    }));
     const routes = new Map<string, URL>();
-    let complete = false;
     let partial = false;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      if (visited.has(current.href)) break;
-      visited.add(current.href);
+    for (let page = 0; page < MAX_PAGES && pending.length; page++) {
+      const query = pending.shift();
+      if (!query) break;
+      const current = query.url;
+      query.visited.add(current.href);
       const $ = load(await this.#page(current));
       if ($("table.routetable").length !== 1)
         throw new Error(
@@ -296,10 +298,12 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         );
       for (const element of $("table.routetable .rt_name .route a[href]").toArray()) {
         const url = routeUrl($(element).attr("href") ?? "");
-        if (routes.has(routeId(url))) {
+        if (query.seen.has(routeId(url))) {
           partial = true;
           continue;
         }
+        query.seen.add(routeId(url));
+        if (routes.has(routeId(url))) continue;
         if (routes.size >= MAX_ROUTES) {
           partial = true;
           continue;
@@ -307,10 +311,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         routes.set(routeId(url), url);
       }
       const next = $(".pagination li.next:not(.disabled) a[href]");
-      if (!next.length) {
-        complete = true;
-        break;
-      }
+      if (!next.length) continue;
       const href = next.attr("href") ?? "";
       const url = URL.canParse(href, current) ? new URL(href, current) : null;
       if (
@@ -321,7 +322,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         url.password ||
         url.pathname !== SEARCH_PATH ||
         url.hash ||
-        url.searchParams.get("S") !== seed.name ||
+        url.searchParams.get("S") !== query.name ||
         url.searchParams.get("only") !== "routes" ||
         !/^[1-9]\d*$/.test(url.searchParams.get("page") ?? "") ||
         [...url.searchParams.keys()].some((key) => !["S", "only", "page"].includes(key)) ||
@@ -330,7 +331,11 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         throw new Error(
           "theCrag returned an invalid catalogue pagination URL. Retry or contact support.",
         );
-      current = url;
+      if (query.visited.has(url.href)) partial = true;
+      else {
+        query.url = url;
+        pending.push(query);
+      }
     }
     const candidates: CatalogueCandidate[] = [];
     for (const url of routes.values()) {
@@ -342,6 +347,6 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
       )
         candidates.push(candidate);
     }
-    return { candidates, complete: complete && !partial };
+    return { candidates, complete: pending.length === 0 && !partial };
   }
 }

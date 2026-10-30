@@ -103,6 +103,71 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const OwnSource: Story = {};
+export const MixedConfidence: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Server-ordered local corroboration followed by distant possible candidates; every candidate remains visible.",
+      },
+    },
+  },
+  args: {
+    context: {
+      ...ready,
+      sources: [
+        {
+          providerId: "mountain-project",
+          searchComplete: true,
+          matches: [
+            {
+              id: "105734732",
+              area: "Goat Rock",
+              confidence: "corroborated" as const,
+              evidence: [
+                "Normalized climb names match.",
+                "Local areas align within 100 m: Goat Rock / Goat Rock.",
+              ],
+            },
+            {
+              id: "2",
+              area: "Distant Wall",
+              confidence: "possible" as const,
+              evidence: [
+                "Normalized climb names match.",
+                "Nearest local areas conflict: Goat Rock / Distant Wall.",
+              ],
+            },
+            {
+              id: "3",
+              area: "Other Crag",
+              confidence: "possible" as const,
+              evidence: [
+                "Normalized climb names match.",
+                "Nearest local areas conflict: Goat Rock / Other Crag.",
+              ],
+            },
+          ].map((item) => ({
+            confidence: item.confidence,
+            evidence: item.evidence,
+            candidate: {
+              providerId: "mountain-project",
+              externalId: item.id,
+              url: `https://www.mountainproject.com/route/${item.id}/swiss-cheese`,
+              name: "Swiss Cheese",
+              kind: "route",
+              setting: "outdoor",
+              locations: [{ externalId: null, name: item.area, scope: "area", coordinates: null }],
+              grade: "5.4",
+              angle: null,
+              tags: [],
+            },
+          })),
+        },
+      ],
+    },
+  },
+};
 export const Missing: Story = { args: { context: missing } };
 export const Collapsed: Story = { args: { open: false } };
 export const Pending: Story = { args: { context: { ...missing, status: "pending" } } };
