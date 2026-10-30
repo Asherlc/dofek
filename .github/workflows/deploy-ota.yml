@@ -57,9 +57,11 @@ jobs:
       # The caller has already completed the matching server rollout. Validate
       # once: an unavailable or invalid manifest stops publication for diagnosis.
       - name: Validate OTA server
+        id: runtime
         working-directory: packages/mobile
         run: |
           RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
+          echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
           pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
       # Keep export diagnostics visible before the publisher owns dist and its
       # source maps. Both commands use the installed Expo version.
@@ -75,7 +77,7 @@ jobs:
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
         run: pnpm dlx eoas@3.2.7 publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
       - name: Verify published device update
-        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production
+        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         env:

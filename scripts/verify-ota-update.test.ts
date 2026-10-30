@@ -87,6 +87,46 @@ const options = {
 };
 
 describe("signed OTA update audit", () => {
+  it("identifies an unchanged update by its exact exported bundle and asset hashes", async () => {
+    serve();
+    const { expectedId: _expectedId, ...contentOptions } = options;
+    await expect(
+      verifyOtaUpdate({
+        ...contentOptions,
+        expectedContent: { launchAssetHash: asset.hash, assetHashes: [asset.hash] },
+      }),
+    ).resolves.toBe(manifest.id);
+  });
+
+  it.each([
+    { launchAssetHash: "different-bundle", assetHashes: [asset.hash] },
+    { launchAssetHash: asset.hash, assetHashes: ["different-image"] },
+    { launchAssetHash: asset.hash, assetHashes: [] },
+    { launchAssetHash: asset.hash, assetHashes: [asset.hash, asset.hash] },
+  ])(
+    "rejects an existing update whose content differs from the export: %j",
+    async (expectedContent) => {
+      serve();
+      const { expectedId: _expectedId, ...contentOptions } = options;
+      await expect(verifyOtaUpdate({ ...contentOptions, expectedContent })).rejects.toThrow(
+        "OTA content does not match the local export",
+      );
+    },
+  );
+
+  it.each([{ invalidSignature: true }, { alteredAsset: true }, { alteredImage: true }])(
+    "keeps signature and download verification for unchanged content: %j",
+    async (fault) => {
+      serve(fault);
+      const { expectedId: _expectedId, ...contentOptions } = options;
+      await expect(
+        verifyOtaUpdate({
+          ...contentOptions,
+          expectedContent: { launchAssetHash: asset.hash, assetHashes: [asset.hash] },
+        }),
+      ).rejects.toThrow();
+    },
+  );
   it("aborts a download that stalls after sending response headers", async () => {
     serve();
     const controller = new AbortController();
