@@ -53,17 +53,23 @@ export function RouteMap({
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
   const selectedMarker = climbMarkers.find((marker) => marker.entryId === activeEntryId);
+  const selectedLongitude = selectedMarker?.location.coordinates.longitude;
+  const selectedLatitude = selectedMarker?.location.coordinates.latitude;
   useEffect(() => {
-    if (compact || !mapReady || !selectedMarker) return;
+    if (
+      compact ||
+      !mapReady ||
+      !activeEntryId ||
+      selectedLongitude == null ||
+      selectedLatitude == null
+    )
+      return;
     camera.current?.easeTo({
-      center: [
-        selectedMarker.location.coordinates.longitude,
-        selectedMarker.location.coordinates.latitude,
-      ],
+      center: [selectedLongitude, selectedLatitude],
       zoom: 16,
       duration: 600,
     });
-  }, [selectedMarker, compact, mapReady]);
+  }, [activeEntryId, selectedLongitude, selectedLatitude, compact, mapReady]);
   const markerGroups = useMemo(
     () => groupClimbingMapMarkers(climbMarkers, providerSourceLabel),
     [climbMarkers],
@@ -166,7 +172,12 @@ export function RouteMap({
               setMapFailed(true);
             }}
           >
-            <Camera ref={camera} initialViewState={initialViewState} bounds={bounds} duration={0} />
+            <Camera
+              ref={camera}
+              initialViewState={initialViewState}
+              bounds={selectedMarker ? undefined : bounds}
+              duration={0}
+            />
             {coordinates.length > 1 && (
               <GeoJSONSource
                 id="activity-route"

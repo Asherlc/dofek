@@ -107,6 +107,43 @@ describe("RouteMap", () => {
     expect(onSelectEntry).toHaveBeenLastCalledWith("area-log-0");
   });
 
+  it("preserves the user's pan when selected marker objects are refreshed", () => {
+    const points: { lat: number; lng: number }[] = [];
+    const view = render(
+      <RouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    measure(view.container);
+    fireEvent(screen.getByTestId("map"), new Event("mapready"));
+    nativeCamera.easeTo.mockClear();
+    view.rerender(
+      <RouteMap
+        points={points}
+        climbMarkers={structuredClone(climbMarkers)}
+        selectedEntryId="tick-1"
+      />,
+    );
+    expect(nativeCamera.easeTo).not.toHaveBeenCalled();
+  });
+
+  it("keeps the selected climb focused when route points arrive", () => {
+    const view = render(
+      <RouteMap points={[]} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    measure(view.container);
+    fireEvent(screen.getByTestId("map"), new Event("mapready"));
+    view.rerender(
+      <RouteMap points={gpsPoints} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    expect(screen.getByTestId("camera").getAttribute("data-bounds")).toBeNull();
+    expect(nativeCamera.easeTo).toHaveBeenCalledTimes(1);
+    view.rerender(
+      <RouteMap points={gpsPoints} climbMarkers={climbMarkers} selectedEntryId={null} />,
+    );
+    expect(JSON.parse(screen.getByTestId("camera").getAttribute("data-bounds") ?? "null")).toEqual(
+      expect.arrayContaining([expect.any(Number)]),
+    );
+  });
+
   it("opens a uniquely located entry directly and permits overview pan and zoom", () => {
     const onSelectEntry = vi.fn();
     const { container } = render(

@@ -229,10 +229,18 @@ describe("ActivityRouteMap", () => {
         disconnect() {}
       },
     );
-    render(<ActivityRouteMap points={[]} climbMarkers={[exact]} presentation="compact" />);
+    render(
+      <ActivityRouteMap
+        points={[]}
+        climbMarkers={[exact]}
+        presentation="compact"
+        selectedEntryId="tick-1"
+      />,
+    );
     expect(maps).toHaveLength(0);
     act(() => intersect(true));
     await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.easeTo).not.toHaveBeenCalled();
     act(() => intersect(false));
     expect(maps[0]?.remove).toHaveBeenCalled();
   });
