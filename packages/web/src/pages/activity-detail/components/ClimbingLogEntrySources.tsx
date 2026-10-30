@@ -1,12 +1,15 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
 import { selectClimbingSources } from "@dofek/training/climbing-sources";
+import type { ReactNode } from "react";
 
 export function ClimbingLogEntrySources({
   name,
   sourceName,
   links,
+  titleControl,
 }: {
+  titleControl?: ReactNode;
   name: string;
   sourceName: string | null;
   links: ClimbingSourceLink[];
@@ -16,26 +19,35 @@ export function ClimbingLogEntrySources({
     links,
     providerSourceLabel,
   );
+  const routeLinks =
+    titleControl && primaryRoute ? [primaryRoute, ...additionalRoutes] : additionalRoutes;
+  const visibleSources = titleControl
+    ? sources.filter(
+        ({ label, tickSource }) =>
+          tickSource || !routeLinks.some((link) => providerSourceLabel(link.providerId) === label),
+      )
+    : sources;
   return (
     <div className="min-w-0 space-y-0.5 break-words">
       <h4 className="text-sm font-medium text-foreground">
-        {primaryRoute ? (
-          <a
-            href={primaryRoute.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`${name} on ${providerSourceLabel(primaryRoute.providerId)}`}
-            className="text-accent underline hover:no-underline"
-          >
-            {name}
-          </a>
-        ) : (
-          name
-        )}
+        {titleControl ??
+          (primaryRoute ? (
+            <a
+              href={primaryRoute.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${name} on ${providerSourceLabel(primaryRoute.providerId)}`}
+              className="text-accent underline hover:no-underline"
+            >
+              {name}
+            </a>
+          ) : (
+            name
+          ))}
       </h4>
-      {sources.length > 0 && (
+      {visibleSources.length > 0 && (
         <p className="text-xs text-dim">
-          {sources.map(({ label, tickSource }, index) => (
+          {visibleSources.map(({ label, tickSource }, index) => (
             <span key={label}>
               {index > 0 && ", "}
               {tickSource ? (
@@ -54,9 +66,9 @@ export function ClimbingLogEntrySources({
           ))}
         </p>
       )}
-      {additionalRoutes.length > 0 && (
+      {routeLinks.length > 0 && (
         <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          {additionalRoutes.map((link) => (
+          {routeLinks.map((link) => (
             <li key={`${link.providerId}:${link.url}`}>
               <a
                 href={link.url}

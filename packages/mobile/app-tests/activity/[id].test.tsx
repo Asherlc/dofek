@@ -865,7 +865,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Log refresh failed")).toBeTruthy();
     expect(screen.getByText("Suggestions refresh failed")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+      screen.getByRole("button", { name: "Attach entry 2, Ridge traverse to this activity" }),
     ).toBeTruthy();
   });
   it("shows route processing and disables GPX while cached sensor points are partial", async () => {
@@ -994,8 +994,8 @@ describe("ActivityDetailScreen", () => {
 
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getAllByText("Route ends at none")).toHaveLength(
-      state.startsWith("cached") ? 2 : 3,
+    expect(screen.queryAllByText("Route ends at none")).toHaveLength(
+      state.startsWith("cached") ? 0 : 1,
     );
     expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
     expect(screen.getByLabelText("Climbing entry: Located climb")).toBeTruthy();
@@ -1014,16 +1014,28 @@ describe("ActivityDetailScreen", () => {
           name: "Located climb",
         },
       },
+      {
+        entryId: "suggested",
+        entryNumber: 3,
+        label: "Suggested climb",
+        location: {
+          coordinates: { latitude: 1, longitude: -122.5 },
+          scope: "area",
+          objectId: "source-area",
+          providerId: "openbeta",
+          name: "Containing area",
+        },
+      },
     ]);
     act(() => overviewProps?.onSelectEntry?.("10000000-0000-4000-8000-000000000301"));
+    expect(
+      screen
+        .getByRole("button", { name: "Select entry 2, Located climb" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Located climb" }));
     expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
     expect(screen.getByText("Record Detail")).toBeTruthy();
-    expect(
-      within(screen.getByLabelText("Climbing entry: Located climb"))
-        .getByText("Located climb")
-        .closest('[data-accessible="true"]')
-        ?.getAttribute("aria-selected"),
-    ).toBe("true");
     const selectedOverviewProps = vi
       .mocked(RouteMap)
       .mock.calls.filter(([props]) => !props.compact)
@@ -1076,13 +1088,13 @@ describe("ActivityDetailScreen", () => {
     render(<ActivityDetailScreen />);
     const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
     expect(overview?.climbMarkers?.map((marker) => marker.entryId)).toEqual([firstId, secondId]);
-    act(() => overview?.onSelectEntry?.(secondId));
+    fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Corner" }));
     const detail = screen.getByTestId("modal");
     expect(within(detail).getByText("Second occurrence notes")).toBeTruthy();
     expect(within(detail).queryByText("First occurrence notes")).toBeNull();
     fireEvent.click(within(detail).getByRole("button", { name: "Close record detail" }));
     expect(screen.queryByText("Record Detail")).toBeNull();
-    act(() => overview?.onSelectEntry?.(secondId));
+    fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Corner" }));
     expect(within(screen.getByTestId("modal")).getByText("Second occurrence notes")).toBeTruthy();
   });
 
@@ -2132,7 +2144,9 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getAllByText("Swiss Cheese")).toHaveLength(2);
-    for (const link of screen.getAllByRole("link", { name: "Swiss Cheese on mountain-project" }))
+    for (const link of screen.getAllByRole("link", {
+      name: "Swiss Cheese route on mountain-project",
+    }))
       fireEvent.click(link);
     for (const link of screen.getAllByRole("link", { name: "mountain-project" }))
       fireEvent.click(link);

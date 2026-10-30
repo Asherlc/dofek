@@ -136,10 +136,12 @@ export const RepeatedPoint: Story = {
     const canvas = within(canvasElement);
     const overview = within(canvas.getByLabelText("Climbing location overview"));
     const dot = await overview.findByRole("button", {
-      name: /^2 climbs · Swiss Cheese · Swiss Cheese, latitude/,
+      name: /^2 climbs · Swiss Cheese · Swiss Cheese/,
     });
     await userEvent.click(dot);
-    const [firstChoice, repeat] = await canvas.findAllByRole("button", { name: "Swiss Cheese" });
+    const [firstChoice, repeat] = await canvas.findAllByRole("button", {
+      name: /^Map entry [13], Swiss Cheese$/,
+    });
     if (!firstChoice || !repeat) throw new Error("Expected both climb choices");
     const [firstCard, repeatedCard] = canvas.getAllByLabelText("Climbing entry: Swiss Cheese");
     if (!firstCard || !repeatedCard) throw new Error("Expected both climbing cards");

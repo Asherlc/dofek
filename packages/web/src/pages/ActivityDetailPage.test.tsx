@@ -1078,7 +1078,7 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(3);
+    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(1);
     expect(screen.getByText("Climbing refresh failed")).toBeDefined();
     const climbPoint = await screen.findByRole("button", {
       name: "Located climb · Climb location: Located climb · Mountain Project",
@@ -1086,21 +1086,20 @@ describe("ActivityDetailPage", () => {
     const createdMaps = maps.length;
     act(() => climbPoint.focus());
     fireEvent.keyDown(climbPoint, { key: "Enter" });
+    expect(screen.getByRole("button", { name: "Select entry 2, Located climb" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const details = screen.getByRole("button", { name: "Details for entry 2, Located climb" });
+    details.focus();
+    fireEvent.click(details);
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(within(dialog).getByRole("region", { name: "Climbing log details" })).getByText(
-        "Located climb",
-      ),
+      within(dialog).getByRole("region", { name: "Climbing log details" }),
     ).toBeInTheDocument();
-    expect(
-      screen
-        .getByRole("region", { name: "Attached climbing logs", hidden: true })
-        .querySelector('[aria-current="true"]'),
-    ).toHaveAttribute("aria-current", "true");
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() => expect(climbPoint).toHaveFocus());
-    fireEvent.click(climbPoint);
+    await waitFor(() => expect(details).toHaveFocus());
+    fireEvent.click(details);
     expect(
       within(await screen.findByRole("dialog")).getByRole("region", {
         name: "Climbing log details",
@@ -2336,7 +2335,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Log refresh failed")).toBeInTheDocument();
       expect(screen.getByText("Suggestions refresh failed")).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+        screen.getByRole("button", { name: "Attach entry 2, Ridge traverse to this activity" }),
       ).toBeEnabled();
     });
     it("waits for attached climbs before showing the empty suggestions notice", async () => {
@@ -2565,7 +2564,7 @@ describe("ActivityDetailPage", () => {
       expect(within(climbsSection).getByText("Project")).toBeInTheDocument();
       expect(
         within(climbsSection).getAllByRole("button", {
-          name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+          name: /^Attach entry [23], (Blue Circuit|Project) to this activity$/,
         }),
       ).toHaveLength(2);
       expect(screen.getByText("Mountain Project")).toBeDefined();
@@ -2574,7 +2573,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("V4", { exact: true })).toBeDefined();
       expect(screen.getAllByText("Flash")).toHaveLength(2);
       const controls = screen.getAllByRole("button", {
-        name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+        name: /^Attach entry [23], (Blue Circuit|Project) to this activity$/,
       });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);

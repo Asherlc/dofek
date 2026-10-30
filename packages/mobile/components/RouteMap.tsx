@@ -32,6 +32,7 @@ interface GpsPoint {
 }
 
 interface RouteMapProps {
+  selectedEntryId?: string | null;
   points: GpsPoint[];
   hoveredPosition?: { lat: number; lng: number } | null;
   climbMarkers?: readonly ClimbingMapMarker[];
@@ -48,6 +49,7 @@ export function RouteMap({
   climbMarkers = NO_CLIMB_MARKERS,
   compact = false,
   onSelectEntry,
+  selectedEntryId: controlledEntryId,
 }: RouteMapProps) {
   const mode = useColorScheme() === "dark" ? "dark" : "light";
   const mapStyle = useMemo(() => createMapStyle(mode), [mode]);
@@ -56,6 +58,7 @@ export function RouteMap({
   const [mapReady, setMapReady] = useState(false);
   const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
   const markerGroups = useMemo(
     () => groupClimbingMapMarkers(climbMarkers, providerSourceLabel),
     [climbMarkers],
@@ -135,7 +138,11 @@ export function RouteMap({
   return (
     <View style={styles.container}>
       {gpsPoints.length > 0 && <Text style={styles.title}>Route Map</Text>}
-      <View style={[styles.mapWrapper, { height: MAP_HEIGHT }]} onLayout={handleLayout}>
+      <View
+        testID="climbing-map"
+        style={[styles.mapWrapper, { height: MAP_HEIGHT }]}
+        onLayout={handleLayout}
+      >
         {mapWidth != null && (
           <NativeMap
             style={{ width: mapWidth, height: MAP_HEIGHT }}
@@ -189,6 +196,9 @@ export function RouteMap({
                 lngLat={[coordinates.longitude, coordinates.latitude]}
                 accessibilityLabel={title}
                 accessibilityHint={description}
+                accessibilityState={{
+                  selected: markers.some((marker) => marker.entryId === activeEntryId),
+                }}
                 anchor="center"
                 onPress={() => {
                   if (markers.length === 1) {
@@ -206,6 +216,8 @@ export function RouteMap({
                     markers.every((marker) => marker.location.scope === "area") &&
                       styles.areaMarker,
                     markers.length > 1 && styles.groupMarker,
+                    markers.some((marker) => marker.entryId === activeEntryId) &&
+                      styles.selectedMarker,
                   ]}
                 >
                   {markers.length > 1 && <Text style={styles.markerCount}>{markers.length}</Text>}
@@ -250,15 +262,23 @@ export function RouteMap({
               <Pressable
                 key={marker.entryId}
                 accessibilityRole="button"
-                accessibilityLabel={marker.label}
-                accessibilityState={{ selected: selectedEntryId === marker.entryId }}
+                accessibilityLabel={
+                  marker.entryNumber == null
+                    ? marker.label
+                    : `Map entry ${marker.entryNumber}, ${marker.label}`
+                }
+                accessibilityState={{ selected: activeEntryId === marker.entryId }}
                 style={styles.occurrence}
                 onPress={() => {
                   setSelectedEntryId(marker.entryId);
                   onSelectEntry?.(marker.entryId);
                 }}
               >
-                <Text style={styles.occurrenceLabel}>{marker.label}</Text>
+                <Text style={styles.occurrenceLabel}>
+                  {marker.entryNumber == null
+                    ? marker.label
+                    : `${marker.entryNumber}. ${marker.label}`}
+                </Text>
               </Pressable>
             );
           })}
@@ -303,6 +323,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#ffffff",
   },
+  selectedMarker: { borderColor: "#15803d", borderWidth: 4 },
   areaMarker: { backgroundColor: statusColors.warning },
   groupMarker: {
     width: 28,

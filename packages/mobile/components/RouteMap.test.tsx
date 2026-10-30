@@ -135,7 +135,9 @@ describe("RouteMap", () => {
     expect(screen.getAllByTestId("marker")).toHaveLength(1);
     expect(group.textContent).toContain("2");
     fireEvent.click(group);
-    const [firstChoice, secondChoice] = screen.getAllByRole("button", { name: "Swiss Cheese" });
+    const [firstChoice, secondChoice] = screen.getAllByRole("button", {
+      name: /^Map entry [13], Swiss Cheese$/,
+    });
     if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
     fireEvent.click(firstChoice);
     expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");

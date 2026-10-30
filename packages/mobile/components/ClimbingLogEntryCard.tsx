@@ -3,6 +3,7 @@ import {
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -44,7 +45,13 @@ export function ClimbingLogEntryCard({
   onAttach,
   entryNumber,
   selected = false,
+  onSelect,
+  onOpenEntry,
+  hideMap = false,
 }: {
+  onSelect?: () => void;
+  onOpenEntry?: () => void;
+  hideMap?: boolean;
   entry: ClimbingLogEntryDetail;
   location?: ClimbingMapLocation;
   attachmentState?: ClimbingLogAttachmentState;
@@ -79,6 +86,21 @@ export function ClimbingLogEntryCard({
       <View style={styles.header}>
         <View style={styles.identity}>
           <ClimbingLogEntrySources
+            titleControl={
+              onSelect ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select entry ${entryNumber}, ${name}`}
+                  accessibilityState={{ selected }}
+                  onPress={onSelect}
+                  style={{ paddingVertical: 8 }}
+                >
+                  <Text style={styles.grade}>
+                    {entryNumber}. <Text>{name}</Text>
+                  </Text>
+                </Pressable>
+              ) : undefined
+            }
             name={name}
             sourceName={entry.sourceName}
             links={entry.sourceLinks}
@@ -88,7 +110,14 @@ export function ClimbingLogEntryCard({
         </View>
         {entry.displayGrade && <Text style={styles.grade}>{entry.displayGrade}</Text>}
       </View>
-      {location && (
+      {hideMap && (
+        <Text style={styles.summary}>
+          {location
+            ? `${location.scope === "area" ? "Approximate area location" : "Climb location"} · ${location.name ?? location.objectId} · ${providerSourceLabel(location.providerId)}`
+            : "No recorded location"}
+        </Text>
+      )}
+      {location && !hideMap && (
         <View style={styles.location}>
           <RouteMap
             points={[]}
@@ -148,6 +177,16 @@ export function ClimbingLogEntryCard({
                 ))}
             </View>
           ),
+      )}
+      {onOpenEntry && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Details for entry ${entryNumber}, ${name}`}
+          onPress={onOpenEntry}
+          style={{ paddingVertical: 8 }}
+        >
+          <Text style={styles.grade}>Details</Text>
+        </Pressable>
       )}
       {onAttach && (
         <View style={styles.attachment}>

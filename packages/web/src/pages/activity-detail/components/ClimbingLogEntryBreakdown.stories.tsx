@@ -315,7 +315,7 @@ export const RepeatedPoint: Story = {
       }),
     );
     const [firstChoice, secondChoice] = await canvas.findAllByRole("button", {
-      name: "Swiss Cheese",
+      name: /^Map entry [14], Swiss Cheese$/,
     });
     if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
     await userEvent.click(firstChoice);

@@ -49,11 +49,11 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ActivityClimbingPanel } from "./activity-detail/components/ActivityClimbingPanel.tsx";
 import {
   ElevationChart,
   MetricsChart,
 } from "./activity-detail/components/ActivityDetailCharts.tsx";
-import { ClimbingLogEntryBreakdown } from "./activity-detail/components/ClimbingLogEntryBreakdown.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
@@ -148,9 +148,10 @@ export function ActivityDetailPage() {
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
-  const selectedClimbingEntry = climbingEntries.data?.find(
-    (entry) => entry.id === selectedClimbingEntryId,
-  );
+  const selectedClimbingEntry = [
+    ...(climbingEntries.data ?? []),
+    ...(entrySuggestions.data ?? []),
+  ].find((entry) => entry.id === selectedClimbingEntryId);
   const climbingLocations = useMemo(
     () =>
       buildClimbingMapLocations([
@@ -160,8 +161,9 @@ export function ActivityDetailPage() {
     [climbingEntries.data, entrySuggestions.data],
   );
   const climbMarkers = useMemo(
-    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
-    [climbingEntries.data],
+    () =>
+      buildClimbingMapMarkers([...(climbingEntries.data ?? []), ...(entrySuggestions.data ?? [])]),
+    [climbingEntries.data, entrySuggestions.data],
   );
   const trpcUtils = trpc.useUtils();
   const [entryAttachState, setEntryAttachState] = useState<
@@ -323,33 +325,37 @@ export function ActivityDetailPage() {
         </Section>
       ) : null}
 
-      {(route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
-        <Section title={!hasGps && climbMarkers.length > 0 ? undefined : "Route Map"}>
-          {route.error ? (
-            <QueryStatePanel error={route.error} height={160} />
-          ) : routeProcessing ? (
-            hasGps || climbMarkers.length > 0 ? (
-              <p role="status" className="text-sm text-muted">
-                {route.isLoading ? "Loading route map…" : "Processing route map…"}
-              </p>
-            ) : (
-              <div className="relative isolate h-[400px] rounded-lg">
-                <MapProcessingIndicator
-                  label={route.isLoading ? "Loading route map…" : "Processing route map…"}
-                />
-              </div>
-            )
-          ) : null}
-          {(hasGps || climbMarkers.length > 0) && (
-            <ActivityRouteMap
-              points={routePoints}
-              climbMarkers={climbMarkers}
-              onSelectEntry={setSelectedClimbingEntryId}
-              onRegisterHoverCallback={mapHoverRef}
-            />
-          )}
-        </Section>
-      )}
+      {!(
+        isClimbingActivity &&
+        ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
+      ) &&
+        (route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
+          <Section title={!hasGps && climbMarkers.length > 0 ? undefined : "Route Map"}>
+            {route.error ? (
+              <QueryStatePanel error={route.error} height={160} />
+            ) : routeProcessing ? (
+              hasGps || climbMarkers.length > 0 ? (
+                <p role="status" className="text-sm text-muted">
+                  {route.isLoading ? "Loading route map…" : "Processing route map…"}
+                </p>
+              ) : (
+                <div className="relative isolate h-[400px] rounded-lg">
+                  <MapProcessingIndicator
+                    label={route.isLoading ? "Loading route map…" : "Processing route map…"}
+                  />
+                </div>
+              )
+            ) : null}
+            {(hasGps || climbMarkers.length > 0) && (
+              <ActivityRouteMap
+                points={routePoints}
+                climbMarkers={climbMarkers}
+                onSelectEntry={setSelectedClimbingEntryId}
+                onRegisterHoverCallback={mapHoverRef}
+              />
+            )}
+          </Section>
+        )}
 
       {(hasHr ||
         hasPower ||
@@ -408,18 +414,33 @@ export function ActivityDetailPage() {
 
       {isClimbingActivity && (
         <Section title="Climbs">
+          {((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0) &&
+            route.error && <QueryStatePanel error={route.error} height={72} />}
+          {((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0) &&
+            routeProcessing && (
+              <p role="status" className="text-sm text-muted">
+                {route.isLoading ? "Loading route map…" : "Processing route map…"}
+              </p>
+            )}
           {climbingEntries.error && (
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
           )}
-          {climbingEntriesLoading ? (
+          {climbingEntriesLoading && (
             <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
-          ) : (climbingEntries.data?.length ?? 0) > 0 ? (
-            <ClimbingLogEntryBreakdown
+          )}
+          {((climbingEntries.data?.length ?? 0) > 0 ||
+            (entrySuggestions.data?.length ?? 0) > 0) && (
+            <ActivityClimbingPanel
+              points={routePoints}
+              onRegisterHoverCallback={mapHoverRef}
+              onOpenEntry={setSelectedClimbingEntryId}
+              suggestions={entrySuggestions.data}
+              attachmentStates={entryAttachState}
+              onAttach={handleAttachEntry}
               entries={climbingEntries.data ?? []}
               locations={climbingLocations}
-              selectedEntryId={selectedClimbingEntryId}
             />
-          ) : null}
+          )}
           {(entrySuggestions.error ||
             (!climbingEntriesLoading && entrySuggestions.isLoading) ||
             (entrySuggestions.data?.length ?? 0) > 0 ||
@@ -434,6 +455,7 @@ export function ActivityDetailPage() {
               }
             >
               <UnattachedClimbingLogEntries
+                showEntries={false}
                 suggestions={entrySuggestions.data}
                 locations={climbingLocations}
                 selectedEntryId={selectedClimbingEntryId}
