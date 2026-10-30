@@ -37,8 +37,8 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 Recorded climbing tags retain source/category attribution in the strengths
 breakdown and grouped climb details through the
 [shared presentation helpers](../training/src/climbing-tag-presentation.ts).
-Catalogue tags stay inside their reference disclosure and do not affect
-strengths; see the [source coverage contract](../../docs/climbing-trait-coverage.md).
+Catalogue tags do not affect strengths; see the
+[source coverage contract](../../docs/climbing-trait-coverage.md).
 
 ## Offline behavior
 

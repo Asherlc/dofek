@@ -190,9 +190,11 @@ the existing public-feed integration or select a new enrichment strategy.
 
 ## Informational catalogue cache
 
-Climb details on web and mobile also offer **Catalogue context**, an explicit
-lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
-information: the [cache service](../src/climbing-catalogue.ts) retains successful
+The server retains catalogue lookup support across KAYA, Mountain Project,
+theCrag and OpenBeta. Climb details omit the lookup controls on both
+[web](../packages/web/src/components/ClimbingLogEntryDetails.tsx) and
+[mobile](../packages/mobile/components/ClimbingLogEntryDetails.tsx).
+This is disposable reference information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
 completeness, and source/reference/corroborated/possible-match attribution. It does not
 write catalogue facts or inferred identities into the recorded climbing graph,
@@ -280,9 +282,9 @@ and its [regressions](../src/climbing-catalogue-matching.test.ts) define this po
 Within each provider, the [server matcher](../src/climbing-catalogue-matching.ts)
 stably orders matches as source, explicit reference, corroborated, then possible.
 It preserves order within each class, every candidate and all evidence; provider
-order is unchanged. The [web](../packages/web/src/components/ClimbingCatalogueContext.tsx)
-and [mobile](../packages/mobile/components/ClimbingCatalogueContext.tsx) views render
-that server order without a client-side score or winner selection.
+order is unchanged. Catalogue lookup controls are omitted from the
+[web](../packages/web/src/components/ClimbingLogEntryDetails.tsx) and
+[mobile](../packages/mobile/components/ClimbingLogEntryDetails.tsx) climb details.
 
 ### Local discovery and identity evidence (2026-10-29)
 
@@ -388,11 +390,8 @@ and [KAYA regression](../src/providers/kaya/catalogue.test.ts).
 
 Pending refresh status comes from the live job, independently of metadata TTL;
 concurrent refresh requests cannot replace a finished result with a long-lived
-pending cache entry. Both clients hide expired context and suppress retained
-data after access/ownership errors. The
-[worker tests](../src/jobs/climbing-catalogue-job.test.ts) and paired
-[web](../packages/web/src/components/ClimbingCatalogueContext.test.tsx)/[mobile](../packages/mobile/components/ClimbingCatalogueContext.test.tsx)
-tests cover these lifecycle boundaries. Recorded theCrag numeric route IDs use
+pending cache entry. The
+[worker tests](../src/jobs/climbing-catalogue-job.test.ts) cover these lifecycle boundaries. Recorded theCrag numeric route IDs use
 the verified `/en/climbing/world/route/<id>` detail path, so a rename does not
 force that source record through name search; see the
 [reader regression](../src/providers/thecrag/catalogue.test.ts).
@@ -423,12 +422,8 @@ The strengths response keeps its existing angle/hold/setting `panels` and adds
 `tagPanels` for observed recorded tag categories. Each tag contributes once per
 identified climb and category/source; the same grade-adjusted and monthly
 calculations apply. Catalogue tags, including inherited Area context, remain
-reference information and never affect these metrics. Both clients show every
-catalogue tag under its existing disclosure, including unfamiliar tags, instead
-of hiding the generic `other` kind. See the
-[aggregation](../packages/server/src/services/climbing-strengths.ts),
-[web details](../packages/web/src/components/ClimbingCatalogueContext.tsx) and
-[mobile details](../packages/mobile/components/ClimbingCatalogueContext.tsx).
+reference information and never affect these metrics. See the
+[aggregation](../packages/server/src/services/climbing-strengths.ts).
 
 ## Repeating the audit
 

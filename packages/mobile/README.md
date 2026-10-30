@@ -156,7 +156,7 @@ Source categories retain provider attribution and use the same server-computed
 profiles as angle and hold breakdowns. Details show grouped recorded tags,
 including unfamiliar labels, through the
 [shared presentation helper](../training/src/climbing-tag-presentation.ts).
-Catalogue tags stay inside their reference disclosure and do not affect
+Catalogue tags do not affect
 strengths, as defined by the [source coverage contract](../../docs/climbing-trait-coverage.md).
 The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date
 anchor in the query key, validates restored responses with the shared schema,

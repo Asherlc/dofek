@@ -52,7 +52,6 @@ it("retains unlocated entries and honest source scope in a single map layout", a
   render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
   expect(screen.getByRole("heading", { name: "Wall" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
-  expect(screen.getByText("Approximate area location")).toBeVisible();
   await screen.findByRole("button", { name: /Area location: Goat Rock · OpenBeta/ });
   expect(screen.getByText("No recorded location")).toBeVisible();
   const indoor = screen.getByRole("button", { name: "Select entry 3, Indoor board log" });
