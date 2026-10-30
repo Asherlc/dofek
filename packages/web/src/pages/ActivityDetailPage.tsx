@@ -149,6 +149,7 @@ export function ActivityDetailPage() {
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
   const selectedClimbingEntry = [
     ...(climbingEntries.data ?? []),
     ...(entrySuggestions.data ?? []),
@@ -376,6 +377,7 @@ export function ActivityDetailPage() {
               </p>
             )}
           <MetricsChart
+            highlightedClimbId={highlightedClimbId}
             climbAnnotations={
               isClimbingActivity
                 ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
@@ -434,6 +436,7 @@ export function ActivityDetailPage() {
           {((climbingEntries.data?.length ?? 0) > 0 ||
             (entrySuggestions.data?.length ?? 0) > 0) && (
             <ActivityClimbingPanel
+              onHighlightEntry={setHighlightedClimbId}
               points={routePoints}
               onRegisterHoverCallback={mapHoverRef}
               onOpenEntry={setSelectedClimbingEntryId}

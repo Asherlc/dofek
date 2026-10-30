@@ -1,7 +1,7 @@
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { type ComponentProps, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityRouteMap } from "../../../components/ActivityRouteMap.tsx";
 import { type ClimbingLogAttachmentState, ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
@@ -19,6 +19,7 @@ export function ActivityClimbingPanel({
   points = NO_POINTS,
   onRegisterHoverCallback,
   onOpenEntry,
+  onHighlightEntry,
 }: {
   entries: readonly ClimbingLogEntryDetail[];
   suggestions?: readonly ClimbingLogEntryDetail[];
@@ -28,6 +29,7 @@ export function ActivityClimbingPanel({
   points?: ComponentProps<typeof ActivityRouteMap>["points"];
   onRegisterHoverCallback?: ComponentProps<typeof ActivityRouteMap>["onRegisterHoverCallback"];
   onOpenEntry?: (entryId: string) => void;
+  onHighlightEntry?: (entryId: string | null) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const [selectedEntryId, selectEntry] = useState<string | null>(null);
@@ -35,6 +37,11 @@ export function ActivityClimbingPanel({
     pointer: null,
     focus: null,
   });
+  const highlightedEntryId = highlights.pointer ?? highlights.focus;
+  useEffect(() => {
+    onHighlightEntry?.(highlightedEntryId);
+    return () => onHighlightEntry?.(null);
+  }, [highlightedEntryId, onHighlightEntry]);
   const markers = useMemo(
     () =>
       [...entries, ...suggestions].flatMap((entry, index) => {
@@ -122,7 +129,7 @@ export function ActivityClimbingPanel({
             points={points}
             climbMarkers={markers}
             selectedEntryId={selectedEntryId}
-            highlightedEntryId={highlights.pointer ?? highlights.focus}
+            highlightedEntryId={highlightedEntryId}
             onSelectEntry={(entryId) => {
               selectEntry(entryId);
               const control = Array.from(

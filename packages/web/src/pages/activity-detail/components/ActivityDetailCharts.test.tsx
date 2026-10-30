@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { formatDateTime } from "@dofek/format/format";
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { init, setPlatformAPI } from "echarts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
@@ -61,6 +61,83 @@ const args = {
   loading: false,
   units: new UnitConverter("metric"),
 };
+
+it.each([false, true])(
+  "preserves user zoom while highlighting a climb (batched: %s)",
+  (batched) => {
+    const view = render(<MetricsChart {...args} />);
+    setPlatformAPI({ measureText: (text) => ({ width: text.length * 7 }) });
+    const chart = init(null, null, { renderer: "svg", ssr: true, width: 800, height: 380 });
+    try {
+      chart.setOption(captured.option);
+      chart.on("datazoom", (event) => {
+        if (typeof event === "object" && event !== null) captured.events.datazoom?.({ ...event });
+      });
+      act(() =>
+        chart.dispatchAction(
+          batched
+            ? { type: "dataZoom", batch: [{ start: 25, end: 75 }] }
+            : { type: "dataZoom", start: 25, end: 75 },
+        ),
+      );
+      view.rerender(<MetricsChart {...args} highlightedClimbId="first" />);
+      chart.setOption(captured.option, true);
+      expect(chart.getOption().dataZoom).toEqual([
+        expect.objectContaining({ start: 25, end: 75 }),
+        expect.objectContaining({ start: 25, end: 75 }),
+      ]);
+    } finally {
+      chart.dispose();
+    }
+  },
+);
+
+it("emphasizes only the active climb line or band and restores it on exit", () => {
+  const climbAnnotations = [
+    { id: "first", label: "First", startedAt: "2026-10-18T17:30:20Z", endedAt: null },
+    { id: "repeat", label: "Repeat", startedAt: "2026-10-18T17:30:40Z", endedAt: null },
+    {
+      id: "range",
+      label: "Range",
+      startedAt: "2026-10-18T17:30:00Z",
+      endedAt: "2026-10-18T17:30:30Z",
+    },
+  ];
+  const view = render(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="repeat" />,
+  );
+  const hrSeries = () => {
+    const series = captured.option.series;
+    if (!Array.isArray(series)) throw new Error("Expected chart series");
+    return series[0];
+  };
+  expect(hrSeries().markLine.data[1]).toMatchObject({
+    lineStyle: { width: 3, type: "solid" },
+    label: { show: true, formatter: "Repeat" },
+  });
+  expect(hrSeries().markLine.data[0].label.show).toBe(false);
+  expect(renderChartSvg().documentElement.textContent).toContain("Repeat");
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="range" />,
+  );
+  expect(hrSeries().markArea.data[0][0]).toMatchObject({
+    itemStyle: { color: "rgba(167,139,250,0.36)" },
+    label: { show: true, formatter: "Range" },
+  });
+  expect(hrSeries().markLine.data[1].lineStyle.width).toBe(1.5);
+  expect(renderChartSvg().documentElement.textContent).toContain("Range");
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId={null} />,
+  );
+  expect(hrSeries().markArea.data[0][0].label.show).toBe(false);
+  expect(hrSeries().markLine.data[1].label.show).toBe(false);
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="no-timing" />,
+  );
+  expect(
+    hrSeries().markLine.data.every((line: { label: { show: boolean } }) => !line.label.show),
+  ).toBe(true);
+});
 
 it("overlays timed climbs on heart rate and exposes exact climb labels", () => {
   render(

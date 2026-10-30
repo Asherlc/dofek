@@ -66,6 +66,11 @@ and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
 The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
 uses a single-column list grouped by Area beside its shared map; other log
 collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
+Hovering or keyboard focusing a climb also emphasizes its existing HR chart
+line or time range, preserving the current zoom. The
+[metrics chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+matches the server-supplied annotation ID; climbs without recorded timing do
+not acquire an inferred position.
 The provider data viewer's
 [record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
 published and reported grade collections, known attempt facts, and notes.
