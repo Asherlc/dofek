@@ -62,7 +62,7 @@ export const GroupedListAndMap: Story = {
     await expect(firstRow).toHaveAttribute("aria-pressed", "true");
     await expect(dot).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(dot);
-    await userEvent.click(canvas.getByRole("button", { name: "Map entry 4, Swiss Cheese" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Select entry 4, Swiss Cheese" }));
     await expect(
       canvas.getByRole("button", { name: "Select entry 4, Swiss Cheese" }),
     ).toHaveAttribute("aria-pressed", "true");

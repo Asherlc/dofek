@@ -3,7 +3,6 @@ import {
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
@@ -105,6 +104,7 @@ export function ClimbingLogEntryCard({
               onSelect ? (
                 <button
                   type="button"
+                  data-climb-entry-id={entry.id}
                   aria-label={`Select entry ${entryNumber}, ${name}`}
                   aria-pressed={selected}
                   onClick={onSelect}
@@ -130,7 +130,9 @@ export function ClimbingLogEntryCard({
       {hideMap && (
         <p className="text-xs text-subtle">
           {location
-            ? `${location.scope === "area" ? "Approximate area location" : "Climb location"} · ${location.name ?? location.objectId} · ${providerSourceLabel(location.providerId)}`
+            ? location.scope === "area"
+              ? "Approximate area location"
+              : "Climb location"
             : "No recorded location"}
         </p>
       )}
@@ -229,10 +231,10 @@ export function ClimbingLogEntryCard({
         <button
           type="button"
           className="self-start text-xs text-accent underline"
-          aria-label={`Details for entry ${entryNumber}, ${name}`}
+          aria-label={`Log details for entry ${entryNumber}, ${name}`}
           onClick={onOpenEntry}
         >
-          Details
+          Log details
         </button>
       )}
       {onAttach && (

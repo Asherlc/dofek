@@ -1033,7 +1033,7 @@ describe("ActivityDetailScreen", () => {
         .getByRole("button", { name: "Select entry 2, Located climb" })
         .getAttribute("aria-selected"),
     ).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Located climb" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Located climb" }));
     expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
     expect(screen.getByText("Record Detail")).toBeTruthy();
     const selectedOverviewProps = vi
@@ -1088,13 +1088,13 @@ describe("ActivityDetailScreen", () => {
     render(<ActivityDetailScreen />);
     const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
     expect(overview?.climbMarkers?.map((marker) => marker.entryId)).toEqual([firstId, secondId]);
-    fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Corner" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Corner" }));
     const detail = screen.getByTestId("modal");
     expect(within(detail).getByText("Second occurrence notes")).toBeTruthy();
     expect(within(detail).queryByText("First occurrence notes")).toBeNull();
     fireEvent.click(within(detail).getByRole("button", { name: "Close record detail" }));
     expect(screen.queryByText("Record Detail")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Corner" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Corner" }));
     expect(within(screen.getByTestId("modal")).getByText("Second occurrence notes")).toBeTruthy();
   });
 

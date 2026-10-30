@@ -129,18 +129,18 @@ Activity-detail climbing logs and same-day attachment suggestions share
 [ActivityClimbingPanel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx):
 a grouped list on the left of one interactive map in wide containers, and the
 map above the list on narrow screens. Row hover/focus highlights its point;
-selecting either a row or marker selects the same occurrence. Numbered choices
+selecting either a row or marker selects the same occurrence. Numbered list rows
 keep repeated names at coincident coordinates individually selectable using
 [MapLibre HTML markers](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/)
 and the [shared grouping model](../training/src/climbing-map.ts).
 Area locations are explicitly approximate and retain their provider attribution.
-Missing GPS retains the row and its Details control. Details opens the existing
+Missing GPS retains the row and its Log details control. Log details opens the existing
 [record dialog](src/pages/RecordDetailModal.tsx); closing restores focus to that
 control. Source links, status labels, photos and independent Attach states remain
 available. The [activity tests](src/pages/ActivityDetailPage.test.tsx) cover route
 refresh states, attachment actions and source details. The full
 [layout story](src/pages/activity-detail/components/ActivityClimbingPanel.stories.tsx)
-exercises hover, focus, selection and repeated coordinate choices on a real map.
+exercises hover, focus, selection and repeated coordinate selection on a real map.
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)

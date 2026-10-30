@@ -1,7 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
-import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { createMapStyle } from "@dofek/training/map-style";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
@@ -33,7 +32,6 @@ export function ActivityRouteMap({
   const mapRef = useRef<HTMLElement>(null);
   const mapInstanceRef = useRef<MapLibreMap | null>(null);
   const [previewVisible, setPreviewVisible] = useState(presentation === "detail");
-  const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [markerElements, setMarkerElements] = useState<HTMLElement[]>([]);
   const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
@@ -126,13 +124,9 @@ export function ActivityRouteMap({
         for (const group of groups) {
           const { latitude, longitude } = group.coordinates;
           const select = () => {
-            if (group.markers.length > 1) setInspectedPoint(group.coordinates);
-            else {
-              const marker = group.markers[0];
-              setInspectedPoint(null);
-              setSelectedEntryId(marker.entryId);
-              selectRef.current?.(marker.entryId);
-            }
+            const marker = group.markers[0];
+            setSelectedEntryId(marker.entryId);
+            selectRef.current?.(marker.entryId);
           };
           const dot = mapDot(M, map, [longitude, latitude], {
             radius: group.markers.length > 1 ? 14 : 7,
@@ -243,38 +237,6 @@ export function ActivityRouteMap({
         />
         {!empty && !mapState.error && mapState.loading ? <MapProcessingIndicator /> : null}
       </div>
-      {presentation === "detail" && inspectedPoint && (
-        <ul aria-label="Climbing entries at this location" className="mt-2 flex flex-wrap gap-2">
-          {climbMarkers.map((marker) => {
-            const { latitude, longitude } = marker.location.coordinates;
-            if (latitude !== inspectedPoint.latitude || longitude !== inspectedPoint.longitude)
-              return null;
-            const selected = activeEntryId === marker.entryId;
-            return (
-              <li key={marker.entryId} className="min-w-0">
-                <button
-                  type="button"
-                  className="rounded border border-border px-3 py-2 text-sm text-accent"
-                  aria-label={
-                    marker.entryNumber == null
-                      ? undefined
-                      : `Map entry ${marker.entryNumber}, ${marker.label}`
-                  }
-                  aria-pressed={selected}
-                  onClick={() => {
-                    setSelectedEntryId(marker.entryId);
-                    selectRef.current?.(marker.entryId);
-                  }}
-                >
-                  {marker.entryNumber == null
-                    ? marker.label
-                    : `${marker.entryNumber}. ${marker.label}`}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
       {empty ? (
         <p className="text-sm text-muted">No GPS locations available.</p>
       ) : mapState.error ? (

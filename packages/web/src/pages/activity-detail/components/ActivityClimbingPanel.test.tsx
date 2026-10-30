@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { maps, resetMaps } from "../../../lib/maplibre-test-helpers.ts";
 import { ActivityClimbingPanel } from "./ActivityClimbingPanel.tsx";
@@ -38,11 +38,11 @@ it("synchronizes row hover/focus, selection and repeated map choices without res
   expect(dot).toHaveAttribute("aria-pressed", "true");
   expect(open).not.toHaveBeenCalled();
   fireEvent.click(dot);
-  const choices = screen.getByRole("list", { name: "Climbing entries at this location" });
-  fireEvent.click(within(choices).getByRole("button", { name: "Map entry 1, Swiss Cheese" }));
   expect(first).toHaveAttribute("aria-pressed", "true");
-  expect(repeat).toHaveAttribute("aria-pressed", "false");
-  fireEvent.click(screen.getByRole("button", { name: "Details for entry 1, Swiss Cheese" }));
+  fireEvent.click(repeat);
+  expect(first).toHaveAttribute("aria-pressed", "false");
+  expect(repeat).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Log details for entry 1, Swiss Cheese" }));
   expect(open).toHaveBeenCalledWith("tick-1");
   await waitFor(() => expect(maps).toHaveLength(1));
   expect(maps[0]?.fitBounds).toHaveBeenCalledOnce();
@@ -52,7 +52,8 @@ it("retains unlocated entries and honest source scope in a single map layout", a
   render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
   expect(screen.getByRole("heading", { name: "Wall" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
-  expect(screen.getByText(/Approximate area location · Goat Rock · OpenBeta/)).toBeVisible();
+  expect(screen.getByText("Approximate area location")).toBeVisible();
+  await screen.findByRole("button", { name: /Area location: Goat Rock · OpenBeta/ });
   expect(screen.getByText("No recorded location")).toBeVisible();
   const indoor = screen.getByRole("button", { name: "Select entry 3, Indoor board log" });
   fireEvent.click(indoor);

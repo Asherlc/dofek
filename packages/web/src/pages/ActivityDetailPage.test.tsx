@@ -1090,7 +1090,7 @@ describe("ActivityDetailPage", () => {
       "aria-pressed",
       "true",
     );
-    const details = screen.getByRole("button", { name: "Details for entry 2, Located climb" });
+    const details = screen.getByRole("button", { name: "Log details for entry 2, Located climb" });
     details.focus();
     fireEvent.click(details);
     const dialog = await screen.findByRole("dialog");

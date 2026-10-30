@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 vi.mock(
@@ -29,14 +29,12 @@ it("selects each repeated occurrence from list and map and keeps details explici
   fireEvent(mapWrapper, new CustomEvent("layout", { detail: { width: 320, height: 280 } }));
   const marker = screen.getByLabelText(/2 climbs · Swiss Cheese/);
   fireEvent.click(marker);
-  const choices = screen.getByLabelText("Climbing entries at this location");
-  fireEvent.click(within(choices).getByRole("button", { name: "Map entry 1, Swiss Cheese" }));
   expect(
     screen
       .getByRole("button", { name: "Select entry 1, Swiss Cheese" })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Details for entry 2, Swiss Cheese" }));
+  fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Swiss Cheese" }));
   expect(onOpenEntry).toHaveBeenCalledWith("repeat");
 });
 
@@ -58,7 +56,7 @@ it("keeps entries without GPS and identifies approximate area sources", () => {
       }}
     />,
   );
-  expect(screen.getByText(/Approximate area location · Goat Rock · OpenBeta/)).toBeTruthy();
+  expect(screen.getByText("Approximate area location")).toBeTruthy();
   expect(screen.getByText("No recorded location")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Select entry 2, Indoor" }));
   expect(

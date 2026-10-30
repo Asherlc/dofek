@@ -15,7 +15,7 @@ Approved scope carried from the user handoff on 2026-10-29.
 
 ## Implementation
 
-Reuse existing area grouping and coordinate grouping. A platform-specific ActivityClimbingPanel owns selection and composes existing climb cards and map. Cards in this panel omit mini-maps. Selection highlights a row; an explicit Details action opens the existing source record modal. Same-day suggestions share the map and appear under Unattached in the grouped list, with their existing pending/error/Attach controls. Query loading/error/empty states remain visible outside the panel.
+Reuse existing area grouping and coordinate grouping. A platform-specific ActivityClimbingPanel owns selection and composes existing climb cards and map. Cards in this panel omit mini-maps. Selection highlights a row; an explicit Log details action opens the existing source record modal. Same-day suggestions share the map and appear under Unattached in the grouped list, with their existing pending/error/Attach controls. Query loading/error/empty states remain visible outside the panel.
 
 Add controlled selection/highlight inputs to existing map components without recreating the map on selection. Preserve coordinate groups without jitter or dropping occurrences. Area locations are explicitly approximate. Native uses the same grouping and native MapLibre renderer.
 
@@ -28,11 +28,20 @@ They now share the map and grouped list, with independent Attach state; both
 platforms have passing regression tests for suggestion-only sessions. A second
 regression verifies that keyboard focus retains its point highlight after the
 pointer leaves a row. Selection stays separate from opening Details so the map
-remains visible, and numbered map choices distinguish repeated climb names.
+remains visible, and numbered list rows distinguish repeated climb names.
 
 Browser verification covered desktop, a 390-pixel viewport with no horizontal
-overflow, map/list selection, repeated coordinate choices and suggestions.
+overflow, map/list selection, repeated coordinate selection and suggestions.
 The mobile Storybook browser renderer also showed one real map and synchronized
 selection. Native iOS bundle export passed using the same non-secret Sentry DSN fixture
 as the [CI checks](../../../.github/workflows/test.yml). A native Simulator/device
 audit was not performed. No production runtime configuration was changed.
+
+## Layout review refinement
+
+The user approved the simplified preview after removing the duplicate occurrence
+chooser below the map. Counted markers select the first occurrence; web moves
+keyboard focus to its list control, and every occurrence remains selectable in
+the existing grouped list. Row captions show only Climb location or Approximate
+area location; the map location label retains the source name and provider.
+The Log details action opens the existing in-app source record panel.

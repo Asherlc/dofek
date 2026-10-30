@@ -3,7 +3,6 @@ import {
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -113,7 +112,9 @@ export function ClimbingLogEntryCard({
       {hideMap && (
         <Text style={styles.summary}>
           {location
-            ? `${location.scope === "area" ? "Approximate area location" : "Climb location"} · ${location.name ?? location.objectId} · ${providerSourceLabel(location.providerId)}`
+            ? location.scope === "area"
+              ? "Approximate area location"
+              : "Climb location"
             : "No recorded location"}
         </Text>
       )}
@@ -181,11 +182,11 @@ export function ClimbingLogEntryCard({
       {onOpenEntry && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Details for entry ${entryNumber}, ${name}`}
+          accessibilityLabel={`Log details for entry ${entryNumber}, ${name}`}
           onPress={onOpenEntry}
           style={{ paddingVertical: 8 }}
         >
-          <Text style={styles.grade}>Details</Text>
+          <Text style={styles.grade}>Log details</Text>
         </Pressable>
       )}
       {onAttach && (

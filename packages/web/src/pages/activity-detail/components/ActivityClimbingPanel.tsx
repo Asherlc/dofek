@@ -1,7 +1,7 @@
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { type ComponentProps, useMemo, useState } from "react";
+import { type ComponentProps, useMemo, useRef, useState } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityRouteMap } from "../../../components/ActivityRouteMap.tsx";
 import { type ClimbingLogAttachmentState, ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
@@ -29,6 +29,7 @@ export function ActivityClimbingPanel({
   onRegisterHoverCallback?: ComponentProps<typeof ActivityRouteMap>["onRegisterHoverCallback"];
   onOpenEntry?: (entryId: string) => void;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
   const [selectedEntryId, selectEntry] = useState<string | null>(null);
   const [highlights, highlightEntry] = useState<{ pointer: string | null; focus: string | null }>({
     pointer: null,
@@ -68,7 +69,10 @@ export function ActivityClimbingPanel({
         aria-label="Activity climbs and locations"
         className="grid min-w-0 gap-4 @min-[760px]:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
       >
-        <div className="order-2 min-w-0 space-y-4 @min-[760px]:order-1 @min-[760px]:max-h-[560px] @min-[760px]:overflow-y-auto @min-[760px]:pr-2">
+        <div
+          ref={listRef}
+          className="order-2 min-w-0 space-y-4 @min-[760px]:order-1 @min-[760px]:max-h-[560px] @min-[760px]:overflow-y-auto @min-[760px]:pr-2"
+        >
           {sections
             .filter((section) => section.entries.length > 0)
             .map((section) => (
@@ -119,7 +123,15 @@ export function ActivityClimbingPanel({
             climbMarkers={markers}
             selectedEntryId={selectedEntryId}
             highlightedEntryId={highlights.pointer ?? highlights.focus}
-            onSelectEntry={selectEntry}
+            onSelectEntry={(entryId) => {
+              selectEntry(entryId);
+              const control = Array.from(
+                listRef.current?.querySelectorAll<HTMLButtonElement>(
+                  "button[data-climb-entry-id]",
+                ) ?? [],
+              ).find((button) => button.dataset.climbEntryId === entryId);
+              control?.focus();
+            }}
             onRegisterHoverCallback={onRegisterHoverCallback}
           />
         </div>

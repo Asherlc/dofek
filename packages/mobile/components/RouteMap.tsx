@@ -1,7 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
-import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { createMapStyle } from "@dofek/training/map-style";
 import {
   Camera,
@@ -11,14 +10,7 @@ import {
   Map as NativeMap,
 } from "@maplibre/maplibre-react-native";
 import { useCallback, useMemo, useState } from "react";
-import {
-  type LayoutChangeEvent,
-  Pressable,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from "react-native";
+import { type LayoutChangeEvent, StyleSheet, Text, useColorScheme, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { colors, radius, spacing } from "../theme";
 import { CompactRouteMap } from "./CompactRouteMap";
@@ -56,7 +48,6 @@ export function RouteMap({
   const [mapFailed, setMapFailed] = useState(false);
   const [mapWidth, setMapWidth] = useState<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
   const markerGroups = useMemo(
@@ -201,13 +192,8 @@ export function RouteMap({
                 }}
                 anchor="center"
                 onPress={() => {
-                  if (markers.length === 1) {
-                    setSelectedEntryId(markers[0].entryId);
-                    setInspectedPoint(null);
-                    onSelectEntry?.(markers[0].entryId);
-                  } else {
-                    setInspectedPoint(coordinates);
-                  }
+                  setSelectedEntryId(markers[0].entryId);
+                  onSelectEntry?.(markers[0].entryId);
                 }}
               >
                 <View
@@ -252,38 +238,6 @@ export function RouteMap({
         )}
       </View>
       <MapAttribution />
-      {inspectedPoint && (
-        <View accessibilityLabel="Climbing entries at this location" style={styles.occurrences}>
-          {climbMarkers.map((marker) => {
-            const { latitude, longitude } = marker.location.coordinates;
-            if (latitude !== inspectedPoint.latitude || longitude !== inspectedPoint.longitude)
-              return null;
-            return (
-              <Pressable
-                key={marker.entryId}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  marker.entryNumber == null
-                    ? marker.label
-                    : `Map entry ${marker.entryNumber}, ${marker.label}`
-                }
-                accessibilityState={{ selected: activeEntryId === marker.entryId }}
-                style={styles.occurrence}
-                onPress={() => {
-                  setSelectedEntryId(marker.entryId);
-                  onSelectEntry?.(marker.entryId);
-                }}
-              >
-                <Text style={styles.occurrenceLabel}>
-                  {marker.entryNumber == null
-                    ? marker.label
-                    : `${marker.entryNumber}. ${marker.label}`}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
     </View>
   );
 }
@@ -333,13 +287,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   markerCount: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
-  occurrences: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  occurrence: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: radius.lg,
-    padding: 10,
-    maxWidth: "100%",
-  },
-  occurrenceLabel: { color: colors.accent, fontSize: 13, flexShrink: 1 },
 });
