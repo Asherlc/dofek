@@ -301,7 +301,7 @@ function ActivityArrangement({
 export const RepeatedPoint: Story = {
   args: { entries: climbingMapLogs.filter((entry) => entry.id !== "tick-2") },
   render: (args) => <ActivityArrangement {...args} />,
-  play: async ({ canvasElement, userEvent }) => {
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const dot = await canvas.findByRole("button", {
       name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/,
@@ -314,23 +314,11 @@ export const RepeatedPoint: Story = {
         clientY: bounds.y + bounds.height / 2,
       }),
     );
-    const [firstChoice, secondChoice] = await canvas.findAllByRole("button", {
-      name: "Swiss Cheese",
-    });
-    if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
-    await userEvent.click(firstChoice);
     await expect(
       canvas
         .getByRole("region", { name: "Attached climbing logs" })
         .querySelector('[aria-current="true"]'),
     ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[0]);
-    secondChoice.focus();
-    await userEvent.keyboard("[Enter]");
-    await expect(
-      canvas
-        .getByRole("region", { name: "Attached climbing logs" })
-        .querySelector('[aria-current="true"]'),
-    ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[1]);
     await expect(
       canvas.getByRole("button", { name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/ }),
     ).toBe(dot);

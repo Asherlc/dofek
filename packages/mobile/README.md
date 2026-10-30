@@ -108,38 +108,22 @@ viewer. Labels match web through [shared formatters](../format/src/climbing-log.
 See the
 [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-Activity-detail climbing entries and suggestions use
-[ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
-[ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
-inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
-Each Area occupies a block with one heading above its cards. Small blocks share
-rows, while larger blocks wrap their cards internally. The breakdown uses
-[`onLayout`](https://reactnative.dev/docs/view#onlayout) to keep card widths
-consistent across blocks as the container resizes.
-Area rows and card rows use flexible cells to preserve their columns at fractional
-widths, covered by the [fractional-width regression stories](./components/ClimbingLogEntryBreakdown.stories.tsx).
-[RouteMap](./components/RouteMap.tsx) renders source dots independently of the
-recorded GPS route and supports compact tick maps. The overview supports panning
-and zooming; compact maps do not intercept touches. A unique point opens its log
-details immediately; coincident locations show a counted marker with source-location
-labels. Selecting it lists every log by climb name,
-including repeated names, without an entry-number heading. The
-[shared marker grouping](../training/src/climbing-map.ts) preserves source coordinates
-and log identities; the count renders inside a
-[MapLibre annotation](https://maplibre.org/maplibre-react-native/docs/components/annotations/).
-Selection opens the exact log's
-[record modal](./components/providers/provider-record-detail-modal.tsx) and
-highlights its card, including repeated names at the same point. The
-[activity tests](./app-tests/activity/[id].test.tsx) cover closing and reopening
-the same occurrence. Colocated Storybook stories
-exercise exact Climb points, containing-Area points, missing GPS, and attachment
-states. The activity screen supplies each log's server-projected location to
-overview and compact maps even without a recorded GPS route. The
-[server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
-uses a source Climb point or its nearest containing Area with coordinates;
-labels identify the source and distinguish Area from Climb locations.
-Unattached suggestions have their own compact source-location maps. The complete
-log and attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+Activity details compose attached climbs in [ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
+one interactive map above a grouped list on narrow screens, including same-day
+attachment suggestions under Unattached. Selecting a row or
+map point highlights the same occurrence; Log details opens the existing
+[record modal](./components/providers/provider-record-detail-modal.tsx).
+Coincident coordinates show a counted marker and remain selectable in the grouped list, preserving
+both source coordinates and log identities through the
+[shared marker grouping](../training/src/climbing-map.ts).
+Area points are labelled approximate with their source provider; entries without
+coordinates remain selectable. The existing subdued light/dark map style remains
+shared with web. Map annotations use [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/components/annotations/).
+Same-day suggestions retain their grouped attachment controls and location
+provenance on the same map, with independent pending and error states. Photos remain
+in [ActivityImages](./components/ActivityImages.tsx). The
+[activity tests](./app-tests/activity/[id].test.tsx) cover selection, route refresh
+states, attachments, and opening/closing the exact occurrence details.
 
 The [Training route](<app/(tabs)/strain.tsx>) requests
 `mobileDashboard.trainingV2` using the combined climbing progression
