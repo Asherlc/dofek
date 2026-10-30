@@ -52,13 +52,6 @@ identify work in progress without changing retries or deadlines. A cancelled
 snapshot is unverified; use a new identifier and retain the failed prefix for
 investigation.
 
-The validated private candidate is `ghcr.io/asherlc/dofek-ota-internal@sha256:32982fe09df2d69ecc880c6d5418e933338f4d8ee79a4da8ce59cdb1e573fc85`, built from Dofek revision
-`910118225de6062b265e2758eda265ad233a7c14`. The
-[canonical CI publication](https://github.com/Asherlc/dofek/actions/runs/40967775586)
-passed upstream tests and both privacy checks; authenticated metadata confirms
-private visibility and anonymous pull authorization is denied. Production
-migration still requires a successful snapshot and isolated rehearsal.
-
 ## Migration boundary
 
 Do not replace the production image until backup and rehearsal are complete.
@@ -98,26 +91,34 @@ not stop existing runs; GitHub documents
 [workflow management](https://docs.github.com/en/actions/managing-workflow-runs/disabling-and-enabling-a-workflow).
 Keep manual EAS/EOAS publication stopped for the same window.
 
-Run a read-only inventory before sizing a backup. Inventory uses rclone's
-[size --json](https://rclone.org/commands/rclone_size/) to report production
-object and byte totals, including an empty bucket. It creates no snapshot and
-does not consume the supplied planned identifier. Capacity inventory runs
-independently of deployments and publisher pauses. Its observed totals can
-change during publication and do not certify a backup. Copies, checks and
-restores retain the production lock and paused-writer requirements.
-The manual workflow allows
-only this read-only operation on a reviewed non-main ref; every copy, restore,
-verification and rehearsal operation remains main-only. Set `REVIEWED_REF` to
-main or the reviewed branch containing this operation, and generate a fresh
-planned identifier:
+Inventory capacity before planning a copy. The read-only `inventory` operation
+runs [rclone size --json](https://rclone.org/commands/rclone_size/) on production
+and prints object/byte totals. It creates no objects and does not consume the
+planned snapshot identifier. Inventory can run from a reviewed branch and does
+not hold the deployment lock or require publisher pauses. Its observed totals
+can change during publication and never certify a backup.
 
 ```sh
 SNAPSHOT_ID="$(date -u +%Y%m%d-%H%M%S)-before-v3"
 gh workflow run ota-storage.yml --ref "$REVIEWED_REF" -f operation=inventory -f snapshot_id="$SNAPSHOT_ID"
 ```
 
-Retain the same snapshot ID throughout this sequence. Never
-reuse the failed `2026-10-29-before-v3` identifier. Dispatch on main, in order:
+Set `REVIEWED_REF` to main or the reviewed branch containing this operation.
+[CI inventory 40976854752](https://github.com/Asherlc/dofek/actions/runs/40976854752)
+reported 25,613 objects and 6,963,170,524 bytes. The instrumented default-worker
+[copy attempt](https://github.com/Asherlc/dofek/actions/runs/40967669419)
+completed 5,182 objects before the 30-minute limit, without reaching verification.
+The copy and verification commands now use 64 transfers and 32 checkers. These
+bounded worker counts address the measured API throughput requirement; rclone
+recommends [parallelism for server-side S3 copies](https://rclone.org/s3/#increasing-the-rate-of-api-requests).
+Higher concurrency increases request and runner memory use. The full byte check,
+lock requirements, retries and 30-minute job bound remain unchanged.
+
+Copies, verification and restores remain main-only, hold the production lock
+and require paused writers. Pause the workflows listed above and wait for
+existing deployment runs to finish before copying. Retain the same planned ID
+throughout the following sequence; never reuse a failed snapshot ID:
+
 
 ```sh
 gh workflow run ota-storage.yml -f operation=snapshot -f snapshot_id="$SNAPSHOT_ID"
@@ -130,10 +131,10 @@ production bucket into `snapshots/<id>/`; the second copies that snapshot into
 1.75.2, [copy --immutable](https://rclone.org/commands/rclone_copy/) and
 [check --download](https://rclone.org/commands/rclone_check/) to compare bytes,
 rather than relying on S3 multipart ETags. Empty sources fail before copying.
-A successful snapshot writes a locked sibling verification receipt at
-`snapshots/<id>.verified.json`, containing its object count, byte count and CI
-run ID. Production restore and migration verification require that receipt
-and matching snapshot totals before proceeding.
+Only after the comparison succeeds, the workflow writes a locked sibling
+`snapshots/<id>.verified.json` receipt containing the snapshot ID, object/byte
+totals and CI run ID. Future production recovery uses this receipt; failed
+copies or comparisons cannot create one.
 The destination is locked as objects arrive, before verification. A failed copy
 or verification consumes that snapshot ID; retain its run as failed evidence
 and use a fresh ID after resolving the error. Never treat a failed run as a
@@ -186,19 +187,15 @@ gh workflow run ota-storage.yml -f operation=restore-rehearsal -f snapshot_id="$
 
 Restoration uses [rclone sync](https://rclone.org/commands/rclone_sync/) followed
 by byte verification. It deletes migrated objects **only in the rehearsal
-prefix** and restores the original layout from the locked snapshot. Production recovery uses the separately guarded procedure below. Never run a
-restore while a server can continue migrating or a publisher can write.
+prefix** and restores the original layout from the locked snapshot. The tool
+does not provide a production restore command: production recovery requires
+quiescing the migrated server through the canonical deployment workflow before
+any destructive restore, followed by verification and the old image. Never
+run a restore while a server can continue migrating or a publisher can write.
 
-Before resuming automatic deployment, require successful **main push CI** for
-the cutover commit or a reviewed descendant containing the upgrade. The
-[release selector](../../scripts/select-web-deploy.ts) chooses the newest
-successful main CI release; a manual deployment alone does not establish that
-baseline. Cancel or drain obsolete main CI while publishers remain disabled,
-and confirm no older deployment runs remain queued, waiting or running. After
-cutover, delivery verification and that main CI baseline succeed, re-enable each
-paused workflow with `gh workflow enable <file>`. Verify the first automatic
-deployment selects the cutover release or a reviewed newer release. Retain the
-workflow run links, snapshot ID and candidate image digest in the incident record.
+After successful cutover and validation, re-enable each paused workflow with
+`gh workflow enable <file>`. Retain the workflow run links, snapshot ID and
+candidate image digest in the incident record.
 Before cutover, dispatch `operation=verify-snapshot` with the same ID to prove
 production still matches the locked snapshot after rehearsal. This operation
 only lists and reads objects; it fails on any byte or object-set difference.
@@ -208,85 +205,3 @@ documents stateless community self-hosting. The full image includes EE code and
 dashboard assets subject to the [EE license](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/ee/LICENSE).
 Distribute this rebuilt image only privately for deployments with the required
 commercial entitlement. Stateless mode does not enable enterprise features.
-
-
-## Production cutover and recovery
-
-Before cutover, retain the verified snapshot/rehearsal run links and inspect the
-actual desired OTA image and app image through the read-only Docker API. Record
-the app image source revision as well. Use only the private candidate digest
-that passed the isolated rehearsal. Production's pinned stack image, EOAS
-publisher version, application identity, preview cleanup/lifecycle prefix and
-runtime gate must be changed as one release. The app ID and signing keys remain
-the existing Infisical values; clients keep their installed URL and certificate.
-The upstream [migration](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/internal/bucket/v2_migration.go)
-requires the matching app-scoped publisher.
-
-Dispatch the canonical Deploy workflow for that reviewed release with
-`target=web`. This applies Terraform and the stack without publishing OTA. Do
-not use `all` or `ota` for this step: those targets publish before the exact
-snapshot comparison can run. Keep preview and cleanup workflows paused. Enable
-the manual dispatcher only for the operation, then disable it again when it
-finishes; the storage CLI requires all four writers disabled and no outstanding
-runs. Retain `CUTOVER_SHA` and a release tag `CUTOVER_REF` pointing to that
-reviewed main commit. Use the same tag for cutover, publication and recovery:
-[workflow dispatch accepts a branch or tag reference](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
-
-```sh
-gh workflow enable deploy.yml
-gh workflow run deploy.yml --ref "$CUTOVER_REF" -f target=web
-# Wait for the complete Deploy run to succeed, then:
-gh workflow disable deploy.yml
-```
-
-Before publication, dispatch:
-
-```sh
-gh workflow run ota-storage.yml -f operation=verify-production-migration -f snapshot_id="$SNAPSHOT_ID"
-```
-
-After that verification succeeds, enable the dispatcher for a separate
-`target=ota` deployment from the same validated release and app image tag. That
-target completes the canonical server check before publishing. Resume the other
-writers only after the post-publication audit succeeds.
-
-This operation requires the locked backup receipt and compares the entire
-production object set and all retained bytes against the expected migration of
-that snapshot. It performs no writes. Complete it before publishing a new
-update, because publication intentionally adds objects. Both production and
-preview publication then audit the EOAS `--emitMetadata` receipt: the exact
-published UUID/runtime, installed device certificate signature and every asset
-hash. The manifest gate requests the runtime being published, accepts a genuine
-empty-runtime directive, and retains its five-second deadline, following the
-[Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-
-If migration fails, keep all publishers paused. Use the canonical Deploy
-workflow's `web-stack` target with `ota_quiesce=true`. Use the currently
-deployed app release's recorded release tag and image tag, plus the recorded immutable old
-OTA image as `ota_image`. The app image must match the dispatch revision;
-[image verification](../../scripts/resolve-deploy-image.ts) rejects mismatches.
-Do not roll back the app image or database schema to an earlier release merely
-to restore OTA storage. The zero-replica overlay remains active during every
-canonical stack apply, and the workflow waits for actual OTA tasks to stop
-using [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
-After that workflow finishes, disable the manual dispatcher again. Then run:
-
-```sh
-gh workflow run ota-storage.yml -f operation=restore-production -f snapshot_id="$SNAPSHOT_ID"
-```
-
-Restore verifies the explicit production Docker endpoint, zero desired replicas,
-all actual task states, paused writers and the locked backup receipt before any
-write. It uses [rclone sync](https://rclone.org/commands/rclone_sync/) from the
-snapshot to the serving bucket, then byte-checks the result. Any failed guard,
-copy or comparison stops the operation. The isolated rehearsal exercises the
-same transfer tools without writing production; production destination and task
-refusal paths have executable CLI regression tests.
-
-Only after restore succeeds, deploy the recorded old OTA image through the
-canonical workflow with `ota_quiesce=false`, keeping the same current app
-release. Keep publication paused until a coherent server/publisher release has
-been validated. Re-enabling the old image alone cannot undo migrated paths.
-The quiescence bound remains the canonical 35 minutes, and the storage job bound
-remains 30 minutes; these existing limits bound operator work and are not
-substitutes for diagnosis of a stalled phase.

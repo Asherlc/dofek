@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
-import { assertServiceStopped, waitForMigrationQuiescence } from "./wait-migration-quiescence.ts";
+import { waitForMigrationQuiescence } from "./wait-migration-quiescence.ts";
 
 const docker = vi.mocked(execFileSync);
 const consumers = [
@@ -56,34 +56,6 @@ afterEach(() => {
 });
 
 describe("migration service quiescence", () => {
-  it("waits only for OTA when quiescing an OTA storage migration", async () => {
-    await waitForMigrationQuiescence("dofek", "ota");
-    expect(
-      docker.mock.calls
-        .filter(([, args]) => Array.isArray(args) && args[0] === "service" && args[1] === "inspect")
-        .map(([, args]) => (Array.isArray(args) ? args[2] : undefined)),
-    ).toEqual(["dofek_ota"]);
-  });
-  it("asserts one stopped service in an explicit context without polling", () => {
-    docker
-      .mockReturnValueOnce(JSON.stringify([{ Spec: { Mode: { Replicated: { Replicas: 0 } } } }]))
-      .mockReturnValueOnce("");
-    assertServiceStopped("dofek_ota", "production");
-    expect(docker).toHaveBeenCalledWith(
-      "docker",
-      ["--context", "production", "service", "inspect", "dofek_ota"],
-      expect.any(Object),
-    );
-    expect(docker).toHaveBeenCalledTimes(2);
-  });
-
-  it("refuses an assertion while a shutdown-requested task still runs", () => {
-    docker
-      .mockReturnValueOnce(JSON.stringify([{ Spec: { Mode: { Replicated: { Replicas: 0 } } } }]))
-      .mockReturnValueOnce("task-a")
-      .mockReturnValueOnce(JSON.stringify([{ ID: "task-a", Status: { State: "running" } }]));
-    expect(() => assertServiceStopped("dofek_ota", "production")).toThrow("tasks must be stopped");
-  });
   it("checks the worker and every CDC consumer in rolling mode", async () => {
     const terminalStates = ["shutdown", "complete", "failed", "rejected", "remove"];
     for (const [index, state] of terminalStates.entries()) {

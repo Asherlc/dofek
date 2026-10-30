@@ -13,16 +13,6 @@ on:
         required: false
         type: string
         default: ""
-      ota_quiesce:
-        description: Keep OTA stopped for storage recovery
-        required: false
-        type: boolean
-        default: false
-      ota_image:
-        description: Immutable OTA image override for verified recovery
-        required: false
-        type: string
-        default: ""
   workflow_dispatch:
     inputs:
       target:
@@ -39,15 +29,6 @@ on:
         description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
         required: false
         type: string
-      ota_quiesce:
-        description: Keep OTA stopped for storage recovery (use web-stack)
-        required: false
-        type: boolean
-        default: false
-      ota_image:
-        description: Immutable OTA image override for verified recovery
-        required: false
-        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -59,10 +40,6 @@ concurrency:
 jobs:
   terraform:
     name: Deploy Infra
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
     if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
@@ -199,8 +176,6 @@ jobs:
       server_host: ${{ vars.ORACLE_SERVER_HOST }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
-      ota_quiesce: ${{ inputs.ota_quiesce || false }}
-      ota_image: ${{ inputs.ota_image || '' }}
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)"
       dispatching_run_id: ${{ github.run_id }}
@@ -223,7 +198,7 @@ jobs:
   ota:
     name: Deploy OTA
     needs: web-stack
-    if: ${{ !cancelled() && !inputs.ota_quiesce && needs.web-stack.result == 'success' && (inputs.target == 'ota' || inputs.target == 'all') }}
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ota' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read

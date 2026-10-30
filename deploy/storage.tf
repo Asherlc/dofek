@@ -289,7 +289,7 @@ resource "cloudflare_r2_bucket_lifecycle" "ota_preview_cleanup" {
     id      = "expire-pr-previews"
     enabled = true
     conditions = {
-      prefix = "${var.expo_app_id}/pr-"
+      prefix = "pr-"
     }
     delete_objects_transition = {
       condition = {

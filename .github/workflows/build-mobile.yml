@@ -29,7 +29,6 @@ jobs:
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
-            EXPO_APP_ID
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
@@ -64,7 +63,6 @@ jobs:
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
-            EXPO_APP_ID
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
@@ -78,13 +76,13 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'pnpm-lock.yaml') }}
+          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml') }}
           restore-keys: pods-v10-
       - name: Cache DerivedData
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'pnpm-lock.yaml', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          key: deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
           restore-keys: deriveddata-v2-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
@@ -178,9 +176,7 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
-          keys: |
-            EXPO_APP_ID
-            EXPO_PUBLIC_SENTRY_DSN
+          keys: EXPO_PUBLIC_SENTRY_DSN
       - uses: ./.github/actions/setup-ccache
         with:
           cache-key-prefix: ccache-watchos
@@ -191,7 +187,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/ios/Pods
-          key: pods-watch-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'packages/mobile/targets/DofekWatch/pods.rb', 'pnpm-lock.yaml') }}
+          key: pods-watch-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/targets/DofekWatch/pods.rb', 'pnpm-lock.yaml') }}
           restore-keys: pods-watch-v1-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install

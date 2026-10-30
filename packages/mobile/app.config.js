@@ -1,5 +1,9 @@
-// Keep Expo configuration executable by Node without a TypeScript loader.
-// JSDoc retains editor and compiler checks without TypeScript syntax.
+// This file is intentionally CommonJS JavaScript, not TypeScript. `eoas publish`
+// runs `expo export` inside an isolated `pnpx`/`dlx` sandbox that has no local
+// `typescript` install, so Expo falls back to Node's built-in
+// `stripTypeScriptTypes` with `mode: 'transform'` — which Node 26 rejects
+// (only `'strip'` is allowed), failing to read a `.ts` config. JSDoc below keeps
+// `tsc`/editor type-checking without TypeScript syntax.
 
 /** @typedef {import("expo/config").ExpoConfig} ExpoConfig */
 /** @typedef {NonNullable<ExpoConfig["plugins"]>[number]} ExpoPlugin */
@@ -13,12 +17,6 @@ function requireSentryDsn() {
     throw new Error("EXPO_PUBLIC_SENTRY_DSN is required to configure native Sentry.");
   }
   return sentryDsn;
-}
-
-function requireExpoAppId() {
-  const appId = process.env.EXPO_APP_ID?.trim();
-  if (!appId) throw new Error("EXPO_APP_ID is required to configure OTA application identity.");
-  return appId;
 }
 
 /**
@@ -67,17 +65,16 @@ module.exports = ({ config }) => ({
   name: config.name || "Dofek",
   slug: config.slug || "dofek",
   plugins: withRequiredSentryDsn(config.plugins),
-  updates: {
-    ...config.updates,
-    requestHeaders: {
-      ...config.updates?.requestHeaders,
-      "expo-app-id": requireExpoAppId(),
-      ...(PREVIEW_CHANNEL ? { "expo-channel-name": PREVIEW_CHANNEL } : {}),
-    },
-  },
   ...(PREVIEW_CHANNEL
     ? {
         name: "Dofek Preview",
+        updates: {
+          ...config.updates,
+          requestHeaders: {
+            ...config.updates?.requestHeaders,
+            "expo-channel-name": PREVIEW_CHANNEL,
+          },
+        },
         ios: {
           ...config.ios,
           bundleIdentifier:

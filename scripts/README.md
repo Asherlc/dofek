@@ -11,13 +11,12 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 - `ota-storage.ts`: Copies and byte-verifies OTA snapshots and isolated rehearsal
   storage using pinned [rclone](https://rclone.org/commands/rclone_check/).
-  Read-only inventory reports production object/byte totals without creating a
-  snapshot ([rclone size](https://rclone.org/commands/rclone_size/)).
-  Production restore additionally requires stopped OTA tasks at the explicit
-  production Docker endpoint and the locked successful-snapshot receipt.
+  Read-only inventory reports production object/byte totals without writes
+  ([rclone size](https://rclone.org/commands/rclone_size/)); copy and verification
+  use bounded parallel workers with the full byte comparison retained.
   Requires paused publication/cleanup workflows and existing Infisical R2
   credentials. See the [OTA storage runbook](../deploy/ota/README.md#verified-storage-operations).
-  - Usage: `pnpm tsx scripts/ota-storage.ts <inventory|snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal|restore-production|verify-production-migration> <snapshot-id>`
+  - Usage: `pnpm tsx scripts/ota-storage.ts <inventory|snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal> <snapshot-id>`
 - `rehearse-ota-storage.ts`: Runs the private candidate image against a verified
   rehearsal copy in CI, checks app-scoped key relocation and signed asset
   delivery, stops the container, restores the copy, and verifies production is
@@ -25,11 +24,6 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   [Expo signature and asset-hash contract](https://docs.expo.dev/technical-specs/expo-updates-1/).
   - Usage: `pnpm tsx scripts/rehearse-ota-storage.ts <snapshot-id>` through the
     [main-only OTA Storage workflow](../.github/workflows/ota-storage.yml).
-
-- `verify-published-ota.ts`: Audits the exact iOS identity/runtime emitted by
-  EOAS 3 publication against the installed certificate and asset hashes using
-  the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-  - Usage: `pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json <production|pr-number>`.
 
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
   - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans.

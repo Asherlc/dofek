@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
 import { OtaMigrationLayout } from "./ota-migration-layout.ts";
-import { assertServiceStopped } from "./wait-migration-quiescence.ts";
 
 const rcloneImage =
   "rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5";
@@ -57,14 +56,12 @@ async function main(): Promise<void> {
       "verify-snapshot",
       "verify-rehearsal",
       "verify-migration",
-      "verify-production-migration",
       "rehearsal-copy",
       "restore-rehearsal",
-      "restore-production",
     ].includes(operation ?? "")
   ) {
     throw new Error(
-      "Usage: ota-storage.ts <inventory|snapshot|verify-snapshot|verify-rehearsal|verify-migration|verify-production-migration|rehearsal-copy|restore-rehearsal|restore-production> <snapshot ID>",
+      "Usage: ota-storage.ts <inventory|snapshot|verify-snapshot|rehearsal-copy|restore-rehearsal> <snapshot ID>",
     );
   }
   if (operation === "restore-rehearsal" && process.env.OTA_REHEARSAL_STOPPED !== "true")
@@ -83,19 +80,6 @@ async function main(): Promise<void> {
       ? z.string().regex(/^\d+$/).parse(required("GITHUB_RUN_ID"))
       : undefined;
   if (operation !== "inventory") await requirePausedWriters();
-  if (operation === "restore-production") {
-    const context = required("OTA_DOCKER_CONTEXT");
-    const expectedHost = `ssh://ubuntu@${required("ORACLE_SERVER_HOST")}`;
-    const endpoints = z
-      .array(z.object({ Endpoints: z.object({ docker: z.object({ Host: z.string() }) }) }))
-      .length(1)
-      .parse(
-        JSON.parse(execFileSync("docker", ["context", "inspect", context], { encoding: "utf8" })),
-      );
-    if (endpoints[0]?.Endpoints.docker.Host !== expectedHost)
-      throw new Error("OTA restore requires the production Docker endpoint");
-    assertServiceStopped("dofek_ota", context);
-  }
   const run = (arguments_: string[], input?: string): string => {
     const started = Date.now();
     console.error(`OTA storage: starting ${arguments_[0]}`);
@@ -108,6 +92,10 @@ async function main(): Promise<void> {
           "--interactive",
           ...Object.keys(environment).flatMap((name) => ["--env", name]),
           rcloneImage,
+          "--transfers",
+          "64",
+          "--checkers",
+          "32",
           "--stats",
           "30s",
           "--stats-one-line",
@@ -134,8 +122,7 @@ async function main(): Promise<void> {
   const productionSource =
     operation === "inventory" || operation === "snapshot" || operation === "verify-snapshot";
   const source = productionSource ? "ota:dofek-ota" : snapshot;
-  const destination =
-    operation === "restore-production" ? "ota:dofek-ota" : productionSource ? snapshot : rehearsal;
+  const destination = productionSource ? snapshot : rehearsal;
   const size = z
     .object({ count: z.number().int().nonnegative(), bytes: z.number().nonnegative() })
     .parse(JSON.parse(run(["size", source, "--json"])));
@@ -145,26 +132,12 @@ async function main(): Promise<void> {
     return;
   }
   if (size.count === 0) throw new Error("Source must contain objects before copy or restore");
-  if (operation === "restore-production" || operation === "verify-production-migration") {
-    const receipt = z
-      .object({
-        version: z.literal(1),
-        snapshotId: z.literal(snapshotId),
-        count: z.number().int().positive(),
-        bytes: z.number().nonnegative(),
-        runId: z.string().regex(/^\d+$/),
-      })
-      .parse(JSON.parse(run(["cat", receiptPath])));
-    if (receipt.count !== size.count || receipt.bytes !== size.bytes)
-      throw new Error("Snapshot differs from its verified backup receipt");
-  }
   if (operation === "verify-snapshot" || operation === "verify-rehearsal") {
     run(["check", source, destination, "--download"]);
     console.log(`Verified ${operation}: ${snapshotId}`);
     return;
   }
-  if (operation === "verify-migration" || operation === "verify-production-migration") {
-    const migrated = operation === "verify-production-migration" ? "ota:dofek-ota" : rehearsal;
+  if (operation === "verify-migration") {
     const appId = required("EXPO_APP_ID");
     const listPaths = (remote: string) =>
       z
@@ -173,10 +146,10 @@ async function main(): Promise<void> {
         .map((object) => object.Path);
     const originalPaths = listPaths(snapshot);
     const layout = new OtaMigrationLayout(originalPaths, appId);
-    layout.assertMigratedPaths(listPaths(migrated));
+    layout.assertMigratedPaths(listPaths(rehearsal));
     for (const [paths, target] of [
-      [layout.movedPaths, `${migrated}/${appId}`],
-      [layout.unchangedPaths, migrated],
+      [layout.movedPaths, `${rehearsal}/${appId}`],
+      [layout.unchangedPaths, rehearsal],
     ] as const) {
       if (paths.length)
         run(
@@ -208,13 +181,14 @@ async function main(): Promise<void> {
     }
     throw new Error("Snapshot has no complete main iOS update to audit");
   }
-  if (operation !== "restore-rehearsal" && operation !== "restore-production") {
+  if (operation !== "restore-rehearsal") {
     const objects = z
       .array(z.object({ Path: z.string() }))
       .parse(JSON.parse(run(["lsjson", destination, "--recursive", "--files-only"])));
     if (objects.length) throw new Error(`Destination ${destination} must be empty`);
     run(["copy", source, destination, "--immutable"]);
   } else {
+    // This destructive restore is restricted to the isolated rehearsal prefix.
     run(["sync", source, destination]);
   }
   run(["check", source, destination, "--download"]);

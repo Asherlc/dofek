@@ -12,7 +12,6 @@
         "scripts/ota-storage.ts",
         "scripts/rehearse-ota-storage.ts",
         "scripts/check-ota-image-visibility.ts",
-        "scripts/verify-published-ota.ts",
         "vitest.config.mutation.ts"
       ],
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}", "scripts/ota-migration-layout.ts", "scripts/verify-ota-update.ts"],

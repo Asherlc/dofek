@@ -16,9 +16,6 @@ let failCommand: string | undefined;
 let sourceCount: number;
 let sourcePaths: string[];
 let migratedPaths: string[];
-let otaReplicas: number;
-let otaTaskStates: string[];
-let snapshotReceipt: unknown;
 const github = setupServer(
   http.get("https://api.github.com/repos/Asherlc/dofek/actions/workflows/:workflow", () =>
     HttpResponse.json({ state: workflowState }),
@@ -43,12 +40,6 @@ beforeEach(() => {
   activeStatus = "queued";
   failCommand = undefined;
   sourceCount = 10;
-  otaReplicas = 0;
-  otaTaskStates = ["shutdown", "complete"];
-  snapshotReceipt = { version: 1, snapshotId: snapshot, count: 10, bytes: 100, runId: "1234" };
-  vi.stubEnv("OTA_DOCKER_CONTEXT", "production-readonly");
-  vi.stubEnv("GITHUB_RUN_ID", "1234");
-  vi.stubEnv("ORACLE_SERVER_HOST", "production.example.invalid");
   sourcePaths = [
     "main/runtime-current/123/.check",
     "main/runtime-current/123/update-metadata.json",
@@ -58,6 +49,7 @@ beforeEach(() => {
   process.argv = ["node", "ota-storage.ts", "snapshot", snapshot];
   for (const [key, value] of Object.entries({
     GITHUB_REPOSITORY: "Asherlc/dofek",
+    GITHUB_RUN_ID: "1234",
     GH_TOKEN: "test-token",
     R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
     R2_ACCESS_KEY_ID: "test-key",
@@ -70,27 +62,13 @@ beforeEach(() => {
   execute.mockImplementation((_file, args) => {
     const command = z.array(z.string()).parse(args).join(" ");
     if (failCommand && command.includes(failCommand)) throw new Error("transfer failed");
-    if (command.includes("context inspect"))
-      return JSON.stringify([
-        { Endpoints: { docker: { Host: "ssh://ubuntu@production.example.invalid" } } },
-      ]);
-    if (command.includes(" service inspect "))
-      return JSON.stringify([{ Spec: { Mode: { Replicated: { Replicas: otaReplicas } } } }]);
-    if (command.includes(" service ps "))
-      return otaTaskStates.map((_, i) => `task-${i}`).join("\n");
-    if (command.includes(" inspect --type task "))
-      return JSON.stringify(
-        otaTaskStates.map((State, i) => ({ ID: `task-${i}`, Status: { State } })),
-      );
     if (command.includes("lsjson")) {
-      if (["verify-migration", "verify-production-migration"].includes(process.argv[2] ?? ""))
+      if (process.argv[2] === "verify-migration")
         return JSON.stringify(
           (command.includes("/snapshots/") ? sourcePaths : migratedPaths).map((Path) => ({ Path })),
         );
       return JSON.stringify(existingObjects);
     }
-    if (command.includes(" cat ") && command.includes(".verified.json"))
-      return JSON.stringify(snapshotReceipt);
     if (command.includes(" cat "))
       return JSON.stringify({ platform: "ios", updateUUID: "retained-id" });
     if (command.includes("size"))
@@ -135,6 +113,43 @@ describe("OTA storage operator CLI", () => {
     expect(transfers()[0]?.slice(-3)).toEqual(["size", "ota:dofek-ota", "--json"]);
   });
 
+  it("parallelizes backup copy and full byte comparison", async () => {
+    await import("./ota-storage.ts");
+    for (const command of transfers().filter(
+      (args) => args.includes("copy") || args.includes("check"),
+    )) {
+      const start = command.indexOf("--transfers");
+      expect(command.slice(start, start + 4)).toEqual(["--transfers", "64", "--checkers", "32"]);
+    }
+  });
+
+  it("writes a locked receipt after successful byte comparison", async () => {
+    await import("./ota-storage.ts");
+    const calls = execute.mock.calls;
+    const receiptIndex = calls.findIndex(([, args]) =>
+      z.array(z.string()).parse(args).includes("rcat"),
+    );
+    const checkIndex = calls.findIndex(([, args]) =>
+      z.array(z.string()).parse(args).includes("check"),
+    );
+    expect(receiptIndex).toBeGreaterThan(checkIndex);
+    const receipt = calls[receiptIndex];
+    expect(receipt?.[1]).toContain(`ota:dofek-ota-backups/snapshots/${snapshot}.verified.json`);
+    expect(JSON.parse(z.object({ input: z.string() }).parse(receipt?.[2]).input)).toEqual({
+      version: 1,
+      snapshotId: snapshot,
+      count: 10,
+      bytes: 100,
+      runId: "1234",
+    });
+  });
+
+  it("requires the CI run identity before creating a snapshot", async () => {
+    vi.stubEnv("GITHUB_RUN_ID", "");
+    await expect(import("./ota-storage.ts")).rejects.toThrow("GITHUB_RUN_ID is required");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("requires confirmation of candidate shutdown before an explicit rehearsal restore", async () => {
     process.argv[2] = "restore-rehearsal";
     vi.stubEnv("OTA_REHEARSAL_STOPPED", "false");
@@ -142,117 +157,6 @@ describe("OTA storage operator CLI", () => {
       "Confirm the rehearsal candidate has stopped",
     );
     expect(transfers()).toEqual([]);
-  });
-  it.each([
-    null,
-    { version: 1, snapshotId: "another-snapshot", count: 10, bytes: 100, runId: "1234" },
-    { version: 1, snapshotId: snapshot, count: 9, bytes: 100, runId: "1234" },
-  ])("refuses an uncertified or changed snapshot before production restore", async (receipt) => {
-    process.argv[2] = "restore-production";
-    snapshotReceipt = receipt;
-    await expect(import("./ota-storage.ts")).rejects.toThrow();
-    expect(transfers().some((args) => args.includes("sync"))).toBe(false);
-  });
-
-  it("writes the locked verification receipt only after successful snapshot byte comparison", async () => {
-    await import("./ota-storage.ts");
-    const receipt = execute.mock.calls.find(([, args]) =>
-      z.array(z.string()).parse(args).includes("rcat"),
-    );
-    expect(receipt).toBeDefined();
-    expect(receipt?.[1]).toContain(`ota:dofek-ota-backups/snapshots/${snapshot}.verified.json`);
-    expect(JSON.parse(z.object({ input: z.string() }).parse(receipt?.[2]).input)).toEqual(
-      snapshotReceipt,
-    );
-    const checkIndex = execute.mock.calls.findIndex(([, args]) =>
-      z.array(z.string()).parse(args).includes("check"),
-    );
-    const receiptIndex = execute.mock.calls.findIndex(([, args]) =>
-      z.array(z.string()).parse(args).includes("rcat"),
-    );
-    expect(receiptIndex).toBeGreaterThan(checkIndex);
-  });
-  it("restores production from a nonempty snapshot only after inspecting quiescence", async () => {
-    process.argv[2] = "restore-production";
-    await import("./ota-storage.ts");
-    const commands = transfers();
-    expect(commands[1]).toEqual([
-      "--context",
-      "production-readonly",
-      "service",
-      "inspect",
-      "dofek_ota",
-    ]);
-    expect(commands.some((args) => args.includes("task-0") && args.includes("task-1"))).toBe(true);
-    const sync = commands.find((args) => args.includes("sync"));
-    expect(sync?.slice(-3)).toEqual([
-      "sync",
-      `ota:dofek-ota-backups/snapshots/${snapshot}`,
-      "ota:dofek-ota",
-    ]);
-    expect(commands.at(-1)?.slice(-4)).toEqual([
-      "check",
-      `ota:dofek-ota-backups/snapshots/${snapshot}`,
-      "ota:dofek-ota",
-      "--download",
-    ]);
-  });
-
-  it("rejects a Docker context pointing at a different host", async () => {
-    process.argv[2] = "restore-production";
-    vi.stubEnv("ORACLE_SERVER_HOST", "other.example.invalid");
-    await expect(import("./ota-storage.ts")).rejects.toThrow("production Docker endpoint");
-    expect(transfers().some((args) => args.includes("run"))).toBe(false);
-  });
-
-  it("requires backup provenance before accessing storage", async () => {
-    vi.stubEnv("GITHUB_RUN_ID", "");
-    await expect(import("./ota-storage.ts")).rejects.toThrow("GITHUB_RUN_ID is required");
-    expect(transfers()).toEqual([]);
-  });
-
-  it.each([
-    "new",
-    "pending",
-    "assigned",
-    "accepted",
-    "preparing",
-    "ready",
-    "starting",
-    "running",
-    "orphaned",
-  ])("refuses production restore while an OTA task is %s", async (state) => {
-    process.argv[2] = "restore-production";
-    otaTaskStates = ["shutdown", state];
-    await expect(import("./ota-storage.ts")).rejects.toThrow("tasks must be stopped");
-    expect(transfers().some((args) => args.includes("run"))).toBe(false);
-  });
-
-  it("refuses production restore while the service can schedule tasks", async () => {
-    process.argv[2] = "restore-production";
-    otaReplicas = 1;
-    await expect(import("./ota-storage.ts")).rejects.toThrow("zero replicas");
-    expect(transfers().some((args) => args.includes("run"))).toBe(false);
-  });
-
-  it("requires an explicit remote Docker context before production restore", async () => {
-    process.argv[2] = "restore-production";
-    vi.stubEnv("OTA_DOCKER_CONTEXT", "");
-    await expect(import("./ota-storage.ts")).rejects.toThrow("OTA_DOCKER_CONTEXT is required");
-    expect(transfers()).toEqual([]);
-  });
-
-  it("refuses an empty snapshot before production restore", async () => {
-    process.argv[2] = "restore-production";
-    sourceCount = 0;
-    await expect(import("./ota-storage.ts")).rejects.toThrow("Source must contain objects");
-    expect(transfers().some((args) => args.includes("sync"))).toBe(false);
-  });
-
-  it.each([" sync ", " check "])("fails production restore when %s fails", async (command) => {
-    process.argv[2] = "restore-production";
-    failCommand = command;
-    await expect(import("./ota-storage.ts")).rejects.toThrow("transfer failed");
   });
   it.each(["../production", "", "a/b", "UPPERCASE-ID"])(
     "rejects unsafe snapshot ID %j",
@@ -417,49 +321,6 @@ describe("OTA storage operator CLI", () => {
     } finally {
       output.mockRestore();
     }
-  });
-
-  it("byte-verifies the entire production migration without writing storage", async () => {
-    process.argv[2] = "verify-production-migration";
-    sourcePaths.push("orphan/file");
-    migratedPaths.push("orphan/file");
-    await import("./ota-storage.ts");
-    const checks = transfers().filter((args) => args.includes("check"));
-    expect(checks).toHaveLength(2);
-    expect(checks[0]?.slice(-6)).toEqual([
-      "check",
-      `ota:dofek-ota-backups/snapshots/${snapshot}`,
-      "ota:dofek-ota/example-app",
-      "--download",
-      "--files-from0",
-      "-",
-    ]);
-    expect(checks[1]?.slice(-6)).toEqual([
-      "check",
-      `ota:dofek-ota-backups/snapshots/${snapshot}`,
-      "ota:dofek-ota",
-      "--download",
-      "--files-from0",
-      "-",
-    ]);
-    expect(
-      transfers()
-        .flat()
-        .some((arg) => ["copy", "sync", "rcat"].includes(arg)),
-    ).toBe(false);
-  });
-
-  it("refuses to certify production when migrated keys differ from the snapshot", async () => {
-    process.argv[2] = "verify-production-migration";
-    migratedPaths.pop();
-    await expect(import("./ota-storage.ts")).rejects.toThrow("object set");
-  });
-
-  it("requires the locked verification receipt before certifying production", async () => {
-    process.argv[2] = "verify-production-migration";
-    snapshotReceipt = null;
-    await expect(import("./ota-storage.ts")).rejects.toThrow();
-    expect(transfers().some((args) => args.includes("lsjson"))).toBe(false);
   });
 
   it("fails migration verification when an original key remains behind", async () => {
