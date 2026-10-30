@@ -1,0 +1,67 @@
+{
+  "provenance": "synthetic directed road",
+  "nodes": [
+    {
+      "id": "a",
+      "latitude": 37.0,
+      "longitude": -122.0
+    },
+    {
+      "id": "b",
+      "latitude": 37.0,
+      "longitude": -121.999
+    },
+    {
+      "id": "c",
+      "latitude": 37.0,
+      "longitude": -121.998
+    }
+  ],
+  "edges": [
+    [
+      "a",
+      "b"
+    ],
+    [
+      "b",
+      "c"
+    ]
+  ],
+  "observations": [
+    {
+      "latitude": 37.00001,
+      "longitude": -121.9999,
+      "timestamp": 0
+    },
+    {
+      "latitude": 37.00001,
+      "longitude": -121.9996,
+      "timestamp": 1
+    },
+    {
+      "latitude": 37.00001,
+      "longitude": -121.9991,
+      "timestamp": 2
+    },
+    {
+      "latitude": 37.00001,
+      "longitude": -121.9987,
+      "timestamp": 3
+    },
+    {
+      "latitude": 37.00001,
+      "longitude": -121.9981,
+      "timestamp": 4
+    }
+  ],
+  "expected_edges": [
+    [
+      "a",
+      "b"
+    ],
+    [
+      "b",
+      "c"
+    ]
+  ]
+}
