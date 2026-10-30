@@ -104,7 +104,11 @@ describe("theCrag official ascent mapping", () => {
     { climbedGearStyle: "lead", tick: { name: "Flash: Top rope" } },
     { climbedGearStyle: "boulder", tick: { name: "Flash: Lead" }, route: { id: "2001" } },
   ])("rejects conflicting source facts %j", (facts) => {
-    expect(() => mapTheCragAscent(apiAscent(facts), "123")).toThrow(/conflicting climbing/);
+    expect(() => mapTheCragAscent(apiAscent(facts), "123")).toThrow(
+      facts.route?.style === "Sport"
+        ? /conflicting climbing disciplines/
+        : /conflicting climbing methods/,
+    );
   });
 
   it("retains unknown discipline and absent optional facts", () => {
@@ -297,8 +301,50 @@ describe("theCrag official ascent mapping", () => {
       failure = error;
     }
     expect(failure).toBeInstanceOf(Error);
+    expect(failure).toHaveProperty(
+      "message",
+      expect.stringContaining("unsupported ascent response"),
+    );
     expect(inspect(failure, { depth: null })).not.toMatch(/private-key|private notes/);
   });
+});
+
+it("preserves null source values and ignores null ancestors", () => {
+  const record = mapTheCragAscent(
+    apiAscent({
+      date: "  ",
+      markdown: null,
+      tick: { label: "" },
+      route: { id: "2", name: null, grade: "  ", ancestors: { parent: null } },
+    }),
+    "123",
+  );
+  expect(record.climbedOn).toBeUndefined();
+  expect(record.notes).toBeNull();
+  expect(record.attempts).toEqual([{ scope: "climb", ropeMethod: "top_rope" }]);
+  expect(record.climb).toEqual({ externalId: "2", kind: "route" });
+});
+
+it("accepts a recorded local datetime", () => {
+  expect(mapTheCragAscent(apiAscent({ date: "2026-10-10T12:30:00" }), "123").climbedOn).toBe(
+    "2026-10-10",
+  );
+});
+
+it("preserves unknown mixed grades and explicit compound boulder scales", () => {
+  expect(
+    mapTheCragAscent(apiAscent({ route: { id: "2", grade: " Unknown FR 6a " } }), "123").climb
+      ?.publishedGrades,
+  ).toEqual([{ system: null, value: "Unknown FR 6a" }]);
+  expect(
+    mapTheCragAscent(
+      apiAscent({ climbedGearStyle: "boulder", tick: null, route: { id: "2", grade: "V4 FB:6B" } }),
+      "123",
+    ).climb?.publishedGrades,
+  ).toEqual([
+    { system: "v_scale", value: "V4" },
+    { system: "font", value: "6B" },
+  ]);
 });
 
 it("maps documented ancestor identities in depth order without duplicating the parent crag", () => {
