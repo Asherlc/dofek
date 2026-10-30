@@ -31,6 +31,34 @@ function expectVisibleDots(container: HTMLElement, count: number) {
 }
 
 describe("ActivityDetailCharts", () => {
+  it("retains climbs at activity boundaries outside the HR sample range", () => {
+    const { container } = render(
+      <LineChart
+        data={[
+          { recordedAt: "2026-10-18T17:30:03Z", value: 130 },
+          { recordedAt: "2026-10-18T17:30:55Z", value: 150 },
+        ]}
+        activityWindow={{ startedAt: "2026-10-18T17:30:00Z", endedAt: "2026-10-18T17:31:00Z" }}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="bpm"
+        climbAnnotations={[
+          { id: "first", label: "First climb", startedAt: "2026-10-18T17:30:00Z", endedAt: null },
+          { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:00Z", endedAt: null },
+        ]}
+      />,
+    );
+    const markers = container.querySelectorAll('Line[stroke="#a78bfa"]');
+    expect([...markers].map((marker) => Number(marker.getAttribute("x1")))).toEqual([44, 324]);
+    const dots = container.querySelectorAll('Circle[fill="#ff0000"]');
+    expect(dots).toHaveLength(2);
+    expect(Number(dots[0]?.getAttribute("cx"))).toBe(58);
+    expect(Number(dots[1]?.getAttribute("cx"))).toBeCloseTo(300.666667);
+    fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
+    expect(screen.getByRole("button", { name: /First climb/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Last climb/ })).toBeDefined();
+  });
+
   it.each([null, "2026-10-18T10:05:00Z"])(
     "selects the nearest climb marker near an earlier climb ending at %s",
     (endedAt) => {

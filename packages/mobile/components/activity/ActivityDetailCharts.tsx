@@ -2,6 +2,7 @@ import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/form
 import { activityMetricColors } from "@dofek/scoring/colors";
 import {
   type ActivityChartSeries,
+  type ActivityChartWindow,
   activityChartSeries,
 } from "@dofek/training/activity-chart-series";
 import {
@@ -56,6 +57,7 @@ export const chartStyles = StyleSheet.create({
 });
 
 interface ChartProps {
+  activityWindow?: ActivityChartWindow;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
   data: Array<{ recordedAt: string; value: number | null }>;
   color: string;
@@ -98,6 +100,7 @@ function TimeAxis({ series }: { series: ActivityChartSeries }) {
 
 export function LineChart({
   data,
+  activityWindow,
   color,
   label,
   unit,
@@ -107,7 +110,7 @@ export function LineChart({
   climbAnnotations = NO_CLIMB_ANNOTATIONS,
 }: ChartProps) {
   const [selectedClimbId, setSelectedClimbId] = useState<string | null>(null);
-  const series = useMemo(() => activityChartSeries(data), [data]);
+  const series = useMemo(() => activityChartSeries(data, activityWindow), [data, activityWindow]);
   const climbs = useMemo(
     () => climbingChartPositions(climbAnnotations, series.startedAt, series.endedAt),
     [climbAnnotations, series.startedAt, series.endedAt],

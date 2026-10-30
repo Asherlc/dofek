@@ -376,6 +376,7 @@ export function ActivityDetailPage() {
               </p>
             )}
           <MetricsChart
+            activityWindow={activity}
             climbAnnotations={
               isClimbingActivity
                 ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])

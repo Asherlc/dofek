@@ -874,6 +874,7 @@ export default function ActivityDetailScreen() {
         ))}
       {hasHr && (
         <LineChart
+          activityWindow={activity}
           climbAnnotations={
             isClimbingActivity
               ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])

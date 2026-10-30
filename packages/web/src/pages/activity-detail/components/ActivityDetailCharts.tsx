@@ -4,6 +4,7 @@ import type { ActivityMetricSource } from "@dofek/providers/activity-metric-sour
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
   type ActivityChartSeries,
+  type ActivityChartWindow,
   activityChartSeries,
   nearestActivityChartSample,
 } from "@dofek/training/activity-chart-series";
@@ -102,6 +103,7 @@ interface MetricDefinition {
 
 export function MetricsChart({
   points,
+  activityWindow,
   activityType,
   hasHr,
   hasPower,
@@ -116,6 +118,7 @@ export function MetricsChart({
   climbAnnotations = [],
 }: {
   points: StreamPoint[];
+  activityWindow?: ActivityChartWindow;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
   activityType: string;
   hasHr: boolean;
@@ -252,6 +255,7 @@ export function MetricsChart({
 
   const timeline = activityChartSeries(
     points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+    activityWindow,
   );
   const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
   const climbTooltip = (annotation: ClimbingChartAnnotation) => ({
@@ -290,6 +294,7 @@ export function MetricsChart({
           recordedAt: point.recordedAt,
           value: metric.data[dataIndex] ?? null,
         })),
+        activityWindow,
       ),
     ),
     connectNulls: false,

@@ -62,6 +62,35 @@ const args = {
   units: new UnitConverter("metric"),
 };
 
+it("retains climbs at activity boundaries outside the HR sample range", () => {
+  render(
+    <MetricsChart
+      {...args}
+      activityWindow={{ startedAt: "2026-10-18T17:29:57Z", endedAt: "2026-10-18T17:31:05Z" }}
+      climbAnnotations={[
+        { id: "first", label: "First climb", startedAt: "2026-10-18T17:29:57Z", endedAt: null },
+        { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:05Z", endedAt: null },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Climbs (2)")).toBeDefined();
+  expect(screen.getByText(/First climb/)).toBeDefined();
+  expect(screen.getByText(/Last climb/)).toBeDefined();
+  expect(captured.option.xAxis).toMatchObject({
+    min: Date.parse("2026-10-18T17:29:57Z"),
+    max: Date.parse("2026-10-18T17:31:05Z"),
+  });
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.data).toHaveLength(2);
+  expect(renderChartSvg().querySelectorAll('path[stroke="#a78bfa"]')).toHaveLength(2);
+  expect(series[0].data.map((sample: { value: [number, number | null] }) => sample.value)).toEqual([
+    [Date.parse(points[0].recordedAt), 140],
+    [Date.parse("2026-10-18T17:30:30Z"), null],
+    [Date.parse(points[1].recordedAt), 150],
+  ]);
+});
+
 it("overlays timed climbs on heart rate and exposes exact climb labels", () => {
   render(
     <MetricsChart
