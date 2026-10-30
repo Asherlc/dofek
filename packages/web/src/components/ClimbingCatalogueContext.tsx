@@ -1,6 +1,9 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type { ClimbingCatalogueContext as Context } from "@dofek/training/climbing-catalogue";
-import { climbingCatalogueTagLabel } from "@dofek/training/climbing-catalogue";
+import {
+  climbingCatalogueConfidenceLabel,
+  climbingCatalogueTagLabel,
+} from "@dofek/training/climbing-catalogue";
 import { useEffect, useId, useState } from "react";
 import { trpc } from "../lib/trpc";
 
@@ -52,18 +55,20 @@ export function ClimbingCatalogueContextView({
           {context?.sources.map((source) => (
             <div key={source.providerId} className="space-y-2">
               <h5 className="font-medium">{providerLabel(source.providerId)}</h5>
-              {!source.searchComplete && (
-                <p className="text-subtle">Search incomplete; more matches may exist.</p>
+              {source.searchArea && (
+                <p className="text-subtle">Search area: {source.searchArea.name}</p>
               )}
-              {source.matches.map(({ candidate, confidence }) => (
+              {!source.searchComplete && (
+                <p className="text-subtle">Search incomplete; more candidates may exist.</p>
+              )}
+              {source.matches.map(({ candidate, confidence, evidence }) => (
                 <div key={candidate.externalId} className="space-y-1">
-                  <p className="text-subtle">
-                    {confidence === "source"
-                      ? "Own source"
-                      : confidence === "corroborated"
-                        ? "Location corroborated"
-                        : "Possible match"}
-                  </p>
+                  <p className="text-subtle">{climbingCatalogueConfidenceLabel(confidence)}</p>
+                  {evidence?.map((reason) => (
+                    <p key={reason} className="text-subtle">
+                      {reason}
+                    </p>
+                  ))}
                   <a
                     className="text-accent underline"
                     href={candidate.url}
@@ -97,7 +102,7 @@ export function ClimbingCatalogueContextView({
           ))}
           {context?.status === "ready" &&
             context.sources.every((source) => source.matches.length === 0) && (
-              <p>No exact-name catalogue matches found.</p>
+              <p>No catalogue candidates to display.</p>
             )}
           {pending ? (
             <p role="status">Looking up catalogue info…</p>

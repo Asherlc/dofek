@@ -194,7 +194,7 @@ Climb details on web and mobile also offer **Catalogue context**, an explicit
 lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
 information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
-completeness, and source/corroborated/possible-match attribution. It does not
+completeness, and source/reference/corroborated/possible-match attribution. It does not
 write catalogue facts or inferred identities into the recorded climbing graph,
 create ticks, or change grades, outcomes, deduplication or training metrics.
 The [owned-log repository](../packages/server/src/repositories/climbing-catalogue-repository.ts)
@@ -225,7 +225,7 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   rather than relabeling them steepness, grips or personal ascent methods.
 - theCrag's [route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes)
   exposes paginated route results. The
-  [reader](../src/providers/thecrag/catalogue.ts) fetches exact-name candidates
+  [reader](../src/providers/thecrag/catalogue.ts) fetches bounded candidate details
   and retains route-page tags, including multiple inherited steepness entries.
   A fresh [Cragmont Crack page](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/route/18589309)
   returned Overhung, Slab (`#Ramp`) and Vertical inherited from Cragmont Park.
@@ -244,8 +244,24 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   credential is public and search-only; no new private credential or service is
   provisioned. Upstream 502 responses remain actionable lookup errors.
 
-Searches are bounded to three pages. Capped or repeated pages remain explicitly
-incomplete and cannot establish a unique corroborated match. Indoor candidates
+Global name searches share at most three page requests per provider across the
+current name and all meaningful logged/source aliases, rather than three pages
+per alias. Empty and case/whitespace-equivalent queries are removed; punctuation
+and route qualifiers remain available to upstream search. Each distinct query
+gets its first page before any query receives another page. Aliases not yet queried,
+unfinished pagination, repeated or omitted results, and detail caps keep combined
+coverage incomplete and cannot establish a unique corroborated match. Query
+pagination/repetition state is separate from global source-ID deduplication, so
+overlap between aliases does not itself imply incomplete coverage. Exact native
+and reference lookups, and independently complete OpenBeta local-area discovery,
+retain their separate paths. See the [shared query-name policy](../src/climbing-catalogue-matching.ts)
+and the provider readers linked above; their upstream protocols are documented by
+the [MP search client](https://www.mountainproject.com/dist/search/block.js?v.5),
+[KAYA consumer query](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js),
+[theCrag route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes),
+and [OpenBeta search client](https://github.com/OpenBeta/open-tacos/blob/develop/src/js/typesense/TypesenseClient.ts).
+
+Indoor candidates
 are possible matches unless the exact recorded provider identity is found;
 matching names or recycled colors never establish the same gym set. Failed
 refreshes retain still-unexpired context with an actionable error instead of
@@ -253,6 +269,122 @@ becoming an empty successful lookup. See the
 [shared response](../packages/training/src/climbing-catalogue.ts),
 [cache/matching tests](../src/climbing-catalogue.test.ts) and
 [database ownership tests](../src/db/climbing-catalogue-seed.integration.test.ts).
+
+Within one provider, two nonempty area IDs must agree before names can align
+those areas. Equal IDs permit a rename; differing IDs retain conflict evidence
+even when names and nearby points coincide. Missing IDs and different provider
+namespaces retain the name-based comparison, with the same distance and
+hierarchy checks. The [server matcher](../src/climbing-catalogue-matching.ts)
+and its [regressions](../src/climbing-catalogue-matching.test.ts) define this policy.
+
+Within each provider, the [server matcher](../src/climbing-catalogue-matching.ts)
+stably orders matches as source, explicit reference, corroborated, then possible.
+It preserves order within each class, every candidate and all evidence; provider
+order is unchanged. The [web](../packages/web/src/components/ClimbingCatalogueContext.tsx)
+and [mobile](../packages/mobile/components/ClimbingCatalogueContext.tsx) views render
+that server order without a client-side score or winner selection.
+
+### Local discovery and identity evidence (2026-10-29)
+
+OpenBeta discovery uses `cragsWithin(filter: { bbox, zoom: 15 })` around the
+nearest recorded area point, independently of the route name. Dofek converts
+its shared 100 m local-area heuristic to a latitude-aware bounding box. A
+provider-owned OpenBeta UUID or Mountain Project area reference selects the
+area when available; otherwise the normalized local name and great-circle
+distance must agree. The reader hydrates at most three matching leaf areas.
+It reads `area(uuid)` metadata and `totalClimbs` before requesting climb facts,
+skips areas exceeding the remaining 200-fact processing budget, and compares the
+unique retained climb count with `totalClimbs`. It also checks the actual returned
+fact count before processing: overruns keep coverage incomplete, processing and
+retention stop at the remaining budget, and no further full-area reads occur
+after exhaustion. These unpaginated upstream responses can exceed an earlier
+advertised count, so the metadata check cannot guarantee a network-level response
+size cap. Missing, capped or partial coverage remains incomplete; `searchArea`
+records the scope of this lookup. Every successful incomplete local lookup
+continues with bounded Typesense name discovery, retaining local candidates and
+deduplicating the combined result by native climb ID. Already hydrated local
+climbs do not require another detail read. The combined result stays incomplete
+without claiming a matched-area search scope. This preserves name results when
+a broader recorded area cannot select a nearby leaf area, or when unrelated
+local climbs exhaust the processing budget before the target's area is read.
+At zoom 15, the upstream geographic query selects leaf areas. Complete local
+results, including empty matched-area coverage, retain their local path;
+HTTP, parsing and identity errors remain lookup errors. When
+the nearest area has no point, bounded name search remains available directly.
+The API has no cursor or completion flag on these area queries; the count check
+follows the upstream leaf-area contract, rather than assuming that any nonempty
+response is complete. Sources: the
+[Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql),
+[area data source](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/model/AreaDataSource.ts),
+and [reader and regression fixtures](../src/providers/openbeta-catalogue.test.ts).
+
+The combined path permits at most seven local requests (one geographic query,
+three metadata reads and three climb reads), then three name-search pages shared
+across all aliases. With the requested `per_page=20` honored, at most 60 unique
+eligible name hits require detail reads, yielding at most 70 requests overall
+and 260 unique candidates before the shared matcher assesses relevance.
+This is a request-budget calculation under the documented
+[Typesense pagination contract](https://typesense.org/docs/30.2/api/search.html#pagination-parameters),
+not a response-size guarantee: the [reader](../src/providers/openbeta-catalogue.ts)
+does not independently cap over-returned Typesense hits or unpaginated area
+response bytes. Local processing still stops at 200 climb facts.
+
+The verified [Goat Rock area](https://openbeta.io/area/0045f7bf-6b6c-5d8a-bc9a-30f9168aea37/goat-rock)
+has UUID `0045f7bf-6b6c-5d8a-bc9a-30f9168aea37`, Mountain Project area reference
+`105734054`, point `37.2282, -122.1079`, and 12 climbs. Hydrated
+[Corner Route](https://openbeta.io/climb/f3a2b199-c2d3-59b8-8f12-dd7ce734e88b/corner-route)
+explicitly references Mountain Project's
+[Cheddar Corner](https://www.mountainproject.com/route/105736399/cheddar-corner)
+(`105736399`), despite the different names. Embedded geographic-search climbs
+did not reliably populate these references in the live audit: only hydrated
+area/native climb `metadata.mp_id` supplies climb identity evidence. Mountain
+Project can follow that reference directly through its existing route-detail
+endpoint. Neither a grade difference nor coincident area coordinates supplies
+or vetoes an identity reference. Sources: the linked public records,
+[Climb metadata schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
+and the [MP reader](../src/providers/mountain-project-catalogue.ts).
+
+All four readers use the shared name relation for presentation aliases and
+bounded approximate suggestions. Original names and directional/start/extension/
+pitch qualifiers remain intact; approximate similarity is discovery evidence,
+not identity confidence. The shared matcher uses source-declared aliases and
+keeps unknown setting unknown. See the [matching policy](../src/climbing-catalogue-matching.ts)
+and [Fuse.js search documentation](https://www.fusejs.io/api/options.html).
+
+theCrag search hydrates at most 60 unique route details over three pages before
+checking names and literal route AKA labels, so a route returned under an alias
+is not discarded solely because its displayed title differs. A repeated page,
+repeated route within one query or omitted detail keeps discovery incomplete;
+overlapping route IDs from different name queries share one detail read. AKA labels come
+only from `.headline__guts > ul.stats > li[title="Alternate name"]`, as observed
+on [this route's "Up" alias](https://www.thecrag.com/en/climbing/thailand/krabi/route/7257755094);
+breadcrumb abbreviations are not route aliases. The displayed `Lat/Lon:` pair
+in a route's location section triggers a separate read of its nearest retained
+native area breadcrumb, when that link has a valid area ID. Only that area's own
+`place:location` metadata, on a page with the verified canonical area ID, supplies
+area coordinates. Parent reads are deduplicated by native area ID within each
+bounded search. The
+[Goat Rock route page](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/route/18578485)
+and [parent area](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/area/16447255)
+display coincident points; a separately located route never replaces the parent
+point. An unavailable parent point leaves area coordinates unknown, while parent
+HTTP/identity failures remain actionable lookup errors. A route-only point is not
+assigned to area or climb scope because its inheritance is unverified. theCrag
+supports individual route/start locations; see
+[Locating Routes](https://www.thecrag.com/en/article/geolocation#locating-routes)
+and [route Lat/Lon editing](https://www.thecrag.com/article/updatingdescriptions).
+Provider identity does not imply outdoor setting. See the
+[theCrag reader](../src/providers/thecrag/catalogue.ts).
+
+KAYA native IDs remain distinct from URL slugs: the public
+[Swiss Cheese URL](https://kaya-app.kayaclimb.com/climb/Swiss-Cheese-56-Castle-Rock-State-Park-6084576)
+has native climb ID `887401`, not suffix `6084576`. Its Goat Rock area is native
+ID `46774` at `37.228451, -122.107888`; the broader Castle Rock State Park
+destination is `2204`. These are attributed source locations, not interchangeable
+route identities. Sources: the audited public search response from KAYA's
+[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), the
+[consumer identity fields](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js),
+and [KAYA regression](../src/providers/kaya/catalogue.test.ts).
 
 Pending refresh status comes from the live job, independently of metadata TTL;
 concurrent refresh requests cannot replace a finished result with a long-lived

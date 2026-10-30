@@ -4,6 +4,63 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 
+it.each([false, true])(
+  "renders mixed confidence candidates in the supplied server order (reversed=%s)",
+  (reversed) => {
+    const source = ready.sources[0];
+    const match = source?.matches[0];
+    if (!source || !match) throw new Error("Missing fixture match");
+    const mixed = [
+      { confidence: "corroborated" as const, name: "Swiss Cheese at Goat Rock" },
+      { confidence: "possible" as const, name: "Swiss Cheese at Distant Wall" },
+      { confidence: "possible" as const, name: "Swiss Cheese at Other Crag" },
+    ];
+    if (reversed) mixed.reverse();
+    useQuery.mockReturnValue({
+      isFetchedAfterMount: true,
+      refetch,
+      error: null,
+      isLoading: false,
+      data: {
+        ...ready,
+        sources: [
+          {
+            ...source,
+            matches: mixed.map((item, index) => ({
+              ...match,
+              confidence: item.confidence,
+              evidence: [
+                item.confidence === "corroborated"
+                  ? "Local areas align within 100 m: Goat Rock / Goat Rock."
+                  : "Nearest local areas conflict.",
+              ],
+              candidate: { ...match.candidate, externalId: String(index), name: item.name },
+            })),
+          },
+        ],
+      },
+    });
+    render(<ClimbingCatalogueContext id="log-1" />);
+    open();
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(
+      reversed
+        ? [
+            "Swiss Cheese at Other Crag",
+            "Swiss Cheese at Distant Wall",
+            "Swiss Cheese at Goat Rock",
+          ]
+        : [
+            "Swiss Cheese at Goat Rock",
+            "Swiss Cheese at Distant Wall",
+            "Swiss Cheese at Other Crag",
+          ],
+    );
+    expect(screen.getByText("Location corroborated")).toBeTruthy();
+    expect(screen.getAllByText("Possible match")).toHaveLength(2);
+    expect(screen.getByText("Local areas align within 100 m: Goat Rock / Goat Rock.")).toBeTruthy();
+  },
+);
+
 const { useQuery, useMutation, mutate, setData, refetch } = vi.hoisted(() => ({
   useQuery: vi.fn(),
   useMutation: vi.fn(),
@@ -175,7 +232,7 @@ it("polls pending lookups and stops on terminal status or errors", () => {
   useMutation.mock.lastCall?.[0].onSuccess(pending);
   expect(setData).toHaveBeenCalledWith({ id: "log-1" }, pending);
 });
-it("distinguishes a completed empty catalogue lookup", () => {
+it("renders the empty state when no catalogue sources were searched", () => {
   useQuery.mockReturnValue({
     isFetchedAfterMount: true,
     refetch,
@@ -185,11 +242,27 @@ it("distinguishes a completed empty catalogue lookup", () => {
   });
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
-  expect(screen.getByText("No exact-name catalogue matches found.")).toBeTruthy();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
+});
+it("renders the empty state after a completed source search", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    data: {
+      ...ready,
+      sources: ready.sources.map((source) => ({ ...source, searchComplete: true, matches: [] })),
+    },
+    error: null,
+    isLoading: false,
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
 });
 
 it.each([
   ["source", "Own source"],
+  ["reference", "Provider reference"],
   ["corroborated", "Location corroborated"],
 ] as const)("labels %s evidence separately from possible matches", (confidence, label) => {
   const source = ready.sources[0];
@@ -381,4 +454,94 @@ it("shows all catalogue climb types separately from wall and personal ascent fac
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
   for (const label of labels) expect(screen.getByText(`Climb type: ${label}`)).toBeTruthy();
+});
+
+it.each([
+  [
+    "reference",
+    [
+      "Explicit Mountain Project reference 105736399.",
+      "Catalogue name differs from the logged name.",
+    ],
+  ],
+  [
+    "possible",
+    [
+      "Explicit Mountain Project reference 105736399.",
+      "Conflict: local areas differ: Goat Rock and Chew Tooth.",
+    ],
+  ],
+] as const)(
+  "displays server evidence for a %s match within the local search area",
+  (confidence, evidence) => {
+    const source = ready.sources[0];
+    const match = source?.matches[0];
+    if (!source || !match) throw new Error("Missing fixture match");
+    useQuery.mockReturnValue({
+      isFetchedAfterMount: true,
+      refetch,
+      error: null,
+      data: {
+        ...ready,
+        sources: [
+          {
+            ...source,
+            searchArea: {
+              externalId: "goat-rock",
+              name: "Goat Rock",
+              scope: "area",
+              coordinates: null,
+            },
+            matches: [
+              {
+                ...match,
+                confidence,
+                evidence: [...evidence],
+                candidate: { ...match.candidate, name: "Corner Route" },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    render(<ClimbingCatalogueContext id="log-1" />);
+    open();
+    expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Corner Route" })).toBeTruthy();
+    for (const reason of evidence) expect(screen.getByText(reason)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Catalogue context" }));
+    expect(
+      screen.getByRole("button", { name: "Catalogue context" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByText(evidence[0])).toBeNull();
+  },
+);
+
+it("qualifies empty results when local discovery is incomplete", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    error: null,
+    data: {
+      ...ready,
+      sources: [
+        {
+          providerId: "openbeta",
+          searchComplete: false,
+          searchArea: {
+            externalId: "goat-rock",
+            name: "Goat Rock",
+            scope: "area",
+            coordinates: null,
+          },
+          matches: [],
+        },
+      ],
+    },
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
+  expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
+  expect(screen.getByText("Search incomplete; more candidates may exist.")).toBeTruthy();
 });
