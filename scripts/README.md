@@ -325,6 +325,10 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm check:mobile-update --app-id <app-id> --runtime-version <resolved-runtime>`
   - Required: `--app-id <app-id> --runtime-version <version>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+- `stack-service-image.ts`: Reads a service’s canonical immutable image from a Compose
+  stack, including [YAML merge keys](https://yaml.org/type/merge.html), for the existing
+  Swarm running-task verifier. Missing or mutable references fail explicitly.
+  - Usage: `pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota`
 - `verify-published-ota.ts`: Audits the exact published UUID/runtime, signed manifest,
   and asset hashes against the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
   - Usage: `pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production`
