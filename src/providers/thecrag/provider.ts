@@ -1,5 +1,5 @@
+import { randomUUID } from "node:crypto";
 import type { TokenSet } from "../../auth/oauth.ts";
-import type { SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
@@ -11,128 +11,46 @@ import {
 } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult } from "../types.ts";
-import { isTheCragPublicProfileScope, THECRAG_PUBLIC_PROFILE_SCOPE } from "./identity.ts";
+import { TheCragClient } from "./client.ts";
+import { THECRAG_LOGBOOK_SCOPE } from "./identity.ts";
+import { mapTheCragAscent } from "./mapping.ts";
 import { writeClimbingRecords } from "./persistence.ts";
-import {
-  type PublicAscentReference,
-  parsePublicAscent,
-  parsePublicFeed,
-  publicFeedUrl,
-  publicProfileAccount,
-  publicProfileUsername,
-} from "./public-parsing.ts";
-import { createTheCragPublicFetch } from "./public-transport.ts";
+import { TheCragSyncProgress } from "./progress.ts";
 
 const API_BASE_URL = "https://www.thecrag.com/api";
-const ORIGIN = "https://www.thecrag.com";
-
-class TheCragPublicRequestError extends Error {}
-
-function publicRedirectTarget(location: string | null, requestUrl: string): string {
-  if (location === null) return "missing";
-  const target = URL.parse(location, requestUrl);
-  if (!target) return "invalid";
-  // Only emit fixed categories: even hostnames can contain private information.
-  if (target.origin === ORIGIN) return "thecrag";
-  if (target.origin === "https://swamp.processing.thecrag.com") return "thecrag_processing";
-  return "external";
-}
-
-async function publicResponse(
-  fetchFn: typeof fetch,
-  url: string,
-  requestKind: "profile_lookup" | "feed" | "ascent",
-  signal?: AbortSignal,
-): Promise<Response> {
-  const response = await fetchFn(url, {
-    method: "GET",
-    redirect: "manual",
-    headers: { Accept: "application/atom+xml, application/json, text/html" },
-    signal,
-  });
-  if (response.status !== 200) {
-    const error = new TheCragPublicRequestError(
-      `theCrag public request failed (${response.status}). Try again when public access is available.`,
-    );
-    captureException(error, {
-      tags: { provider: "thecrag", phase: "public_request", requestKind },
-      extra: {
-        httpStatus: response.status,
-        ...(response.status >= 300 && response.status < 400
-          ? { redirectTarget: publicRedirectTarget(response.headers.get("location"), url) }
-          : {}),
-      },
-    });
-    throw error;
-  }
-  if (response.url) {
-    const requested = new URL(url);
-    const received = new URL(response.url);
-    const receivedPath = received.pathname.replace(/^\/en\//, "/");
-    if (
-      received.origin !== ORIGIN ||
-      receivedPath !== requested.pathname ||
-      received.search !== requested.search ||
-      received.username ||
-      received.password ||
-      received.hash
-    )
-      throw new Error(
-        "theCrag redirected to a different or nonpublic resource. Check that your profile and ascents are public, then try again.",
-      );
-  }
-  return response;
-}
 
 export class TheCragProvider implements SyncProvider {
   readonly id = "thecrag";
   readonly name = "theCrag";
   readonly #fetchFn: typeof fetch;
-
-  constructor(fetchFn: typeof globalThis.fetch = createTheCragPublicFetch()) {
+  constructor(fetchFn: typeof fetch = globalThis.fetch) {
     this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn);
   }
-
   validate(): string | null {
     return null;
   }
-
   authSetup(): ProviderAuthSetup {
     return {
       apiBaseUrl: API_BASE_URL,
       manualToken: {
-        kind: "public-profile",
-        label: "theCrag profile URL or username",
-        instructionsUrl: "https://www.thecrag.com/",
+        kind: "access-token",
+        label: "Personal API key (active supporter required)",
+        instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
         exchangeToken: async (input): Promise<TokenSet> => {
-          const username = publicProfileUsername(input);
-          const url = new URL(`${API_BASE_URL}/lookup/climber`);
-          url.searchParams.set("search", username);
-          const response = await publicResponse(this.#fetchFn, url.href, "profile_lookup");
-          let body: unknown;
-          try {
-            body = await response.json();
-          } catch (error) {
-            if (!(error instanceof SyntaxError)) throw error;
-            const safeError = new Error(
-              "theCrag returned an invalid public profile response. Check your username and try again.",
-            );
-            captureException(safeError, { tags: { provider: this.id, phase: "public_profile" } });
-            throw safeError;
-          }
-          const accountId = publicProfileAccount(body, username);
+          const key = input.trim();
+          const data = await new TheCragClient(this.#fetchFn, key).fetchPage(1);
           return {
-            accessToken: username,
+            accessToken: key,
             refreshToken: null,
             expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-            scopes: THECRAG_PUBLIC_PROFILE_SCOPE,
-            providerAccountId: accountId,
+            scopes: THECRAG_LOGBOOK_SCOPE,
+            providerAccountId: data.account.id,
+            authorizationId: randomUUID(),
           };
         },
       },
     };
   }
-
   async sync(run: SyncRun): Promise<SyncResult> {
     const startedAt = Date.now();
     const { db, options } = run;
@@ -145,67 +63,74 @@ export class TheCragProvider implements SyncProvider {
       if (!tokens)
         throw new ProviderStoredIdentityMissingError(
           this.name,
-          "public profile — reconnect in Data Sources using your username or profile URL",
+          "API key — reconnect in Data Sources",
         );
-      if (!isTheCragPublicProfileScope(tokens.scopes))
+      if (
+        tokens.scopes !== THECRAG_LOGBOOK_SCOPE ||
+        !tokens.authorizationId ||
+        !tokens.providerAccountId ||
+        !/^[1-9]\d*$/.test(tokens.providerAccountId)
+      )
         throw new ProviderStoredIdentityInvalidError(
-          "Revoke your old personal API key in theCrag Settings → API Keys, then reconnect using your public username/profile URL.",
+          "Reconnect theCrag in Data Sources using a personal API key from theCrag Settings > API Keys. An active supporter subscription is required.",
         );
-      const accountId = tokens.providerAccountId;
-      if (!accountId || !/^[1-9]\d*$/.test(accountId))
-        throw new ProviderStoredIdentityMissingError(
-          this.name,
-          "account identity — reconnect in Data Sources",
-        );
-      const username = publicProfileUsername(tokens.accessToken);
-      if (username !== tokens.accessToken)
-        throw new ProviderStoredIdentityMissingError(
-          this.name,
-          "public profile identity — reconnect in Data Sources",
-        );
+      const identity = {
+        accountId: tokens.providerAccountId,
+        authorizationId: tokens.authorizationId,
+      };
+      const progress = new TheCragSyncProgress(db, userId, identity);
+      const cursor = run.window.kind === "full" ? undefined : await progress.load();
+      // The API's `since` is exclusive. Replay the source second at the boundary.
+      const since = cursor === undefined ? undefined : Math.max(0, cursor - 1);
+      const client = new TheCragClient(this.#fetchFn, tokens.accessToken);
       recordsSynced = await withSyncLog(
         db,
         this.id,
         "climbing_activity",
         async () => {
-          const references = new Map<string, PublicAscentReference>();
-          const visited = new Set<string>();
-          let next: string | null = publicFeedUrl(accountId);
-          while (next) {
-            if (visited.has(next) || visited.size >= 100)
+          const records = [];
+          const ids = new Set<string>();
+          let expectedTotal: number | undefined;
+          let expectedPageSize: number | undefined;
+          let highestEpoch = cursor;
+          for (let page = 1; ; page++) {
+            const data = await client.fetchPage(page, { since, signal: options.signal });
+            if (data.account.id !== identity.accountId)
               throw new Error(
-                "theCrag public feed pagination could not complete because it looped or exceeded 100 pages. Contact support to investigate the public feed pagination.",
+                "theCrag returned a different account. Reconnect your intended account in Data Sources.",
               );
-            visited.add(next);
-            const response = await publicResponse(this.#fetchFn, next, "feed", options.signal);
-            const page = parsePublicFeed(await response.text(), accountId);
-            for (const item of page.items) {
-              const previous = references.get(item.id);
-              if (previous && previous.routeId !== item.routeId)
-                throw new Error("theCrag returned conflicting public ascent identifiers.");
-              references.set(item.id, item);
+            if (
+              data.page !== page ||
+              (expectedTotal !== undefined && data.numberAscents !== expectedTotal) ||
+              (expectedPageSize !== undefined && data.perPage !== expectedPageSize)
+            )
+              throw new Error(
+                "theCrag returned inconsistent logbook pagination. Try syncing again.",
+              );
+            expectedTotal = data.numberAscents;
+            expectedPageSize = data.perPage;
+            const remaining = data.numberAscents - (page - 1) * data.perPage;
+            if (data.ascents.length !== Math.min(data.perPage, remaining))
+              throw new Error("theCrag returned an incomplete logbook page. Try syncing again.");
+            for (const ascent of data.ascents) {
+              const record = mapTheCragAscent(ascent, identity.accountId);
+              if (ids.has(record.externalId))
+                throw new Error("theCrag returned duplicate ascent identities. Try syncing again.");
+              ids.add(record.externalId);
+              records.push(record);
+              highestEpoch = Math.max(highestEpoch ?? 0, ascent.epoch);
             }
-            next = page.next;
-          }
-          const records: SourceClimbingLogEntry[] = [];
-          for (const reference of references.values()) {
-            const response = await publicResponse(
-              this.#fetchFn,
-              `${ORIGIN}/ascent/${reference.id}`,
-              "ascent",
-              options.signal,
-            );
-            records.push(parsePublicAscent(await response.text(), reference, username));
+            if (page * data.perPage >= data.numberAscents) break;
           }
           const recordCount = await writeClimbingRecords(db, userId, this.id, records);
+          if (records.length && highestEpoch !== undefined) await progress.save(highestEpoch);
           return { recordCount, result: recordCount };
         },
         userId,
       );
       return { provider: this.id, recordsSynced, errors: [], duration: Date.now() - startedAt };
     } catch (error) {
-      if (!(error instanceof TheCragPublicRequestError))
-        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
       if (findProviderTransportError(error)) throw error;
       return {
         provider: this.id,

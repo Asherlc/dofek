@@ -13,7 +13,7 @@ const pageSchema = z.object({
         .union([z.string().regex(/^[1-9]\d*$/), z.number().int().positive().safe()])
         .transform(String),
     }),
-    ascents: z.array(z.json()),
+    ascents: z.array(z.object({ epoch: integer }).catchall(z.json())),
     numberAscents: integer,
     page: integer.pipe(z.number().positive()),
     perPage: integer.pipe(z.number().positive()),
