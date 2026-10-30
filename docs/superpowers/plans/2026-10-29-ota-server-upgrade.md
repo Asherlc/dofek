@@ -1,5 +1,14 @@
 # OTA server upgrade implementation plan
 
+> **Superseded on 2026-10-29:** The operator approved starting fresh, without
+> migrating old updates. The historical preservation plan below is retained as
+> a decision record. Current requirements are a Terraform-managed
+> `dofek-ota-releases` bucket, the tested private 3.2.7 image, matching EOAS
+> publisher, current-runtime gate and signed asset audit. Keep old buckets and
+> objects untouched; no backup/rehearsal is a release prerequisite. See the
+> [current release runbook](../../../deploy/ota/README.md).
+
+
 Execute each task with regression tests before implementation and obtain an independent review before deployment. Record commands, results, image digests, snapshot identifiers and workflow run links in the [production incident record](../../production-incident-baseline.md).
 
 **Goal:** Upgrade the OTA server/publisher to 3.2.7, propagate storage failures,

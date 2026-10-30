@@ -13,6 +13,7 @@ const signedManifest = z.object({
 });
 
 interface AuditOptions {
+  appId: string;
   url: string;
   runtimeVersion: string;
   channel: string;
@@ -26,6 +27,7 @@ export async function verifyOtaUpdate(options: AuditOptions): Promise<string> {
   let captured: Response | undefined;
   const checked = await checkOtaManifest({
     requestOptions: {
+      appId: options.appId,
       url: options.url,
       runtimeVersion: options.runtimeVersion,
       channel: options.channel,

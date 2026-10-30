@@ -40,6 +40,10 @@ concurrency:
 jobs:
   terraform:
     name: Deploy Infra
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:

@@ -4,6 +4,16 @@ variable "cloudflare_api_token" {
   sensitive   = true
 }
 
+variable "expo_app_id" {
+  description = "Existing Infisical EXPO_APP_ID used by app-scoped OTA preview object keys"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]+$", var.expo_app_id))
+    error_message = "expo_app_id must be a nonempty OTA application identifier without path separators."
+  }
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare account ID"
   type        = string

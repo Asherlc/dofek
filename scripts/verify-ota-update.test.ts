@@ -41,7 +41,7 @@ function serve(
   server.use(
     http.get("https://ota.example.test/manifest", ({ request }) => {
       expect(request.headers.get("expo-expect-signature")).toContain('keyid="main"');
-      expect(request.headers.has("expo-app-id")).toBe(false);
+      expect(request.headers.get("expo-app-id")).toBe("release-app-id");
       const body = JSON.stringify(manifest);
       const signature = sign(
         "RSA-SHA256",
@@ -77,6 +77,7 @@ function serve(
 }
 
 const options = {
+  appId: "release-app-id",
   url: "https://ota.example.test/manifest",
   runtimeVersion: "runtime-current",
   channel: "production",
