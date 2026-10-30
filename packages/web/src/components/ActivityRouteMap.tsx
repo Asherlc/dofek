@@ -1,7 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
-import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { createMapStyle } from "@dofek/training/map-style";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +16,11 @@ export function ActivityRouteMap({
   climbMarkers = NO_CLIMB_MARKERS,
   presentation = "detail",
   onSelectEntry,
+  selectedEntryId: controlledEntryId,
+  highlightedEntryId,
 }: {
+  selectedEntryId?: string | null;
+  highlightedEntryId?: string | null;
   points: Array<{ lat: number; lng: number }>;
   climbMarkers?: readonly ClimbingMapMarker[];
   presentation?: "detail" | "compact";
@@ -29,8 +32,11 @@ export function ActivityRouteMap({
   const mapRef = useRef<HTMLElement>(null);
   const mapInstanceRef = useRef<MapLibreMap | null>(null);
   const [previewVisible, setPreviewVisible] = useState(presentation === "detail");
-  const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [markerElements, setMarkerElements] = useState<HTMLElement[]>([]);
+  const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
+  const selectRef = useRef(onSelectEntry);
+  selectRef.current = onSelectEntry;
   const [tileWarning, setTileWarning] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,16 +120,13 @@ export function ActivityRouteMap({
         if (end)
           cleanups.push(mapDot(M, map, end, { radius: 6, color: statusColors.danger }).remove);
         const groups = groupClimbingMapMarkers(climbMarkers, providerSourceLabel);
+        const elements: HTMLElement[] = [];
         for (const group of groups) {
           const { latitude, longitude } = group.coordinates;
           const select = () => {
-            if (group.markers.length > 1) setInspectedPoint(group.coordinates);
-            else {
-              const marker = group.markers[0];
-              setInspectedPoint(null);
-              setSelectedEntryId(marker.entryId);
-              onSelectEntry?.(marker.entryId);
-            }
+            const marker = group.markers[0];
+            setSelectedEntryId(marker.entryId);
+            selectRef.current?.(marker.entryId);
           };
           const dot = mapDot(M, map, [longitude, latitude], {
             radius: group.markers.length > 1 ? 14 : 7,
@@ -140,8 +143,10 @@ export function ActivityRouteMap({
           );
           if (group.markers.length === 1)
             dot.element.setAttribute("data-entry-id", group.markers[0].entryId);
+          elements.push(dot.element);
           cleanups.push(dot.remove);
         }
+        setMarkerElements(elements);
         const coordinates = [
           ...route,
           ...groups.map((group): [number, number] => [
@@ -206,7 +211,20 @@ export function ActivityRouteMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [points, climbMarkers, presentation, onRegisterHoverCallback, previewVisible, onSelectEntry]);
+  }, [points, climbMarkers, presentation, onRegisterHoverCallback, previewVisible]);
+
+  useEffect(() => {
+    if (presentation !== "detail") return;
+    for (const element of markerElements) {
+      const ids: string[] = JSON.parse(element.getAttribute("data-entry-ids") ?? "[]");
+      const selected = activeEntryId != null && ids.includes(activeEntryId);
+      const highlighted = highlightedEntryId != null && ids.includes(highlightedEntryId);
+      element.setAttribute("aria-pressed", String(selected));
+      element.setAttribute("data-highlighted", String(highlighted));
+      element.style.boxShadow =
+        selected || highlighted ? "0 0 0 4px #ffffff, 0 0 0 7px #15803d" : "0 1px 4px #0004";
+    }
+  }, [markerElements, activeEntryId, highlightedEntryId, presentation]);
 
   const empty = points.length === 0 && climbMarkers.length === 0;
   return (
@@ -219,31 +237,6 @@ export function ActivityRouteMap({
         />
         {!empty && !mapState.error && mapState.loading ? <MapProcessingIndicator /> : null}
       </div>
-      {presentation === "detail" && inspectedPoint && (
-        <ul aria-label="Climbing entries at this location" className="mt-2 flex flex-wrap gap-2">
-          {climbMarkers.map((marker) => {
-            const { latitude, longitude } = marker.location.coordinates;
-            if (latitude !== inspectedPoint.latitude || longitude !== inspectedPoint.longitude)
-              return null;
-            const selected = selectedEntryId === marker.entryId;
-            return (
-              <li key={marker.entryId} className="min-w-0">
-                <button
-                  type="button"
-                  className="rounded border border-border px-3 py-2 text-sm text-accent"
-                  aria-pressed={selected}
-                  onClick={() => {
-                    setSelectedEntryId(marker.entryId);
-                    onSelectEntry?.(marker.entryId);
-                  }}
-                >
-                  {marker.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
       {empty ? (
         <p className="text-sm text-muted">No GPS locations available.</p>
       ) : mapState.error ? (

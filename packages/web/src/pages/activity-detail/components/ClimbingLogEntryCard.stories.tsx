@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   climbingAttemptFixture,
@@ -136,3 +137,13 @@ export const MinimalEntry: Story = {
   args: { entry: climbingLogEntryFixture(), location: undefined, entryNumber: undefined },
 };
 export const SelectedOccurrence: Story = { args: { entryNumber: 3, selected: true } };
+
+export const SharedMapRow: Story = {
+  args: {
+    hideMap: true,
+    entryNumber: 1,
+    onSelect: fn(),
+    onOpenEntry: fn(),
+    location: exactClimbingLocation,
+  },
+};

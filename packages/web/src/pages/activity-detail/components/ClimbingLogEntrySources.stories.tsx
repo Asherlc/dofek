@@ -82,3 +82,13 @@ export const TickHistoryOnly: Story = {
     ],
   },
 };
+
+export const WithSelection: Story = {
+  args: {
+    titleControl: (
+      <button type="button" aria-pressed="false">
+        Swiss Cheese
+      </button>
+    ),
+  },
+};

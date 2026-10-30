@@ -7,6 +7,7 @@ import type { ClimbingLogAttachmentState } from "./ClimbingLogEntryCard.tsx";
 export type LogEntryAttachState = Record<string, ClimbingLogAttachmentState>;
 export function UnattachedClimbingLogEntries({
   suggestions,
+  showEntries = true,
   locations,
   selectedEntryId,
   error,
@@ -14,6 +15,7 @@ export function UnattachedClimbingLogEntries({
   state,
   onAttach,
 }: {
+  showEntries?: boolean;
   suggestions: readonly ClimbingLogEntryDetail[] | undefined;
   locations?: Readonly<Record<string, ClimbingMapLocation>>;
   selectedEntryId?: string | null;
@@ -33,7 +35,7 @@ export function UnattachedClimbingLogEntries({
         <p className="text-sm text-muted">Loading climbing logs...</p>
       ) : suggestions === undefined && error ? null : !suggestions?.length ? (
         <p className="text-sm text-muted">No unattached climbing logs for this day.</p>
-      ) : (
+      ) : showEntries ? (
         <>
           <h3 className="text-xs font-medium text-muted">Unattached</h3>
           <ClimbingLogEntryBreakdown
@@ -45,7 +47,7 @@ export function UnattachedClimbingLogEntries({
             label="Unattached climbing logs"
           />
         </>
-      )}
+      ) : null}
     </div>
   );
 }

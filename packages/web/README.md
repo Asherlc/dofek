@@ -63,11 +63,9 @@ for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
 and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
-Areas flow as blocks, with singleton areas sharing a row and larger areas
-wrapping their cards internally. The
-[breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx)
-uses [ResizeObserver](https://www.w3.org/TR/resize-observer/) to keep each block's
-column span within the available grid and preserve consistent card widths.
+The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
+uses a single-column list grouped by Area beside its shared map; other log
+collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 The provider data viewer's
 [record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
 published and reported grade collections, known attempt facts, and notes.
@@ -127,32 +125,22 @@ Thumbnails render near the viewport through one snapshot queue, capture the map 
 [idle](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#idle), and release the WebGL
 context. Their server-authored center/zoom and SVG overlays share an aspect-preserved frame.
 
-Activity-detail climbing logs and attachment suggestions share the
-[canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
-Their component inputs accept source locations keyed by entry ID; the
-[shared location types](../training/src/climbing-map.ts) retain coordinates,
-the owning Climb or Area, and provider attribution.
-[ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
-independently of recorded GPS tracks and loads compact tick maps as they
-approach the viewport. A unique point opens its climbing log details immediately;
-coincident locations show a counted marker. Its tooltip lists every climb name and
-source-location label. Selecting that marker offers each log by climb name, including repeated names,
-without an entry-number heading. The [shared marker grouping](../training/src/climbing-map.ts)
-preserves source coordinates and log identities; the web count uses a
-[MapLibre HTML marker](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/).
-Selection opens the exact log's
-[record dialog](src/pages/RecordDetailModal.tsx) and highlights its
-[climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
-including repeated names at the same point. Closing the dialog returns keyboard
-focus to its triggering map point or occurrence button; the [activity tests](src/pages/ActivityDetailPage.test.tsx)
-cover closing and reopening the same occurrence.
-The activity screen supplies each log's server-projected location to the
-overview and compact maps, including when no recorded GPS route exists.
-The [server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
-uses a source Climb point or its nearest containing Area with coordinates;
-labels identify the owning source and distinguish Area from Climb locations.
-Unattached suggestions show their own compact source-location maps. The
-colocated map and climbing-log Storybook stories exercise these component inputs.
+Activity-detail climbing logs and same-day attachment suggestions share
+[ActivityClimbingPanel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx):
+a grouped list on the left of one interactive map in wide containers, and the
+map above the list on narrow screens. Row hover/focus highlights its point;
+selecting either a row or marker selects the same occurrence. Numbered list rows
+keep repeated names at coincident coordinates individually selectable using
+[MapLibre HTML markers](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/)
+and the [shared grouping model](../training/src/climbing-map.ts).
+Area locations are explicitly approximate and retain their provider attribution.
+Missing GPS retains the row and its Log details control. Log details opens the existing
+[record dialog](src/pages/RecordDetailModal.tsx); closing restores focus to that
+control. Source links, status labels, photos and independent Attach states remain
+available. The [activity tests](src/pages/ActivityDetailPage.test.tsx) cover route
+refresh states, attachment actions and source details. The full
+[layout story](src/pages/activity-detail/components/ActivityClimbingPanel.stories.tsx)
+exercises hover, focus, selection and repeated coordinate selection on a real map.
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)
