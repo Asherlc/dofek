@@ -28,6 +28,43 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it("centers and zooms on selection, including selections made before initialization", async () => {
+    const points: { lat: number; lng: number }[] = [];
+    const area = {
+      ...exact,
+      entryId: "area",
+      location: {
+        ...exact.location,
+        scope: "area" as const,
+        coordinates: { latitude: 38, longitude: -123 },
+      },
+    };
+    const climbMarkers = [exact, area];
+    const view = render(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    await waitFor(() =>
+      expect(maps[0]?.easeTo).toHaveBeenCalledWith({
+        center: [-122.4, 37.8],
+        zoom: 16,
+        duration: 600,
+      }),
+    );
+    view.rerender(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="area" />,
+    );
+    expect(maps[0]?.easeTo).toHaveBeenLastCalledWith({
+      center: [-123, 38],
+      zoom: 16,
+      duration: 600,
+    });
+    view.rerender(
+      <ActivityRouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="unlocated" />,
+    );
+    expect(maps[0]?.easeTo).toHaveBeenCalledTimes(2);
+    expect(maps).toHaveLength(1);
+    expect(maps[0]?.fitBounds).toHaveBeenCalledOnce();
+  });
   it("initializes the shared vector style and waits for map load", async () => {
     render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");

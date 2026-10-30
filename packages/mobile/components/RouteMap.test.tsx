@@ -1,7 +1,7 @@
 import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { nativeSnapshot } from "./native-map-test-helpers";
+import { nativeCamera, nativeSnapshot } from "./native-map-test-helpers";
 import { RouteMap } from "./RouteMap";
 
 vi.mock("@maplibre/maplibre-react-native", async () => {
@@ -50,6 +50,35 @@ const gpsPoints = [
 describe("RouteMap", () => {
   beforeEach(() => {
     nativeSnapshot.mockClear();
+    nativeCamera.easeTo.mockClear();
+  });
+  it("centers and zooms on the selected climb when ready and on subsequent area selections", () => {
+    const points: { lat: number; lng: number }[] = [];
+    const view = render(
+      <RouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-1" />,
+    );
+    measure(view.container);
+    expect(nativeCamera.easeTo).not.toHaveBeenCalled();
+    const map = screen.getByTestId("map");
+    fireEvent(map, new Event("mapready"));
+    expect(nativeCamera.easeTo).toHaveBeenLastCalledWith({
+      center: [-73.98, 40.752],
+      zoom: 16,
+      duration: 600,
+    });
+    view.rerender(
+      <RouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="tick-2" />,
+    );
+    expect(nativeCamera.easeTo).toHaveBeenLastCalledWith({
+      center: [-73.979, 40.753],
+      zoom: 16,
+      duration: 600,
+    });
+    view.rerender(
+      <RouteMap points={points} climbMarkers={climbMarkers} selectedEntryId="unlocated" />,
+    );
+    expect(nativeCamera.easeTo).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("map")).toBe(map);
   });
   it("preserves names and provenance while selecting the first climb at a shared location", () => {
     const first = climbMarkers[0];

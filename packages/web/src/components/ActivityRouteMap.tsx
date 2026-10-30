@@ -226,6 +226,19 @@ export function ActivityRouteMap({
     }
   }, [markerElements, activeEntryId, highlightedEntryId, presentation]);
 
+  const selectedMarker = climbMarkers.find((marker) => marker.entryId === activeEntryId);
+  useEffect(() => {
+    if (presentation !== "detail" || markerElements.length === 0 || !selectedMarker) return;
+    mapInstanceRef.current?.easeTo({
+      center: [
+        selectedMarker.location.coordinates.longitude,
+        selectedMarker.location.coordinates.latitude,
+      ],
+      zoom: 16,
+      duration: 600,
+    });
+  }, [selectedMarker, markerElements, presentation]);
+
   const empty = points.length === 0 && climbMarkers.length === 0;
   return (
     <div>

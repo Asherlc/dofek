@@ -4,12 +4,13 @@ import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training
 import { createMapStyle } from "@dofek/training/map-style";
 import {
   Camera,
+  type CameraRef,
   GeoJSONSource,
   Layer,
   Marker,
   Map as NativeMap,
 } from "@maplibre/maplibre-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, useColorScheme, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { colors, radius, spacing } from "../theme";
@@ -48,8 +49,21 @@ export function RouteMap({
   const [mapFailed, setMapFailed] = useState(false);
   const [mapWidth, setMapWidth] = useState<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const camera = useRef<CameraRef>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const activeEntryId = controlledEntryId === undefined ? selectedEntryId : controlledEntryId;
+  const selectedMarker = climbMarkers.find((marker) => marker.entryId === activeEntryId);
+  useEffect(() => {
+    if (compact || !mapReady || !selectedMarker) return;
+    camera.current?.easeTo({
+      center: [
+        selectedMarker.location.coordinates.longitude,
+        selectedMarker.location.coordinates.latitude,
+      ],
+      zoom: 16,
+      duration: 600,
+    });
+  }, [selectedMarker, compact, mapReady]);
   const markerGroups = useMemo(
     () => groupClimbingMapMarkers(climbMarkers, providerSourceLabel),
     [climbMarkers],
@@ -152,7 +166,7 @@ export function RouteMap({
               setMapFailed(true);
             }}
           >
-            <Camera initialViewState={initialViewState} bounds={bounds} duration={0} />
+            <Camera ref={camera} initialViewState={initialViewState} bounds={bounds} duration={0} />
             {coordinates.length > 1 && (
               <GeoJSONSource
                 id="activity-route"
