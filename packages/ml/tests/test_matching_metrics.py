@@ -32,7 +32,7 @@ def test_reports_retrieval_misses_separately_from_abstentions_and_false_merges()
     assert report["precision"] == 0.5
     assert report["recall"] == pytest.approx(1 / 3)
     assert len(report["disagreements"]) == 3
-    assert report["by_source_pair"]["alpha / beta"]["false_merges"] == 1
+    assert report["by_source_pair"]['["alpha","beta"]']["false_merges"] == 1
 
 
 def test_unresolved_truth_and_undefined_rates_are_not_negative_examples() -> None:
@@ -58,7 +58,41 @@ def test_unlabeled_candidate_abstentions_are_counted_in_their_source_pair() -> N
     result = evaluate(Dataset.model_validate(payload), {}, "test", 0.2, 0.8)
     assert result["counts"]["unlabeled_candidates"] == 1
     assert result["counts"]["abstentions"] == 4
-    assert result["by_source_pair"]["alpha / beta"]["unlabeled_candidates"] == 1
+    assert result["by_source_pair"]['["alpha","beta"]']["unlabeled_candidates"] == 1
+
+
+def test_source_pair_counts_cannot_collide_when_provider_names_contain_delimiters() -> None:
+    from dofek_ml.matching_data import Dataset
+    from dofek_ml.matching_metrics import evaluate
+
+    records = [
+        {
+            "id": f"{provider}:record",
+            "provider": provider,
+            "name": "Climb",
+            "entity_group": f"group-{index}",
+            "split": "test",
+        }
+        for index, provider in enumerate(("a / b", "c", "a", "b / c"))
+    ]
+    pairs = [
+        {"left": "a / b:record", "right": "c:record"},
+        {"left": "a:record", "right": "b / c:record"},
+    ]
+    dataset = Dataset.model_validate(
+        {
+            "domain": "climbing",
+            "relationship": "catalogue_identity",
+            "records": records,
+            "pairs": pairs,
+            "labels": [{**pair, "label": "different", "provenance": "synthetic"} for pair in pairs],
+        }
+    )
+    report = evaluate(
+        dataset, {dataset.pairs[0].key: 0.9, dataset.pairs[1].key: 0.1}, "test", 0.2, 0.8
+    )
+    assert len(report["by_source_pair"]) == 2
+    assert sorted(values["false_merges"] for values in report["by_source_pair"].values()) == [0, 1]
 
 
 @pytest.mark.parametrize(

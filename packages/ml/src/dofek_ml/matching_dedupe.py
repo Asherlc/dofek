@@ -9,7 +9,7 @@ import dedupe
 import numpy as np
 from dedupe import variables
 
-from dofek_ml.matching_artifacts import Artifact, create_artifact, load_artifact, seal_artifact
+from dofek_ml.matching_artifacts import Artifact, load_artifact, training_artifact
 from dofek_ml.matching_data import Dataset, PairKey, Record, Split
 
 
@@ -66,14 +66,13 @@ def train(dataset: Dataset, directory: Path, seed: int) -> None:
         raise ValueError(
             "Dedupe fitting requires at least five labels of each class for cross-validation"
         )
-    artifact = create_artifact(dataset, directory, "dedupe", seed)
-    matcher = _learner(artifact)
-    matcher.train()
-    with (directory / "dedupe.settings").open("wb") as output:
-        matcher.write_settings(output)
-    with (directory / "dedupe.training.json").open("w") as output:
-        matcher.write_training(output)
-    seal_artifact(directory)
+    with training_artifact(dataset, directory, "dedupe", seed) as (artifact, output_directory):
+        matcher = _learner(artifact)
+        matcher.train()
+        with (output_directory / "dedupe.settings").open("wb") as output:
+            matcher.write_settings(output)
+        with (output_directory / "dedupe.training.json").open("w") as output:
+            matcher.write_training(output)
 
 
 def predict(dataset: Dataset, directory: Path, split: Split) -> dict[PairKey, float]:
@@ -98,11 +97,6 @@ def predict(dataset: Dataset, directory: Path, split: Split) -> dict[PairKey, fl
 
 def uncertain(dataset: Dataset, directory: Path) -> list[dict[str, str]]:
     artifact = load_artifact(dataset, directory, "dedupe", "train")
-    current = dataset.training_labels()
-    if [label.model_dump() for label in current] != [
-        label.model_dump() for label in artifact.labels
-    ]:
-        raise ValueError("Labels changed: train a new artifact before requesting its next queue")
     matcher = _learner(artifact)
     known = {label.key for label in artifact.labels}
     learner = matcher.active_learner

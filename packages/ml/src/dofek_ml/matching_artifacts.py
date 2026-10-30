@@ -3,8 +3,14 @@
 import hashlib
 import json
 import re
+from contextlib import contextmanager
 from importlib.metadata import version
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from pydantic import Field, field_validator
 
@@ -41,6 +47,41 @@ class Manifest(InputModel):
             if not re.fullmatch(r"[a-f0-9]{64}", digest):
                 raise ValueError("Model manifest requires SHA-256 file fingerprints")
         return files
+
+
+def _training_sha256(records: list[Record], labels: list[Label]) -> str:
+    content = "\n".join(
+        [record.model_dump_json() for record in records]
+        + [label.model_dump_json() for label in labels]
+    )
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
+@contextmanager
+def new_artifact_directory(directory: Path) -> "Iterator[Path]":
+    if directory.exists() or directory.is_symlink():
+        raise FileExistsError(f"Artifact output already exists: {directory}")
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=f".{directory.name}-", dir=directory.parent) as temporary:
+        output = Path(temporary) / "artifact"
+        yield output
+        if directory.exists() or directory.is_symlink():
+            raise FileExistsError(f"Artifact output already exists: {directory}")
+        output.rename(directory)
+
+
+@contextmanager
+def training_artifact(
+    dataset: Dataset,
+    directory: Path,
+    engine: str,
+    seed: int,
+    parameters: dict[str, str | int | float] | None = None,
+) -> "Iterator[tuple[Artifact, Path]]":
+    with new_artifact_directory(directory) as output:
+        artifact = create_artifact(dataset, output, engine, seed, parameters)
+        yield artifact, output
+        seal_artifact(output)
 
 
 def _file_digest(path: Path) -> str:
@@ -84,17 +125,13 @@ def create_artifact(
 ) -> Artifact:
     labels = dataset.training_labels()
     records = dataset.records_for("train")
-    content = "\n".join(
-        [record.model_dump_json() for record in records]
-        + [label.model_dump_json() for label in labels]
-    )
     artifact = Artifact(
         engine=engine,
         engine_version=version(engine),
         domain=dataset.domain,
         relationship=dataset.relationship,
         seed=seed,
-        training_sha256=hashlib.sha256(content.encode()).hexdigest(),
+        training_sha256=_training_sha256(records, labels),
         records=records,
         labels=labels,
         parameters=parameters or {},
@@ -113,6 +150,12 @@ def load_artifact(dataset: Dataset, directory: Path, engine: str, split: Split) 
         raise ValueError("Model engine/domain/relationship does not match the dataset")
     if artifact.engine_version != version(engine):
         raise ValueError("Model library version differs; use its recorded locked environment")
+    if (
+        split == "train"
+        and _training_sha256(dataset.records_for("train"), dataset.training_labels())
+        != artifact.training_sha256
+    ):
+        raise ValueError("Training records or labels changed; train a new artifact")
     if split != "train":
         ids = {record.id for record in artifact.records}
         groups = {record.entity_group for record in artifact.records}

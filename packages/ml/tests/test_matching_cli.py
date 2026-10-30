@@ -1,10 +1,12 @@
 """Execute the user-facing offline commands rather than inspect their source."""
 
+import fnmatch
 import json
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from matching_helpers import dataset_input
 
 from dofek_ml.matching_cli import main
@@ -65,3 +67,56 @@ def test_cli_dedupe_train_predict_and_label_queue(tmp_path: Path) -> None:
     main(["uncertain", str(dataset), str(model), str(queue)])
     assert len(json.loads(scores.read_text())["scores"]) == 4
     assert json.loads(queue.read_text())["pairs_to_label"]
+
+
+def test_acquisition_downloads_safe_tensor_shards_and_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def download(repo_id: str, revision: str, local_dir: Path, allow_patterns: list[str]) -> str:
+        files = {
+            "config.json": "{}",
+            "model.safetensors.index.json": json.dumps(
+                {
+                    "metadata": {"total_size": 8},
+                    "weight_map": {
+                        "left": "model-00001-of-00002.safetensors",
+                        "right": "model-00002-of-00002.safetensors",
+                    },
+                }
+            ),
+            "model-00001-of-00002.safetensors": "safe",
+            "model-00002-of-00002.safetensors": "safe",
+        }
+        local_dir.mkdir(parents=True, exist_ok=True)
+        for name, content in files.items():
+            if any(fnmatch.fnmatch(name, pattern) for pattern in allow_patterns):
+                (local_dir / name).write_text(content)
+        return str(local_dir)
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", download)
+    output = tmp_path / "pretrained"
+    main(["acquire", "fixture/model", "a" * 40, str(output)])
+    assert (output / "model-00001-of-00002.safetensors").read_text() == "safe"
+    assert (output / "model-00002-of-00002.safetensors").read_text() == "safe"
+    assert json.loads((output / "source.json").read_text())["revision"] == "a" * 40
+
+
+def test_failed_acquisition_can_retry_the_same_output_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    complete = False
+
+    def download(repo_id: str, revision: str, local_dir: Path, allow_patterns: list[str]) -> str:
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "config.json").write_text("{}")
+        if complete:
+            (local_dir / "model.safetensors").write_bytes(b"safe fixture")
+        return str(local_dir)
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", download)
+    output = tmp_path / "pretrained"
+    with pytest.raises(ValueError, match="no safe tensor"):
+        main(["acquire", "fixture/model", "a" * 40, str(output)])
+    complete = True
+    main(["acquire", "fixture/model", "a" * 40, str(output)])
+    assert (output / "model.safetensors").read_bytes() == b"safe fixture"

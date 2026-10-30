@@ -2,17 +2,19 @@
 
 from pathlib import Path
 
-from matching_helpers import learning_input
+import pytest
+from matching_helpers import learning_input, with_same_name_negative
 
 
 def test_dedupe_trains_reloads_and_proposes_unlabeled_training_pairs(tmp_path: Path) -> None:
     from dofek_ml.matching_data import Dataset
     from dofek_ml.matching_dedupe import predict, train, uncertain
 
-    dataset = Dataset.model_validate(learning_input())
+    dataset = Dataset.model_validate(with_same_name_negative(learning_input()))
     train(dataset, tmp_path / "model", seed=42)
     scores = predict(dataset, tmp_path / "model", "test")
     assert scores[("alpha:test-0", "beta:test-0")] > scores[("alpha:test-0", "beta:test-1")]
+    assert scores[("alpha:test-0", "beta:test-0")] > scores[("alpha:test-0", "beta:test-namesake")]
     assert scores == predict(dataset, tmp_path / "model", "test")
     queue = uncertain(dataset, tmp_path / "model")
     labeled = {label.key for label in dataset.labels_for("train") if label.label != "unresolved"}
@@ -49,3 +51,19 @@ def test_exhausted_active_learning_queue_returns_no_pair(tmp_path: Path) -> None
     dataset = Dataset.model_validate(payload)
     train(dataset, tmp_path / "model", seed=42)
     assert uncertain(dataset, tmp_path / "model") == []
+
+
+def test_active_learning_rejects_changed_training_population(tmp_path: Path) -> None:
+    from dofek_ml.matching_data import Dataset
+    from dofek_ml.matching_dedupe import train, uncertain
+
+    payload = learning_input()
+    train(Dataset.model_validate(payload), tmp_path / "model", seed=42)
+    new_record = {
+        **payload["records"][0],
+        "id": "alpha:fresh",
+        "entity_group": "fresh-training-entity",
+    }
+    payload["records"].append(new_record)
+    with pytest.raises(ValueError, match="Training.*changed"):
+        uncertain(Dataset.model_validate(payload), tmp_path / "model")

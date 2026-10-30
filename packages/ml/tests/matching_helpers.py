@@ -75,3 +75,21 @@ def learning_input() -> dict[str, Any]:
             ]
         )
     return payload
+
+
+def with_same_name_negative(payload: dict[str, Any]) -> dict[str, Any]:
+    """A separate climb with an identical name and conflicting area context."""
+    original = next(record for record in payload["records"] if record["id"] == "alpha:test-0")
+    payload["records"].append(
+        {
+            **original,
+            "id": "beta:test-namesake",
+            "provider": "beta",
+            "context": "Independent canyon",
+            "entity_group": "test-namesake",
+        }
+    )
+    pair = {"left": "alpha:test-0", "right": "beta:test-namesake"}
+    payload["pairs"].append(pair)
+    payload["labels"].append({**pair, "label": "different", "provenance": "synthetic namesake"})
+    return payload

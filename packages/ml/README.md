@@ -64,10 +64,14 @@ uv run --extra matching dofek-match evaluate examples/matching/catalogue.json /t
 uv run --extra matching dofek-match map examples/matching/trace.json /tmp/map-report.json
 ```
 
-Training and acquisition require a new output directory. Inference uses saved
+Training and acquisition require a new output directory and publish it only after
+success. Failed attempts discard their private staging directory, so the same
+output path can be retried. Inference uses saved
 models and local files, without implicit training or downloads. `acquire` is the
 explicit network operation; it requires a full revision SHA and downloads only
-configuration, tokenizer, and safe tensor files from the selected model repository.
+configuration, tokenizer, and safe tensor files from the selected model repository,
+including sharded weights and their index. Missing weights or referenced shards
+fail acquisition before an output artifact is published.
 The example checkpoint is [DistilBERT at the pinned revision](https://huggingface.co/distilbert/distilbert-base-uncased/tree/12040accade4e8a0f71eabdb258fecc2e7e948be).
 Transformers supports [local-only loading and safe tensor weights](https://huggingface.co/docs/transformers/main_classes/model).
 
@@ -115,7 +119,8 @@ serialization; load only trusted local artifacts, as explained by
 
 For an active-learning round, review `/tmp/next-label.json`, add the pair's label
 and provenance to the dataset's `labels`, and train a **new** Dedupe artifact.
-Request its next uncertain pair. Leave validation/test labels unchanged and retain
+Request its next uncertain pair. Changed training records or resolved labels require
+a new artifact before requesting another queue. Leave validation/test labels unchanged and retain
 prior dataset/artifact files for reproducibility. The queue excludes resolved
 training labels; an exhausted queue is empty.
 
@@ -124,6 +129,8 @@ above the upper threshold match; scores at or below the lower threshold differ;
 the middle region and missing scores abstain. Reports include candidate recall,
 labeled precision/recall, false-positive links, missed positives, abstentions,
 unresolved truth, per-source counts, pair decisions, and fixture disagreements.
+Source-pair dictionary keys encode the sorted provider names as compact JSON arrays,
+so provider names containing punctuation cannot merge separate source-pair counts.
 Recall counts all labeled positives, including retrieval misses and abstentions.
 Undefined rates are null; relevant denominator counts accompany them. Scores are
 not claimed to be calibrated probabilities or cluster-accuracy measurements.

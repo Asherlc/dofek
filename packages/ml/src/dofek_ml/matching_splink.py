@@ -10,7 +10,7 @@ import pandas as pd
 from splink import DuckDBAPI, Linker, SettingsCreator
 from splink import comparison_library as comparisons
 
-from dofek_ml.matching_artifacts import create_artifact, load_artifact, seal_artifact
+from dofek_ml.matching_artifacts import load_artifact, training_artifact
 from dofek_ml.matching_data import Dataset, PairKey, Record, Split
 
 
@@ -21,60 +21,63 @@ def _row(record: Record) -> dict[str, str | float | None]:
 def train(dataset: Dataset, directory: Path, seed: int, prior: float) -> None:
     if not 0 < prior < 1:
         raise ValueError("The declared population match prior must be between zero and one")
-    artifact = create_artifact(dataset, directory, "splink", seed, {"prior": prior})
-    api = DuckDBAPI()
-    frame = api.register(
-        pd.DataFrame([_row(record) for record in artifact.records]), dataset_display_name="training"
-    )
-    settings = SettingsCreator(
-        link_type="link_only",
-        probability_two_random_records_match=prior,
-        comparisons=[
-            comparisons.ExactMatch("name").configure(term_frequency_adjustments=True),
-            comparisons.ExactMatch("context"),
-            comparisons.ExactMatch("kind"),
-        ],
-    )
-    linker = Linker(frame, settings)
-    linker.training.estimate_u_using_random_sampling(
-        max_pairs=100_000, seed=seed, min_count_per_level=1
-    )
-    positives = pd.DataFrame(
-        [
-            {
-                "unique_id_l": label.left,
-                "unique_id_r": label.right,
-                "source_dataset_l": dataset.index[label.left].provider,
-                "source_dataset_r": dataset.index[label.right].provider,
-            }
-            for label in artifact.labels
-            if label.label == "same"
-        ]
-    )
-    api.register(positives, table_name="positive_labels")
-    # Splink's public label-training method has no annotations in 5.0.
-    fit_labels = cast("Callable[[str], None]", linker.training.estimate_m_from_pairwise_labels)
-    fit_labels("positive_labels")
-    model = linker.misc.save_model_to_json()
-    api.duckdb_con.close()
-    import json
+    with training_artifact(dataset, directory, "splink", seed, {"prior": prior}) as (
+        artifact,
+        output,
+    ):
+        api = DuckDBAPI()
+        frame = api.register(
+            pd.DataFrame([_row(record) for record in artifact.records]),
+            dataset_display_name="training",
+        )
+        settings = SettingsCreator(
+            link_type="link_only",
+            probability_two_random_records_match=prior,
+            comparisons=[
+                comparisons.ExactMatch("name").configure(term_frequency_adjustments=True),
+                comparisons.ExactMatch("context"),
+                comparisons.ExactMatch("kind"),
+            ],
+        )
+        linker = Linker(frame, settings)
+        linker.training.estimate_u_using_random_sampling(
+            max_pairs=100_000, seed=seed, min_count_per_level=1
+        )
+        positives = pd.DataFrame(
+            [
+                {
+                    "unique_id_l": label.left,
+                    "unique_id_r": label.right,
+                    "source_dataset_l": dataset.index[label.left].provider,
+                    "source_dataset_r": dataset.index[label.right].provider,
+                }
+                for label in artifact.labels
+                if label.label == "same"
+            ]
+        )
+        api.register(positives, table_name="positive_labels")
+        # Splink's public label-training method has no annotations in 5.0.
+        fit_labels = cast("Callable[[str], None]", linker.training.estimate_m_from_pairwise_labels)
+        fit_labels("positive_labels")
+        model = linker.misc.save_model_to_json()
+        api.duckdb_con.close()
+        import json
 
-    missing = [
-        comparison["output_column_name"]
-        for comparison in model["comparisons"]
-        if any(
-            not level.get("is_null_level")
-            and ("m_probability" not in level or "u_probability" not in level)
-            for level in comparison["comparison_levels"]
-        )
-    ]
-    if missing:
-        raise ValueError(
-            f"Splink has unestimated comparison levels in {missing}; "
-            "add training examples covering agreement and disagreement"
-        )
-    (directory / "splink.json").write_text(json.dumps(model, indent=2, allow_nan=False))
-    seal_artifact(directory)
+        missing = [
+            comparison["output_column_name"]
+            for comparison in model["comparisons"]
+            if any(
+                not level.get("is_null_level")
+                and ("m_probability" not in level or "u_probability" not in level)
+                for level in comparison["comparison_levels"]
+            )
+        ]
+        if missing:
+            raise ValueError(
+                f"Splink has unestimated comparison levels in {missing}; "
+                "add training examples covering agreement and disagreement"
+            )
+        (output / "splink.json").write_text(json.dumps(model, indent=2, allow_nan=False))
 
 
 def predict(dataset: Dataset, directory: Path, split: Split) -> dict[PairKey, float]:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from dofek_ml.matching_artifacts import Artifact, fingerprint
+from dofek_ml.matching_artifacts import Artifact, fingerprint, new_artifact_directory
 from dofek_ml.matching_data import Dataset, InputModel, Pair, Split
 from dofek_ml.matching_metrics import evaluate
 
@@ -26,6 +26,11 @@ class Predictions(InputModel):
     artifact_sha256: str
     parameters: dict[str, str | int | float]
     scores: list[Score]
+
+
+class CheckpointIndex(InputModel):
+    metadata: dict[str, object] = Field(default_factory=dict)
+    weight_map: dict[str, str] = Field(min_length=1)
 
 
 def _digest(path: Path) -> str:
@@ -88,20 +93,39 @@ def main(arguments: list[str] | None = None) -> None:
             parser.error("Pretrained acquisition requires a full commit SHA")
         if args.output.exists():
             parser.error("Acquisition output must be a new directory")
-        snapshot_download(
-            args.model_id,
-            revision=args.revision,
-            local_dir=args.output,
-            allow_patterns=[
-                "config.json",
-                "model.safetensors",
-                "tokenizer.json",
-                "tokenizer_config.json",
-                "special_tokens_map.json",
-                "vocab.txt",
-            ],
-        )
-        _write(args.output / "source.json", {"model_id": args.model_id, "revision": args.revision})
+        with new_artifact_directory(args.output) as output:
+            snapshot_download(
+                args.model_id,
+                revision=args.revision,
+                local_dir=output,
+                allow_patterns=[
+                    "config.json",
+                    "model*.safetensors",
+                    "model.safetensors.index.json",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "special_tokens_map.json",
+                    "vocab.txt",
+                ],
+            )
+            index_path = output / "model.safetensors.index.json"
+            if index_path.exists():
+                index = CheckpointIndex.model_validate_json(index_path.read_text())
+                for name in index.weight_map.values():
+                    path = Path(name)
+                    if (
+                        path.is_absolute()
+                        or ".." in path.parts
+                        or not name.endswith(".safetensors")
+                    ):
+                        raise ValueError(
+                            "Checkpoint index must reference safe tensor files inside the model"
+                        )
+                    if not (output / path).is_file():
+                        raise ValueError(f"Checkpoint safe tensor shard is missing: {name}")
+            elif not (output / "model.safetensors").is_file():
+                raise ValueError("Checkpoint has no safe tensor weights or shard index")
+            _write(output / "source.json", {"model_id": args.model_id, "revision": args.revision})
         return
     if args.command == "map":
         from dofek_ml.matching_map import Trace, match_trace

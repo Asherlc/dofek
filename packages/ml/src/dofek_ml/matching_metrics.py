@@ -1,9 +1,14 @@
 """Separate candidate retrieval coverage from pair-classification outcomes."""
 
+import json
 import math
 from typing import TypedDict
 
 from dofek_ml.matching_data import Dataset, PairKey, Split
+
+
+def _source_key(left: str, right: str) -> str:
+    return json.dumps(sorted((left, right)), ensure_ascii=False, separators=(",", ":"))
 
 
 class Evaluation(TypedDict):
@@ -51,7 +56,7 @@ def evaluate(
     known_keys = {label.key for label in labels}
     counts["unlabeled_candidates"] = len(candidates - known_keys)
     for label in labels:
-        source = " / ".join(sorted((index[label.left].provider, index[label.right].provider)))
+        source = _source_key(index[label.left].provider, index[label.right].provider)
         source_counts = by_source.setdefault(source, dict.fromkeys(counts, 0))
         score = predictions.get(label.key)
         retrieved = label.key in candidates
@@ -95,7 +100,7 @@ def evaluate(
         values["abstentions"] = 0
     decisions: list[dict[str, object]] = []
     for pair in dataset.pairs_for(split):
-        source = " / ".join(sorted((index[pair.left].provider, index[pair.right].provider)))
+        source = _source_key(index[pair.left].provider, index[pair.right].provider)
         source_counts = by_source.setdefault(source, dict.fromkeys(counts, 0))
         score = predictions.get(pair.key)
         decision = (

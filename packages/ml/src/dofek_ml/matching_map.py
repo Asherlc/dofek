@@ -68,10 +68,13 @@ class TraceResult(TypedDict):
 def match_trace(trace: Trace) -> TraceResult:
     labels = [node.id for node in trace.nodes]
     node_ids = {label: index for index, label in enumerate(labels)}
+    adjacency: dict[int, list[int]] = {index: [] for index in node_ids.values()}
+    for left, right in trace.edges:
+        adjacency[node_ids[left]].append(node_ids[right])
     graph = {
         node_ids[node.id]: (
             (node.latitude, node.longitude),
-            [node_ids[right] for left, right in trace.edges if left == node.id],
+            adjacency[node_ids[node.id]],
         )
         for node in trace.nodes
     }

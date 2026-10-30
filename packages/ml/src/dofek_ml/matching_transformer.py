@@ -9,9 +9,8 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from dofek_ml.matching_artifacts import (
     PretrainedSource,
-    create_artifact,
     load_artifact,
-    seal_artifact,
+    training_artifact,
 )
 from dofek_ml.matching_data import Dataset, Pair, PairKey, Record, Split
 
@@ -76,53 +75,51 @@ def train(
     if source_path.exists():
         pretrained_source = PretrainedSource.model_validate_json(source_path.read_text())
         parameters.update(pretrained_source.model_dump())
-    create_artifact(
-        dataset,
-        directory,
-        "transformers",
-        seed,
-        parameters,
-    )
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    history = []
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0.0
-        order = torch.randperm(len(labels)).tolist()
-        for offset in range(0, len(order), 8):
-            batch = [labels[position] for position in order[offset : offset + 8]]
-            left, right = _texts(dataset, list(batch))
-            tokens = tokenizer(
-                left, right, padding=True, truncation=True, max_length=256, return_tensors="pt"
-            )
-            target = torch.tensor([int(label.label == "same") for label in batch])
-            optimizer.zero_grad()
-            loss = model(**tokens, labels=target).loss
-            loss.backward()
-            optimizer.step()
-            total_loss += float(loss.detach()) * len(batch)
-        model.eval()
-        validation_loss = 0.0
-        with torch.no_grad():
-            for offset in range(0, len(validation), 8):
-                batch = validation[offset : offset + 8]
+    with training_artifact(dataset, directory, "transformers", seed, parameters) as (_, output):
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+        history = []
+        for epoch in range(epochs):
+            model.train()
+            total_loss = 0.0
+            order = torch.randperm(len(labels)).tolist()
+            for offset in range(0, len(order), 8):
+                batch = [labels[position] for position in order[offset : offset + 8]]
                 left, right = _texts(dataset, list(batch))
                 tokens = tokenizer(
                     left, right, padding=True, truncation=True, max_length=256, return_tensors="pt"
                 )
                 target = torch.tensor([int(label.label == "same") for label in batch])
-                validation_loss += float(model(**tokens, labels=target).loss) * len(batch)
-        history.append(
-            {
-                "epoch": epoch + 1,
-                "training_loss": total_loss / len(labels),
-                "validation_loss": validation_loss / len(validation),
-            }
-        )
-    model.save_pretrained(directory, safe_serialization=True)
-    tokenizer.save_pretrained(directory)
-    (directory / "training.json").write_text(json.dumps({"epochs": history}, indent=2))
-    seal_artifact(directory)
+                optimizer.zero_grad()
+                loss = model(**tokens, labels=target).loss
+                loss.backward()
+                optimizer.step()
+                total_loss += float(loss.detach()) * len(batch)
+            model.eval()
+            validation_loss = 0.0
+            with torch.no_grad():
+                for offset in range(0, len(validation), 8):
+                    batch = validation[offset : offset + 8]
+                    left, right = _texts(dataset, list(batch))
+                    tokens = tokenizer(
+                        left,
+                        right,
+                        padding=True,
+                        truncation=True,
+                        max_length=256,
+                        return_tensors="pt",
+                    )
+                    target = torch.tensor([int(label.label == "same") for label in batch])
+                    validation_loss += float(model(**tokens, labels=target).loss) * len(batch)
+            history.append(
+                {
+                    "epoch": epoch + 1,
+                    "training_loss": total_loss / len(labels),
+                    "validation_loss": validation_loss / len(validation),
+                }
+            )
+        model.save_pretrained(output, safe_serialization=True)
+        tokenizer.save_pretrained(output)
+        (output / "training.json").write_text(json.dumps({"epochs": history}, indent=2))
 
 
 def predict(dataset: Dataset, directory: Path, split: Split) -> dict[PairKey, float]:

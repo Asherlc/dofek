@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+import pytest
 import torch
 from matching_helpers import dataset_input
 from transformers import BertConfig, BertForSequenceClassification, BertTokenizer
@@ -75,7 +76,7 @@ def test_finetunes_local_model_and_preserves_label_order(tmp_path: Path) -> None
         )
     )
     before = model.classifier.weight.detach().clone()
-    model.save_pretrained(source, safe_serialization=True)
+    model.save_pretrained(source, safe_serialization=True, max_shard_size="1KB")
     dataset = Dataset.model_validate(dataset_input())
     train(dataset, tmp_path / "trained", source, seed=1, epochs=2, learning_rate=0.001)
     trained = BertForSequenceClassification.from_pretrained(
@@ -95,3 +96,24 @@ def test_finetunes_local_model_and_preserves_label_order(tmp_path: Path) -> None
     assert metrics["epochs"][0]["validation_loss"] > 0
     provenance = json.loads((tmp_path / "trained" / "metadata.json").read_text())
     assert len(provenance["parameters"]["source_weights_sha256"]) == 64
+    from dofek_ml.matching_artifacts import seal_artifact
+
+    # A real model with a controlled classifier head isolates class selection from fit quality.
+    with torch.no_grad():
+        trained.classifier.weight.zero_()
+        trained.classifier.bias.copy_(torch.tensor([0.0, 2.0]))
+    trained.save_pretrained(tmp_path / "trained", safe_serialization=True)
+    seal_artifact(tmp_path / "trained")
+    selected = predict(dataset, tmp_path / "trained", "test")
+    assert all(score == pytest.approx(0.880797, abs=1e-6) for score in selected.values())
+    trained.config.id2label = {0: "same", 1: "different"}
+    trained.save_pretrained(tmp_path / "trained", safe_serialization=True)
+    seal_artifact(tmp_path / "trained")
+    with pytest.raises(ValueError, match="label order"):
+        predict(dataset, tmp_path / "trained", "test")
+    unsafe = tmp_path / "unsafe-source"
+    tokenizer.save_pretrained(unsafe)
+    model.config.save_pretrained(unsafe)
+    torch.save(model.state_dict(), unsafe / "pytorch_model.bin")
+    with pytest.raises(OSError, match="safetensors"):
+        train(dataset, tmp_path / "unsafe-trained", unsafe, seed=1, epochs=1)

@@ -32,6 +32,7 @@ def test_matches_noisy_trace_with_directed_edges() -> None:
     assert result["edges"] == [["a", "b"], ["b", "c"]]
     assert result["coverage"] == 1
     assert result["expected_edge_recall"] == 1
+    assert result["path"] == ["a", "b", "c"]
 
 
 def test_out_of_coverage_is_unresolved_not_a_complete_path() -> None:
