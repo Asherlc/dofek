@@ -365,3 +365,147 @@ index 0000000..6b7812f
 +		})
 +	}
 +}
+diff --git a/internal/handlers/upload_handler.go b/internal/handlers/upload_handler.go
+index 4cd1fb54..7b7fcb23 100644
+--- a/internal/handlers/upload_handler.go
++++ b/internal/handlers/upload_handler.go
+@@ -364,11 +364,13 @@ func (h *UploadHandler) RequestUploadUrlHandler(w http.ResponseWriter, r *http.R
+ 			http.Error(w, err.Error(), http.StatusBadRequest)
+ 			return
+ 		}
+-		if errors.Is(err, services.ErrNoChangesDetected) {
++		var unchanged *services.NoChangesDetectedError
++		if errors.As(err, &unchanged) {
+ 			w.Header().Set("Content-Type", "application/json")
+ 			w.WriteHeader(http.StatusNotAcceptable)
+ 			_ = json.NewEncoder(w).Encode(map[string]string{
+-				"error": "You have already uploaded this update, no changes detected",
++				"error":      "You have already uploaded this update, no changes detected",
++				"updateUUID": unchanged.UpdateUUID,
+ 			})
+ 			return
+ 		}
+diff --git a/internal/services/deployment_identical_test.go b/internal/services/deployment_identical_test.go
+index a5d33c5d..3ba08d2b 100644
+--- a/internal/services/deployment_identical_test.go
++++ b/internal/services/deployment_identical_test.go
+@@ -53,6 +53,21 @@ func TestRequestUploadURLs_RefusesAnIdenticalPublish(t *testing.T) {
+ 	assert.ErrorIs(t, err, ErrNoChangesDetected)
+ }
+ 
++func TestRequestUploadURLs_IdenticalPublishReturnsExistingUUID(t *testing.T) {
++	svc, h := newDedupTestHarness(t)
++	files := publishFiles("bundle-v1", "assets/a")
++	seedPublished(t, h, files)
++	ctx := context.Background()
++	previous, err := h.updateRepo.GetLatestUpdate(ctx, h.appId, "main", "1", "ios")
++	require.NoError(t, err)
++	require.NoError(t, h.updateRepo.StoreUpdateUUIDInMetadata(ctx, *previous, "existing-update"))
++	_, err = svc.RequestUploadURLs(ctx, publishParams(h, files))
++	var unchanged *NoChangesDetectedError
++	require.ErrorAs(t, err, &unchanged)
++	assert.Equal(t, "existing-update", unchanged.UpdateUUID)
++	assert.ErrorIs(t, err, ErrNoChangesDetected)
++}
++
+ func TestRequestUploadURLs_AcceptsAChangedBundle(t *testing.T) {
+ 	svc, h := newDedupTestHarness(t)
+ 	seedPublished(t, h, publishFiles("bundle-v1", "assets/a"))
+diff --git a/internal/services/deployment_service.go b/internal/services/deployment_service.go
+index 8a5bb756..e2ca2377 100644
+--- a/internal/services/deployment_service.go
++++ b/internal/services/deployment_service.go
+@@ -516,28 +516,38 @@ func (s *DeploymentService) dedupExistingUploadAssets(ctx context.Context, appId
+ 	return dedupedAssets
+ }
+ 
+-// isIdenticalToLatest reports whether this publish would re-ship the content the
+-// branch already serves for the platform. A store that cannot answer never
++// identicalToLatest returns the update whose content this publish would re-ship
++// on the branch for the platform. A store that cannot answer never
+ // blocks the publish.
+-func (s *DeploymentService) isIdenticalToLatest(ctx context.Context, params RequestUploadURLParams, incoming *types.UpdateAssetMapping) bool {
++func (s *DeploymentService) identicalToLatest(ctx context.Context, params RequestUploadURLParams, incoming *types.UpdateAssetMapping) *types.Update {
+ 	// Straight to the repo: refusing a publish over a stale cached envelope
+ 	// would block re-shipping the previous good build after a bad one.
+ 	latest, err := s.updateRepo.GetLatestUpdate(ctx, params.AppID, params.BranchName, params.RuntimeVersion, params.Platform)
+ 	if err != nil {
+ 		log.Printf("[RequestID: %s] Warning: GetLatestUpdate returned error, skipping identical check: %v", params.RequestID, err)
+-		return false
++		return nil
+ 	}
+ 	if latest == nil {
+-		return false
++		return nil
+ 	}
+ 	stored, err := s.updateRepo.GetUpdateAssetMapping(ctx, *latest)
+ 	if err != nil {
+ 		log.Printf("[RequestID: %s] Warning: GetUpdateAssetMapping returned error, skipping identical check: %v", params.RequestID, err)
+-		return false
++		return nil
+ 	}
+-	return update2.AreUpdatesIdentical(stored, incoming)
++	if update2.AreUpdatesIdentical(stored, incoming) {
++		return latest
++	}
++	return nil
+ }
+ 
++type NoChangesDetectedError struct {
++	UpdateUUID string
++}
++
++func (e *NoChangesDetectedError) Error() string { return ErrNoChangesDetected.Error() }
++func (e *NoChangesDetectedError) Unwrap() error { return ErrNoChangesDetected }
++
+ func (s *DeploymentService) RequestUploadURLs(ctx context.Context, params RequestUploadURLParams) (*RequestUploadURLResponse, error) {
+ 	err := s.branchService.UpsertBranchAndRuntimeVersion(ctx, params.AppID, params.BranchName, params.RuntimeVersion)
+ 	if err != nil {
+@@ -562,9 +572,16 @@ func (s *DeploymentService) RequestUploadURLs(ctx context.Context, params Reques
+ 		log.Printf("[RequestID: %s] %v", params.RequestID, err)
+ 		return nil, err
+ 	}
+-	if s.isIdenticalToLatest(ctx, params, mapping) {
++	if previous := s.identicalToLatest(ctx, params, mapping); previous != nil {
++		metadata, err := s.updateRepo.RetrieveUpdateStoredMetadata(ctx, *previous)
++		if err != nil {
++			return nil, err
++		}
++		if metadata == nil {
++			return nil, fmt.Errorf("missing stored metadata for unchanged update %s", previous.UpdateId)
++		}
+ 		log.Printf("[RequestID: %s] Updates are identical, refusing upload", params.RequestID)
+-		return nil, ErrNoChangesDetected
++		return nil, &NoChangesDetectedError{UpdateUUID: metadata.UpdateUUID}
+ 	}
+ 
+ 	updateId := update2.GenerateUpdateTimestamp(params.Platform)
+diff --git a/test/requestUpload_test.go b/test/requestUpload_test.go
+index 24456b64..853351fa 100644
+--- a/test/requestUpload_test.go
++++ b/test/requestUpload_test.go
+@@ -528,10 +528,24 @@ func TestStatelessIdenticalPublishIsRefused(t *testing.T) {
+ 			first := postRequestUploadUrl(t, "DO_NOT_USE", "1", fixture.platform, sample)
+ 			assert.Equal(t, http.StatusOK, first.Code)
+ 			markUpdateChecked(t, basePath, "DO_NOT_USE", "1", updateIdFromResponse(t, first))
++			metadataPath := filepath.Join(basePath, "test-app-id", "DO_NOT_USE", "1", strconv.FormatInt(updateIdFromResponse(t, first), 10), "update-metadata.json")
++			stored, err := os.ReadFile(metadataPath)
++			require.NoError(t, err)
++			var metadata map[string]any
++			require.NoError(t, json.Unmarshal(stored, &metadata))
++			metadata["updateUUID"] = "existing-update"
++			stored, err = json.Marshal(metadata)
++			require.NoError(t, err)
++			require.NoError(t, os.WriteFile(metadataPath, stored, 0o644))
+ 
+ 			second := postRequestUploadUrl(t, "DO_NOT_USE", "1", fixture.platform, sample)
+ 			assert.Equal(t, http.StatusNotAcceptable, second.Code)
+ 			assert.Contains(t, second.Body.String(), "no changes detected")
++			var unchanged struct {
++				UpdateUUID string `json:"updateUUID"`
++			}
++			require.NoError(t, json.Unmarshal(second.Body.Bytes(), &unchanged))
++			assert.Equal(t, "existing-update", unchanged.UpdateUUID)
+ 		})
+ 	}
+ }
