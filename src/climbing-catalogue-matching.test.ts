@@ -86,15 +86,20 @@ describe("catalogue name discovery", () => {
   });
   it.each([
     [" Great Roof, The ", "the great roof"],
+    ["Great\nRoof, The", "the great roof"],
+    ["Great\r\nRoof, The", "the great roof"],
     ["Café’s!", "cafés"],
     ["  SWISS\t CHEESE  ", "swiss cheese"],
     ["Ａ Crack", "a crack"],
     ["Corner (Left Start)", "corner left start"],
+    ["Corner\n(Left Start), The", "the corner left start"],
   ])("normalizes %s without erasing qualifiers", (name, expected) => {
     expect(normalizeCatalogueName(name)).toBe(expected);
   });
   it.each([
     ["The Great Roof", { name: "Great Roof, The" }, "exact"],
+    ["Great\nRoof, The", { name: "The Great Roof" }, "exact"],
+    ["The Great Roof", { name: "Great\r\nRoof, The" }, "exact"],
     ["Corner Route", { name: "Cheddar Corner", aliases: ["Corner Route"] }, "alias"],
     ["Swiss Cheese", { name: "Swish Cheese" }, "approximate"],
     ["Corner", { name: "Corner route" }, "approximate"],

@@ -278,7 +278,8 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         );
       return { candidates: [await this.#detail(url, areas)], complete: false };
     }
-    const pending = catalogueSearchNames(seed).map((name) => ({
+    const names = catalogueSearchNames(seed);
+    const pending = names.map((name) => ({
       name,
       url: new URL(`${ORIGIN}${SEARCH_PATH}?S=${encodeURIComponent(name)}&only=routes`),
       visited: new Set<string>(),
@@ -340,11 +341,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
     const candidates: CatalogueCandidate[] = [];
     for (const url of routes.values()) {
       const candidate = await this.#detail(url, areas);
-      if (
-        [seed.name, ...(seed.aliases ?? [])].some(
-          (name) => catalogueNameMatch(name, candidate) !== null,
-        )
-      )
+      if (names.some((name) => catalogueNameMatch(name, candidate) !== null))
         candidates.push(candidate);
     }
     return { candidates, complete: pending.length === 0 && !partial };

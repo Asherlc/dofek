@@ -25,7 +25,7 @@ export function catalogueSearchNames(seed: CatalogueSeed): string[] {
 
 /** Normalize presentation, retaining directional, start, extension and pitch words. */
 export function normalizeCatalogueName(value: string): string {
-  const article = value.normalize("NFKC").replace(/^(.*),\s*(the|a|an)\s*$/iu, "$2 $1");
+  const article = value.normalize("NFKC").replace(/^(.*),\s*(the|a|an)\s*$/isu, "$2 $1");
   return article
     .toLowerCase()
     .replace(/['’‘ʼ]/gu, "")
