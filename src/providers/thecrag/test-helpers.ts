@@ -2,6 +2,32 @@ import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { createMockDatabase } from "../test-helpers.ts";
 
+export function apiAscent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "1001",
+    epoch: 1791676800,
+    date: "2026-10-10",
+    climbedGearStyle: "top rope",
+    tick: { label: "attempt", name: "Attempt: Top rope" },
+    markdown: "Private training notes",
+    route: { id: "2001", name: "Sample route", grade: "5.10b", style: "Top rope" },
+    ...overrides,
+  };
+}
+
+export function logbookPage(ascents = [apiAscent()], overrides: Record<string, unknown> = {}) {
+  return {
+    data: {
+      account: { id: "123", login: "sampleclimber" },
+      ascents,
+      numberAscents: ascents.length,
+      page: "1",
+      perPage: 250,
+      ...overrides,
+    },
+  };
+}
+
 export function publicFeed(
   items: { id?: string; accountId?: string; routeId?: string }[] = [{}],
   options: { accountId?: string; next?: string } = {},
