@@ -63,6 +63,11 @@ deployed transport before proposing a redirect-policy change. On 2026-10-29,
 production lookup/feed probes returned 200, but the feed's ascent page
 redirected to the processing origin and that destination returned 403; see the
 [incident record](production-incident-baseline.md#2026-10-29--thecrag-ascent-requests-redirected-to-a-forbidden-host).
+Compare the same public ascent from the production host and workstation before
+changing transport: on October 30, private Firefox and workstation native/Linux
+Impit probes succeeded while both the deployed transport and an isolated
+production-image container returned 302. Local success does not establish
+production recovery; see the [recurrence evidence](production-incident-baseline.md#2026-10-30--thecrag-connection-warning-recurrence).
 
 The provider-local [HTTP transport](../src/providers/thecrag/public-transport.ts)
 uses Impit 0.14.7 with the tested `chrome` networking profile through Dofek's
