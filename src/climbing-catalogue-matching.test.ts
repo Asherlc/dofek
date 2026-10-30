@@ -206,6 +206,90 @@ describe("evidence-based catalogue matching", () => {
       evidence: expect.arrayContaining([expect.stringMatching(/source.*id/i)]),
     });
   });
+  it.each([
+    { externalId: "105734732", confidence: "source" },
+    { externalId: null, confidence: "possible" },
+  ])(
+    "keeps nearby same-name native areas distinct with recorded climb ID $externalId",
+    ({ externalId, confidence }) => {
+      const native = {
+        ...candidate,
+        providerId: "mountain-project" as const,
+        externalId: "105734732",
+        locations: [{ ...area("Goat Rock", 37.2306), externalId: "other-native-area" }],
+      };
+      expect(
+        matches([native], {
+          ...seed,
+          externalId,
+          locations: [{ ...area(), externalId: "recorded-native-area" }],
+        }),
+      ).toMatchObject([
+        {
+          confidence,
+          evidence: expect.arrayContaining([
+            expect.stringMatching(/nearest local areas conflict/i),
+          ]),
+        },
+      ]);
+    },
+  );
+  it("preserves a recorded native area ID conflict after current discovery moves to a same-name area", () => {
+    const currentArea = { ...area("Goat Rock", 37.2306), externalId: "current-area" };
+    expect(
+      matchCatalogueCandidates(
+        { ...seed, externalId: null, locations: [currentArea] },
+        {
+          candidates: [{ ...candidate, providerId: "mountain-project", locations: [currentArea] }],
+          complete: true,
+        },
+        [{ ...area(), externalId: "recorded-area" }],
+      ),
+    ).toMatchObject([
+      {
+        confidence: "possible",
+        evidence: expect.arrayContaining([expect.stringMatching(/nearest local areas conflict/i)]),
+      },
+    ]);
+  });
+  it.each([
+    { providerId: "mountain-project", leftId: null, rightId: "other-area" },
+    { providerId: "mountain-project", leftId: "recorded-area", rightId: null },
+    { providerId: "mountain-project", leftId: "", rightId: "other-area" },
+    { providerId: "mountain-project", leftId: "recorded-area", rightId: "" },
+    { providerId: "openbeta", leftId: "recorded-area", rightId: "other-area" },
+  ] as const)(
+    "retains nearby name fallback for $providerId area IDs $leftId / $rightId",
+    ({ providerId, leftId, rightId }) => {
+      expect(
+        matches(
+          [
+            {
+              ...candidate,
+              providerId,
+              locations: [{ ...area("Goat Rock", 37.2306), externalId: rightId }],
+            },
+          ],
+          { ...seed, externalId: null, locations: [{ ...area(), externalId: leftId }] },
+        )[0]?.confidence,
+      ).toBe("corroborated");
+    },
+  );
+  it("aligns a renamed native area through a legitimate additional nearby hierarchy level", () => {
+    const parent = { ...area("Renamed Goat Rock", 37.2305), externalId: "native-area" };
+    expect(
+      matches(
+        [
+          {
+            ...candidate,
+            providerId: "mountain-project",
+            locations: [parent, { ...area("Lower Wall", 37.2306), externalId: "lower-wall" }],
+          },
+        ],
+        { ...seed, externalId: null, locations: [{ ...area(), externalId: "native-area" }] },
+      )[0]?.confidence,
+    ).toBe("corroborated");
+  });
   it.each(["recorded", "current"])(
     "aligns a renamed native area ID against the %s source geography",
     (sourceGeography) => {

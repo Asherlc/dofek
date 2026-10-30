@@ -718,6 +718,113 @@ describe("OpenBeta bounded local-area discovery", () => {
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
+  it("supplements 200 unrelated local climbs with a name result from a later area", async () => {
+    const first = {
+      ...goatRockArea,
+      totalClimbs: 200,
+      climbs: Array.from({ length: 200 }, (_, index) => ({
+        ...climb(),
+        uuid: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        name: "Unrelated summit",
+      })),
+    };
+    const later = { ...goatRockArea, uuid: areaId, totalClimbs: 1, climbs: [] };
+    const fetchFn = client([
+      nearby([first, later]),
+      summary(first),
+      { data: { area: first } },
+      page(1, 1, [{ document: { climbUUID: id, climbName: "Cheddar Corner" } }]),
+      { data: { climb: climb({ name: "Cheddar Corner" }) } },
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...localSeed,
+      providerId: "kaya",
+    });
+    expect(result.candidates).toHaveLength(201);
+    expect(result.candidates.find((candidate) => candidate.externalId === id)).toMatchObject({
+      name: "Cheddar Corner",
+    });
+    expect(
+      result.candidates.filter((candidate) => candidate.name === "Unrelated summit"),
+    ).toHaveLength(200);
+    expect(result.complete).toBe(false);
+    expect(result.searchArea).toBeUndefined();
+    expect(fetchFn).toHaveBeenCalledTimes(5);
+    expect(new URL(String(fetchFn.mock.calls[3]?.[0])).searchParams.get("q")).toBe(
+      "Cheddar Corner",
+    );
+  });
+
+  it("retains partial local facts and deduplicates name hits within the shared alias budget", async () => {
+    const extraId = "00000000-0000-4000-8000-000000000999";
+    const area = {
+      ...goatRockArea,
+      totalClimbs: 2,
+      climbs: [climb({ name: "Cheddar Corner", metadata: { mp_id: "105736399" } })],
+    };
+    const fetchFn = client([
+      nearby(),
+      summary(area),
+      { data: { area } },
+      page(1, 1, [{ document: { climbUUID: id, climbName: "Cheddar Corner" } }]),
+      page(2, 1, [
+        { document: { climbUUID: id, climbName: "Up" } },
+        { document: { climbUUID: extraId, climbName: "Up" } },
+      ]),
+      page(0, 1, []),
+      { data: { climb: climb({ uuid: extraId, name: "Up" }) } },
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...localSeed,
+      aliases: ["Up", "Down", "Left start"],
+    });
+    expect(result.candidates.map((candidate) => candidate.externalId)).toEqual([id, extraId]);
+    expect(result.candidates[0]).toMatchObject({
+      name: "Cheddar Corner",
+      grade: "5.6",
+      references: [{ providerId: "mountain-project", externalId: "105736399" }],
+      locations: expect.arrayContaining([{ ...localArea, externalId: goatRockArea.uuid }]),
+    });
+    expect(result.complete).toBe(false);
+    expect(result.searchArea).toBeUndefined();
+    expect(fetchFn).toHaveBeenCalledTimes(7);
+    expect(
+      fetchFn.mock.calls.slice(3, 6).map(([input]) => {
+        const url = new URL(String(input));
+        return [
+          url.searchParams.get("q"),
+          url.searchParams.get("page"),
+          url.searchParams.get("per_page"),
+        ];
+      }),
+    ).toEqual([
+      ["Cheddar Corner", "1", "20"],
+      ["Up", "1", "20"],
+      ["Down", "1", "20"],
+    ]);
+    expect(JSON.parse(String(fetchFn.mock.calls[6]?.[1]?.body)).variables).toEqual({
+      uuid: extraId,
+    });
+  });
+
+  it.each([
+    { response: () => new Response("", { status: 503 }), error: /HTTP 503/ },
+    { response: () => Response.json({}), error: /search response is invalid/ },
+  ])(
+    "surfaces supplemental name search errors despite partial local facts: $error",
+    async ({ response, error }) => {
+      const area = { ...goatRockArea, totalClimbs: 2, climbs: [goatRockArea.climbs[0]] };
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(nearby()))
+        .mockResolvedValueOnce(Response.json(summary(area)))
+        .mockResolvedValueOnce(Response.json({ data: { area } }))
+        .mockResolvedValueOnce(response());
+      await expect(new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).rejects.toThrow(error);
+      expect(fetchFn).toHaveBeenCalledTimes(4);
+    },
+  );
+
   it.each([
     { response: () => new Response("", { status: 503 }), error: /HTTP 503/ },
     {
@@ -813,13 +920,19 @@ describe("OpenBeta bounded local-area discovery", () => {
 
   it("deduplicates repeated discovery areas and climbs without claiming partial counts complete", async () => {
     const area = { ...goatRockArea, climbs: [goatRockArea.climbs[0], goatRockArea.climbs[0]] };
-    const fetchFn = client([nearby([goatRockArea, goatRockArea]), summary(), { data: { area } }]);
+    const fetchFn = client([
+      nearby([goatRockArea, goatRockArea]),
+      summary(),
+      { data: { area } },
+      page(0, 1, []),
+    ]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
     expect(result).toMatchObject({
       complete: false,
       candidates: [{ externalId: "0e68c732-da31-510e-8986-948d65689d45" }],
     });
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(result.searchArea).toBeUndefined();
+    expect(fetchFn).toHaveBeenCalledTimes(4);
   });
 
   it("skips full climb hydration when metadata exceeds the 200-climb budget", async () => {
@@ -908,6 +1021,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       nearby(areas),
       ...areas.slice(0, 2).flatMap((area) => [summary(area), { data: { area } }]),
       ...areas.slice(2).map((area) => summary(area)),
+      page(0, 1, []),
     ]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
       ...localSeed,
@@ -915,7 +1029,7 @@ describe("OpenBeta bounded local-area discovery", () => {
     });
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(160);
-    expect(fetchFn).toHaveBeenCalledTimes(6);
+    expect(fetchFn).toHaveBeenCalledTimes(7);
   });
 
   it("counts hydrated facts against the budget even when areas repeat the same climb IDs", async () => {
@@ -933,7 +1047,9 @@ describe("OpenBeta bounded local-area discovery", () => {
     }));
     const fetchFn = client([
       nearby(areas),
-      ...areas.flatMap((area) => [summary(area), { data: { area } }]),
+      ...areas.slice(0, 2).flatMap((area) => [summary(area), { data: { area } }]),
+      ...areas.slice(2).map((area) => summary(area)),
+      page(0, 1, []),
     ]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
       ...localSeed,
@@ -941,7 +1057,7 @@ describe("OpenBeta bounded local-area discovery", () => {
     });
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(80);
-    expect(fetchFn).toHaveBeenCalledTimes(6);
+    expect(fetchFn).toHaveBeenCalledTimes(7);
   });
   it("bounds duplicate-heavy full responses even when the unique count equals advertised metadata", async () => {
     const area = {
@@ -952,7 +1068,7 @@ describe("OpenBeta bounded local-area discovery", () => {
         name: i === 200 ? "Unprocessed overflow" : "First retained fact",
       })),
     };
-    const fetchFn = client([nearby(), summary(area), { data: { area } }]);
+    const fetchFn = client([nearby(), summary(area), { data: { area } }, page(0, 1, [])]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(1);
@@ -969,14 +1085,16 @@ describe("OpenBeta bounded local-area discovery", () => {
     }));
     const fetchFn = client([
       nearby(areas),
-      ...areas.flatMap((area) => [summary(area), { data: { area } }]),
+      summary(areas[0]),
+      { data: { area: areas[0] } },
+      page(0, 1, []),
     ]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
     });
     expect(result.complete).toBe(false);
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
   });
 });
 

@@ -270,6 +270,13 @@ becoming an empty successful lookup. See the
 [cache/matching tests](../src/climbing-catalogue.test.ts) and
 [database ownership tests](../src/db/climbing-catalogue-seed.integration.test.ts).
 
+Within one provider, two nonempty area IDs must agree before names can align
+those areas. Equal IDs permit a rename; differing IDs retain conflict evidence
+even when names and nearby points coincide. Missing IDs and different provider
+namespaces retain the name-based comparison, with the same distance and
+hierarchy checks. The [server matcher](../src/climbing-catalogue-matching.ts)
+and its [regressions](../src/climbing-catalogue-matching.test.ts) define this policy.
+
 Within each provider, the [server matcher](../src/climbing-catalogue-matching.ts)
 stably orders matches as source, explicit reference, corroborated, then possible.
 It preserves order within each class, every candidate and all evidence; provider
@@ -293,13 +300,16 @@ retention stop at the remaining budget, and no further full-area reads occur
 after exhaustion. These unpaginated upstream responses can exceed an earlier
 advertised count, so the metadata check cannot guarantee a network-level response
 size cap. Missing, capped or partial coverage remains incomplete; `searchArea`
-records the scope of this lookup. Successful local discovery that is both
-incomplete and empty continues with bounded Typesense name discovery and keeps
-the combined result incomplete, without claiming a matched-area search scope.
-This preserves name results when a broader recorded area cannot select a nearby
-leaf area: at zoom 15, the upstream geographic query selects leaf areas. Complete
-empty matched-area coverage and partial results containing candidates retain
-their local path; HTTP, parsing and identity errors remain lookup errors. When
+records the scope of this lookup. Every successful incomplete local lookup
+continues with bounded Typesense name discovery, retaining local candidates and
+deduplicating the combined result by native climb ID. Already hydrated local
+climbs do not require another detail read. The combined result stays incomplete
+without claiming a matched-area search scope. This preserves name results when
+a broader recorded area cannot select a nearby leaf area, or when unrelated
+local climbs exhaust the processing budget before the target's area is read.
+At zoom 15, the upstream geographic query selects leaf areas. Complete local
+results, including empty matched-area coverage, retain their local path;
+HTTP, parsing and identity errors remain lookup errors. When
 the nearest area has no point, bounded name search remains available directly.
 The API has no cursor or completion flag on these area queries; the count check
 follows the upstream leaf-area contract, rather than assuming that any nonempty
@@ -311,7 +321,8 @@ and [reader and regression fixtures](../src/providers/openbeta-catalogue.test.ts
 The combined path permits at most seven local requests (one geographic query,
 three metadata reads and three climb reads), then three name-search pages shared
 across all aliases. With the requested `per_page=20` honored, at most 60 unique
-eligible name hits require detail reads, yielding at most 70 requests overall.
+eligible name hits require detail reads, yielding at most 70 requests overall
+and 260 unique candidates before the shared matcher assesses relevance.
 This is a request-budget calculation under the documented
 [Typesense pagination contract](https://typesense.org/docs/30.2/api/search.html#pagination-parameters),
 not a response-size guarantee: the [reader](../src/providers/openbeta-catalogue.ts)

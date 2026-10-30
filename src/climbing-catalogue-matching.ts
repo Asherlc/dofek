@@ -89,11 +89,9 @@ function geography(
   if (!localLeft.coordinates || !localRight.coordinates) return "unknown";
   if (!catalogueAreasAreNearby(localLeft, localRight)) return "conflict";
   const areasAlign = (leftArea: CatalogueLocation, rightArea: CatalogueLocation) =>
-    (sameProvider &&
-      leftArea.externalId !== null &&
-      leftArea.externalId.length > 0 &&
-      leftArea.externalId === rightArea.externalId) ||
-    sameAreaName(leftArea, rightArea);
+    sameProvider && leftArea.externalId && rightArea.externalId
+      ? leftArea.externalId === rightArea.externalId
+      : sameAreaName(leftArea, rightArea);
   if (areasAlign(localLeft, localRight)) return "compatible";
   // One source can include an extra local level. Align the other's nearest area,
   // rather than accepting an arbitrary shared country/park ancestor.

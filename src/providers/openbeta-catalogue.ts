@@ -398,7 +398,10 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
     const areaResult = local?.coordinates
       ? await this.#local(seed, { ...local, coordinates: local.coordinates })
       : null;
-    if (areaResult && (areaResult.complete || areaResult.candidates.length > 0)) return areaResult;
+    if (areaResult?.complete) return areaResult;
+    const candidates = new Map(
+      areaResult?.candidates.map((candidate) => [candidate.externalId, candidate]),
+    );
     const ids = new Set<string>();
     const pending = catalogueSearchNames(seed).map((name) => ({
       name,
@@ -450,8 +453,12 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
         pending.push(current);
       }
     }
-    const candidates: CatalogueCandidate[] = [];
-    for (const id of ids) candidates.push(await this.#climb(id));
-    return { candidates, complete: areaResult === null && !partial && pending.length === 0 };
+    for (const id of ids) {
+      if (!candidates.has(id)) candidates.set(id, await this.#climb(id));
+    }
+    return {
+      candidates: [...candidates.values()],
+      complete: areaResult === null && !partial && pending.length === 0,
+    };
   }
 }
