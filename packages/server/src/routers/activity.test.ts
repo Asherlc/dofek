@@ -640,6 +640,81 @@ describe("activityRouter", () => {
   });
 
   describe("heartRateContext", () => {
+    it("selects the default HR source rather than another metric's default", async () => {
+      const metricSources = vi
+        .spyOn(ActivityRepository.prototype, "getMetricSources")
+        .mockResolvedValue([
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "power-device",
+            sources: [{ id: "power-device", label: "Power device" }],
+          },
+          {
+            key: "heartRate",
+            label: "Heart Rate",
+            defaultSourceId: "whoop",
+            sources: [{ id: "whoop", label: "WHOOP" }],
+          },
+        ]);
+      try {
+        const store = makeSensorStoreStub({
+          getStream: vi
+            .fn()
+            .mockImplementation(async (_window, _maxPoints, sources) => [
+              {
+                recorded_at: "2026-04-01T09:55:00.000Z",
+                heart_rate: sources.heartRate === "whoop" ? 91 : 192,
+              },
+            ]),
+        });
+        const caller = makeResolvedCaller(
+          [
+            {
+              ...makeActivityRow({}),
+              user_id: "user-1",
+              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+            },
+          ],
+          store,
+        );
+        const result = await caller.heartRateContext({
+          id: "00000000-0000-0000-0000-000000000001",
+        });
+        expect(result.points).toEqual([{ recordedAt: "2026-04-01T09:55:00.000Z", value: 91 }]);
+      } finally {
+        metricSources.mockRestore();
+      }
+    });
+    it("returns an empty context when the activity has no HR source", async () => {
+      const metricSources = vi
+        .spyOn(ActivityRepository.prototype, "getMetricSources")
+        .mockResolvedValue([
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "power-device",
+            sources: [{ id: "power-device", label: "Power device" }],
+          },
+        ]);
+      try {
+        const caller = makeResolvedCaller([
+          {
+            ...makeActivityRow({}),
+            user_id: "user-1",
+            member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+          },
+        ]);
+        expect(
+          await caller.heartRateContext({ id: "00000000-0000-0000-0000-000000000001" }),
+        ).toEqual({
+          window: { startedAt: "2026-04-01T09:55:00.000Z", endedAt: "2026-04-01T11:05:00.000Z" },
+          points: [],
+        });
+      } finally {
+        metricSources.mockRestore();
+      }
+    });
     it("requires the sensor store", async () => {
       await expect(
         makeCallerWithoutSensorStore().heartRateContext({

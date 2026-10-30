@@ -128,7 +128,12 @@ describe("activityChartSeries", () => {
 
   it("handles a metric with no observations", () => {
     expect(activityChartSeries([sample(0, null)]).samples).toEqual([]);
-    expect(activityChartSeries([]).samples).toEqual([]);
+    expect(activityChartSeries([])).toEqual({ startedAt: -500, endedAt: 500, samples: [] });
+    expect(activityChartSeries([], { startedAt: "2026-10-20T16:00:00Z", endedAt: null })).toEqual({
+      startedAt: startedAt - 500,
+      endedAt: startedAt + 500,
+      samples: [],
+    });
   });
 });
 

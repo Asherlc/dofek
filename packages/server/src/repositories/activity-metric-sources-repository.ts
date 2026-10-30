@@ -7,10 +7,10 @@ import { z } from "zod";
 import {
   ACTIVITY_CHART_METRICS,
   type ActivityHeartRateContext,
+  type ActivityMetricSourceSelection,
   type ActivityMetricSources,
   type ActivityPowerWork,
 } from "../contracts/activity-metric-sources.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-zone-sql.ts";
 
@@ -42,9 +42,17 @@ export function activityMetricParams(window: ActivitySensorWindow) {
   };
 }
 
+interface HeartRateStreamStore {
+  getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources: ActivityMetricSourceSelection,
+  ): Promise<Array<{ recorded_at: string; heart_rate: number | null }>>;
+}
+
 /** Display context only; activity summaries and zones retain the recorded window. */
 export async function getActivityHeartRateContext(
-  store: Pick<ActivitySensorStore, "getStream">,
+  store: HeartRateStreamStore,
   window: ActivitySensorWindow,
   maxPoints: number,
   heartRateSourceId: string | undefined,
