@@ -1044,7 +1044,7 @@ jobs:
             "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract verify /run/dofek-peerdb-cdc/artifact.json'
 
-      - name: Deploy ClickHouse consumer services
+      - name: Deploy and verify remaining services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
         env:
@@ -1081,9 +1081,10 @@ jobs:
             exit "$status"
           fi
 
+          expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota)"
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
-          for service in analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
+          for service in ota analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
             service_name="${STACK_NAME}_${service}"
             stable_task_id=""
             stable_since_seconds=0
@@ -1153,6 +1154,9 @@ jobs:
                 stable_elapsed_seconds=$((SECONDS - stable_since_seconds))
                 if [ "$stable_elapsed_seconds" -ge "$stability_window_seconds" ]; then
                   case "$service" in
+                    ota)
+                      pnpm tsx scripts/verify-deploy-image.ts "$expected_ota_image" "$service_name"
+                      ;;
                     analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
                       pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "$service_name"
                       ;;
