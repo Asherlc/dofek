@@ -25,17 +25,23 @@ describe("theCrag official ascent mapping", () => {
     expect(record.climb?.kind).toBe("route");
   });
 
-  it.each(["xlead", "leadx", "xfollow", "followx", "xsolo", "solox", "xtop rope", "top ropex"])(
-    "preserves unknown method %s",
-    (gear) => {
-      expect(
-        mapTheCragAscent(
-          apiAscent({ climbedGearStyle: gear, tick: null, route: { id: "2001" } }),
-          "123",
-        ).attempts[0]?.ropeMethod,
-      ).toBeUndefined();
-    },
-  );
+  it.each([
+    "unknown lead",
+    "lead unknown",
+    "unknown follow",
+    "follow unknown",
+    "unknown solo",
+    "solo unknown",
+    "unknown top rope",
+    "top rope unknown",
+  ])("preserves unknown method %s", (gear) => {
+    expect(
+      mapTheCragAscent(
+        apiAscent({ climbedGearStyle: gear, tick: null, route: { id: "2001" } }),
+        "123",
+      ).attempts[0]?.ropeMethod,
+    ).toBeUndefined();
+  });
 
   it.each([
     ["onsight", "free-onsight"],
