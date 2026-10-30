@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { checkOtaManifest } from "./check-ota-manifest.ts";
 
 const requestOptions = {
+  appId: "release-app-id",
   channel: "production",
   platform: "ios",
   runtimeVersion: "1.0",
@@ -143,26 +144,36 @@ describe("checkOtaManifest", () => {
     ).rejects.toThrow("OTA manifest runtime does not match requested runtime");
   });
 
-  it("fails before requesting a manifest when the CLI runtime is missing", async () => {
-    let requestCount = 0;
-    const server = createServer((_request, response) => {
-      requestCount += 1;
-      response.writeHead(204).end();
-    });
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("Missing test server port");
-    try {
-      const result = await runMobileUpdateCheck(["--url", `http://127.0.0.1:${address.port}`]);
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain("--runtime-version is required");
-      expect(requestCount).toBe(0);
-    } finally {
-      server.close();
-      await once(server, "close");
-    }
-  });
+  it.each([
+    { arguments: [], message: "--runtime-version is required" },
+    { arguments: ["--runtime-version", "runtime"], message: "--app-id is required" },
+  ])(
+    "fails before requesting a manifest when required CLI context is missing: $message",
+    async (missing) => {
+      let requestCount = 0;
+      const server = createServer((_request, response) => {
+        requestCount += 1;
+        response.writeHead(204).end();
+      });
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing test server port");
+      try {
+        const result = await runMobileUpdateCheck([
+          "--url",
+          `http://127.0.0.1:${address.port}`,
+          ...missing.arguments,
+        ]);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(missing.message);
+        expect(requestCount).toBe(0);
+      } finally {
+        server.close();
+        await once(server, "close");
+      }
+    },
+  );
 
   it("accepts a 204 response and sends the production Expo request headers", async () => {
     const fetchImplementation = vi
@@ -176,6 +187,7 @@ describe("checkOtaManifest", () => {
     expect(fetchImplementation).toHaveBeenCalledWith(manifestUrl, {
       headers: {
         accept: "application/expo+json, application/json, multipart/mixed",
+        "expo-app-id": "release-app-id",
         "expo-channel-name": "production",
         "expo-platform": "ios",
         "expo-protocol-version": "1",
@@ -229,6 +241,8 @@ describe("checkOtaManifest", () => {
 
     try {
       const result = await runMobileUpdateCheck([
+        "--app-id",
+        "release-app-id",
         "--url",
         url,
         "--channel",
@@ -247,6 +261,7 @@ describe("checkOtaManifest", () => {
       });
       expect(requestUrl).toBe("/manifest");
       expect(requestHeaders).toMatchObject({
+        "expo-app-id": "release-app-id",
         "expo-channel-name": "preview-pr-1783",
         "expo-platform": "android",
         "expo-protocol-version": "1",

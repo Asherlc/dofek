@@ -8,6 +8,11 @@ if (!metadataPath || !channel || !/^(production|pr-\d+)$/.test(channel) || extra
   throw new Error(
     "Usage: verify-published-ota.ts <xprem-update-metadata.json> <production|pr-number>",
   );
+const appId = z
+  .string({ error: "EXPO_APP_ID is required" })
+  .trim()
+  .min(1, "EXPO_APP_ID is required")
+  .parse(process.env.EXPO_APP_ID);
 const branch = channel === "production" ? "main" : channel;
 const [update] = z
   .tuple([
@@ -24,6 +29,7 @@ const certificatePath = new URL(
   import.meta.url,
 );
 const id = await verifyOtaUpdate({
+  appId,
   url: mobileApp.expo.updates.url,
   channel,
   expectedId: update.id,

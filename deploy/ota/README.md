@@ -73,7 +73,16 @@ current iOS runtime, validates the server within five seconds, publishes with
 EOAS 3.2.7, then verifies the exact published UUID/runtime, manifest signature
 and all asset hashes using the retained device certificate. An empty runtime is
 accepted only through the [Expo no-update protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-Storage read/decode failures remain fatal. A publication failure leaves the
+Storage read/decode failures remain fatal. The gate and receipt audit send the
+same `expo-app-id` header as the configured client.
+
+The audit detects failures after publication; it does not make publication
+atomic. A failed audit leaves that release advertised until explicit repair.
+[Expo clients verify manifest signatures and asset hashes](https://docs.expo.dev/technical-specs/expo-updates-1/)
+and reject invalid downloads. Keep the failed UUID/runtime and evidence,
+diagnose whether the cause is transport, configuration or corruption, then
+perform targeted remediation. Do not automatically delete a potentially valid
+release or shared immutable assets merely because a network audit failed. A publication failure leaves the
 installed app's embedded or cached update available; diagnose the failed step
 before retrying. Restore normal automatic and preview workflows after the
 release; no migration freeze is required.

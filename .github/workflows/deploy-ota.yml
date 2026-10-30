@@ -60,7 +60,7 @@ jobs:
         working-directory: packages/mobile
         run: |
           RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
-          pnpm tsx ../../scripts/check-ota-manifest.ts --runtime-version "$RUNTIME_VERSION"
+          pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
       # Keep export diagnostics visible before the publisher owns dist and its
       # source maps. Both commands use the installed Expo version.
       - name: Export iOS bundle (surfaces the error eoas hides)

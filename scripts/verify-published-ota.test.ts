@@ -9,6 +9,7 @@ const originalArguments = process.argv;
 let receipt: unknown;
 beforeEach(() => {
   vi.resetModules();
+  vi.stubEnv("EXPO_APP_ID", "release-app-id");
   vi.mocked(verifyOtaUpdate).mockReset().mockResolvedValue("published-id");
   receipt = [
     { id: "published-id", platform: "ios", runtimeVersion: "published-runtime", branch: "main" },
@@ -27,6 +28,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   process.argv = originalArguments;
+  vi.unstubAllEnvs();
 });
 
 describe("published OTA receipt audit", () => {
@@ -36,6 +38,7 @@ describe("published OTA receipt audit", () => {
       expect.objectContaining({
         url: "https://ota.dofek.asherlc.com/manifest",
         channel: "production",
+        appId: "release-app-id",
         expectedId: "published-id",
         runtimeVersion: "published-runtime",
         certificate: "installed-device-certificate",
@@ -86,6 +89,12 @@ describe("published OTA receipt audit", () => {
     await expect(import("./verify-published-ota.ts")).rejects.toThrow(
       "OTA asset returned HTTP 500",
     );
+  });
+
+  it("fails missing application identity before auditing", async () => {
+    vi.stubEnv("EXPO_APP_ID", undefined);
+    await expect(import("./verify-published-ota.ts")).rejects.toThrow("EXPO_APP_ID is required");
+    expect(verifyOtaUpdate).not.toHaveBeenCalled();
   });
 
   it("fails missing arguments before reading files", async () => {

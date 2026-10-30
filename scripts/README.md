@@ -322,7 +322,8 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   the deployed update metadata, or reports that no update is available.
   URL, channel, runtime version, and platform have explicit command-line
   overrides for local and preview checks.
-  - Usage: `pnpm check:mobile-update --runtime-version <resolved-runtime>`
+  - Usage: `pnpm check:mobile-update --app-id <app-id> --runtime-version <resolved-runtime>`
+  - Required: `--app-id <app-id> --runtime-version <version>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
 - `verify-published-ota.ts`: Audits the exact published UUID/runtime, signed manifest,
   and asset hashes against the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).

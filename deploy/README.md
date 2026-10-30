@@ -771,7 +771,7 @@ Workflows using this path:
 
 PR preview object cleanup:
 
-- `.github/workflows/cleanup-pr-r2.yml` deletes `pr-<number>/` objects from `dofek-storybook` and `dofek-ota` when a PR closes.
+- `.github/workflows/cleanup-pr-r2.yml` waits for the same PR’s mobile publication through [GitHub workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), loads required identity before deleting, then removes `pr-<number>/` objects from `dofek-storybook` and `<app-id>/pr-<number>/` objects from `dofek-ota-releases` when the PR closes. Both deletions can be rerun safely using [AWS recursive removal](https://docs.aws.amazon.com/cli/latest/reference/s3/rm.html). The historical `dofek-ota` bucket remains untouched.
 - R2 lifecycle rules in `deploy/storage.tf` also expire preview prefixes after 14 days as a safety net if a workflow-run cleanup is missed.
 
 Postgres backup status:

@@ -5,7 +5,7 @@ on:
     types: [closed]
 
 concurrency:
-  group: cleanup-pr-r2-${{ github.event.number }}
+  group: mobile-preview-ota-${{ github.event.number }}
   cancel-in-progress: false
 
 jobs:
@@ -43,6 +43,17 @@ jobs:
 
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
+      - name: Check out the cleanup action
+        if: steps.ready.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Load OTA application identity through OIDC
+        if: steps.ready.outputs.ready == 'true'
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_APP_ID
+
       - name: Delete Storybook preview objects
         if: steps.ready.outputs.ready == 'true'
         env:
@@ -58,16 +69,6 @@ jobs:
             --region auto \
             --endpoint-url "$R2_ENDPOINT"
 
-      - name: Check out the cleanup action
-        if: steps.ready.outputs.ready == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Load OTA application identity through OIDC
-        if: steps.ready.outputs.ready == 'true'
-        uses: ./.github/actions/load-infisical-secrets
-        with:
-          keys: EXPO_APP_ID
       - name: Delete mobile preview OTA objects
         if: steps.ready.outputs.ready == 'true'
         env:

@@ -5,7 +5,7 @@ const defaultCommandOptions = {
   channel: "production",
   platform: "ios",
   url: "https://ota.dofek.asherlc.com/manifest",
-} satisfies Omit<OtaManifestRequestOptions, "runtimeVersion">;
+} satisfies Omit<OtaManifestRequestOptions, "runtimeVersion" | "appId">;
 
 const assetSchema = z.object({
   contentType: z.string(),
@@ -24,6 +24,7 @@ const manifestSchema = z.object({
 });
 
 const commandOptionsSchema = z.object({
+  appId: z.string({ error: "--app-id is required" }).trim().min(1, "--app-id is required"),
   channel: z.string().min(1),
   platform: z.enum(["android", "ios"]),
   runtimeVersion: z
@@ -36,6 +37,7 @@ type OtaManifest = z.infer<typeof manifestSchema>;
 type OtaPlatform = z.infer<typeof commandOptionsSchema.shape.platform>;
 
 interface OtaManifestRequestOptions {
+  appId: string;
   channel: string;
   platform: OtaPlatform;
   runtimeVersion: string;
@@ -77,6 +79,7 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
     channel: string;
     platform: string;
     runtimeVersion?: string;
+    appId?: string;
     url: string;
   } = { ...defaultCommandOptions };
 
@@ -86,6 +89,10 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
       continue;
     }
     switch (argument) {
+      case "--app-id":
+        options.appId = readOptionValue(arguments_, index, argument);
+        index += 1;
+        break;
       case "--channel":
         options.channel = readOptionValue(arguments_, index, argument);
         index += 1;
@@ -120,6 +127,7 @@ export async function checkOtaManifest({
     response = await fetchImplementation(requestOptions.url, {
       headers: {
         accept: "application/expo+json, application/json, multipart/mixed",
+        "expo-app-id": requestOptions.appId,
         "expo-channel-name": requestOptions.channel,
         "expo-platform": requestOptions.platform,
         "expo-protocol-version": "1",
