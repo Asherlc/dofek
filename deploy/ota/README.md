@@ -17,6 +17,16 @@ silently choose an older update or become a successful empty response. Inspect
 the failed object, preserve evidence, and repair or remove the invalid upload
 through an explicit storage operation before publishing again.
 
+The patch also emits one canonical Content-Type field per multipart JSON part.
+The [upstream response writer](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/internal/services/expo_protocol_service.go)
+emits both `Content-Type` and `content-type`. A case-insensitive MIME parser
+combines those into `application/json, application/json; charset=utf-8`, which
+is not the JSON media type required by the [Expo protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+Real-router regressions assert one parseable JSON Content-Type for complete
+manifests and empty/incomplete update directives, as well as the existing
+storage fault cases. Keep the client parser strict. The production image pin
+in [stack.yml](../stack.yml) is the release source of truth.
+
 ## Build
 
 Check out the immutable upstream revision into a separate build directory,
@@ -25,12 +35,12 @@ build context:
 
 ```sh
 docker build --target test -f deploy/ota/Dockerfile <patched-upstream-directory>
-docker build -t dofek-ota:3.2.7-dofek.1 -f deploy/ota/Dockerfile <patched-upstream-directory>
+docker build -t dofek-ota:3.2.7-dofek.2 -f deploy/ota/Dockerfile <patched-upstream-directory>
 ```
 
 The compiler and runtime image are pinned by version and digest. The compiler
 is [Go 1.27.3](https://go.dev/dl/); the upstream runtime remains non-root. The
-result reports `3.2.7-dofek.1` so normal version-scoped caches identify this
+result reports `3.2.7-dofek.2` so normal version-scoped caches identify this
 binary separately. CI verifies the upstream tests and builds the runtime image.
 On main, the workflow publishes source-commit tags to the private `dofek-ota-internal`
 GHCR package and records its digest. The package must already exist and be
@@ -84,8 +94,10 @@ diagnose whether the cause is transport, configuration or corruption, then
 perform targeted remediation. Do not automatically delete a potentially valid
 release or shared immutable assets merely because a network audit failed. A publication failure leaves the
 installed app's embedded or cached update available; diagnose the failed step
-before retrying. Restore normal automatic and preview workflows after the
-release; no migration freeze is required.
+before retrying. Keep automatic and preview workflows enabled throughout this fresh-store
+rollout. A failed gate stops the affected run for diagnosis; it does not
+authorize disabling publishers. Any pause requires fresh explicit operator
+approval naming that pause. No migration freeze is required.
 
 The [licensing guide](https://mercure-technologies.gitbook.io/xprem/references/open-core-and-licensing.md)
 documents stateless community self-hosting. The full image includes EE code and

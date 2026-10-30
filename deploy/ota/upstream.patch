@@ -14,12 +14,26 @@ index b78d5b9..d384434 100644
  			continue
  		}
  		valid, err := s.isUpdateValid(ctx, updates[i])
+diff --git a/internal/services/expo_protocol_service.go b/internal/services/expo_protocol_service.go
+index d3f32c9..f16d3cf 100644
+--- a/internal/services/expo_protocol_service.go
++++ b/internal/services/expo_protocol_service.go
+@@ -256,8 +256,7 @@ func (s *ExpoProtocolService) putRawResponse(ctx context.Context, w http.Respons
+ 	}
+ 	headers := map[string][]string{
+ 		"Content-Disposition": {fmt.Sprintf("form-data; name=\"%s\"", fieldName)},
+-		"Content-Type":        {"application/json"},
+-		"content-type":        {"application/json; charset=utf-8"},
++		"Content-Type":        {"application/json; charset=utf-8"},
+ 	}
+ 	if signedHash != "" {
+ 		headers["expo-signature"] = []string{fmt.Sprintf("sig=\"%s\", keyid=\"main\"", signedHash)}
 diff --git a/test/manifest_storage_errors_test.go b/test/manifest_storage_errors_test.go
 new file mode 100644
-index 0000000..c837a12
+index 0000000..6b7812f
 --- /dev/null
 +++ b/test/manifest_storage_errors_test.go
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,131 @@
 +package test
 +
 +import (
@@ -112,6 +126,14 @@ index 0000000..c837a12
 +			serveThroughRouter(response, request)
 +			require.Equal(t, tc.status, response.Code, response.Body.String())
 +			if tc.status == http.StatusOK {
++				_, envelope, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
++				require.NoError(t, err)
++				part, err := multipart.NewReader(bytes.NewReader(response.Body.Bytes()), envelope["boundary"]).NextPart()
++				require.NoError(t, err)
++				require.Len(t, part.Header.Values("Content-Type"), 1, "JSON parts require one Content-Type field")
++				mediaType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
++				require.NoError(t, err)
++				require.Equal(t, "application/json", mediaType)
 +				if tc.noUpdate {
 +					require.Contains(t, response.Body.String(), "noUpdateAvailable")
 +				} else {
