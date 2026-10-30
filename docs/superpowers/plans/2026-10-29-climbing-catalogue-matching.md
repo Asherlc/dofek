@@ -48,9 +48,9 @@
 
 ### Task 2: Provider discovery and real Goat Rock fixtures
 
-**Files:** Modify catalogue adapters and colocated tests: `src/providers/openbeta-catalogue.ts`, `src/providers/mountain-project-catalogue.ts`, `src/providers/kaya/catalogue.ts`, `src/providers/thecrag/catalogue.ts`. Add small source fixture/test-helper files only where necessary. Update `docs/climbing-trait-coverage.md` with cited discovery evidence.
+**Files:** Modify catalogue adapters and colocated tests: `src/providers/openbeta-catalogue.ts`, `src/providers/mountain-project-catalogue.ts`, `src/providers/kaya/catalogue.ts`, `src/providers/thecrag/catalogue.ts`. Expose the existing distance predicate from `src/climbing-catalogue-matching.ts` and cover its production adapter use in its colocated test. Add small source fixture/test-helper files only where necessary. Update `docs/climbing-trait-coverage.md` with cited discovery evidence.
 
-**Interfaces:** Consume Task 1 helpers and optional references/searchArea. Keep the existing `ClimbingCatalogueAdapter.search(seed)` entry point.
+**Interfaces:** Consume Task 1 helpers and optional references/searchArea. Keep the existing `ClimbingCatalogueAdapter.search(seed)` entry point. Export the existing private distance predicate as `catalogueAreasAreNearby(left: CatalogueLocation, right: CatalogueLocation): boolean` and its shared `CATALOGUE_LOCAL_AREA_METRES = 100` constant so OpenBeta discovery and matching use one geographic policy.
 
 - [ ] Write failing tests using the real provider identities: MP Cheddar Corner `105736399`; OpenBeta Corner Route `f3a2b199-c2d3-59b8-8f12-dd7ce734e88b`, parent Goat Rock `0045f7bf-6b6c-5d8a-bc9a-30f9168aea37`, parent MP ID `105734054`; native area coordinates 37.2282,-122.1079. Cover local-area discovery independent of route name and reverse MP reference lookup; duplicates, mismatched area identity, partial count and bounds; unknown coordinates; article aliases and approximate suggestions with preserved qualifiers; KAYA native IDs distinct from slug suffix; theCrag scoped coordinate parsing.
 - [ ] Run changed provider test files and record RED evidence.

@@ -31,6 +31,71 @@ const climb = {
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
 
 describe("KayaCatalogueAdapter", () => {
+  it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+    "retains name-related result %s without removing qualifiers",
+    async (name) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([{ ...climb, name }]));
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+        ...seed,
+        name: "The Great Roof",
+      });
+      expect(result.candidates[0]?.name).toBe(name);
+    },
+  );
+  it("uses source-declared seed aliases for discovery", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([{ ...climb, name: "Up" }]));
+    expect(
+      (
+        await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+          ...seed,
+          aliases: ["Up"],
+        })
+      ).candidates[0]?.name,
+    ).toBe("Up");
+  });
+  it("preserves Goat Rock native IDs separately from unrelated URL slug suffixes", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          ...climb,
+          id: "887401",
+          slug: "Swiss-Cheese-56-Castle-Rock-State-Park-6084576",
+          name: "Swiss Cheese",
+          destination: {
+            id: "2204",
+            name: "Castle Rock State Park",
+            latitude: "37.22846981",
+            longitude: "-122.09959639",
+          },
+          area: {
+            id: "46774",
+            name: "Goat Rock",
+            latitude: "37.228451",
+            longitude: "-122.107888",
+          },
+        },
+      ]),
+    );
+    expect(
+      (
+        await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+          ...seed,
+          name: "Swiss Cheese",
+        })
+      ).candidates[0],
+    ).toMatchObject({
+      externalId: "887401",
+      url: "https://kaya-app.kayaclimb.com/climb/Swiss-Cheese-56-Castle-Rock-State-Park-6084576",
+      locations: expect.arrayContaining([
+        {
+          externalId: "46774",
+          name: "Goat Rock",
+          scope: "area",
+          coordinates: { latitude: 37.228451, longitude: -122.107888 },
+        },
+      ]),
+    });
+  });
   it("reads explicit outdoor traits and retains area coordinate attribution", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([climb]));
     const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search(seed);

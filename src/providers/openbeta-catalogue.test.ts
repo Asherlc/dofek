@@ -1,7 +1,8 @@
-import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
+import type { CatalogueLocation, CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/error-reporting.ts";
 import { OpenBetaCatalogueAdapter } from "./openbeta-catalogue.ts";
+import { goatRockArea, goatRockDiscovery } from "./openbeta-catalogue-fixture.ts";
 
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
@@ -62,17 +63,14 @@ describe("OpenBetaCatalogueAdapter", () => {
     },
   );
 
-  it.each(["Other climb", "Cragmont", "Cragmont Crack extension"])(
-    "does not fetch approximate name hit %s",
-    async (name) => {
-      const fetchFn = client([page(1, 1, [{ document: { climbUUID: id, climbName: name } }])]);
-      expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
-        candidates: [],
-        complete: true,
-      });
-      expect(fetchFn).toHaveBeenCalledTimes(1);
-    },
-  );
+  it.each(["Other climb", "Cragmont"])("does not fetch approximate name hit %s", async (name) => {
+    const fetchFn = client([page(1, 1, [{ document: { climbUUID: id, climbName: name } }])]);
+    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
+      candidates: [],
+      complete: true,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
 
   it("does not merge distinct Unicode names through uppercase expansion", async () => {
     const fetchFn = client([page(1, 1, [{ document: { climbUUID: id, climbName: "STRASSE" } }])]);
@@ -530,4 +528,257 @@ describe("OpenBetaCatalogueAdapter", () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response("", { status: 302 }));
     await expect(new OpenBetaCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(/302/);
   });
+});
+
+describe("OpenBeta bounded local-area discovery", () => {
+  const localArea: CatalogueLocation = {
+    externalId: "105734054",
+    name: "Goat Rock",
+    scope: "area",
+    coordinates: { latitude: 37.2282, longitude: -122.1079 },
+  };
+  const localSeed: CatalogueSeed = {
+    ...seed,
+    providerId: "mountain-project",
+    externalId: "105736399",
+    name: "Cheddar Corner",
+    kind: "route",
+    setting: "outdoor",
+    locations: [
+      {
+        externalId: "105734054",
+        name: "Goat Rock",
+        scope: "area",
+        coordinates: { latitude: 37.2282, longitude: -122.1079 },
+      },
+    ],
+  };
+  const summary = (area: { climbs: unknown } & Record<string, unknown> = goatRockArea) => {
+    const { climbs: _, ...facts } = area;
+    return { data: { area: facts } };
+  };
+  const nearby = (areas: unknown[] = goatRockDiscovery) => ({ data: { cragsWithin: areas } });
+
+  it("finds Corner Route independently of Cheddar Corner and retains hydrated MP references", async () => {
+    const fetchFn = client([nearby(), summary(), { data: { area: goatRockArea } }]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
+    expect(result.complete).toBe(true);
+    expect(result.candidates).toHaveLength(12);
+    expect(result.searchArea).toEqual({
+      externalId: "0045f7bf-6b6c-5d8a-bc9a-30f9168aea37",
+      name: "Goat Rock",
+      scope: "area",
+      coordinates: { latitude: 37.2282, longitude: -122.1079 },
+    });
+    expect(result.candidates.find((candidate) => candidate.name === "Corner Route")).toMatchObject({
+      externalId: "f3a2b199-c2d3-59b8-8f12-dd7ce734e88b",
+      references: [{ providerId: "mountain-project", externalId: "105736399" }],
+      setting: null,
+      locations: expect.arrayContaining([
+        {
+          externalId: goatRockArea.uuid,
+          name: "Goat Rock",
+          scope: "area",
+          coordinates: { latitude: 37.2282, longitude: -122.1079 },
+        },
+      ]),
+    });
+    const requests = fetchFn.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    expect(requests[0].query).toContain("cragsWithin");
+    expect(requests[0].variables.zoom).toBe(15);
+    expect(requests[0].variables.bbox[0]).toBeCloseTo(-122.10903, 5);
+    expect(requests[0].variables.bbox[1]).toBeCloseTo(37.2273, 5);
+    expect(requests[0].variables.bbox[2]).toBeCloseTo(-122.10677, 5);
+    expect(requests[0].variables.bbox[3]).toBeCloseTo(37.2291, 5);
+    expect(requests[1].query).not.toContain("climbs {");
+    expect(requests[2].variables).toEqual({ uuid: goatRockArea.uuid });
+  });
+
+  it("selects an owned area reference despite an area rename", async () => {
+    const result = await new OpenBetaCatalogueAdapter(
+      client([nearby(), summary(), { data: { area: goatRockArea } }]),
+    ).search({
+      ...localSeed,
+      locations: [{ ...localArea, name: "Old Goat Rock name" }],
+    });
+    expect(result.candidates).toHaveLength(12);
+    expect(result.complete).toBe(true);
+  });
+
+  it("uses normalized area names and distance when area IDs belong to another provider", async () => {
+    const result = await new OpenBetaCatalogueAdapter(
+      client([nearby(), summary(), { data: { area: goatRockArea } }]),
+    ).search({
+      ...localSeed,
+      providerId: "kaya",
+      locations: [{ ...localArea, externalId: "46774", name: "GOAT   ROCK" }],
+    });
+    expect(result.complete).toBe(true);
+    expect(result.candidates).toHaveLength(12);
+  });
+
+  it("does not treat a same-name area with a different owned reference as matched", async () => {
+    const fetchFn = client([nearby()]);
+    expect(
+      await new OpenBetaCatalogueAdapter(fetchFn).search({
+        ...localSeed,
+        locations: [{ ...localArea, externalId: "999" }],
+      }),
+    ).toMatchObject({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { ...goatRockArea, uuid: areaId },
+    { ...goatRockArea, metadata: { ...goatRockArea.metadata, mp_id: "999" } },
+  ])("rejects mismatched hydrated area identity", async (area) => {
+    await expect(
+      new OpenBetaCatalogueAdapter(client([nearby(), summary(area)])).search(localSeed),
+    ).rejects.toThrow(/area.*identity/i);
+  });
+
+  it("deduplicates repeated discovery areas and climbs without claiming partial counts complete", async () => {
+    const area = { ...goatRockArea, climbs: [goatRockArea.climbs[0], goatRockArea.climbs[0]] };
+    const fetchFn = client([nearby([goatRockArea, goatRockArea]), summary(), { data: { area } }]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
+    expect(result).toMatchObject({
+      complete: false,
+      candidates: [{ externalId: "0e68c732-da31-510e-8986-948d65689d45" }],
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("skips full climb hydration when metadata exceeds the 200-climb budget", async () => {
+    const fetchFn = client([nearby(), summary({ ...goatRockArea, totalClimbs: 201 })]);
+    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).toMatchObject({
+      candidates: [],
+      complete: false,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds matching area hydration to three areas and keeps results incomplete", async () => {
+    const areas = [goatRockArea.uuid, areaId, id, "00000000-0000-4000-8000-000000000001"].map(
+      (uuid) => ({
+        ...goatRockArea,
+        uuid,
+        pathTokens: ["Goat Rock"],
+        ancestors: [uuid],
+        climbs: [],
+        totalClimbs: 0,
+      }),
+    );
+    const fetchFn = client([
+      nearby(areas),
+      ...areas.slice(0, 3).flatMap((area) => [summary(area), { data: { area } }]),
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...localSeed,
+      providerId: "kaya",
+    });
+    expect(result).toMatchObject({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(7);
+  });
+
+  it("keeps name discovery available when the nearest recorded area has unknown coordinates", async () => {
+    const fetchFn = client([page(0, 1, [])]);
+    expect(
+      await new OpenBetaCatalogueAdapter(fetchFn).search({
+        ...localSeed,
+        locations: [{ ...localArea, coordinates: null }],
+      }),
+    ).toEqual({ candidates: [], complete: true });
+    expect(String(fetchFn.mock.calls[0]?.[0])).toContain("typesense");
+  });
+
+  it.each([37.22909, 37.22911, null])(
+    "uses the shared 100 metre distance policy for unreferenced area point %s",
+    async (lat) => {
+      const area = { ...goatRockArea, metadata: { ...goatRockArea.metadata, lat } };
+      const fetchFn = client([
+        nearby([area]),
+        ...(lat === 37.22909 ? [summary(area), { data: { area } }] : []),
+      ]);
+      const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+        ...localSeed,
+        providerId: "kaya",
+      });
+      expect(result.complete).toBe(lat === 37.22909);
+      expect(result.candidates).toHaveLength(lat === 37.22909 ? 12 : 0);
+    },
+  );
+
+  it("uses the remaining shared climb budget before hydrating another matching area", async () => {
+    const areas = [goatRockArea.uuid, areaId, id].map((uuid) => ({
+      ...goatRockArea,
+      uuid,
+      pathTokens: ["Goat Rock"],
+      ancestors: [uuid],
+      totalClimbs: 80,
+      climbs: Array.from({ length: 80 }, (_, i) => ({
+        ...climb(),
+        uuid: `00000000-0000-4000-8000-${String((uuid === id ? 160 : uuid === areaId ? 80 : 0) + i).padStart(12, "0")}`,
+      })),
+    }));
+    const fetchFn = client([
+      nearby(areas),
+      ...areas.slice(0, 2).flatMap((area) => [summary(area), { data: { area } }]),
+      ...areas.slice(2).map((area) => summary(area)),
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...localSeed,
+      providerId: "kaya",
+    });
+    expect(result.complete).toBe(false);
+    expect(result.candidates).toHaveLength(160);
+    expect(fetchFn).toHaveBeenCalledTimes(6);
+  });
+
+  it("counts hydrated facts against the budget even when areas repeat the same climb IDs", async () => {
+    const climbs = Array.from({ length: 80 }, (_, i) => ({
+      ...climb(),
+      uuid: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    }));
+    const areas = [goatRockArea.uuid, areaId, id].map((uuid) => ({
+      ...goatRockArea,
+      uuid,
+      pathTokens: ["Goat Rock"],
+      ancestors: [uuid],
+      totalClimbs: 80,
+      climbs,
+    }));
+    const fetchFn = client([
+      nearby(areas),
+      ...areas.flatMap((area) => [summary(area), { data: { area } }]),
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...localSeed,
+      providerId: "kaya",
+    });
+    expect(result.complete).toBe(false);
+    expect(result.candidates).toHaveLength(80);
+    expect(fetchFn).toHaveBeenCalledTimes(6);
+  });
+});
+
+it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+  "retains presentation and approximate discovery suggestion %s with qualifiers intact",
+  async (name) => {
+    const fetchFn = client([
+      page(1, 1, [{ document: { climbUUID: id, climbName: name } }]),
+      { data: { climb: climb({ name }) } },
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...seed,
+      name: "The Great Roof",
+    });
+    expect(result.candidates[0]?.name).toBe(name);
+  },
+);
+
+it("retains hydrated native-climb MP identity references", async () => {
+  const result = await lookup({ metadata: { mp_id: "105736399" } });
+  expect(result.candidates[0]?.references).toEqual([
+    { providerId: "mountain-project", externalId: "105736399" },
+  ]);
 });

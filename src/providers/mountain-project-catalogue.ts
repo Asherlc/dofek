@@ -6,6 +6,7 @@ import {
   catalogueCandidateSchema,
 } from "@dofek/training/climbing-catalogue";
 import { z } from "zod";
+import { catalogueNameMatch } from "../climbing-catalogue-matching.ts";
 
 const origin = "https://www.mountainproject.com";
 const coordinates = z.tuple([
@@ -47,8 +48,6 @@ const detailSchema = z.object({
   difficulty: z.string().nullish(),
   types: z.array(z.string()),
 });
-const normalize = (name: string) =>
-  name.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
 function tags(types: string[]): CatalogueCandidate["tags"] {
   return types.map((label) => ({
     kind: "climb_type",
@@ -109,25 +108,37 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
   }
 
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
-    if (seed.providerId === this.providerId) {
-      if (seed.externalId !== null && !/^\d+$/.test(seed.externalId))
+    const reference = seed.references?.find(
+      (reference) => reference.providerId === this.providerId,
+    );
+    const source =
+      seed.providerId === this.providerId
+        ? { ...seed, externalId: seed.externalId ?? reference?.externalId ?? null }
+        : reference
+          ? { ...seed, externalId: reference.externalId, sourceUrl: null }
+          : null;
+    if (source) {
+      if (source.externalId !== null && !/^\d+$/.test(source.externalId))
         throw new Error("Mountain Project catalogue source ID must be numeric.");
-      if (seed.sourceUrl && !routeUrl.safeParse(seed.sourceUrl).success)
+      if (source.sourceUrl && !routeUrl.safeParse(source.sourceUrl).success)
         throw new Error(
           "Mountain Project catalogue source URL must be a Mountain Project route URL.",
         );
-      if (seed.externalId) {
-        if (seed.sourceUrl && new URL(seed.sourceUrl).pathname.split("/")[2] !== seed.externalId)
+      if (source.externalId) {
+        if (
+          source.sourceUrl &&
+          new URL(source.sourceUrl).pathname.split("/")[2] !== source.externalId
+        )
           throw new Error("Mountain Project catalogue source URL and route ID disagree.");
         const detail = detailSchema.safeParse(
-          await this.#request(`${origin}/api/v2/routes/${seed.externalId}`),
+          await this.#request(`${origin}/api/v2/routes/${source.externalId}`),
         );
-        if (!detail.success || String(detail.data.id) !== seed.externalId)
+        if (!detail.success || String(detail.data.id) !== source.externalId)
           throw new Error(
             "Mountain Project catalogue returned invalid route details; retry later.",
           );
         const route = detail.data;
-        if (new URL(route.url).pathname.split("/")[2] !== seed.externalId)
+        if (new URL(route.url).pathname.split("/")[2] !== source.externalId)
           throw new Error("Mountain Project catalogue returned inconsistent route identity.");
         const candidate = catalogueCandidateSchema.parse({
           providerId: this.providerId,
@@ -179,7 +190,12 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
         seen.add(hit.id);
         if (new URL(hit.url).pathname.split("/")[2] !== hit.id.slice(7))
           throw new Error("Mountain Project catalogue returned inconsistent route identity.");
-        if (normalize(hit.title) === normalize(seed.name)) candidates.push(hitCandidate(hit));
+        if (
+          [seed.name, ...(seed.aliases ?? [])].some(
+            (name) => catalogueNameMatch(name, { name: hit.title }) !== null,
+          )
+        )
+          candidates.push(hitCandidate(hit));
       }
       from += hits.length;
       if (repeated) return { candidates, complete: false };

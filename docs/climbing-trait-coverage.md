@@ -194,7 +194,7 @@ Climb details on web and mobile also offer **Catalogue context**, an explicit
 lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
 information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
-completeness, and source/corroborated/possible-match attribution. It does not
+completeness, and source/reference/corroborated/possible-match attribution. It does not
 write catalogue facts or inferred identities into the recorded climbing graph,
 create ticks, or change grades, outcomes, deduplication or training metrics.
 The [owned-log repository](../packages/server/src/repositories/climbing-catalogue-repository.ts)
@@ -225,7 +225,7 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   rather than relabeling them steepness, grips or personal ascent methods.
 - theCrag's [route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes)
   exposes paginated route results. The
-  [reader](../src/providers/thecrag/catalogue.ts) fetches exact-name candidates
+  [reader](../src/providers/thecrag/catalogue.ts) fetches bounded candidate details
   and retains route-page tags, including multiple inherited steepness entries.
   A fresh [Cragmont Crack page](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/route/18589309)
   returned Overhung, Slab (`#Ramp`) and Vertical inherited from Cragmont Park.
@@ -253,6 +253,72 @@ becoming an empty successful lookup. See the
 [shared response](../packages/training/src/climbing-catalogue.ts),
 [cache/matching tests](../src/climbing-catalogue.test.ts) and
 [database ownership tests](../src/db/climbing-catalogue-seed.integration.test.ts).
+
+### Local discovery and identity evidence (2026-10-29)
+
+OpenBeta discovery uses `cragsWithin(filter: { bbox, zoom: 15 })` around the
+nearest recorded area point, independently of the route name. Dofek converts
+its shared 100 m local-area heuristic to a latitude-aware bounding box. A
+provider-owned OpenBeta UUID or Mountain Project area reference selects the
+area when available; otherwise the normalized local name and great-circle
+distance must agree. The reader hydrates at most three matching leaf areas.
+It reads `area(uuid)` metadata and `totalClimbs` before requesting climb facts,
+skips areas exceeding the remaining 200-climb budget, and compares the unique
+hydrated climb count with `totalClimbs`. Missing, capped or partial coverage
+remains incomplete; `searchArea` records the scope of this lookup. When the
+nearest area has no point, the existing bounded Typesense name search remains
+available. The API has no cursor or completion flag on these area queries;
+the count check follows the upstream leaf-area contract, rather than assuming
+that any nonempty response is complete. Sources: the
+[Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql),
+[area data source](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/model/AreaDataSource.ts),
+and [reader and regression fixtures](../src/providers/openbeta-catalogue.test.ts).
+
+The verified [Goat Rock area](https://openbeta.io/area/0045f7bf-6b6c-5d8a-bc9a-30f9168aea37/goat-rock)
+has UUID `0045f7bf-6b6c-5d8a-bc9a-30f9168aea37`, Mountain Project area reference
+`105734054`, point `37.2282, -122.1079`, and 12 climbs. Hydrated
+[Corner Route](https://openbeta.io/climb/f3a2b199-c2d3-59b8-8f12-dd7ce734e88b/corner-route)
+explicitly references Mountain Project's
+[Cheddar Corner](https://www.mountainproject.com/route/105736399/cheddar-corner)
+(`105736399`), despite the different names. Embedded geographic-search climbs
+did not reliably populate these references in the live audit: only hydrated
+area/native climb `metadata.mp_id` supplies climb identity evidence. Mountain
+Project can follow that reference directly through its existing route-detail
+endpoint. Neither a grade difference nor coincident area coordinates supplies
+or vetoes an identity reference. Sources: the linked public records,
+[Climb metadata schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
+and the [MP reader](../src/providers/mountain-project-catalogue.ts).
+
+All four readers use the shared name relation for presentation aliases and
+bounded approximate suggestions. Original names and directional/start/extension/
+pitch qualifiers remain intact; approximate similarity is discovery evidence,
+not identity confidence. The shared matcher uses source-declared aliases and
+keeps unknown setting unknown. See the [matching policy](../src/climbing-catalogue-matching.ts)
+and [Fuse.js search documentation](https://www.fusejs.io/api/options.html).
+
+theCrag search hydrates at most 60 unique route details over three pages before
+checking names and literal route AKA labels, so a route returned under an alias
+is not discarded solely because its displayed title differs. A repeated page,
+repeated route or omitted detail keeps discovery incomplete. AKA labels come
+only from `.headline__guts > ul.stats > li[title="Alternate name"]`, as observed
+on [this route's "Up" alias](https://www.thecrag.com/en/climbing/thailand/krabi/route/7257755094);
+breadcrumb abbreviations are not route aliases. The displayed `Lat/Lon:` pair
+in the location section of the
+[Goat Rock route page](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/route/18578485)
+is attributed to its nearest retained area breadcrumb. The same point is
+displayed for neighboring routes, so it is not treated as a surveyed climb point.
+Malformed/unlabeled coordinates remain unknown, and provider identity does not
+imply outdoor setting. See the [theCrag reader](../src/providers/thecrag/catalogue.ts).
+
+KAYA native IDs remain distinct from URL slugs: the public
+[Swiss Cheese URL](https://kaya-app.kayaclimb.com/climb/Swiss-Cheese-56-Castle-Rock-State-Park-6084576)
+has native climb ID `887401`, not suffix `6084576`. Its Goat Rock area is native
+ID `46774` at `37.228451, -122.107888`; the broader Castle Rock State Park
+destination is `2204`. These are attributed source locations, not interchangeable
+route identities. Sources: the audited public search response from KAYA's
+[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), the
+[consumer identity fields](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js),
+and [KAYA regression](../src/providers/kaya/catalogue.test.ts).
 
 Pending refresh status comes from the live job, independently of metadata TTL;
 concurrent refresh requests cannot replace a finished result with a long-lived

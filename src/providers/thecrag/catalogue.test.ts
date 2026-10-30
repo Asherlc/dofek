@@ -44,6 +44,68 @@ function lookup(html: string) {
 }
 
 describe("TheCragCatalogueAdapter", () => {
+  it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(
+    "retains name-related suggestion %s with qualifiers intact",
+    async (name) => {
+      const fetchFn = client([
+        search(row(name)),
+        detail().replace("Cragmont Crack</span>", `${name}</span>`),
+      ]);
+      expect(
+        (await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, name: "The Great Roof" }))
+          .candidates[0]?.name,
+      ).toBe(name);
+    },
+  );
+  it("retains only literal route AKA labels from the verified headline scope", async () => {
+    const html = detail(
+      '<span itemprop="alternateName">Wrong breadcrumb alias</span><div class="headline__guts"><ul class="stats"><li title="Alternate name"><strong>Aka:</strong> Up</li></ul></div><li title="Alternate name"><strong>Aka:</strong> Wrong other scope</li>',
+    );
+    expect((await lookup(html)).candidates[0]?.aliases).toEqual(["Up"]);
+  });
+  it("discovers source-declared AKA matches even when the search title is unrelated", async () => {
+    const fetchFn = client([
+      search(row("Tall Wall")),
+      detail(
+        '<div class="headline__guts"><ul class="stats"><li title="Alternate name"><strong>Aka:</strong> Up</li></ul></div>',
+      ).replace('itemprop="name">Cragmont Crack', 'itemprop="name">Tall Wall'),
+    ]);
+    expect(
+      (await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, name: "Up" })).candidates[0],
+    ).toMatchObject({ name: "Tall Wall", aliases: ["Up"] });
+  });
+  it("caps unique detail hydration without treating an omitted route as evidence of uniqueness", async () => {
+    const rows = Array.from({ length: 61 }, (_, i) =>
+      row("Cragmont Crack", `/en/climbing/world/route/${i + 1}`),
+    ).join("");
+    const fetchFn = client([
+      search(rows),
+      ...Array.from({ length: 60 }, (_, i) => detail("", `/en/climbing/world/route/${i + 1}`)),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(result.complete).toBe(false);
+    expect(result.candidates).toHaveLength(60);
+    expect(fetchFn).toHaveBeenCalledTimes(61);
+  });
+  it.each([
+    ["Lat/Lon:", "37.22828, -122.10797", { latitude: 37.22828, longitude: -122.10797 }],
+    ["Lat/Lon:", "137.22828, -122.10797", null],
+    ["Lat/Lon:", "37.22828, -222.10797", null],
+    ["Longitude:", "37.22828, -122.10797", null],
+    ["Lat/Lon:", "37.22828", null],
+  ])(
+    "attaches verified displayed %s %s conservatively to the nearest area",
+    async (label, pair, coordinates) => {
+      const html = detail(
+        `<meta property="place:location:latitude" content="40"><h3><span id="location">Location</span></h3><dl class="areaInfo"><dd>${label} ${pair}</dd></dl>`,
+      ).replace("Cragmont Park</span>", "Goat Rock</span>");
+      const result = await lookup(html);
+      expect(result.candidates[0]?.locations).toEqual([
+        { externalId: "456", name: "Goat Rock", scope: "area", coordinates },
+      ]);
+      expect(result.candidates[0]?.setting).toBeNull();
+    },
+  );
   it.each(["  CRAGMONT  CRACK  ", "Ｃｒａｇｍｏｎｔ Crack", "Cragmont\t\nCrack"])(
     "finds the sole matching result after normalizing %s",
     async (name) => {
@@ -54,12 +116,15 @@ describe("TheCragCatalogueAdapter", () => {
   );
 
   it("does not merge distinct Unicode names when folding case", async () => {
-    const fetchFn = client([search(row("STRASSE"))]);
+    const fetchFn = client([
+      search(row("STRASSE")),
+      detail().replace('itemprop="name">Cragmont Crack', 'itemprop="name">STRASSE'),
+    ]);
     expect(await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, name: "Straße" })).toEqual({
       candidates: [],
       complete: true,
     });
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -364,21 +429,21 @@ describe("TheCragCatalogueAdapter", () => {
     );
   });
 
-  it("follows pages, deduplicates IDs and only fetches normalized exact names", async () => {
+  it("follows pages and retains unique IDs while repeated rows keep discovery incomplete", async () => {
     const fetchFn = client([
       search(row("Different") + row(), "?S=Cragmont%20Crack&only=routes&page=2"),
       search(row("  CRAGMONT  CRACK ")),
       detail(),
     ]);
     const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
-    expect(result.complete).toBe(true);
+    expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(1);
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
   it("marks capped searches incomplete", async () => {
     const pages = Array.from({ length: 3 }, (_, i) =>
-      search(row("Other"), `?S=Cragmont%20Crack&only=routes&page=${i + 2}`),
+      search("", `?S=Cragmont%20Crack&only=routes&page=${i + 2}`),
     );
     const fetchFn = client(pages);
     expect(await new TheCragCatalogueAdapter(fetchFn).search(seed)).toEqual({
@@ -390,8 +455,8 @@ describe("TheCragCatalogueAdapter", () => {
 
   it("marks repeated pagination incomplete", async () => {
     const fetchFn = client([
-      search(row("Other"), "?S=Cragmont%20Crack&only=routes&page=2"),
-      search(row("Other"), "?S=Cragmont%20Crack&only=routes&page=2"),
+      search("", "?S=Cragmont%20Crack&only=routes&page=2"),
+      search("", "?S=Cragmont%20Crack&only=routes&page=2"),
     ]);
     expect((await new TheCragCatalogueAdapter(fetchFn).search(seed)).complete).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(2);

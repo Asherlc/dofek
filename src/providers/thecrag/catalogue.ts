@@ -5,10 +5,12 @@ import type {
   ClimbingCatalogueAdapter,
 } from "@dofek/training/climbing-catalogue";
 import { load } from "cheerio";
+import { catalogueNameMatch } from "../../climbing-catalogue-matching.ts";
 
 const ORIGIN = "https://www.thecrag.com";
 const SEARCH_PATH = "/en/climbing/world/search";
 const MAX_PAGES = 3;
+const MAX_ROUTES = 60;
 const steepness: Record<string, string> = {
   Ramp: "slab",
   Vertical: "vertical",
@@ -16,10 +18,6 @@ const steepness: Record<string, string> = {
   Roof: "roof",
   Tufa: "tufa",
 };
-
-function normalizedName(value: string): string {
-  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-}
 
 function routeUrl(value: string): URL {
   const url = URL.canParse(value, ORIGIN) ? new URL(value, ORIGIN) : null;
@@ -144,11 +142,41 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
       coordinates: null,
     });
   }
+  const displayed = $("#location")
+    .closest("h3")
+    .next("dl.areaInfo")
+    .find("dd")
+    .toArray()
+    .map((element) =>
+      /^\s*Lat\/Lon:\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\s*$/.exec($(element).text()),
+    )
+    .filter((match) => match !== null);
+  const nearest = locations.at(-1);
+  if (displayed.length === 1 && nearest) {
+    const latitude = Number(displayed[0]?.[1]);
+    const longitude = Number(displayed[0]?.[2]);
+    if (
+      Number.isFinite(latitude) &&
+      Math.abs(latitude) <= 90 &&
+      Number.isFinite(longitude) &&
+      Math.abs(longitude) <= 180
+    )
+      nearest.coordinates = { latitude, longitude };
+  }
+  const aliases = $('.headline__guts > ul.stats > li[title="Alternate name"]')
+    .toArray()
+    .map((element) => {
+      const alias = $(element).clone();
+      alias.find("strong").remove();
+      return alias.text().replace(/\s+/g, " ").trim();
+    })
+    .filter(Boolean);
   return {
     providerId: "thecrag",
     externalId: routeId(identity),
     url: identity.href,
     name,
+    ...(aliases.length ? { aliases: [...new Set(aliases)] } : {}),
     kind,
     setting: null,
     locations,
@@ -199,6 +227,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
     const visited = new Set<string>();
     const routes = new Map<string, URL>();
     let complete = false;
+    let partial = false;
     for (let page = 0; page < MAX_PAGES; page++) {
       if (visited.has(current.href)) break;
       visited.add(current.href);
@@ -208,10 +237,15 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
           "theCrag catalogue search page is blocked or unsupported. Retry when public access is available.",
         );
       for (const element of $("table.routetable .rt_name .route a[href]").toArray()) {
-        const anchor = $(element).clone();
-        anchor.find(".star").remove();
-        if (normalizedName(anchor.text()) !== normalizedName(seed.name)) continue;
-        const url = routeUrl(anchor.attr("href") ?? "");
+        const url = routeUrl($(element).attr("href") ?? "");
+        if (routes.has(routeId(url))) {
+          partial = true;
+          continue;
+        }
+        if (routes.size >= MAX_ROUTES) {
+          partial = true;
+          continue;
+        }
         routes.set(routeId(url), url);
       }
       const next = $(".pagination li.next:not(.disabled) a[href]");
@@ -241,7 +275,15 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
       current = url;
     }
     const candidates: CatalogueCandidate[] = [];
-    for (const url of routes.values()) candidates.push(parseDetail(await this.#page(url), url));
-    return { candidates, complete };
+    for (const url of routes.values()) {
+      const candidate = parseDetail(await this.#page(url), url);
+      if (
+        [seed.name, ...(seed.aliases ?? [])].some(
+          (name) => catalogueNameMatch(name, candidate) !== null,
+        )
+      )
+        candidates.push(candidate);
+    }
+    return { candidates, complete: complete && !partial };
   }
 }

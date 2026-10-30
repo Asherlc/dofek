@@ -1,10 +1,18 @@
 import type {
   CatalogueCandidate,
+  CatalogueLocation,
   CatalogueSearchResult,
   CatalogueSeed,
   ClimbingCatalogueAdapter,
 } from "@dofek/training/climbing-catalogue";
 import { z } from "zod";
+import {
+  CATALOGUE_LOCAL_AREA_METRES,
+  catalogueAreasAreNearby,
+  catalogueLocalArea,
+  catalogueNameMatch,
+  normalizeCatalogueName,
+} from "../climbing-catalogue-matching.ts";
 import { captureException } from "../lib/error-reporting.ts";
 
 const API = "https://api.openbeta.io";
@@ -18,6 +26,7 @@ const uuid = z.uuid();
 const metadata = z.object({
   lat: z.number().finite().min(-90).max(90).nullish(),
   lng: z.number().finite().min(-180).max(180).nullish(),
+  mp_id: z.string().regex(/^\d+$/).nullish(),
 });
 const labels = new Map([
   ["trad", ["Trad", "trad"]],
@@ -31,16 +40,32 @@ const labels = new Map([
   ["aid", ["Aid", "aid"]],
   ["tr", ["Top rope", "top_rope"]],
 ]);
-const climbSchema = z.object({
+const climbFacts = z.object({
   uuid,
   name: z.string().trim().min(1),
   type: z.record(z.string(), z.boolean().nullable()),
   grades: z.record(z.string(), z.string().nullable()).nullable(),
   metadata,
+});
+const climbSchema = climbFacts.extend({
   parent: z.object({ uuid, area_name: z.string().trim().min(1), metadata }),
   pathTokens: z.array(z.string().min(1)).nullish(),
   ancestors: z.array(uuid).nullish(),
 });
+const areaSchema = z.object({
+  uuid,
+  area_name: z.string().trim().min(1),
+  metadata: metadata.extend({ leaf: z.boolean().nullish() }),
+  pathTokens: z.array(z.string().min(1)).nullish(),
+  ancestors: z.array(uuid).nullish(),
+});
+const areaSummarySchema = areaSchema.extend({ totalClimbs: z.number().int().nonnegative() });
+const hydratedAreaSchema = areaSummarySchema.extend({ climbs: z.array(climbFacts) });
+const areaFields =
+  "uuid area_name pathTokens ancestors totalClimbs metadata { lat lng mp_id leaf }";
+const climbFields = `uuid name type { trad sport bouldering deepwatersolo alpine snow ice mixed aid tr }
+    grades { yds vscale french font ewbank uiaa brazilianCrux wi } metadata { lat lng mp_id }`;
+const nearbyQuery = `query NearbyCatalogueAreas($bbox:[Float],$zoom:Float) { cragsWithin(filter:{bbox:$bbox,zoom:$zoom}) { uuid area_name pathTokens ancestors metadata { lat lng mp_id leaf } } }`;
 const searchSchema = z.object({
   found: z.number().int().nonnegative(),
   page: z.number().int().positive(),
@@ -53,19 +78,38 @@ const query = `query CatalogueClimb($uuid: ID!) {
   climb(uuid: $uuid) {
     uuid name type { trad sport bouldering deepwatersolo alpine snow ice mixed aid tr }
     grades { yds vscale french font ewbank uiaa brazilianCrux wi }
-    metadata { lat lng } parent { uuid area_name metadata { lat lng } }
+    metadata { lat lng mp_id } parent { uuid area_name metadata { lat lng mp_id } }
     pathTokens ancestors
   }
 }`;
-
-function normalize(value: string): string {
-  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-}
 
 function coordinates(value: z.infer<typeof metadata>) {
   return value.lat == null || value.lng == null
     ? null
     : { latitude: value.lat, longitude: value.lng };
+}
+
+function areaLocation(area: z.infer<typeof areaSchema>): CatalogueLocation {
+  return {
+    externalId: area.uuid,
+    name: area.area_name,
+    scope: "area",
+    coordinates: coordinates(area.metadata),
+  };
+}
+
+function matchesArea(
+  seed: CatalogueSeed,
+  local: CatalogueLocation,
+  area: z.infer<typeof areaSchema>,
+): boolean {
+  if (local.externalId && seed.providerId === "openbeta") return local.externalId === area.uuid;
+  if (local.externalId && seed.providerId === "mountain-project" && area.metadata.mp_id)
+    return local.externalId === area.metadata.mp_id;
+  return (
+    normalizeCatalogueName(local.name) === normalizeCatalogueName(area.area_name) &&
+    catalogueAreasAreNearby(local, areaLocation(area))
+  );
 }
 
 function sourceId(seed: CatalogueSeed): string | null {
@@ -150,6 +194,13 @@ function candidate(climb: z.infer<typeof climbSchema>): CatalogueCandidate {
     externalId: climb.uuid,
     url: `https://openbeta.io/climb/${climb.uuid}`,
     name: climb.name,
+    ...(climb.metadata.mp_id
+      ? {
+          references: [
+            { providerId: "mountain-project" as const, externalId: climb.metadata.mp_id },
+          ],
+        }
+      : {}),
     kind: boulder === route ? null : boulder ? "boulder" : "route",
     setting: null,
     locations,
@@ -215,9 +266,126 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
     return candidate(climb);
   }
 
+  async #graph(queryText: string, variables: Record<string, unknown>): Promise<unknown> {
+    return this.#request(API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: queryText, variables }),
+    });
+  }
+
+  async #local(
+    seed: CatalogueSeed,
+    local: CatalogueLocation & { coordinates: NonNullable<CatalogueLocation["coordinates"]> },
+  ): Promise<CatalogueSearchResult> {
+    const { latitude, longitude } = local.coordinates;
+    const degrees = (CATALOGUE_LOCAL_AREA_METRES / 6_371_000) * (180 / Math.PI);
+    const longitudeDegrees = degrees / Math.cos((latitude * Math.PI) / 180);
+    const discovered = z
+      .object({
+        errors: z.array(z.unknown()).optional(),
+        data: z.object({ cragsWithin: z.array(areaSchema) }),
+      })
+      .safeParse(
+        await this.#graph(nearbyQuery, {
+          bbox: [
+            Math.max(-180, longitude - longitudeDegrees),
+            Math.max(-90, latitude - degrees),
+            Math.min(180, longitude + longitudeDegrees),
+            Math.min(90, latitude + degrees),
+          ],
+          zoom: 15,
+        }),
+      );
+    if (!discovered.success || discovered.data.errors?.length)
+      throw new Error(
+        "OpenBeta catalogue local-area discovery is invalid. Retry when public access is available.",
+      );
+    const areas = [
+      ...new Map(
+        discovered.data.data.cragsWithin
+          .filter((area) => matchesArea(seed, local, area))
+          .map((area) => [area.uuid, area]),
+      ).values(),
+    ];
+    const candidates = new Map<string, CatalogueCandidate>();
+    let hydratedClimbs = 0;
+    let complete = areas.length > 0 && areas.length <= 3;
+    let searchArea: CatalogueLocation = local;
+    for (const selected of areas.slice(0, 3)) {
+      const summary = z
+        .object({
+          errors: z.array(z.unknown()).optional(),
+          data: z.object({ area: areaSummarySchema.nullable() }),
+        })
+        .safeParse(
+          await this.#graph(
+            `query CatalogueArea($uuid:ID) { area(uuid:$uuid) { ${areaFields} } }`,
+            { uuid: selected.uuid },
+          ),
+        );
+      if (!summary.success || summary.data.errors?.length || !summary.data.data.area)
+        throw new Error("OpenBeta catalogue area metadata is unavailable or invalid. Retry later.");
+      const area = summary.data.data.area;
+      if (area.uuid !== selected.uuid || !matchesArea(seed, local, area))
+        throw new Error(
+          "OpenBeta catalogue area identity does not match the selected local area. Retry later.",
+        );
+      if (areas.length === 1) searchArea = areaLocation(area);
+      if (area.metadata.leaf !== true || area.totalClimbs > 200 - hydratedClimbs) {
+        complete = false;
+        continue;
+      }
+      const hydrated = z
+        .object({
+          errors: z.array(z.unknown()).optional(),
+          data: z.object({ area: hydratedAreaSchema.nullable() }),
+        })
+        .safeParse(
+          await this.#graph(
+            `query CatalogueArea($uuid:ID) { area(uuid:$uuid) { ${areaFields} climbs { ${climbFields} } } }`,
+            { uuid: area.uuid },
+          ),
+        );
+      if (!hydrated.success || hydrated.data.errors?.length || !hydrated.data.data.area)
+        throw new Error("OpenBeta catalogue area climbs are unavailable or invalid. Retry later.");
+      const full = hydrated.data.data.area;
+      hydratedClimbs += full.climbs.length;
+      if (full.uuid !== area.uuid || !matchesArea(seed, local, full))
+        throw new Error(
+          "OpenBeta catalogue area identity does not match the selected local area. Retry later.",
+        );
+      const unique = new Map(full.climbs.map((climb) => [climb.uuid, climb]));
+      if (
+        unique.size !== full.totalClimbs ||
+        full.totalClimbs !== area.totalClimbs ||
+        full.metadata.leaf !== true
+      )
+        complete = false;
+      for (const climb of unique.values()) {
+        if (candidates.size >= 200) {
+          complete = false;
+          break;
+        }
+        candidates.set(
+          climb.uuid,
+          candidate({
+            ...climb,
+            parent: full,
+            pathTokens: full.pathTokens,
+            ancestors: full.ancestors,
+          }),
+        );
+      }
+    }
+    return { candidates: [...candidates.values()], complete, searchArea };
+  }
+
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
     const id = sourceId(seed);
     if (id) return { candidates: [await this.#climb(id)], complete: false };
+    const local = catalogueLocalArea(seed.locations);
+    if (local?.coordinates) return this.#local(seed, { ...local, coordinates: local.coordinates });
     const ids = new Set<string>();
     let complete = false;
     for (let page = 1; page <= MAX_PAGES; page++) {
@@ -241,7 +409,11 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
       const result = response.data;
       if (result.page !== page) break;
       for (const hit of result.hits)
-        if (normalize(hit.document.climbName) === normalize(seed.name))
+        if (
+          [seed.name, ...(seed.aliases ?? [])].some(
+            (name) => catalogueNameMatch(name, { name: hit.document.climbName }) !== null,
+          )
+        )
           ids.add(hit.document.climbUUID);
       if (result.search_cutoff || result.found <= page * PAGE_SIZE) {
         complete = !result.search_cutoff;

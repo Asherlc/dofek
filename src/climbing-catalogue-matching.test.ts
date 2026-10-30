@@ -6,11 +6,24 @@ import type {
 } from "@dofek/training/climbing-catalogue";
 import { describe, expect, it } from "vitest";
 import {
+  catalogueAreasAreNearby,
   catalogueLocalArea,
   catalogueNameMatch,
   matchCatalogueCandidates,
   normalizeCatalogueName,
 } from "./climbing-catalogue-matching.ts";
+
+it("applies the shared 100 metre great-circle policy at high latitude and rejects unknown points", () => {
+  const point = (longitude: number): CatalogueLocation => ({
+    externalId: null,
+    name: "Area",
+    scope: "area",
+    coordinates: { latitude: 60, longitude },
+  });
+  expect(catalogueAreasAreNearby(point(0), point(0.00179))).toBe(true);
+  expect(catalogueAreasAreNearby(point(0), point(0.00181))).toBe(false);
+  expect(catalogueAreasAreNearby(point(0), { ...point(0), coordinates: null })).toBe(false);
+});
 
 const area = (name = "Goat Rock", latitude = 37.2304): CatalogueLocation => ({
   externalId: null,

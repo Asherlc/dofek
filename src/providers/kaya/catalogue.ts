@@ -6,6 +6,7 @@ import {
   catalogueCandidateSchema,
 } from "@dofek/training/climbing-catalogue";
 import { z } from "zod";
+import { catalogueNameMatch } from "../../climbing-catalogue-matching.ts";
 import { decodeKayaClimbingTags } from "./climbing-tags.ts";
 
 const origin = "https://kaya-app.kayaclimb.com";
@@ -57,8 +58,6 @@ const nativeSchema = z.object({
   }),
   errors: z.array(z.unknown()).optional(),
 });
-const normalize = (name: string) =>
-  name.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
 
 type ClassifiedClimb = z.infer<typeof climbSchema> & {
   lead?: boolean | null;
@@ -257,7 +256,9 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
         }
         seen.add(climb.id);
         if (
-          normalize(climb.name) === normalize(seed.name) ||
+          [seed.name, ...(seed.aliases ?? [])].some(
+            (name) => catalogueNameMatch(name, climb) !== null,
+          ) ||
           (seed.providerId === this.providerId && seed.externalId === climb.id)
         )
           candidates.push(token ? await this.#native(climb.id, token) : candidate(climb));

@@ -43,7 +43,12 @@ export function catalogueLocalArea(locations: CatalogueLocation[]): CatalogueLoc
   return locations.filter((location) => location.scope === "area").at(-1) ?? null;
 }
 
-function withinLocalArea(left: CatalogueLocation, right: CatalogueLocation): boolean {
+export const CATALOGUE_LOCAL_AREA_METRES = 100;
+
+export function catalogueAreasAreNearby(
+  left: CatalogueLocation,
+  right: CatalogueLocation,
+): boolean {
   if (!left.coordinates || !right.coordinates) return false;
   const radians = Math.PI / 180;
   const origin = left.coordinates;
@@ -54,7 +59,7 @@ function withinLocalArea(left: CatalogueLocation, right: CatalogueLocation): boo
       Math.cos(destination.latitude * radians) *
       Math.sin(((destination.longitude - origin.longitude) * radians) / 2) ** 2;
   const metres = 2 * 6_371_000 * Math.asin(Math.sqrt(Math.min(1, haversine)));
-  return metres <= 100;
+  return metres <= CATALOGUE_LOCAL_AREA_METRES;
 }
 
 function sameAreaName(left: CatalogueLocation, right: CatalogueLocation): boolean {
@@ -68,7 +73,7 @@ function geography(left: CatalogueLocation[], right: CatalogueLocation[]): Geogr
   if (!localLeft || !localRight) return "unknown";
   // A shared broad ancestor cannot erase conflicting nearest-area observations.
   if (!localLeft.coordinates || !localRight.coordinates) return "unknown";
-  if (!withinLocalArea(localLeft, localRight)) return "conflict";
+  if (!catalogueAreasAreNearby(localLeft, localRight)) return "conflict";
   if (sameAreaName(localLeft, localRight)) return "compatible";
   // One source can include an extra local level. Align the other's nearest area,
   // rather than accepting an arbitrary shared country/park ancestor.
@@ -77,7 +82,7 @@ function geography(left: CatalogueLocation[], right: CatalogueLocation[]): Geogr
       (location) =>
         location.scope === "area" &&
         sameAreaName(location, nearest) &&
-        withinLocalArea(location, nearest),
+        catalogueAreasAreNearby(location, nearest),
     );
   return aligned(left, localRight) || aligned(right, localLeft) ? "compatible" : "conflict";
 }
