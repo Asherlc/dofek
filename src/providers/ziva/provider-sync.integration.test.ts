@@ -164,12 +164,12 @@ const originalClientId = process.env.ZIVA_CLIENT_ID;
 const originalClientSecret = process.env.ZIVA_CLIENT_SECRET;
 const originalRedirectUri = process.env.OAUTH_REDIRECT_URI;
 
-describe.sequential("ZivaProvider.sync (PostgreSQL + MCP protocol)", () => {
+describe("ZivaProvider.sync (PostgreSQL + MCP protocol)", { concurrent: false }, () => {
   beforeAll(async () => {
     process.env.ZIVA_CLIENT_ID = "ziva-integration-client";
     process.env.ZIVA_CLIENT_SECRET = "ziva-integration-secret";
     process.env.OAUTH_REDIRECT_URI = "https://dofek.example.test/oauth/callback";
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
   }, 120_000);
 

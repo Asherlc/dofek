@@ -235,7 +235,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "zwift", "Zwift", "https://us-or-rly101.zwift.com");
   }, 60_000);
 

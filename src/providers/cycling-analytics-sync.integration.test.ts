@@ -98,7 +98,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-client-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "cycling_analytics",

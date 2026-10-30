@@ -95,7 +95,7 @@ describe("durable Garmin import waiting-children protocol", () => {
   let context: TestContext;
 
   beforeAll(async () => {
-    archive.server.activate({ onUnhandledRequest: "error" });
+    archive.server.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
   }, 60_000);
 

@@ -87,7 +87,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   }
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
       VALUES (${OTHER_USER_ID}::uuid, 'Other climber')`);
   }, 60_000);

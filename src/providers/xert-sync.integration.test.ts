@@ -97,7 +97,7 @@ describe("XertProvider.sync() (integration)", () => {
     process.env.XERT_CLIENT_ID = "xert_public";
     process.env.XERT_CLIENT_SECRET = "xert_public";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "xert", "Xert", "https://www.xertonline.com");
   }, 60_000);
 

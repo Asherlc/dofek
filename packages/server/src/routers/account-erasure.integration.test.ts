@@ -41,7 +41,7 @@ describe("account erasure router (integration)", () => {
 
   beforeAll(async () => {
     process.env.STRIPE_SECRET_KEY = stripeSecretKey;
-    externalApiServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    externalApiServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name, email)

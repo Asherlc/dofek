@@ -86,7 +86,7 @@ describe("DecathlonProvider.sync() (integration)", () => {
     process.env.DECATHLON_CLIENT_ID = "test-client-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "decathlon",

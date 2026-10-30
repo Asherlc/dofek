@@ -168,7 +168,7 @@ describe("PolarProvider.sync() (integration)", () => {
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 
@@ -562,7 +562,7 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
-    errorServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    errorServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 

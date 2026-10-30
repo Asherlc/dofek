@@ -85,7 +85,7 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "trainerroad", "TrainerRoad", "https://www.trainerroad.com");
   }, 60_000);
 

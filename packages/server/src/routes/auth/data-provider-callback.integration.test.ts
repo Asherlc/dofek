@@ -44,7 +44,7 @@ describe("data provider OAuth reconnect", () => {
     process.env.GARMIN_CLIENT_SECRET = "test-garmin-secret";
     process.env.GARMIN_WEBHOOK_SECRET = "test-garmin-webhook-secret-at-least-32-characters";
 
-    mswServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    mswServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     vi.resetModules();
     ({ createAuthRouter } = await import("./index.ts"));
     ({ getOAuthStateStoreRef } = await import("./shared.ts"));

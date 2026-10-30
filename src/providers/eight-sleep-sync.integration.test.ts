@@ -122,7 +122,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
   }, 60_000);
 

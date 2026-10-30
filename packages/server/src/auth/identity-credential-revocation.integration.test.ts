@@ -9,7 +9,7 @@ const server = createIntegrationMswFixture();
 
 describe("identity credential revocation", () => {
   beforeAll(() => {
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => server.resetHandlers());

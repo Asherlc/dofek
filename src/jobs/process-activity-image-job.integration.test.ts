@@ -51,7 +51,7 @@ describe("account erasure racing with image acquisition", () => {
     vi.stubEnv("R2_ACCESS_KEY_ID", "media");
     vi.stubEnv("R2_SECRET_ACCESS_KEY", "media-secret");
     vi.stubEnv("ACTIVITY_MEDIA_R2_BUCKET", bucket);
-    server.activate({ onUnhandledRequest: "bypass" });
+    server.activate({ onUnhandledFrame: "bypass" });
     syncBuiltinESMExports();
     await ctx.db.execute(
       sql`INSERT INTO fitness.user_profile(id,name) VALUES(${userId},'Media erasure race')`,

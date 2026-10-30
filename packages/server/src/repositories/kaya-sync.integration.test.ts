@@ -25,7 +25,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
 
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       context.db,
       "kaya",

@@ -151,7 +151,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     process.env.RWGPS_CLIENT_ID = "test-client-id";
     process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 
@@ -1055,7 +1055,7 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
   const identityServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    identityServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    identityServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

@@ -30,7 +30,7 @@ describe("provider detail operation fences (integration)", () => {
   const originalClientSecret = process.env.GARMIN_CLIENT_SECRET;
 
   beforeAll(async () => {
-    externalApiServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    externalApiServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name) VALUES (${userId}, 'Provider operation user')`,

@@ -48,7 +48,7 @@ describe("whoopAuth router", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    mswServer.activate({ onUnhandledRequest: "bypass" });
+    mswServer.activate({ onUnhandledFrame: "bypass" });
     testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);

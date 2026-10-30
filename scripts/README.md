@@ -119,10 +119,14 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   Discovery and original specifications remain authoritative. New files use
   the positive-duration median; estimates and all allocations are recorded in
   `reports/integration-sharding/<index>-of-<count>/assignment.json`.
-- `update-integration-test-timings.ts`: Validates fresh successful whole-suite
-  result caches and combines exactly four coherent shard artifacts. Cache paths
-  come from Vitest's public
-  [results-cache getter](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cache/results.ts).
+- `integration-timing-reporter.ts`: Publishes completed whole-suite timings using
+  Vitest's public [per-specification cache API](https://vitest.dev/api/advanced/vitest#cache)
+  after the run ends. It requires successful complete current-run results for
+  exactly the assigned files.
+- `update-integration-test-timings.ts`: Validates the reporter-owned artifacts
+  and combines exactly four coherent shard exports. It does not parse Vitest's
+  internal cache files; the [public reporter API](https://vitest.dev/api/advanced/reporters)
+  supplies completed modules.
   Allocation never consumes independently restored caches. Invalid refresh input
   preserves the existing baseline.
   - CI export, after tests pass:

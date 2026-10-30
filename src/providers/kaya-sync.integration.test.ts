@@ -29,7 +29,7 @@ describe("KayaSyncProvider canonical persistence", () => {
   let ascents: Record<string, unknown>[];
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(context.db, "kaya", "Kaya", "https://kaya-beta.kayaclimb.com", userId);
     await saveTokens(
       context.db,

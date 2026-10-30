@@ -15,7 +15,7 @@ function setEmailEnv(): void {
 
 describe("shared email", () => {
   beforeAll(() => {
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   beforeEach(() => {

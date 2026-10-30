@@ -33,7 +33,7 @@ beforeAll(() => {
   vi.stubEnv("R2_SECRET_ACCESS_KEY", "integration-secret");
   vi.stubEnv("R2_ENDPOINT", "http://provider-archives.test");
   vi.stubEnv("IMPORT_R2_BUCKET", "original-fits");
-  archiveNetwork.activate({ onUnhandledRequest: "bypass" });
+  archiveNetwork.activate({ onUnhandledFrame: "bypass" });
 });
 afterEach(() => {
   archiveKeys.clear();

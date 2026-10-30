@@ -56,7 +56,7 @@ const server = createIntegrationMswFixture();
 
 describe("remote account revocation (integration)", () => {
   beforeAll(async () => {
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     process.env.APPLE_TEAM_ID = "APPLE_TEAM";
     process.env.APPLE_KEY_ID = "APPLE_KEY";
     process.env.APPLE_PRIVATE_KEY = await generateTestKeyPem();

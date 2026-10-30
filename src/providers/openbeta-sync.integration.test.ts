@@ -32,7 +32,7 @@ describe("OpenBetaProvider canonical persistence", () => {
   let currentTicks: Record<string, unknown>[];
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       context.db,
       "openbeta",

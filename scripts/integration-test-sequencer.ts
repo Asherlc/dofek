@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { BaseSequencer, type TestSpecification } from "vitest/node";
 import {
@@ -108,9 +108,10 @@ export default class IntegrationTestSequencer extends BaseSequencer {
     }
     const selected = bins[shard.index - 1];
     if (!selected) throw new Error("Integration shard has no allocated bin");
-    const cachePath = this.ctx.cache.results.getCachePath();
     const assignment = timingAssignmentSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      assignmentId: randomUUID(),
+      assignedAt: Date.now(),
       index: shard.index,
       count: shard.count,
       provenance: {
@@ -132,8 +133,10 @@ export default class IntegrationTestSequencer extends BaseSequencer {
         .map((file) => file.key)
         .sort(),
       bins: bins.map((bin) => ({ durationMs: bin.durationMs, fileCount: bin.files.length })),
-      cachePath,
-      cacheExistedBefore: cachePath !== null && existsSync(cachePath),
+      cacheEnabled: this.ctx.config.cache !== false,
+      cacheExistedBefore: specifications.some(
+        (specification) => this.ctx.cache.getTestSpecificationResult(specification) !== undefined,
+      ),
     });
     const directory = path.resolve(
       root,
@@ -141,6 +144,8 @@ export default class IntegrationTestSequencer extends BaseSequencer {
       `${shard.index}-of-${shard.count}`,
     );
     mkdirSync(directory, { recursive: true });
+    for (const file of ["completed-results.json", "results.json"])
+      rmSync(path.join(directory, file), { force: true });
     writeFileSync(
       path.join(directory, "assignment.json"),
       `${JSON.stringify(assignment, null, 2)}\n`,

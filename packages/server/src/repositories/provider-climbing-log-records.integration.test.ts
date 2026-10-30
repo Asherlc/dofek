@@ -37,7 +37,7 @@ describe("provider climbing log records", () => {
   let foreignId: string;
 
   beforeAll(async () => {
-    network.activate({ onUnhandledRequest: "error" });
+    network.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name) VALUES
       (${userId}::uuid, 'Log owner'), (${otherUserId}::uuid, 'Other log owner')`);

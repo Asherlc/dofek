@@ -29,7 +29,7 @@ function archivedKey(bytes: Buffer, providerId = "fit-file") {
 }
 
 beforeAll(async () => {
-  archive.server.activate({ onUnhandledRequest: "error" });
+  archive.server.activate({ onUnhandledFrame: "error" });
   context = await setupTestDatabase();
   await ensureProvider(context.db, "fit-file", "FIT File", undefined, TEST_USER_ID);
 }, 60_000);

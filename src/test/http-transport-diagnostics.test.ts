@@ -252,7 +252,7 @@ describe("HTTP transport diagnostics", () => {
       server.listen(socketPath, resolve);
     });
     const msw = setupServer();
-    msw.listen({ onUnhandledRequest: "bypass" });
+    msw.listen({ onUnhandledFrame: "bypass" });
     const events = output();
     const observedErrors: unknown[] = [];
     const observer = (message: unknown) => {

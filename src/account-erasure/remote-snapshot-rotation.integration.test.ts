@@ -21,7 +21,7 @@ describe("account-erasure rotated revocation credentials (integration)", () => {
   let context: TestContext;
   const server = createIntegrationMswFixture();
   beforeAll(async () => {
-    server.activate({ onUnhandledRequest: "error" });
+    server.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
   });
   afterEach(() => server.resetHandlers());

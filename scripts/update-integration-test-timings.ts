@@ -1,5 +1,5 @@
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
@@ -64,7 +64,9 @@ export const timingBaselineSchema = z
   });
 export const timingAssignmentSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
+    assignmentId: z.uuid(),
+    assignedAt: z.number().int().positive(),
     provenance: provenanceSchema,
     index: z.number().int().positive(),
     count: z.number().int().positive(),
@@ -72,7 +74,7 @@ export const timingAssignmentSchema = z
     selected: inventorySchema,
     estimated: inventorySchema,
     baselineSha256: z.string().regex(/^[a-f0-9]{64}$/),
-    cachePath: z.string().refine(isAbsolute).nullable(),
+    cacheEnabled: z.boolean(),
     cacheExistedBefore: z.boolean(),
     bins: z.array(
       z.object({ durationMs: durationSchema, fileCount: z.number().int().nonnegative() }),
@@ -90,10 +92,24 @@ export const timingAssignmentSchema = z
       ctx.addIssue({ code: "custom", message: "Assignment counts do not match inventory" });
   });
 type Assignment = z.infer<typeof timingAssignmentSchema>;
-const resultCacheSchema = z.object({
-  version: z.string(),
+const completedTimingSchema = z.object({
+  schemaVersion: z.literal(1),
+  assignmentId: z.uuid(),
+  provenance: provenanceSchema,
+  index: z.number().int().positive(),
+  count: z.number().int().positive(),
+  baselineSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  runStartedAt: z.number().int().positive(),
+  runFinishedAt: z.number().int().positive(),
   results: z.array(
-    z.tuple([keySchema, z.object({ duration: durationSchema, failed: z.literal(false) })]),
+    z.tuple([
+      keySchema,
+      z.object({
+        duration: durationSchema,
+        failed: z.literal(false),
+        lastRun: z.number().int().positive(),
+      }),
+    ]),
   ),
 });
 
@@ -122,7 +138,7 @@ function sameKeys(actual: string[], expected: string[], label: string): void {
 }
 function checkAssignment(assignment: Assignment, environment: NodeJS.ProcessEnv): void {
   if (assignment.count !== 4) throw new Error("Timing refresh requires exactly four shards");
-  if (assignment.cacheExistedBefore || !assignment.cachePath)
+  if (assignment.cacheExistedBefore || !assignment.cacheEnabled)
     throw new Error("Timing cache is stale/preexisting or disabled; rerun on a fresh CI runner");
   const provenance = assignment.provenance;
   if (
@@ -146,10 +162,26 @@ function checkAssignment(assignment: Assignment, environment: NodeJS.ProcessEnv)
         throw new Error(`Timing provenance mismatch: ${key}`);
   }
 }
-function checkCache(value: unknown, assignment: Assignment) {
-  const cache = resultCacheSchema.parse(value);
-  if (cache.version !== assignment.provenance.vitestVersion)
-    throw new Error("Vitest timing cache version mismatch");
+/** Validate our reporter artifact; Vitest's private on-disk cache format is never consumed. */
+export function checkIntegrationTimingResults(value: unknown, assignment: Assignment) {
+  const cache = completedTimingSchema.parse(value);
+  if (
+    cache.assignmentId !== assignment.assignmentId ||
+    cache.index !== assignment.index ||
+    cache.count !== assignment.count ||
+    cache.baselineSha256 !== assignment.baselineSha256 ||
+    JSON.stringify(cache.provenance) !== JSON.stringify(assignment.provenance)
+  )
+    throw new Error("Timing completion assignment/provenance mismatch");
+  if (
+    cache.runStartedAt > assignment.assignedAt ||
+    cache.runFinishedAt < assignment.assignedAt ||
+    cache.runFinishedAt < cache.runStartedAt ||
+    cache.results.some(
+      ([, result]) => result.lastRun < cache.runStartedAt || result.lastRun > cache.runFinishedAt,
+    )
+  )
+    throw new Error("Timing cache has no complete current-run result");
   sameKeys(
     cache.results.map(([key]) => key),
     assignment.selected,
@@ -174,8 +206,14 @@ export function runIntegrationTimingCommand(
     checkAssignment(assignment, environment);
     if (environment.GITHUB_ACTIONS !== "true")
       throw new Error("Only successful fresh GitHub Actions shards are eligible timing exports");
-    if (!assignment.cachePath) throw new Error("Vitest result cache is disabled");
-    const cache = checkCache(readJson(assignment.cachePath), assignment);
+    if (!existsSync(join(target, "completed-results.json")))
+      throw new Error(
+        "No eligible complete timing results; run every assigned file successfully with a fresh enabled Vitest cache. Partial, failed or interrupted runs cannot be exported.",
+      );
+    const cache = checkIntegrationTimingResults(
+      readJson(join(target, "completed-results.json")),
+      assignment,
+    );
     writeFileSync(join(target, "results.json"), `${JSON.stringify(cache, null, 2)}\n`);
     return;
   }
@@ -187,7 +225,7 @@ export function runIntegrationTimingCommand(
       checkAssignment(assignment, environment);
       return {
         assignment,
-        cache: checkCache(readJson(join(directory, "results.json")), assignment),
+        cache: checkIntegrationTimingResults(readJson(join(directory, "results.json")), assignment),
       };
     })
     .sort((a, b) => a.assignment.index - b.assignment.index);
@@ -214,7 +252,7 @@ export function runIntegrationTimingCommand(
     schemaVersion: 1,
     provenance: {
       ...first.provenance,
-      source: "Successful complete four-shard Vitest results caches (whole-suite durations)",
+      source: "Successful complete four-shard Vitest public cache results (whole-suite durations)",
       baselineSha256: first.baselineSha256,
       inventory: first.inventory,
       shards: shards.map(({ assignment }) => assignment),

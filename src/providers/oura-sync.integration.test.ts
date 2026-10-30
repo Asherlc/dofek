@@ -188,7 +188,7 @@ describe("OuraProvider.sync() (integration)", () => {
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
@@ -459,7 +459,7 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
-    errorServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    errorServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 

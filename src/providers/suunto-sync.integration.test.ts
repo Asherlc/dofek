@@ -101,7 +101,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     process.env.SUUNTO_CLIENT_SECRET = "test-client-secret";
     process.env.SUUNTO_SUBSCRIPTION_KEY = "test-subscription-key";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "suunto", "Suunto", "https://cloudapi.suunto.com");
   }, 60_000);
 

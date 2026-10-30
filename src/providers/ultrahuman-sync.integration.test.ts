@@ -128,7 +128,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     process.env.ULTRAHUMAN_API_TOKEN = "test-ultrahuman-token";
     process.env.ULTRAHUMAN_EMAIL = "test@example.com";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "ultrahuman",

@@ -41,7 +41,7 @@ describe("validateNativeAppleCallback (integration)", () => {
   const originalEnv = { ...process.env };
 
   beforeAll(async () => {
-    mswServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    mswServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
 
     const { pem, keyId } = await generateTestKeyPem();
     process.env.APPLE_BUNDLE_ID = "com.dofek.app";

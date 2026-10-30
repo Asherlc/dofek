@@ -70,7 +70,7 @@ function processorProgress(
 
 describe("account-erasure processors (integration)", () => {
   beforeAll(() => {
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

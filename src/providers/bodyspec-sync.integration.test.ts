@@ -203,7 +203,7 @@ describe("BodySpecProvider.sync() (integration)", () => {
 
   beforeAll(() => {
     server = createIntegrationMswFixture(...bodyspecHandlers());
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(async () => {

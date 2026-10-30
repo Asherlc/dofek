@@ -54,7 +54,7 @@ describe("official Garmin activity persistence", () => {
   let context: TestContext;
   const server = createIntegrationMswFixture();
   beforeAll(async () => {
-    server.activate({ onUnhandledRequest: "error" });
+    server.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
     await ensureProvider(context.db, "garmin", "Garmin", undefined, TEST_USER_ID);
   }, 60_000);

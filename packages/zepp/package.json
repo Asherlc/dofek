@@ -27,7 +27,7 @@
     "esbuild": "0.28.2",
     "module-alias": "2.3.4",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@zeppos/zml": "0.0.43",

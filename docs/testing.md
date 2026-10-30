@@ -167,14 +167,18 @@ Vitest's allocation; see the [public sequence extension](https://v4.vitest.dev/c
 Do not restore independent result caches as allocation input. All jobs must use
 the same checked-in baseline. Preserve the historical runner version that
 measured it; a runner upgrade can consume those weights, while all artifacts
-in a new complete refresh must match one current runtime. Each job records its assignment and exact public
-result-cache path, then exports timings only after successful tests from an
-absent-before, present-after cache with exactly the assigned successful files.
-The cache records whole-suite duration, including suite hooks, rather than JSON
+in a new complete refresh must match one current runtime. Each job records its
+assignment and checks the public per-specification cache before execution. The
+[timing reporter](../scripts/integration-timing-reporter.ts) publishes an owned
+artifact only after a successful complete run of exactly the assigned files,
+with current-run timestamps and matching assignment identity. The export command
+validates this artifact before publishing `results.json`; Vitest's internal
+cache filename and disk schema are not part of the contract.
+The public cache records whole-suite duration, including suite hooks, rather than JSON
 reporter intervals between individual tests; import, collection and coverage
 overhead remain outside that estimate. See Vitest's
-[results cache](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cache/results.ts)
-and [JSON reporter](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/reporters/json.ts).
+[per-specification cache](https://vitest.dev/api/advanced/vitest#cache)
+and [reporter API](https://vitest.dev/api/advanced/reporters).
 
 After a complete successful CI run, download `integration-timings-1` through
 `integration-timings-4` from the same run attempt into four separate directories.

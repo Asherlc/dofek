@@ -98,7 +98,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     process.env.WITHINGS_CLIENT_ID = "test-withings-client";
     process.env.WITHINGS_CLIENT_SECRET = "test-withings-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 

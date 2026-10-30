@@ -101,7 +101,7 @@ describe("KomootProvider.sync() (integration)", () => {
     process.env.KOMOOT_CLIENT_ID = "test-client-id";
     process.env.KOMOOT_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "komoot", "Komoot", "https://external-api.komoot.de/v007");
   }, 60_000);
 

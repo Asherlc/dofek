@@ -292,7 +292,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "whoop", "WHOOP");
     // Store a fake refresh token so the provider can authenticate
     await saveTokens(ctx.db, "whoop", {
@@ -1269,7 +1269,7 @@ describe("WhoopClient — verifyCode", () => {
   const clientServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    clientServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    clientServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1376,7 +1376,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
   const cognitoServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    cognitoServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    cognitoServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1440,7 +1440,7 @@ describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
   const mfaServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    mfaServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    mfaServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1474,7 +1474,7 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
   const bootstrapServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    bootstrapServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    bootstrapServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1501,7 +1501,7 @@ describe("WhoopClient — getCycles response shapes", () => {
   const cyclesServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    cyclesServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    cyclesServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1602,7 +1602,7 @@ describe("WhoopClient — API error handling", () => {
   const apiServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    apiServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    apiServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

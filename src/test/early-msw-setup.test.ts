@@ -11,14 +11,16 @@ describe("integration MSW startup", () => {
       write(
         "sentinel.ts",
         `
-import { Socket } from "node:net";
+import { createServer } from "node:http";
+import { once } from "node:events";
 if (!globalThis.sentinelInstalled) {
   globalThis.sentinelInstalled = true;
-  globalThis.socketCalls = 0;
   globalThis.nativeCalls = 0;
-  Socket.prototype.connect = function () { globalThis.socketCalls++; throw new Error("Unexpected socket"); };
-  globalThis.sentinelFetch = async () => { globalThis.nativeCalls++; return new Response("synthetic unauthorized", { status: 401 }); };
-  globalThis.fetch = globalThis.sentinelFetch;
+  globalThis.sentinelFetch = globalThis.fetch;
+  globalThis.listener = createServer((_request, response) => { globalThis.nativeCalls++; response.writeHead(401); response.end("synthetic unauthorized"); });
+  globalThis.listener.listen(0, "127.0.0.1");
+  await once(globalThis.listener, "listening");
+  globalThis.base = "http://127.0.0.1:" + globalThis.listener.address().port;
 }
 if (globalThis.fetch !== globalThis.sentinelFetch) throw new Error("Previous file did not restore native fetch");
 process.env.GARMIN_CLIENT_ID = "fixture-client";
@@ -44,8 +46,8 @@ it("constructs the retained client", () => {});
 import { beforeAll, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { createIntegrationMswFixture } from ${JSON.stringify(path.join(process.cwd(), "src/test/early-msw-lifecycle.ts"))};
-const server = createIntegrationMswFixture(http.get("https://fixture.example.test/baseline", () => HttpResponse.text("baseline")));
-beforeAll(() => server.activate({ onUnhandledRequest: "error" }));
+const server = createIntegrationMswFixture(http.get(globalThis.base + "/baseline", () => HttpResponse.text("baseline")));
+beforeAll(() => server.activate({ onUnhandledFrame: "error" }));
 it("uses current handlers and persists rotated authorization before revocation", async () => {
   let persisted;
   let refreshCalls = 0;
@@ -64,15 +66,14 @@ it("uses current handlers and persists rotated authorization before revocation",
   expect(revokeCalls).toBe(1);
   expect(persistenceCalls).toBe(1);
   expect(globalThis.nativeCalls).toBe(0);
-  expect(globalThis.socketCalls).toBe(0);
   await expect(fetch("https://unexpected.example.test/")).rejects.toThrow();
 });
 it("restores the constructor baseline after clearing runtime handlers", async () => {
   let overrideCalls = 0;
-  server.use(http.get("https://fixture.example.test/baseline", () => { overrideCalls++; return HttpResponse.text("override"); }));
-  expect(await (await fetch("https://fixture.example.test/baseline")).text()).toBe("override");
+  server.use(http.get(globalThis.base + "/baseline", () => { overrideCalls++; return HttpResponse.text("override"); }));
+  expect(await (await fetch(globalThis.base + "/baseline")).text()).toBe("override");
   server.resetHandlers();
-  expect(await (await fetch("https://fixture.example.test/baseline")).text()).toBe("baseline");
+  expect(await (await fetch(globalThis.base + "/baseline")).text()).toBe("baseline");
   expect(overrideCalls).toBe(1);
 });
 `,
@@ -84,9 +85,9 @@ import { expect, it } from "vitest";
 import { createIntegrationMswFixture } from ${JSON.stringify(path.join(process.cwd(), "src/test/early-msw-lifecycle.ts"))};
 const server = createIntegrationMswFixture();
 it("does not retain the previous file handlers or policy", async () => {
-  expect((await fetch("https://fixture.example.test/baseline")).status).toBe(401);
+  expect((await fetch(globalThis.base + "/baseline")).status).toBe(401);
   expect(globalThis.nativeCalls).toBe(1);
-  server.activate({ onUnhandledRequest: "error" });
+  server.activate({ onUnhandledFrame: "error" });
   await expect(fetch("https://diauth.garmin.com/di-oauth2-service/oauth/token", { method: "POST" })).rejects.toThrow();
 });
 `,
@@ -94,11 +95,11 @@ it("does not retain the previous file handlers or policy", async () => {
       write(
         "z-final.test.ts",
         `
-import { expect, it } from "vitest";
+import { afterAll, expect, it } from "vitest";
+afterAll(async () => { await new Promise((resolve, reject) => globalThis.listener.close(error => error ? reject(error) : resolve())); });
 it("defaults to bypass in a file without an API fixture", async () => {
-  expect((await fetch("https://fixture.example.test/baseline")).status).toBe(401);
+  expect((await fetch(globalThis.base + "/baseline")).status).toBe(401);
   expect(globalThis.nativeCalls).toBe(2);
-  expect(globalThis.socketCalls).toBe(0);
 });
 `,
       );

@@ -115,7 +115,7 @@ describe("WahooProvider.sync() (integration)", () => {
     process.env.WAHOO_CLIENT_ID = "test-client-id";
     process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);
 

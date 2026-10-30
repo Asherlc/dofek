@@ -28,7 +28,7 @@ const server = createIntegrationMswFixture(
 
 describe("account-erasure processor retention (integration)", () => {
   beforeAll(() => {
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

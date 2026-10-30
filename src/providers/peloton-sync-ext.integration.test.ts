@@ -93,7 +93,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
@@ -572,7 +572,7 @@ const loginServer = createIntegrationMswFixture();
 
 describe("pelotonAutomatedLogin", () => {
   beforeAll(() => {
-    loginServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    loginServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {

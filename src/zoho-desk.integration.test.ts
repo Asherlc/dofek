@@ -14,7 +14,7 @@ const config: ZohoDeskConfig = {
 
 const mswServer = createIntegrationMswFixture();
 
-beforeAll(() => mswServer.activate({ onUnhandledRequest: "error" }));
+beforeAll(() => mswServer.activate({ onUnhandledFrame: "error" }));
 afterEach(() => mswServer.resetHandlers());
 afterAll(() => mswServer.deactivate());
 

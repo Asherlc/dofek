@@ -149,7 +149,7 @@ describe("password reset service", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    emailServer.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    emailServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     ctx = await setupTestDatabase();
   }, 120_000);
 

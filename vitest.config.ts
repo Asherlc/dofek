@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import IntegrationDiagnosticsReporter from "./scripts/integration-diagnostics-reporter.ts";
 import IntegrationTestSequencer from "./scripts/integration-test-sequencer.ts";
+import IntegrationTimingReporter from "./scripts/integration-timing-reporter.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const zeppStubPath = path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js");
@@ -40,6 +41,7 @@ const sharedTestConfig = {
   pool: "forks" as const,
   execArgv: ["--no-experimental-webstorage"],
   retry: 2,
+  clearMocks: false,
 };
 
 const testCredentialEncryptionKey = Buffer.from("a".repeat(32), "utf8").toString("base64");
@@ -77,9 +79,10 @@ export default defineConfig({
   test: {
     ...sharedTestConfig,
     sequence: { sequencer: IntegrationTestSequencer },
-    reporters: ["default", new IntegrationDiagnosticsReporter()],
+    reporters: ["default", new IntegrationDiagnosticsReporter(), new IntegrationTimingReporter()],
     projects: [
       {
+        extends: false,
         esbuild: {
           jsx: "automatic",
         },
@@ -109,6 +112,7 @@ export default defineConfig({
       },
       "packages/mobile/vitest.config.ts",
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "integration",
@@ -133,6 +137,7 @@ export default defineConfig({
         },
       },
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "peerdb-integration",

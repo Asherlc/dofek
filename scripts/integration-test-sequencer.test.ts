@@ -45,11 +45,11 @@ async function fixture(durations: number[] = [90, 80, 70, 60, 10, 10, 10, 10]) {
   );
   const context = await createVitest(
     "test",
-    { root, config: false, watch: false, name: "integration", pool: "forks", cache: false },
+    { root, config: false, watch: false, name: "integration", pool: "forks" },
     { server: { middlewareMode: true } },
   );
   contexts.push(context);
-  vi.spyOn(context.cache.results, "getCachePath").mockReturnValue(join(root, "results.json"));
+
   const makeSpec = (file: string, name = "integration", pool = "forks") => {
     const project = context.getRootProject();
     const specification = project.createSpecification(
@@ -124,7 +124,11 @@ describe("duration balanced integration sequencing", () => {
   it("is independent of checkout root, discovery order and preexisting cache", async () => {
     const a = await fixture(),
       b = await fixture();
-    writeFileSync(join(b.root, "results.json"), "foreign cache");
+    vi.spyOn(b.context.cache, "getTestSpecificationResult").mockReturnValue({
+      duration: 100,
+      failed: false,
+      lastRun: Date.now() - 1000,
+    });
     for (const index of [1, 2, 3, 4]) {
       await a.shard(index);
       await b.shard(index, 4, [...b.specs].reverse());
@@ -132,6 +136,20 @@ describe("duration balanced integration sequencing", () => {
       expect(a.manifest(index).baselineSha256).toBe(b.manifest(index).baselineSha256);
     }
     expect(b.manifest().cacheExistedBefore).toBe(true);
+  });
+  it("records disabled caches and replaces stale app-owned results for a new assignment", async () => {
+    const setup = await fixture();
+    await setup.shard();
+    const first = setup.manifest();
+    const directory = join(setup.root, "reports/integration-sharding/1-of-4");
+    writeFileSync(join(directory, "completed-results.json"), "old completion");
+    writeFileSync(join(directory, "results.json"), "old export");
+    setup.context.config.cache = false;
+    await setup.shard();
+    expect(setup.manifest().assignmentId).not.toBe(first.assignmentId);
+    expect(setup.manifest().cacheEnabled).toBe(false);
+    expect(() => readFileSync(join(directory, "completed-results.json"))).toThrow();
+    expect(() => readFileSync(join(directory, "results.json"))).toThrow();
   });
   it("uses ordinal ties, zero weights, and empty bins when shards exceed files", async () => {
     const setup = await fixture([10, 10, 0, 0]);

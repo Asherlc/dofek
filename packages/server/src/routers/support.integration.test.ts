@@ -1,6 +1,7 @@
 import { POSTHOG_API_KEY, POSTHOG_HOST } from "dofek/lib/posthog-config";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
+import { HttpNetworkFrame } from "msw/experimental";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -33,7 +34,9 @@ describe("support router", () => {
 
   beforeAll(async () => {
     mswServer.activate({
-      onUnhandledRequest(request) {
+      onUnhandledFrame({ frame }) {
+        if (!(frame instanceof HttpNetworkFrame)) return;
+        const request = frame.data.request;
         if (new URL(request.url).hostname === "localhost") {
           return;
         }

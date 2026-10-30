@@ -28,7 +28,7 @@ const userId = randomUUID();
 let context: TestContext;
 
 beforeAll(async () => {
-  archive.server.activate({ onUnhandledRequest: "error" });
+  archive.server.activate({ onUnhandledFrame: "error" });
   context = await setupTestDatabase();
   await context.db.execute(
     sql`INSERT INTO fitness.user_profile (id, name) VALUES (${userId}::uuid, 'Artifact erasure owner')`,

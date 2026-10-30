@@ -16,7 +16,7 @@ describe("Stripe erasure at account-deletion acceptance (integration)", () => {
   beforeAll(async () => {
     context = await setupTestDatabase();
     process.env.STRIPE_SECRET_KEY = "sk_test_acceptance";
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   }, 120_000);
 
   afterEach(() => {

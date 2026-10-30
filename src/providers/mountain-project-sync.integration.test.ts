@@ -41,7 +41,7 @@ describe("MountainProjectProvider canonical persistence", () => {
   let currentExport: string;
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "mountain-project",

@@ -84,7 +84,7 @@ describe("FatSecretProvider.sync() (integration)", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-consumer-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-consumer-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fatsecret", "FatSecret");
   }, 60_000);
 

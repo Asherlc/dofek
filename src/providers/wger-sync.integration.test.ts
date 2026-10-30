@@ -105,7 +105,7 @@ describe("WgerProvider.sync() (integration)", () => {
     process.env.WGER_CLIENT_ID = "test-client-id";
     process.env.WGER_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "wger", "Wger", "https://wger.de/api/v2");
   }, 60_000);
 

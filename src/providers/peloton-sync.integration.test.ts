@@ -140,7 +140,7 @@ describe("PelotonProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 

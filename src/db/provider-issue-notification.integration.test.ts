@@ -27,7 +27,7 @@ describe("provider issue email delivery", () => {
   let emailRequests: unknown[];
 
   beforeAll(async () => {
-    server.activate({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.insert(userProfile).values({ id: OTHER_USER_ID, name: "Other User" });
   }, 120_000);
