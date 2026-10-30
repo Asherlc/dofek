@@ -3,6 +3,7 @@ import {
   catalogueCandidateSchema,
   catalogueSearchResultSchema,
   catalogueSeedSchema,
+  climbingCatalogueConfidenceLabel,
   climbingCatalogueContextSchema,
   climbingCatalogueTagLabel,
 } from "./climbing-catalogue.ts";
@@ -194,4 +195,13 @@ describe("informational catalogue observations", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it.each([
+  ["source", "Own source"],
+  ["reference", "Provider reference"],
+  ["corroborated", "Location corroborated"],
+  ["possible", "Possible match"],
+] as const)("labels %s confidence for both clients", (confidence, label) => {
+  expect(climbingCatalogueConfidenceLabel(confidence)).toBe(label);
 });

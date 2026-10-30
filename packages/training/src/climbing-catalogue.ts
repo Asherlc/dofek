@@ -94,6 +94,19 @@ export type CatalogueCandidate = z.infer<typeof catalogueCandidateSchema>;
 export type CatalogueSearchResult = z.infer<typeof catalogueSearchResultSchema>;
 export type ClimbingCatalogueContext = z.infer<typeof climbingCatalogueContextSchema>;
 
+/** Present the server's match decision consistently on web and mobile. */
+export function climbingCatalogueConfidenceLabel(
+  confidence: ClimbingCatalogueContext["sources"][number]["matches"][number]["confidence"],
+): string {
+  const labels = {
+    source: "Own source",
+    reference: "Provider reference",
+    corroborated: "Location corroborated",
+    possible: "Possible match",
+  };
+  return labels[confidence];
+}
+
 /** Label literal catalogue tags without assigning unknown tags a wall or hold meaning. */
 export function climbingCatalogueTagLabel(tag: z.infer<typeof catalogueTagSchema>): string {
   const prefix =

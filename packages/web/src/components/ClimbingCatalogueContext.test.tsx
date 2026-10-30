@@ -185,11 +185,12 @@ it("distinguishes a completed empty catalogue lookup", () => {
   });
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
-  expect(screen.getByText("No exact-name catalogue matches found.")).toBeTruthy();
+  expect(screen.getByText("No catalogue candidates found in the searched sources.")).toBeTruthy();
 });
 
 it.each([
   ["source", "Own source"],
+  ["reference", "Provider reference"],
   ["corroborated", "Location corroborated"],
 ] as const)("labels %s evidence separately from possible matches", (confidence, label) => {
   const source = ready.sources[0];
@@ -381,4 +382,94 @@ it("shows all catalogue climb types separately from wall and personal ascent fac
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
   for (const label of labels) expect(screen.getByText(`Climb type: ${label}`)).toBeTruthy();
+});
+
+it.each([
+  [
+    "reference",
+    [
+      "Explicit Mountain Project reference 105736399.",
+      "Catalogue name differs from the logged name.",
+    ],
+  ],
+  [
+    "possible",
+    [
+      "Explicit Mountain Project reference 105736399.",
+      "Conflict: local areas differ: Goat Rock and Chew Tooth.",
+    ],
+  ],
+] as const)(
+  "displays server evidence for a %s match within the local search area",
+  (confidence, evidence) => {
+    const source = ready.sources[0];
+    const match = source?.matches[0];
+    if (!source || !match) throw new Error("Missing fixture match");
+    useQuery.mockReturnValue({
+      isFetchedAfterMount: true,
+      refetch,
+      error: null,
+      data: {
+        ...ready,
+        sources: [
+          {
+            ...source,
+            searchArea: {
+              externalId: "goat-rock",
+              name: "Goat Rock",
+              scope: "area",
+              coordinates: null,
+            },
+            matches: [
+              {
+                ...match,
+                confidence,
+                evidence: [...evidence],
+                candidate: { ...match.candidate, name: "Corner Route" },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    render(<ClimbingCatalogueContext id="log-1" />);
+    open();
+    expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Corner Route" })).toBeTruthy();
+    for (const reason of evidence) expect(screen.getByText(reason)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Catalogue context" }));
+    expect(
+      screen.getByRole("button", { name: "Catalogue context" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByText(evidence[0])).toBeNull();
+  },
+);
+
+it("qualifies empty results when local discovery is incomplete", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    error: null,
+    data: {
+      ...ready,
+      sources: [
+        {
+          providerId: "openbeta",
+          searchComplete: false,
+          searchArea: {
+            externalId: "goat-rock",
+            name: "Goat Rock",
+            scope: "area",
+            coordinates: null,
+          },
+          matches: [],
+        },
+      ],
+    },
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByText("No catalogue candidates found in the searched sources.")).toBeTruthy();
+  expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
+  expect(screen.getByText("Search incomplete; more candidates may exist.")).toBeTruthy();
 });

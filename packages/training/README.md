@@ -176,6 +176,26 @@ whitespace. Distinct parent paths remain separate. If one source has multiple
 Area IDs for the same path, the match is ambiguous and those areas remain
 separate. Grouping preserves every log and its original occurrence number.
 
+### Climbing catalogue evidence
+
+The [catalogue response contract](src/climbing-catalogue.ts) keeps disposable
+reference observations separate from recorded climb facts. Both clients use
+`climbingCatalogueConfidenceLabel` for Own source, Provider reference,
+Location corroborated, and Possible match labels; they display the server's
+`evidence` strings and optional `searchArea` without deciding identity.
+Incomplete searches remain qualified even when no candidates were returned.
+
+Explicit provider references can link renamed climbs: the paired catalogue
+stories show Mountain Project's
+[Cheddar Corner](https://www.mountainproject.com/route/105736399/cheddar-corner)
+and OpenBeta's
+[Corner Route](https://openbeta.io/climb/f3a2b199-c2d3-59b8-8f12-dd7ce734e88b/corner-route).
+OpenBeta exposes the reference as `metadata.mp_id` in its
+[Climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql).
+A separate conflict story keeps the candidate possible and displays the server's
+reason. Catalogue grades and tags remain attributed observations, independent
+of that identity decision; see the [matching design](../../docs/superpowers/specs/2026-10-29-climbing-catalogue-matching-design.md).
+
 ### Training distributions
 
 The Treff polarization summary uses recorded cycling time in three
