@@ -77,21 +77,31 @@ function sameAreaName(left: CatalogueLocation, right: CatalogueLocation): boolea
   return name.length > 0 && name === normalizeCatalogueName(right.name);
 }
 
-function geography(left: CatalogueLocation[], right: CatalogueLocation[]): Geography {
+function geography(
+  left: CatalogueLocation[],
+  right: CatalogueLocation[],
+  sameProvider: boolean,
+): Geography {
   const localLeft = catalogueLocalArea(left);
   const localRight = catalogueLocalArea(right);
   if (!localLeft || !localRight) return "unknown";
   // A shared broad ancestor cannot erase conflicting nearest-area observations.
   if (!localLeft.coordinates || !localRight.coordinates) return "unknown";
   if (!catalogueAreasAreNearby(localLeft, localRight)) return "conflict";
-  if (sameAreaName(localLeft, localRight)) return "compatible";
+  const areasAlign = (leftArea: CatalogueLocation, rightArea: CatalogueLocation) =>
+    (sameProvider &&
+      leftArea.externalId !== null &&
+      leftArea.externalId.length > 0 &&
+      leftArea.externalId === rightArea.externalId) ||
+    sameAreaName(leftArea, rightArea);
+  if (areasAlign(localLeft, localRight)) return "compatible";
   // One source can include an extra local level. Align the other's nearest area,
   // rather than accepting an arbitrary shared country/park ancestor.
   const aligned = (locations: CatalogueLocation[], nearest: CatalogueLocation) =>
     locations.some(
       (location) =>
         location.scope === "area" &&
-        sameAreaName(location, nearest) &&
+        areasAlign(location, nearest) &&
         catalogueAreasAreNearby(location, nearest),
     );
   return aligned(left, localRight) || aligned(right, localLeft) ? "compatible" : "conflict";
@@ -139,7 +149,7 @@ export function matchCatalogueCandidates(
   const areaConflict = (left: CatalogueLocation[], right: CatalogueLocation[]) =>
     `Nearest local areas conflict: ${catalogueLocalArea(left)?.name} / ${catalogueLocalArea(right)?.name}.`;
   const sourceConflict =
-    geography(recordedLocations, seed.locations) === "conflict"
+    geography(recordedLocations, seed.locations, true) === "conflict"
       ? areaConflict(recordedLocations, seed.locations)
       : null;
   const candidates = [
@@ -157,8 +167,9 @@ export function matchCatalogueCandidates(
       const references = referenceEvidence(seed, candidate);
       const reference = !native && references.linked;
       const name = nameEvidence(seed, candidate);
-      const currentPlace = geography(seed.locations, candidate.locations);
-      const recordedPlace = geography(recordedLocations, candidate.locations);
+      const sameProvider = seed.providerId === candidate.providerId;
+      const currentPlace = geography(seed.locations, candidate.locations, sameProvider);
+      const recordedPlace = geography(recordedLocations, candidate.locations, sameProvider);
       const place = currentPlace === "unknown" ? recordedPlace : currentPlace;
       const supportingLocations =
         currentPlace === "compatible" ? seed.locations : recordedLocations;
@@ -184,12 +195,6 @@ export function matchCatalogueCandidates(
     })
     .filter((match) => match.native || match.reference || match.name !== null);
   const plausible = assessed.filter((match) => match.conflicts.length === 0);
-  const complete =
-    found.complete &&
-    (!found.searchArea ||
-      (found.searchArea.scope === "area" &&
-        (geography(seed.locations, [found.searchArea]) === "compatible" ||
-          geography(recordedLocations, [found.searchArea]) === "compatible")));
   const matches = assessed.map<AttributedMatch>(
     ({ candidate, native, reference, name, place, supportingLocations, conflicts }) => {
       if (native)
@@ -214,6 +219,13 @@ export function matchCatalogueCandidates(
         return { candidate, confidence: "reference", evidence };
       const outdoor = seed.setting === "outdoor" || candidate.setting === "outdoor";
       const kind = seed.kind !== null && seed.kind === candidate.kind;
+      const sameProvider = seed.providerId === candidate.providerId;
+      const complete =
+        found.complete &&
+        (!found.searchArea ||
+          (found.searchArea.scope === "area" &&
+            (geography(seed.locations, [found.searchArea], sameProvider) === "compatible" ||
+              geography(recordedLocations, [found.searchArea], sameProvider) === "compatible")));
       if (!kind) evidence.push("Known matching route/boulder kinds are required.");
       if (!outdoor) evidence.push("Outdoor geography cannot verify indoor gym or set identity.");
       if (!complete) evidence.push("Discovery is incomplete for the matched local area.");

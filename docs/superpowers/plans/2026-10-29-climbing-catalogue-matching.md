@@ -1,6 +1,6 @@
 # Climbing Catalogue Matching Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Checkboxes record completion of each implementation step.
 
 **Goal:** Apply the approved evidence rules to cached cross-provider climb enrichment.
 

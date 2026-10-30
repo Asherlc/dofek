@@ -115,9 +115,7 @@ export function ClimbingCatalogueContextView({
           ))}
           {context?.status === "ready" &&
             context.sources.every((source) => source.matches.length === 0) && (
-              <Text style={styles.text}>
-                No catalogue candidates found in the searched sources.
-              </Text>
+              <Text style={styles.text}>No catalogue candidates to display.</Text>
             )}
           {pending ? (
             <Text accessibilityLiveRegion="polite" style={styles.text}>

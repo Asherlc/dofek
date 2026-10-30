@@ -232,7 +232,7 @@ it("polls pending lookups and stops on terminal status or errors", () => {
   useMutation.mock.lastCall?.[0].onSuccess(pending);
   expect(setData).toHaveBeenCalledWith({ id: "log-1" }, pending);
 });
-it("distinguishes a completed empty catalogue lookup", () => {
+it("renders the empty state when no catalogue sources were searched", () => {
   useQuery.mockReturnValue({
     isFetchedAfterMount: true,
     refetch,
@@ -242,7 +242,22 @@ it("distinguishes a completed empty catalogue lookup", () => {
   });
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
-  expect(screen.getByText("No catalogue candidates found in the searched sources.")).toBeTruthy();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
+});
+it("renders the empty state after a completed source search", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    data: {
+      ...ready,
+      sources: ready.sources.map((source) => ({ ...source, searchComplete: true, matches: [] })),
+    },
+    error: null,
+    isLoading: false,
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
 });
 
 it.each([
@@ -526,7 +541,7 @@ it("qualifies empty results when local discovery is incomplete", () => {
   });
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
-  expect(screen.getByText("No catalogue candidates found in the searched sources.")).toBeTruthy();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
   expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
   expect(screen.getByText("Search incomplete; more candidates may exist.")).toBeTruthy();
 });

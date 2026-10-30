@@ -8,24 +8,25 @@ import {
   climbingCatalogueTagLabel,
 } from "./climbing-catalogue.ts";
 
+const references = [{ providerId: "mountain-project", externalId: "105736399" }];
+const aliases = ["Cheddar Corner"];
+const searchArea = { externalId: null, name: "Goat Rock", scope: "area", coordinates: null };
+const candidate = {
+  providerId: "openbeta",
+  externalId: "corner",
+  name: "Corner Route",
+  url: "https://openbeta.io/climb/corner",
+  kind: "route",
+  setting: null,
+  locations: [searchArea],
+  grade: "5.6",
+  angle: null,
+  tags: [],
+  references,
+  aliases,
+};
+
 it("carries explicit identity evidence and local coverage through the shared response", () => {
-  const references = [{ providerId: "mountain-project", externalId: "105736399" }];
-  const aliases = ["Cheddar Corner"];
-  const searchArea = { externalId: null, name: "Goat Rock", scope: "area", coordinates: null };
-  const candidate = {
-    providerId: "openbeta",
-    externalId: "corner",
-    name: "Corner Route",
-    url: "https://openbeta.io/climb/corner",
-    kind: "route",
-    setting: null,
-    locations: [searchArea],
-    grade: "5.6",
-    angle: null,
-    tags: [],
-    references,
-    aliases,
-  };
   expect(
     catalogueSearchResultSchema.parse({ candidates: [candidate], complete: true, searchArea }),
   ).toEqual({ candidates: [candidate], complete: true, searchArea });
@@ -75,7 +76,13 @@ it("accepts independently released response clients without the optional evidenc
       fetchedAt: null,
       expiresAt: null,
       error: null,
-      sources: [{ providerId: "openbeta", searchComplete: false, matches: [] }],
+      sources: [
+        {
+          providerId: "openbeta",
+          searchComplete: false,
+          matches: [{ confidence: "possible", candidate }],
+        },
+      ],
     }).success,
   ).toBe(true);
 });

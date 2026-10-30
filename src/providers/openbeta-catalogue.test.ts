@@ -670,6 +670,69 @@ describe("OpenBeta bounded local-area discovery", () => {
   };
   const nearby = (areas: unknown[] = goatRockDiscovery) => ({ data: { cragsWithin: areas } });
 
+  it("keeps a real name result when a recorded non-leaf area cannot select its nearby leaf area", async () => {
+    const leafArea = {
+      uuid: areaId,
+      area_name: "Northeast Face",
+      metadata: { lat: 37.89, lng: -122.26, leaf: true },
+    };
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "typesense-01.openbeta.io" && url.searchParams.get("q") === seed.name)
+        return Response.json(page());
+      const body = JSON.parse(String(init?.body));
+      if (body.query.includes("cragsWithin")) return Response.json(nearby([leafArea]));
+      if (body.query.includes("CatalogueClimb") && body.variables.uuid === id)
+        return Response.json({ data: { climb: climb() } });
+      throw new Error("Unexpected OpenBeta request");
+    });
+    const adapter = new OpenBetaCatalogueAdapter(fetchFn);
+    const unlocated = await adapter.search(seed);
+    const located = await adapter.search({
+      ...seed,
+      locations: [
+        {
+          externalId: null,
+          name: "Cragmont Park",
+          scope: "area",
+          coordinates: { latitude: 37.89, longitude: -122.26 },
+        },
+      ],
+    });
+    expect(unlocated.candidates.map((candidate) => candidate.name)).toEqual(["Cragmont Crack"]);
+    expect(unlocated.complete).toBe(true);
+    expect(located.candidates).toEqual(unlocated.candidates);
+    expect(located.complete).toBe(false);
+    expect(located.searchArea).toBeUndefined();
+    expect(fetchFn).toHaveBeenCalledTimes(5);
+  });
+
+  it("preserves complete empty coverage of a matched leaf area", async () => {
+    const area = { ...goatRockArea, totalClimbs: 0, climbs: [] };
+    const fetchFn = client([nearby(), summary(area), { data: { area } }]);
+    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).toMatchObject({
+      candidates: [],
+      complete: true,
+      searchArea: { externalId: goatRockArea.uuid },
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    { response: () => new Response("", { status: 503 }), error: /HTTP 503/ },
+    {
+      response: () => Response.json({ data: { cragsWithin: null } }),
+      error: /discovery is invalid/,
+    },
+  ])(
+    "surfaces local discovery errors without continuing name discovery: $error",
+    async ({ response, error }) => {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => response());
+      await expect(new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).rejects.toThrow(error);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("finds Corner Route independently of Cheddar Corner and retains hydrated MP references", async () => {
     const fetchFn = client([nearby(), summary(), { data: { area: goatRockArea } }]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
@@ -729,14 +792,14 @@ describe("OpenBeta bounded local-area discovery", () => {
   });
 
   it("does not treat a same-name area with a different owned reference as matched", async () => {
-    const fetchFn = client([nearby()]);
+    const fetchFn = client([nearby(), page(0, 1, [])]);
     expect(
       await new OpenBetaCatalogueAdapter(fetchFn).search({
         ...localSeed,
         locations: [{ ...localArea, externalId: "999" }],
       }),
     ).toMatchObject({ candidates: [], complete: false });
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -760,15 +823,19 @@ describe("OpenBeta bounded local-area discovery", () => {
   });
 
   it("skips full climb hydration when metadata exceeds the 200-climb budget", async () => {
-    const fetchFn = client([nearby(), summary({ ...goatRockArea, totalClimbs: 201 })]);
+    const fetchFn = client([
+      nearby(),
+      summary({ ...goatRockArea, totalClimbs: 201 }),
+      page(0, 1, []),
+    ]);
     expect(await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).toMatchObject({
       candidates: [],
       complete: false,
     });
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
-  it("bounds matching area hydration to three areas and keeps results incomplete", async () => {
+  it("bounds local hydration to three areas and name discovery to three pages across aliases", async () => {
     const areas = [goatRockArea.uuid, areaId, id, "00000000-0000-4000-8000-000000000001"].map(
       (uuid) => ({
         ...goatRockArea,
@@ -782,13 +849,18 @@ describe("OpenBeta bounded local-area discovery", () => {
     const fetchFn = client([
       nearby(areas),
       ...areas.slice(0, 3).flatMap((area) => [summary(area), { data: { area } }]),
+      ...Array.from({ length: 3 }, () => page(0, 1, [])),
     ]);
     const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
+      aliases: ["Up", "Down", "Left start"],
     });
     expect(result).toMatchObject({ candidates: [], complete: false });
-    expect(fetchFn).toHaveBeenCalledTimes(7);
+    expect(fetchFn).toHaveBeenCalledTimes(10);
+    expect(
+      fetchFn.mock.calls.slice(7).map(([input]) => new URL(String(input)).searchParams.get("q")),
+    ).toEqual(["Cheddar Corner", "Up", "Down"]);
   });
 
   it("keeps name discovery available when the nearest recorded area has unknown coordinates", async () => {
@@ -809,6 +881,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       const fetchFn = client([
         nearby([area]),
         ...(lat === 37.22909 ? [summary(area), { data: { area } }] : []),
+        ...(lat === 37.22909 ? [] : [page(0, 1, [])]),
       ]);
       const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
         ...localSeed,

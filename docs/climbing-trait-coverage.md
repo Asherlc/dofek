@@ -248,7 +248,7 @@ Global name searches share at most three page requests per provider across the
 current name and all meaningful logged/source aliases, rather than three pages
 per alias. Empty and case/whitespace-equivalent queries are removed; punctuation
 and route qualifiers remain available to upstream search. Each distinct query
-gets its first page before any query receives another page. Unqueried aliases,
+gets its first page before any query receives another page. Aliases not yet queried,
 unfinished pagination, repeated or omitted results, and detail caps keep combined
 coverage incomplete and cannot establish a unique corroborated match. Query
 pagination/repetition state is separate from global source-ID deduplication, so
@@ -292,15 +292,31 @@ fact count before processing: overruns keep coverage incomplete, processing and
 retention stop at the remaining budget, and no further full-area reads occur
 after exhaustion. These unpaginated upstream responses can exceed an earlier
 advertised count, so the metadata check cannot guarantee a network-level response
-size cap. Missing, capped or partial coverage
-remains incomplete; `searchArea` records the scope of this lookup. When the
-nearest area has no point, the existing bounded Typesense name search remains
-available. The API has no cursor or completion flag on these area queries;
-the count check follows the upstream leaf-area contract, rather than assuming
-that any nonempty response is complete. Sources: the
+size cap. Missing, capped or partial coverage remains incomplete; `searchArea`
+records the scope of this lookup. Successful local discovery that is both
+incomplete and empty continues with bounded Typesense name discovery and keeps
+the combined result incomplete, without claiming a matched-area search scope.
+This preserves name results when a broader recorded area cannot select a nearby
+leaf area: at zoom 15, the upstream geographic query selects leaf areas. Complete
+empty matched-area coverage and partial results containing candidates retain
+their local path; HTTP, parsing and identity errors remain lookup errors. When
+the nearest area has no point, bounded name search remains available directly.
+The API has no cursor or completion flag on these area queries; the count check
+follows the upstream leaf-area contract, rather than assuming that any nonempty
+response is complete. Sources: the
 [Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql),
 [area data source](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/model/AreaDataSource.ts),
 and [reader and regression fixtures](../src/providers/openbeta-catalogue.test.ts).
+
+The combined path permits at most seven local requests (one geographic query,
+three metadata reads and three climb reads), then three name-search pages shared
+across all aliases. With the requested `per_page=20` honored, at most 60 unique
+eligible name hits require detail reads, yielding at most 70 requests overall.
+This is a request-budget calculation under the documented
+[Typesense pagination contract](https://typesense.org/docs/30.2/api/search.html#pagination-parameters),
+not a response-size guarantee: the [reader](../src/providers/openbeta-catalogue.ts)
+does not independently cap over-returned Typesense hits or unpaginated area
+response bytes. Local processing still stops at 200 climb facts.
 
 The verified [Goat Rock area](https://openbeta.io/area/0045f7bf-6b6c-5d8a-bc9a-30f9168aea37/goat-rock)
 has UUID `0045f7bf-6b6c-5d8a-bc9a-30f9168aea37`, Mountain Project area reference

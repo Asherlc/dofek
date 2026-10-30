@@ -206,6 +206,92 @@ describe("evidence-based catalogue matching", () => {
       evidence: expect.arrayContaining([expect.stringMatching(/source.*id/i)]),
     });
   });
+  it.each(["recorded", "current"])(
+    "aligns a renamed native area ID against the %s source geography",
+    (sourceGeography) => {
+      const recordedArea = { ...area(), externalId: "native-area" };
+      const currentArea = { ...area("Renamed Goat Rock", 37.2306), externalId: "native-area" };
+      const native = {
+        ...candidate,
+        providerId: "mountain-project" as const,
+        externalId: "105734732",
+        locations: [currentArea],
+      };
+      const result = matchCatalogueCandidates(
+        {
+          ...seed,
+          locations: [sourceGeography === "current" ? currentArea : recordedArea],
+        },
+        { candidates: [native], complete: true },
+        [recordedArea],
+      );
+      expect(result).toMatchObject([
+        {
+          confidence: "source",
+          evidence: ["Recorded source provider and ID match."],
+        },
+      ]);
+    },
+  );
+  it("keeps conflicting nearby area names when their equal IDs belong to different providers", () => {
+    const nativeArea = { ...area(), externalId: "shared-area-id" };
+    const otherProviderArea = {
+      ...area("Chew Tooth", 37.2306),
+      externalId: "shared-area-id",
+    };
+    expect(
+      matches([{ ...candidate, locations: [otherProviderArea] }], {
+        ...seed,
+        locations: [nativeArea],
+      }),
+    ).toMatchObject([
+      {
+        confidence: "possible",
+        evidence: expect.arrayContaining([expect.stringMatching(/nearest local areas conflict/i)]),
+      },
+    ]);
+  });
+  it("keeps conflicting native area names when both area IDs are empty", () => {
+    const native = {
+      ...candidate,
+      providerId: "mountain-project" as const,
+      externalId: "105734732",
+      locations: [{ ...area("Chew Tooth", 37.2306), externalId: "" }],
+    };
+    expect(
+      matches([native], {
+        ...seed,
+        locations: [{ ...area(), externalId: "" }],
+      }),
+    ).toMatchObject([
+      {
+        confidence: "source",
+        evidence: expect.arrayContaining([expect.stringMatching(/nearest local areas conflict/i)]),
+      },
+    ]);
+  });
+  it("preserves distant logged and current native area coordinates despite matching area IDs", () => {
+    const recordedArea = { ...area(), externalId: "native-area" };
+    const currentArea = { ...area("Renamed Goat Rock", 38), externalId: "native-area" };
+    const native = {
+      ...candidate,
+      providerId: "mountain-project" as const,
+      externalId: "105734732",
+      locations: [currentArea],
+    };
+    expect(
+      matchCatalogueCandidates(
+        { ...seed, locations: [currentArea] },
+        { candidates: [native], complete: true },
+        [recordedArea],
+      ),
+    ).toMatchObject([
+      {
+        confidence: "source",
+        evidence: expect.arrayContaining([expect.stringMatching(/nearest local areas conflict/i)]),
+      },
+    ]);
+  });
   it("accepts a renamed explicit MP reference without name or grade equality", () => {
     const linked = {
       ...candidate,
