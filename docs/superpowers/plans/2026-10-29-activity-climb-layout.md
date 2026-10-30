@@ -34,6 +34,6 @@ Interfaces: panel consumes entries, locations, route points and onOpenEntry; map
 
 - [x] Add full-layout web/mobile stories, empty/narrow variants and rendered interaction checks.
 - [x] Start tunneled Storybook and verify real map hover, focus, click, overlap selection and narrow layout.
-- [ ] Run lint, relevant tests, all required typechecks, build and size checks.
+- [x] Run lint, relevant tests, all required typechecks, build and size checks.
 - [x] Obtain fresh code review; fix important findings with regression tests.
-- [ ] Commit and push; open a PR with direct preview and honest validation notes.
+- [x] Commit and push; open a PR with direct preview and honest validation notes.

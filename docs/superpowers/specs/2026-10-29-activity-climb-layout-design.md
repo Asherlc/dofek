@@ -11,7 +11,7 @@ Approved scope carried from the user handoff on 2026-10-29.
 - [x] Retain statuses, source links, photos, details and attachment actions.
 - [x] Reuse merged subdued green map style and lazy SDK loading.
 - [x] Full-layout Storybook preview with actual interaction verification.
-- [ ] Tests, lint, typechecks, build, size check, review, pushed branch and new PR; no merge.
+- [x] Tests, lint, typechecks, build, size check, review, pushed branch and new PR; no merge.
 
 ## Implementation
 
@@ -33,6 +33,6 @@ remains visible, and numbered map choices distinguish repeated climb names.
 Browser verification covered desktop, a 390-pixel viewport with no horizontal
 overflow, map/list selection, repeated coordinate choices and suggestions.
 The mobile Storybook browser renderer also showed one real map and synchronized
-selection. Native iOS export could not run because EXPO_PUBLIC_SENTRY_DSN was
-unavailable and both workstation Infisical CLIs lacked a usable login session.
-No runtime configuration was changed to bypass that prerequisite.
+selection. Native iOS bundle export passed using the same non-secret Sentry DSN fixture
+as the [CI checks](../../../.github/workflows/test.yml). A native Simulator/device
+audit was not performed. No production runtime configuration was changed.

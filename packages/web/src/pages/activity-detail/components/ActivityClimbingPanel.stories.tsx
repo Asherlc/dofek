@@ -55,7 +55,7 @@ export const GroupedListAndMap: Story = {
     const firstRow = canvas.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
     await userEvent.hover(firstRow);
     await waitFor(() => expect(dot).toHaveAttribute("data-highlighted", "true"));
-    await userEvent.unhover(firstRow);
+    await userEvent.hover(canvas.getByRole("heading", { name: "Climbs", level: 2 }));
     firstRow.focus();
     await waitFor(() => expect(dot).toHaveAttribute("data-highlighted", "true"));
     await userEvent.keyboard("[Enter]");
