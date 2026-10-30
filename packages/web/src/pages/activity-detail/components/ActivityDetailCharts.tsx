@@ -14,6 +14,7 @@ import {
 } from "@dofek/training/climbing-chart";
 import { cadenceAxisLabel } from "@dofek/training/training";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
+import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import { DofekChart } from "../../../components/DofekChart.tsx";
@@ -104,6 +105,7 @@ interface MetricDefinition {
 export function MetricsChart({
   points,
   activityWindow,
+  heartRateContext,
   activityType,
   hasHr,
   hasPower,
@@ -119,6 +121,7 @@ export function MetricsChart({
 }: {
   points: StreamPoint[];
   activityWindow?: ActivityChartWindow;
+  heartRateContext?: ActivityHeartRateContext;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
   activityType: string;
   hasHr: boolean;
@@ -168,7 +171,8 @@ export function MetricsChart({
   );
 
   if (loading && metricSources.length === 0) return <ChartLoadingSkeleton height={300} />;
-  if (points.length === 0 && metricSources.length === 0) return null;
+  if (points.length === 0 && !heartRateContext?.points.length && metricSources.length === 0)
+    return null;
 
   const metrics: MetricDefinition[] = [];
   if (hasHr || metricSources.some((source) => source.key === "heartRate"))
@@ -254,8 +258,9 @@ export function MetricsChart({
   const isVisible = (name: string) => legendSelected[name] !== false;
 
   const timeline = activityChartSeries(
-    points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
-    activityWindow,
+    heartRateContext?.points ??
+      points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+    heartRateContext?.window ?? activityWindow,
   );
   const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
   const climbTooltip = (annotation: ClimbingChartAnnotation) => ({
@@ -290,11 +295,13 @@ export function MetricsChart({
     yAxisIndex: index,
     data: chartSeriesData(
       activityChartSeries(
-        points.map((point, dataIndex) => ({
-          recordedAt: point.recordedAt,
-          value: metric.data[dataIndex] ?? null,
-        })),
-        activityWindow,
+        metric.name === "Heart Rate" && heartRateContext
+          ? heartRateContext.points
+          : points.map((point, dataIndex) => ({
+              recordedAt: point.recordedAt,
+              value: metric.data[dataIndex] ?? null,
+            })),
+        heartRateContext?.window ?? activityWindow,
       ),
     ),
     connectNulls: false,
@@ -415,9 +422,18 @@ export function MetricsChart({
   return (
     <figure className="m-0">
       {customLegend?.({ isVisible, toggle: toggleMetric })}
+      {heartRateContext && isVisible("Heart Rate") && (
+        <p className="mt-2 text-xs text-muted">
+          {heartRateContext.window.endedAt
+            ? "HR chart spans 5 minutes before and after the activity."
+            : "HR chart starts 5 minutes before the activity."}
+        </p>
+      )}
       {loading ? (
         <ChartLoadingSkeleton height={300} />
-      ) : points.length === 0 && error ? null : points.length === 0 ? (
+      ) : points.length === 0 &&
+        !heartRateContext?.points.length &&
+        error ? null : points.length === 0 && !heartRateContext?.points.length ? (
         <p className="py-6 text-sm text-muted">No samples for the selected sources.</p>
       ) : (
         <DofekChart option={option} height={380} onEvents={chartEvents} timeRangeMode="data" />

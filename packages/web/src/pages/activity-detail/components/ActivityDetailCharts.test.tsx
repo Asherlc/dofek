@@ -91,6 +91,30 @@ it("retains climbs at activity boundaries outside the HR sample range", () => {
   ]);
 });
 
+it("plots server-provided HR context without extending other metrics", () => {
+  render(
+    <MetricsChart
+      {...args}
+      heartRateContext={{
+        window: { startedAt: "2026-10-18T17:25:00Z", endedAt: "2026-10-18T17:36:00Z" },
+        points: [
+          { recordedAt: "2026-10-18T17:25:00Z", value: 90 },
+          { recordedAt: "2026-10-18T17:36:00Z", value: 100 },
+        ],
+      }}
+    />,
+  );
+  expect(captured.option.xAxis).toMatchObject({
+    min: Date.parse("2026-10-18T17:25:00Z"),
+    max: Date.parse("2026-10-18T17:36:00Z"),
+  });
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].data[0].value).toEqual([Date.parse("2026-10-18T17:25:00Z"), 90]);
+  expect(series[0].data.at(-1).value).toEqual([Date.parse("2026-10-18T17:36:00Z"), 100]);
+  expect(series[1].data[0].value).toEqual([Date.parse(points[0].recordedAt), 200]);
+});
+
 it("overlays timed climbs on heart rate and exposes exact climb labels", () => {
   render(
     <MetricsChart

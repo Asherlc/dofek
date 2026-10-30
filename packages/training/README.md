@@ -122,6 +122,12 @@ The [chart geometry](src/activity-chart-series.ts) uses the recorded activity
 window when supplied, keeping endpoint climbs visible when sensor observations
 start later or end earlier. It preserves the original samples and recording gaps;
 an activity without a recorded end uses the last observation for that boundary.
+For climbing HR, both clients instead render the server's
+[`activity.heartRateContext`](../server/src/routers/activity.ts) window and
+observations. Its [repository](../server/src/repositories/activity-metric-sources-repository.ts)
+adds five minutes before the recorded start and after a recorded end, retaining
+the selected HR source and leaving activity durations, summaries and zones scoped
+to the original window. Empty margins stay empty; no readings are synthesized.
 The [server projection](../server/src/services/climbing-chart-annotations.ts)
 accepts timezone-qualified KAYA ascent and export dates from retained raw
 records; date-only logs, session attempt summaries and ingestion timestamps

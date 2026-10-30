@@ -62,8 +62,10 @@ describe("ActivityDetailCharts", () => {
   it.each([null, "2026-10-18T10:05:00Z"])(
     "selects the nearest climb marker near an earlier climb ending at %s",
     (endedAt) => {
+      const onHoverTime = vi.fn();
       render(
         <LineChart
+          onHoverTime={onHoverTime}
           data={[
             { recordedAt: "2026-10-18T10:00:00Z", value: 130 },
             { recordedAt: "2026-10-18T12:00:00Z", value: 150 },
@@ -78,6 +80,7 @@ describe("ActivityDetailCharts", () => {
         />,
       );
       act(() => scrub.onHoverTime?.(Date.parse("2026-10-18T10:03:05Z")));
+      expect(onHoverTime).toHaveBeenLastCalledWith(Date.parse("2026-10-18T10:03:05Z"));
       expect(screen.getByText(/Later · V4 ·/)).toBeDefined();
       expect(screen.queryByText(/Earlier · V3 ·/)).toBeNull();
     },

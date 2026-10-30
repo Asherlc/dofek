@@ -639,6 +639,51 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("heartRateContext", () => {
+    it("requires the sensor store", async () => {
+      await expect(
+        makeCallerWithoutSensorStore().heartRateContext({
+          id: "00000000-0000-0000-0000-000000000001",
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    });
+    it("does not query sensor samples for an inaccessible activity", async () => {
+      const store = makeSensorStoreStub();
+      await expect(
+        makeResolvedCaller([], store).heartRateContext({
+          id: "00000000-0000-0000-0000-000000000001",
+          heartRateSourceId: "whoop",
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(store.getStream).not.toHaveBeenCalled();
+    });
+    it("returns a separate padded window without changing activity-scoped stream requests", async () => {
+      const store = makeSensorStoreStub({
+        getStream: vi
+          .fn()
+          .mockResolvedValue([{ recorded_at: "2026-04-01T09:55:00.000Z", heart_rate: 91 }]),
+      });
+      const caller = makeResolvedCaller(
+        [
+          {
+            ...makeActivityRow({}),
+            user_id: "user-1",
+            member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+          },
+        ],
+        store,
+      );
+      const result = await caller.heartRateContext({
+        id: "00000000-0000-0000-0000-000000000001",
+        heartRateSourceId: "whoop",
+      });
+      expect(result).toEqual({
+        window: { startedAt: "2026-04-01T09:55:00.000Z", endedAt: "2026-04-01T11:05:00.000Z" },
+        points: [{ recordedAt: "2026-04-01T09:55:00.000Z", value: 91 }],
+      });
+    });
+  });
+
   describe("stream", () => {
     it("throws PRECONDITION_FAILED when analytics store is not configured", async () => {
       const caller = makeCallerWithoutSensorStore();

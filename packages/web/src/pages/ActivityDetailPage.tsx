@@ -10,6 +10,7 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
+import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
@@ -116,15 +117,7 @@ export function ActivityDetailPage() {
     { id, powerSourceId: sources.power },
     {
       enabled: isCycling,
-      placeholderData: (previousData, previousQuery) => {
-        const previousInput = previousQuery?.queryKey[1]?.input;
-        return previousInput &&
-          typeof previousInput === "object" &&
-          "id" in previousInput &&
-          previousInput.id === id
-          ? previousData
-          : undefined;
-      },
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const powerZones = trpc.activity.powerZones.useQuery(
@@ -139,6 +132,10 @@ export function ActivityDetailPage() {
   );
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const heartRateContext = trpc.activity.heartRateContext.useQuery(
+    { id, maxPoints: 500, ...heartRateSourceInput },
+    { enabled: isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
+  );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id, responseVersion: 3 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
@@ -267,7 +264,9 @@ export function ActivityDetailPage() {
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
   const hasGps = routePoints.length > 0;
   const routeProcessing = route.isLoading || route.data?.status === "processing";
-  const hasHr = points.some((p) => p.heartRate != null);
+  const hasHr =
+    points.some((p) => p.heartRate != null) ||
+    (isClimbingActivity && (heartRateContext.data?.points.length ?? 0) > 0);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
@@ -322,6 +321,9 @@ export function ActivityDetailPage() {
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
+      {isClimbingActivity && heartRateContext.error && (
+        <QueryStatePanel error={heartRateContext.error} height={72} />
+      )}
       {stream.error ? (
         <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />
@@ -368,6 +370,7 @@ export function ActivityDetailPage() {
         <Section title="Performance">
           {sourceControls.length > 0 &&
             (stream.isFetching ||
+              heartRateContext.isFetching ||
               hrZones.isFetching ||
               powerZones.isFetching ||
               powerWork.isFetching) && (
@@ -376,6 +379,7 @@ export function ActivityDetailPage() {
               </p>
             )}
           <MetricsChart
+            heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
             activityWindow={activity}
             climbAnnotations={
               isClimbingActivity

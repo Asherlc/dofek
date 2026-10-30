@@ -13,6 +13,7 @@ import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import {
+  activityHeartRateContextSchema,
   activityMetricSourceSelectionSchema,
   activityMetricSourcesSchema,
   activityPowerWorkSchema,
@@ -29,7 +30,10 @@ import {
   getOwnedActivityImages,
   listActivityImages,
 } from "../repositories/activity-images-repository.ts";
-import { getActivityPowerWork } from "../repositories/activity-metric-sources-repository.ts";
+import {
+  getActivityHeartRateContext,
+  getActivityPowerWork,
+} from "../repositories/activity-metric-sources-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
@@ -229,6 +233,39 @@ export const activityRouter = router({
       );
       const points = await repo.getStream(input.id, input.maxPoints, input.sources);
       return points.map((point) => point.toDetail());
+    }),
+
+  heartRateContext: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(
+      z.object({
+        id: z.guid(),
+        maxPoints: z.number().int().min(10).max(10000).default(500),
+        heartRateSourceId: z.string().min(1).max(4096).optional(),
+      }),
+    )
+    .output(activityHeartRateContextSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for heart-rate context. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      const window = await repo.findSensorWindow(input.id);
+      if (!window) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      const sourceId =
+        input.heartRateSourceId ??
+        (await repo.getMetricSources(input.id)).find((metric) => metric.key === "heartRate")
+          ?.defaultSourceId;
+      return getActivityHeartRateContext(ctx.sensorStore, window, input.maxPoints, sourceId);
     }),
 
   route: protectedProcedure

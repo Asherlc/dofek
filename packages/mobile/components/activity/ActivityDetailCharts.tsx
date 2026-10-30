@@ -64,6 +64,7 @@ interface ChartProps {
   label: string;
   unit: string;
   onHoverIndex?: (index: number | null) => void;
+  onHoverTime?: (timestamp: number | null) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
 }
@@ -105,6 +106,7 @@ export function LineChart({
   label,
   unit,
   onHoverIndex,
+  onHoverTime,
   onScrubStart,
   onScrubEnd,
   climbAnnotations = NO_CLIMB_ANNOTATIONS,
@@ -123,6 +125,7 @@ export function LineChart({
   const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
   const handleHoverTime = useCallback(
     (timestamp: number | null) => {
+      onHoverTime?.(timestamp);
       if (timestamp === null) return;
       const tolerance = (10 / plotWidth) * (series.endedAt - series.startedAt);
       let selected: ClimbingChartAnnotation | undefined;
@@ -144,7 +147,7 @@ export function LineChart({
       )?.annotation;
       setSelectedClimbId(selected?.id ?? null);
     },
-    [climbs, plotWidth, series.startedAt, series.endedAt],
+    [climbs, plotWidth, series.startedAt, series.endedAt, onHoverTime],
   );
   const { touchIndex, panResponder } = useChartScrub({
     plotWidth,
