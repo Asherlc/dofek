@@ -34,6 +34,9 @@ describe("KayaCatalogueAdapter", () => {
   it.each([null, "", "  "])(
     "loads an unnamed indoor climb by its recorded KAYA identity: %j",
     async (name) => {
+      // Exercise schema construction for each upstream name shape.
+      vi.resetModules();
+      const { KayaCatalogueAdapter: Adapter } = await import("./catalogue.ts");
       const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
         Response.json({
           data: {
@@ -49,7 +52,7 @@ describe("KayaCatalogueAdapter", () => {
           },
         }),
       );
-      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
+      const result = await new Adapter(fetchFn, async () => "token").search({
         ...seed,
         providerId: "kaya",
         externalId: "1062267",
