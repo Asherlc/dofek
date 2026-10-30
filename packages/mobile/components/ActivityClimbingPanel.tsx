@@ -1,7 +1,7 @@
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { type ComponentProps, useMemo, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
@@ -20,6 +20,7 @@ export function ActivityClimbingPanel({
   points = NO_POINTS,
   hoveredPosition,
   onOpenEntry,
+  onSelectEntry,
 }: {
   entries: readonly ClimbingLogEntryDetail[];
   suggestions?: readonly ClimbingLogEntryDetail[];
@@ -29,8 +30,16 @@ export function ActivityClimbingPanel({
   points?: ComponentProps<typeof RouteMap>["points"];
   hoveredPosition?: ComponentProps<typeof RouteMap>["hoveredPosition"];
   onOpenEntry?: (entryId: string) => void;
+  onSelectEntry?: (entryId: string | null) => void;
 }) {
   const [selectedEntryId, selectEntry] = useState<string | null>(null);
+  const handleSelectEntry = (entryId: string) => {
+    selectEntry(entryId);
+    onSelectEntry?.(entryId);
+  };
+  useEffect(() => {
+    return () => onSelectEntry?.(null);
+  }, [onSelectEntry]);
   const markers = useMemo(
     () =>
       [...entries, ...suggestions].flatMap((entry, index) => {
@@ -64,7 +73,7 @@ export function ActivityClimbingPanel({
         points={points}
         climbMarkers={markers}
         selectedEntryId={selectedEntryId}
-        onSelectEntry={selectEntry}
+        onSelectEntry={handleSelectEntry}
         hoveredPosition={hoveredPosition}
       />
       {sections
@@ -92,7 +101,7 @@ export function ActivityClimbingPanel({
                       onAttach={section.onAttach}
                       hideMap
                       selected={entry.id === selectedEntryId}
-                      onSelect={() => selectEntry(entry.id)}
+                      onSelect={() => handleSelectEntry(entry.id)}
                       onOpenEntry={onOpenEntry ? () => onOpenEntry(entry.id) : undefined}
                     />
                   ))}

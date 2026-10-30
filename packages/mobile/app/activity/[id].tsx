@@ -455,6 +455,7 @@ export default function ActivityDetailScreen() {
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
   const selectedClimbingEntry = [
     ...(climbingEntries.data ?? []),
     ...(entrySuggestions.data ?? []),
@@ -794,6 +795,7 @@ export default function ActivityDetailScreen() {
           {((climbingEntries.data?.length ?? 0) > 0 ||
             (entrySuggestions.data?.length ?? 0) > 0) && (
             <ActivityClimbingPanel
+              onSelectEntry={setHighlightedClimbId}
               points={routePoints}
               hoveredPosition={hoveredPosition}
               onOpenEntry={setSelectedClimbingEntryId}
@@ -869,6 +871,8 @@ export default function ActivityDetailScreen() {
       {hasHr && (
         <>
           <LineChart
+            highlightedClimbId={highlightedClimbId}
+            onSelectClimb={setHighlightedClimbId}
             activityWindow={
               isClimbingActivity ? (heartRateContext.data?.window ?? activity) : activity
             }

@@ -13,7 +13,7 @@ import {
   climbingChartPositions,
 } from "@dofek/training/climbing-chart";
 import { cadenceAxisLabel } from "@dofek/training/training";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
@@ -118,11 +118,13 @@ export function MetricsChart({
   metricSources = [],
   error,
   climbAnnotations = [],
+  highlightedClimbId,
 }: {
   points: StreamPoint[];
   activityWindow?: ActivityChartWindow;
   heartRateContext?: ActivityHeartRateContext;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
+  highlightedClimbId?: string | null;
   activityType: string;
   hasHr: boolean;
   hasPower: boolean;
@@ -145,6 +147,13 @@ export function MetricsChart({
   }) => ReactNode;
 }) {
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
+  const zoomRef = useRef({ start: 0, end: 100 });
+  const handleZoom = useCallback((params: Record<string, unknown>) => {
+    const range = Array.isArray(params.batch) ? params.batch[0] : params;
+    if (typeof range?.start === "number" && typeof range?.end === "number") {
+      zoomRef.current = { start: range.start, end: range.end };
+    }
+  }, []);
   const toggleMetric = useCallback((name: string) => {
     setLegendSelected((previous) => ({ ...previous, [name]: previous[name] === false }));
   }, []);
@@ -166,8 +175,9 @@ export function MetricsChart({
     () => ({
       ...(buildAxisPointerEvents(points, onHoverPosition) ?? {}),
       legendselectchanged: handleLegendChange,
+      datazoom: handleZoom,
     }),
-    [points, onHoverPosition, handleLegendChange],
+    [points, onHoverPosition, handleLegendChange, handleZoom],
   );
 
   if (loading && metricSources.length === 0) return <ChartLoadingSkeleton height={300} />;
@@ -325,6 +335,16 @@ export function MetricsChart({
                 name: annotation.label,
                 xAxis: Date.parse(annotation.startedAt),
                 tooltip: climbTooltip(annotation),
+                lineStyle: {
+                  width: annotation.id === highlightedClimbId ? 3 : 1.5,
+                  type: annotation.id === highlightedClimbId ? "solid" : "dashed",
+                },
+                label: {
+                  show: annotation.id === highlightedClimbId,
+                  formatter: annotation.label,
+                  position: "insideEndTop",
+                  color: chartThemeColors.legendText,
+                },
               })),
           },
           markArea: {
@@ -339,6 +359,18 @@ export function MetricsChart({
                   xAxis:
                     timeline.startedAt + startPosition * (timeline.endedAt - timeline.startedAt),
                   tooltip: climbTooltip(annotation),
+                  itemStyle: {
+                    color:
+                      annotation.id === highlightedClimbId
+                        ? "rgba(167,139,250,0.36)"
+                        : "rgba(167,139,250,0.16)",
+                  },
+                  label: {
+                    show: annotation.id === highlightedClimbId,
+                    formatter: annotation.label,
+                    position: "insideTop",
+                    color: chartThemeColors.legendText,
+                  },
                 },
                 {
                   xAxis: timeline.startedAt + endPosition * (timeline.endedAt - timeline.startedAt),
@@ -376,12 +408,11 @@ export function MetricsChart({
     },
     legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [
-      { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
+      { type: "inside", xAxisIndex: 0, ...zoomRef.current },
       {
         type: "slider",
         xAxisIndex: 0,
-        start: 0,
-        end: 100,
+        ...zoomRef.current,
         height: 32,
         bottom: 16,
         showDataShadow: false,

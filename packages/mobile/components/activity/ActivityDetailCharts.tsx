@@ -59,6 +59,8 @@ export const chartStyles = StyleSheet.create({
 interface ChartProps {
   activityWindow?: ActivityChartWindow;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
+  highlightedClimbId?: string | null;
+  onSelectClimb?: (entryId: string | null) => void;
   data: Array<{ recordedAt: string; value: number | null }>;
   color: string;
   label: string;
@@ -110,15 +112,25 @@ export function LineChart({
   onScrubStart,
   onScrubEnd,
   climbAnnotations = NO_CLIMB_ANNOTATIONS,
+  highlightedClimbId,
+  onSelectClimb,
 }: ChartProps) {
   const [selectedClimbId, setSelectedClimbId] = useState<string | null>(null);
+  const selectClimb = useCallback(
+    (entryId: string | null) => {
+      setSelectedClimbId(entryId);
+      onSelectClimb?.(entryId);
+    },
+    [onSelectClimb],
+  );
   const series = useMemo(() => activityChartSeries(data, activityWindow), [data, activityWindow]);
   const climbs = useMemo(
     () => climbingChartPositions(climbAnnotations, series.startedAt, series.endedAt),
     [climbAnnotations, series.startedAt, series.endedAt],
   );
   const selectedClimb = climbs.find(
-    ({ annotation }) => annotation.id === selectedClimbId,
+    ({ annotation }) =>
+      annotation.id === (highlightedClimbId === undefined ? selectedClimbId : highlightedClimbId),
   )?.annotation;
   const climbTimeLabel = (annotation: ClimbingChartAnnotation) =>
     `${formatDateTime(new Date(annotation.startedAt))}${annotation.endedAt ? ` – ${formatDateTime(new Date(annotation.endedAt))}` : ""}`;
@@ -145,9 +157,9 @@ export function LineChart({
           timestamp >= Date.parse(annotation.startedAt) &&
           timestamp <= Date.parse(annotation.endedAt),
       )?.annotation;
-      setSelectedClimbId(selected?.id ?? null);
+      selectClimb(selected?.id ?? null);
     },
-    [climbs, plotWidth, series.startedAt, series.endedAt, onHoverTime],
+    [climbs, plotWidth, series.startedAt, series.endedAt, onHoverTime, selectClimb],
   );
   const { touchIndex, panResponder } = useChartScrub({
     plotWidth,
@@ -193,7 +205,7 @@ export function LineChart({
         ...climbs.map(({ annotation }) => ({
           label: annotation.label,
           value: climbTimeLabel(annotation),
-          onPress: () => setSelectedClimbId(annotation.id),
+          onPress: () => selectClimb(annotation.id),
         })),
       ]}
     >
@@ -213,8 +225,8 @@ export function LineChart({
                       y1={CHART_PADDING.top}
                       y2={CHART_PADDING.top + plotHeight}
                       stroke="#a78bfa"
-                      strokeWidth={1.5}
-                      strokeDasharray="4,4"
+                      strokeWidth={annotation.id === selectedClimb?.id ? 3 : 1.5}
+                      strokeDasharray={annotation.id === selectedClimb?.id ? undefined : "4,4"}
                     />
                   ) : (
                     <Rect
@@ -223,7 +235,7 @@ export function LineChart({
                       width={width}
                       height={plotHeight}
                       fill="#a78bfa"
-                      fillOpacity={0.16}
+                      fillOpacity={annotation.id === selectedClimb?.id ? 0.36 : 0.16}
                     />
                   )}
                 </G>
