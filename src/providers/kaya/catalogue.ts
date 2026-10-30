@@ -6,6 +6,7 @@ import {
   catalogueCandidateSchema,
 } from "@dofek/training/climbing-catalogue";
 import { z } from "zod";
+import { catalogueNameMatch, catalogueSearchNames } from "../../climbing-catalogue-matching.ts";
 import { decodeKayaClimbingTags } from "./climbing-tags.ts";
 
 const origin = "https://kaya-app.kayaclimb.com";
@@ -57,8 +58,6 @@ const nativeSchema = z.object({
   }),
   errors: z.array(z.unknown()).optional(),
 });
-const normalize = (name: string) =>
-  name.normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
 
 type ClassifiedClimb = z.infer<typeof climbSchema> & {
   lead?: boolean | null;
@@ -241,8 +240,20 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
       return { candidates: [await this.#native(seed.externalId, token)], complete: true };
     const candidates: CatalogueCandidate[] = [];
     const seen = new Set<string>();
-    for (let page = 0; page < 3; page++) {
-      const body = await this.#request(query, { name: seed.name, offset: page * 20, count: 20 });
+    const pending = catalogueSearchNames(seed).map((name) => ({
+      name,
+      offset: 0,
+      seen: new Set<string>(),
+    }));
+    let partial = false;
+    for (let page = 0; page < 3 && pending.length; page++) {
+      const current = pending.shift();
+      if (!current) break;
+      const body = await this.#request(query, {
+        name: current.name,
+        offset: current.offset,
+        count: 20,
+      });
       const parsed = searchSchema.safeParse(body);
       if (!parsed.success || parsed.data.errors?.length)
         throw new Error(
@@ -251,20 +262,25 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
       const rows = parsed.data.data.webSearchForClimb;
       let repeated = false;
       for (const climb of rows) {
-        if (seen.has(climb.id)) {
+        if (current.seen.has(climb.id)) {
           repeated = true;
           continue;
         }
+        current.seen.add(climb.id);
+        if (seen.has(climb.id)) continue;
         seen.add(climb.id);
         if (
-          normalize(climb.name) === normalize(seed.name) ||
+          [seed.name, ...(seed.aliases ?? [])].some(
+            (name) => catalogueNameMatch(name, climb) !== null,
+          ) ||
           (seed.providerId === this.providerId && seed.externalId === climb.id)
         )
           candidates.push(token ? await this.#native(climb.id, token) : candidate(climb));
       }
-      if (repeated) return { candidates, complete: false };
-      if (rows.length < 20) return { candidates, complete: true };
+      current.offset += 20;
+      if (repeated) partial = true;
+      else if (rows.length >= 20) pending.push(current);
     }
-    return { candidates, complete: false };
+    return { candidates, complete: !partial && pending.length === 0 };
   }
 }

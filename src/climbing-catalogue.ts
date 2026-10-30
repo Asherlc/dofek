@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  type CatalogueCandidate,
+  type CatalogueSearchResult,
   type CatalogueSeed,
   type ClimbingCatalogueAdapter,
   type ClimbingCatalogueContext,
@@ -8,6 +8,7 @@ import {
   catalogueSeedSchema,
   climbingCatalogueContextSchema,
 } from "@dofek/training/climbing-catalogue";
+import { matchCatalogueCandidates } from "./climbing-catalogue-matching.ts";
 import type { CacheStore } from "./lib/cache.ts";
 import { captureException } from "./lib/error-reporting.ts";
 
@@ -19,33 +20,22 @@ const missing: ClimbingCatalogueContext = {
   error: null,
   sources: [],
 };
-const normalized = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
 
 function key(seed: CatalogueSeed): string {
   const fingerprint = createHash("sha256")
     .update(JSON.stringify(catalogueSeedSchema.parse(seed)))
     .digest("hex");
-  return `${seed.userId}:climbing.catalogueContext:v1:${fingerprint}`;
+  return `${seed.userId}:climbing.catalogueContext:v2:${fingerprint}`;
 }
-function corroborates(seed: CatalogueSeed, candidate: CatalogueCandidate): boolean {
-  if (
-    seed.setting !== "outdoor" ||
-    candidate.setting !== "outdoor" ||
-    !seed.kind ||
-    seed.kind !== candidate.kind
-  )
-    return false;
-  return seed.locations.some((location) =>
-    candidate.locations.some(
-      (other) =>
-        location.scope === other.scope &&
-        normalized(location.name) === normalized(other.name) &&
-        location.coordinates !== null &&
-        other.coordinates !== null &&
-        Math.abs(location.coordinates.latitude - other.coordinates.latitude) <= 0.001 &&
-        Math.abs(location.coordinates.longitude - other.coordinates.longitude) <= 0.001,
-    ),
-  );
+
+async function search(
+  adapter: ClimbingCatalogueAdapter,
+  seed: CatalogueSeed,
+): Promise<CatalogueSearchResult> {
+  const found = catalogueSearchResultSchema.parse(await adapter.search(seed));
+  if (found.candidates.some((candidate) => candidate.providerId !== adapter.providerId))
+    throw new Error(`Unexpected provider in ${adapter.providerId} catalogue response.`);
+  return found;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */
@@ -92,36 +82,43 @@ export class ClimbingCatalogueService {
 
   async refresh(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
     try {
+      const nativeAdapter = seed.externalId
+        ? this.adapters.find((adapter) => adapter.providerId === seed.providerId)
+        : undefined;
+      const nativeFound = nativeAdapter ? await search(nativeAdapter, seed) : undefined;
+      const native = nativeFound?.candidates
+        .filter((candidate) => candidate.externalId === seed.externalId)
+        .at(-1);
+      // This context exists only for this lookup. The logged seed still owns the cache key.
+      const discoverySeed: CatalogueSeed = native
+        ? {
+            ...seed,
+            name: native.name,
+            aliases: [...new Set([seed.name, ...(seed.aliases ?? []), ...(native.aliases ?? [])])],
+            references: [
+              ...new Map(
+                [...(seed.references ?? []), ...(native.references ?? [])].map((reference) => [
+                  `${reference.providerId}:${reference.externalId}`,
+                  reference,
+                ]),
+              ).values(),
+            ],
+            kind: seed.kind ?? native.kind,
+            setting: seed.setting ?? native.setting,
+            locations: native.locations.length ? native.locations : seed.locations,
+          }
+        : seed;
       const sources = await Promise.all(
         this.adapters.map(async (adapter) => {
-          const found = catalogueSearchResultSchema.parse(await adapter.search(seed));
-          if (found.candidates.some((candidate) => candidate.providerId !== adapter.providerId)) {
-            throw new Error(`Unexpected provider in ${adapter.providerId} catalogue response.`);
-          }
-          const candidates = [
-            ...new Map(
-              found.candidates
-                .filter(
-                  (candidate) =>
-                    (candidate.providerId === seed.providerId &&
-                      candidate.externalId === seed.externalId) ||
-                    normalized(candidate.name) === normalized(seed.name),
-                )
-                .map((candidate) => [candidate.externalId, candidate]),
-            ).values(),
-          ];
+          const found =
+            adapter === nativeAdapter && nativeFound
+              ? nativeFound
+              : await search(adapter, discoverySeed);
           return {
             providerId: adapter.providerId,
             searchComplete: found.complete,
-            matches: candidates.map((candidate) => ({
-              candidate,
-              confidence:
-                candidate.providerId === seed.providerId && candidate.externalId === seed.externalId
-                  ? ("source" as const)
-                  : found.complete && candidates.length === 1 && corroborates(seed, candidate)
-                    ? ("corroborated" as const)
-                    : ("possible" as const),
-            })),
+            ...(found.searchArea ? { searchArea: found.searchArea } : {}),
+            matches: matchCatalogueCandidates(discoverySeed, found, seed.locations),
           };
         }),
       );

@@ -290,6 +290,7 @@
     "bullmq": "6.3.14",
     "cheerio": "1.2.0",
     "drizzle-orm": "0.45.2",
+    "fuse.js": "7.5.0",
     "impit": "0.14.7",
     "ioredis": "6.0.0",
     "kafkajs": "2.2.4",

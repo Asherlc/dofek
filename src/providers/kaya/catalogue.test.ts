@@ -31,6 +31,159 @@ const climb = {
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
 
 describe("KayaCatalogueAdapter", () => {
+  it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_input, init) =>
+        response(
+          JSON.parse(String(init?.body)).variables.name === "Left start"
+            ? [{ ...climb, name: "Left start" }]
+            : [],
+        ),
+      );
+    expect(
+      await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+        ...seed,
+        aliases: ["Up", "Down", "Left start"],
+      }),
+    ).toEqual({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])(
+    "discovers historical names with request-sensitive results (overlap=%s)",
+    async (overlap) => {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+        const { variables } = JSON.parse(String(init?.body));
+        return response(variables.name === "Up" || overlap ? [{ ...climb, name: "Up" }] : []);
+      });
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+        ...seed,
+        aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
+      });
+      expect(result.candidates.map((candidate) => candidate.name)).toEqual(["Up"]);
+      expect(result.complete).toBe(true);
+      expect(
+        fetchFn.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).variables.name),
+      ).toEqual(["Cragmont Crack", "Up"]);
+    },
+  );
+  it("shares three pages across aliases before paginating and reports uncovered names", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const { variables } = JSON.parse(String(init?.body));
+      return response(
+        variables.name === seed.name
+          ? Array.from({ length: 20 }, (_, i) => ({ ...climb, id: String(i + 1) }))
+          : [],
+      );
+    });
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+      ...seed,
+      aliases: ["Up", "Down", "Left start"],
+    });
+    expect(result.complete).toBe(false);
+    expect(
+      fetchFn.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).variables.name),
+    ).toEqual(["Cragmont Crack", "Up", "Down"]);
+  });
+  it("resumes each query at its own offset after giving aliases an initial page", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const { variables } = JSON.parse(String(init?.body));
+      return response(
+        variables.name === seed.name && variables.offset === 0
+          ? Array.from({ length: 20 }, (_, i) => ({ ...climb, id: String(i + 1) }))
+          : [],
+      );
+    });
+    expect(
+      (
+        await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+          ...seed,
+          aliases: ["Up"],
+        })
+      ).complete,
+    ).toBe(true);
+    expect(
+      fetchFn.mock.calls.map(([, init]) => {
+        const { variables } = JSON.parse(String(init?.body));
+        return [variables.name, variables.offset];
+      }),
+    ).toEqual([
+      ["Cragmont Crack", 0],
+      ["Up", 0],
+      ["Cragmont Crack", 20],
+    ]);
+  });
+  it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
+    "retains name-related result %s without removing qualifiers",
+    async (name) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([{ ...climb, name }]));
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+        ...seed,
+        name: "The Great Roof",
+      });
+      expect(result.candidates[0]?.name).toBe(name);
+    },
+  );
+  it("uses source-declared seed aliases for discovery", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_input, init) =>
+        response(
+          JSON.parse(String(init?.body)).variables.name === "Up" ? [{ ...climb, name: "Up" }] : [],
+        ),
+      );
+    expect(
+      (
+        await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+          ...seed,
+          aliases: ["Up"],
+        })
+      ).candidates[0]?.name,
+    ).toBe("Up");
+  });
+  it("preserves Goat Rock native IDs separately from unrelated URL slug suffixes", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          ...climb,
+          id: "887401",
+          slug: "Swiss-Cheese-56-Castle-Rock-State-Park-6084576",
+          name: "Swiss Cheese",
+          destination: {
+            id: "2204",
+            name: "Castle Rock State Park",
+            latitude: "37.22846981",
+            longitude: "-122.09959639",
+          },
+          area: {
+            id: "46774",
+            name: "Goat Rock",
+            latitude: "37.228451",
+            longitude: "-122.107888",
+          },
+        },
+      ]),
+    );
+    expect(
+      (
+        await new KayaCatalogueAdapter(fetchFn, async () => null).search({
+          ...seed,
+          name: "Swiss Cheese",
+        })
+      ).candidates[0],
+    ).toMatchObject({
+      externalId: "887401",
+      url: "https://kaya-app.kayaclimb.com/climb/Swiss-Cheese-56-Castle-Rock-State-Park-6084576",
+      locations: expect.arrayContaining([
+        {
+          externalId: "46774",
+          name: "Goat Rock",
+          scope: "area",
+          coordinates: { latitude: 37.228451, longitude: -122.107888 },
+        },
+      ]),
+    });
+  });
   it("reads explicit outdoor traits and retains area coordinate attribution", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([climb]));
     const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search(seed);
