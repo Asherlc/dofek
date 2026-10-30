@@ -4,6 +4,10 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 
+// Exercise the same Pressable/View implementation as mobile Storybook; the
+// global native mock translates accessibilityState more broadly than RN Web.
+vi.mock("react-native", () => vi.importActual<typeof import("react-native")>("react-native-web"));
+
 const { useQuery, useMutation, mutate, setData, refetch } = vi.hoisted(() => ({
   useQuery: vi.fn(),
   useMutation: vi.fn(),
@@ -472,4 +476,22 @@ it("qualifies empty results when local discovery is incomplete", () => {
   expect(screen.getByText("No catalogue candidates found in the searched sources.")).toBeTruthy();
   expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
   expect(screen.getByText("Search incomplete; more candidates may exist.")).toBeTruthy();
+});
+
+it("announces collapsed, expanded and collapsed disclosure state through React Native Web", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    data: ready,
+    error: null,
+    isLoading: false,
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  expect(screen.getByRole("button", { name: "Catalogue context", expanded: false })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Catalogue context" }));
+  expect(screen.getByRole("button", { name: "Catalogue context", expanded: true })).toBeTruthy();
+  expect(screen.getByText("Catalogue grade: V4")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Catalogue context" }));
+  expect(screen.getByRole("button", { name: "Catalogue context", expanded: false })).toBeTruthy();
+  expect(screen.queryByText("Catalogue grade: V4")).toBeNull();
 });

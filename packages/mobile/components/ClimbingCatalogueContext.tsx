@@ -36,7 +36,7 @@ export function ClimbingCatalogueContextView({
     <View style={styles.container}>
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
+        aria-expanded={open}
         onPress={onToggle}
         style={styles.button}
       >
