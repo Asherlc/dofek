@@ -473,14 +473,7 @@ describe("ClimbingCatalogueService", () => {
       const renamed = setup([{ ...candidate, name: "An unrelated name" }]);
       const renamedMatches = (await renamed.service.refresh({ ...seed, ...identity })).sources[0]
         ?.matches;
-      if (confidence === "possible")
-        expect(renamedMatches).toMatchObject([
-          {
-            confidence: "possible",
-            evidence: expect.arrayContaining([expect.stringMatching(/conflict.*id/i)]),
-          },
-        ]);
-      else expect(renamedMatches).toEqual([]);
+      expect(renamedMatches).toEqual([]);
     },
   );
 

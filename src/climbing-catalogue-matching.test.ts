@@ -102,6 +102,7 @@ describe("evidence-based catalogue matching", () => {
   it("does not let a positive reference override a contradictory reference to the same native provider", () => {
     const conflicting = {
       ...candidate,
+      name: "Renamed",
       references: [
         { providerId: "mountain-project" as const, externalId: "105734732" },
         { providerId: "mountain-project" as const, externalId: "wrong-id" },
@@ -158,6 +159,25 @@ describe("evidence-based catalogue matching", () => {
       candidate: linked,
       evidence: expect.arrayContaining([expect.stringMatching(/reference/i)]),
     });
+  });
+  it("admits local candidates by positive identity or name evidence before assessing conflicting IDs", () => {
+    const linked = {
+      ...candidate,
+      name: "Corner Route",
+      references: [{ providerId: "mountain-project" as const, externalId: "105736399" }],
+    };
+    const unrelated = {
+      ...candidate,
+      externalId: "unrelated",
+      name: "The Yodel King",
+      references: [{ providerId: "mountain-project" as const, externalId: "117907056" }],
+    };
+    const result = matches([linked, unrelated], {
+      ...seed,
+      externalId: "105736399",
+      name: "Cheddar Corner",
+    });
+    expect(result).toMatchObject([{ candidate: linked, confidence: "reference" }]);
   });
   it("follows a reference carried by the seed", () => {
     expect(

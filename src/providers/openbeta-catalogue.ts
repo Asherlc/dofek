@@ -60,7 +60,7 @@ const areaSchema = z.object({
   ancestors: z.array(uuid).nullish(),
 });
 const areaSummarySchema = areaSchema.extend({ totalClimbs: z.number().int().nonnegative() });
-const hydratedAreaSchema = areaSummarySchema.extend({ climbs: z.array(climbFacts) });
+const hydratedAreaSchema = areaSummarySchema.extend({ climbs: z.array(z.unknown()) });
 const areaFields =
   "uuid area_name pathTokens ancestors totalClimbs metadata { lat lng mp_id leaf }";
 const climbFields = `uuid name type { trad sport bouldering deepwatersolo alpine snow ice mixed aid tr }
@@ -313,6 +313,10 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
     let complete = areas.length > 0 && areas.length <= 3;
     let searchArea: CatalogueLocation = local;
     for (const selected of areas.slice(0, 3)) {
+      if (hydratedClimbs >= 200) {
+        complete = false;
+        break;
+      }
       const summary = z
         .object({
           errors: z.array(z.unknown()).optional(),
@@ -350,12 +354,17 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
       if (!hydrated.success || hydrated.data.errors?.length || !hydrated.data.data.area)
         throw new Error("OpenBeta catalogue area climbs are unavailable or invalid. Retry later.");
       const full = hydrated.data.data.area;
-      hydratedClimbs += full.climbs.length;
+      const remaining = 200 - hydratedClimbs;
+      if (full.climbs.length > remaining) complete = false;
+      const retained = z.array(climbFacts).safeParse(full.climbs.slice(0, remaining));
+      if (!retained.success)
+        throw new Error("OpenBeta catalogue area climbs are unavailable or invalid. Retry later.");
+      hydratedClimbs += retained.data.length;
       if (full.uuid !== area.uuid || !matchesArea(seed, local, full))
         throw new Error(
           "OpenBeta catalogue area identity does not match the selected local area. Retry later.",
         );
-      const unique = new Map(full.climbs.map((climb) => [climb.uuid, climb]));
+      const unique = new Map(retained.data.map((climb) => [climb.uuid, climb]));
       if (
         unique.size !== full.totalClimbs ||
         full.totalClimbs !== area.totalClimbs ||

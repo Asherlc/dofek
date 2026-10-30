@@ -88,24 +88,105 @@ describe("TheCragCatalogueAdapter", () => {
     expect(fetchFn).toHaveBeenCalledTimes(61);
   });
   it.each([
-    ["Lat/Lon:", "37.22828, -122.10797", { latitude: 37.22828, longitude: -122.10797 }],
+    ["Lat/Lon:", "37.22828, -122.10797", null],
     ["Lat/Lon:", "137.22828, -122.10797", null],
     ["Lat/Lon:", "37.22828, -222.10797", null],
     ["Longitude:", "37.22828, -122.10797", null],
     ["Lat/Lon:", "37.22828", null],
   ])(
-    "attaches verified displayed %s %s conservatively to the nearest area",
+    "keeps route-only displayed %s %s out of area geography without a verified parent",
     async (label, pair, coordinates) => {
       const html = detail(
         `<meta property="place:location:latitude" content="40"><h3><span id="location">Location</span></h3><dl class="areaInfo"><dd>${label} ${pair}</dd></dl>`,
       ).replace("Cragmont Park</span>", "Goat Rock</span>");
-      const result = await lookup(html);
+      const fetchFn = client([
+        html,
+        '<link rel="canonical" href="https://www.thecrag.com/en/climbing/area/456"><h1>Goat Rock</h1>',
+      ]);
+      const result = await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "123",
+      });
       expect(result.candidates[0]?.locations).toEqual([
         { externalId: "456", name: "Goat Rock", scope: "area", coordinates },
       ]);
       expect(result.candidates[0]?.setting).toBeNull();
     },
   );
+  it.each([
+    ["37.22828, -122.10797", "37.22827985362", "-122.10796556377"],
+    ["37.24, -122.11", "37.22827985362", "-122.10796556377"],
+  ])(
+    "uses the verified parent point independently of a route's displayed %s",
+    async (displayed, latitude, longitude) => {
+      const routePath = "/en/climbing/united-states/castle-rock-state-park/route/18578485";
+      const parentPath = "/en/climbing/united-states/castle-rock-state-park/area/16447255";
+      const html = detail(
+        `<h3><a id="location"></a>Location</h3><dl class="areaInfo"><dd>Lat/Lon: ${displayed}</dd></dl>`,
+        routePath,
+      )
+        .replace(
+          'href="/en/climbing/area/456" data-nid="456"',
+          `href="${parentPath}" data-nid="16447255"`,
+        )
+        .replace("Cragmont Park</span>", "Goat Rock</span>");
+      const parent = `<link rel="canonical" href="${origin}${parentPath}"><h1>Goat Rock</h1><meta property="place:location:latitude" content="${latitude}"><meta property="place:location:longitude" content="${longitude}">`;
+      const fetchFn = client([html, parent]);
+      const result = await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "18578485",
+        sourceUrl: origin + routePath,
+      });
+      expect(result.candidates[0]?.locations).toEqual([
+        {
+          externalId: "16447255",
+          name: "Goat Rock",
+          scope: "area",
+          coordinates: { latitude: 37.22827985362, longitude: -122.10796556377 },
+        },
+      ]);
+      expect(String(fetchFn.mock.calls[1]?.[0])).toBe(origin + parentPath);
+    },
+  );
+  it("deduplicates parent area reads across routes in one bounded search", async () => {
+    const location =
+      '<h3><a id="location"></a>Location</h3><dl class="areaInfo"><dd>Lat/Lon: 37.22828, -122.10797</dd></dl>';
+    const parent = `<link rel="canonical" href="${origin}/en/climbing/area/456"><meta property="place:location:latitude" content="37.22827985362"><meta property="place:location:longitude" content="-122.10796556377">`;
+    const fetchFn = client([
+      search(row() + row("Cragmont Crack", "/en/climbing/united-states/route/124")),
+      detail(location),
+      parent,
+      detail(location, "/en/climbing/united-states/route/124"),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(result.candidates).toHaveLength(2);
+    expect(result.candidates.map((candidate) => candidate.locations[0]?.coordinates)).toEqual([
+      { latitude: 37.22827985362, longitude: -122.10796556377 },
+      { latitude: 37.22827985362, longitude: -122.10796556377 },
+    ]);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+  });
+  it("reports unavailable parent HTTP reads without substituting a route point", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          detail(
+            '<h3><a id="location"></a>Location</h3><dl class="areaInfo"><dd>Lat/Lon: 37.24, -122.11</dd></dl>',
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(new Response("Unavailable", { status: 404 }));
+    await expect(
+      new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "123",
+      }),
+    ).rejects.toThrow(/theCrag.*HTTP 404/);
+  });
   it.each(["  CRAGMONT  CRACK  ", "Ｃｒａｇｍｏｎｔ Crack", "Cragmont\t\nCrack"])(
     "finds the sole matching result after normalizing %s",
     async (name) => {

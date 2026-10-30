@@ -169,13 +169,10 @@ export function matchCatalogueCandidates(
         name,
         place,
         supportingLocations,
-        identityConflict: references.conflicts.length > 0,
         conflicts: [...new Set(conflicts)],
       };
     })
-    .filter(
-      (match) => match.native || match.reference || match.name !== null || match.identityConflict,
-    );
+    .filter((match) => match.native || match.reference || match.name !== null);
   const plausible = assessed.filter((match) => match.conflicts.length === 0);
   const complete =
     found.complete &&

@@ -1,5 +1,6 @@
 import type {
   CatalogueCandidate,
+  CatalogueLocation,
   CatalogueSearchResult,
   CatalogueSeed,
   ClimbingCatalogueAdapter,
@@ -40,7 +41,46 @@ function routeId(url: URL): string {
   return url.pathname.split("/").filter(Boolean).at(-1) ?? "";
 }
 
-function parseDetail(html: string, expected: URL): CatalogueCandidate {
+function areaUrl(value: string, id: string | null): URL | null {
+  const url = URL.canParse(value, ORIGIN) ? new URL(value, ORIGIN) : null;
+  return url &&
+    url.origin === ORIGIN &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    /^\/en\/climbing\/(?:[^/]+\/)*area\/[1-9]\d*\/?$/.test(url.pathname) &&
+    routeId(url) === id
+    ? url
+    : null;
+}
+
+function areaCoordinates(html: string, expected: URL): CatalogueLocation["coordinates"] {
+  const $ = load(html);
+  const canonical = $('link[rel="canonical"]');
+  if (canonical.length !== 1 || !areaUrl(canonical.attr("href") ?? "", routeId(expected)))
+    throw new Error(
+      "theCrag catalogue parent area identity is unavailable or invalid. Retry later.",
+    );
+  const latitude = $('meta[property="place:location:latitude"]');
+  const longitude = $('meta[property="place:location:longitude"]');
+  const lat = latitude.attr("content") ?? "";
+  const lon = longitude.attr("content") ?? "";
+  if (
+    latitude.length !== 1 ||
+    longitude.length !== 1 ||
+    !/^-?\d+(?:\.\d+)?$/.test(lat) ||
+    !/^-?\d+(?:\.\d+)?$/.test(lon)
+  )
+    return null;
+  const point = { latitude: Number(lat), longitude: Number(lon) };
+  return Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180 ? point : null;
+}
+
+function parseDetail(
+  html: string,
+  expected: URL,
+): { candidate: CatalogueCandidate; parent: URL | null } {
   const $ = load(html);
   const name = $("h1 [itemprop=name]").text().trim();
   const canonical = $('link[rel="canonical"]');
@@ -121,6 +161,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
     });
   }
   const locations: CatalogueCandidate["locations"] = [];
+  let parent: URL | null = null;
   for (const element of $("a.crumb__a").toArray()) {
     const anchor = $(element);
     const href = anchor.attr("href") ?? "";
@@ -141,6 +182,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
       scope: "area",
       coordinates: null,
     });
+    parent = areaUrl(href, locations.at(-1)?.externalId ?? null);
   }
   const displayed = $("#location")
     .closest("h3")
@@ -151,8 +193,8 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
       /^\s*Lat\/Lon:\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\s*$/.exec($(element).text()),
     )
     .filter((match) => match !== null);
-  const nearest = locations.at(-1);
-  if (displayed.length === 1 && nearest) {
+  let hasDisplayedPoint = false;
+  if (displayed.length === 1) {
     const latitude = Number(displayed[0]?.[1]);
     const longitude = Number(displayed[0]?.[2]);
     if (
@@ -161,7 +203,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
       Number.isFinite(longitude) &&
       Math.abs(longitude) <= 180
     )
-      nearest.coordinates = { latitude, longitude };
+      hasDisplayedPoint = true;
   }
   const aliases = $('.headline__guts > ul.stats > li[title="Alternate name"]')
     .toArray()
@@ -171,7 +213,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
       return alias.text().replace(/\s+/g, " ").trim();
     })
     .filter(Boolean);
-  return {
+  const candidate: CatalogueCandidate = {
     providerId: "thecrag",
     externalId: routeId(identity),
     url: identity.href,
@@ -184,6 +226,7 @@ function parseDetail(html: string, expected: URL): CatalogueCandidate {
     angle: null,
     tags,
   };
+  return { candidate, parent: hasDisplayedPoint ? parent : null };
 }
 
 /** Public catalogue reads only; the caller owns request telemetry and transport. */
@@ -209,7 +252,22 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
     return response.text();
   }
 
+  async #detail(
+    url: URL,
+    areas: Map<string, CatalogueLocation["coordinates"]>,
+  ): Promise<CatalogueCandidate> {
+    const { candidate, parent } = parseDetail(await this.#page(url), url);
+    const nearest = candidate.locations.at(-1);
+    if (parent && nearest) {
+      const id = routeId(parent);
+      if (!areas.has(id)) areas.set(id, areaCoordinates(await this.#page(parent), parent));
+      nearest.coordinates = areas.get(id) ?? null;
+    }
+    return candidate;
+  }
+
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
+    const areas = new Map<string, CatalogueLocation["coordinates"]>();
     if (seed.providerId === this.providerId && (seed.sourceUrl || seed.externalId)) {
       const url = routeUrl(
         seed.sourceUrl ?? `${ORIGIN}/en/climbing/world/route/${seed.externalId}`,
@@ -218,7 +276,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
         throw new Error(
           "theCrag catalogue source identity does not match the recorded climb. Check its source URL.",
         );
-      return { candidates: [parseDetail(await this.#page(url), url)], complete: false };
+      return { candidates: [await this.#detail(url, areas)], complete: false };
     }
     const initial = new URL(
       `${ORIGIN}${SEARCH_PATH}?S=${encodeURIComponent(seed.name)}&only=routes`,
@@ -276,7 +334,7 @@ export class TheCragCatalogueAdapter implements ClimbingCatalogueAdapter {
     }
     const candidates: CatalogueCandidate[] = [];
     for (const url of routes.values()) {
-      const candidate = parseDetail(await this.#page(url), url);
+      const candidate = await this.#detail(url, areas);
       if (
         [seed.name, ...(seed.aliases ?? [])].some(
           (name) => catalogueNameMatch(name, candidate) !== null,

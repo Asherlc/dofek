@@ -759,6 +759,41 @@ describe("OpenBeta bounded local-area discovery", () => {
     expect(result.candidates).toHaveLength(80);
     expect(fetchFn).toHaveBeenCalledTimes(6);
   });
+  it("bounds duplicate-heavy full responses even when the unique count equals advertised metadata", async () => {
+    const area = {
+      ...goatRockArea,
+      totalClimbs: 1,
+      climbs: Array.from({ length: 201 }, (_, i) => ({
+        ...climb(),
+        name: i === 200 ? "Unprocessed overflow" : "First retained fact",
+      })),
+    };
+    const fetchFn = client([nearby(), summary(area), { data: { area } }]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
+    expect(result.complete).toBe(false);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe("First retained fact");
+  });
+  it("stops further area hydration when an unpaginated full response exhausts the fact budget", async () => {
+    const areas = [goatRockArea.uuid, areaId].map((uuid) => ({
+      ...goatRockArea,
+      uuid,
+      pathTokens: ["Goat Rock"],
+      ancestors: [uuid],
+      totalClimbs: 1,
+      climbs: Array.from({ length: 201 }, () => climb()),
+    }));
+    const fetchFn = client([
+      nearby(areas),
+      ...areas.flatMap((area) => [summary(area), { data: { area } }]),
+    ]);
+    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      ...localSeed,
+      providerId: "kaya",
+    });
+    expect(result.complete).toBe(false);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
 });
 
 it.each(["Great Roof, The", "The Great Rooff", "The Great Roof extension"])(

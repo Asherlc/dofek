@@ -263,8 +263,13 @@ provider-owned OpenBeta UUID or Mountain Project area reference selects the
 area when available; otherwise the normalized local name and great-circle
 distance must agree. The reader hydrates at most three matching leaf areas.
 It reads `area(uuid)` metadata and `totalClimbs` before requesting climb facts,
-skips areas exceeding the remaining 200-climb budget, and compares the unique
-hydrated climb count with `totalClimbs`. Missing, capped or partial coverage
+skips areas exceeding the remaining 200-fact processing budget, and compares the
+unique retained climb count with `totalClimbs`. It also checks the actual returned
+fact count before processing: overruns keep coverage incomplete, processing and
+retention stop at the remaining budget, and no further full-area reads occur
+after exhaustion. These unpaginated upstream responses can exceed an earlier
+advertised count, so the metadata check cannot guarantee a network-level response
+size cap. Missing, capped or partial coverage
 remains incomplete; `searchArea` records the scope of this lookup. When the
 nearest area has no point, the existing bounded Typesense name search remains
 available. The API has no cursor or completion flag on these area queries;
@@ -303,12 +308,22 @@ repeated route or omitted detail keeps discovery incomplete. AKA labels come
 only from `.headline__guts > ul.stats > li[title="Alternate name"]`, as observed
 on [this route's "Up" alias](https://www.thecrag.com/en/climbing/thailand/krabi/route/7257755094);
 breadcrumb abbreviations are not route aliases. The displayed `Lat/Lon:` pair
-in the location section of the
+in a route's location section triggers a separate read of its nearest retained
+native area breadcrumb, when that link has a valid area ID. Only that area's own
+`place:location` metadata, on a page with the verified canonical area ID, supplies
+area coordinates. Parent reads are deduplicated by native area ID within each
+bounded search. The
 [Goat Rock route page](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/route/18578485)
-is attributed to its nearest retained area breadcrumb. The same point is
-displayed for neighboring routes, so it is not treated as a surveyed climb point.
-Malformed/unlabeled coordinates remain unknown, and provider identity does not
-imply outdoor setting. See the [theCrag reader](../src/providers/thecrag/catalogue.ts).
+and [parent area](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/area/16447255)
+display coincident points; a separately located route never replaces the parent
+point. An unavailable parent point leaves area coordinates unknown, while parent
+HTTP/identity failures remain actionable lookup errors. A route-only point is not
+assigned to area or climb scope because its inheritance is unverified. theCrag
+supports individual route/start locations; see
+[Locating Routes](https://www.thecrag.com/en/article/geolocation#locating-routes)
+and [route Lat/Lon editing](https://www.thecrag.com/article/updatingdescriptions).
+Provider identity does not imply outdoor setting. See the
+[theCrag reader](../src/providers/thecrag/catalogue.ts).
 
 KAYA native IDs remain distinct from URL slugs: the public
 [Swiss Cheese URL](https://kaya-app.kayaclimb.com/climb/Swiss-Cheese-56-Castle-Rock-State-Park-6084576)
