@@ -7,6 +7,7 @@ import {
   walkingActivitySourceHardware,
   walkingActivitySourceTree,
 } from "../../app-fixtures/activity-source-tree";
+import { activityImageFixture } from "../activity-images-test-helpers";
 import { ActivityDetailHeader } from "./ActivityDetailHeader";
 import { detailHeaderActivity, removedDetailHeaderActivity } from "./ActivityDetailHeader.fixtures";
 
@@ -134,5 +135,19 @@ export const WalkingExpanded: Story = {
     await expect(canvas.getByText("Serial number: WATCH-123")).toBeVisible();
     await expect(canvas.getByText("Peloton")).toBeVisible();
     await expect(canvas.getByText("Whoop")).toBeVisible();
+  },
+};
+
+export const WithPhoto: Story = {
+  args: {
+    photos: {
+      images: [
+        {
+          ...activityImageFixture,
+          url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=300&q=80",
+        },
+      ],
+      onRetry: () => undefined,
+    },
   },
 };

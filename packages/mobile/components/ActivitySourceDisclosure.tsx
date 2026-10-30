@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   heading: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
-  headerTrigger: { maxWidth: "50%", paddingHorizontal: 0 },
+  headerTrigger: { maxWidth: "100%", paddingHorizontal: 0 },
   fullWidth: { width: "100%" },
   container: {
     borderTopWidth: 1,
