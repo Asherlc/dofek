@@ -98,6 +98,7 @@ describe("activity_sensor_summary_rows model", () => {
     const incrementalScopedSql = renderDbtModelSql(modelSql, {
       isIncremental: true,
       activityRefreshScoped: true,
+      activityRefreshIds: ["00000000-0000-0000-0000-000000000001"],
     });
     const fullRefreshSql = renderDbtModelSql(modelSql, {
       isIncremental: false,

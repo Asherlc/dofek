@@ -4,8 +4,11 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
+const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
 
 interface ServiceObservation {
   readonly desiredReplicas?: string;
@@ -23,6 +26,7 @@ interface ConsumerScenarios {
 
 interface DeployConsumerOptions {
   readonly failTaskInspection?: boolean;
+  readonly failOtaImageVerification?: boolean;
   readonly sleepSeconds?: number;
   readonly webConvergenceFailed?: boolean;
 }
@@ -123,7 +127,16 @@ exit 1
 `;
 
 function deployConsumersRunScript(): string {
-  return workflowRunScript("Deploy ClickHouse consumer services");
+  const workflow = z.object({
+    jobs: z.object({
+      "web-stack": z.object({
+        steps: z.array(z.object({ id: z.string().optional(), run: z.string().optional() })),
+      }),
+    }),
+  }).parse(parse(workflowText));
+  const script = workflow.jobs["web-stack"].steps.find((step) => step.id === "deploy_stack_full")?.run;
+  if (!script) throw new Error("Could not find deploy_stack_full run script");
+  return script;
 }
 
 function workflowRunScript(name: string): string {
@@ -179,6 +192,7 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
   const dockerPath = join(temporaryDirectory, "docker");
   const nodePath = join(temporaryDirectory, "node");
   const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
+  const imageVerificationCapturePath = join(temporaryDirectory, "image-verification-args");
 
   try {
     mkdirSync(scenarioDirectory);
@@ -191,7 +205,26 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
     chmodSync(dockerPath, 0o755);
     chmodSync(nodePath, 0o755);
     const pnpmPath = join(temporaryDirectory, "pnpm");
-    writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
+    writeFileSync(imageVerificationCapturePath, "");
+    writeFileSync(pnpmPath, `#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = tsx ]
+case "$2" in
+  scripts/stack-service-image.ts) printf '%s\\n' "$MOCK_OTA_IMAGE" ;;
+  scripts/verify-deploy-image.ts)
+    printf '%s\\n' "$*" >> "$IMAGE_VERIFICATION_CAPTURE"
+    if [ "$4" = dofek_ota ] && [ "$FAIL_OTA_IMAGE_VERIFICATION" = 1 ]; then
+      printf '%s\\n' "OTA running image mismatch" >&2
+      exit 1
+    fi
+    ;;
+  *) exit 1 ;;
+esac
+`);
+    writeFileSync(
+      join(scenarioDirectory, "dofek_ota"),
+      serializeScenario([{ ...STABLE_OBSERVATION, image: otaImage }]),
+    );
     chmodSync(pnpmPath, 0o755);
     writeFileSync(
       join(scenarioDirectory, "dofek_analytics-worker"),
@@ -239,6 +272,9 @@ ${deployConsumersRunScript()}`,
           ...process.env,
           PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
           FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
+          FAIL_OTA_IMAGE_VERIFICATION: options.failOtaImageVerification ? "1" : "0",
+          MOCK_OTA_IMAGE: otaImage,
+          IMAGE_VERIFICATION_CAPTURE: imageVerificationCapturePath,
           APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
           MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
           STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
@@ -255,6 +291,7 @@ ${deployConsumersRunScript()}`,
     return {
       ...result,
       stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
+      imageVerificationArgs: readFileSync(imageVerificationCapturePath, "utf8"),
     };
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
@@ -364,7 +401,7 @@ describe("deploy-web-stack workflow contract", () => {
       "Configure ClickHouse CDC",
       "Finalize PeerDB CDC contract",
       "Verify PeerDB CDC causal markers",
-      "Deploy ClickHouse consumer services",
+      "Deploy and verify remaining services",
     ];
     const positions = orderedSteps.map((name) => workflowText.indexOf(`      - name: ${name}`));
 
@@ -384,7 +421,7 @@ describe("deploy-web-stack workflow contract", () => {
       "Configure ClickHouse CDC",
       "Finalize PeerDB CDC contract",
       "Verify PeerDB CDC causal markers",
-      "Deploy ClickHouse consumer services",
+      "Deploy and verify remaining services",
       "Fail deployment after restoring processing services when web rolled back",
     ];
     const positions = orderedSteps.map((name) =>
@@ -417,7 +454,7 @@ describe("deploy-web-stack workflow contract", () => {
   it.each([
     ["Apply dependency stack before migrations", "web-pre-migration.env", deployTestOldImage],
     ["Deploy stack without ClickHouse consumers", "web.env", deployTestRepository + "@" + deployTestDigest],
-    ["Deploy ClickHouse consumer services", "web.env", deployTestRepository + "@" + deployTestDigest],
+    ["Deploy and verify remaining services", "web.env", deployTestRepository + "@" + deployTestDigest],
   ])("selects the correct web environment in %s", (step, expectedFile, expectedImage) => {
     const result = spawnSync(
       "bash",
@@ -683,7 +720,7 @@ ${workflowRunScript(step)}
 
   it("keeps ClickHouse consumers quiesced when CDC configuration fails", () => {
     expect(workflowText).toContain(
-      `      - name: Deploy ClickHouse consumer services
+      `      - name: Deploy and verify remaining services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success'`,
     );
@@ -703,6 +740,26 @@ ${workflowRunScript(step)}
       'if [ "${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}" = "true" ]; then',
     );
     expect(workflowText).toContain("its prior Swarm configuration remains in place");
+  });
+
+  it("verifies the canonical OTA image before declaring rollout complete", () => {
+    const result = runDeployConsumers({
+      analyticsWorker: [STABLE_OBSERVATION],
+      metricStreamClickhouseSink: [STABLE_OBSERVATION],
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.imageVerificationArgs).toContain(`scripts/verify-deploy-image.ts ${otaImage} dofek_ota`);
+    expect(result.stdout).toContain("dofek_ota task stable-task has remained converged for 60s");
+  });
+
+  it("fails rollout when the OTA running-image verifier rejects a converged task", () => {
+    const result = runDeployConsumers(
+      { analyticsWorker: [STABLE_OBSERVATION], metricStreamClickhouseSink: [STABLE_OBSERVATION] },
+      { failOtaImageVerification: true },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("OTA running image mismatch");
+    expect(result.stdout).not.toContain("dofek_ota task stable-task has remained converged");
   });
 
   it("requires the same running task to remain converged for 60 seconds", () => {
@@ -758,10 +815,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[10s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
+      "[70s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
     );
     expect(result.stdout).toContain(
-      "[70s] dofek_analytics-worker task replacement-task has remained converged for 60s",
+      "[130s] dofek_analytics-worker task replacement-task has remained converged for 60s",
     );
   });
 
@@ -777,10 +834,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[10s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
+      "[70s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
     );
     expect(result.stdout).toContain(
-      "[80s] dofek_analytics-worker task stable-task has remained converged for 60s",
+      "[140s] dofek_analytics-worker task stable-task has remained converged for 60s",
     );
   });
 

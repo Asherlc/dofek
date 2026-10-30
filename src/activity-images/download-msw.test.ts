@@ -16,7 +16,7 @@ it("downloads a public HTTPS image through the real request and temporary-file l
       () => new HttpResponse(new Uint8Array(bytes), { headers: { "content-type": "image/png" } }),
     ),
   );
-  server.listen({ onUnhandledRequest: "error" });
+  server.listen({ onUnhandledFrame: "error" });
   syncBuiltinESMExports();
   try {
     const image = await downloadActivityImage({

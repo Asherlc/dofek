@@ -192,7 +192,12 @@ and the
 | Linux without privileged Docker | Tool installation and Docker-free unit tests only; `cloud:start` fails before database setup |
 
 Xcode, iOS Simulator runtimes, signing identities, CocoaPods, SwiftLint,
-Periphery, and Muter remain a macOS-native profile. Apple distributes and
+Periphery, and MutantKit remain a macOS-native profile. The configured MutantKit
+artifact targets macOS ARM64 and is checksum/provenance-pinned through the
+[GitHub backend](https://mise.jdx.dev/dev-tools/backends/github.html) in
+[mise.toml](../mise.toml) and [mise.lock](../mise.lock); see the
+[native mutation procedure](testing.md#native-swift-mutation-testing).
+Apple distributes and
 supports Xcode through its
 [Xcode resources](https://developer.apple.com/xcode/resources/); a Linux
 container cannot replace that platform requirement.

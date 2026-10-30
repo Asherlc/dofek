@@ -12,11 +12,8 @@ import {
   isHealthKitDatabaseInaccessible,
   isTransientNetworkErrorMessage,
 } from "./health-kit-errors";
-import {
-  BACKGROUND_HEALTH_KIT_TYPES,
-  type HealthKitSyncStage,
-  type SyncTrpcClient,
-} from "./health-kit-sync";
+import { BACKGROUND_HEALTH_KIT_TYPES } from "./health-kit-sync";
+import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync-types";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";

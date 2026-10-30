@@ -27,6 +27,34 @@ const baseMetricStreamRow = {
 };
 
 describe("createMetricStreamEvent", () => {
+  it("keeps interval identity stable across display renames and distinguishes stable source facts", () => {
+    const row = {
+      ...baseMetricStreamRow,
+      externalId: "hk:steps",
+      channel: "step_count",
+      deviceId: "Watch",
+      metadata: { interval_end: "2026-06-06T19:00:01.000Z", source_bundle: "watch" },
+    };
+    const first = createCurrentMetricStreamEvent(row);
+    expect(
+      createCurrentMetricStreamEvent({
+        ...row,
+        metadata: { ...row.metadata, interval_end: "2026-06-06T19:00:02.000Z" },
+      }).id,
+    ).not.toBe(first.id);
+    const renamed = createCurrentMetricStreamEvent({ ...row, deviceId: "Localized Watch" });
+    expect(renamed.id).toBe(first.id);
+    expect(renamed.deviceId).toBe("Localized Watch");
+    expect(createCurrentMetricStreamEvent({ ...row, sourceType: "file" }).id).not.toBe(first.id);
+    expect(
+      createCurrentMetricStreamEvent({
+        ...row,
+        metadata: { ...row.metadata, source_bundle: "phone" },
+      }).id,
+    ).not.toBe(first.id);
+    expect(createCurrentMetricStreamEvent({ ...row, generation: 1 }).id).not.toBe(first.id);
+    expect(createCurrentMetricStreamEvent({ ...row, scalar: 15 }).id).toBe(first.id);
+  });
   it("derives a stable id from the metric stream natural key when no id is supplied", () => {
     const firstEvent = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,

@@ -56,7 +56,7 @@ function makeMeal(overrides: Partial<NormalizedZivaMeal> = {}): NormalizedZivaMe
   };
 }
 
-describe.sequential("upsertZivaMealsForDate", () => {
+describe("upsertZivaMealsForDate", { concurrent: false }, () => {
   let context: TestContext;
   let userId: string;
   let otherUserId: string;

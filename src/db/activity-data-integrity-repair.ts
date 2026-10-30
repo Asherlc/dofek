@@ -638,7 +638,9 @@ async function repairActivityDataIntegrityWithLease(
     postgresCommit: { completedAt: now().toISOString(), updated },
   };
   await replacePrivateJson(artifactPath, postgresCommitted, generateRunId);
-  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
+  const rebuildReadModels =
+    dependencies.rebuildReadModels ??
+    ((input: ActivityIntegrityDbtBuildInput) => runActivityIntegrityDbtBuild(input, clickHouse));
   let failureStage: "cdc_readiness" | "dbt_rebuild" | "verification" = "cdc_readiness";
   try {
     await waitForPostgresMirror(clickHouse, options.userId, changedRows, dependencies);
@@ -852,7 +854,9 @@ async function rollbackActivityDataIntegrityWithLease(
     repairedEndedAt: row.endedAt,
   }));
   await waitForPostgresMirror(clickHouse, artifact.userId, rollbackMirrorRows, dependencies);
-  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
+  const rebuildReadModels =
+    dependencies.rebuildReadModels ??
+    ((input: ActivityIntegrityDbtBuildInput) => runActivityIntegrityDbtBuild(input, clickHouse));
   await rebuildReadModels({
     userId: artifact.userId,
     activityIds: affectedIds,

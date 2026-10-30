@@ -1,0 +1,5 @@
+project:
+  kind: swiftPackageMacOS
+reports: [console, json]
+evidence:
+  archive: true

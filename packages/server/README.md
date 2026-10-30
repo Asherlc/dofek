@@ -153,6 +153,18 @@ with incomplete power coverage withheld from weekly totals.
   [full compatibility contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
   tRPC documents [input and output validation](https://trpc.io/docs/server/validators),
   and Zod documents [unknown-key handling](https://zod.dev/api#objects).
+- **Running response versions**: The existing `running.dynamics` array and
+  `running.dynamicsV2` wrapper accept `responseVersion: 1 | 2`, defaulting to `1`.
+  The historical projection includes only rows with finite cadence, pace and
+  distance, preserving genuine zeros and the exact old fields. Version `2`
+  retains nullable measurements and cadence basis/coverage; its wrapper has
+  separate cadence availability. Canonical repository selection remains complete. Both clients
+  request `2` and validate the [shared wire contract](../training/src/running-response.ts)
+  before rendering. The [router](src/routers/running.ts) uses a new cache
+  namespace and raw request versions separate entries. Its
+  [transport tests](src/routers/running.test.ts) cover cold omitted-version
+  requests and both cache ordering directions, following the existing
+  [climbing version policy](../training/src/climbing-log-response.ts).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 

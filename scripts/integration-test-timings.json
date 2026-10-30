@@ -1,0 +1,2423 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "sourceSha": "2838b632c71fb96ccf83798c8797a1d848d0a0cf",
+    "repository": "Asherlc/dofek",
+    "runId": 40915129483,
+    "runAttempt": 1,
+    "vitestVersion": "4.1.11",
+    "source": "Completed passing integration-suite console summaries from all four successful hosted jobs",
+    "durationUnit": "milliseconds",
+    "jobs": [
+      {
+        "jobId": 123594220982,
+        "shard": 1,
+        "fileCount": 85,
+        "testCount": 641,
+        "sumDurationMs": 249014
+      },
+      {
+        "jobId": 123594220978,
+        "shard": 2,
+        "fileCount": 85,
+        "testCount": 736,
+        "sumDurationMs": 287685
+      },
+      {
+        "jobId": 123594220983,
+        "shard": 3,
+        "fileCount": 85,
+        "testCount": 566,
+        "sumDurationMs": 419158
+      },
+      {
+        "jobId": 123594221080,
+        "shard": 4,
+        "fileCount": 84,
+        "testCount": 687,
+        "sumDurationMs": 536489
+      }
+    ]
+  },
+  "summary": {
+    "fileCount": 339,
+    "uniqueIdentityCount": 339,
+    "testCount": 2630,
+    "sumDurationMs": 1492346
+  },
+  "files": [
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_duplicate_groups.integration.test.ts",
+      "durationMs": 713,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_duplicate_matches.integration.test.ts",
+      "durationMs": 667,
+      "testCount": 3,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_heart_rate_distribution.integration.test.ts",
+      "durationMs": 15935,
+      "testCount": 9,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_pace_curve.integration.test.ts",
+      "durationMs": 24462,
+      "testCount": 9,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts",
+      "durationMs": 20398,
+      "testCount": 28,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_sensor_key_verification.integration.test.ts",
+      "durationMs": 19095,
+      "testCount": 12,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_sensor_processing_coverage-compatibility.integration.test.ts",
+      "durationMs": 5769,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_sensor_processing_coverage-tooling.integration.test.ts",
+      "durationMs": 18378,
+      "testCount": 6,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_sensor_processing_coverage.integration.test.ts",
+      "durationMs": 41569,
+      "testCount": 12,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_source_records.integration.test.ts",
+      "durationMs": 3229,
+      "testCount": 16,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "analytics/models/read_models/activity_step_cadence_rows.integration.test.ts",
+      "durationMs": 83015,
+      "testCount": 24,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/auth/account-linking.integration.test.ts",
+      "durationMs": 383,
+      "testCount": 13,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/auth/identity-credential-revocation.integration.test.ts",
+      "durationMs": 6,
+      "testCount": 5,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/auth/password-credential.integration.test.ts",
+      "durationMs": 657,
+      "testCount": 11,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/auth/password-reset.integration.test.ts",
+      "durationMs": 1137,
+      "testCount": 13,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/auth/providers.integration.test.ts",
+      "durationMs": 12,
+      "testCount": 5,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/auth/session.integration.test.ts",
+      "durationMs": 202,
+      "testCount": 8,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/clinical-records/repository.integration.test.ts",
+      "durationMs": 274,
+      "testCount": 4,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/companion/token-repository.integration.test.ts",
+      "durationMs": 392,
+      "testCount": 6,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/export.integration.test.ts",
+      "durationMs": 239,
+      "testCount": 6,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/index.integration.test.ts",
+      "durationMs": 455,
+      "testCount": 32,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/jobs/process-provider-data-deletion-job.integration.test.ts",
+      "durationMs": 4182,
+      "testCount": 5,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/mcp/activity-details-stable-groups.integration.test.ts",
+      "durationMs": 9417,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/mcp/day-nutrition-output.integration.test.ts",
+      "durationMs": 507,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/mcp/oidc.integration.test.ts",
+      "durationMs": 366,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts",
+      "durationMs": 3665,
+      "testCount": 3,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/mcp/token-repository.integration.test.ts",
+      "durationMs": 265,
+      "testCount": 10,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activities-calendar-repository.integration.test.ts",
+      "durationMs": 8463,
+      "testCount": 5,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-hardware-labels.integration.test.ts",
+      "durationMs": 333,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-hardware-repository.integration.test.ts",
+      "durationMs": 308,
+      "testCount": 3,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-images-repository.integration.test.ts",
+      "durationMs": 451,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-local-date.integration.test.ts",
+      "durationMs": 228,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-map-state.integration.test.ts",
+      "durationMs": 1059,
+      "testCount": 6,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts",
+      "durationMs": 775,
+      "testCount": 13,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-repository.integration.test.ts",
+      "durationMs": 1496,
+      "testCount": 19,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-route-repository.integration.test.ts",
+      "durationMs": 272,
+      "testCount": 4,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-sensor-provenance.integration.test.ts",
+      "durationMs": 7705,
+      "testCount": 5,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/activity-visibility-consistency.integration.test.ts",
+      "durationMs": 7327,
+      "testCount": 5,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/analytical-training-load-repository.integration.test.ts",
+      "durationMs": 714,
+      "testCount": 5,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/billing-repository.integration.test.ts",
+      "durationMs": 321,
+      "testCount": 9,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/body-measurement-read-model.integration.test.ts",
+      "durationMs": 3481,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/body-measurement-sample.integration.test.ts",
+      "durationMs": 2791,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/body-repository.integration.test.ts",
+      "durationMs": 7901,
+      "testCount": 5,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/clickhouse-activity-sensor-store-lifecycle.integration.test.ts",
+      "durationMs": 2850,
+      "testCount": 6,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/climbing-activity-log-entry-repository.integration.test.ts",
+      "durationMs": 1245,
+      "testCount": 30,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/climbing-images-repository.integration.test.ts",
+      "durationMs": 300,
+      "testCount": 5,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/climbing-log-entry-associator.integration.test.ts",
+      "durationMs": 421,
+      "testCount": 7,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/climbing-progression-repository.integration.test.ts",
+      "durationMs": 623,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/climbing-repository.integration.test.ts",
+      "durationMs": 1673,
+      "testCount": 29,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/climbing-strengths-repository.integration.test.ts",
+      "durationMs": 857,
+      "testCount": 17,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/correlation-repository.integration.test.ts",
+      "durationMs": 3362,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/cycling-analytics-repository.integration.test.ts",
+      "durationMs": 6402,
+      "testCount": 4,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/cycling-performance-repository.integration.test.ts",
+      "durationMs": 3410,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
+      "durationMs": 423,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
+      "durationMs": 231,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+      "durationMs": 531,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
+      "durationMs": 2298,
+      "testCount": 16,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/developer-client-repository.integration.test.ts",
+      "durationMs": 315,
+      "testCount": 7,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/efficiency-repository.integration.test.ts",
+      "durationMs": 4592,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/finger-loading-progression-repository.integration.test.ts",
+      "durationMs": 293,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/food-record-repository.integration.test.ts",
+      "durationMs": 642,
+      "testCount": 7,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/hang-ten-import.integration.test.ts",
+      "durationMs": 454,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/hangboarding-repository.integration.test.ts",
+      "durationMs": 555,
+      "testCount": 10,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/health-kit-running-steps-repository.integration.test.ts",
+      "durationMs": 877,
+      "testCount": 7,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/heart-rate-repository.integration.test.ts",
+      "durationMs": 450,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/hiking-repository.integration.test.ts",
+      "durationMs": 2079,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/hiking-route-projection.integration.test.ts",
+      "durationMs": 1185,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/kaya-sync.integration.test.ts",
+      "durationMs": 617,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts",
+      "durationMs": 478,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/nutrition-canonical.integration.test.ts",
+      "durationMs": 2003,
+      "testCount": 22,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/nutrition-source-key.integration.test.ts",
+      "durationMs": 498,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/performance-comparison-repository.integration.test.ts",
+      "durationMs": 2150,
+      "testCount": 14,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/processing-repository.integration.test.ts",
+      "durationMs": 263,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/processing-sync-recovery.integration.test.ts",
+      "durationMs": 396,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/provider-climbing-log-records.integration.test.ts",
+      "durationMs": 405,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/provider-detail-repository.integration.test.ts",
+      "durationMs": 788,
+      "testCount": 11,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/provider-metric-stream-daily.integration.test.ts",
+      "durationMs": 1158,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/provider-stats-read-model.integration.test.ts",
+      "durationMs": 1475,
+      "testCount": 8,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/push-provider-repository.integration.test.ts",
+      "durationMs": 598,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/recovery-activity-exposure-repository.integration.test.ts",
+      "durationMs": 258,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/recovery-training-series-repository.integration.test.ts",
+      "durationMs": 361,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/repeated-efforts-repository.integration.test.ts",
+      "durationMs": 549,
+      "testCount": 7,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/route-equivalence.integration.test.ts",
+      "durationMs": 1369,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/running-repository.integration.test.ts",
+      "durationMs": 278,
+      "testCount": 4,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/sport-volume-repository.integration.test.ts",
+      "durationMs": 312,
+      "testCount": 7,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/strength-progression-repository.integration.test.ts",
+      "durationMs": 453,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/strength-repository.integration.test.ts",
+      "durationMs": 571,
+      "testCount": 9,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/sync-repository.integration.test.ts",
+      "durationMs": 904,
+      "testCount": 13,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/training-load-repository.integration.test.ts",
+      "durationMs": 6458,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/training-repository.integration.test.ts",
+      "durationMs": 304,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/webhook-subscription-repository.integration.test.ts",
+      "durationMs": 581,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/account-erasure.integration.test.ts",
+      "durationMs": 465,
+      "testCount": 7,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/activity-dedup.integration.test.ts",
+      "durationMs": 4091,
+      "testCount": 28,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/activity-power-curve-eligibility.integration.test.ts",
+      "durationMs": 160,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/activity-power-curve-read-model.integration.test.ts",
+      "durationMs": 21072,
+      "testCount": 9,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/activity-sensor-summary-read-model.integration.test.ts",
+      "durationMs": 257,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/activity-title.integration.test.ts",
+      "durationMs": 676,
+      "testCount": 5,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/activity.integration.test.ts",
+      "durationMs": 707,
+      "testCount": 18,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/clickhouse-integration-test-read-models-b.integration.test.ts",
+      "durationMs": 81,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/climbing.integration.test.ts",
+      "durationMs": 1335,
+      "testCount": 14,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/credential-reconnect.integration.test.ts",
+      "durationMs": 5326,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/cycling-activity-read-model.integration.test.ts",
+      "durationMs": 50,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/cycling-advanced-vertical-ascent.integration.test.ts",
+      "durationMs": 6647,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/daily-metrics.integration.test.ts",
+      "durationMs": 358,
+      "testCount": 13,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/duration-curves-data.integration.test.ts",
+      "durationMs": 491,
+      "testCount": 3,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/efficiency.integration.test.ts",
+      "durationMs": 256,
+      "testCount": 7,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/health-kit-sync-processors.integration.test.ts",
+      "durationMs": 347,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/health-kit-sync.integration.test.ts",
+      "durationMs": 640,
+      "testCount": 24,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/healthspan.integration.test.ts",
+      "durationMs": 13552,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/mobile-dashboard.integration.test.ts",
+      "durationMs": 2778,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/nutrition-analytics-data.integration.test.ts",
+      "durationMs": 7131,
+      "testCount": 10,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/predictions.integration.test.ts",
+      "durationMs": 7326,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/provider-detail.integration.test.ts",
+      "durationMs": 383,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/router-data.integration.test.ts",
+      "durationMs": 33778,
+      "testCount": 40,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/router-logic.integration.test.ts",
+      "durationMs": 30021,
+      "testCount": 25,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/router-sql.integration.test.ts",
+      "durationMs": 5852,
+      "testCount": 64,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/router.integration.test.ts",
+      "durationMs": 30116,
+      "testCount": 43,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/settings.integration.test.ts",
+      "durationMs": 460,
+      "testCount": 11,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sleep-consistency-across-endpoints.integration.test.ts",
+      "durationMs": 5162,
+      "testCount": 4,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sleep-heart-rate-sample-read-model.integration.test.ts",
+      "durationMs": 656,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sleep-heart-rate-window-read-model.integration.test.ts",
+      "durationMs": 1169,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sleep-need.integration.test.ts",
+      "durationMs": 15427,
+      "testCount": 10,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sleep.integration.test.ts",
+      "durationMs": 16666,
+      "testCount": 7,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/support.integration.test.ts",
+      "durationMs": 283,
+      "testCount": 6,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sync-request-job.integration.test.ts",
+      "durationMs": 91,
+      "testCount": 7,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/sync.integration.test.ts",
+      "durationMs": 367,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/trends-data.integration.test.ts",
+      "durationMs": 6329,
+      "testCount": 3,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routers/whoop-auth.integration.test.ts",
+      "durationMs": 303,
+      "testCount": 9,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routes/auth/data-provider-callback.integration.test.ts",
+      "durationMs": 964,
+      "testCount": 15,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routes/developer-clients.integration.test.ts",
+      "durationMs": 404,
+      "testCount": 11,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routes/external-write-api.integration.test.ts",
+      "durationMs": 2692,
+      "testCount": 29,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/routes/ingest-zos-health.integration.test.ts",
+      "durationMs": 588,
+      "testCount": 44,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/services/daily-recovery-read-model.integration.test.ts",
+      "durationMs": 1164,
+      "testCount": 5,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/services/food-record-service.integration.test.ts",
+      "durationMs": 2182,
+      "testCount": 18,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "packages/web/src/lib/timeRange-policy.integration.test.ts",
+      "durationMs": 115,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "scripts/backfill-exercise-provenance.integration.test.ts",
+      "durationMs": 678,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "scripts/backfill-hang-ten-workouts.integration.test.ts",
+      "durationMs": 225,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "scripts/backfill-provider-connections.integration.test.ts",
+      "durationMs": 300,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "scripts/seed-openai-reviewer-demo.integration.test.ts",
+      "durationMs": 258,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "scripts/seed-review-clickhouse.integration.test.ts",
+      "durationMs": 760,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "scripts/seed/body-health.integration.test.ts",
+      "durationMs": 317,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "scripts/seed/core.integration.test.ts",
+      "durationMs": 312,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "scripts/seed/verification.integration.test.ts",
+      "durationMs": 564,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/archive-erasure.integration.test.ts",
+      "durationMs": 15080,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/clickhouse-erasure.integration.test.ts",
+      "durationMs": 16519,
+      "testCount": 8,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/database-backup-storage.integration.test.ts",
+      "durationMs": 11690,
+      "testCount": 4,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/peerdb-staging-retention.integration.test.ts",
+      "durationMs": 3929,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/postgres-erasure.integration.test.ts",
+      "durationMs": 525,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/processor-erasure.integration.test.ts",
+      "durationMs": 48,
+      "testCount": 7,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/processor-retention.integration.test.ts",
+      "durationMs": 18,
+      "testCount": 5,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/redis-erasure.integration.test.ts",
+      "durationMs": 2027,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/redpanda-drain.integration.test.ts",
+      "durationMs": 351,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/remote-revocation.integration.test.ts",
+      "durationMs": 57,
+      "testCount": 12,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/remote-snapshot-rotation.integration.test.ts",
+      "durationMs": 255,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/remote-snapshot.integration.test.ts",
+      "durationMs": 971,
+      "testCount": 17,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/restore-reconciliation.integration.test.ts",
+      "durationMs": 277,
+      "testCount": 7,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/account-erasure/stripe-acceptance.integration.test.ts",
+      "durationMs": 551,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/activity-images/storage.integration.test.ts",
+      "durationMs": 8462,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/analytics-refresh-queue.integration.test.ts",
+      "durationMs": 17,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/account-erasure.integration.test.ts",
+      "durationMs": 714,
+      "testCount": 13,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-data-integrity-cadence-scope.integration.test.ts",
+      "durationMs": 612,
+      "testCount": 5,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-data-integrity-dbt.integration.test.ts",
+      "durationMs": 68112,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-data-integrity-repair.integration.test.ts",
+      "durationMs": 163017,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-device-observations.integration.test.ts",
+      "durationMs": 355,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-effort-identity-read-model.integration.test.ts",
+      "durationMs": 2473,
+      "testCount": 9,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-field-priority-dbt.integration.test.ts",
+      "durationMs": 15173,
+      "testCount": 22,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-field-priority-read-model.integration.test.ts",
+      "durationMs": 3153,
+      "testCount": 16,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-field-priority.integration.test.ts",
+      "durationMs": 336,
+      "testCount": 17,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-group-payload-union.integration.test.ts",
+      "durationMs": 20027,
+      "testCount": 7,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-group-reconciliation.integration.test.ts",
+      "durationMs": 509,
+      "testCount": 23,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-images.integration.test.ts",
+      "durationMs": 634,
+      "testCount": 9,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-intervals.integration.test.ts",
+      "durationMs": 310,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-location-bounded-microbatch.integration.test.ts",
+      "durationMs": 20402,
+      "testCount": 4,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-origin-read-model.integration.test.ts",
+      "durationMs": 4010,
+      "testCount": 56,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-origin.integration.test.ts",
+      "durationMs": 1626,
+      "testCount": 87,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-overlap-plan.integration.test.ts",
+      "durationMs": 213,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-payload-dbt-microbatch.integration.test.ts",
+      "durationMs": 86666,
+      "testCount": 6,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-perceived-exertion.integration.test.ts",
+      "durationMs": 253,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-power-curve-read-model.integration.test.ts",
+      "durationMs": 368,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-refresh-scope.integration.test.ts",
+      "durationMs": 107191,
+      "testCount": 8,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-route-identity-read-model.integration.test.ts",
+      "durationMs": 25568,
+      "testCount": 23,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-sensor-consumers.integration.test.ts",
+      "durationMs": 802,
+      "testCount": 4,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-sensor-sample-append.integration.test.ts",
+      "durationMs": 13688,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-sensor-sample-read-model.integration.test.ts",
+      "durationMs": 474,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-sensor-summary-power-sample-rate.integration.test.ts",
+      "durationMs": 10,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-sensor-summary-watermark.integration.test.ts",
+      "durationMs": 5639,
+      "testCount": 7,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-summary-canonical-ids.integration.test.ts",
+      "durationMs": 1842,
+      "testCount": 5,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-type-classification.integration.test.ts",
+      "durationMs": 376,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/activity-vo2max-stable-groups.integration.test.ts",
+      "durationMs": 2128,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/apple-health-workout-revisions.integration.test.ts",
+      "durationMs": 319,
+      "testCount": 13,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/canonical-activity-types-migration.integration.test.ts",
+      "durationMs": 6079,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-cdc-health.integration.test.ts",
+      "durationMs": 98,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-deduped-sensor.integration.test.ts",
+      "durationMs": 3464,
+      "testCount": 11,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0055_provider_connection_catalog.integration.test.ts",
+      "durationMs": 83,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0059_provider_change_state.integration.test.ts",
+      "durationMs": 335,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0060_heart_rate_day_change.integration.test.ts",
+      "durationMs": 125,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0061_provider_current_state_projection.integration.test.ts",
+      "durationMs": 229,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0067_repair_local_time_column_order.integration.test.ts",
+      "durationMs": 105,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0068_provider_metric_stream_daily_counts.integration.test.ts",
+      "durationMs": 296,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0069_canonical_activity_types.integration.test.ts",
+      "durationMs": 294,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0071_repair_canonical_activity_type_reads.integration.test.ts",
+      "durationMs": 375,
+      "testCount": 8,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0072_canonical_clinical_records.integration.test.ts",
+      "durationMs": 168,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0073_activity_sensor_summary_source_version.integration.test.ts",
+      "durationMs": 127,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0074_metric_stream_external_id_projection.integration.test.ts",
+      "durationMs": 40,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0076_activity_sensor_provenance.integration.test.ts",
+      "durationMs": 52,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0077_activity_power_curve_evidence.integration.test.ts",
+      "durationMs": 28,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0078_sensor_provider_priority_type.integration.test.ts",
+      "durationMs": 171,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0079_stable_activity_group_id.integration.test.ts",
+      "durationMs": 49,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0081_stable_activity_read_views.integration.test.ts",
+      "durationMs": 511,
+      "testCount": 3,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0083_activity_location_source_refresh.integration.test.ts",
+      "durationMs": 165,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.integration.test.ts",
+      "durationMs": 49,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0086_activity_location_member_change.integration.test.ts",
+      "durationMs": 112,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.integration.test.ts",
+      "durationMs": 44,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0089_activity_lifecycle_nullable.integration.test.ts",
+      "durationMs": 31,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0091_metric_stream_freshness_index.integration.test.ts",
+      "durationMs": 43,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0092_sensor_scalar_sample_refresh_projection.integration.test.ts",
+      "durationMs": 660,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0093_refresh_daily_metrics_view.integration.test.ts",
+      "durationMs": 55,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0094_sensor_scalar_sample_lightweight_refresh_projection.integration.test.ts",
+      "durationMs": 258,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0095_food_entry_source_account_key.integration.test.ts",
+      "durationMs": 19,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0098_heart_rate_source_access.integration.test.ts",
+      "durationMs": 110,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0099_activity_sensor_day_versions.integration.test.ts",
+      "durationMs": 78,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0101_activity_end_time_nullability.integration.test.ts",
+      "durationMs": 188,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0104_activity_origin.integration.test.ts",
+      "durationMs": 180,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clickhouse-migrations/0106_activity_primary_type.integration.test.ts",
+      "durationMs": 262,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-attempt-result.integration.test.ts",
+      "durationMs": 4462,
+      "testCount": 36,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-catalogue-seed.integration.test.ts",
+      "durationMs": 443,
+      "testCount": 8,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-context-migration.integration.test.ts",
+      "durationMs": 334,
+      "testCount": 22,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-log-area-sync.integration.test.ts",
+      "durationMs": 404,
+      "testCount": 5,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-log-model-conversion.integration.test.ts",
+      "durationMs": 15995,
+      "testCount": 11,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-log-model.integration.test.ts",
+      "durationMs": 769,
+      "testCount": 13,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-log-session-sync.integration.test.ts",
+      "durationMs": 382,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-log-snapshot.integration.test.ts",
+      "durationMs": 277,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-log-sync.integration.test.ts",
+      "durationMs": 1018,
+      "testCount": 26,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-migration-order.integration.test.ts",
+      "durationMs": 1001,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-route-method-migration.integration.test.ts",
+      "durationMs": 210,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-route-method.integration.test.ts",
+      "durationMs": 784,
+      "testCount": 16,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/climbing-traits.integration.test.ts",
+      "durationMs": 121,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/clinical-record-migration.integration.test.ts",
+      "durationMs": 483,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/daily-activity-load-read-model.integration.test.ts",
+      "durationMs": 685,
+      "testCount": 5,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/daily-body-measurement-read-model.integration.test.ts",
+      "durationMs": 1101,
+      "testCount": 3,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/daily-endurance-load.integration.test.ts",
+      "durationMs": 8887,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/daily-metrics-schema.integration.test.ts",
+      "durationMs": 216,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/daily-sleep-read-model.integration.test.ts",
+      "durationMs": 500,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/data-export.integration.test.ts",
+      "durationMs": 203,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/db.integration.test.ts",
+      "durationMs": 451,
+      "testCount": 8,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/deduped-activities-read-model.integration.test.ts",
+      "durationMs": 29976,
+      "testCount": 26,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/deduped-sensor-read-model.integration.test.ts",
+      "durationMs": 39,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/effort-equivalence-groups.integration.test.ts",
+      "durationMs": 376,
+      "testCount": 7,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/file-upload.integration.test.ts",
+      "durationMs": 328,
+      "testCount": 9,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/food-record-modifications.integration.test.ts",
+      "durationMs": 490,
+      "testCount": 6,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/garmin-official-authorization-migration.integration.test.ts",
+      "durationMs": 270,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/hang-ten-activity-priority.integration.test.ts",
+      "durationMs": 214,
+      "testCount": 2,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/hangboard-activity-type-migration.integration.test.ts",
+      "durationMs": 229,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/index.integration.test.ts",
+      "durationMs": 236,
+      "testCount": 3,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/metric-stream-location-point-migration.integration.test.ts",
+      "durationMs": 4872,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/metric-stream-replica-identity.integration.test.ts",
+      "durationMs": 422,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/migrate.integration.test.ts",
+      "durationMs": 5701,
+      "testCount": 21,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/mountain-project-tick-migration.integration.test.ts",
+      "durationMs": 123,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/peerdb/mirror-schema-validator.integration.test.ts",
+      "durationMs": 344,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/processing-alert-dismissals.integration.test.ts",
+      "durationMs": 248,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/provider-activity-absence.integration.test.ts",
+      "durationMs": 461,
+      "testCount": 21,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/provider-activity-sync.integration.test.ts",
+      "durationMs": 209,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/provider-data-deletion.integration.test.ts",
+      "durationMs": 667,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/provider-issue-notification.integration.test.ts",
+      "durationMs": 983,
+      "testCount": 31,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/provider-operation-fence.integration.test.ts",
+      "durationMs": 262,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/record-local-time-context.integration.test.ts",
+      "durationMs": 278,
+      "testCount": 6,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/record-modifications.integration.test.ts",
+      "durationMs": 1386,
+      "testCount": 16,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/seed-dev-db.integration.test.ts",
+      "durationMs": 22391,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/sleep-quality-backfill.integration.test.ts",
+      "durationMs": 240,
+      "testCount": 1,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/stable-activity-groups-migration.integration.test.ts",
+      "durationMs": 596,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/sync-log.integration.test.ts",
+      "durationMs": 496,
+      "testCount": 7,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/db/tagged-query-client.integration.test.ts",
+      "durationMs": 222,
+      "testCount": 2,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/db/tokens.integration.test.ts",
+      "durationMs": 555,
+      "testCount": 14,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/tracking-mcp-scope-migration.integration.test.ts",
+      "durationMs": 212,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/db/unattached-climbing-log-entry.integration.test.ts",
+      "durationMs": 229,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/user-external-effect.integration.test.ts",
+      "durationMs": 269,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/db/zepp-activity-priority.integration.test.ts",
+      "durationMs": 306,
+      "testCount": 5,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/email.integration.test.ts",
+      "durationMs": 7,
+      "testCount": 6,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/export.integration.test.ts",
+      "durationMs": 300,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/account-erasure-work-guard.integration.test.ts",
+      "durationMs": 442,
+      "testCount": 8,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/account-erasure-worker.integration.test.ts",
+      "durationMs": 383,
+      "testCount": 1,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/bullmq-stall.integration.test.ts",
+      "durationMs": 10024,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/process-account-erasure-request.integration.test.ts",
+      "durationMs": 726,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/process-activity-image-backfill-job.integration.test.ts",
+      "durationMs": 390,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/process-activity-image-job.integration.test.ts",
+      "durationMs": 14810,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/process-fit-file-import-job.integration.test.ts",
+      "durationMs": 2711,
+      "testCount": 4,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/process-garmin-dump-import-job.integration.test.ts",
+      "durationMs": 383,
+      "testCount": 3,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/jobs/provider-artifact-erasure.integration.test.ts",
+      "durationMs": 479,
+      "testCount": 3,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/lib/cache.integration.test.ts",
+      "durationMs": 6,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/metric-stream/clickhouse-sink.integration.test.ts",
+      "durationMs": 28456,
+      "testCount": 15,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/metric-stream/redpanda-consumer.integration.test.ts",
+      "durationMs": 26546,
+      "testCount": 3,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/personalization/refit-clickhouse.integration.test.ts",
+      "durationMs": 284,
+      "testCount": 2,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/personalization/refit.integration.test.ts",
+      "durationMs": 524,
+      "testCount": 4,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/processing/analytics-microbatch-bounds.integration.test.ts",
+      "durationMs": 16677,
+      "testCount": 1,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/processing/analytics-processing.integration.test.ts",
+      "durationMs": 275,
+      "testCount": 2,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/processing/processing-event-store.integration.test.ts",
+      "durationMs": 555,
+      "testCount": 14,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/processing/processing-reconciler.integration.test.ts",
+      "durationMs": 806,
+      "testCount": 4,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/provider-artifact-storage.integration.test.ts",
+      "durationMs": 804,
+      "testCount": 5,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/apple-health/db-insertion.integration.test.ts",
+      "durationMs": 300,
+      "testCount": 15,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/apple-health/import.integration.test.ts",
+      "durationMs": 3541,
+      "testCount": 49,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/apple-health/sync.integration.test.ts",
+      "durationMs": 293,
+      "testCount": 14,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/bodyspec-sync.integration.test.ts",
+      "durationMs": 1498,
+      "testCount": 5,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/concept2-sync.integration.test.ts",
+      "durationMs": 568,
+      "testCount": 9,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/coros-sync.integration.test.ts",
+      "durationMs": 2108,
+      "testCount": 7,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/cronometer-csv-sync.integration.test.ts",
+      "durationMs": 724,
+      "testCount": 10,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/cycling-analytics-sync.integration.test.ts",
+      "durationMs": 1213,
+      "testCount": 6,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/decathlon-sync.integration.test.ts",
+      "durationMs": 1196,
+      "testCount": 6,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/eight-sleep-sync.integration.test.ts",
+      "durationMs": 466,
+      "testCount": 12,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/fatsecret/provider-sync.integration.test.ts",
+      "durationMs": 1863,
+      "testCount": 12,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/fitbit-sync.integration.test.ts",
+      "durationMs": 3189,
+      "testCount": 38,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/garmin/activities.integration.test.ts",
+      "durationMs": 3030,
+      "testCount": 5,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/garmin/authorization.integration.test.ts",
+      "durationMs": 470,
+      "testCount": 4,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/garmin/health.integration.test.ts",
+      "durationMs": 364,
+      "testCount": 12,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/kaya-sync.integration.test.ts",
+      "durationMs": 1588,
+      "testCount": 18,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/kaya/import.integration.test.ts",
+      "durationMs": 432,
+      "testCount": 3,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/komoot-sync.integration.test.ts",
+      "durationMs": 909,
+      "testCount": 13,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/mapmyfitness-sync.integration.test.ts",
+      "durationMs": 850,
+      "testCount": 13,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/mountain-project-sync.integration.test.ts",
+      "durationMs": 4997,
+      "testCount": 14,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/openbeta-sync.integration.test.ts",
+      "durationMs": 893,
+      "testCount": 11,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/oura-sync.integration.test.ts",
+      "durationMs": 686,
+      "testCount": 5,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/peloton-sync-ext.integration.test.ts",
+      "durationMs": 541,
+      "testCount": 12,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/peloton-sync.integration.test.ts",
+      "durationMs": 613,
+      "testCount": 12,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/polar-sync.integration.test.ts",
+      "durationMs": 738,
+      "testCount": 9,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/ride-with-gps-sync.integration.test.ts",
+      "durationMs": 1202,
+      "testCount": 22,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/strava-sync.integration.test.ts",
+      "durationMs": 461,
+      "testCount": 6,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/strong-csv-sync.integration.test.ts",
+      "durationMs": 964,
+      "testCount": 12,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/suunto-sync.integration.test.ts",
+      "durationMs": 1830,
+      "testCount": 6,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/thecrag-sync.integration.test.ts",
+      "durationMs": 1596,
+      "testCount": 15,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/trainerroad-sync.integration.test.ts",
+      "durationMs": 382,
+      "testCount": 7,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/ultrahuman-sync.integration.test.ts",
+      "durationMs": 312,
+      "testCount": 8,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/wahoo-sync.integration.test.ts",
+      "durationMs": 7795,
+      "testCount": 10,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/wger-sync.integration.test.ts",
+      "durationMs": 557,
+      "testCount": 10,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/whoop-sync.integration.test.ts",
+      "durationMs": 10133,
+      "testCount": 37,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/withings-sync.integration.test.ts",
+      "durationMs": 383,
+      "testCount": 7,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/xert-sync.integration.test.ts",
+      "durationMs": 377,
+      "testCount": 7,
+      "sourceJobId": 123594220983
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/ziva/nutrition-writer.integration.test.ts",
+      "durationMs": 335,
+      "testCount": 7,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/ziva/provider-sync.integration.test.ts",
+      "durationMs": 1016,
+      "testCount": 6,
+      "sourceJobId": 123594220978
+    },
+    {
+      "project": "integration",
+      "file": "src/providers/zwift-sync.integration.test.ts",
+      "durationMs": 636,
+      "testCount": 14,
+      "sourceJobId": 123594221080
+    },
+    {
+      "project": "integration",
+      "file": "src/zoho-desk.integration.test.ts",
+      "durationMs": 52,
+      "testCount": 15,
+      "sourceJobId": 123594221080
+    }
+  ]
+}

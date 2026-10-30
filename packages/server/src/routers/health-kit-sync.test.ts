@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeTransactionalTestDatabase } from "./test-helpers.ts";
@@ -64,9 +65,12 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   ProviderActivityListSync: class {
     upsert = providerActivitySyncMocks.upsert;
     reconcile = providerActivitySyncMocks.reconcile;
+    trackPresent = vi.fn();
   },
   finishProviderActivityListSync: vi.fn(),
-  upsertProviderActivity: vi.fn(),
+  upsertProviderActivity: (db: unknown, values: unknown, update: unknown) =>
+    providerActivitySyncMocks.upsert(values, update, db),
+  markProviderActivityPresent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../../../src/db/activity-group-reconciliation.ts", () => ({
@@ -152,6 +156,156 @@ describe("healthKitSyncRouter", () => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
       return publishedRows;
+    });
+  });
+
+  describe("pushRunningStepSamples", () => {
+    const userId = "00000000-0000-0000-0000-000000000001";
+    const workout = {
+      uuid: "00000000-0000-4000-8000-000000000201",
+      workoutType: "37",
+      startDate: "2024-01-15T10:00:00Z",
+      endDate: "2024-01-15T11:00:00Z",
+      duration: 3600,
+      totalDistance: null,
+      sourceName: "Watch",
+      sourceBundle: "watch",
+    };
+    const sample = {
+      ...makeSample({
+        uuid: "00000000-0000-4000-8000-000000000202",
+        value: 3.5,
+        endDate: "2024-01-15T10:00:01.250Z",
+      }),
+      workoutUuids: [workout.uuid],
+    };
+    it("publishes raw intervals once with merged associations and parent deletion identity", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      const result = await caller.pushRunningStepSamples({
+        workouts: [workout],
+        samples: [sample, sample],
+      });
+      expect(result).toEqual({ inserted: 1 });
+      expect(publishedMetricStreamRows()).toEqual([
+        expect.objectContaining({
+          userId,
+          providerId: "apple_health",
+          externalId: `hk:${sample.uuid}`,
+          channel: "step_count",
+          scalar: 3.5,
+          recordedAt: sample.startDate,
+          metadata: {
+            interval_end: "2024-01-15T10:00:01.250Z",
+            source_bundle: sample.sourceBundle,
+            workout_uuids: [workout.uuid],
+          },
+        }),
+      ]);
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+      expect(healthKitPushTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "pushRunningStepSamples",
+        status: "success",
+      });
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "pushRunningStepSamples",
+        category: "runningStepInterval",
+      });
+    });
+    it.each([
+      { overrides: { value: -1 }, reason: ">=0" },
+      { overrides: { unit: "statistics" }, reason: 'expected "count"' },
+      {
+        overrides: { endDate: sample.startDate },
+        reason: "Running step intervals must end after they start",
+      },
+      { overrides: { workoutUuids: [] }, reason: ">=1" },
+    ])(
+      "rejects malformed raw observations with their specific actionable reason: $reason",
+      async ({ overrides, reason }) => {
+        const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+        const request = caller.pushRunningStepSamples({
+          workouts: [workout],
+          samples: [{ ...sample, ...overrides }],
+        });
+        await expect(request).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringContaining(`Running step sample ${sample.uuid} is invalid:`),
+        });
+        await expect(request).rejects.toHaveProperty("message", expect.stringContaining(reason));
+        await expect(request).rejects.toHaveProperty(
+          "message",
+          expect.stringContaining("Resync Apple Health running steps."),
+        );
+        expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+      },
+    );
+    it("rejects nonfinite raw counts at the input boundary", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      await expect(
+        caller.pushRunningStepSamples({
+          workouts: [workout],
+          samples: [{ ...sample, value: Infinity }],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    });
+    it("rejects associations outside the uploaded running contexts with an actionable error", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      await expect(
+        caller.pushRunningStepSamples({
+          workouts: [workout],
+          samples: [{ ...sample, workoutUuids: ["00000000-0000-4000-8000-000000000999"] }],
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: `Step sample ${sample.uuid} references a workout outside this upload's running contexts. Resync Apple Health workouts and steps together.`,
+      });
+      expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    });
+    it("rejects non-running contexts", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      await expect(
+        caller.pushRunningStepSamples({
+          workouts: [{ ...workout, workoutType: "52" }],
+          samples: [sample],
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message:
+          "Raw running steps require original running workout contexts (workout type 37). Resync Apple Health workouts.",
+      });
+    });
+    it("preserves semantic publisher errors and their original identity", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      const failure = new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Step ingestion is unavailable until the provider connection is restored.",
+      });
+      mockMetricStreamPublishRows.mockRejectedValue(failure);
+      await expect(
+        caller.pushRunningStepSamples({ workouts: [workout], samples: [sample] }),
+      ).rejects.toBe(failure);
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(failure, {
+        tags: { endpoint: "pushRunningStepSamples" },
+        extra: { userId },
+      });
+    });
+    it("reports publisher failures and fails the mutation for retry", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId, timezone: "UTC" });
+      const failure = new Error("broker unavailable");
+      mockMetricStreamPublishRows.mockRejectedValue(failure);
+      await expect(
+        caller.pushRunningStepSamples({ workouts: [workout], samples: [sample] }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          "Apple Health running steps could not be saved. Retry sync; your step cursor has not advanced.",
+        cause: failure,
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(failure, {
+        tags: { endpoint: "pushRunningStepSamples" },
+        extra: { userId },
+      });
     });
   });
 
@@ -626,6 +780,56 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).not.toContain("5552.349998360692");
     });
 
+    it("routes all running quantities into the metric stream", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId: "user-1", timezone: "UTC" });
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({ type: "HKQuantityTypeIdentifierRunningSpeed", unit: "m/s", value: 4 }),
+          makeSample({ type: "HKQuantityTypeIdentifierRunningPower", unit: "W", value: 250.5 }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningStrideLength",
+            unit: "m",
+            value: 1.2,
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningGroundContactTime",
+            unit: "ms",
+            value: 240,
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningVerticalOscillation",
+            unit: "mm",
+            value: 75,
+          }),
+        ],
+      });
+      expect(publishedMetricStreamRows()).toEqual([
+        expect.objectContaining({ channel: "speed", scalar: 4 }),
+        expect.objectContaining({ channel: "power", scalar: 250.5 }),
+        expect.objectContaining({ channel: "stride_length", scalar: 1.2 }),
+        expect.objectContaining({ channel: "ground_contact_time", scalar: 240 }),
+        expect.objectContaining({ channel: "vertical_oscillation", scalar: 75 }),
+      ]);
+    });
+
+    it("reports incompatible running units through the existing error boundary", async () => {
+      const caller = createCaller({ db: makeDatabase(), userId: "user-1", timezone: "UTC" });
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierRunningSpeed",
+            unit: "kg",
+            value: 4,
+          }),
+        ],
+      });
+      expect(result.errors).toEqual([
+        expect.stringMatching(/Unsupported.*kg.*RunningSpeed.*Expected/),
+      ]);
+      expect(mockSentryCaptureException).toHaveBeenCalled();
+      expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    });
+
     it("rounds float heart rate before publishing metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
@@ -900,7 +1104,8 @@ describe("healthKitSyncRouter", () => {
       const execute = vi.fn();
       // ensureProvider succeeds
       execute.mockResolvedValueOnce([]);
-      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Metric stream Redpanda error"));
+      const failure = new Error("Metric stream Redpanda error");
+      mockMetricStreamPublishRows.mockRejectedValueOnce(failure);
 
       const caller = createCaller({
         db: makeDatabase(execute),
@@ -916,6 +1121,9 @@ describe("healthKitSyncRouter", () => {
 
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors.some((e: string) => e.includes("Metric stream"))).toBe(true);
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(failure, {
+        tags: { healthKitSyncStep: "metricStream" },
+      });
     });
 
     it("reports errors when daily metrics processing fails", async () => {

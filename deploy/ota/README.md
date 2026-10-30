@@ -78,7 +78,10 @@ See the [upstream key layout](https://github.com/mercuretechnologies/xprem/blob/
 and [R2 lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
 
 The canonical Terraform workflow creates the bucket before the stack workflow
-switches the pinned private image and bucket together. Deploy OTA resolves the
+switches the pinned private image and bucket together. The existing Swarm
+convergence gate includes OTA and checks both its desired digest and every
+running task against the canonical stack pin before reporting success; it
+retains the existing startup stability window. Deploy OTA resolves the
 current iOS runtime, validates the server within five seconds, publishes with
 EOAS 3.2.7, then verifies the exact published UUID/runtime, manifest signature
 and all asset hashes using the retained device certificate. An empty runtime is

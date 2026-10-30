@@ -114,7 +114,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       `INSERT INTO ${activitySummaryTable} (${summaryColumns.join(", ")}) SELECT ${summaryColumns.join(", ")} FROM ${activitySummaryTable}_old`,
       `DROP TABLE IF EXISTS ${sensorSummaryTable}_old`,
       `DROP TABLE IF EXISTS ${activitySummaryTable}_old`,
-      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+      expect.stringContaining("CREATE OR REPLACE VIEW analytics.activity_summary\nAS"),
     ]);
   });
 
@@ -134,7 +134,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       buildActivitySummaryRowsTableSql(),
       `INSERT INTO ${sensorSummaryTable} (${sensorColumns}) SELECT ${sensorColumns} FROM ${sensorSummaryTable}_old`,
       `DROP TABLE IF EXISTS ${sensorSummaryTable}_old`,
-      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+      expect.stringContaining("CREATE OR REPLACE VIEW analytics.activity_summary\nAS"),
     ]);
   });
 
@@ -154,7 +154,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       buildActivitySummaryRowsTableSql(),
       `INSERT INTO ${activitySummaryTable} (${summaryColumns}) SELECT ${summaryColumns} FROM ${activitySummaryTable}_old`,
       `DROP TABLE IF EXISTS ${activitySummaryTable}_old`,
-      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+      expect.stringContaining("CREATE OR REPLACE VIEW analytics.activity_summary\nAS"),
     ]);
   });
 
@@ -168,7 +168,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       "DROP VIEW IF EXISTS analytics.activity_summary",
       buildActivitySensorSummaryRowsTableSql(),
       buildActivitySummaryRowsTableSql(),
-      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+      expect.stringContaining("CREATE OR REPLACE VIEW analytics.activity_summary\nAS"),
     ]);
   });
 
@@ -182,7 +182,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       "DROP VIEW IF EXISTS analytics.activity_summary",
       buildActivitySensorSummaryRowsTableSql(),
       buildActivitySummaryRowsTableSql(),
-      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+      expect.stringContaining("CREATE OR REPLACE VIEW analytics.activity_summary\nAS"),
     ]);
   });
 
@@ -213,7 +213,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       `DROP TABLE IF EXISTS ${sensorSummaryTable}_old`,
       `INSERT INTO ${activitySummaryTable} (${summaryColumns}) SELECT ${summaryColumns} FROM ${activitySummaryTable}_old`,
       `DROP TABLE IF EXISTS ${activitySummaryTable}_old`,
-      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+      expect.stringContaining("CREATE OR REPLACE VIEW analytics.activity_summary\nAS"),
     ]);
   });
 

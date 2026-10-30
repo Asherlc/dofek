@@ -827,10 +827,21 @@ jobs:
           path: .build/fit-decoder/bin
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
-      - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
+      - id: integration-tests
+        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - name: Capture ClickHouse failure diagnostics
+        if: ${{ failure() && steps.integration-tests.outcome == 'failure' }}
+        run: pnpm tsx scripts/collect-clickhouse-ci-diagnostics.ts '${{ job.services.clickhouse.id }}' '${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}'
+      - name: Upload ClickHouse failure diagnostics
+        if: ${{ always() && steps.integration-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clickhouse-diagnostics-${{ matrix.shard }}
+          path: ${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}/
+          if-no-files-found: error
       - name: Upload integration coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -841,6 +852,14 @@ jobs:
         with:
           name: coverage-integration-${{ matrix.shard }}
           path: coverage/
+      - name: Export fresh integration timings
+        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-4
+      - name: Upload integration timings
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-${{ matrix.shard }}
+          path: reports/integration-sharding/${{ matrix.shard }}-of-4/
+          if-no-files-found: error
 
   test-peerdb-integration:
     name: PeerDB CDC Integration
@@ -911,6 +930,23 @@ jobs:
             cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
           fi
           exit ${DIFF_FAILED:-0}
+      - name: Download integration timings
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: integration-timings-*
+          path: integration-timings
+          merge-multiple: false
+      - name: Validate complete integration timings
+        run: >-
+          pnpm tsx scripts/update-integration-test-timings.ts merge integration-test-timings.json
+          integration-timings/integration-timings-1 integration-timings/integration-timings-2
+          integration-timings/integration-timings-3 integration-timings/integration-timings-4
+      - name: Upload complete integration timing refresh
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-complete
+          path: integration-test-timings.json
+          if-no-files-found: error
 
   test-gate:
     name: Unit & Integration Tests
@@ -1373,21 +1409,12 @@ jobs:
           path: |
             packages/mobile/modules/*/.build
             packages/mobile/targets/*/.build
-            !packages/mobile/modules/*_mutated/.build
-            !packages/mobile/targets/*_mutated/.build
           key: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mobile/modules/*/Package.swift', 'packages/mobile/targets/*/Package.swift') }}
           restore-keys: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: muter-cache
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          path: /opt/homebrew/Cellar/muter
-          key: muter-v2-${{ runner.os }}-${{ runner.arch }}
-      - name: Install Muter
-        if: steps.muter-cache.outputs.cache-hit != 'true'
-        run: brew install muter-mutation-testing/formulae/muter
-      - name: Link Muter from cache
-        if: steps.muter-cache.outputs.cache-hit == 'true'
-        run: brew link --overwrite muter 2>/dev/null || ln -sf /opt/homebrew/Cellar/muter/*/bin/muter /opt/homebrew/bin/muter
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
       - name: Run native mutation tests
         timeout-minutes: 30
         env:
@@ -1396,24 +1423,39 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: muter-report-${{ strategy.job-index }}
+          name: mutantkit-report-${{ strategy.job-index }}
           path: |
             reports/swift-mutation/
-            packages/mobile/modules/*_mutated/*.log
-            packages/mobile/targets/*_mutated/*.log
+            packages/mobile/modules/*/.mutantkit/evidence/
+            packages/mobile/targets/*/.mutantkit/evidence/
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 
   mutation-gate:
     name: Mutation Testing
-    needs: [mutation-prep, mutation]
+    needs: [mutation-prep, mutation, mutation-swift-prep, mutation-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
-          if [ "${{ needs.mutation.result }}" = "failure" ] || [ "${{ needs.mutation.result }}" = "cancelled" ]; then
-            echo "Mutation testing failed or was cancelled"
+          for result in \
+            "${{ needs.mutation-prep.result }}" \
+            "${{ needs.mutation.result }}" \
+            "${{ needs.mutation-swift-prep.result }}" \
+            "${{ needs.mutation-swift.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "Mutation discovery or testing failed or was cancelled"
+              exit 1
+            fi
+          done
+          if [ "${{ needs.mutation-prep.result == 'success' && needs.mutation-prep.outputs.shards != '[]' && needs.mutation.result != 'success' }}" = "true" ]; then
+            echo "Selected TypeScript mutation work did not succeed"
+            exit 1
+          fi
+          if [ "${{ needs.mutation-swift-prep.result == 'success' && needs.mutation-swift-prep.outputs.files != '[]' && needs.mutation-swift.result != 'success' }}" = "true" ]; then
+            echo "Selected native mutation work did not succeed"
             exit 1
           fi
 

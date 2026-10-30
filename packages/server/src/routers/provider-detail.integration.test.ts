@@ -2,11 +2,11 @@ import { closeProviderOperationFencePool } from "dofek/db/provider-operation-fen
 import { ensureProvider, loadTokens, saveTokens } from "dofek/db/tokens";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../../../../src/db/typed-sql.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { providerDetailRouter } from "./provider-detail.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
@@ -21,7 +21,7 @@ const existingTokens = {
   providerAccountId: "disconnect-garmin-account",
   authorizationId,
 };
-const externalApiServer = setupServer();
+const externalApiServer = createIntegrationMswFixture();
 
 describe("provider detail operation fences (integration)", () => {
   let context: TestContext;
@@ -30,7 +30,7 @@ describe("provider detail operation fences (integration)", () => {
   const originalClientSecret = process.env.GARMIN_CLIENT_SECRET;
 
   beforeAll(async () => {
-    externalApiServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    externalApiServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name) VALUES (${userId}, 'Provider operation user')`,
@@ -47,7 +47,7 @@ describe("provider detail operation fences (integration)", () => {
   });
 
   afterAll(async () => {
-    externalApiServer.close();
+    externalApiServer.deactivate();
     await closeProviderOperationFencePool();
     await context?.cleanup();
     for (const [key, value] of [

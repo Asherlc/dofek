@@ -51,7 +51,7 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
   const originalEnv = { ...process.env };
   const server = setupServer();
 
-  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
   afterEach(() => {
     server.resetHandlers();
     process.env = { ...originalEnv };
@@ -178,7 +178,7 @@ describe("WahooProvider — rate-limit aware fetch wiring", () => {
   const originalEnv = { ...process.env };
   const server = setupServer();
 
-  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
   afterEach(() => {
     server.resetHandlers();
     process.env = { ...originalEnv };

@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
-import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DiagnosticContainer } from "../test/diagnostic-container.ts";
 
 const execFileAsync = promisify(execFile);
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -39,7 +39,7 @@ interface BareDatabaseContext {
 }
 
 async function setupBareDatabase(): Promise<BareDatabaseContext> {
-  const container = await new GenericContainer(
+  const container = await new DiagnosticContainer(
     "mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all",
   )
     .withEnvironment({

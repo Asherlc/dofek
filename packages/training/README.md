@@ -77,9 +77,12 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
 | `pmc` | TRIMP, heart-rate/power stress, FTP estimate, learned stress model, and performance-management calculations |
+| `running-cadence` | [Cadence basis and supplied-coverage labels](src/running-cadence.ts) shared by web and mobile; values remain server-authored |
+| `running-response` | [Running response versions, wire validation, and faithful legacy projection](src/running-response.ts) for independently released API and clients |
 | `power-analysis` | Power curves, normalized power, critical-power fit, regression, and duration constants |
 | `training` | Canonical activity types, provider normalization, and weekly-volume grouping |
 | `training-distribution` | [Karvonen](https://pubmed.ncbi.nlm.nih.gov/13470504/) and [Treff](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full) weekly intensity-distribution summaries |
+| `training-chart-availability` | [Shared chart availability schema](src/training-chart-availability.ts); counts and messages are computed by the server |
 | `training-load` | `TrainingStressCalculator` stateful facade |
 | `workout-recommendation` | Workout recommendation types and calculation |
 
@@ -195,6 +198,26 @@ OpenBeta exposes the reference as `metadata.mp_id` in its
 A separate conflict story keeps the candidate possible and displays the server's
 reason. Catalogue grades and tags remain attributed observations, independent
 of that identity decision; see the [matching design](../../docs/superpowers/specs/2026-10-29-climbing-catalogue-matching-design.md).
+
+### Running response versions
+
+The existing `running.dynamics` and `running.dynamicsV2` procedures accept
+`responseVersion: 1 | 2`, defaulting to `1`, following the
+[climbing response-version pattern](src/climbing-log-response.ts). The procedure
+suffix and negotiated response version are separate. The
+[running wire contract](src/running-response.ts) projects version `1` to the
+historical fields and includes only rows with finite cadence, pace and distance.
+Genuine numeric zeros remain zero. Version `2` retains nullable measurements,
+cadence basis and coverage; its wrapper has separate form/cadence availability. Canonical
+records remain complete; the projection runs only at the API boundary in the
+[running router](../server/src/routers/running.ts).
+
+Both repository clients explicitly request version `2` and validate its shared
+schema before rendering. Unknown measurements remain missing values, and a
+malformed response produces an actionable error. The shared
+[availability schema](src/training-chart-availability.ts) validates the wire
+shape; the [server factory](../server/src/contracts/training-chart-availability.ts)
+owns availability calculations and messages.
 
 ### Training distributions
 

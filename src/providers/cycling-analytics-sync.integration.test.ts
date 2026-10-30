@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -89,7 +89,7 @@ function cyclingAnalyticsHandlers(
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("CyclingAnalyticsProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -98,7 +98,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-client-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "cycling_analytics",
@@ -112,7 +112,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
