@@ -90,6 +90,7 @@ describe("ClimbingCatalogueService", () => {
       ...seed,
       providerId: "thecrag",
       externalId: candidate.externalId,
+      locations: candidate.locations,
     });
     expect(result.sources[1]?.searchComplete).toBe(true);
     expect(
@@ -224,7 +225,12 @@ describe("ClimbingCatalogueService", () => {
   });
   it("discovers native source context first and keeps enrichment out of the cache fingerprint", async () => {
     const cache = new MemoryCacheStore();
-    const original = { ...seed, providerId: "thecrag", externalId: candidate.externalId };
+    const original = {
+      ...seed,
+      providerId: "thecrag",
+      externalId: candidate.externalId,
+      locations: candidate.locations,
+    };
     const linked = {
       ...candidate,
       providerId: "openbeta" as const,
