@@ -375,7 +375,12 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota`
 - `verify-published-ota.ts`: Audits the exact published UUID/runtime, signed manifest,
   and asset hashes against the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
-  - Usage: `pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production`
+  EOAS [returns without writing a receipt for unchanged content](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
+  When no receipt exists, the audit requires the served launch bundle and complete
+  asset hash set to match the local export, verifies the device signature and
+  downloaded bytes, then writes the verified identity as the receipt. A present
+  receipt must match the requested runtime and branch and remains an exact UUID check.
+  - Usage: `pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production <resolved-runtime>`
 - `validate-deploy-env.ts`: Validates the rendered production dotenv and calls
   the same account-erasure keyring parser used by web and worker startup.
   - Usage: `pnpm tsx scripts/validate-deploy-env.ts <rendered-dotenv-path>`

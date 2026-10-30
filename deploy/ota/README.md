@@ -39,6 +39,12 @@ robots, humans and identity rejection. Preserve the empty-identity refusal from
 [upstream security fix #311](https://github.com/mercuretechnologies/xprem/pull/311)
 when changing this check; two empty lookup results must never authenticate.
 
+The [unchanged-publication correction](https://github.com/mercuretechnologies/xprem/pull/312)
+returns the existing manifest UUID in the unchanged response. This lets a
+publisher write a receipt for an unchanged export and retain device signature
+and asset verification. The matching CLI correction must also be installed by
+the publishing workflow.
+
 ## Build
 
 Check out the immutable upstream revision into a separate build directory,
@@ -47,12 +53,12 @@ build context:
 
 ```sh
 docker build --target test -f deploy/ota/Dockerfile <patched-upstream-directory>
-docker build -t dofek-ota:3.2.7-dofek.3 -f deploy/ota/Dockerfile <patched-upstream-directory>
+docker build -t dofek-ota:3.2.7-dofek.4 -f deploy/ota/Dockerfile <patched-upstream-directory>
 ```
 
 The compiler and runtime image are pinned by version and digest. The compiler
 is [Go 1.27.3](https://go.dev/dl/); the upstream runtime remains non-root. The
-result reports `3.2.7-dofek.3` so normal version-scoped caches identify this
+result reports `3.2.7-dofek.4` so normal version-scoped caches identify this
 binary separately. CI verifies the upstream tests and builds the runtime image.
 On main, the workflow publishes source-commit tags to the private `dofek-ota-internal`
 GHCR package and records its digest. The package must already exist and be
@@ -103,6 +109,13 @@ same `expo-app-id` header as the configured client.
 
 The audit detects failures after publication; it does not make publication
 atomic. A failed audit leaves that release advertised until explicit repair.
+EOAS [omits its receipt when the bundle is unchanged](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
+The audit then compares the served launch bundle hash and complete asset hash set
+against the fresh local export for the explicitly resolved runtime. It verifies
+the device signature and every downloaded asset before writing the existing
+update's verified identity as a receipt. Missing exports, content differences,
+signature failures and unreadable assets remain fatal; a present receipt still
+requires its exact UUID, runtime and branch.
 [Expo clients verify manifest signatures and asset hashes](https://docs.expo.dev/technical-specs/expo-updates-1/)
 and reject invalid downloads. Keep the failed UUID/runtime and evidence,
 diagnose whether the cause is transport, configuration or corruption, then
