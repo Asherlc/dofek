@@ -118,7 +118,7 @@ export class ClimbingCatalogueService {
             providerId: adapter.providerId,
             searchComplete: found.complete,
             ...(found.searchArea ? { searchArea: found.searchArea } : {}),
-            matches: matchCatalogueCandidates(discoverySeed, found),
+            matches: matchCatalogueCandidates(discoverySeed, found, seed.locations),
           };
         }),
       );

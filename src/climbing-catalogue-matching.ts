@@ -94,25 +94,39 @@ function nameEvidence(seed: CatalogueSeed, candidate: CatalogueCandidate): NameM
   return approximate;
 }
 
-function explicitReference(seed: CatalogueSeed, candidate: CatalogueCandidate): boolean {
+function referenceEvidence(seed: CatalogueSeed, candidate: CatalogueCandidate) {
   const recorded = [
     ...(seed.externalId ? [{ providerId: seed.providerId, externalId: seed.externalId }] : []),
     ...(seed.references ?? []),
   ];
   const found = [candidate, ...(candidate.references ?? [])];
-  return recorded.some((reference) =>
-    found.some(
-      (other) =>
-        reference.providerId === other.providerId && reference.externalId === other.externalId,
-    ),
-  );
+  let linked = false;
+  const conflicts = new Set<string>();
+  for (const reference of recorded) {
+    for (const other of found) {
+      if (reference.providerId !== other.providerId) continue;
+      if (reference.externalId === other.externalId) linked = true;
+      else
+        conflicts.add(
+          `Conflicting provider IDs for ${reference.providerId}: ${reference.externalId} / ${other.externalId}.`,
+        );
+    }
+  }
+  return { linked, conflicts: [...conflicts] };
 }
 
-/** Attribute every decision; source observations are never rewritten or persisted here. */
+/** Compare current discovery and original logged geography independently; never rewrite source facts. */
 export function matchCatalogueCandidates(
   seed: CatalogueSeed,
   found: CatalogueSearchResult,
+  recordedLocations: CatalogueLocation[],
 ): AttributedMatch[] {
+  const areaConflict = (left: CatalogueLocation[], right: CatalogueLocation[]) =>
+    `Nearest local areas conflict: ${catalogueLocalArea(left)?.name} / ${catalogueLocalArea(right)?.name}.`;
+  const sourceConflict =
+    geography(recordedLocations, seed.locations) === "conflict"
+      ? areaConflict(recordedLocations, seed.locations)
+      : null;
   const candidates = [
     ...new Map(
       found.candidates.map((candidate) => [
@@ -125,63 +139,83 @@ export function matchCatalogueCandidates(
     .map((candidate) => {
       const native =
         candidate.providerId === seed.providerId && candidate.externalId === seed.externalId;
-      const reference = !native && explicitReference(seed, candidate);
+      const references = referenceEvidence(seed, candidate);
+      const reference = !native && references.linked;
       const name = nameEvidence(seed, candidate);
-      const place = geography(seed.locations, candidate.locations);
-      const conflicts: string[] = [];
+      const currentPlace = geography(seed.locations, candidate.locations);
+      const recordedPlace = geography(recordedLocations, candidate.locations);
+      const place = currentPlace === "unknown" ? recordedPlace : currentPlace;
+      const supportingLocations =
+        currentPlace === "compatible" ? seed.locations : recordedLocations;
+      const conflicts = [...references.conflicts];
+      if (sourceConflict) conflicts.push(sourceConflict);
       if (seed.kind && candidate.kind && seed.kind !== candidate.kind)
         conflicts.push("Known route/boulder kinds conflict.");
       if (seed.setting && candidate.setting && seed.setting !== candidate.setting)
         conflicts.push("Known indoor/outdoor settings conflict.");
-      if (place === "conflict")
-        conflicts.push(
-          `Nearest local areas conflict: ${catalogueLocalArea(seed.locations)?.name} / ${catalogueLocalArea(candidate.locations)?.name}.`,
-        );
-      return { candidate, native, reference, name, place, conflicts };
+      if (currentPlace === "conflict")
+        conflicts.push(areaConflict(seed.locations, candidate.locations));
+      if (recordedPlace === "conflict")
+        conflicts.push(areaConflict(recordedLocations, candidate.locations));
+      return {
+        candidate,
+        native,
+        reference,
+        name,
+        place,
+        supportingLocations,
+        identityConflict: references.conflicts.length > 0,
+        conflicts: [...new Set(conflicts)],
+      };
     })
-    .filter((match) => match.native || match.reference || match.name !== null);
+    .filter(
+      (match) => match.native || match.reference || match.name !== null || match.identityConflict,
+    );
   const plausible = assessed.filter((match) => match.conflicts.length === 0);
   const complete =
     found.complete &&
     (!found.searchArea ||
       (found.searchArea.scope === "area" &&
-        geography(seed.locations, [found.searchArea]) === "compatible"));
-  return assessed.map(({ candidate, native, reference, name, place, conflicts }) => {
-    if (native)
-      return {
-        candidate,
-        confidence: "source",
-        evidence: ["Recorded source provider and ID match.", ...conflicts],
-      };
-    const evidence: string[] = [];
-    if (reference) evidence.push("Explicit provider reference links these climbs.");
-    if (name === "exact") evidence.push("Normalized climb names match.");
-    if (name === "alias") evidence.push("A source-declared alias matches.");
-    if (name === "approximate")
-      evidence.push("Approximate name only; route qualifiers remain distinct.");
-    evidence.push(...conflicts);
-    if (place === "compatible")
-      evidence.push(
-        `Local areas align within 100 m: ${catalogueLocalArea(seed.locations)?.name} / ${catalogueLocalArea(candidate.locations)?.name}.`,
-      );
-    if (place === "unknown") evidence.push("Independent local-area geography is unavailable.");
-    if (reference && conflicts.length === 0)
-      return { candidate, confidence: "reference", evidence };
-    const outdoor = seed.setting === "outdoor" || candidate.setting === "outdoor";
-    const kind = seed.kind !== null && seed.kind === candidate.kind;
-    if (!kind) evidence.push("Known matching route/boulder kinds are required.");
-    if (!outdoor) evidence.push("Outdoor geography cannot verify indoor gym or set identity.");
-    if (!complete) evidence.push("Discovery is incomplete for the matched local area.");
-    if (plausible.length > 1)
-      evidence.push("Another plausible local or unlocated candidate remains.");
-    const corroborated =
-      (name === "exact" || name === "alias") &&
-      kind &&
-      outdoor &&
-      conflicts.length === 0 &&
-      place === "compatible" &&
-      complete &&
-      plausible.length === 1;
-    return { candidate, confidence: corroborated ? "corroborated" : "possible", evidence };
-  });
+        (geography(seed.locations, [found.searchArea]) === "compatible" ||
+          geography(recordedLocations, [found.searchArea]) === "compatible")));
+  return assessed.map(
+    ({ candidate, native, reference, name, place, supportingLocations, conflicts }) => {
+      if (native)
+        return {
+          candidate,
+          confidence: "source",
+          evidence: ["Recorded source provider and ID match.", ...conflicts],
+        };
+      const evidence: string[] = [];
+      if (reference) evidence.push("Explicit provider reference links these climbs.");
+      if (name === "exact") evidence.push("Normalized climb names match.");
+      if (name === "alias") evidence.push("A source-declared alias matches.");
+      if (name === "approximate")
+        evidence.push("Approximate name only; route qualifiers remain distinct.");
+      evidence.push(...conflicts);
+      if (place === "compatible")
+        evidence.push(
+          `Local areas align within 100 m: ${catalogueLocalArea(supportingLocations)?.name} / ${catalogueLocalArea(candidate.locations)?.name}.`,
+        );
+      if (place === "unknown") evidence.push("Independent local-area geography is unavailable.");
+      if (reference && conflicts.length === 0)
+        return { candidate, confidence: "reference", evidence };
+      const outdoor = seed.setting === "outdoor" || candidate.setting === "outdoor";
+      const kind = seed.kind !== null && seed.kind === candidate.kind;
+      if (!kind) evidence.push("Known matching route/boulder kinds are required.");
+      if (!outdoor) evidence.push("Outdoor geography cannot verify indoor gym or set identity.");
+      if (!complete) evidence.push("Discovery is incomplete for the matched local area.");
+      if (plausible.length > 1)
+        evidence.push("Another plausible local or unlocated candidate remains.");
+      const corroborated =
+        (name === "exact" || name === "alias") &&
+        kind &&
+        outdoor &&
+        conflicts.length === 0 &&
+        place === "compatible" &&
+        complete &&
+        plausible.length === 1;
+      return { candidate, confidence: corroborated ? "corroborated" : "possible", evidence };
+    },
+  );
 }

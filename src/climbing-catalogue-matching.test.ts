@@ -46,7 +46,7 @@ function matches(
   recorded: CatalogueSeed = seed,
   discovery: Omit<CatalogueSearchResult, "candidates"> = { complete: true },
 ) {
-  return matchCatalogueCandidates(recorded, { candidates, ...discovery });
+  return matchCatalogueCandidates(recorded, { candidates, ...discovery }, recorded.locations);
 }
 
 describe("catalogue name discovery", () => {
@@ -74,6 +74,42 @@ describe("catalogue name discovery", () => {
 });
 
 describe("evidence-based catalogue matching", () => {
+  it("keeps an exact local complete match possible when its explicit native-provider ID conflicts", () => {
+    const wrongReference = {
+      ...candidate,
+      references: [{ providerId: "mountain-project" as const, externalId: "wrong-id" }],
+    };
+    expect(matches([wrongReference])[0]).toMatchObject({
+      confidence: "possible",
+      evidence: expect.arrayContaining([
+        expect.stringMatching(/conflict.*mountain-project.*105734732.*wrong-id/i),
+      ]),
+    });
+  });
+  it("does not let a positive reference override a contradictory reference to the same native provider", () => {
+    const conflicting = {
+      ...candidate,
+      references: [
+        { providerId: "mountain-project" as const, externalId: "105734732" },
+        { providerId: "mountain-project" as const, externalId: "wrong-id" },
+      ],
+    };
+    expect(matches([conflicting])[0]).toMatchObject({
+      confidence: "possible",
+      evidence: expect.arrayContaining([expect.stringMatching(/conflict.*id/i)]),
+    });
+  });
+  it("treats a different candidate ID from the native provider as conflicting identity evidence", () => {
+    const otherNative = {
+      ...candidate,
+      providerId: "mountain-project" as const,
+      externalId: "different-route",
+    };
+    expect(matches([otherNative])[0]).toMatchObject({
+      confidence: "possible",
+      evidence: expect.arrayContaining([expect.stringMatching(/conflict.*id/i)]),
+    });
+  });
   it("keeps native source identity after a rename and even conflicting observations", () => {
     const native = {
       ...candidate,

@@ -21,6 +21,10 @@ separation of candidate generation from comparison described in
 - Native `(providerId, externalId)` survives a rename. Explicit cross-provider
   references bypass name equality. Known kind, setting, or credible local-area
   contradictions keep a cross-reference possible and explain the conflict.
+  An explicit different ID of the recorded provider is conflicting evidence,
+  including when another reference agrees; it cannot fall through to inferred
+  corroboration. Current source geography can guide discovery but cannot erase
+  a known geographical contradiction in the logged source facts.
 - Match the nearest available local areas, allowing extra hierarchy levels.
   Never let agreement on a broad ancestor override contradictory nearer areas.
   Geography supports place identity; coincident route/area coordinates do not
