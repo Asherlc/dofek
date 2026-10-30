@@ -5,6 +5,17 @@ For production SSH access details used during deploy or incident debugging, see 
 
 ## Reading iOS Build Errors
 
+If filtered logs stop without a causal error, download the complete job log
+before deciding which command failed. During [PR #3166's preview failure](https://github.com/Asherlc/dofek/actions/runs/41074540752/job/124127095782),
+`gh run view --log-failed` output stopped at runtime-resolution diagnostics,
+while the complete job log showed a later upload-authentication failure.
+GitHub provides a [plain-text job-log download endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run):
+
+```bash
+gh api repos/Asherlc/dofek/actions/jobs/<JOB_ID>/logs > /tmp/ci-job.log
+rg -n 'Error:|error:|Process completed' /tmp/ci-job.log
+```
+
 The "iOS Native Build" CI job runs `xcodebuild archive` piped through `tail -40`, which only keeps the last 40 lines. Swift compiler errors are printed **mid-build** and get truncated. The job log only shows the final summary ("The following build commands failed") and exit code 65, not the actual error messages.
 
 ### How to get the actual Swift errors
