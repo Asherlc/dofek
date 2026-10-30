@@ -38,6 +38,8 @@ describe("HTTP transport diagnostics", () => {
   it.each([
     ["GET", "/v1.49/_ping?token=private", "docker.ping"],
     ["GET", "/version", "docker.version"],
+    ["GET", "/v12.34/_ping", "docker.ping"],
+    ["GET", "/prefix/v1.49/_ping", "local.http"],
     ["GET", "/v1.42/info", "docker.info"],
     ["GET", "/v1.42/images/private/json", "docker.image_inspect"],
     ["POST", "/images/create?fromImage=private", "docker.image_create"],
@@ -45,6 +47,7 @@ describe("HTTP transport diagnostics", () => {
     ["POST", "/containers/private/start", "docker.container_start"],
     ["GET", "/containers/private/json", "docker.container_inspect"],
     ["POST", "/containers/private/exec", "docker.container_exec"],
+    ["POST", "/containers/v1.49/exec", "docker.container_exec"],
     ["POST", "/exec/private/start", "docker.exec_start"],
     ["GET", "/exec/private/json", "docker.exec_inspect"],
     ["PATCH", "/private/unknown", "local.http"],
@@ -92,8 +95,9 @@ describe("HTTP transport diagnostics", () => {
       const liveRequest = { host: "localhost", path: "/private", method: "GET" };
       created.publish({ request: liveRequest });
       stop();
-      stop();
       const count = events.length;
+      stop();
+      expect(events).toHaveLength(count);
       failed.publish({ request: liveRequest, error: new Error("private") });
       publish({ host: "localhost", path: "/private", method: "GET" });
       expect(events).toHaveLength(count);
@@ -116,17 +120,106 @@ describe("HTTP transport diagnostics", () => {
     stop();
     expect(events).toEqual([{ event: "http.request.summary", observed: 1, errors: 0 }]);
   });
+  it("ignores malformed channel messages and non-string request fields", () => {
+    const events = output();
+    const stop = startHttpTransportDiagnostics();
+    try {
+      for (const message of [
+        null,
+        undefined,
+        false,
+        17,
+        "private",
+        {},
+        { request: null },
+        { request: 1 },
+        { request: "private" },
+      ]) {
+        created.publish(message);
+        failed.publish(message);
+      }
+      for (const host of [undefined, null, 3, { toString: () => "localhost" }])
+        publish({ host, path: "/_ping", method: "GET" });
+      publish({ host: "LOCALHOST", path: 123, method: "GET" });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ operation: "local.http", transport: "local" });
+      expect(capture).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+  it("reports elapsed time and clamps a backwards clock", () => {
+    const events = output();
+    const now = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(120)
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(90);
+    const stop = startHttpTransportDiagnostics();
+    try {
+      publish({ host: "localhost", path: "/_ping", method: "GET" });
+      publish({ host: "localhost", path: "/_ping", method: "GET" });
+      expect(events.map((event) => event.elapsedMs)).toEqual([20, 0]);
+    } finally {
+      stop();
+      now.mockRestore();
+    }
+  });
+  it("reports failed summary writes and unsubscribes only once", () => {
+    output();
+    const stop = startHttpTransportDiagnostics();
+    vi.mocked(fs.writeSync).mockImplementation(() => {
+      throw Object.assign(new Error("private summary"), {
+        code: "EPIPE",
+        syscall: "write",
+        stack: "Error: private summary",
+      });
+    });
+    expect(stop).not.toThrow();
+    expect(stop).not.toThrow();
+    expect(capture).toHaveBeenCalledExactlyOnceWith(
+      new Error("HTTP transport diagnostics failed"),
+      {
+        extra: {
+          diagnostic: {
+            errors: [
+              { name: "Error", code: "EPIPE", syscall: "write", aborted: false, locations: [] },
+            ],
+            truncated: false,
+          },
+        },
+      },
+    );
+    expect(JSON.stringify(capture.mock.calls)).not.toContain("private");
+  });
   it("reports observer getter failures without exposing their data", () => {
     output();
     const stop = startHttpTransportDiagnostics();
     try {
       const request = {
         get host(): never {
-          throw new Error("private token");
+          throw Object.assign(new Error("private token"), {
+            code: "EPIPE",
+            syscall: "write",
+            stack: "Error: private token",
+          });
         },
       };
       expect(() => created.publish({ request })).not.toThrow();
-      expect(capture.mock.calls[0]?.[0]).toEqual(new Error("HTTP transport diagnostics failed"));
+      expect(capture).toHaveBeenCalledExactlyOnceWith(
+        new Error("HTTP transport diagnostics failed"),
+        {
+          extra: {
+            diagnostic: {
+              errors: [
+                { name: "Error", code: "EPIPE", syscall: "write", aborted: false, locations: [] },
+              ],
+              truncated: false,
+            },
+          },
+        },
+      );
       expect(JSON.stringify(capture.mock.calls)).not.toMatch(/private|token/);
     } finally {
       stop();
