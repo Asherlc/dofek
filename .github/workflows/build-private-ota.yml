@@ -32,7 +32,7 @@ jobs:
           ref: 071f6d907527d7de1ba21dd0be23a6ba669a2b1c
           path: .ota-upstream
           persist-credentials: false
-      - name: Apply storage and protocol corrections
+      - name: Apply tested server corrections
         working-directory: .ota-upstream
         run: git apply ../deploy/ota/upstream.patch
       - name: Set up Docker Buildx
