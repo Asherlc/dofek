@@ -4,6 +4,202 @@ import { mapTheCragAscent } from "./mapping.ts";
 import { apiAscent, gradeCases } from "./test-helpers.ts";
 
 describe("theCrag official ascent mapping", () => {
+  it.each([
+    [" LEAD ", "lead"],
+    ["lead solo", "lead"],
+    ["top-rope", "top_rope"],
+    ["top rope solo", "top_rope"],
+    ["free solo", "unroped"],
+    ["solo", "unroped"],
+    ["unroped", "unroped"],
+    ["follow", "follow"],
+    ["second", "follow"],
+  ])("maps recorded method %s", (gear, ropeMethod) => {
+    const record = mapTheCragAscent(
+      apiAscent({ climbedGearStyle: gear, tick: null, route: { id: "2001" } }),
+      "123",
+    );
+    expect(record.attempts).toEqual([
+      { scope: "climb", ropeMethod, ...(gear.includes("solo") ? { solo: true } : {}) },
+    ]);
+    expect(record.climb?.kind).toBe("route");
+  });
+
+  it.each(["xlead", "leadx", "xfollow", "followx", "xsolo", "solox", "xtop rope", "top ropex"])(
+    "preserves unknown method %s",
+    (gear) => {
+      expect(
+        mapTheCragAscent(
+          apiAscent({ climbedGearStyle: gear, tick: null, route: { id: "2001" } }),
+          "123",
+        ).attempts[0]?.ropeMethod,
+      ).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["onsight", "free-onsight"],
+    ["on sight", "free-onsight"],
+    ["flash", "free-flash"],
+    ["aid onsight", "aid-onsight"],
+    ["aid flash", "aid-flash"],
+    ["clean", "free-send"],
+    ["send", "free-send"],
+    ["greenpoint", "free-send"],
+    ["fell/hung", "fell-hung"],
+    ["dab", "dab"],
+  ])("maps source qualifier %s", (label, qualifier) => {
+    expect(
+      mapTheCragAscent(apiAscent({ tick: { label: ` ${label.toUpperCase()} ` } }), "123")
+        .attempts[0],
+    ).toMatchObject({ sourceResult: label.toUpperCase(), qualifier });
+  });
+
+  it.each([
+    ["dog", { fellOrHung: true }],
+    ["hang dog", { fellOrHung: true }],
+    ["repeat", { hadCompletedBefore: true, qualifier: "free-send" }],
+    ["pinkpoint", { usedPreplacedProtection: true, qualifier: "free-send" }],
+    ["ground-up redpoint", { priorFailedAttemptsGroundUp: true, qualifier: "free-send" }],
+    ["french free", { usedAid: true }],
+    ["frenchfree", { usedAid: true }],
+  ])("preserves source result facts for %s", (label, facts) => {
+    expect(mapTheCragAscent(apiAscent({ tick: { label } }), "123").attempts).toEqual([
+      { scope: "climb", ropeMethod: "top_rope", sourceResult: label, ...facts },
+    ]);
+  });
+
+  it.each(["sport", "trad"])("preserves %s protection", (style) => {
+    const record = mapTheCragAscent(
+      apiAscent({
+        climbedGearStyle: style,
+        tick: null,
+        route: { id: "2001", style: ` ${style.toUpperCase()} ` },
+      }),
+      "123",
+    );
+    expect(record.attempts).toEqual([{ scope: "climb", protectionUsed: [style] }]);
+    expect(record.climb).toEqual({ externalId: "2001", kind: "route", routeProtection: [style] });
+  });
+
+  it("derives result and method from a tick name when the label is blank", () => {
+    expect(
+      mapTheCragAscent(
+        apiAscent({ climbedGearStyle: null, tick: { label: " ", name: " Flash : Lead Solo " } }),
+        "123",
+      ).attempts,
+    ).toEqual([
+      {
+        scope: "climb",
+        sourceResult: "Flash",
+        ropeMethod: "lead",
+        solo: true,
+        qualifier: "free-flash",
+      },
+    ]);
+  });
+
+  it.each([
+    { climbedGearStyle: "boulder", route: { id: "2001", style: "Sport" } },
+    { climbedGearStyle: "lead", tick: { name: "Flash: Top rope" } },
+    { climbedGearStyle: "boulder", tick: { name: "Flash: Lead" }, route: { id: "2001" } },
+  ])("rejects conflicting source facts %j", (facts) => {
+    expect(() => mapTheCragAscent(apiAscent(facts), "123")).toThrow(/conflicting climbing/);
+  });
+
+  it("retains unknown discipline and absent optional facts", () => {
+    const record = mapTheCragAscent({ id: 1, epoch: 0, route: { id: 2 } }, "123");
+    expect(record).toEqual({
+      externalId: "thecrag:1",
+      sourceName: "theCrag",
+      attempts: [{ scope: "climb" }],
+      climb: { externalId: "2" },
+      raw: { accountId: "123", ascent: { id: 1, epoch: 0, route: { id: 2 } } },
+    });
+  });
+
+  it("preserves known boulder identity without inferring a rope method", () => {
+    expect(
+      mapTheCragAscent(
+        apiAscent({
+          climbedGearStyle: " BOULDER ",
+          tick: null,
+          route: { id: "2", name: "  ", grade: " V10 " },
+        }),
+        "123",
+      ),
+    ).toMatchObject({
+      discipline: "rock_climbing",
+      attempts: [{ scope: "climb" }],
+      climb: {
+        externalId: "2",
+        kind: "boulder",
+        name: null,
+        publishedGrades: [{ system: "v_scale", value: "V10" }],
+      },
+    });
+  });
+
+  it("maps datetime dates and trims notes and route names", () => {
+    expect(
+      mapTheCragAscent(
+        apiAscent({
+          date: "2026-10-10T23:45:00+02:00",
+          markdown: " note ",
+          route: { id: "2", name: " Route " },
+        }),
+        "123",
+      ),
+    ).toMatchObject({ climbedOn: "2026-10-10", notes: "note", climb: { name: "Route" } });
+  });
+
+  it.each(["0000-01-01", "2026-10-10T25:00:00Z"])("rejects unusable day %s", (date) => {
+    expect(() => mapTheCragAscent(apiAscent({ date }), "123")).toThrow(/climb date/);
+  });
+
+  it("retains aid use without assigning a free send", () => {
+    expect(
+      mapTheCragAscent(apiAscent({ climbedGearStyle: "aid", tick: { label: "redpoint" } }), "123")
+        .attempts,
+    ).toEqual([{ scope: "climb", sourceResult: "redpoint", usedAid: true }]);
+  });
+
+  it.each(["Vx", "5.invalid", "FR invalid", "Unknown grade"])(
+    "preserves unrecognized grade %s",
+    (grade) => {
+      expect(
+        mapTheCragAscent(apiAscent({ route: { id: "2", grade } }), "123").climb?.publishedGrades,
+      ).toEqual([{ system: null, value: grade }]);
+    },
+  );
+
+  it.each([
+    ["boulder", "5.10a"],
+    ["sport", "V4"],
+  ])("rejects incompatible %s grade %s", (style, grade) => {
+    expect(() =>
+      mapTheCragAscent(
+        apiAscent({ climbedGearStyle: style, tick: null, route: { id: "2", style, grade } }),
+        "123",
+      ),
+    ).toThrow(/unsupported or ambiguous grade/);
+  });
+
+  it("maps compound explicit scales", () => {
+    expect(
+      mapTheCragAscent(apiAscent({ route: { id: "2", grade: "FR 6a YDS 5.10a" } }), "123").climb
+        ?.publishedGrades,
+    ).toEqual([
+      { system: "french", value: "6a" },
+      { system: "yds", value: "5.10a" },
+    ]);
+  });
+
+  it("rejects non-JSON provenance without exposing it", () => {
+    expect(() => mapTheCragAscent(apiAscent({ secret: () => "private notes" }), "123")).toThrow(
+      /invalid ascent provenance/,
+    );
+  });
   it("retains stable IDs, recorded date, private notes and raw provenance", () => {
     const ascent = apiAscent();
     expect(mapTheCragAscent(ascent, "123")).toMatchObject({

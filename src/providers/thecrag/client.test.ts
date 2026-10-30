@@ -171,7 +171,7 @@ describe("theCrag official logbook client", () => {
   it("requires source progress on each ascent", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(Response.json(logbookPage([{ id: "123" }])));
+      .mockResolvedValue(Response.json(logbookPage([apiAscent({ epoch: undefined })])));
     await expect(new TheCragClient(fetchFn, "key").fetchPage(1)).rejects.toThrow(
       /invalid logbook response/,
     );
