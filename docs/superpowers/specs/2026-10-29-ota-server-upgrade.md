@@ -5,7 +5,8 @@
 > a decision record. Current requirements are a Terraform-managed
 > `dofek-ota-releases` bucket, the tested private 3.2.7 image, matching EOAS
 > publisher, current-runtime gate and signed asset audit. Keep old buckets and
-> objects untouched; no backup/rehearsal is a release prerequisite. See the
+> objects untouched; no backup/rehearsal is a release prerequisite. Normal
+> publishers remain enabled; this plan does not authorize pausing them. See the
 > [current release runbook](../../../deploy/ota/README.md).
 
 
