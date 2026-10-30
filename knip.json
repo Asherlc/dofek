@@ -7,6 +7,7 @@
         "src/db/setup-clickhouse-cdc.ts",
         "src/jobs/worker.ts",
         "src/opentelemetry-hook.mjs",
+        "scripts/collect-clickhouse-ci-diagnostics.ts",
         "scripts/run-analytics-build.ts",
         "scripts/warm-query-cache.ts",
         "scripts/ota-storage.ts",
@@ -14,7 +15,7 @@
         "scripts/check-ota-image-visibility.ts",
         "vitest.config.mutation.ts"
       ],
-      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}", "scripts/ota-migration-layout.ts", "scripts/verify-ota-update.ts"],
+      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}", "scripts/clickhouse-ci-diagnostics.ts", "scripts/ota-migration-layout.ts", "scripts/verify-ota-update.ts"],
       "ignoreDependencies": ["supports-color"],
       "ignoreBinaries": [
         "cmake", "dbt", "expo", "infisical", "open", "openssl", "uv",
