@@ -751,7 +751,7 @@ describe("ActivityDetailScreen", () => {
         meta: { persist: false },
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Open photo 1: At the summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "View 1 photo" }));
     expect(screen.getByRole("button", { name: "Close photo" })).toBeTruthy();
   });
 
@@ -781,7 +781,7 @@ describe("ActivityDetailScreen", () => {
     });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     const view = render(React.createElement(ActivityDetailScreen));
-    fireEvent.click(screen.getByRole("button", { name: "Open photo 1: At the summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "View 1 photo" }));
     expect(screen.getByRole("button", { name: "Close photo" })).toBeTruthy();
     activityRouteParams.id = "00000000-0000-0000-0000-000000000002";
     view.rerender(React.createElement(ActivityDetailScreen));

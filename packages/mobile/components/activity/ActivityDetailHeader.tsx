@@ -4,6 +4,7 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityDetail } from "dofek-server/types";
 import type { ComponentProps } from "react";
 import { Text, View } from "react-native";
+import { ActivityImages } from "../ActivityImages";
 import { ActivitySourceDisclosure } from "../ActivitySourceDisclosure";
 import { ActivityTypeIcon } from "../ActivityTypeIcon";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
@@ -11,8 +12,10 @@ import { styles } from "./styles";
 
 export function ActivityDetailHeader({
   activity,
+  photos,
   ...hardwareProps
 }: {
+  photos?: Omit<ComponentProps<typeof ActivityImages>, "heading">;
   activity: Pick<
     ActivityDetail,
     | "name"
@@ -35,35 +38,41 @@ export function ActivityDetailHeader({
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
 
-  return (
-    <View style={styles.header}>
-      <ActivitySourceDisclosure
-        tree={activity.sourceTree}
-        {...hardwareProps}
-        heading={
-          <View style={styles.header}>
-            <View style={styles.headerRow}>
+  const heading = (
+    <ActivitySourceDisclosure
+      tree={activity.sourceTree}
+      {...hardwareProps}
+      heading={
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            {!photos?.images.length && (
               <ActivityTypeIcon activityType={activity.activityType} size={48} />
-              <View style={styles.headerText}>
-                <Text style={styles.name}>
-                  {activity.name ??
-                    formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
+            )}
+            <View style={styles.headerText}>
+              <Text style={styles.name}>
+                {activity.name ??
+                  formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
+              </Text>
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeBadgeText}>
+                  {formatActivityTypeLabel(activity.activityType)}
                 </Text>
-                <View style={styles.typeBadge}>
-                  <Text style={styles.typeBadgeText}>
-                    {formatActivityTypeLabel(activity.activityType)}
-                  </Text>
-                </View>
               </View>
             </View>
-            <Text style={styles.dateTime}>
-              {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
-              {" at "}
-              {localStartTime === "--" ? "Local time unavailable" : localStartTime}
-            </Text>
           </View>
-        }
-      />
+          <Text style={styles.dateTime}>
+            {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
+            {" at "}
+            {localStartTime === "--" ? "Local time unavailable" : localStartTime}
+          </Text>
+        </View>
+      }
+    />
+  );
+
+  return (
+    <View style={styles.header}>
+      {photos ? <ActivityImages {...photos} heading={heading} /> : heading}
       {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
     </View>
   );

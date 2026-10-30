@@ -123,7 +123,7 @@ export function ActivitySourceDisclosure({
       <div
         className={
           heading
-            ? "relative z-20 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 text-sm"
+            ? "relative z-20 grid min-w-0 grid-cols-1 items-start gap-x-3 gap-y-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
             : "relative z-20 min-w-0 border-t border-border/60 text-sm"
         }
       >

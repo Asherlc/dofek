@@ -26,6 +26,63 @@ const image = {
 afterEach(cleanup);
 
 describe("ActivityPhotos", () => {
+  it("keeps the activity identity when no photo is attached", () => {
+    render(
+      <ActivityPhotos
+        images={[]}
+        loading={false}
+        error={null}
+        onRetry={vi.fn()}
+        heading={<h1>Morning ride</h1>}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Morning ride" })).toBeVisible();
+  });
+  it("refreshes a failed summary preview even when its signed URL stays the same", () => {
+    const retry = vi.fn();
+    render(
+      <ActivityPhotos
+        images={[image]}
+        loading={false}
+        error={null}
+        onRetry={retry}
+        heading={<h1>Morning ride</h1>}
+      />,
+    );
+    fireEvent.error(screen.getByRole("img", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "View 1 photo" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Refresh photos" }),
+    );
+    expect(retry).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Close photo" }));
+    expect(screen.getByRole("img", { name: "Summit" })).toHaveAttribute("src", image.url);
+  });
+  it("keeps the summary beside one preview and makes every photo available in the viewer", () => {
+    render(
+      <ActivityPhotos
+        images={[
+          image,
+          {
+            ...image,
+            id: "photo-2",
+            sources: image.sources.map((source) => ({ ...source, caption: "Finish" })),
+          },
+        ]}
+        loading={false}
+        error={null}
+        onRetry={vi.fn()}
+        heading={<h1>Morning ride</h1>}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Morning ride" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View 2 photos" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "View 2 photos" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Enlarge Finish" }),
+    );
+    expect(screen.getByRole("dialog", { name: "Finish" })).toBeVisible();
+  });
   it("opens the selected photo, closes with Escape, and returns focus to the thumbnail", async () => {
     render(<ActivityPhotos images={[image]} loading={false} error={null} onRetry={vi.fn()} />);
     const thumbnail = screen.getByRole("button", { name: "Enlarge Summit" });
