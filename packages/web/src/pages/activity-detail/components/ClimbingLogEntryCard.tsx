@@ -31,7 +31,15 @@ export function ClimbingLogEntryCard({
   selected = false,
   attachmentState,
   onAttach,
+  onSelect,
+  onHighlight,
+  onOpenEntry,
+  hideMap = false,
 }: {
+  onSelect?: () => void;
+  onHighlight?: (active: boolean, interaction: "pointer" | "focus") => void;
+  onOpenEntry?: () => void;
+  hideMap?: boolean;
   entry: ClimbingLogEntryDetail;
   location?: ClimbingMapLocation;
   entryNumber?: number;
@@ -64,14 +72,49 @@ export function ClimbingLogEntryCard({
   return (
     <li
       aria-current={selected ? "true" : undefined}
-      className={`flex min-w-0 flex-col gap-3 rounded-lg border p-3 ${selected ? "border-accent" : "border-border"}`}
+      onMouseEnter={() => onHighlight?.(true, "pointer")}
+      onMouseLeave={() => onHighlight?.(false, "pointer")}
+      onFocus={() => onHighlight?.(true, "focus")}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onHighlight?.(false, "focus");
+      }}
+      onKeyDown={(event) => {
+        if (
+          (event.key === "Enter" || event.key === " ") &&
+          event.target instanceof Element &&
+          !event.target.closest("a, button, input")
+        ) {
+          event.preventDefault();
+          onSelect?.();
+        }
+      }}
+      onClick={(event) => {
+        if (event.target instanceof Element && !event.target.closest("a, button, input"))
+          onSelect?.();
+      }}
+      className={`flex min-w-0 flex-col gap-2 rounded-lg border p-3 ${selected ? "border-accent" : "border-border"}`}
     >
-      {location && (
+      {location && !hideMap && (
         <ActivityRouteMap points={NO_SENSOR_POINTS} climbMarkers={markers} presentation="compact" />
       )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <ClimbingLogEntrySources
+            titleControl={
+              onSelect ? (
+                <button
+                  type="button"
+                  data-climb-entry-id={entry.id}
+                  aria-label={`Select entry ${entryNumber}, ${name}`}
+                  aria-pressed={selected}
+                  onClick={onSelect}
+                  className="self-start rounded text-left text-sm font-semibold text-accent outline-offset-4"
+                >
+                  <span aria-hidden="true">{entryNumber}. </span>
+                  <span>{name}</span>
+                </button>
+              ) : undefined
+            }
             name={name}
             sourceName={entry.sourceName}
             links={entry.sourceLinks}
@@ -84,6 +127,15 @@ export function ClimbingLogEntryCard({
           </span>
         )}
       </div>
+      {hideMap && (
+        <p className="text-xs text-subtle">
+          {location
+            ? location.scope === "area"
+              ? "Approximate area location"
+              : "Climb location"
+            : "No recorded location"}
+        </p>
+      )}
       <div className="space-y-1 text-xs text-subtle">
         {attemptStyles.map((labels) => (
           <div key={labels.join(":")} className="flex flex-wrap gap-1">
@@ -175,6 +227,16 @@ export function ClimbingLogEntryCard({
             ),
         )}
       </div>
+      {onOpenEntry && (
+        <button
+          type="button"
+          className="self-start text-xs text-accent underline"
+          aria-label={`Log details for entry ${entryNumber}, ${name}`}
+          onClick={onOpenEntry}
+        >
+          Log details
+        </button>
+      )}
       {onAttach && (
         <div className="mt-auto space-y-2">
           {attachmentState?.error && (

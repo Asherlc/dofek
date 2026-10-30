@@ -23,3 +23,10 @@ export const CachedRefreshError: Story = {
   args: { error: new Error("Source is unavailable. Retry the sync.") },
 };
 export const Loading: Story = { args: { suggestions: undefined, isLoading: true } };
+
+export const StatusOnlyError: Story = {
+  args: { showEntries: false, error: new Error("Source is unavailable. Retry the sync.") },
+};
+export const StatusOnlyLoading: Story = {
+  args: { showEntries: false, suggestions: undefined, isLoading: true },
+};

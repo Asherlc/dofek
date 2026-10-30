@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { Pressable, Text } from "react-native";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 
 const meta = {
@@ -65,5 +66,15 @@ export const TickHistoryOnly: Story = {
         url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
       },
     ],
+  },
+};
+
+export const WithSelection: Story = {
+  args: {
+    titleControl: (
+      <Pressable accessibilityRole="button">
+        <Text>Swiss Cheese</Text>
+      </Pressable>
+    ),
   },
 };

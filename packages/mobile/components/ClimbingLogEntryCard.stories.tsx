@@ -143,3 +143,13 @@ export const AttachError: Story = {
     },
   },
 };
+
+export const SharedMapRow: Story = {
+  args: {
+    hideMap: true,
+    entryNumber: 1,
+    onSelect: fn(),
+    onOpenEntry: fn(),
+    location: exactClimbingLocation,
+  },
+};

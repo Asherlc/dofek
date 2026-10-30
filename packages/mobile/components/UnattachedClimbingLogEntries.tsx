@@ -8,6 +8,7 @@ import { ClimbingLogEntryBreakdown } from "./ClimbingLogEntryBreakdown";
 export type LogEntryAttachState = Record<string, { pending: boolean; error: string | null }>;
 export function UnattachedClimbingLogEntries({
   suggestions,
+  showEntries = true,
   error,
   isLoading,
   state,
@@ -15,6 +16,7 @@ export function UnattachedClimbingLogEntries({
   locations,
   selectedEntryId,
 }: {
+  showEntries?: boolean;
   suggestions: readonly ClimbingLogEntryDetail[] | undefined;
   error: unknown | null;
   isLoading: boolean;
@@ -34,7 +36,7 @@ export function UnattachedClimbingLogEntries({
         <Text style={styles.label}>Loading climbing logs...</Text>
       ) : suggestions === undefined && error ? null : !suggestions?.length ? (
         <Text style={styles.label}>No unattached climbing logs for this day.</Text>
-      ) : (
+      ) : showEntries ? (
         <>
           <Text style={styles.label}>Unattached</Text>
           <ClimbingLogEntryBreakdown
@@ -45,7 +47,7 @@ export function UnattachedClimbingLogEntries({
             onAttach={onAttach}
           />
         </>
-      )}
+      ) : null}
     </View>
   );
 }
