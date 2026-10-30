@@ -1,3 +1,103 @@
+diff --git a/internal/providers/expo/expo.go b/internal/providers/expo/expo.go
+index fab79da..cc27b3c 100644
+--- a/internal/providers/expo/expo.go
++++ b/internal/providers/expo/expo.go
+@@ -13,6 +13,7 @@ import (
+ 	"xprem/config"
+ 	cache2 "xprem/internal/cache"
+ 	"xprem/internal/types"
++	"xprem/internal/version"
+ )
+ 
+ // The "operationName" header values below are a contract with the test mocks
+@@ -27,6 +28,11 @@ type UserAccount struct {
+ 	Email    string `json:"email"`
+ }
+ 
++// Actor identifies a human or robot credential independently of display names.
++type Actor struct {
++	Id string `json:"id"`
++}
++
+ type BranchMapping struct {
+ 	BranchName  string  `json:"branchName"`
+ 	BranchId    string  `json:"branchId"`
+@@ -58,32 +64,59 @@ func HasCredential(auth types.Auth) bool {
+ 		(auth.SessionSecret != nil && strings.TrimSpace(*auth.SessionSecret) != "")
+ }
+ 
+-func ValidateAuth(appId string, expoAuth types.Auth) (*UserAccount, error) {
++func ValidateAuth(appId string, expoAuth types.Auth) (*Actor, error) {
+ 	if !HasCredential(expoAuth) {
+ 		return nil, errors.New("no valid Expo auth provided")
+ 	}
+-	expoAccount, err := FetchUserAccountInformations(expoAuth)
++	caller, err := fetchActor(expoAuth)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if expoAccount == nil {
+-		return nil, errors.New("no expo account found")
++	serverToken := GetAccessToken(appId)
++	if strings.TrimSpace(serverToken) == "" {
++		return nil, errors.New("no Expo access token configured for app")
++	}
++	server, err := fetchActor(types.Auth{Token: &serverToken})
++	if err != nil {
++		return nil, fmt.Errorf("could not resolve configured Expo actor: %w", err)
++	}
++	if caller.Id != server.Id {
++		return nil, errors.New("Expo actor does not match configured app actor")
+ 	}
+-	// Both sides must resolve to a real username before they are compared.
+-	// FetchSelfUsername answers "" when the server's own token is missing or
+-	// Expo is unreachable, and a caller's empty username must never equal it:
+-	// two empty strings would read as the same user.
+-	if strings.TrimSpace(expoAccount.Username) == "" {
+-		return nil, errors.New("expo account has no username")
++	return caller, nil
++}
++
++func fetchActor(auth types.Auth) (*Actor, error) {
++	actorCache := cache2.GetCache()
++	cacheKey := fmt.Sprintf("expo-provider:actor:%s:%s", version.Version, credentialFingerprint(auth))
++	if actor, ok := cache2.GetJSON[Actor](actorCache, cacheKey); ok {
++		return &actor, nil
++	}
++	var response struct {
++		Data struct {
++			Actor *Actor `json:"meActor"`
++		} `json:"data"`
++		Errors []struct {
++			Message string `json:"message"`
++		} `json:"errors"`
++	}
++	headers := map[string]string{}
++	if config.IsTestMode() {
++		// Retain the existing Expo identity-operation mock contract.
++		headers["operationName"] = "FetchExpoUserAccountInformations"
++	}
++	if err := MakeGraphQLRequest(context.Background(), `query GetCurrentActor { meActor { id } }`, nil, auth, &response, headers); err != nil {
++		return nil, err
+ 	}
+-	selfExpoUsername := FetchSelfUsername(appId)
+-	if strings.TrimSpace(selfExpoUsername) == "" {
+-		return nil, errors.New("could not resolve the Expo user of the server access token")
++	if len(response.Errors) > 0 {
++		return nil, fmt.Errorf("expo rejected the credential: %s", response.Errors[0].Message)
+ 	}
+-	if selfExpoUsername != expoAccount.Username {
+-		return nil, errors.New("expo account does not match self expo username")
++	if response.Data.Actor == nil || strings.TrimSpace(response.Data.Actor.Id) == "" {
++		return nil, errors.New("expo credential does not resolve to an actor")
+ 	}
+-	return expoAccount, nil
++	ttl := userAccountCacheTTLSeconds
++	cache2.SetJSON(actorCache, cacheKey, *response.Data.Actor, &ttl)
++	return response.Data.Actor, nil
+ }
+ 
+ // GetAccessToken returns the Expo access token configured for the given
 diff --git a/internal/repository/update_bucket.go b/internal/repository/update_bucket.go
 index b78d5b9..d384434 100644
 --- a/internal/repository/update_bucket.go
@@ -28,6 +128,106 @@ index d3f32c9..f16d3cf 100644
  	}
  	if signedHash != "" {
  		headers["expo-signature"] = []string{fmt.Sprintf("sig=\"%s\", keyid=\"main\"", signedHash)}
+diff --git a/test/expo_auth_test.go b/test/expo_auth_test.go
+index 529c49a..f96b80b 100644
+--- a/test/expo_auth_test.go
++++ b/test/expo_auth_test.go
+@@ -1,8 +1,10 @@
+ package test
+ 
+ import (
++	"encoding/json"
+ 	"net/http"
+ 	"path/filepath"
++	"strings"
+ 	"testing"
+ 
+ 	"xprem/internal/types"
+@@ -11,6 +13,70 @@ import (
+ 	"github.com/stretchr/testify/assert"
+ )
+ 
++// Expo robots resolve through meActor, while the human-only me field is null.
++// Exercise the normal upload route so its publishing permission depends on
++// the configured actor's identity, not on a username or a nonempty token.
++func TestRequestUploadUrlValidatesExpoActorIdentity(t *testing.T) {
++	actor := func(id, kind string) map[string]interface{} {
++		identity := map[string]interface{}{"id": id, "__typename": kind}
++		if kind == "User" {
++			identity["username"] = "same_name"
++		}
++		return identity
++	}
++	for _, tc := range []struct {
++		name           string
++		server, caller map[string]interface{}
++		graphqlError   string
++		want           int
++	}{
++		{"configured robot", actor("robot-1", "Robot"), actor("robot-1", "Robot"), "", http.StatusOK},
++		{"configured human", actor("user-1", "User"), actor("user-1", "User"), "", http.StatusOK},
++		{"different robot", actor("robot-1", "Robot"), actor("robot-2", "Robot"), "", http.StatusUnauthorized},
++		{"same username different human", actor("user-1", "User"), actor("user-2", "User"), "", http.StatusUnauthorized},
++		{"missing caller", actor("robot-1", "Robot"), nil, "", http.StatusUnauthorized},
++		{"missing server", nil, actor("robot-1", "Robot"), "", http.StatusUnauthorized},
++		{"both missing", nil, nil, "", http.StatusUnauthorized},
++		{"blank caller id", actor("robot-1", "Robot"), actor(" ", "Robot"), "", http.StatusUnauthorized},
++		{"both blank ids", actor("", "User"), actor("", "User"), "", http.StatusUnauthorized},
++		{"caller graphql error with actor", actor("robot-1", "Robot"), actor("robot-1", "Robot"), "caller", http.StatusUnauthorized},
++		{"server graphql error with actor", actor("robot-1", "Robot"), actor("robot-1", "Robot"), "server", http.StatusUnauthorized},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			teardown := setup(t)
++			defer teardown()
++			httpmock.RegisterResponder("POST", "https://api.expo.dev/graphql", func(req *http.Request) (*http.Response, error) {
++				var body struct {
++					Query string `json:"query"`
++				}
++				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
++					return nil, err
++				}
++				identity := tc.caller
++				lookup := "caller"
++				if req.Header.Get("Authorization") == "Bearer EXPO_ACCESS_TOKEN" {
++					identity = tc.server
++					lookup = "server"
++				}
++				var human map[string]interface{}
++				if identity != nil && identity["__typename"] == "User" {
++					human = identity
++				}
++				data := map[string]interface{}{"me": human}
++				if strings.Contains(body.Query, "meActor") {
++					data = map[string]interface{}{"meActor": identity}
++				}
++				response := map[string]interface{}{"data": data}
++				if tc.graphqlError == lookup {
++					response["errors"] = []map[string]interface{}{{"message": "Authentication failed"}}
++				}
++				return httpmock.NewJsonResponse(http.StatusOK, response)
++			})
++			assert.Equal(t, tc.want, requestUploadUrlWithBearer(t, "Bearer caller_token"))
++		})
++	}
++}
++
+ // mockExpoMe answers the Expo `me` lookup per bearer token; any token missing
+ // from the table gets `me: null`, which is how Expo answers an unknown token.
+ func mockExpoMe(byBearer map[string]map[string]interface{}) {
+diff --git a/test/helpers.go b/test/helpers.go
+index 17c97ca..c3f7124 100644
+--- a/test/helpers.go
++++ b/test/helpers.go
+@@ -247,7 +247,8 @@ func MockExpoBranchesResponse(updateBranches []map[string]interface{}) (*http.Re
+ func MockExpoAccountResponse(me map[string]interface{}) (*http.Response, error) {
+ 	return httpmock.NewJsonResponse(http.StatusOK, map[string]interface{}{
+ 		"data": map[string]interface{}{
+-			"me": me,
++			"me":      me,
++			"meActor": me,
+ 		},
+ 	})
+ }
 diff --git a/test/manifest_storage_errors_test.go b/test/manifest_storage_errors_test.go
 new file mode 100644
 index 0000000..6b7812f

@@ -29,6 +29,16 @@ manifests and empty/incomplete update directives, as well as the existing
 storage fault cases. Keep the client parser strict. The production image pin
 in [stack.yml](../stack.yml) is the release source of truth.
 
+Stateless publisher authentication resolves Expo's `meActor` identity and compares
+its nonempty ID with the actor of the access token configured for that app.
+This supports the existing [Expo robot token](https://docs.expo.dev/accounts/programmatic-access/)
+without accepting another actor with a matching username. Null identities and
+GraphQL errors remain authentication failures. The upstream human-user lookups
+used for dashboard display remain separate; upload-route regression tests cover
+robots, humans and identity rejection. Preserve the empty-identity refusal from
+[upstream security fix #311](https://github.com/mercuretechnologies/xprem/pull/311)
+when changing this check; two empty lookup results must never authenticate.
+
 ## Build
 
 Check out the immutable upstream revision into a separate build directory,
@@ -37,12 +47,12 @@ build context:
 
 ```sh
 docker build --target test -f deploy/ota/Dockerfile <patched-upstream-directory>
-docker build -t dofek-ota:3.2.7-dofek.2 -f deploy/ota/Dockerfile <patched-upstream-directory>
+docker build -t dofek-ota:3.2.7-dofek.3 -f deploy/ota/Dockerfile <patched-upstream-directory>
 ```
 
 The compiler and runtime image are pinned by version and digest. The compiler
 is [Go 1.27.3](https://go.dev/dl/); the upstream runtime remains non-root. The
-result reports `3.2.7-dofek.2` so normal version-scoped caches identify this
+result reports `3.2.7-dofek.3` so normal version-scoped caches identify this
 binary separately. CI verifies the upstream tests and builds the runtime image.
 On main, the workflow publishes source-commit tags to the private `dofek-ota-internal`
 GHCR package and records its digest. The package must already exist and be

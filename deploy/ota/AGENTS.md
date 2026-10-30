@@ -3,10 +3,10 @@
 Read [README.md](README.md) and the parent [deployment README](../README.md)
 before work here. Parent agent instructions also apply.
 
-Keep [upstream.patch](upstream.patch) limited to the reproduced storage-error
-and multipart `Content-Type` faults and their executable tests. The header
-correction follows [Expo's multipart protocol](https://docs.expo.dev/technical-specs/expo-updates-1/#multipart-response)
-and [MIME's entity-header grammar](https://www.rfc-editor.org/rfc/rfc2045.html#section-3).
-Verify the patch applies to the exact source revision before building. Use the
-canonical workflows for production changes; keep the historical buckets
-untouched and use the serving bucket documented in the README.
+Keep the upstream patch limited to the reproduced storage-error, multipart-header and
+Expo robot-authentication failures and their executable HTTP tests. Stateless publishing
+must compare nonempty Expo actor IDs against the app's configured credential; a human
+username is not required for [Expo robot tokens](https://docs.expo.dev/accounts/programmatic-access/).
+Verify it applies to the exact source revision before
+building. Use the canonical workflows for production changes; keep the historical buckets untouched and use the serving bucket documented
+in the README.
