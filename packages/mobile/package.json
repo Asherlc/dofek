@@ -52,7 +52,7 @@
     "@formatjs/intl-pluralrules": "6.3.16",
     "@maplibre/maplibre-react-native": "11.5.0",
     "@opentelemetry/api-logs": "0.222.0",
-    "@opentelemetry/exporter-logs-otlp-http": "0.223.0",
+    "@opentelemetry/exporter-logs-otlp-http": "0.300.0",
     "@opentelemetry/resources": "2.10.0",
     "@opentelemetry/sdk-logs": "0.221.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
