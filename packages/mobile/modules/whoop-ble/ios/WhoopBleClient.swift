@@ -28,7 +28,7 @@ public enum WhoopBleClientState: String, Sendable {
             self = .idle
         case .scanning:
             self = .scanning
-        case .connecting:
+        case .connecting, .disconnecting:
             self = .connecting
         case .discoveringServices:
             self = .discoveringServices

@@ -51,6 +51,14 @@ extension WhoopBleConnectionManager {
                 || state == .subscribing
         else { return }
         recordConnectionEvent("handshake_aborted", error: underlyingError, reason: error.rejection.code)
+        if autoReconnect && connectCompletion == nil && error.isTransientSetupFailure {
+            // Keep the peripheral until CoreBluetooth confirms cancellation. Its
+            // disconnect callback owns cleanup and the next pending connection.
+            finishConnect(.failure(error))
+            setState(.disconnecting)
+            cancelPeripheral()
+            return
+        }
         autoReconnect = false
         cancelPeripheral()
         cleanup()

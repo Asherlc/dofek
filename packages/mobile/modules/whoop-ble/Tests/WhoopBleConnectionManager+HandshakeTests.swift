@@ -57,11 +57,105 @@ final class WhoopBlePendingReconnectTests: XCTestCase {
             manager.syncOnBleQueue {
                 manager.setState(stage)
                 manager.autoReconnect = true
+                manager.wasStreaming = true
                 manager.startHandshakeTimeout { cancelled.fulfill() }
             }
 
             wait(for: [cancelled], timeout: 1)
             manager.syncOnBleQueue {
+                XCTAssertEqual(manager.state.rawValue, "disconnecting")
+                XCTAssertEqual(WhoopBleClientState(manager.state), .connecting)
+                XCTAssertTrue(manager.autoReconnect)
+                XCTAssertTrue(manager.wasStreaming)
+                manager.handleDisconnection(peripheralId: "strap-id", error: nil) {
+                    manager.startHandshakeTimeout { XCTFail("Recovery connection must stay pending") }
+                }
+                XCTAssertEqual(manager.state, .connecting)
+            }
+        }
+    }
+
+    func testTransientAutomaticSetupFailuresRecoverRepeatedlyAndRestoreStreaming() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.autoReconnect = true
+            manager.wasStreaming = true
+            let failures: [WhoopBleConnectionError] = [
+                .timeout, .serviceDiscoveryFailed("temporary failure"),
+                .characteristicDiscoveryFailed("temporary failure"),
+                .notificationSubscriptionFailed("temporary failure"),
+            ]
+            for failure in failures {
+                manager.setState(.discoveringServices)
+                var cancellations = 0
+                manager.abortHandshake(with: failure) { cancellations += 1 }
+                XCTAssertEqual(manager.state.rawValue, "disconnecting")
+                XCTAssertTrue(manager.autoReconnect)
+                manager.abortHandshake(with: failure) { cancellations += 1 }
+                XCTAssertEqual(cancellations, 1, "Late setup failures must not cancel twice")
+                var reconnects = 0
+                manager.handleDisconnection(peripheralId: "strap-id", error: nil) { reconnects += 1 }
+                XCTAssertEqual(reconnects, 1)
+                XCTAssertEqual(manager.state, .connecting)
+                XCTAssertTrue(manager.wasStreaming)
+            }
+            manager.setState(.subscribing)
+            let wasStreaming = manager.settleNotificationSubscriptionUpdate(
+                .ready, failureDetail: "unused", cancelPeripheral: { XCTFail("Ready connection must remain active") })
+            XCTAssertEqual(wasStreaming, true)
+            WhoopBleStreamRestorer.restoreIfNeeded(
+                wasStreaming: wasStreaming ?? false, startStreaming: manager.startStreaming,
+                activateImu: {}, emitDeviceState: {})
+            XCTAssertEqual(manager.state, .streaming)
+        }
+    }
+
+    func testStopDuringAutomaticHandshakeCancellationDoesNotRestoreImu() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.autoReconnect = true
+            manager.wasStreaming = true
+            manager.setState(.subscribing)
+            manager.abortHandshake(with: .timeout) {}
+            XCTAssertTrue(manager.autoReconnect)
+            manager.stopStreaming()
+            manager.handleDisconnection(peripheralId: "strap-id", error: nil) {}
+            manager.setState(.subscribing)
+            XCTAssertEqual(manager.settleNotificationSubscriptionUpdate(
+                .ready, failureDetail: "unused", cancelPeripheral: {}), false)
+            XCTAssertEqual(manager.state, .ready)
+        }
+    }
+
+    func testDisconnectDuringAutomaticHandshakeCancellationPreventsReconnect() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.autoReconnect = true
+            manager.wasStreaming = true
+            manager.setState(.subscribing)
+            manager.abortHandshake(with: .timeout) {}
+            XCTAssertTrue(manager.autoReconnect)
+        }
+        let disconnected = expectation(description: "explicit disconnect overrides recovery")
+        manager.disconnect {
+            manager.handleDisconnection(peripheralId: "strap-id", error: nil) {
+                XCTFail("Explicit disconnect must prevent recovery")
+            }
+            XCTAssertEqual(manager.state, .idle)
+            XCTAssertFalse(manager.autoReconnect)
+            XCTAssertFalse(manager.wasStreaming)
+            disconnected.fulfill()
+        }
+        wait(for: [disconnected], timeout: 1)
+    }
+
+    func testIncompatiblePeripheralStopsAutomaticRecovery() {
+        for failure in [WhoopBleConnectionError.serviceNotFound, .characteristicsNotFound] {
+            let manager = WhoopBleConnectionManager()
+            manager.syncOnBleQueue {
+                manager.autoReconnect = true
+                manager.setState(.discoveringServices)
+                manager.abortHandshake(with: failure) {}
                 XCTAssertEqual(manager.state, .idle)
                 XCTAssertFalse(manager.autoReconnect)
             }
