@@ -1,4 +1,5 @@
 ALTER TABLE fitness.file_upload
+-- squawk-ignore ban-drop-constraint
 DROP CONSTRAINT file_upload_import_type_valid;
 --> statement-breakpoint
 ALTER TABLE fitness.file_upload

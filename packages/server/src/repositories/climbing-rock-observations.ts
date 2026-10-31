@@ -41,6 +41,12 @@ export function rockClimbingLogProjection(
           )})`,
     );
   }
+  if (filters.board !== undefined)
+    logPredicates.push(
+      anySelected(filters.board, (value) =>
+        value === "recorded" ? sql`ce.board IS NOT NULL` : sql`ce.board IS NULL`,
+      ),
+    );
   if (filters.routeProtection !== undefined)
     logPredicates.push(
       anySelected(filters.routeProtection, (value) =>

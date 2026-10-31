@@ -24,6 +24,30 @@ export const Default: Story = {};
 export const OutdoorLead: Story = {
   args: { value: { types: ["lead"], setting: ["outdoor"] } },
 };
+export const BoardOnly: Story = {
+  args: { value: { types: ["bouldering"], setting: ["indoor"], board: ["recorded"] } },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Filters" }));
+    const board = within(
+      within(canvasElement.ownerDocument.body).getByRole("group", { name: "Board" }),
+    );
+    await expect(board.getByRole("checkbox", { name: "All" })).toBePartiallyChecked();
+    await expect(board.getByRole("checkbox", { name: "Board climbs" })).toBeChecked();
+    await expect(board.getByRole("checkbox", { name: "No board recorded" })).not.toBeChecked();
+  },
+};
+export const NoBoardRecorded: Story = {
+  args: { value: { types: ["bouldering"], setting: ["indoor"], board: ["not_recorded"] } },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Filters" }));
+    const board = within(
+      within(canvasElement.ownerDocument.body).getByRole("group", { name: "Board" }),
+    );
+    await expect(board.getByRole("checkbox", { name: "All" })).toBePartiallyChecked();
+    await expect(board.getByRole("checkbox", { name: "Board climbs" })).not.toBeChecked();
+    await expect(board.getByRole("checkbox", { name: "No board recorded" })).toBeChecked();
+  },
+};
 export const CustomSelection: Story = {
   args: {
     value: { types: ["follow"], solo: [false], setting: ["unknown"] },

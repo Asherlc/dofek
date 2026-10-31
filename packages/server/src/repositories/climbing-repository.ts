@@ -1,5 +1,8 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import type { ClimbingFilters } from "@dofek/training/climbing-filters";
+import {
+  type ClimbingFilters,
+  isClimbingBoardFilterActive,
+} from "@dofek/training/climbing-filters";
 import {
   type ClimbingGradePreference,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
@@ -378,7 +381,9 @@ export class ClimbingRepository extends BaseRepository {
   async getVolumeOverTime(days: number | null, filters: ClimbingFilters = {}) {
     const endDate = formatDateYmdInTimeZone(new Date(), this.timezone);
     const range = days ?? { endDate };
-    const hasFilters = Object.values(filters).some((value) => value !== undefined);
+    const hasFilters =
+      isClimbingBoardFilterActive(filters) ||
+      Object.entries(filters).some(([key, value]) => key !== "board" && value !== undefined);
     const rows = await executeWithSchema(
       this.db,
       weeklyVolumeRowSchema,

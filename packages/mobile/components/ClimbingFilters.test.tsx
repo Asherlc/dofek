@@ -50,6 +50,69 @@ import { ClimbingFilters } from "./ClimbingFilters";
 
 afterEach(cleanup);
 
+it("offers board choices before More filters and preserves independent facts", () => {
+  const facts: Filters = { types: ["bouldering"], setting: ["indoor"], solo: [false] };
+  render(<Harness initial={facts} />);
+  open();
+  const all = screen.getByRole("checkbox", { name: "All Board" });
+  const recorded = screen.getByRole("checkbox", { name: "Board climbs" });
+  const notRecorded = screen.getByRole("checkbox", { name: "No board recorded" });
+  expect(all.getAttribute("aria-checked")).toBe("true");
+  expect(recorded.getAttribute("aria-checked")).toBe("true");
+  expect(notRecorded.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(notRecorded);
+  expect(value()).toEqual({ ...facts, board: ["recorded"] });
+  expect(all.getAttribute("aria-checked")).toBe("mixed");
+  expect(recorded.getAttribute("aria-checked")).toBe("true");
+  expect(notRecorded.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Outdoor" }));
+  expect(value()).toEqual({ ...facts, setting: ["indoor", "outdoor"], board: ["recorded"] });
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(screen.getByText("Bouldering · Indoor + Outdoor · Board climbs")).toBeTruthy();
+});
+
+it("selects or clears all board choices and retains an empty individual selection", () => {
+  render(<Harness />);
+  open();
+  const all = screen.getByRole("checkbox", { name: "All Board" });
+  const recorded = screen.getByRole("checkbox", { name: "Board climbs" });
+  const notRecorded = screen.getByRole("checkbox", { name: "No board recorded" });
+  fireEvent.click(recorded);
+  expect(value()).toEqual({ board: ["not_recorded"] });
+  expect(all.getAttribute("aria-checked")).toBe("mixed");
+  fireEvent.click(notRecorded);
+  expect(value()).toEqual({ board: [] });
+  expect(all.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(all);
+  expect(value()).toEqual({});
+  expect(all.getAttribute("aria-checked")).toBe("true");
+  expect(recorded.getAttribute("aria-checked")).toBe("true");
+  expect(notRecorded.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(all);
+  expect(value()).toEqual({ board: [] });
+  expect(recorded.getAttribute("aria-checked")).toBe("false");
+  expect(notRecorded.getAttribute("aria-checked")).toBe("false");
+});
+
+it("clears a board restriction with the other filters and restores combined choices", () => {
+  render(<Harness initial={{ types: ["bouldering"], board: ["not_recorded"] }} />);
+  expect(screen.getByText("Bouldering · All settings · No board recorded")).toBeTruthy();
+  open();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(value()).toEqual({});
+  expect(screen.getByRole("checkbox", { name: "All Board" }).getAttribute("aria-checked")).toBe(
+    "true",
+  );
+  expect(screen.getByRole("checkbox", { name: "Board climbs" }).getAttribute("aria-checked")).toBe(
+    "true",
+  );
+  expect(
+    screen.getByRole("checkbox", { name: "No board recorded" }).getAttribute("aria-checked"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(screen.getByText("All climbing · All settings")).toBeTruthy();
+});
+
 it("combines protection choices using the same mixed checkbox behavior as settings", () => {
   render(<Harness />);
   open();

@@ -65,6 +65,28 @@ account. The [erasure prerequisite](../src/account-erasure/remote-snapshot.ts)
 fails before activation with that specific action, rather than claiming a
 remote revocation succeeded.
 
+## Filtering board climbs
+
+In the existing climbing views, open **Filters → Board** on web or iOS.
+**Board climbs** selects entries with recorded board metadata; **No board
+recorded** selects entries without it, including records whose board context is
+unknown. Both are selected by default, preserving the combined view. Clearing
+both choices selects no entries; Clear filters restores the default. These
+choices intersect with climbing type, setting, and other existing filters.
+See the [shared filter contract](../packages/training/src/climbing-filters.ts)
+and the [server projection](../packages/server/src/repositories/climbing-rock-observations.ts).
+
+Selection uses each log's recorded metadata, so it also works for mixed-source
+file imports. It does not infer board use from the provider or classify missing
+metadata as ordinary gym bouldering. Counts and charts are filtered on the
+server before aggregation, with unlogged activity time and sessions retained
+when both board choices are selected; see the
+[repository regressions](../packages/server/src/repositories/climbing-repository.integration.test.ts)
+and [progression regressions](../packages/server/src/repositories/climbing-progression-repository.integration.test.ts).
+Activity time still describes the matching recorded activities, rather than an
+estimated duration for individual climbs; see the
+[weekly-volume query](../packages/server/src/repositories/climbing-repository.ts).
+
 ## File exports
 
 ### Crimpd
