@@ -14,7 +14,7 @@ Docker supports [formatted inspection](https://docs.docker.com/reference/cli/doc
 and GitHub removes [service containers at job completion](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
 
 `pnpm check:dependency-security` runs `check-node-forge-security.ts` and
-`check-braces-security.ts` against the installed Expo/Metro dependencies before
+`check-braces-security.ts` and `check-expo-zod-security.ts` against the installed Expo/Metro dependencies before
 the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)
 for the upstream fixes, regression coverage, and scoped advisory exceptions.
 

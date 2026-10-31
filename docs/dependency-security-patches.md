@@ -40,18 +40,18 @@ also restores PEM Buffer-input compatibility after the 1.4.1 security correction
 The superseded 1.4.0 patch and signature-advisory exception are removed together;
 `check-node-forge-security.ts` still exercises the installed Expo signing dependency.
 
-## Expo CLI Zod override
+## Expo CLI schema compatibility
 
-The workspace pins Expo CLI's Zod dependency to 4.6.7, the same release used by
-the application. Expo CLI 58.1.14 still declares Zod 3
-([upstream manifest](https://github.com/expo/expo/blob/main/packages/%40expo/cli/package.json)),
-which is covered by the [collection validation advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
-The [upstream fix](https://github.com/colinhacks/zod/commit/a0ebf97)
-rejects oversized constrained collections before parsing their elements.
+Expo CLI 58.1.18 removes its Zod dependency, validates plugin descriptors and
+output through `@expo/schema-utils`, and accepts the MCP caller's Zod instance
+for command-input schemas ([upstream change](https://github.com/expo/expo/commit/31450487b140c8bee92b0aaf753c123b54fdec0c)).
+The former CLI-specific override is removed. The application supplies its pinned
+Zod 4.6.7 to the command-schema compatibility check. This version includes the
+[upstream collection-validation fix](https://github.com/colinhacks/zod/commit/a0ebf97)
+that rejects oversized constrained collections before parsing their elements.
 
-`pnpm check:dependency-security` exercises that behavior through Expo CLI's
-installed dependency and checks its plugin descriptor, command-input, and
-command-output schemas with valid and invalid inputs. The security assertion
-failed with Expo's original Zod 3 dependency and passes with the scoped override.
-This correction adds no audit exception. Review the override and these checks
-together when updating Expo CLI's schema consumers.
+`pnpm check:dependency-security` exercises that collection behavior and checks
+the installed CLI's plugin descriptor, command-input, and command-output schemas
+with valid and invalid inputs through their current validators. This correction
+adds no audit exception. Review these checks when updating Expo CLI's schema
+consumers.
