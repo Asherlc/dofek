@@ -39,9 +39,8 @@ audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
-    # Backported fixes; CI runs check:dependency-security before auditing.
+    # Backported fix; CI runs check:dependency-security before auditing.
     # See docs/dependency-security-patches.md for source and validation.
-    - GHSA-86w9-cpqp-85rv
     - GHSA-vfj7-8cjw-p6xm
 
 overrides:
@@ -106,7 +105,6 @@ patchedDependencies:
   braces@3.0.3: patches/braces@3.0.3.patch
   eoas@3.2.7: patches/eoas@3.2.7.patch
   expo-apple-authentication@58.0.2: patches/expo-apple-authentication@58.0.2.patch
-  node-forge@1.4.0: patches/node-forge@1.4.0.patch
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
   react-native@0.88.1: patches/react-native@0.88.1.patch
 
