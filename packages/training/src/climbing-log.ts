@@ -136,6 +136,7 @@ export const climbingAttemptSchema = z
 export const recordedClimbingAttemptSchema = z
   .strictObject({
     ...climbingAttemptFields,
+    sourceCompleted: z.boolean().nullable(),
     sourceResult: z
       .string()
       .refine((value) => value.trim().length > 0)

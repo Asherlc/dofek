@@ -286,6 +286,7 @@ export const climbingAttempt = fitness.table(
     pitchId: uuid("pitch_id").references(() => pitch.id),
     parentAttemptId: uuid("parent_attempt_id"),
     attemptIndex: bigint("attempt_index", { mode: "number" }),
+    sourceCompleted: boolean("source_completed"),
     sourceResult: text("source_result"),
     ropeMethod: ropeMethodEnum("rope_method"),
     solo: boolean("solo"),

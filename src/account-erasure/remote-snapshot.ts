@@ -1,3 +1,4 @@
+import { providerLabel } from "@dofek/providers/providers";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
@@ -230,6 +231,21 @@ async function loadProviderConnections(
   );
   const snapshots = await Promise.all(
     connections.map(async (connection) => {
+      if (
+        [
+          "kilter",
+          "tension",
+          "grasshopper",
+          "decoy",
+          "soill",
+          "touchstone",
+          "aurora-board",
+        ].includes(connection.provider_id)
+      ) {
+        throw new ProviderRevocationPrerequisiteError(
+          `Disconnect ${providerLabel(connection.provider_id)} in Dofek before deleting your account because remote session revocation is unavailable.`,
+        );
+      }
       if (connection.provider_id === "coros") {
         throw new ProviderRevocationPrerequisiteError(
           "Disconnect Dofek in the COROS app under Profile > Settings > 3rd Party Apps > Data Sync, then disconnect COROS in Dofek before deleting your account.",

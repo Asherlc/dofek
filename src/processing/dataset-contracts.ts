@@ -400,6 +400,13 @@ export function datasetsForProvider(
 }
 
 const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly ProcessingDatasetKey[]>> = {
+  kilter: ["activity", "training", "providers"],
+  tension: ["activity", "training", "providers"],
+  grasshopper: ["activity", "training", "providers"],
+  decoy: ["activity", "training", "providers"],
+  soill: ["activity", "training", "providers"],
+  touchstone: ["activity", "training", "providers"],
+  "aurora-board": ["activity", "training", "providers"],
   "amazfit-zepp": [
     "activity",
     "hiking",
@@ -460,6 +467,9 @@ export function processingDatasetKeysForProvider(
 }
 
 const IMPORT_DATASET_CAPABILITIES: Readonly<Record<string, readonly ProcessingDatasetKey[]>> = {
+  crimpd: ["activity", "training", "providers"],
+  "eight-a": ["activity", "training", "providers"],
+  moonboard: ["activity", "training", "providers"],
   "apple-health": [
     "activity",
     "hiking",

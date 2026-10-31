@@ -60,9 +60,15 @@ const attempt = {
   createdAt: "2026-10-13T12:00:00Z",
 };
 const { outcome: _computedOutcome, ...recordedAttemptFields } = attempt;
-const recordedAttempt = { ...recordedAttemptFields, sourceResult: null };
+const recordedAttempt = { ...recordedAttemptFields, sourceCompleted: null, sourceResult: null };
 
 describe("recorded climbing attempt source facts", () => {
+  it.each([true, false, null])("preserves raw boolean completion %s", (sourceCompleted) => {
+    expect(
+      recordedClimbingAttemptSchema.parse({ ...recordedAttempt, sourceCompleted }),
+    ).toMatchObject({ sourceCompleted, sourceResult: null });
+  });
+
   it.each(["X", "Flash", " rEdPoInT ", "\tFlash\n", "\u00a0Flash\ufeff"])(
     "preserves the exact original source result %j",
     (sourceResult) => {

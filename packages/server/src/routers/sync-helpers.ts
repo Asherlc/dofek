@@ -44,6 +44,25 @@ export function ensureProvidersRegistered(): Promise<void> {
 
 async function doRegisterProviders() {
   const providers = [
+    ["kilter", () => import("dofek/providers/kilter").then((m) => new m.KilterProvider())],
+    ["tension", () => import("dofek/providers/tension").then((m) => new m.TensionProvider())],
+    [
+      "grasshopper",
+      () => import("dofek/providers/grasshopper").then((m) => new m.GrasshopperProvider()),
+    ],
+    ["decoy", () => import("dofek/providers/decoy").then((m) => new m.DecoyProvider())],
+    ["soill", () => import("dofek/providers/soill").then((m) => new m.SoillProvider())],
+    [
+      "touchstone",
+      () => import("dofek/providers/touchstone").then((m) => new m.TouchstoneProvider()),
+    ],
+    [
+      "aurora-board",
+      () => import("dofek/providers/aurora-board").then((m) => new m.AuroraBoardProvider()),
+    ],
+    ["crimpd", () => import("dofek/providers/crimpd").then((m) => new m.CrimpdProvider())],
+    ["eight-a", () => import("dofek/providers/eight-a").then((m) => new m.EightAProvider())],
+    ["moonboard", () => import("dofek/providers/moonboard").then((m) => new m.MoonBoardProvider())],
     ["wahoo", () => import("dofek/providers/wahoo/provider").then((m) => new m.WahooProvider())],
     ["withings", () => import("dofek/providers/withings").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
@@ -140,6 +159,9 @@ export function getAllConfiguredProviderIds(): Set<string> {
 }
 
 const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
+  crimpd: "crimpd",
+  "eight-a": "eight-a",
+  moonboard: "moonboard",
   "apple-health": "apple_health",
   "strong-csv": "strong-csv",
   "cronometer-csv": "cronometer-csv",

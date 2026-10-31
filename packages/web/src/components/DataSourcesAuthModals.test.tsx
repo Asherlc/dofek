@@ -44,6 +44,44 @@ beforeEach(() => {
 });
 
 describe("data source auth dialogs", () => {
+  it.each(["tension", "grasshopper", "decoy", "soill", "touchstone", "aurora-board"])(
+    "connects %s with its exact trimmed board username",
+    async (providerId) => {
+      mockCredentialSignIn.mockResolvedValue({ success: true });
+      const onSuccess = vi.fn();
+      render(
+        <CredentialAuthModal
+          providerId={providerId}
+          providerName="Climbing Board"
+          onClose={vi.fn()}
+          onSuccess={onSuccess}
+        />,
+      );
+      const username = screen.getByLabelText("Username");
+      expect(username).toHaveAttribute("type", "text");
+      expect(username).toHaveAttribute("placeholder", "Your username");
+      expect(username).toHaveAccessibleDescription(
+        "Use an existing board account after accepting its terms of use and privacy policy in the board app.",
+      );
+      const signIn = screen.getByRole("button", { name: "Sign In" });
+      expect(signIn).toBeDisabled();
+      expect(signIn).toHaveAccessibleDescription("Enter your username and password to continue.");
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "board-password" } });
+      expect(signIn).toHaveAccessibleDescription("Enter your username to continue.");
+      fireEvent.change(username, { target: { value: "  Boulder.User_01  " } });
+      expect(signIn).toBeEnabled();
+      fireEvent.click(signIn);
+      await waitFor(() => {
+        expect(mockCredentialSignIn).toHaveBeenCalledWith({
+          providerId,
+          username: "Boulder.User_01",
+          password: "board-password",
+        });
+        expect(onSuccess).toHaveBeenCalledOnce();
+      });
+    },
+  );
+
   it("shows an unfamiliar public profile identity as visible text", async () => {
     const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
     render(
@@ -63,6 +101,7 @@ describe("data source auth dialogs", () => {
   it.each([
     { id: "eight-sleep", name: "Eight Sleep" },
     { id: "zwift", name: "Zwift" },
+    { id: "kilter", name: "Kilter Board" },
   ])("submits $name credentials with a trimmed email and protected password", async (provider) => {
     const onSuccess = vi.fn();
     render(
@@ -74,6 +113,7 @@ describe("data source auth dialogs", () => {
       />,
     );
 
+    expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "  athlete@example.com  " },

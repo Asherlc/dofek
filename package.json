@@ -7,6 +7,16 @@
     "ioredis": "6.0.0"
   },
   "exports": {
+    "./providers/kilter": "./src/providers/kilter.ts",
+    "./providers/tension": "./src/providers/tension.ts",
+    "./providers/grasshopper": "./src/providers/grasshopper.ts",
+    "./providers/decoy": "./src/providers/decoy.ts",
+    "./providers/soill": "./src/providers/soill.ts",
+    "./providers/touchstone": "./src/providers/touchstone.ts",
+    "./providers/aurora-board": "./src/providers/aurora-board.ts",
+    "./providers/crimpd": "./src/providers/crimpd/provider.ts",
+    "./providers/eight-a": "./src/providers/eight-a/provider.ts",
+    "./providers/moonboard": "./src/providers/moonboard/provider.ts",
     "./climbing-tags": "./src/climbing-tags.ts",
     "./climbing-catalogue": "./src/climbing-catalogue.ts",
     "./climbing-catalogue-sources": "./src/climbing-catalogue-sources.ts",
