@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { TEST_USER_ID } from "dofek/db/schema/core";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -438,5 +439,75 @@ describe("DailyMetricsRepository sample-derived oxygen saturation", () => {
         source_providers: [],
       });
     }
+  });
+  it("resolves delayed WHOOP BLE temperature against API priority on both query engines", async () => {
+    const frameHex =
+      readFileSync(
+        new URL(
+          "../../../mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv",
+          import.meta.url,
+        ),
+        "utf8",
+      )
+        .split("\n")
+        .map((line) => line.split("\t").at(-1) ?? "")
+        .find((hex) => hex.length === 248 && hex.slice(16, 20) === "2f12") ?? "";
+    await client.insert({
+      table: `${database}.metric_stream`,
+      format: "JSONEachRow",
+      values: [
+        {
+          id: randomUUID(),
+          user_id: TEST_USER_ID,
+          provider_id: "whoop_ble",
+          device_id: "strap-a",
+          recorded_at: "2026-10-30 12:00:00.000",
+          channel: "sensor_record",
+          source_type: "ble",
+          metadata: JSON.stringify({
+            captureId: randomUUID(),
+            timestamp: "2026-10-30T12:00:00.000Z",
+            frameHex,
+            deviceInfo: {},
+          }),
+        },
+      ],
+    });
+    const readTemperature = async () => {
+      const pg = await repository.list(1, "2026-03-29");
+      const ch = await store.query(
+        z.object({ skin_temp_c: z.coerce.number().nullable() }),
+        `WITH ${dailyMetricsWithSpo2ClickHouseCte(true)} SELECT skin_temp_c FROM daily_metrics`,
+        dailyMetricsSpo2QueryParams({
+          userId: TEST_USER_ID,
+          timezone: "America/Los_Angeles",
+          endDate: "2026-03-29",
+          days: 1,
+        }),
+      );
+      return [pg[0]?.skin_temp_c, ch[0]?.skin_temp_c];
+    };
+    for (const value of await readTemperature()) expect(value).toBeCloseTo(32.18, 3);
+    await context.db.execute(sql`INSERT INTO fitness.daily_metrics (user_id,provider_id,date,skin_temp_c)
+      VALUES (${TEST_USER_ID},'garmin','2026-03-29',34.5)`);
+    await client.command({
+      query: `INSERT INTO ${database}.daily_metrics (id,user_id,provider_id,date,skin_temp_c)
+      VALUES (generateUUIDv4(),'${TEST_USER_ID}','garmin','2026-03-29',34.5)`,
+    });
+    await context.db.execute(sql`INSERT INTO fitness.provider_priority (provider_id,priority,recovery_priority)
+      VALUES ('whoop_ble',1,1),('garmin',10,10) ON CONFLICT(provider_id) DO UPDATE SET priority=EXCLUDED.priority,recovery_priority=EXCLUDED.recovery_priority`);
+    await client.command({
+      query: `INSERT INTO ${database}.provider_priority (provider_id,priority,recovery_priority,_peerdb_version)
+      VALUES ('whoop_ble',1,1,10),('garmin',10,10,10)`,
+    });
+    for (const value of await readTemperature()) expect(value).toBeCloseTo(32.18, 3);
+    await context.db.execute(
+      sql`UPDATE fitness.provider_priority SET recovery_priority=0 WHERE provider_id='garmin'`,
+    );
+    await client.command({
+      query: `INSERT INTO ${database}.provider_priority (provider_id,priority,recovery_priority,_peerdb_version)
+      VALUES ('garmin',10,0,20)`,
+    });
+    for (const value of await readTemperature()) expect(value).toBe(34.5);
   });
 });

@@ -1,6 +1,6 @@
 # WHOOP MG background sensor capture
 
-Status: proposed design; implementation has not started.
+Status: approved by the user on 2026-10-30; implementation in progress.
 
 ## Intent and agreed scope
 

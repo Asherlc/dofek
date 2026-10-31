@@ -1,5 +1,16 @@
 import Foundation
+import XCTest
 @testable import WhoopBLE
+
+func capturedWhoopR18Data() throws -> Data {
+    let url = try XCTUnwrap(Bundle.module.url(forResource: "imu-activation-capture", withExtension: "tsv", subdirectory: "fixtures"))
+    let text = try String(contentsOf: url, encoding: .utf8)
+    let hex = try XCTUnwrap(text.split(separator: "\n").compactMap { line -> String? in
+        let value = String(line.split(separator: "\t").last ?? "")
+        return value.count == 248 && value.dropFirst(16).hasPrefix("2f12") ? value : nil
+    }.first)
+    return try XCTUnwrap(Data(hexString: hex))
+}
 
 extension Data {
     init?(hexString: String) {

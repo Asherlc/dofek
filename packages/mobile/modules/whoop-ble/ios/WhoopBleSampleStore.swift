@@ -1,7 +1,19 @@
 import Foundation
 import SQLite3
 
-enum WhoopUploadStream: String, CaseIterable { case imu, realtime }
+enum WhoopUploadStream: String, CaseIterable {
+    case imu, realtime, sensorRecords
+
+    var batchLimit: Int { self == .sensorRecords ? 16 : 500 }
+    var bodyLimit: Int { self == .sensorRecords ? 262_144 : Int.max }
+    var route: String {
+        switch self {
+        case .imu: return "inertialMeasurementUnitSync.pushSamples"
+        case .realtime: return "whoopBleSync.pushRealtimeData"
+        case .sensorRecords: return "whoopBleSync.pushSensorRecords"
+        }
+    }
+}
 
 struct WhoopUploadBinding: Codable, Equatable {
     let userId: String
@@ -113,11 +125,17 @@ final class WhoopBleSampleStore {
                     throw StoreError("WHOOP sample requires a valid ISO8601 timestamp")
                 }
                 guard JSONSerialization.isValidJSONObject(sample) else { throw StoreError("WHOOP sample is not valid JSON") }
-                if let cutoff, date.timeIntervalSince1970 <= cutoff { erased += 1; continue }
+                let erasureTime = stream == .sensorRecords
+                    ? WhoopBleSensorRecord.erasureTime(sample: sample, receivedAt: date)
+                    : date.timeIntervalSince1970
+                if let cutoff, erasureTime <= cutoff { erased += 1; continue }
                 let payload = try JSONSerialization.data(withJSONObject: sample, options: [.sortedKeys])
+                guard payload.count <= stream.bodyLimit - 2048 else {
+                    throw StoreError("WHOOP sensor record exceeds the upload body limit")
+                }
                 sqlite3_reset(statement)
                 sqlite3_clear_bindings(statement)
-                try bind([stream.rawValue, deviceId, date.timeIntervalSince1970, payload], to: statement)
+                try bind([stream.rawValue, deviceId, erasureTime, payload], to: statement)
                 try finish(statement)
             }
             try execute("UPDATE stats SET erased = erased + ? WHERE stream = ?", [erased, stream.rawValue])
@@ -131,10 +149,19 @@ final class WhoopBleSampleStore {
             let head = try rows("SELECT device FROM samples WHERE stream = ? ORDER BY id LIMIT 1", [stream.rawValue])
             guard let first = head.first else { return nil }
             let device: String = try field("device", in: first)
-            let selected = try rows(
+            let candidates = try rows(
                 "SELECT id, payload FROM samples WHERE stream = ? AND device = ? ORDER BY id LIMIT ?",
-                [stream.rawValue, device, min(limit, 500)]
+                [stream.rawValue, device, min(limit, stream.batchLimit)]
             )
+            var selected: [[String: Any]] = []
+            var payloadBytes = 0
+            for candidate in candidates {
+                let payload: Data = try field("payload", in: candidate)
+                guard payloadBytes + payload.count + selected.count + 2048 <= stream.bodyLimit else { break }
+                selected.append(candidate)
+                payloadBytes += payload.count
+            }
+            guard !selected.isEmpty else { throw StoreError("WHOOP sensor record exceeds the upload body limit") }
             let id = UUID().uuidString
             let generation = try currentGeneration()
             let payloads = try selected.map { row -> Any in
@@ -144,6 +171,7 @@ final class WhoopBleSampleStore {
             var input: [String: Any] = ["deviceId": device, "samples": payloads, "telemetry": ["batchId": id]]
             if stream == .imu { input["deviceType"] = "whoop" }
             let body = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
+            guard body.count <= stream.bodyLimit else { throw StoreError("WHOOP upload body exceeds its size limit") }
             try execute("INSERT INTO batches VALUES (?, ?, ?, ?, ?, ?)", [id, generation, stream.rawValue, device, body, selected.count])
             for row in selected {
                 let rowId: Int = try field("id", in: row)

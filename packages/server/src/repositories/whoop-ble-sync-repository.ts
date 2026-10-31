@@ -1,4 +1,5 @@
 import { WHOOP_BLE_PROVIDER_ID } from "@dofek/providers/push-providers";
+import { SENSOR_RECORD_CHANNEL, type WhoopSensorRecord } from "@dofek/providers/whoop-sensors";
 import type { Database } from "dofek/db";
 import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
@@ -47,6 +48,25 @@ export class WhoopBleSyncRepository {
       providerId: WHOOP_BLE_PROVIDER_ID,
       userId: this.#userId,
     });
+  }
+
+  async insertSensorRecords(deviceId: string, samples: WhoopSensorRecord[]): Promise<number> {
+    if (samples.length === 0) return 0;
+    const result = await writeMetricStreamRows({
+      database: this.#database,
+      publisher: await this.#publisher(),
+      rows: samples.map((sample) => ({
+        recordedAt: sample.timestamp,
+        userId: this.#userId,
+        providerId: WHOOP_BLE_PROVIDER_ID,
+        deviceId,
+        sourceType: "ble",
+        channel: SENSOR_RECORD_CHANNEL,
+        externalId: `${WHOOP_BLE_PROVIDER_ID}:${deviceId}:${SENSOR_RECORD_CHANNEL}:${sample.captureId}`,
+        metadata: sample,
+      })),
+    });
+    return result.published;
   }
 
   async insertRealtimeDataBatch(

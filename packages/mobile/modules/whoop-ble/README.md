@@ -7,6 +7,15 @@ The package discovers bonded WHOOP straps, parses proprietary framed packets,
 captures reported heart rate, real-time R-R intervals and inertial samples, and exposes connection
 and orientation events through Expo Modules.
 
+Additional background sensor records use the same durable native upload system.
+Complete packets retain their capture identity, reception time and observed
+device information. The server decodes capture-backed R18 temperature and retains
+unverified optical layouts as raw records, following the
+[protocol evidence boundaries](../../../../docs/whoop-ble-protocol.md#background-thermal-and-optical-records).
+The WHOOP BLE provider detail screen shows uploaded temperature and raw records
+on both clients. This does not start ECG capture or change persistent strap
+configuration.
+
 ## Install
 
 ```sh
@@ -95,7 +104,7 @@ a command characteristic.
 
 `getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
 snapshot containing `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`,
-`imu`, `realtime`, `activeUploadCount`, `blockedUploadStreams`, and
+`imu`, `realtime`, `sensorRecords`, `activeUploadCount`, `blockedUploadStreams`, and
 `lastUploadError`. Stream counters describe persisted queue changes. The buffer
 identity is the persisted account/server generation; it survives ordinary process
 recreation. Creation/checkpoint times describe the current native uploader and

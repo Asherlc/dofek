@@ -35,6 +35,7 @@ function makeBufferCheckpoint() {
     bufferCreatedAt: "2026-10-23T02:00:00.000Z",
     checkpointAt: "2026-10-23T03:00:00.000Z",
     imu: makeBufferStreamDiagnostics(),
+    sensorRecords: makeBufferStreamDiagnostics(),
     realtime: {
       ...makeBufferStreamDiagnostics(),
       count: 1,
@@ -102,6 +103,14 @@ function makeDataPathStats() {
 }
 
 describe("WhoopBle native bridge", () => {
+  it("reports a blocked sensor-record upload without losing capture diagnostics", () => {
+    const stats = makeDataPathStats();
+    nativeModule.getDataPathStats.mockReturnValue({
+      ...stats,
+      buffers: { ...stats.buffers, blockedUploadStreams: ["sensorRecords"] },
+    });
+    expect(getDataPathStats().buffers.blockedUploadStreams).toEqual(["sensorRecords"]);
+  });
   beforeEach(() => {
     nativeModule.addListener.mockReset();
     nativeModule.getDataPathStats.mockReset();

@@ -7,12 +7,18 @@ import {
 } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  dailyMetricsTemperatureClickHouseCte,
+  dailyMetricsTemperaturePostgresCte,
+} from "./daily-metrics-temperature-query.ts";
+import { whoopTemperatureDailyCte } from "./whoop-sensor-repository.ts";
 
 const sampleDailySchema = z.object({
   date: dateStringSchema,
   provider_id: z.string(),
   source_name: z.string().nullable(),
-  spo2_avg: z.coerce.number(),
+  spo2_avg: z.coerce.number().nullable(),
+  skin_temp_c: z.coerce.number().nullable(),
 });
 
 interface DailyMetricsSourceInput {
@@ -52,14 +58,28 @@ function sampleDailyClickHouseCte(includeWindowStart: boolean): string {
 export async function fetchDailyMetricsWithSpo2Cte(input: DailyMetricsSourceInput): Promise<SQL> {
   const rows = await input.sensorStore.query(
     sampleDailySchema,
-    `WITH ${sampleDailyClickHouseCte(input.days !== null)}
-     SELECT toString(date) AS date, provider_id, source_name, spo2_avg FROM spo2_sample_daily`,
+    `WITH ${sampleDailyClickHouseCte(input.days !== null)}, ${whoopTemperatureDailyCte(input.days !== null)}
+     SELECT toString(date) AS date, provider_id, source_name, spo2_avg, CAST(NULL AS Nullable(Float64)) AS skin_temp_c FROM spo2_sample_daily
+     UNION ALL SELECT toString(date), provider_id, source_name, CAST(NULL AS Nullable(Float64)), skin_temp_c FROM temperature_sample_daily`,
     dailyMetricsSpo2QueryParams(input),
   );
+  const oxygen = rows.filter((row) => row.spo2_avg != null);
+  const temperatures = rows.flatMap((row) =>
+    row.skin_temp_c != null
+      ? [
+          {
+            date: row.date,
+            provider_id: row.provider_id,
+            source_name: row.source_name,
+            skin_temp_c: row.skin_temp_c,
+          },
+        ]
+      : [],
+  );
   const sampleValues =
-    rows.length > 0
+    oxygen.length > 0
       ? sql`VALUES ${sql.join(
-          rows.map(
+          oxygen.map(
             (row) =>
               sql`(${row.date}::date, ${row.provider_id}::text, ${row.source_name}::text, ${row.spo2_avg}::real)`,
           ),
@@ -88,7 +108,7 @@ export async function fetchDailyMetricsWithSpo2Cte(input: DailyMetricsSourceInpu
       ) device ON true
     ),
     resolved_spo2 AS (SELECT * FROM spo2_ranked WHERE rank = 1),
-    daily_metrics AS (
+    daily_metrics_without_temperature AS (
       SELECT COALESCE(dm.date, oxygen.date) AS date, ${input.userId}::uuid AS user_id,
         dm.hrv, oxygen.spo2_avg, dm.respiratory_rate_avg, dm.skin_temp_c,
         dm.steps, dm.distance_km, dm.flights_climbed, dm.exercise_minutes, dm.stand_hours, dm.walking_speed,
@@ -97,7 +117,7 @@ export async function fetchDailyMetricsWithSpo2Cte(input: DailyMetricsSourceInpu
       FROM (SELECT * FROM fitness.v_daily_metrics WHERE user_id = ${input.userId}
         ${dateWindowStartPredicate(sql`date`, input.endDate, input.days)} AND date <= ${input.endDate}::date) dm
       FULL JOIN resolved_spo2 oxygen ON oxygen.date = dm.date
-    )`;
+    ), ${dailyMetricsTemperaturePostgresCte(temperatures, input)}`;
 }
 
 export function dailyMetricsSpo2QueryParams(
@@ -148,7 +168,7 @@ export function dailyMetricsWithSpo2ClickHouseCte(includeWindowStart: boolean): 
       AND date <= toDate({spo2EndDate:String})
     UNION DISTINCT SELECT date FROM resolved_spo2
   ),
-  daily_metrics AS (
+  daily_metrics_without_temperature AS (
     SELECT dates.date AS date, {userId:UUID} AS user_id,
       dm.hrv AS hrv, if(oxygen.provider_id = '', NULL, oxygen.spo2_avg) AS spo2_avg,
       dm.respiratory_rate_avg AS respiratory_rate_avg, dm.skin_temp_c AS skin_temp_c,
@@ -158,5 +178,5 @@ export function dailyMetricsWithSpo2ClickHouseCte(includeWindowStart: boolean): 
     FROM daily_metric_dates dates
     LEFT JOIN analytics.v_daily_metrics dm ON dm.user_id = {userId:UUID} AND dm.date = dates.date
     LEFT JOIN resolved_spo2 oxygen ON oxygen.date = dates.date
-  )`;
+  ), ${dailyMetricsTemperatureClickHouseCte(includeWindowStart)}`;
 }

@@ -68,6 +68,19 @@ describe("decodeWhoopSensorRecord", () => {
     });
   });
 
+  it("preserves a full realtime transport without interpreting its opaque optical bytes", () => {
+    const frame = Buffer.from(capturedFrames[0] ?? "", "hex");
+    frame[8] = 40;
+    frame.writeUInt32LE(crc32(frame.subarray(8, -4)), frame.length - 4);
+    expect(decodeWhoopSensorRecord({ ...record, frameHex: frame.toString("hex") })).toMatchObject({
+      packetType: 40,
+      measuredAt: null,
+      skinTemperatureC: null,
+      fields: [],
+      rawFrameHex: frame.toString("hex"),
+    });
+  });
+
   it("decodes every complete captured R18 frame without consuming the CRC trailer", () => {
     const readings = capturedFrames.map((frameHex) =>
       decodeWhoopSensorRecord({ ...record, frameHex }),

@@ -31,7 +31,9 @@ export function decodeWhoopSensorRecord(input: WhoopSensorRecord): WhoopSensorRe
   }
   const packetType = frame.readUInt8(8);
   const layout = frame.readUInt8(9);
-  if (![43, 47].includes(packetType) || layout === 16 || layout === 17 || layout === 21) {
+  const fullRealtime = packetType === 40 && frame.length >= 65;
+  const additionalSensor = [43, 47].includes(packetType) && ![16, 17, 21].includes(layout);
+  if (!fullRealtime && !additionalSensor) {
     throw new Error("WHOOP frame is not an additional background sensor record");
   }
   const result: WhoopSensorReading = {

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { crc32 } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
@@ -69,6 +71,99 @@ describe("whoopBleSyncRouter", () => {
     mockDb = makeMockDb();
     metricStreamPublisher = makeMetricStreamPublisher();
     ctx = makeCtx(mockDb, metricStreamPublisher);
+  });
+
+  describe("pushSensorRecords", () => {
+    const frameHex =
+      readFileSync(
+        new URL(
+          "../../../mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv",
+          import.meta.url,
+        ),
+        "utf8",
+      )
+        .split("\n")
+        .map((line) => line.split("\t").at(-1) ?? "")
+        .find((hex) => hex.length === 248 && hex.slice(16, 20) === "2f12") ?? "";
+    const sample = {
+      captureId: "1087b7ac-fc32-4c29-8b31-72e366dc974d",
+      timestamp: "2026-10-30T12:00:00.000Z",
+      frameHex,
+      deviceInfo: { firmware: "50.42.1.0", model: "WHOOP MG" },
+    };
+
+    it("retains original frame bytes and receipt time with stable retry identity", async () => {
+      const trpcCaller = whoopBleSyncRouter.createCaller(ctx);
+      expect(
+        await trpcCaller.pushSensorRecords({ deviceId: "strap-a", samples: [sample] }),
+      ).toEqual({ inserted: 1 });
+      await trpcCaller.pushSensorRecords({ deviceId: "strap-a", samples: [sample] });
+      const rows = getPublishedRows(metricStreamPublisher);
+      expect(rows).toEqual([
+        expect.objectContaining({
+          channel: "sensor_record",
+          recordedAt: sample.timestamp,
+          externalId: `whoop_ble:strap-a:sensor_record:${sample.captureId}`,
+          metadata: sample,
+        }),
+        expect.objectContaining({
+          channel: "sensor_record",
+          recordedAt: sample.timestamp,
+          externalId: `whoop_ble:strap-a:sensor_record:${sample.captureId}`,
+          metadata: sample,
+        }),
+      ]);
+    });
+
+    it("rejects damaged frames before acknowledging them", async () => {
+      const bytes = Buffer.from(frameHex, "hex");
+      bytes[73] ^= 1;
+      await expect(
+        whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+          deviceId: "strap-a",
+          samples: [{ ...sample, frameHex: bytes.toString("hex") }],
+        }),
+      ).rejects.toThrow(/CRC/);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([]);
+    });
+
+    it("propagates publication failure so the native queue retains its reservation", async () => {
+      metricStreamPublisher.publishRows.mockRejectedValue(new Error("Broker unavailable"));
+      await expect(
+        whoopBleSyncRouter
+          .createCaller(ctx)
+          .pushSensorRecords({ deviceId: "strap-a", samples: [sample] }),
+      ).rejects.toThrow("Broker unavailable");
+      expect(captureException).toHaveBeenCalled();
+    });
+
+    it("rejects batches over the record count bound", async () => {
+      await expect(
+        whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+          deviceId: "strap-a",
+          samples: Array.from({ length: 17 }, () => sample),
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects a byte-oversized batch of otherwise valid opaque frames", async () => {
+      // Constructed maximum-size envelope; no sensor meanings are assigned.
+      const frame = Buffer.alloc(65_543);
+      Buffer.from("aa01ffff0001e435", "hex").copy(frame);
+      frame[8] = 43;
+      frame[9] = 22;
+      frame.writeUInt32LE(crc32(frame.subarray(8, -4)), frame.length - 4);
+      await expect(
+        whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+          deviceId: "strap-a",
+          samples: Array.from({ length: 3 }, () => ({
+            ...sample,
+            frameHex: frame.toString("hex"),
+          })),
+        }),
+      ).rejects.toThrow(/262144 bytes/);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([]);
+    });
   });
 
   describe("pushRealtimeData", () => {

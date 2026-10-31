@@ -326,6 +326,9 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    whoopBleSync: {
+      sensorSnapshot: { useQuery: () => ({ data: undefined, error: null, isLoading: false }) },
+    },
     processing: {
       status: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
