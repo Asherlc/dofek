@@ -25,16 +25,26 @@ The [canonical configuration](../packages/mobile/mutantkit.yml) is shared by
 package-local symlinks. Each run derives an exact source scope while retaining
 the owning package's full tests. The runner validates source with the official
 Swift compiler, matches the plan's complete source inventory and hashes, and
-requires measurable candidates for every selected file. Missing, malformed or
-unmeasurable selected source fails explicitly. Only an empty changed compiled
-intersection skips the campaign. See MutantKit's
+rejects missing or malformed selected source. A selected file can have no
+eligible default mutation operators, as with declarations or forwarding-only
+code. Such files still run the full native baseline; only an empty changed
+compiled intersection skips the campaign. See MutantKit's
 [planning interface](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift)
 and [configuration loading](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/ConfigurationLoader.swift).
 
 Keep the plan, derived configuration, JSON report, official verification output
-and raw evidence archive under `reports/swift-mutation/`. Fresh complete results,
-a passing baseline, positive measured work and all mandatory source/archive
-checks are required. The required CI mutation aggregate includes native
+and raw evidence archive under `reports/swift-mutation/`. Nonempty plans require
+fresh complete results, a passing baseline, positive measured work and all
+mandatory source/archive checks. Genuine zero-candidate plans require a nonempty
+compiled inventory with matching hashes, the complete pinned default operator
+catalogue, zero skipped work, successful baseline build/test commands, and the
+verified empty archive. The runner rechecks source hashes after execution.
+MutantKit's [verifier](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/ReportReverification.swift)
+intentionally rejects zero results; the runner preserves that verdict and accepts
+only its exact empty-result failure with every applicable check passing. It
+reports **baseline-only, mutation score not applicable**, retaining the raw
+verification/trust exit statuses and JSON. Any other failure remains fatal.
+The required CI mutation aggregate includes native
 discovery and every selected native job. Inspect individual matrix outcomes as
 well as the aggregate; see [CI wiring](../.github/workflows/test.yml) and official
 [report reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/ReportReverification.swift).
@@ -51,8 +61,8 @@ Review surviving mutants and add tests for real coverage gaps. Assertion kills,
 confirmed crashes/timeouts, survivors, compile failures and inconclusive outcomes
 remain distinct under the official
 [outcome model](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/MutationOutcome.swift).
-The native runner retains its existing positive-work policy without adding a
-numeric threshold. Default optional independent assertion confirmation can
+Nonempty plans retain the existing positive-work policy without a numeric
+threshold; having candidates but no measurable outcomes still fails. Default optional independent assertion confirmation can
 remain unverified; that status does not establish named-test attribution.
 Native unit tests, app builds and Simulator checks remain separate;
 physical background reconnection and capture still require a device.
