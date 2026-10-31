@@ -39,13 +39,15 @@ const planSchema = z
     projectRoot: z.string().min(1),
     toolchain,
     sourceFileHashes: z.record(z.string(), hash),
-    mutations: z.array(point).min(1, "No measurable mutation candidates"),
+    mutations: z.array(point),
     skipped: z
       .array(z.unknown())
       .max(0, "Skipped, budgeted or suppressed mutations are not allowed"),
   })
   .passthrough();
-type Plan = z.infer<typeof planSchema>;
+export type MutationPlan = z.infer<typeof planSchema>;
+type Plan = MutationPlan;
+export const NATIVE_MUTATIONS_PER_JOB = 12;
 const outcome = z.enum([
   "killedByAssertion",
   "killedByCrash",
@@ -61,7 +63,7 @@ const outcome = z.enum([
   "notMaterialized",
   "skipped",
 ]);
-const reportSchema = z
+const reportCoreSchema = z
   .object({
     schemaVersion: z.literal(2),
     planID: z.string(),
@@ -111,13 +113,15 @@ const reportSchema = z
       excluded: z.record(z.string(), count),
     }),
     operationalIssues: z.array(z.unknown()).max(0),
-    evidenceArchive: z.object({
-      runID: z.string().regex(/^[a-zA-Z0-9-]+$/),
-      manifestHash: hash,
-      entryCount: count,
-    }),
   })
   .passthrough();
+const reportSchema = reportCoreSchema.extend({
+  evidenceArchive: z.object({
+    runID: z.string().regex(/^[a-zA-Z0-9-]+$/),
+    manifestHash: hash,
+    entryCount: count,
+  }),
+});
 type Report = z.infer<typeof reportSchema>;
 
 function requireCondition(condition: boolean, message: string): asserts condition {
@@ -137,6 +141,7 @@ export function validateMutationPlan(
   expected: { projectRoot: string; sources: Record<string, string> },
 ): Plan {
   const plan = planSchema.parse(value);
+  requireCondition(Object.keys(expected.sources).length > 0, "Empty requested source inventory");
   requireCondition(
     realpathSync(plan.projectRoot) === realpathSync(expected.projectRoot),
     "Mutation plan project root mismatch",
@@ -151,10 +156,6 @@ export function validateMutationPlan(
       plan.sourceFileHashes[file] === expectedHash,
       `Stale mutation plan hash for ${file}`,
     );
-    requireCondition(
-      plan.mutations.some((mutation) => mutation.file === file),
-      `No measurable mutation candidates for ${file}`,
-    );
   }
   const ids = plan.mutations.map((mutation) => mutation.id);
   requireCondition(new Set(ids).size === ids.length, "Duplicate mutation plan IDs");
@@ -167,8 +168,8 @@ export function validateMutationPlan(
   return plan;
 }
 
-export function validateMutationReport(value: unknown, plan: Plan) {
-  const report = reportSchema.parse(value);
+function validateReportCore(value: unknown, plan: Plan) {
+  const report = reportCoreSchema.parse(value);
   requireCondition(
     report.planID === plan.planID &&
       realpathSync(report.projectRoot) === realpathSync(plan.projectRoot),
@@ -256,15 +257,63 @@ export function validateMutationReport(value: unknown, plan: Plan) {
     isDeepStrictEqual(report.score, { killed, survived, noCoverage, excluded }),
     "Mutation score/outcome counts do not reconcile",
   );
+  return report;
+}
+
+function requireMeasuredWork(report: z.infer<typeof reportCoreSchema>): void {
   requireCondition(
-    killed + survived > 0 && Number.isFinite(killed / (killed + survived)),
+    report.score.killed + report.score.survived > 0 &&
+      Number.isFinite(report.score.killed / (report.score.killed + report.score.survived)),
     "No finite positive measured mutation denominator",
   );
+}
+
+export function validateMutationShardReport(value: unknown, plan: Plan): Report {
+  const report = reportSchema.parse(value);
+  validateReportCore(report, plan);
   requireCondition(
-    report.evidenceArchive.entryCount === mutationCount,
+    report.evidenceArchive.entryCount === plan.mutations.length,
     "Incomplete mutation evidence archive",
   );
   return report;
+}
+
+/** Each shard's raw evidence is verified independently before official merge. */
+export function validateMergedMutationReport(value: unknown, plan: Plan) {
+  const report = validateReportCore(value, plan);
+  requireMeasuredWork(report);
+  return report;
+}
+
+/** Every original point must occur exactly once in the official bounded shards. */
+export function validateMutationPartition(plan: Plan, shards: Plan[]): void {
+  const ids: string[] = [];
+  const points = new Map(plan.mutations.map((point) => [point.id, point]));
+  for (const shard of shards) {
+    for (const key of [
+      "planID",
+      "projectRoot",
+      "toolchain",
+      "sourceFileHashes",
+      "configurationHash",
+      "planningHash",
+      "operators",
+    ] as const)
+      requireCondition(isDeepStrictEqual(shard[key], plan[key]), `Changed shard context: ${key}`);
+    requireCondition(shard.skipped.length === 0, "Skipped mutations in shard");
+    requireCondition(
+      shard.mutations.length <= NATIVE_MUTATIONS_PER_JOB,
+      "Mutation shard exceeds work bound",
+    );
+    for (const point of shard.mutations) {
+      requireCondition(
+        isDeepStrictEqual(point, points.get(point.id)),
+        `Changed shard point: ${point.id}`,
+      );
+      ids.push(point.id);
+    }
+  }
+  sameMembers(ids, [...points.keys()], "parent/shard mutation IDs");
 }
 
 export function validatePlanVerification(value: unknown, plan: Plan): void {

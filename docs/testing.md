@@ -24,19 +24,30 @@ Expo bridge files do not become mutation inputs. See the
 The [canonical configuration](../packages/mobile/mutantkit.yml) is shared by
 package-local symlinks. Each run derives an exact source scope while retaining
 the owning package's full tests. The runner validates source with the official
-Swift compiler, matches the plan's complete source inventory and hashes, and
-requires measurable candidates for every selected file. Missing, malformed or
-unmeasurable selected source fails explicitly. Only an empty changed compiled
-intersection skips the campaign. See MutantKit's
+Swift compiler and matches the plan's complete source inventory and hashes.
+An official verified plan with zero candidates is reported as not applicable,
+without a mutation score; its compiler, source and verification evidence is
+retained. Missing or malformed selected source still fails. See MutantKit's
 [planning interface](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift)
 and [configuration loading](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/ConfigurationLoader.swift).
 
-Keep the plan, derived configuration, JSON report, official verification output
-and raw evidence archive under `reports/swift-mutation/`. Fresh complete results,
-a passing baseline, positive measured work and all mandatory source/archive
-checks are required. The required CI mutation aggregate includes native
-discovery and every selected native job. Inspect individual matrix outcomes as
-well as the aggregate; see [CI wiring](../.github/workflows/test.yml) and official
+Preparation (`--base origin/main --prepare`) writes a commit-bound campaign
+manifest and full per-file plans under `reports/swift-mutation/`. The pinned
+tool's [official sharding](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationPlanner/PlanSharding.swift)
+partitions every candidate into workers of at most twelve candidates. Uneven
+hash partitions are reshaped by increasing the shard count, never by removing
+candidates. Workers (`--job '{"file":"<repository-relative.swift>","shard":0}'`)
+retain the full owning-package tests and the existing 30-minute step timeout.
+
+Keep every plan, derived configuration, report, verification output and raw
+evidence archive. The required merge (`--merge`) revalidates every shard archive
+and uses the [official merge command](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/MergeCommand.swift)
+against the original full plan. Missing, duplicate or changed candidate IDs,
+stale sources and failed baselines fail. A shard may contain only unviable
+mutants, but each nonempty full-file campaign requires positive measured work.
+The required CI aggregate includes preparation, every selected worker and the
+full-plan merge, including reverification of zero-candidate files. Inspect
+individual matrix outcomes as well as the aggregate; see [CI wiring](../.github/workflows/test.yml) and official
 [report reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/ReportReverification.swift).
 
 Each recorded command retains separate `.command.stdout.log` and

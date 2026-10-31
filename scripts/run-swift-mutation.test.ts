@@ -65,6 +65,8 @@ function createFixture() {
     omit: "",
     malformed: "",
     zero: false,
+    candidates: 1,
+    duplicateShard: false,
     missing: false,
     stale: false,
     corrupt: false,
@@ -93,7 +95,7 @@ function createFixture() {
     write(root, path, "// changed\n");
   }
   async function run(base: string, options: string[] = []) {
-    commitBase();
+    if (!["--job", "--merge"].includes(options[0] ?? "")) commitBase();
     if (state.missing) rmSync(join(root, whoop, "ios/Parser.swift"));
     vi.resetModules();
     const stdout: string[] = [];
@@ -107,7 +109,15 @@ function createFixture() {
     vi.stubGlobal(
       "process",
       Object.create(process, {
-        argv: { value: [process.execPath, "run-swift-mutation.ts", "--base", base, ...options] },
+        argv: {
+          value: [
+            process.execPath,
+            "run-swift-mutation.ts",
+            ...(["--job", "--merge"].includes(options[0] ?? "")
+              ? options
+              : ["--base", base, ...options]),
+          ],
+        },
         cwd: { value: () => root },
         exit: {
           value: (status: number) => {
@@ -143,30 +153,76 @@ function createFixture() {
       if (tool === "swift" && state.malformed === "swift") output = "invalid-json";
       if (tool === "swift" && state.malformed === "inventory") output = "{}";
       if (tool === "mutantkit") {
-        const config = parse(
-          readFileSync(requiredItem(argv[argv.indexOf("--config") + 1]), "utf8"),
-        );
-        const selected: string[] = config.sources.include;
+        const outputPath = argv.includes("--output")
+          ? requiredItem(argv[argv.indexOf("--output") + 1])
+          : "";
+        const planPath = argv.includes("--plan")
+          ? requiredItem(argv[argv.indexOf("--plan") + 1])
+          : "";
+        const loadedPlan = planPath ? JSON.parse(readFileSync(planPath, "utf8")) : undefined;
+        const selected: string[] = argv.includes("--config")
+          ? parse(readFileSync(requiredItem(argv[argv.indexOf("--config") + 1]), "utf8")).sources
+              .include
+          : [];
         const fixture = mutationFixture(
           cwd,
           Object.fromEntries(
             selected.map((file) => [file, hash(readFileSync(join(cwd, file), "utf8"))]),
           ),
         );
-        const outputPath = requiredItem(argv[argv.indexOf("--output") + 1]);
+        if (loadedPlan) fixture.plan = loadedPlan;
+        const count = fixture.plan.mutations.length;
+        fixture.report.results = fixture.plan.mutations.map((point) => ({
+          point,
+          outcome: "killedByAssertion",
+        }));
+        for (const key of [
+          "discovered",
+          "planned",
+          "sourceApplied",
+          "buildObserved",
+          "executed",
+          "classified",
+          "reported",
+        ] as const)
+          fixture.report.integrity[key] = count;
+        fixture.report.score.killed = count;
+        fixture.report.evidenceArchive.entryCount = count;
+        fixture.verification.resultCount = count;
+        fixture.verification.tierB.reverifiedCount = count;
+        fixture.verification.tierB.matchedCount = count;
+        fixture.trust.mutationCount = count;
         if (command === "plan") {
-          if (state.zero) fixture.plan.mutations = [];
+          const point = requiredItem(fixture.plan.mutations[0]);
+          fixture.plan.mutations = state.zero
+            ? []
+            : Array.from({ length: state.candidates }, (_, i) => ({ ...point, id: `mut_${i}` }));
           if (state.stale) fixture.plan.sourceFileHashes[requiredItem(selected[0])] = hash("stale");
           if (state.omit !== "plan")
             writeFileSync(
               outputPath,
               state.malformed === "plan" ? "invalid-json" : JSON.stringify(fixture.plan),
             );
+        } else if (command === "shard") {
+          const parent = JSON.parse(readFileSync(requiredItem(argv[1]), "utf8"));
+          const total = Number(argv[argv.indexOf("--count") + 1]);
+          const directory = requiredItem(argv[argv.indexOf("--output-directory") + 1]);
+          mkdirSync(directory, { recursive: true });
+          for (let i = 0; i < total; i++)
+            writeFileSync(
+              join(directory, `plan.${i}.json`),
+              JSON.stringify({
+                ...parent,
+                mutations: state.duplicateShard
+                  ? parent.mutations
+                  : parent.mutations.filter((_: unknown, index: number) => index % total === i),
+              }),
+            );
         } else if (command === "verify")
           output = JSON.stringify({
             schemaVersion: 1,
             planID: fixture.plan.planID,
-            mutationCount: selected.length,
+            mutationCount: count,
             valid: true,
             compatibility: "match",
             idViolations: [],
@@ -182,6 +238,13 @@ function createFixture() {
             );
           if (state.omit !== "archive")
             write(cwd, ".mutantkit/evidence/fixture-run/manifest.json", "{}");
+        } else if (command === "merge") {
+          const reportPaths = argv.slice(argv.indexOf("--config") + 2, argv.indexOf("--plan"));
+          fixture.report.results = reportPaths.flatMap(
+            (path) => JSON.parse(readFileSync(path, "utf8")).results,
+          );
+          const { evidenceArchive: _archive, ...merged } = fixture.report;
+          writeFileSync(outputPath, JSON.stringify(merged));
         } else if (command === "verify-run")
           output = state.malformed === "verify-run" ? "{}" : JSON.stringify(fixture.verification);
         else if (command === "trust") output = JSON.stringify(fixture.trust);
@@ -232,7 +295,10 @@ describe("run-swift-mutation public CLI", () => {
       expect(result.status, result.stderr).toBe(exit);
       const evidence = JSON.parse(
         readFileSync(
-          join(fixture.root, "reports/swift-mutation/whoop-ble/run.command.json"),
+          join(
+            fixture.root,
+            `reports/swift-mutation/files/${whoop}/ios/Parser.swift/workers/0/run.command.json`,
+          ),
           "utf8",
         ),
       );
@@ -250,6 +316,115 @@ describe("run-swift-mutation public CLI", () => {
       expect(fixture.calls.some((call) => call.args[0] === "trust")).toBe(exit === 0);
     },
   );
+  it("records verified empty candidates as not applicable during preparation", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.zero = true;
+    const result = await fixture.run(base, ["--prepare"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([]);
+    const campaign = JSON.parse(
+      readFileSync(join(fixture.root, "reports/swift-mutation/campaign.json"), "utf8"),
+    );
+    expect(campaign.files[0]).toMatchObject({
+      source: `${whoop}/ios/Parser.swift`,
+      status: "notApplicable",
+      jobs: [],
+    });
+    expect(
+      fixture.calls.some((call) => call.tool === "mutantkit" && call.args[0] === "verify"),
+    ).toBe(true);
+    expect(fixture.calls.some((call) => call.tool === "mutantkit" && call.args[0] === "run")).toBe(
+      false,
+    );
+  });
+
+  it("executes every bounded official shard and merges the complete original campaign", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.candidates = 25;
+    const prepared = await fixture.run(base, ["--prepare"]);
+    expect(prepared.status, prepared.stderr).toBe(0);
+    const jobs = JSON.parse(prepared.stdout);
+    expect(jobs.length).toBeGreaterThan(1);
+    for (const job of jobs) {
+      const result = await fixture.run(base, ["--job", JSON.stringify(job)]);
+      expect(result.status, result.stderr).toBe(0);
+    }
+    const merged = await fixture.run(base, ["--merge"]);
+    expect(merged.status, merged.stderr).toBe(0);
+    const runCounts = fixture.calls
+      .filter((call) => call.tool === "mutantkit" && call.args[0] === "run")
+      .map(
+        (call) =>
+          JSON.parse(readFileSync(requiredItem(call.args[call.args.indexOf("--plan") + 1]), "utf8"))
+            .mutations.length,
+      );
+    expect(runCounts.reduce((sum, value) => sum + value, 0)).toBe(25);
+    expect(runCounts.every((count) => count > 0 && count <= 12)).toBe(true);
+    expect(
+      fixture.calls.some((call) => call.tool === "mutantkit" && call.args[0] === "merge"),
+    ).toBe(true);
+  });
+
+  it("fails closed when a selected shard has not produced its report", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    expect((await fixture.run(base, ["--prepare"])).status).toBe(0);
+    const result = await fixture.run(base, ["--merge"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("report.json");
+  });
+
+  it("rejects duplicate candidates emitted by the official partition boundary", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.candidates = 13;
+    fixture.state.duplicateShard = true;
+    const result = await fixture.run(base, ["--prepare"]);
+    expect(result.status).not.toBe(0);
+    expect(fixture.calls.some((call) => call.args[0] === "run")).toBe(false);
+  });
+
+  it.each(["commit", "source", "job"])("rejects stale or unselected worker %s", async (problem) => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    expect((await fixture.run(base, ["--prepare"])).status).toBe(0);
+    if (problem === "commit") fixture.commitBase();
+    if (problem === "source")
+      write(fixture.root, `${whoop}/ios/Parser.swift`, "// changed again\n");
+    const result = await fixture.run(base, [
+      "--job",
+      JSON.stringify({ file: `${whoop}/ios/Parser.swift`, shard: problem === "job" ? 9 : 0 }),
+    ]);
+    expect(result.status).not.toBe(0);
+    expect(fixture.calls.some((call) => call.args[0] === "run")).toBe(false);
+  });
+
+  it("reverifies a wholly zero-candidate campaign without producing a score", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.zero = true;
+    expect((await fixture.run(base, ["--prepare"])).status).toBe(0);
+    const result = await fixture.run(base, ["--merge"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("no mutation score");
+    expect(fixture.calls.filter((call) => call.args[0] === "verify")).toHaveLength(2);
+    expect(fixture.calls.some((call) => call.args[0] === "merge")).toBe(false);
+  });
+
   it("lists changed compiled files without running the mutation tool", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop, "ios", ["Parser.swift", "nested/Timer space.swift"]);
@@ -282,7 +457,20 @@ describe("run-swift-mutation public CLI", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(
       fixture.calls.filter((call) => call.tool === "mutantkit").map((call) => call.args[0]),
-    ).toEqual(["config", "plan", "verify", "run", "verify-run", "trust"]);
+    ).toEqual([
+      "config",
+      "plan",
+      "verify",
+      "shard",
+      "verify",
+      "run",
+      "verify-run",
+      "trust",
+      "verify",
+      "verify-run",
+      "trust",
+      "merge",
+    ]);
     const run = requiredItem(
       fixture.calls.find((call) => call.tool === "mutantkit" && call.args[0] === "run"),
     );
@@ -428,7 +616,11 @@ describe("run-swift-mutation public CLI", () => {
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
-    write(fixture.root, `reports/swift-mutation/whoop-ble/${omitted}.json`, "{}");
+    write(
+      fixture.root,
+      `reports/swift-mutation/files/${whoop}/ios/Parser.swift/${omitted === "report" ? "workers/0/" : ""}${omitted}.json`,
+      "{}",
+    );
     fixture.state.omit = omitted;
     const result = await fixture.run(base);
     expect(result.status).not.toBe(0);
@@ -445,7 +637,7 @@ describe("run-swift-mutation public CLI", () => {
       expect((await fixture.run(base)).status).not.toBe(0);
     },
   );
-  it.each(["zero", "stale", "missing", "corrupt"] as const)("rejects %s work", async (problem) => {
+  it.each(["stale", "missing", "corrupt"] as const)("rejects %s work", async (problem) => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
@@ -469,7 +661,8 @@ describe("run-swift-mutation public CLI", () => {
           readFileSync(
             join(
               fixture.root,
-              "reports/swift-mutation/whoop-ble",
+              `reports/swift-mutation/files/${whoop}/ios/Parser.swift`,
+              ["run", "verify-run", "trust"].includes(command) ? "workers/0" : "",
               `${command === "swiftc" ? "compiler" : command}.command.json`,
             ),
             "utf8",
