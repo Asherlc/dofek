@@ -23,46 +23,45 @@ const endpoint = "https://www.thecrag.com/api/logbook/ascents";
 describe("theCrag official logbook persistence (PostgreSQL)", () => {
   let context: TestContext;
   let requests: URL[];
-  const run = (full = false) =>
+  const run = (full = false, userId = TEST_USER_ID) =>
     new TheCragProvider(globalThis.fetch).sync(
       new SyncRun({
         db: context.db,
-        userId: TEST_USER_ID,
+        userId,
         window: full ? SyncWindow.full() : SyncWindow.lastDays(7),
         origin: full ? "manual" : "scheduled",
       }),
     );
-  const entries = () =>
-    context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.providerId, "thecrag"));
-  const progress = async () => {
+  const entries = (userId = TEST_USER_ID) =>
+    context.db
+      .select()
+      .from(climbingLogEntry)
+      .where(and(eq(climbingLogEntry.providerId, "thecrag"), eq(climbingLogEntry.userId, userId)));
+  const progress = async (userId = TEST_USER_ID) => {
     const [row] = await context.db
       .select()
       .from(userSettings)
-      .where(
-        and(eq(userSettings.userId, TEST_USER_ID), eq(userSettings.key, "thecrag_sync_cursor")),
-      );
+      .where(and(eq(userSettings.userId, userId), eq(userSettings.key, "thecrag_sync_cursor")));
     return row?.value;
   };
-  const connect = async (accountId = "123", authorizationId = randomUUID()) => {
-    await ensureProvider(
-      context.db,
-      "thecrag",
-      "theCrag",
-      "https://www.thecrag.com/api",
-      TEST_USER_ID,
-    );
+  const connect = async (
+    accountId = "123",
+    authorizationId = randomUUID(),
+    userId = TEST_USER_ID,
+  ) => {
+    await ensureProvider(context.db, "thecrag", "theCrag", "https://www.thecrag.com/api", userId);
     await saveTokens(
       context.db,
       "thecrag",
       {
-        accessToken: "personal-key",
+        accessToken: userId === TEST_USER_ID ? "personal-key" : "second-personal-key",
         providerAccountId: accountId,
         authorizationId,
         scopes: THECRAG_LOGBOOK_SCOPE,
         refreshToken: null,
         expiresAt: new Date("2099-12-31"),
       },
-      TEST_USER_ID,
+      userId,
     );
   };
   function serve(reply: (url: URL) => Response = () => HttpResponse.json(logbookPage())) {
@@ -108,6 +107,57 @@ describe("theCrag official logbook persistence (PostgreSQL)", () => {
     expect(await progress()).toMatchObject({ accountId: "123", epoch: 1791676800 });
     expect(await context.db.select().from(climbingAttempt)).toEqual([
       expect.objectContaining({ ropeMethod: "top_rope", sourceResult: "attempt" }),
+    ]);
+  });
+
+  it("isolates ascent identities and incremental progress between users", async () => {
+    const secondUserId = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${secondUserId}::uuid, 'Second user')`,
+    );
+    await connect("456", randomUUID(), secondUserId);
+    const admissions: { owner: string; since: string | null }[] = [];
+    server.use(
+      http.get(endpoint, ({ request }) => {
+        const second = request.headers.get("X-CData-Key") === "key=second-personal-key";
+        const since = new URL(request.url).searchParams.get("since");
+        admissions.push({ owner: second ? secondUserId : TEST_USER_ID, since });
+        return HttpResponse.json(
+          logbookPage(
+            [
+              apiAscent({
+                epoch: second ? 200 : since ? 101 : 100,
+                markdown: second ? "Second user's note" : "First user's note",
+              }),
+            ],
+            { account: { id: second ? "456" : "123" } },
+          ),
+        );
+      }),
+    );
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await run(false, secondUserId)).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(admissions).toEqual([
+      { owner: TEST_USER_ID, since: null },
+      { owner: secondUserId, since: null },
+      { owner: TEST_USER_ID, since: "99" },
+    ]);
+    expect(await progress()).toMatchObject({ accountId: "123", epoch: 101 });
+    expect(await progress(secondUserId)).toMatchObject({ accountId: "456", epoch: 200 });
+    expect(await entries()).toEqual([
+      expect.objectContaining({
+        externalId: "thecrag:1001",
+        userId: TEST_USER_ID,
+        notes: "First user's note",
+      }),
+    ]);
+    expect(await entries(secondUserId)).toEqual([
+      expect.objectContaining({
+        externalId: "thecrag:1001",
+        userId: secondUserId,
+        notes: "Second user's note",
+      }),
     ]);
   });
 

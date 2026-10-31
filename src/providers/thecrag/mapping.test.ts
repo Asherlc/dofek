@@ -4,6 +4,11 @@ import { mapTheCragAscent } from "./mapping.ts";
 import { apiAscent, gradeCases } from "./test-helpers.ts";
 
 describe("theCrag official ascent mapping", () => {
+  it.each(["soloist", "solos"])("does not infer solo from %s", (label) => {
+    expect(mapTheCragAscent(apiAscent({ tick: { label } }), "123").attempts).toEqual([
+      { scope: "climb", sourceResult: label, ropeMethod: "top_rope" },
+    ]);
+  });
   it.each([
     [" LEAD ", "lead"],
     ["lead solo", "lead"],

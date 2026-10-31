@@ -3,6 +3,7 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import type { TRPCError } from "@trpc/server";
+import { getTokenUserId } from "dofek/db/token-user-context";
 import { ProviderAuthenticationFailedError } from "dofek/providers/auth-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,7 +84,10 @@ describe("tokenAuthRouter", () => {
       expiresAt: new Date("2026-08-01T00:00:00Z"),
       scopes: "read",
     };
-    const exchangeToken = vi.fn().mockResolvedValue(tokens);
+    const exchangeToken = vi.fn().mockImplementation(async () => {
+      expect(getTokenUserId()).toBe("user-123");
+      return tokens;
+    });
     const provider = stubProvider({
       id: "wger",
       name: "Wger",

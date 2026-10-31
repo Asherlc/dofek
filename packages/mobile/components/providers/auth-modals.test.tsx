@@ -30,6 +30,9 @@ describe("theCrag personal key connection", () => {
     );
     const input = screen.getByPlaceholderText("Personal API key");
     expect(input.getAttribute("type")).toBe("password");
+    expect(input.getAttribute("accessibilityHint")).toBe(
+      "This key imports your public and private ascent notes.",
+    );
     expect(screen.getByText("This key imports your public and private ascent notes.")).toBeTruthy();
     fireEvent.change(input, { target: { value: "personal-key" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect theCrag" }));

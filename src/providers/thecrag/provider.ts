@@ -10,6 +10,7 @@ import { ensureProvider, loadTokens } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { findProviderTransportError } from "../../lib/provider-transport-error.ts";
+import { resolveScopedUserId } from "../../lib/user-context.ts";
 import {
   ProviderStoredIdentityInvalidError,
   ProviderStoredIdentityMissingError,
@@ -29,12 +30,19 @@ export class TheCragProvider implements SyncProvider {
   readonly name = "theCrag";
   readonly #fetchFn: typeof fetch;
   constructor(fetchFn: typeof fetch = globalThis.fetch) {
-    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn, {
+    this.#fetchFn = fetchFn;
+  }
+  #scopedFetch(userId: string): typeof fetch {
+    return createProviderRateLimitFetch(this.id, this.#fetchFn, {
+      scope: "user",
+      userId,
       createRateLimitError: (response) =>
         new ProviderRateLimitError({
           message:
             "theCrag limited logbook access (429). Check your weekly usage budget in theCrag Settings > API Keys and try again when access is available.",
           providerId: this.id,
+          scope: "user",
+          userId,
           statusCode: response.status,
           responseBody: "",
           retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
@@ -63,7 +71,10 @@ export class TheCragProvider implements SyncProvider {
         instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
         exchangeToken: async (input): Promise<TokenSet> => {
           const key = input.trim();
-          const data = await new TheCragClient(this.#fetchFn, key).fetchPage(1);
+          const data = await new TheCragClient(
+            this.#scopedFetch(resolveScopedUserId()),
+            key,
+          ).fetchPage(1);
           return {
             accessToken: key,
             refreshToken: null,
@@ -107,7 +118,7 @@ export class TheCragProvider implements SyncProvider {
       const cursor = run.window.kind === "full" ? undefined : await progress.load();
       // The API's `since` is exclusive. Replay the source second at the boundary.
       const since = cursor === undefined ? undefined : Math.max(0, cursor - 1);
-      const client = new TheCragClient(this.#fetchFn, tokens.accessToken);
+      const client = new TheCragClient(this.#scopedFetch(userId), tokens.accessToken);
       recordsSynced = await withSyncLog(
         db,
         this.id,
@@ -155,6 +166,7 @@ export class TheCragProvider implements SyncProvider {
       );
       return { provider: this.id, recordsSynced, errors: [], duration: Date.now() - startedAt };
     } catch (error) {
+      options.signal?.throwIfAborted();
       captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
       if (findProviderTransportError(error)) throw error;
       return {

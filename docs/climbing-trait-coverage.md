@@ -186,7 +186,7 @@ user labels; neither is a recorded grip classification. The
 [supporter logbook API](https://www.thecrag.com/en/article/logbookreadapi) also
 documents route tags under its own access conditions, but the public route
 pages already demonstrate structured traits. This inventory does not change
-the existing public-feed integration or select a new enrichment strategy.
+the [retired public-feed integration](thecrag.md#public-read-path) or select a new enrichment strategy.
 
 ## Informational catalogue cache
 

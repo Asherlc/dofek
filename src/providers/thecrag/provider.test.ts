@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
 import { ProviderRequestTimeoutError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runWithTokenUser } from "../../db/token-user-context.ts";
+import { providerAdaptiveRateLimitStore } from "../../lib/provider-adaptive-rate-limit.ts";
 import { createMockDatabase } from "../test-helpers.ts";
 import { TheCragProvider } from "./provider.ts";
 import { apiAscent, logbookPage, makeRun } from "./test-helpers.ts";
@@ -48,8 +50,40 @@ afterEach(() => {
 });
 const fetchPage = () =>
   vi.fn<typeof fetch>().mockImplementation(async () => Response.json(logbookPage()));
+function exchange(provider: TheCragProvider, input: string, userId = "connection-owner") {
+  const manualToken = provider.authSetup().manualToken;
+  if (!manualToken) throw new Error("Expected personal key connection");
+  return runWithTokenUser(userId, () => manualToken.exchangeToken(input));
+}
 
 describe("theCrag official API provider", () => {
+  it("scopes admission to each connection owner for exchange and sync", async () => {
+    const admission = vi
+      .spyOn(providerAdaptiveRateLimitStore, "awaitAdmission")
+      .mockResolvedValue();
+    const provider = new TheCragProvider(fetchPage());
+    await exchange(provider, "key", "first-owner");
+    await provider.sync(makeRun(createMockDatabase().db, { userId: "second-owner" }));
+    expect(admission.mock.calls).toEqual([
+      ["thecrag", "user", "first-owner"],
+      ["thecrag", "user", "second-owner"],
+    ]);
+  });
+
+  it("propagates an aborted request without reporting a sync failure", async () => {
+    const controller = new AbortController();
+    const reason = new Error("sync cancelled");
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => {
+      controller.abort(reason);
+      throw reason;
+    });
+    const run = makeRun(createMockDatabase().db);
+    run.options.signal = controller.signal;
+    await expect(new TheCragProvider(fetchFn).sync(run)).rejects.toBe(reason);
+    expect(mocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.saveProgress).not.toHaveBeenCalled();
+  });
   it("advertises and validates a per-user supporter API key", async () => {
     const fetchFn = fetchPage();
     const provider = new TheCragProvider(fetchFn);
@@ -59,7 +93,7 @@ describe("theCrag official API provider", () => {
       label: "Personal API key",
       instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
-    const tokens = await provider.authSetup().manualToken?.exchangeToken(" personal-key ");
+    const tokens = await exchange(provider, " personal-key ");
     expect(tokens).toMatchObject({
       accessToken: "personal-key",
       providerAccountId: "123",
@@ -69,7 +103,7 @@ describe("theCrag official API provider", () => {
     expect(new Headers(fetchFn.mock.calls[0]?.[1]?.headers).get("X-CData-Key")).toBe(
       "key=personal-key",
     );
-    const replacement = await provider.authSetup().manualToken?.exchangeToken("personal-key");
+    const replacement = await exchange(provider, "personal-key");
     expect(replacement?.authorizationId).not.toBe(tokens?.authorizationId);
   });
   it.each([
@@ -202,18 +236,17 @@ it.each([429, 502, 503, 504])(
       providerId: "thecrag",
       statusCode: status,
       retryAfterSeconds: 17,
+      ...(status === 429 ? { scope: "user", userId: "00000000-0000-0000-0000-000000000001" } : {}),
     });
-    const connectFailure = await provider
-      .authSetup()
-      .manualToken?.exchangeToken("personal-key")
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+    const connectFailure = await exchange(provider, "personal-key").then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     expect(connectFailure).toMatchObject({
       providerId: "thecrag",
       statusCode: status,
       retryAfterSeconds: 17,
+      ...(status === 429 ? { scope: "user", userId: "connection-owner" } : {}),
     });
     expect(
       inspect(

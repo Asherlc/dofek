@@ -76,6 +76,7 @@ export class TheCragClient {
     try {
       body = await response.json();
     } catch {
+      options.signal?.throwIfAborted();
       const error = new Error(
         "theCrag returned invalid logbook JSON. Try again or contact support.",
       );

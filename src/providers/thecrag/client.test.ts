@@ -9,6 +9,21 @@ vi.mock("../../lib/error-reporting.ts", () => ({ captureException }));
 afterEach(() => vi.clearAllMocks());
 
 describe("theCrag official logbook client", () => {
+  it("preserves cancellation during response body decoding", async () => {
+    const controller = new AbortController();
+    const reason = new Error("sync cancelled");
+    const response = Response.json(logbookPage());
+    vi.spyOn(response, "json").mockImplementation(async () => {
+      controller.abort(reason);
+      throw reason;
+    });
+    await expect(
+      new TheCragClient(vi.fn<typeof fetch>().mockResolvedValue(response), "key").fetchPage(1, {
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
+    expect(captureException).not.toHaveBeenCalled();
+  });
   it("sends the key only in its header and preserves cancellation", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json(logbookPage()));
     const controller = new AbortController();

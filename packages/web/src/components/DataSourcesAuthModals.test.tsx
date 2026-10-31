@@ -421,4 +421,7 @@ it("shows theCrag key access disclosure before connection", async () => {
     screen.getByText("This key imports your public and private ascent notes."),
   ).toBeInTheDocument();
   expect(screen.getByLabelText("Personal API key")).toHaveAttribute("type", "password");
+  expect(screen.getByLabelText("Personal API key")).toHaveAccessibleDescription(
+    "This key imports your public and private ascent notes.",
+  );
 });

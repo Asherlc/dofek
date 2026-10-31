@@ -112,7 +112,7 @@ export function mapTheCragAscent(raw: unknown, accountId: string): SourceClimbin
     scope: "climb",
     ...(label ? { sourceResult: label } : {}),
     ...(ropeMethod ? { ropeMethod } : {}),
-    ...([gear, result, suffix].some((value) => value.includes("solo")) ? { solo: true } : {}),
+    ...([gear, result, suffix].some((value) => /\bsolo\b/.test(value)) ? { solo: true } : {}),
     ...(gear === "sport" || gear === "trad" ? { protectionUsed: [gear] } : {}),
     ...(qualifier ? { qualifier } : {}),
     ...(aid ? { usedAid: true } : {}),
