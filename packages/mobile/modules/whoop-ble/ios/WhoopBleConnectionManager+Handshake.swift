@@ -23,10 +23,9 @@ extension WhoopBleConnectionManager {
         )
     }
 
-    func startHandshakeTimeout(for peripheral: CBPeripheral) {
-        startHandshakeTimeout { [weak self, weak peripheral] in
-            guard let peripheral else { return }
-            self?.centralManager?.cancelPeripheralConnection(peripheral)
+    func startHandshakeTimeout(for peripheral: any WhoopBlePeripheralConnection) {
+        startHandshakeTimeout {
+            peripheral.cancelConnection()
         }
     }
 
@@ -51,6 +50,14 @@ extension WhoopBleConnectionManager {
                 || state == .subscribing
         else { return }
         recordConnectionEvent("handshake_aborted", error: underlyingError, reason: error.rejection.code)
+        if autoReconnect && connectCompletion == nil && error.isTransientSetupFailure {
+            // Keep the peripheral until CoreBluetooth confirms cancellation. Its
+            // disconnect callback owns cleanup and the next pending connection.
+            finishConnect(.failure(error))
+            setState(.disconnecting)
+            cancelPeripheral()
+            return
+        }
         autoReconnect = false
         cancelPeripheral()
         cleanup()
@@ -59,14 +66,13 @@ extension WhoopBleConnectionManager {
 
     /// Ignore a late callback from a peripheral that no longer owns the attempt.
     func abortHandshake(
-        for peripheral: CBPeripheral,
+        for peripheral: any WhoopBlePeripheralConnection,
         with error: WhoopBleConnectionError,
         underlyingError: Error? = nil
     ) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        abortHandshake(with: error, underlyingError: underlyingError) { [weak self, weak peripheral] in
-            guard let peripheral else { return }
-            self?.centralManager?.cancelPeripheralConnection(peripheral)
+        abortHandshake(with: error, underlyingError: underlyingError) {
+            peripheral.cancelConnection()
         }
     }
 }

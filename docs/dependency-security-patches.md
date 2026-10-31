@@ -40,18 +40,20 @@ also restores PEM Buffer-input compatibility after the 1.4.1 security correction
 The superseded 1.4.0 patch and signature-advisory exception are removed together;
 `check-node-forge-security.ts` still exercises the installed Expo signing dependency.
 
-## Expo CLI Zod override
+## Expo schema compatibility and Zod security
 
-The workspace pins Expo CLI's Zod dependency to 4.6.7, the same release used by
-the application. Expo CLI 58.1.14 still declares Zod 3
+The application pins Zod to 4.6.7. Earlier Expo CLI releases required a scoped
+override for Zod 3's [collection validation advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+Expo CLI 58.1.18 no longer declares that direct dependency
 ([upstream manifest](https://github.com/expo/expo/blob/main/packages/%40expo/cli/package.json)),
-which is covered by the [collection validation advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+so the obsolete scoped override was removed.
 The [upstream fix](https://github.com/colinhacks/zod/commit/a0ebf97)
 rejects oversized constrained collections before parsing their elements.
 
-`pnpm check:dependency-security` exercises that behavior through Expo CLI's
-installed dependency and checks its plugin descriptor, command-input, and
-command-output schemas with valid and invalid inputs. The security assertion
-failed with Expo's original Zod 3 dependency and passes with the scoped override.
-This correction adds no audit exception. Review the override and these checks
-together when updating Expo CLI's schema consumers.
+`pnpm check:dependency-security` exercises that behavior with the application's
+installed Zod and supplies it to Expo's [MCP command-schema constructor](https://github.com/expo/expo/blob/main/packages/%40expo/cli/src/start/server/mcp/createMCPDevToolsExtensionSchema.ts).
+Plugin descriptors and command output use Expo's JSON schemas and its
+`@expo/schema-utils` validator, matching the [native CLI consumer](https://github.com/expo/expo/blob/main/packages/%40expo/cli/src/start/server/devtools/DevToolsPlugin.ts).
+The same valid/invalid fixtures still cover descriptors, command inputs,
+output URLs and early rejection of oversized constrained arrays. No audit
+exception is added. Review these checks when updating Expo's schema consumers.

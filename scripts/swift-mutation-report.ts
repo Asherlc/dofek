@@ -39,7 +39,10 @@ const planSchema = z
     projectRoot: z.string().min(1),
     toolchain,
     sourceFileHashes: z.record(z.string(), hash),
-    mutations: z.array(point).min(1, "No measurable mutation candidates"),
+    mutations: z.array(point),
+    operators: z.array(
+      z.object({ id: z.string(), version: z.number(), defaultEnabled: z.boolean() }).passthrough(),
+    ),
     skipped: z
       .array(z.unknown())
       .max(0, "Skipped, budgeted or suppressed mutations are not allowed"),
@@ -68,27 +71,25 @@ const reportSchema = z
     projectRoot: z.string(),
     toolchain,
     baseline: z.object({ passed: z.literal(true) }).passthrough(),
-    results: z
-      .array(
-        z
-          .object({
-            point,
-            outcome,
-            evidence: z
-              .object({
-                confirmationChain: z.array(z.unknown()).optional(),
-                crashConfirmation: z.object({ crashedAgain: z.boolean() }).passthrough().optional(),
-                timeoutConfirmation: z
-                  .object({ timedOutAgain: z.boolean() })
-                  .passthrough()
-                  .optional(),
-              })
-              .passthrough()
-              .optional(),
-          })
-          .passthrough(),
-      )
-      .min(1),
+    results: z.array(
+      z
+        .object({
+          point,
+          outcome,
+          evidence: z
+            .object({
+              confirmationChain: z.array(z.unknown()).optional(),
+              crashConfirmation: z.object({ crashedAgain: z.boolean() }).passthrough().optional(),
+              timeoutConfirmation: z
+                .object({ timedOutAgain: z.boolean() })
+                .passthrough()
+                .optional(),
+            })
+            .passthrough()
+            .optional(),
+        })
+        .passthrough(),
+    ),
     integrity: z
       .object({
         discovered: count,
@@ -137,6 +138,7 @@ export function validateMutationPlan(
   expected: { projectRoot: string; sources: Record<string, string> },
 ): Plan {
   const plan = planSchema.parse(value);
+  requireCondition(Object.keys(expected.sources).length > 0, "No requested compiled source files");
   requireCondition(
     realpathSync(plan.projectRoot) === realpathSync(expected.projectRoot),
     "Mutation plan project root mismatch",
@@ -151,9 +153,23 @@ export function validateMutationPlan(
       plan.sourceFileHashes[file] === expectedHash,
       `Stale mutation plan hash for ${file}`,
     );
+  }
+  if (plan.mutations.length === 0) {
+    sameMembers(
+      plan.operators.map((operator) => operator.id),
+      [
+        "swift.core.bool-literal-inversion",
+        "swift.core.logical-connector-replacement",
+        "swift.core.relational-operator-replacement",
+        "swift.core.return-value-replacement",
+        "swift.core.ternary-branch-swap",
+        "swift.core.unary-not-removal",
+      ],
+      "zero-candidate default operators",
+    );
     requireCondition(
-      plan.mutations.some((mutation) => mutation.file === file),
-      `No measurable mutation candidates for ${file}`,
+      plan.operators.every((operator) => operator.version === 1 && operator.defaultEnabled),
+      "Incomplete zero-candidate operator catalogue",
     );
   }
   const ids = plan.mutations.map((mutation) => mutation.id);
@@ -199,6 +215,16 @@ export function validateMutationReport(value: unknown, plan: Plan) {
     tally[result.outcome] = (tally[result.outcome] ?? 0) + 1;
   }
   const mutationCount = plan.mutations.length;
+  if (mutationCount === 0) {
+    z.object({
+      passed: z.literal(true),
+      buildProductHash: hash,
+      buildCommand: z.object({ exitCode: z.literal(0) }),
+      testCommand: z.object({ exitCode: z.literal(0) }),
+      buildDurationSeconds: z.number().finite().positive(),
+      testDurationSeconds: z.number().finite().positive(),
+    }).parse(report.baseline);
+  }
   const counters = report.integrity;
   for (const name of [
     "discovered",
@@ -257,7 +283,7 @@ export function validateMutationReport(value: unknown, plan: Plan) {
     "Mutation score/outcome counts do not reconcile",
   );
   requireCondition(
-    killed + survived > 0 && Number.isFinite(killed / (killed + survived)),
+    mutationCount === 0 || (killed + survived > 0 && Number.isFinite(killed / (killed + survived))),
     "No finite positive measured mutation denominator",
   );
   requireCondition(
@@ -298,6 +324,19 @@ const requiredChecks = [
 ];
 
 export function validateRunVerification(value: unknown, plan: Plan, report: Report): void {
+  if (plan.mutations.length === 0) {
+    const verified = z
+      .object({
+        schemaVersion: z.literal(1),
+        planID: z.literal(plan.planID),
+        resultCount: z.literal(0),
+        planSupplied: z.literal(true),
+      })
+      .passthrough()
+      .parse(value);
+    validateZeroCandidateVerification(verified, ["source.anchors", "evidence.sourceAfter"]);
+    return;
+  }
   const verified = z
     .object({
       schemaVersion: z.literal(1),
@@ -368,6 +407,36 @@ export function validateRunVerification(value: unknown, plan: Plan, report: Repo
 }
 
 export function validateMutationTrust(value: unknown, plan: Plan): void {
+  if (plan.mutations.length === 0) {
+    const trust = z
+      .object({
+        schemaVersion: z.literal(1),
+        planID: z.literal(plan.planID),
+        mutationCount: z.literal(0),
+        trustworthy: z.literal(false),
+        trustStatus: z.literal("mismatch"),
+        operationalIssueCount: z.literal(0),
+        integrity: z.object({
+          passed: z.literal(true),
+          violationCount: z.literal(0),
+          violations: z.array(z.unknown()).max(0),
+        }),
+        verification: z
+          .object({
+            planSupplied: z.literal(true),
+            unverifiedRequiredChecks: z.array(z.string()),
+          })
+          .passthrough(),
+      })
+      .parse(value);
+    sameMembers(
+      trust.verification.unverifiedRequiredChecks,
+      ["report.results", "result.identity", "result.provenance"],
+      "zero-candidate unverified requirements",
+    );
+    validateZeroCandidateVerification(trust.verification, []);
+    return;
+  }
   z.object({
     schemaVersion: z.literal(1),
     planID: z.literal(plan.planID),
@@ -377,4 +446,47 @@ export function validateMutationTrust(value: unknown, plan: Plan): void {
     operationalIssueCount: z.literal(0),
     verification: z.object({ unverifiedRequiredChecks: z.array(z.string()).max(0) }),
   }).parse(value);
+}
+
+/** Preserve MutantKit's no-result verdict while validating every applicable check. */
+function validateZeroCandidateVerification(value: unknown, sourceChecks: string[]): void {
+  const verification = z
+    .object({
+      passed: z.literal(false),
+      complete: z.literal(false),
+      tierAComplete: z.literal(false),
+      fullEvidenceReverified: z.literal(false),
+      tierBPerformed: z.literal(false),
+      failCount: z.literal(1),
+      notVerifiableCount: z.literal(0),
+      passCount: count,
+      checks: z.array(
+        z.object({ name: z.string(), status: z.enum(["pass", "fail", "notVerifiable"]) }),
+      ),
+    })
+    .parse(value);
+  const passed = [
+    "plan.identity",
+    "plan.mutationIDs",
+    "integrity.recompute",
+    "score.recompute",
+    "archive.integrity",
+    "archive.policy",
+    ...sourceChecks,
+  ];
+  sameMembers(
+    verification.checks.map((check) => check.name),
+    ["report.results", ...passed],
+    "zero-candidate verification checks",
+  );
+  requireCondition(
+    verification.passCount === passed.length,
+    "Invalid zero-candidate verification counters",
+  );
+  for (const check of verification.checks) {
+    requireCondition(
+      check.status === (check.name === "report.results" ? "fail" : "pass"),
+      `Unexpected zero-candidate verification result: ${check.name}`,
+    );
+  }
 }
