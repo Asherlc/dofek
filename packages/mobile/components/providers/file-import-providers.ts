@@ -14,6 +14,21 @@ const csvDocumentTypes = [
 ];
 
 const fileImportProviderConfigs = {
+  crimpd: {
+    providerId: "crimpd",
+    documentTypes: ["application/zip", "application/x-zip-compressed"],
+    selectionErrorMessage: "Unable to select Crimpd logbook export",
+  },
+  "eight-a": {
+    providerId: "eight-a",
+    documentTypes: csvDocumentTypes,
+    selectionErrorMessage: "Unable to select 8a.nu logbook export",
+  },
+  moonboard: {
+    providerId: "moonboard",
+    documentTypes: csvDocumentTypes,
+    selectionErrorMessage: "Unable to select MoonBoard BoardLib export",
+  },
   "apple-health": {
     providerId: "apple-health",
     documentTypes: [
@@ -63,6 +78,9 @@ export function getFileImportProviderConfig(
     case "garmin-dump":
     case "fit-file":
     case "kaya-export":
+    case "crimpd":
+    case "eight-a":
+    case "moonboard":
       return fileImportProviderConfigs[providerId];
     default:
       return undefined;

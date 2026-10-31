@@ -10,9 +10,13 @@ import type { FileUpload } from "../db/file-upload.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
-import { createAppleHealthImportValidationError } from "./import-validation-error.ts";
+import {
+  createAppleHealthImportValidationError,
+  createClimbingImportValidationError,
+} from "./import-validation-error.ts";
 import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 import type { ImportJobData } from "./queues.ts";
+import { ArchiveValidationError } from "./validate-import-archive.ts";
 
 const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
@@ -34,7 +38,10 @@ vi.mock("../db/file-upload.ts", () => ({
 }));
 
 vi.mock("./process-import-job.ts", () => ({ processImportJob: mocks.processImport }));
-vi.mock("./validate-import-archive.ts", () => ({ validateImportArchive: mocks.validateArchive }));
+vi.mock("./validate-import-archive.ts", async (importOriginal) => ({
+  ...(await importOriginal()),
+  validateImportArchive: mocks.validateArchive,
+}));
 vi.mock("../file-upload-metrics.ts", () => ({
   fileUploadChecksumMismatchesTotal: { add: mocks.checksumMismatch },
   fileUploadLifecycleTotal: { add: mocks.lifecycle },
@@ -311,6 +318,67 @@ describe("processFileUploadImportJob", () => {
     expect(mocks.validateArchive.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.processImport.mock.invocationCallOrder[0] ?? 0,
     );
+  });
+
+  it("records malformed Crimpd archives as actionable unrecoverable validation failures", async () => {
+    mocks.claim.mockResolvedValue(upload({ originalFilename: "crimpd.zip", importType: "crimpd" }));
+    const message = "ZIP archive contains an unsafe entry path";
+    mocks.validateArchive.mockRejectedValueOnce(new ArchiveValidationError(message));
+    await expect(
+      processFileUploadImportJob(job("crimpd"), database, storageWithBody()),
+    ).rejects.toMatchObject({
+      name: "ClimbingImportValidationError",
+      message,
+    });
+    expect(mocks.fail).toHaveBeenCalledWith(
+      database,
+      uploadId,
+      "ClimbingImportValidationError",
+      message,
+    );
+    expect(mocks.processImport).not.toHaveBeenCalled();
+    expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
+  });
+
+  it("persists a corrupt Crimpd member rejection after archive metadata validation passes", async () => {
+    const message =
+      "Crimpd ZIP contains corrupt or truncated workouts.csv. Download your logbook again from Crimpd and upload the new ZIP.";
+    mocks.claim.mockResolvedValue(upload({ originalFilename: "crimpd.zip", importType: "crimpd" }));
+    mocks.validateArchive.mockResolvedValueOnce(undefined);
+    mocks.processImport.mockRejectedValueOnce(createClimbingImportValidationError(message));
+    await expect(
+      processFileUploadImportJob(job("crimpd"), database, storageWithBody()),
+    ).rejects.toMatchObject({ name: "ClimbingImportValidationError", message });
+    expect(mocks.validateArchive).toHaveBeenCalledOnce();
+    expect(mocks.processImport).toHaveBeenCalledOnce();
+    expect(mocks.fail).toHaveBeenCalledWith(
+      database,
+      uploadId,
+      "ClimbingImportValidationError",
+      message,
+    );
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("keeps Crimpd archive filesystem failures retryable and preserves other import behavior", async () => {
+    const filesystemFailure = Object.assign(new Error("disk read failed"), { code: "EIO" });
+    mocks.claim.mockResolvedValue(upload({ originalFilename: "crimpd.zip", importType: "crimpd" }));
+    mocks.validateArchive.mockRejectedValueOnce(filesystemFailure);
+    await expect(
+      processFileUploadImportJob(job("crimpd"), database, storageWithBody()),
+    ).rejects.toBe(filesystemFailure);
+    expect(mocks.fail).not.toHaveBeenCalled();
+    expect(mocks.processImport).not.toHaveBeenCalled();
+
+    const malformed = new ArchiveValidationError("Invalid ZIP");
+    mocks.claim.mockResolvedValue(
+      upload({ originalFilename: "garmin.zip", importType: "garmin-dump" }),
+    );
+    mocks.validateArchive.mockRejectedValueOnce(malformed);
+    await expect(
+      processFileUploadImportJob(job("garmin-dump"), database, storageWithBody()),
+    ).rejects.toBe(malformed);
+    expect(mocks.fail).not.toHaveBeenCalled();
   });
 
   it("uses a safe fallback extension for invalid filenames", async () => {

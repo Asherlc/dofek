@@ -143,6 +143,34 @@ function initiationInput(overrides: Partial<InitiationInput> = {}): InitiationIn
 }
 
 describe("fileUploadRouter", () => {
+  it.each([
+    ["crimpd", "crimpd-logs.zip", "application/zip"],
+    ["eight-a", "logbook.csv", "text/csv"],
+    ["moonboard", "moonboard.csv", "text/csv"],
+  ] as const)(
+    "initiates a %s import through the existing multipart flow",
+    async (importType, filename, contentType) => {
+      const current = upload({
+        importType,
+        originalFilename: filename,
+        contentType,
+        state: "initiated",
+      });
+      const { caller, repository } = setup(current);
+      repository.find.mockResolvedValueOnce(null);
+      const result = await caller.initiate({
+        ...initiationInput(),
+        importType,
+        filename,
+        contentType,
+      });
+      expect(result.uploadId).toBe(current.id);
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ importType, originalFilename: filename, contentType }),
+      );
+    },
+  );
   it("authorizes only the exact expected part size", async () => {
     const { caller, storage } = setup();
 

@@ -4,7 +4,7 @@ import type { OperationResultObservable } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { trpc } from "../../lib/trpc";
-import { TokenAuthModal } from "./auth-modals.tsx";
+import { CredentialAuthModal, TokenAuthModal } from "./auth-modals.tsx";
 
 function connectionResult(): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
@@ -55,6 +55,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const BoardUsername: Story = {
+  render: () => (
+    <CredentialAuthModal
+      providerId="tension"
+      providerName="Tension Board"
+      onClose={() => {}}
+      onSuccess={() => {}}
+    />
+  ),
+};
 export const WithDescription: Story = {
   args: {
     description:

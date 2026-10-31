@@ -4,6 +4,7 @@ export type SourceAttemptFacts = Partial<
   Pick<
     RecordedClimbingAttempt,
     | "attemptIndex"
+    | "sourceCompleted"
     | "sourceResult"
     | "ropeMethod"
     | "solo"

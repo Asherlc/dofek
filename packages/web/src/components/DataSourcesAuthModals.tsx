@@ -1,5 +1,9 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import {
+  type ProviderManualConnectionKind,
+  providerCredentialInput,
+  providerCredentialSubmitHint,
+} from "@dofek/providers/provider-connection";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -14,14 +18,6 @@ const disabledAuthSubmitButtonClassName =
 
 function authSubmitButtonClassName(disabled: boolean) {
   return disabled ? disabledAuthSubmitButtonClassName : enabledAuthSubmitButtonClassName;
-}
-
-function credentialSubmitHint(username: string, password: string, loading: boolean) {
-  if (loading) return null;
-  if (!username.trim() && !password) return "Enter your email and password to continue.";
-  if (!username.trim()) return "Enter your email to continue.";
-  if (!password) return "Enter your password to continue.";
-  return null;
 }
 
 // -- Credential Auth Modal --
@@ -43,9 +39,15 @@ export function CredentialAuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<HTMLInputElement>(null);
+  const identifierRef = useRef<HTMLInputElement>(null);
+  const credentialInput = providerCredentialInput(providerId);
   const signInDisabled = loading || !username.trim() || !password;
-  const signInHint = credentialSubmitHint(username, password, loading);
+  const signInHint = providerCredentialSubmitHint(
+    username,
+    password,
+    loading,
+    credentialInput.identifier,
+  );
 
   const signInMutation = trpc.credentialAuth.signIn.useMutation({
     meta: locallyReportedErrorMeta,
@@ -76,7 +78,7 @@ export function CredentialAuthModal({
     <ModalDialog
       open
       onClose={onClose}
-      initialFocusRef={emailRef}
+      initialFocusRef={identifierRef}
       contentClassName="bg-surface-solid border border-border-strong rounded-xl p-6 w-[calc(100%-2rem)] max-w-sm shadow-2xl"
     >
       <div className="flex items-center justify-between mb-4">
@@ -106,19 +108,28 @@ export function CredentialAuthModal({
       )}
 
       <form onSubmit={handleSignIn} className="space-y-3">
+        {credentialInput.instructions ? (
+          <p id={`${providerId}-credential-instructions`} className="text-xs text-muted">
+            {credentialInput.instructions}
+          </p>
+        ) : null}
         <div>
-          <label htmlFor={`${providerId}-email`} className="block text-xs text-muted mb-1">
-            Email
+          <label htmlFor={`${providerId}-identifier`} className="block text-xs text-muted mb-1">
+            {credentialInput.label}
           </label>
           <input
-            ref={emailRef}
-            id={`${providerId}-email`}
-            type="email"
+            ref={identifierRef}
+            id={`${providerId}-identifier`}
+            type={credentialInput.identifier === "email" ? "email" : "text"}
+            autoComplete="username"
+            aria-describedby={
+              credentialInput.instructions ? `${providerId}-credential-instructions` : undefined
+            }
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-            placeholder="you@example.com"
+            placeholder={credentialInput.placeholder}
           />
         </div>
         <div>
@@ -312,7 +323,7 @@ export function WhoopAuthModal({
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const credentialSignInDisabled = loading || !username.trim() || !password;
-  const credentialSignInHint = credentialSubmitHint(username, password, loading);
+  const credentialSignInHint = providerCredentialSubmitHint(username, password, loading);
   const verificationDisabled = loading || !code;
   const verificationHint = !loading && !code ? "Enter the verification code to continue." : null;
 

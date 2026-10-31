@@ -1,5 +1,9 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import {
+  type ProviderManualConnectionKind,
+  providerCredentialInput,
+  providerCredentialSubmitHint,
+} from "@dofek/providers/provider-connection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,14 +20,6 @@ import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import { styles } from "./styles.ts";
 import type { ProviderDetailModals } from "./use-provider-detail-actions.ts";
-
-function credentialSubmitHint(username: string, password: string, loading: boolean) {
-  if (loading) return null;
-  if (!username.trim() && !password) return "Enter your email and password to continue.";
-  if (!username.trim()) return "Enter your email to continue.";
-  if (!password) return "Enter your password to continue.";
-  return null;
-}
 
 // ── Generic Credential Auth Modal ──
 
@@ -42,12 +38,18 @@ export function CredentialAuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<TextInputInstance>(null);
+  const identifierRef = useRef<TextInputInstance>(null);
+  const credentialInput = providerCredentialInput(providerId);
   const signInDisabled = loading || !username.trim() || !password;
-  const signInHint = credentialSubmitHint(username, password, loading);
+  const signInHint = providerCredentialSubmitHint(
+    username,
+    password,
+    loading,
+    credentialInput.identifier,
+  );
 
   useEffect(() => {
-    emailRef.current?.focus();
+    identifierRef.current?.focus();
   }, []);
 
   const signInMutation = trpc.credentialAuth.signIn.useMutation();
@@ -91,14 +93,19 @@ export function CredentialAuthModal({
             </View>
           ) : null}
 
+          {credentialInput.instructions ? (
+            <Text style={styles.modalDescription}>{credentialInput.instructions}</Text>
+          ) : null}
           <TextInput
-            ref={emailRef}
+            ref={identifierRef}
             style={styles.input}
-            placeholder="Email"
+            placeholder={credentialInput.label}
+            accessibilityLabel={credentialInput.label}
+            accessibilityHint={credentialInput.instructions}
             placeholderTextColor={colors.textTertiary}
             value={username}
             onChangeText={setUsername}
-            keyboardType="email-address"
+            keyboardType={credentialInput.identifier === "email" ? "email-address" : "default"}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -331,7 +338,7 @@ export function WhoopAuthModal({
   const emailRef = useRef<TextInputInstance>(null);
   const codeRef = useRef<TextInputInstance>(null);
   const credentialSignInDisabled = loading || !username.trim() || !password;
-  const credentialSignInHint = credentialSubmitHint(username, password, loading);
+  const credentialSignInHint = providerCredentialSubmitHint(username, password, loading);
   const verificationDisabled = loading || !code;
   const verificationHint = !loading && !code ? "Enter the verification code to continue." : null;
 

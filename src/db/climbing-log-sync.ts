@@ -77,6 +77,7 @@ const sourceAttemptSchema = z
     parentSourceKey: z.string().trim().min(1).optional(),
     qualifier: sourceQualifierSchema.optional(),
     attemptIndex: climbingAttemptSchema.shape.attemptIndex.optional(),
+    sourceCompleted: climbingAttemptSchema.shape.sourceCompleted.optional(),
     sourceResult: climbingAttemptSchema.shape.sourceResult.optional(),
     ropeMethod: climbingAttemptSchema.shape.ropeMethod.optional(),
     solo: climbingAttemptSchema.shape.solo.optional(),
@@ -427,6 +428,7 @@ async function resolveClimb(
 
 const factKeys = [
   "attemptIndex",
+  "sourceCompleted",
   "sourceResult",
   "ropeMethod",
   "solo",
@@ -498,7 +500,9 @@ function matchAttempt(
   sharedCountedMethod: boolean,
 ): AttemptRow | undefined {
   const remaining = rows.filter((row) => !matched.has(row.id));
-  if (!described(supplied)) return remaining[0];
+  const hasSuppliedFacts =
+    factKeys.some((key) => supplied[key] !== undefined) || supplied.parentAttemptId !== undefined;
+  if (!hasSuppliedFacts) return remaining[0];
   if (supplied.attemptIndex != null) {
     const indexed = remaining.filter((row) => row.attemptIndex === supplied.attemptIndex);
     if (indexed.length > 1)
@@ -511,6 +515,7 @@ function matchAttempt(
       factKeys.every(
         (key) =>
           key === "sourceResult" ||
+          key === "sourceCompleted" ||
           (key === "ropeMethod" && sharedCountedMethod) ||
           supplied[key] == null ||
           row[key] == null ||
@@ -535,6 +540,12 @@ function matchAttempt(
         row.sourceResult?.trim().toLowerCase() === supplied.sourceResult?.trim().toLowerCase(),
     );
     if (resultMatches.length === 1) return resultMatches[0];
+  }
+  if (supplied.sourceCompleted != null) {
+    const completionMatches = compatible.filter(
+      (row) => row.sourceCompleted === supplied.sourceCompleted,
+    );
+    if (completionMatches.length === 1) return completionMatches[0];
   }
   if (compatible.length === 1) return compatible[0];
   if (compatible.length > 1) {
@@ -668,6 +679,7 @@ function associatedParent(
         factKeys.every(
           (key) =>
             key === "sourceResult" ||
+            key === "sourceCompleted" ||
             facts[key] == null ||
             row[key] == null ||
             equalFact(facts[key], row[key]),
@@ -679,6 +691,12 @@ function associatedParent(
           row.sourceResult?.trim().toLowerCase() === facts.sourceResult?.trim().toLowerCase(),
       );
       if (resultMatches.length) candidates = resultMatches;
+    }
+    if (facts.sourceCompleted != null) {
+      const completionMatches = candidates.filter(
+        (row) => row.sourceCompleted === facts.sourceCompleted,
+      );
+      if (completionMatches.length) candidates = completionMatches;
     }
     for (const candidate of candidates)
       if (candidate.parentAttemptId) parents.add(candidate.parentAttemptId);

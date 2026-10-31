@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -504,6 +505,43 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       "Manually unlink Dofek from your Decathlon account (contact Decathlon support if no unlink control is available), then disconnect Decathlon in Dofek before deleting your account.",
     );
   });
+
+  it.each([
+    ["kilter", "Kilter Board"],
+    ["tension", "Tension Board"],
+    ["grasshopper", "Grasshopper Board"],
+    ["decoy", "Decoy Board"],
+    ["soill", "So iLL Board"],
+    ["touchstone", "Touchstone Board"],
+    ["aurora-board", "Aurora Board"],
+  ])(
+    "requires disconnecting an active %s session before account erasure",
+    async (providerId, name) => {
+      const boardUserId = randomUUID();
+      await context.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name) VALUES (${boardUserId}::uuid, 'Board User')`,
+      );
+      await ensureProvider(context.db, providerId, name, undefined, boardUserId);
+      await saveTokens(
+        context.db,
+        providerId,
+        {
+          accessToken: "board-session",
+          refreshToken: null,
+          expiresAt: new Date("2099-01-01T00:00:00Z"),
+          scopes: null,
+        },
+        boardUserId,
+      );
+      await expect(
+        context.db.transaction((transaction) =>
+          createEncryptedAccountErasureSnapshot(transaction, boardUserId, providers),
+        ),
+      ).rejects.toThrow(
+        `Disconnect ${name} in Dofek before deleting your account because remote session revocation is unavailable.`,
+      );
+    },
+  );
 
   it("blocks Ziva before registry lookup because remote revocation is not advertised", async () => {
     await expect(

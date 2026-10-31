@@ -52,9 +52,9 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, Concept2, Cycling Analytics, Decoy Board, Eight Sleep, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
 - **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
-- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
+- **Import-only providers**: Crimpd ZIP, 8a.nu/Vertical-Life CSV, historical MoonBoard BoardLib CSV, Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
 The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
@@ -73,6 +73,19 @@ worker registries:
   ([MapMyFitness developer portal](https://developer.mapmyfitness.com/)).
 - Decathlon requires an approved application registration before issuing client credentials
   ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
+
+## Climbing boards and exports
+
+Kilter connects to its current backend. Tension, Grasshopper, Decoy, So iLL,
+Touchstone Board, and Aurora Board connect to independent accounts through
+Aurora's shared protocol. Crimpd, 8a.nu/Vertical-Life, and historical MoonBoard
+BoardLib files use the existing upload/import flow. The
+[climbing provider guide](../../docs/climbing-providers.md) documents exact
+access, field limits, source evidence, account-erasure prerequisites, and
+unavailable 27 Crags/Griptonite/current MoonBoard contracts. See the
+[Aurora app directory](https://auroraclimbing.com/),
+[Crimpd export](https://crimpd.com/docs/data-export/), and
+[8a.nu export](https://www.8a.nu/faq).
 
 ## Ziva
 

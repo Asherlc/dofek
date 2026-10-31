@@ -521,6 +521,7 @@ entity "climbing_attempt" {
   pitch_id : uuid <<FK>>
   parent_attempt_id : uuid <<FK>>
   attempt_index : bigint
+  source_completed : boolean
   source_result : text
   rope_method : rope_method
   solo : boolean

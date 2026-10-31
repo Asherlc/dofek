@@ -26,10 +26,12 @@ function errorText(error: unknown): string | null {
  */
 export const APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME = "AppleHealthImportValidationError";
 export const STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME = "StrongCsvValidationError";
+export const CLIMBING_IMPORT_VALIDATION_ERROR_NAME = "ClimbingImportValidationError";
 
 const importValidationErrorNames = new Set<string>([
   APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
+  CLIMBING_IMPORT_VALIDATION_ERROR_NAME,
 ]);
 
 /** Returns true when an error name marks a rejected import file. */

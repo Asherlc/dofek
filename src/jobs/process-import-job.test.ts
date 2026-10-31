@@ -171,6 +171,18 @@ const mockImportKayaExportFile = vi.fn().mockResolvedValue({
 vi.mock("../providers/kaya/import.ts", () => ({
   importKayaExportFile: (...args: unknown[]) => mockImportKayaExportFile(...args),
 }));
+const mockImportCrimpdExportFile = vi.fn().mockResolvedValue({ recordsSynced: 3, errors: [] });
+vi.mock("../providers/crimpd/provider.ts", () => ({
+  importCrimpdExportFile: (...args: unknown[]) => mockImportCrimpdExportFile(...args),
+}));
+const mockImportEightAExportFile = vi.fn().mockResolvedValue({ recordsSynced: 3, errors: [] });
+vi.mock("../providers/eight-a/provider.ts", () => ({
+  importEightAExportFile: (...args: unknown[]) => mockImportEightAExportFile(...args),
+}));
+const mockImportMoonBoardExportFile = vi.fn().mockResolvedValue({ recordsSynced: 3, errors: [] });
+vi.mock("../providers/moonboard/provider.ts", () => ({
+  importMoonBoardExportFile: (...args: unknown[]) => mockImportMoonBoardExportFile(...args),
+}));
 const mockImportZosAppBin = vi.fn().mockResolvedValue({
   recordsSynced: 3,
   errors: [],
@@ -848,6 +860,61 @@ describe("processImportJob", () => {
       });
     });
   });
+  describe("climbing file imports", () => {
+    it.each([
+      ["crimpd", mockImportCrimpdExportFile],
+      ["eight-a", mockImportEightAExportFile],
+      ["moonboard", mockImportMoonBoardExportFile],
+    ] as const)(
+      "dispatches %s to its importer and records completion",
+      async (importType, importer) => {
+        await writeFile(tempFilePath, "climbing export data");
+        const job = createMockJob({ filePath: tempFilePath, importType });
+        await runImportJob(job, mockDb);
+        expect(importer).toHaveBeenCalledWith(
+          mockDb,
+          importType === "crimpd" ? tempFilePath : "climbing export data",
+          "user-1",
+        );
+        expect(mockLogSync).toHaveBeenCalledWith(
+          mockDb,
+          expect.objectContaining({ providerId: importType, status: "success", recordCount: 3 }),
+        );
+        expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalled();
+      },
+    );
+
+    it("surfaces a malformed climbing export as a terminal actionable failure", async () => {
+      await writeFile(tempFilePath, "bad export");
+      const error = new Error("Crimpd ZIP must contain sets.csv. Export your logbook again.");
+      error.name = "ClimbingImportValidationError";
+      mockImportCrimpdExportFile.mockRejectedValueOnce(error);
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "crimpd" }), mockDb),
+      ).rejects.toMatchObject({ name: "ClimbingImportValidationError", message: error.message });
+      expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "failed", errorMessage: error.message }),
+      );
+    });
+
+    it("reports partial climbing errors without declaring a successful upload", async () => {
+      await writeFile(tempFilePath, "climbing export data");
+      mockImportEightAExportFile.mockResolvedValueOnce({
+        recordsSynced: 1,
+        errors: [{ message: "row 3: date is invalid" }],
+      });
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "eight-a" }), mockDb),
+      ).rejects.toThrow("row 3: date is invalid");
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ providerId: "eight-a", status: "error", recordCount: 1 }),
+      );
+    });
+  });
+
   describe("kaya-export import", () => {
     it("reads file and calls importKayaExportFile with correct args", async () => {
       await writeFile(

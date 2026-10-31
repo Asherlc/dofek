@@ -179,7 +179,22 @@ Add it to the lazy registration list in **both** `src/jobs/provider-registration
 ["my-provider", () => import("../providers/my-provider.ts").then((m) => new m.MyProvider())],
 ```
 
-Also add metadata in `packages/providers-meta/src/providers.ts` (label, logo or brand color), queue config in `src/jobs/provider-queue-config.ts`, and optional entries in `packages/onboarding/src/provider-guide.ts`.
+Also add metadata in `packages/providers-meta/src/provider-catalog.ts` (label, logo or brand color), queue config in `src/jobs/provider-queue-config.ts`, and optional entries in `packages/onboarding/src/provider-guide.ts`. The [catalog](../packages/providers-meta/src/provider-catalog.ts) is the canonical presentation source for both clients.
+
+For external contracts, record the verification date, current backend, supported
+versus unofficial access, pagination/deletion semantics, missing fields, and
+whether an authenticated account or actual export was tested. Include a
+known-to-unknown refresh case: explicit upstream null clears a source fact;
+omission preserves it. The [climbing provider guide](climbing-providers.md) and
+[source writer tests](../src/db/climbing-log-sync.integration.test.ts) illustrate
+these distinctions.
+
+For ZIP imports, test both invalid directory metadata and corrupted compressed
+members. Directory inspection does not exercise decompression; malformed member
+data must reach the same actionable, terminal validation path while filesystem
+and unexpected programming errors remain reportable failures. See the
+[Crimpd archive regressions](../src/providers/crimpd/archive.test.ts) and
+[durable import worker tests](../src/jobs/process-file-upload-import-job.test.ts).
 
 Push-only providers still require queue configuration: the
 [worker factory](../src/jobs/worker-queues.ts) creates dedicated workers from

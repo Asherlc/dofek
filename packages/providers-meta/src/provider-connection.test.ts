@@ -1,5 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { isCloudPushProvider } from "./provider-connection.ts";
+import {
+  isCloudPushProvider,
+  providerCredentialInput,
+  providerCredentialSubmitHint,
+} from "./provider-connection.ts";
+
+describe("credential input presentation", () => {
+  it("defaults unfamiliar providers to email", () => {
+    expect(providerCredentialInput("unfamiliar-provider")).toMatchObject({
+      identifier: "email",
+      label: "Email",
+      placeholder: "you@example.com",
+    });
+  });
+
+  it.each([
+    {
+      username: "",
+      password: "",
+      loading: false,
+      want: "Enter your username and password to continue.",
+    },
+    { username: " ", password: "secret", loading: false, want: "Enter your username to continue." },
+    { username: "climber", password: "", loading: false, want: "Enter your password to continue." },
+    { username: "climber", password: "secret", loading: false, want: null },
+    { username: "", password: "", loading: true, want: null },
+  ])("describes the missing username credentials: %j", ({ username, password, loading, want }) => {
+    expect(providerCredentialSubmitHint(username, password, loading, "username")).toBe(want);
+  });
+
+  it("uses email wording by default for existing credential flows", () => {
+    expect(providerCredentialSubmitHint("", "", false)).toBe(
+      "Enter your email and password to continue.",
+    );
+  });
+});
 
 describe("isCloudPushProvider", () => {
   it.each([

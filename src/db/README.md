@@ -85,7 +85,10 @@ The [transactional writer](climbing-log-sync.ts) expands reported counts into
 scoped occurrences and retains one partially described occurrence when a total
 is missing. Recorded booleans and raw source result labels remain independently
 nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
-original supported label through the [canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+raw completion boolean when supplied, otherwise its original supported label.
+The [completion migration](../../drizzle/0172_source_climbing_completion.sql)
+preserves the existing served shape while extending the
+[canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
 Methods remain nullable for every climb kind. Missing source evidence does
 not establish a method; omitted fields preserve existing facts and explicit
 null clears them. The [nullable-method migration](../../drizzle/0171_nullable_climbing_route_methods.sql)
