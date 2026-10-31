@@ -110,8 +110,9 @@ same `expo-app-id` header as the configured client.
 
 The audit detects failures after publication; it does not make publication
 atomic. A failed audit leaves that release advertised until explicit repair.
-EOAS [omits its receipt when the bundle is unchanged](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
-The audit then compares the served launch bundle hash and complete asset hash set
+Unpatched EOAS 3.2.7 [omits its receipt when the bundle is unchanged](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
+The installed patched CLI writes that receipt. Only when no receipt exists does
+the audit compare the served launch bundle hash and complete asset hash set
 against the fresh local export for the explicitly resolved runtime. It verifies
 the device signature and every downloaded asset before writing the existing
 update's verified identity as a receipt. Missing exports, content differences,
