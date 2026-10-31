@@ -87,7 +87,7 @@ describe("historical MoonBoard BoardLib CSV", () => {
     },
   );
 
-  it.each(["xmoon2019", "moon2019x", "moon2018", "MOON2019"])(
+  it.each(["x-moon2019", "moon2019x", "moon2018", "MOON2019"])(
     "rejects unsupported setup %s",
     (board) => {
       expect(() => parseMoonBoardExport(`${moonBoardHeader}\n${moonBoardRow({ board })}`)).toThrow(
