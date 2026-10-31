@@ -12,7 +12,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-import { hash, mutationFixture, requiredItem } from "./swift-mutation-test-helpers.ts";
+import {
+  hash,
+  mutationFixture,
+  requiredItem,
+  zeroMutationFixture,
+} from "./swift-mutation-test-helpers.ts";
 
 vi.mock("node:child_process", async (original) => ({
   ...(await original<typeof import("node:child_process")>()),
@@ -70,6 +75,7 @@ function createFixture() {
     corrupt: false,
     verbose: false,
     verboseExit: 0,
+    changeSourceDuringRun: false,
   };
   function addPackage(path: string, target = "ios", sources = ["Parser.swift"]) {
     write(root, `${path}/Package.swift`, "// package\n");
@@ -147,7 +153,8 @@ function createFixture() {
           readFileSync(requiredItem(argv[argv.indexOf("--config") + 1]), "utf8"),
         );
         const selected: string[] = config.sources.include;
-        const fixture = mutationFixture(
+        const makeFixture = state.zero ? zeroMutationFixture : mutationFixture;
+        const fixture = makeFixture(
           cwd,
           Object.fromEntries(
             selected.map((file) => [file, hash(readFileSync(join(cwd, file), "utf8"))]),
@@ -155,7 +162,6 @@ function createFixture() {
         );
         const outputPath = requiredItem(argv[argv.indexOf("--output") + 1]);
         if (command === "plan") {
-          if (state.zero) fixture.plan.mutations = [];
           if (state.stale) fixture.plan.sourceFileHashes[requiredItem(selected[0])] = hash("stale");
           if (state.omit !== "plan")
             writeFileSync(
@@ -166,7 +172,7 @@ function createFixture() {
           output = JSON.stringify({
             schemaVersion: 1,
             planID: fixture.plan.planID,
-            mutationCount: selected.length,
+            mutationCount: fixture.plan.mutations.length,
             valid: true,
             compatibility: "match",
             idViolations: [],
@@ -174,6 +180,8 @@ function createFixture() {
             anchorViolations: [],
           });
         else if (command === "run") {
+          if (state.changeSourceDuringRun)
+            write(cwd, requiredItem(selected[0]), "// changed during baseline\n");
           if (state.corrupt) fixture.report.score.killed = 999;
           if (state.omit !== "report")
             writeFileSync(
@@ -198,7 +206,8 @@ function createFixture() {
           ],
           { ...opts, encoding: "utf8" },
         );
-      return complete({ status: 0, stdout: output, stderr: "", pid: 1, signal: null, output: [] });
+      const status = state.zero && (command === "verify-run" || command === "trust") ? 2 : 0;
+      return complete({ status, stdout: output, stderr: "", pid: 1, signal: null, output: [] });
     });
     let status = 0;
     try {
@@ -219,6 +228,66 @@ afterEach(() => {
 });
 
 describe("run-swift-mutation public CLI", () => {
+  it("rejects a zero-candidate source that changes during baseline execution", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.zero = true;
+    fixture.state.changeSourceDuringRun = true;
+    const result = await fixture.run(base);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Stale mutation plan hash");
+    expect(fixture.calls.some((call) => call.args[0] === "trust")).toBe(false);
+  });
+  it.each(["verify-run", "trust"])(
+    "rejects an unexpected successful %s exit for zero candidates",
+    async (command) => {
+      const fixture = createFixture();
+      fixture.addPackage(whoop);
+      const base = fixture.commitBase();
+      fixture.change(`${whoop}/ios/Parser.swift`);
+      fixture.state.zero = true;
+      fixture.state.fail = command;
+      fixture.state.exit = 0;
+      expect((await fixture.run(base)).status).toBe(1);
+    },
+  );
+  it("runs and verifies a baseline-only zero-candidate file without inventing a mutation score", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.zero = true;
+    const result = await fixture.run(base);
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      fixture.calls.filter((call) => call.tool === "mutantkit").map((call) => call.args[0]),
+    ).toEqual(["config", "plan", "verify", "run", "verify-run", "trust"]);
+    expect(result.stdout).toContain("baseline-only");
+    expect(result.stdout).toContain("mutation score not applicable");
+    const evidence = JSON.parse(
+      readFileSync(
+        join(fixture.root, "reports/swift-mutation/whoop-ble/trust.command.json"),
+        "utf8",
+      ),
+    );
+    expect(evidence.status).toBe(2);
+  });
+  it.each(["run", "verify", "verify-run", "trust"])(
+    "does not accept unexpected %s exits for zero candidates",
+    async (command) => {
+      const fixture = createFixture();
+      fixture.addPackage(whoop);
+      const base = fixture.commitBase();
+      fixture.change(`${whoop}/ios/Parser.swift`);
+      fixture.state.zero = true;
+      fixture.state.fail = command;
+      fixture.state.exit = 7;
+      const result = await fixture.run(base);
+      expect(result.status).toBe(7);
+    },
+  );
   it.each([0, 23])(
     "retains complete verbose streams and exit %s from a real Node child",
     async (exit) => {
@@ -445,7 +514,7 @@ describe("run-swift-mutation public CLI", () => {
       expect((await fixture.run(base)).status).not.toBe(0);
     },
   );
-  it.each(["zero", "stale", "missing", "corrupt"] as const)("rejects %s work", async (problem) => {
+  it.each(["stale", "missing", "corrupt"] as const)("rejects %s work", async (problem) => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();

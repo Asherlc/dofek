@@ -6,7 +6,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@expo/cli>zod': 4.6.7
   '@expo/dom-webview': 58.0.2
   '@expo/xcpretty>js-yaml': 4.3.2
   '@grpc/grpc-js': 1.14.5
@@ -720,8 +719,8 @@ importers:
   packages/mobile/modules/whoop-ble:
     devDependencies:
       expo-modules-core:
-        specifier: 58.0.22
-        version: 58.0.22(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
+        specifier: 58.0.29
+        version: 58.0.29(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)
 
   packages/mountain-project-client:
     dependencies:
@@ -3245,19 +3244,9 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@expo/modules-macros-win32-arm64@0.20.0':
-    resolution: {integrity: sha512-7B57gc7+TeygPcK8fLYlEhJbbvaPh+JBzex11YIYZrSzbFhz7Q+Z37fSdAfp4EsfCswJNcX0S6wpkgSlVNefVw==}
-    cpu: [arm64]
-    os: [win32]
-
   '@expo/modules-macros-win32-arm64@0.27.1':
     resolution: {integrity: sha512-BcIJibqB7YxuUTf7R7gk2gbPYr6ngM0t+hTeoAhpsgS5xUlYU/TVjgrYpYOFTyYfWwgnDUv75WrJxbvVolK5xQ==}
     cpu: [arm64]
-    os: [win32]
-
-  '@expo/modules-macros-win32-x64@0.20.0':
-    resolution: {integrity: sha512-BM5a2U2tCyHzmtiSEY70KPsts82Mfy1bHSZ7AUbg6z9LcnxuThxJlcH85/SV5eFbhrPfgDBAG/WAncyZCvKvyA==}
-    cpu: [x64]
     os: [win32]
 
   '@expo/modules-macros-win32-x64@0.27.1':
@@ -11841,16 +11830,6 @@ packages:
     engines: {node: ^22.13.0 || ^24.3.0 || ^26.0.0 || >=27.0.0}
     hasBin: true
 
-  expo-modules-core@58.0.22:
-    resolution: {integrity: sha512-T3YJYziFkF4JlGDpX4zCl91oIxz1Skq5sp1LFVO+GL/BARSIXk013QWGdRZrvt+wMxoVaql5dpOdPdP5q2+0jQ==}
-    peerDependencies:
-      react: 19.3.0
-      react-native: '*'
-      react-native-worklets: '>=0.13.0'
-    peerDependenciesMeta:
-      react-native-worklets:
-        optional: true
-
   expo-modules-core@58.0.29:
     resolution: {integrity: sha512-S3L38WVxcn1sQfUr9fiUgKri2n4YKdtuToF3r45V7dVIUmHN69Fc7nZPF5BiMtOl/CgPWACicqUZr7jawBxXFg==}
     peerDependencies:
@@ -11861,18 +11840,10 @@ packages:
       react-native-worklets:
         optional: true
 
-  expo-modules-jsi@58.0.15:
-    resolution: {integrity: sha512-PsjYgL4KWtvBqWH242r0wbP99VjgHkHCpkPCekO7nzb+ulkDNyrNnhysxa0TcNpfRTNLetmCUaLs9t4CcoquZQ==}
-    peerDependencies:
-      react-native: '*'
-
   expo-modules-jsi@58.0.21:
     resolution: {integrity: sha512-6FG3jKt89s+qolbalas+OE5gQjDYu/sfV7HVAFEw3JVtkS1+MVfCvQLxp3RAm85bVNO0vgfnbn5z6A8WSDWalA==}
     peerDependencies:
       react-native: '*'
-
-  expo-modules-macros@0.20.0:
-    resolution: {integrity: sha512-Ekgb5c9LQPM9CPnmDZdeWcOa1eBbCDUGrgdN5lIFNH2GWDUf9doeAOK7IqQOOVviamy37eIp5FW+N1zyrIwzoA==}
 
   expo-modules-macros@0.27.1:
     resolution: {integrity: sha512-xWNI+LpK4Pdmj52ygNYlxefZDhw4mpe6s5yVCLXpqtOyU3PPrFGJJJnDyBpOsOv+mXiYLeaszEEJEpDKBObZ7A==}
@@ -20901,13 +20872,7 @@ snapshots:
   '@expo/modules-macros-linux-x64@0.27.1':
     optional: true
 
-  '@expo/modules-macros-win32-arm64@0.20.0':
-    optional: true
-
   '@expo/modules-macros-win32-arm64@0.27.1':
-    optional: true
-
-  '@expo/modules-macros-win32-x64@0.20.0':
     optional: true
 
   '@expo/modules-macros-win32-x64@0.27.1':
@@ -24349,7 +24314,7 @@ snapshots:
       metro: 0.87.1(supports-color@11.0.0)
       semver: 7.8.5
     optionalDependencies:
-      '@react-native/metro-config': 0.88.1(@babel/core@7.29.7)(supports-color@11.0.0)
+      '@react-native/metro-config': 0.88.1(@babel/core@8.0.9)(supports-color@11.0.0)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -24443,7 +24408,7 @@ snapshots:
       invariant: 2.2.4
       nullthrows: 1.1.1
       react: 19.3.0
-      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@7.29.7)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
+      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
     optionalDependencies:
       '@types/react': 19.3.0
 
@@ -30893,38 +30858,19 @@ snapshots:
       '@babel/parser': 7.29.9
       arg: 5.0.2
 
-  expo-modules-core@58.0.22(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0):
-    dependencies:
-      expo-modules-jsi: 58.0.15(react-native@0.88.1)
-      expo-modules-macros: 0.20.0
-      invariant: 2.2.4
-      react: 19.3.0
-      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
-    optionalDependencies:
-      react-native-worklets: 0.13.0(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(react-native@0.88.1)(react@19.3.0)(supports-color@11.0.0)
-
   expo-modules-core@58.0.29(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0):
     dependencies:
       expo-modules-jsi: 58.0.21(react-native@0.88.1)
       expo-modules-macros: 0.27.1
       invariant: 2.2.4
       react: 19.3.0
-      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@7.29.7)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
-    optionalDependencies:
-      react-native-worklets: 0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.1)(react-native@0.88.1)(react@19.3.0)(supports-color@11.0.0)
-
-  expo-modules-jsi@58.0.15(react-native@0.88.1):
-    dependencies:
       react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
+    optionalDependencies:
+      react-native-worklets: 0.13.0(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(react-native@0.88.1)(react@19.3.0)(supports-color@11.0.0)
 
   expo-modules-jsi@58.0.21(react-native@0.88.1):
     dependencies:
-      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@7.29.7)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
-
-  expo-modules-macros@0.20.0:
-    optionalDependencies:
-      '@expo/modules-macros-win32-arm64': 0.20.0
-      '@expo/modules-macros-win32-x64': 0.20.0
+      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
 
   expo-modules-macros@0.27.1:
     optionalDependencies:

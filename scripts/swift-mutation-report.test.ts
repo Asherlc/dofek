@@ -6,7 +6,11 @@ import {
   validatePlanVerification,
   validateRunVerification,
 } from "./swift-mutation-report.ts";
-import { mutationFixture, requiredItem } from "./swift-mutation-test-helpers.ts";
+import {
+  mutationFixture,
+  requiredItem,
+  zeroMutationFixture,
+} from "./swift-mutation-test-helpers.ts";
 
 describe("Swift mutation plan boundary", () => {
   it("accepts exact requested hashes and positive work", () => {
@@ -15,7 +19,28 @@ describe("Swift mutation plan boundary", () => {
       validateMutationPlan(plan, { projectRoot: "/", sources: plan.sourceFileHashes }),
     ).toEqual(plan);
   });
-  it.each(["missing", "extra", "hash", "zero", "duplicate", "skipped", "tool", "root", "anchor"])(
+  it("accepts a genuine zero-candidate inventory with the full default operator catalogue", () => {
+    const { plan } = zeroMutationFixture();
+    expect(
+      validateMutationPlan(plan, { projectRoot: "/", sources: plan.sourceFileHashes }),
+    ).toEqual(plan);
+  });
+  it.each(["sources", "operators", "skipped", "hash"])(
+    "rejects incomplete zero-candidate %s",
+    (kind) => {
+      const { plan } = zeroMutationFixture();
+      const sources = { ...plan.sourceFileHashes };
+      if (kind === "sources") {
+        plan.sourceFileHashes = {};
+        for (const key of Object.keys(sources)) delete sources[key];
+      }
+      if (kind === "operators") plan.operators = [];
+      if (kind === "skipped") Reflect.set(plan, "skipped", [{ reason: "budgetExceeded" }]);
+      if (kind === "hash") plan.sourceFileHashes["ios/Delegate.swift"] = `sha256:${"0".repeat(64)}`;
+      expect(() => validateMutationPlan(plan, { projectRoot: "/", sources })).toThrow();
+    },
+  );
+  it.each(["missing", "extra", "hash", "duplicate", "skipped", "tool", "root", "anchor"])(
     "rejects %s plan work",
     (kind) => {
       const { plan } = mutationFixture();
@@ -24,7 +49,6 @@ describe("Swift mutation plan boundary", () => {
       if (kind === "extra")
         Reflect.set(plan.sourceFileHashes, "Extra.swift", sources["ios/Parser.swift"]);
       if (kind === "hash") plan.sourceFileHashes["ios/Parser.swift"] = `sha256:${"0".repeat(64)}`;
-      if (kind === "zero") plan.mutations = [];
       if (kind === "duplicate") plan.mutations.push(requiredItem(plan.mutations[0]));
       if (kind === "skipped")
         Reflect.set(plan, "skipped", [{ id: "hidden", reason: "budgetExceeded" }]);
@@ -61,6 +85,50 @@ describe("Swift mutation plan boundary", () => {
 });
 
 describe("Swift mutation report boundary", () => {
+  it("accepts a zero-candidate baseline and preserves the upstream non-mutation verdict", () => {
+    const { plan, report, verification, trust } = zeroMutationFixture();
+    const checked = validateMutationReport(report, plan);
+    expect(checked.baseline.passed).toBe(true);
+    expect(checked.results).toEqual([]);
+    expect(() => validateRunVerification(verification, plan, checked)).not.toThrow();
+    expect(() => validateMutationTrust(trust, plan)).not.toThrow();
+    expect(verification.passed).toBe(false);
+    expect(trust.trustworthy).toBe(false);
+  });
+  it.each(["passed", "build", "test", "product", "archive", "score"])(
+    "rejects invalid zero-candidate baseline %s",
+    (kind) => {
+      const { plan, report } = zeroMutationFixture();
+      if (kind === "passed") report.baseline.passed = false;
+      if (kind === "build") report.baseline.buildCommand.exitCode = 1;
+      if (kind === "test") report.baseline.testCommand.exitCode = 1;
+      if (kind === "product") report.baseline.buildProductHash = "";
+      if (kind === "archive") report.evidenceArchive.entryCount = 1;
+      if (kind === "score") report.score.killed = 1;
+      expect(() => validateMutationReport(report, plan)).toThrow();
+    },
+  );
+  it.each(["archive", "missing", "duplicate", "counter", "unexpected failure"])(
+    "rejects zero-candidate verification %s",
+    (kind) => {
+      const { plan, report, verification } = zeroMutationFixture();
+      if (kind === "archive")
+        requiredItem(
+          verification.checks.find((check) => check.name === "archive.integrity"),
+        ).status = "fail";
+      if (kind === "missing") verification.checks.pop();
+      if (kind === "duplicate") verification.checks.push(requiredItem(verification.checks[1]));
+      if (kind === "counter") verification.passCount = 99;
+      if (kind === "unexpected failure")
+        verification.checks.push({ name: "unexpected", status: "fail" });
+      expect(() => validateRunVerification(verification, plan, report)).toThrow();
+    },
+  );
+  it("rejects any additional unverified trust requirement for zero candidates", () => {
+    const { plan, trust } = zeroMutationFixture();
+    trust.verification.unverifiedRequiredChecks.push("archive.integrity");
+    expect(() => validateMutationTrust(trust, plan)).toThrow();
+  });
   it("accepts a measured survivor without imposing a threshold", () => {
     const { plan, report } = mutationFixture();
     requiredItem(report.results[0]).outcome = "survived";

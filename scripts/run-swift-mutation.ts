@@ -55,6 +55,7 @@ function run(
   cwd: string,
   evidencePath?: string,
   captureStdout = true,
+  expectedExit = 0,
 ): string {
   const context = relative(root, cwd) || ".";
   const stdoutPath = evidencePath?.replace(/\.json$/, ".stdout.log");
@@ -97,9 +98,9 @@ function run(
   if (result.error) {
     throw new Error(`Could not start ${command} for ${context}: ${result.error.message}`);
   }
-  if (result.status !== 0) {
+  if (result.status !== expectedExit) {
     console.error(`${command} failed for ${context}: ${result.signal ?? `exit ${result.status}`}`);
-    process.exit(result.status ?? 1);
+    process.exit(result.status || 1);
   }
   return captureStdout
     ? stdoutPath
@@ -167,14 +168,16 @@ function mutatePackage(executable: string, directory: string, selected: string[]
     .parse(parse(readFileSync(join(directory, "mutantkit.yml"), "utf8")));
   const configPath = join(output, "mutantkit.yml");
   writeFileSync(configPath, stringify({ ...config, sources: { include: selected } }));
-  const sources = Object.fromEntries(
-    selected.map((file) => [
-      file,
-      `sha256:${createHash("sha256")
-        .update(readFileSync(join(directory, file)))
-        .digest("hex")}`,
-    ]),
-  );
+  const sourceHashes = () =>
+    Object.fromEntries(
+      selected.map((file) => [
+        file,
+        `sha256:${createHash("sha256")
+          .update(readFileSync(join(directory, file)))
+          .digest("hex")}`,
+      ]),
+    );
+  const sources = sourceHashes();
   writeFileSync(join(output, "inputs.json"), JSON.stringify(sources, null, 2));
   run(
     "swiftc",
@@ -184,18 +187,24 @@ function mutatePackage(executable: string, directory: string, selected: string[]
     false,
   );
   const common = ["--project-root", directory, "--config", configPath];
-  function command(name: string, commandArgs: string[], captureStdout = false): string {
+  function command(
+    name: string,
+    commandArgs: string[],
+    captureStdout = false,
+    expectedExit = 0,
+  ): string {
     return run(
       executable,
       [name, ...common, ...commandArgs],
       directory,
       join(output, `${name}.command.json`),
       captureStdout,
+      expectedExit,
     );
   }
-  function jsonCommand(name: string, commandArgs: string[]): unknown {
+  function jsonCommand(name: string, commandArgs: string[], expectedExit = 0): unknown {
     const path = join(output, `${name}.json`);
-    writeFileSync(path, command(name, [...commandArgs, "--json"], true));
+    writeFileSync(path, command(name, [...commandArgs, "--json"], true, expectedExit));
     return readJson(path);
   }
   const planPath = join(output, "plan.json");
@@ -207,6 +216,7 @@ function mutatePackage(executable: string, directory: string, selected: string[]
   console.log(`Mutating ${relative(root, directory)}: ${selected.join(", ")}`);
   command("run", ["--plan", planPath, "--output", reportPath, "--no-resume", "--no-history"]);
   const report = validateMutationReport(readJson(reportPath), plan);
+  validateMutationPlan(plan, { projectRoot: directory, sources: sourceHashes() });
   const archive = join(directory, ".mutantkit/evidence", report.evidenceArchive.runID);
   if (!existsSync(join(archive, "manifest.json")))
     throw new Error(`Missing mutation evidence archive ${archive}`);
@@ -214,14 +224,31 @@ function mutatePackage(executable: string, directory: string, selected: string[]
   cpSync(archive, copiedArchive, { recursive: true });
   const verificationArgs = ["--plan", planPath, "--evidence", copiedArchive];
   validateRunVerification(
-    jsonCommand("verify-run", [reportPath, ...verificationArgs]),
+    jsonCommand(
+      "verify-run",
+      [reportPath, ...verificationArgs],
+      plan.mutations.length === 0 ? 2 : 0,
+    ),
     plan,
     report,
   );
-  validateMutationTrust(jsonCommand("trust", ["--report", reportPath, ...verificationArgs]), plan);
-  console.log(
-    `${basename(directory)}: ${report.results.length} mutants; ${JSON.stringify(report.score)}. All required source/archive checks passed; optional assertion confirmation may remain unverified.`,
+  validateMutationTrust(
+    jsonCommand(
+      "trust",
+      ["--report", reportPath, ...verificationArgs],
+      plan.mutations.length === 0 ? 2 : 0,
+    ),
+    plan,
   );
+  if (plan.mutations.length === 0) {
+    console.log(
+      `${basename(directory)}: baseline-only; zero eligible mutation candidates, mutation score not applicable. Source hashes, baseline and archive checks passed; upstream zero-result verdict retained.`,
+    );
+  } else {
+    console.log(
+      `${basename(directory)}: ${report.results.length} mutants; ${JSON.stringify(report.score)}. All required source/archive checks passed; optional assertion confirmation may remain unverified.`,
+    );
+  }
 }
 
 const changedPaths = run(
