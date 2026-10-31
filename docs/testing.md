@@ -57,6 +57,17 @@ remain unverified; that status does not establish named-test attribution.
 Native unit tests, app builds and Simulator checks remain separate;
 physical background reconnection and capture still require a device.
 
+For queue query tests, seed persisted SQLite rows directly instead of replaying
+ingestion for every fixture and isolated mutation. SQLite supports bounded
+set-based fixtures through [recursive CTEs](https://www.sqlite.org/lang_with.html#recursive_query_examples).
+The [WHOOP store tests](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStoreTests.swift)
+retain 10,000-row instruction-budget fixtures and cross the former 86,400-row
+queue boundary through public append after restoring a persisted backlog. They
+check actual stored rows as well as lifecycle counters. Keep public ingestion,
+acknowledgment, erasure and failure paths under test; fixture setup must not
+replace the behavior being verified. This reduces repeated fixture cost while
+retaining the full mutation suite and existing CI deadlines.
+
 ## CI build caches
 
 Docker layers use the existing central GHCR registry caches:

@@ -37,6 +37,26 @@ final class SQLiteWorkProbe {
 
     private init(database: OpaquePointer) { self.database = database }
 
+    var errorCode: Int32 { sqlite3_errcode(database) }
+
+    func executeFixture(_ sql: String) throws {
+        let result = sqlite3_exec(database, sql, nil, nil, nil)
+        guard result == SQLITE_OK else {
+            throw NSError(domain: "SQLiteFixture", code: Int(result), userInfo: [
+                NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(database)),
+            ])
+        }
+    }
+
+    func integer(_ sql: String) throws -> Int {
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(database, sql, -1, &statement, nil), SQLITE_OK)
+        let prepared = try XCTUnwrap(statement)
+        defer { sqlite3_finalize(prepared) }
+        XCTAssertEqual(sqlite3_step(prepared), SQLITE_ROW)
+        return Int(sqlite3_column_int64(prepared, 0))
+    }
+
     static func opening<T>(_ open: () throws -> T) throws -> (T, SQLiteWorkProbe) {
         let value = try open()
         // Borrow the handle only to instrument public calls. Apple does not
