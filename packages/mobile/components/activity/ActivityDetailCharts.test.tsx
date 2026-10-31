@@ -1,5 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AreaChart, LineChart } from "./ActivityDetailCharts";
 
@@ -31,11 +32,111 @@ function expectVisibleDots(container: HTMLElement, count: number) {
 }
 
 describe("ActivityDetailCharts", () => {
+  it("retains climbs at activity boundaries outside the HR sample range", () => {
+    const { container } = render(
+      <LineChart
+        highlightedClimbId="last"
+        data={[
+          { recordedAt: "2026-10-18T17:30:03Z", value: 130 },
+          { recordedAt: "2026-10-18T17:30:55Z", value: 150 },
+        ]}
+        activityWindow={{ startedAt: "2026-10-18T17:30:00Z", endedAt: "2026-10-18T17:31:00Z" }}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="bpm"
+        climbAnnotations={[
+          { id: "first", label: "First climb", startedAt: "2026-10-18T17:30:00Z", endedAt: null },
+          { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:00Z", endedAt: null },
+        ]}
+      />,
+    );
+    const markers = container.querySelectorAll('Line[stroke="#a78bfa"]');
+    expect([...markers].map((marker) => Number(marker.getAttribute("x1")))).toEqual([44, 324]);
+    expect(markers[0]?.getAttribute("stroke-width")).toBe("1.5");
+    expect(markers[1]?.getAttribute("stroke-width")).toBe("3");
+    const dots = container.querySelectorAll('Circle[fill="#ff0000"]');
+    expect(dots).toHaveLength(2);
+    expect(Number(dots[0]?.getAttribute("cx"))).toBe(58);
+    expect(Number(dots[1]?.getAttribute("cx"))).toBeCloseTo(300.666667);
+    fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
+    expect(screen.getByRole("button", { name: /First climb/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Last climb/ })).toBeDefined();
+  });
+
+  it("lets chart scrubbing and accessible selection replace a list selection", () => {
+    function LinkedChart() {
+      const [highlightedClimbId, selectClimb] = useState<string | null>("first");
+      return (
+        <LineChart
+          data={[
+            { recordedAt: "2026-10-18T10:00:00Z", value: 130 },
+            { recordedAt: "2026-10-18T12:00:00Z", value: 150 },
+          ]}
+          color="#ff0000"
+          label="Heart Rate"
+          unit="bpm"
+          highlightedClimbId={highlightedClimbId}
+          onSelectClimb={selectClimb}
+          climbAnnotations={[
+            { id: "first", label: "Earlier", startedAt: "2026-10-18T10:00:00Z", endedAt: null },
+            { id: "second", label: "Later", startedAt: "2026-10-18T10:30:00Z", endedAt: null },
+          ]}
+        />
+      );
+    }
+    render(<LinkedChart />);
+    expect(screen.getByText(/Earlier ·/)).toBeDefined();
+    act(() => scrub.onHoverTime?.(Date.parse("2026-10-18T10:30:00Z")));
+    expect(screen.getByText(/Later ·/)).toBeDefined();
+    expect(screen.queryByText(/Earlier ·/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
+    fireEvent.click(screen.getByRole("button", { name: /Earlier/ }));
+    expect(screen.getByText(/Earlier ·/)).toBeDefined();
+  });
+  it("highlights the selected list occurrence and range, then clears the highlight", () => {
+    const args = {
+      data: [
+        { recordedAt: "2026-10-18T17:30:00Z", value: 130 },
+        { recordedAt: "2026-10-18T17:31:00Z", value: 150 },
+      ],
+      color: "#ff0000",
+      label: "Heart Rate",
+      unit: "bpm",
+      climbAnnotations: [
+        { id: "first", label: "First", startedAt: "2026-10-18T17:30:10Z", endedAt: null },
+        { id: "repeat", label: "Repeat", startedAt: "2026-10-18T17:30:30Z", endedAt: null },
+        {
+          id: "range",
+          label: "Range",
+          startedAt: "2026-10-18T17:30:00Z",
+          endedAt: "2026-10-18T17:30:40Z",
+        },
+        { id: "outside", label: "Outside", startedAt: "2026-10-18T17:32:00Z", endedAt: null },
+      ],
+    };
+    const view = render(<LineChart {...args} highlightedClimbId="repeat" />);
+    const lines = () => view.container.querySelectorAll('Line[stroke="#a78bfa"]');
+    expect(lines()[1]?.getAttribute("stroke-width")).toBe("3");
+    expect(lines()[0]?.getAttribute("stroke-width")).toBe("1.5");
+    expect(screen.getByText(/Repeat ·/)).toBeDefined();
+    view.rerender(<LineChart {...args} highlightedClimbId="range" />);
+    expect(view.container.querySelector('Rect[fill="#a78bfa"]')?.getAttribute("fill-opacity")).toBe(
+      "0.36",
+    );
+    expect(screen.getByText(/Range ·/)).toBeDefined();
+    view.rerender(<LineChart {...args} highlightedClimbId={null} />);
+    expect(lines()[1]?.getAttribute("stroke-width")).toBe("1.5");
+    expect(screen.queryByText(/Range ·/)).toBeNull();
+    view.rerender(<LineChart {...args} highlightedClimbId="outside" />);
+    expect(screen.queryByText(/Outside/)).toBeNull();
+  });
   it.each([null, "2026-10-18T10:05:00Z"])(
     "selects the nearest climb marker near an earlier climb ending at %s",
     (endedAt) => {
+      const onHoverTime = vi.fn();
       render(
         <LineChart
+          onHoverTime={onHoverTime}
           data={[
             { recordedAt: "2026-10-18T10:00:00Z", value: 130 },
             { recordedAt: "2026-10-18T12:00:00Z", value: 150 },
@@ -50,6 +151,7 @@ describe("ActivityDetailCharts", () => {
         />,
       );
       act(() => scrub.onHoverTime?.(Date.parse("2026-10-18T10:03:05Z")));
+      expect(onHoverTime).toHaveBeenLastCalledWith(Date.parse("2026-10-18T10:03:05Z"));
       expect(screen.getByText(/Later · V4 ·/)).toBeDefined();
       expect(screen.queryByText(/Earlier · V3 ·/)).toBeNull();
     },

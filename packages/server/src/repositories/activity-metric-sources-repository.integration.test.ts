@@ -12,6 +12,7 @@ import {
   rewriteClickHouseDatabaseNames,
 } from "../routers/clickhouse-integration-test-models.ts";
 import {
+  getActivityHeartRateContext,
   getActivityMetricSources,
   getActivityPowerWork,
   getActivitySourceHrZones,
@@ -38,6 +39,34 @@ describe("activity metric source selection", () => {
     });
   let client: ReturnType<typeof createClient>;
   let store: ClickHouseActivitySensorStore;
+  it("reads selected HR before and after a session across midnight with user and activity isolation", async () => {
+    const contextWindow = {
+      ...window,
+      activityId: randomUUID(),
+      memberActivityIds: [],
+      startedAt: "2026-10-21T00:02:00.000Z",
+      endedAt: "2026-10-21T00:12:00.000Z",
+    };
+    await executeCommand(`INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 23:57:00', '2026-10-20', 'heart_rate', 'context_whoop', 90, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-21 00:17:00', '2026-10-21', 'heart_rate', 'context_whoop', 100, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 23:56:59', '2026-10-20', 'heart_rate', 'context_whoop', 190, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-21 00:17:01', '2026-10-21', 'heart_rate', 'context_whoop', 190, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${randomUUID()}', '2026-10-21 00:00:00', '2026-10-21', 'heart_rate', 'context_whoop', 190, 1, 0, 1),
+      (generateUUIDv4(), '${randomUUID()}', '${userId}', '2026-10-21 00:01:00', '2026-10-21', 'heart_rate', 'context_whoop', 190, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-21 00:02:00', '2026-10-21', 'heart_rate', 'other_context_device', 190, 1, 0, 1)`);
+    const result = await getActivityHeartRateContext(store, contextWindow, 500, "context_whoop");
+    expect(result.window).toEqual({
+      startedAt: "2026-10-20T23:57:00.000Z",
+      endedAt: "2026-10-21T00:17:00.000Z",
+    });
+    expect(result.points).toEqual([
+      { recordedAt: "2026-10-20T23:57:00.000Z", value: 90 },
+      { recordedAt: "2026-10-21T00:17:00.000Z", value: 100 },
+    ]);
+  });
   async function executeCommand(query: string) {
     await client.command({ query: scope(query) });
   }

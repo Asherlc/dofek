@@ -163,6 +163,24 @@ Sources:
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
 - Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
 
+### S3 fixture allocation
+
+The [shared SeaweedFS fixture](../src/account-erasure/test-helpers.ts) configures
+`master.volume_growth.copy_1 = 1` for its small, single-node test collections.
+The pinned release otherwise defaults to [seven volumes per single-copy growth](https://github.com/seaweedfs/seaweedfs/blob/4.47/weed/command/scaffold/master.toml)
+and an [eight-volume server cap](https://github.com/seaweedfs/seaweedfs/blob/4.47/weed/command/server.go).
+Allocating one at a time keeps multiple test buckets writable without raising
+that cap. Real S3 operations, multipart uploads and signed-upload identity
+configuration remain exercised by the fixture's integration consumers.
+
+If an S3 fixture returns `InternalError`, run the affected file alone with
+`pnpm test:integration <file>`. While its container is running, identify it with
+`docker ps` and capture `docker logs <container-id>` before test teardown removes
+it. Inspect master/volume errors such as `No writable volumes and no free
+volumes left` before changing storage settings or retry behavior. See
+[Docker container logs](https://docs.docker.com/reference/cli/docker/container/logs/)
+and the [reproduced allocation incident](production-incident-baseline.md#2026-10-31--pr3177-seaweedfs-fixture-volume-exhaustion-unresolved).
+
 ### Duration-balanced integration shards
 
 The four integration jobs use one committed measured baseline,

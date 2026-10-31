@@ -127,13 +127,9 @@ export function ClimbingLogEntryCard({
           </span>
         )}
       </div>
-      {hideMap && (
+      {hideMap && location?.scope !== "area" && (
         <p className="text-xs text-subtle">
-          {location
-            ? location.scope === "area"
-              ? "Approximate area location"
-              : "Climb location"
-            : "No recorded location"}
+          {location ? "Climb location" : "No recorded location"}
         </p>
       )}
       <div className="space-y-1 text-xs text-subtle">

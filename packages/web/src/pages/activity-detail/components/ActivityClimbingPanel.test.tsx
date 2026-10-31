@@ -11,6 +11,32 @@ vi.mock(
 );
 beforeEach(resetMaps);
 
+it("shares the hovered or focused occurrence with the chart and clears on unmount", () => {
+  const onHighlightEntry = vi.fn();
+  const { unmount } = render(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      onHighlightEntry={onHighlightEntry}
+    />,
+  );
+  const first = screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
+  const repeat = screen.getByRole("button", { name: "Select entry 4, Swiss Cheese" });
+  const row = repeat.closest("li");
+  if (!row) throw new Error("Expected repeat row");
+  fireEvent.focus(first);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith("tick-1");
+  fireEvent.mouseEnter(row);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith(climbingMapLogs[3]?.id);
+  fireEvent.mouseLeave(row);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith("tick-1");
+  fireEvent.blur(first);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith(null);
+  fireEvent.mouseEnter(row);
+  unmount();
+  expect(onHighlightEntry).toHaveBeenLastCalledWith(null);
+});
+
 it("synchronizes row hover/focus, selection and repeated map choices without resetting the map", async () => {
   const open = vi.fn();
   render(
@@ -52,7 +78,6 @@ it("retains unlocated entries and honest source scope in a single map layout", a
   render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
   expect(screen.getByRole("heading", { name: "Wall" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
-  expect(screen.getByText("Approximate area location")).toBeVisible();
   await screen.findByRole("button", { name: /Area location: Goat Rock · OpenBeta/ });
   expect(screen.getByText("No recorded location")).toBeVisible();
   const indoor = screen.getByRole("button", { name: "Select entry 3, Indoor board log" });

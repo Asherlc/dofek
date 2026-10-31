@@ -3,6 +3,11 @@ export interface ActivityChartSample {
   value: number | null;
 }
 
+export interface ActivityChartWindow {
+  startedAt: string;
+  endedAt: string | null;
+}
+
 interface ChartObservation {
   /** Index in the API timeline, retained for map synchronization. */
   index: number;
@@ -25,15 +30,26 @@ export interface ActivityChartSeries {
  * 50% timing variation. At least two positive intervals are needed to infer a
  * cadence; otherwise observations remain dots. Sparse series retain markers.
  */
-export function activityChartSeries(data: readonly ActivityChartSample[]): ActivityChartSeries {
+export function activityChartSeries(
+  data: readonly ActivityChartSample[],
+  activityWindow?: ActivityChartWindow,
+): ActivityChartSeries {
   const timeline = data.map((sample, index) => ({
     ...sample,
     index,
     timestamp: Date.parse(sample.recordedAt),
   }));
   const times = timeline.map(({ timestamp }) => timestamp);
-  let startedAt = times.length > 0 ? Math.min(...times) : 0;
-  let endedAt = times.length > 0 ? Math.max(...times) : 0;
+  let startedAt = activityWindow
+    ? Date.parse(activityWindow.startedAt)
+    : times.length > 0
+      ? Math.min(...times)
+      : 0;
+  let endedAt = activityWindow?.endedAt
+    ? Date.parse(activityWindow.endedAt)
+    : times.length > 0
+      ? Math.max(...times)
+      : startedAt;
   if (startedAt === endedAt) {
     startedAt -= 500;
     endedAt += 500;
