@@ -14,7 +14,7 @@ Docker supports [formatted inspection](https://docs.docker.com/reference/cli/doc
 and GitHub removes [service containers at job completion](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
 
 `pnpm check:dependency-security` runs `check-node-forge-security.ts` and
-`check-braces-security.ts` against the installed Expo/Metro dependencies before
+`check-braces-security.ts` and `check-expo-zod-security.ts` against the installed Expo/Metro dependencies before
 the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)
 for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
@@ -148,8 +148,13 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - The shared [configuration](../packages/mobile/mutantkit.yml) is linked into
     each package. The runner compiler-validates every selected source, checks
     exact plan hashes/inventory, runs full owning-package tests and verifies
-    complete official raw observations. It skips only an empty compiled-source
-    intersection and propagates every nonzero tool exit. See
+    complete official raw observations. Verified zero-candidate plans are not
+    applicable and receive no mutation score. Every other candidate runs through
+    official shards of at most twelve, followed by a required full-plan merge;
+    the complete campaign requires positive measured work. Every nonzero tool
+    exit propagates. CI uses `--base origin/main --prepare`, `--job <JSON>` and
+    `--merge`; the default command executes the complete campaign locally. See
+    [official sharding](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationPlanner/PlanSharding.swift),
     [planning](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift),
     [official reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/VerifyRunCommand.swift)
     and [native testing requirements](../docs/testing.md#native-swift-mutation-testing).

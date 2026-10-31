@@ -32,6 +32,16 @@ final class WhoopBleConnectionManager {
     var notificationSubscriptionTracker: WhoopBleNotificationSubscriptionTracker?
     var autoReconnect = false
     var wasStreaming = false
+    var deviceInfo: [String: String] = [:]
+
+    @discardableResult
+    func recordDeviceInformation(uuid: String, data: Data) -> Bool {
+        let keys = ["2A24": "model", "2A25": "serial", "2A26": "firmware", "2A27": "hardware"]
+        guard let key = keys[uuid.uppercased()] else { return false }
+        if let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !value.isEmpty, value.count <= 200 { deviceInfo[key] = value }
+        return true
+    }
 
     var findCompletion: (([String: Any?]?) -> Void)?
     var connectCompletion: ((Result<Bool, WhoopBleConnectionError>) -> Void)?
@@ -334,6 +344,7 @@ final class WhoopBleConnectionManager {
         cmdResponseCharacteristic = nil
         dataCharacteristic = nil
         notificationSubscriptionTracker = nil
+        deviceInfo = [:]
     }
 
     /// Applies the asynchronous notification-subscription result to the

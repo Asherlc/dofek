@@ -48,7 +48,9 @@ const planSchema = z
       .max(0, "Skipped, budgeted or suppressed mutations are not allowed"),
   })
   .passthrough();
-type Plan = z.infer<typeof planSchema>;
+export type MutationPlan = z.infer<typeof planSchema>;
+type Plan = MutationPlan;
+export const NATIVE_MUTATIONS_PER_JOB = 12;
 const outcome = z.enum([
   "killedByAssertion",
   "killedByCrash",
@@ -64,32 +66,34 @@ const outcome = z.enum([
   "notMaterialized",
   "skipped",
 ]);
-const reportSchema = z
+const reportCoreSchema = z
   .object({
     schemaVersion: z.literal(2),
     planID: z.string(),
     projectRoot: z.string(),
     toolchain,
     baseline: z.object({ passed: z.literal(true) }).passthrough(),
-    results: z.array(
-      z
-        .object({
-          point,
-          outcome,
-          evidence: z
-            .object({
-              confirmationChain: z.array(z.unknown()).optional(),
-              crashConfirmation: z.object({ crashedAgain: z.boolean() }).passthrough().optional(),
-              timeoutConfirmation: z
-                .object({ timedOutAgain: z.boolean() })
-                .passthrough()
-                .optional(),
-            })
-            .passthrough()
-            .optional(),
-        })
-        .passthrough(),
-    ),
+    results: z
+      .array(
+        z
+          .object({
+            point,
+            outcome,
+            evidence: z
+              .object({
+                confirmationChain: z.array(z.unknown()).optional(),
+                crashConfirmation: z.object({ crashedAgain: z.boolean() }).passthrough().optional(),
+                timeoutConfirmation: z
+                  .object({ timedOutAgain: z.boolean() })
+                  .passthrough()
+                  .optional(),
+              })
+              .passthrough()
+              .optional(),
+          })
+          .passthrough(),
+      )
+      .min(1),
     integrity: z
       .object({
         discovered: count,
@@ -112,13 +116,15 @@ const reportSchema = z
       excluded: z.record(z.string(), count),
     }),
     operationalIssues: z.array(z.unknown()).max(0),
-    evidenceArchive: z.object({
-      runID: z.string().regex(/^[a-zA-Z0-9-]+$/),
-      manifestHash: hash,
-      entryCount: count,
-    }),
   })
   .passthrough();
+const reportSchema = reportCoreSchema.extend({
+  evidenceArchive: z.object({
+    runID: z.string().regex(/^[a-zA-Z0-9-]+$/),
+    manifestHash: hash,
+    entryCount: count,
+  }),
+});
 type Report = z.infer<typeof reportSchema>;
 
 function requireCondition(condition: boolean, message: string): asserts condition {
@@ -138,7 +144,7 @@ export function validateMutationPlan(
   expected: { projectRoot: string; sources: Record<string, string> },
 ): Plan {
   const plan = planSchema.parse(value);
-  requireCondition(Object.keys(expected.sources).length > 0, "No requested compiled source files");
+  requireCondition(Object.keys(expected.sources).length > 0, "Empty requested source inventory");
   requireCondition(
     realpathSync(plan.projectRoot) === realpathSync(expected.projectRoot),
     "Mutation plan project root mismatch",
@@ -183,8 +189,8 @@ export function validateMutationPlan(
   return plan;
 }
 
-export function validateMutationReport(value: unknown, plan: Plan) {
-  const report = reportSchema.parse(value);
+function validateReportCore(value: unknown, plan: Plan) {
+  const report = reportCoreSchema.parse(value);
   requireCondition(
     report.planID === plan.planID &&
       realpathSync(report.projectRoot) === realpathSync(plan.projectRoot),
@@ -215,16 +221,6 @@ export function validateMutationReport(value: unknown, plan: Plan) {
     tally[result.outcome] = (tally[result.outcome] ?? 0) + 1;
   }
   const mutationCount = plan.mutations.length;
-  if (mutationCount === 0) {
-    z.object({
-      passed: z.literal(true),
-      buildProductHash: hash,
-      buildCommand: z.object({ exitCode: z.literal(0) }),
-      testCommand: z.object({ exitCode: z.literal(0) }),
-      buildDurationSeconds: z.number().finite().positive(),
-      testDurationSeconds: z.number().finite().positive(),
-    }).parse(report.baseline);
-  }
   const counters = report.integrity;
   for (const name of [
     "discovered",
@@ -282,15 +278,63 @@ export function validateMutationReport(value: unknown, plan: Plan) {
     isDeepStrictEqual(report.score, { killed, survived, noCoverage, excluded }),
     "Mutation score/outcome counts do not reconcile",
   );
+  return report;
+}
+
+function requireMeasuredWork(report: z.infer<typeof reportCoreSchema>): void {
   requireCondition(
-    mutationCount === 0 || (killed + survived > 0 && Number.isFinite(killed / (killed + survived))),
+    report.score.killed + report.score.survived > 0 &&
+      Number.isFinite(report.score.killed / (report.score.killed + report.score.survived)),
     "No finite positive measured mutation denominator",
   );
+}
+
+export function validateMutationShardReport(value: unknown, plan: Plan): Report {
+  const report = reportSchema.parse(value);
+  validateReportCore(report, plan);
   requireCondition(
-    report.evidenceArchive.entryCount === mutationCount,
+    report.evidenceArchive.entryCount === plan.mutations.length,
     "Incomplete mutation evidence archive",
   );
   return report;
+}
+
+/** Each shard's raw evidence is verified independently before official merge. */
+export function validateMergedMutationReport(value: unknown, plan: Plan) {
+  const report = validateReportCore(value, plan);
+  requireMeasuredWork(report);
+  return report;
+}
+
+/** Every original point must occur exactly once in the official bounded shards. */
+export function validateMutationPartition(plan: Plan, shards: Plan[]): void {
+  const ids: string[] = [];
+  const points = new Map(plan.mutations.map((point) => [point.id, point]));
+  for (const shard of shards) {
+    for (const key of [
+      "planID",
+      "projectRoot",
+      "toolchain",
+      "sourceFileHashes",
+      "configurationHash",
+      "planningHash",
+      "operators",
+    ] as const)
+      requireCondition(isDeepStrictEqual(shard[key], plan[key]), `Changed shard context: ${key}`);
+    requireCondition(shard.skipped.length === 0, "Skipped mutations in shard");
+    requireCondition(
+      shard.mutations.length <= NATIVE_MUTATIONS_PER_JOB,
+      "Mutation shard exceeds work bound",
+    );
+    for (const point of shard.mutations) {
+      requireCondition(
+        isDeepStrictEqual(point, points.get(point.id)),
+        `Changed shard point: ${point.id}`,
+      );
+      ids.push(point.id);
+    }
+  }
+  sameMembers(ids, [...points.keys()], "parent/shard mutation IDs");
 }
 
 export function validatePlanVerification(value: unknown, plan: Plan): void {
@@ -324,19 +368,6 @@ const requiredChecks = [
 ];
 
 export function validateRunVerification(value: unknown, plan: Plan, report: Report): void {
-  if (plan.mutations.length === 0) {
-    const verified = z
-      .object({
-        schemaVersion: z.literal(1),
-        planID: z.literal(plan.planID),
-        resultCount: z.literal(0),
-        planSupplied: z.literal(true),
-      })
-      .passthrough()
-      .parse(value);
-    validateZeroCandidateVerification(verified, ["source.anchors", "evidence.sourceAfter"]);
-    return;
-  }
   const verified = z
     .object({
       schemaVersion: z.literal(1),
@@ -407,36 +438,6 @@ export function validateRunVerification(value: unknown, plan: Plan, report: Repo
 }
 
 export function validateMutationTrust(value: unknown, plan: Plan): void {
-  if (plan.mutations.length === 0) {
-    const trust = z
-      .object({
-        schemaVersion: z.literal(1),
-        planID: z.literal(plan.planID),
-        mutationCount: z.literal(0),
-        trustworthy: z.literal(false),
-        trustStatus: z.literal("mismatch"),
-        operationalIssueCount: z.literal(0),
-        integrity: z.object({
-          passed: z.literal(true),
-          violationCount: z.literal(0),
-          violations: z.array(z.unknown()).max(0),
-        }),
-        verification: z
-          .object({
-            planSupplied: z.literal(true),
-            unverifiedRequiredChecks: z.array(z.string()),
-          })
-          .passthrough(),
-      })
-      .parse(value);
-    sameMembers(
-      trust.verification.unverifiedRequiredChecks,
-      ["report.results", "result.identity", "result.provenance"],
-      "zero-candidate unverified requirements",
-    );
-    validateZeroCandidateVerification(trust.verification, []);
-    return;
-  }
   z.object({
     schemaVersion: z.literal(1),
     planID: z.literal(plan.planID),
@@ -446,47 +447,4 @@ export function validateMutationTrust(value: unknown, plan: Plan): void {
     operationalIssueCount: z.literal(0),
     verification: z.object({ unverifiedRequiredChecks: z.array(z.string()).max(0) }),
   }).parse(value);
-}
-
-/** Preserve MutantKit's no-result verdict while validating every applicable check. */
-function validateZeroCandidateVerification(value: unknown, sourceChecks: string[]): void {
-  const verification = z
-    .object({
-      passed: z.literal(false),
-      complete: z.literal(false),
-      tierAComplete: z.literal(false),
-      fullEvidenceReverified: z.literal(false),
-      tierBPerformed: z.literal(false),
-      failCount: z.literal(1),
-      notVerifiableCount: z.literal(0),
-      passCount: count,
-      checks: z.array(
-        z.object({ name: z.string(), status: z.enum(["pass", "fail", "notVerifiable"]) }),
-      ),
-    })
-    .parse(value);
-  const passed = [
-    "plan.identity",
-    "plan.mutationIDs",
-    "integrity.recompute",
-    "score.recompute",
-    "archive.integrity",
-    "archive.policy",
-    ...sourceChecks,
-  ];
-  sameMembers(
-    verification.checks.map((check) => check.name),
-    ["report.results", ...passed],
-    "zero-candidate verification checks",
-  );
-  requireCondition(
-    verification.passCount === passed.length,
-    "Invalid zero-candidate verification counters",
-  );
-  for (const check of verification.checks) {
-    requireCondition(
-      check.status === (check.name === "report.results" ? "fail" : "pass"),
-      `Unexpected zero-candidate verification result: ${check.name}`,
-    );
-  }
 }

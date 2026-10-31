@@ -153,6 +153,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "bufferInstanceId": try store.generation,
                 "bufferCreatedAt": Self.iso(createdAt), "checkpointAt": Self.iso(now()),
                 "imu": try store.statistics(stream: .imu), "realtime": try store.statistics(stream: .realtime),
+                "sensorRecords": try store.statistics(stream: .sensorRecords),
                 "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
             ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
@@ -219,9 +220,9 @@ final class WhoopBleBackgroundUploader: NSObject {
             do {
                 guard !blocked.contains(stream), retryAfter[stream].map({ $0 <= now() }) ?? true else { continue }
                 if let batch = pending.first(where: { $0.stream == stream }), active.contains(identity(batch)) { continue }
-                let count = try store.queuedCount(stream: stream, limit: 500)
+                let count = try store.queuedCount(stream: stream, limit: stream.batchLimit)
                 let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
-                guard count >= 500 || partial || now().timeIntervalSince(since) >= 30 else { continue }
+                guard count >= stream.batchLimit || partial || now().timeIntervalSince(since) >= 30 else { continue }
                 guard let batch = try store.reserve(stream: stream) else { continue }
                 let identity = identity(batch)
                 guard !active.contains(identity) else { continue }
@@ -232,7 +233,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 try FileManager.default.setAttributes(
                     [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
                 #endif
-                let route = stream == .imu ? "inertialMeasurementUnitSync.pushSamples" : "whoopBleSync.pushRealtimeData"
+                let route = stream.route
                 guard let url = URL(string: binding.serverURL + "/api/trpc/" + route) else {
                     throw WhoopUploadError(message: "Invalid WHOOP upload URL")
                 }

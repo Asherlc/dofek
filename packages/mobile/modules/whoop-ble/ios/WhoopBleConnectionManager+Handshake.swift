@@ -64,6 +64,23 @@ extension WhoopBleConnectionManager {
         finishConnect(.failure(error))
     }
 
+    /// Metadata is optional; a missing DIS attribute must not stop required notifications.
+    func handleCharacteristicDiscoveryError(
+        serviceUUID: CBUUID,
+        error: Error,
+        cancelPeripheral: () -> Void
+    ) {
+        if serviceUUID == CBUUID(string: "180A") {
+            recordConnectionEvent("device_information_discovery_failed", error: error)
+            return
+        }
+        abortHandshake(
+            with: .characteristicDiscoveryFailed(error.localizedDescription),
+            underlyingError: error,
+            cancelPeripheral: cancelPeripheral
+        )
+    }
+
     /// Ignore a late callback from a peripheral that no longer owns the attempt.
     func abortHandshake(
         for peripheral: any WhoopBlePeripheralConnection,

@@ -205,6 +205,30 @@ final class WhoopBlePendingReconnectTests: XCTestCase {
 }
 
 final class WhoopBleHandshakeTests: XCTestCase {
+    func testOptionalMetadataDiscoveryErrorPreservesPendingHandshakeAndReconnect() {
+        for stage in [ConnectionState.discoveringServices, .subscribing] {
+            let manager = WhoopBleConnectionManager()
+            manager.setState(stage)
+            manager.autoReconnect = true
+            var completed = false
+            manager.connectCompletion = { _ in completed = true }
+            manager.handleCharacteristicDiscoveryError(
+                serviceUUID: CBUUID(string: "180A"),
+                error: NSError(domain: "CBATTErrorDomain", code: 10),
+                cancelPeripheral: { XCTFail("Optional metadata must not cancel capture") }
+            )
+            XCTAssertEqual(manager.state, stage)
+            XCTAssertTrue(manager.autoReconnect)
+            XCTAssertFalse(completed)
+            manager.setState(.subscribing)
+            _ = manager.settleNotificationSubscriptionUpdate(
+                .ready, failureDetail: "unused", cancelPeripheral: {}
+            )
+            XCTAssertTrue(completed)
+            XCTAssertEqual(manager.state, .ready)
+        }
+    }
+
     func testHandshakeDeadlineRetainsItsCallbackAdapterUntilCancellation() {
         let manager = WhoopBleConnectionManager(connectTimeoutSeconds: 0.01)
         let cancelled = expectation(description: "callback adapter cancels its native connection")
@@ -270,8 +294,10 @@ final class WhoopBleHandshakeTests: XCTestCase {
         manager.connectCompletion = { results.append($0) }
         manager.setState(.discoveringServices)
 
-        manager.abortHandshake(
-            with: .characteristicDiscoveryFailed("characteristic discovery unavailable")
+        manager.handleCharacteristicDiscoveryError(
+            serviceUUID: WhoopBleConstants.allServiceUUIDs[0],
+            error: NSError(domain: "CBATTErrorDomain", code: 10,
+                           userInfo: [NSLocalizedDescriptionKey: "characteristic discovery unavailable"])
         ) {
             cancellationCount += 1
         }

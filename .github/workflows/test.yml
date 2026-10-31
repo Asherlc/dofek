@@ -1120,6 +1120,9 @@ jobs:
       - name: Run Core Motion Swift tests
         working-directory: packages/mobile/modules/core-motion
         run: swift test
+      - name: Run WHOOP BLE Swift tests
+        working-directory: packages/mobile/modules/whoop-ble
+        run: swift test
       - name: Run Swift tests with coverage
         id: healthkit-coverage
         run: pnpm tsx scripts/check-health-kit-coverage.ts
@@ -1369,12 +1372,12 @@ jobs:
           retention-days: 7
 
   mutation-swift-prep:
-    name: Discover Swift mutation files
+    name: Prepare Swift mutation shards
     needs: check-mobile-changes
     runs-on: macos-latest
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     outputs:
-      files: ${{ steps.discover.outputs.files }}
+      jobs: ${{ steps.discover.outputs.jobs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1382,28 +1385,43 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Discover changed compiled Swift sources
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Prepare verified native candidate partitions
         id: discover
         run: |
-          FILES=$(pnpm tsx scripts/run-swift-mutation.ts --base origin/main --list-files)
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          JOBS=$(pnpm tsx scripts/run-swift-mutation.ts --base origin/main --prepare)
+          echo "jobs=$JOBS" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
+          if-no-files-found: error
+          retention-days: 7
 
   mutation-swift:
-    name: Swift Mutation Testing (${{ matrix.file }})
+    name: Swift Mutation Testing (${{ matrix.file }}, shard ${{ matrix.shard }})
     needs: mutation-swift-prep
     runs-on: macos-latest
-    if: needs.mutation-swift-prep.outputs.files != '' && needs.mutation-swift-prep.outputs.files != '[]'
+    if: needs.mutation-swift-prep.outputs.jobs != '' && needs.mutation-swift-prep.outputs.jobs != '[]'
     strategy:
       fail-fast: false
       matrix:
-        file: ${{ fromJSON(needs.mutation-swift-prep.outputs.files) }}
+        include: ${{ fromJSON(needs.mutation-swift-prep.outputs.jobs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -1418,23 +1436,69 @@ jobs:
       - name: Run native mutation tests
         timeout-minutes: 30
         env:
-          MUTATION_FILE: ${{ matrix.file }}
-        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main --file "$MUTATION_FILE"
+          MUTATION_JOB: ${{ toJSON(matrix) }}
+        run: pnpm tsx scripts/run-swift-mutation.ts --job "$MUTATION_JOB"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mutantkit-report-${{ strategy.job-index }}
+          name: swift-mutation-worker-${{ strategy.job-index }}
           path: |
-            reports/swift-mutation/
-            packages/mobile/modules/*/.mutantkit/evidence/
-            packages/mobile/targets/*/.mutantkit/evidence/
+            reports/swift-mutation/campaign.json
+            reports/swift-mutation/files/${{ matrix.file }}/workers/${{ matrix.shard }}/
           include-hidden-files: true
-          if-no-files-found: ignore
+          if-no-files-found: error
+          retention-days: 7
+
+  mutation-swift-merge:
+    name: Verify complete Swift mutation campaign
+    needs: [mutation-swift-prep, mutation-swift]
+    if: >-
+      always() && needs.mutation-swift-prep.result == 'success' &&
+      (needs.mutation-swift.result == 'success' ||
+       (needs.mutation-swift-prep.outputs.jobs == '[]' && needs.mutation-swift.result == 'skipped'))
+    runs-on: macos-latest
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Download prepared Swift mutation plans
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
+      - name: Download Swift mutation worker evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.mutation-swift-prep.outputs.jobs != '[]'
+        with:
+          pattern: swift-mutation-worker-*
+          path: reports/swift-mutation/
+          merge-multiple: true
+      - name: Install pinned MutantKit
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Reverify shard evidence and merge every original candidate
+        timeout-minutes: 30
+        run: pnpm tsx scripts/run-swift-mutation.ts --merge
+      - name: Upload verified Swift mutation campaign
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-campaign
+          path: reports/swift-mutation/
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 7
 
   mutation-gate:
     name: Mutation Testing
-    needs: [mutation-prep, mutation, mutation-swift-prep, mutation-swift]
+    needs: [mutation-prep, mutation, mutation-swift-prep, mutation-swift, mutation-swift-merge]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1444,7 +1508,8 @@ jobs:
             "${{ needs.mutation-prep.result }}" \
             "${{ needs.mutation.result }}" \
             "${{ needs.mutation-swift-prep.result }}" \
-            "${{ needs.mutation-swift.result }}"; do
+            "${{ needs.mutation-swift.result }}" \
+            "${{ needs.mutation-swift-merge.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "Mutation discovery or testing failed or was cancelled"
               exit 1
@@ -1454,8 +1519,12 @@ jobs:
             echo "Selected TypeScript mutation work did not succeed"
             exit 1
           fi
-          if [ "${{ needs.mutation-swift-prep.result == 'success' && needs.mutation-swift-prep.outputs.files != '[]' && needs.mutation-swift.result != 'success' }}" = "true" ]; then
+          if [ "${{ needs.mutation-swift-prep.result == 'success' && needs.mutation-swift-prep.outputs.jobs != '[]' && needs.mutation-swift.result != 'success' }}" = "true" ]; then
             echo "Selected native mutation work did not succeed"
+            exit 1
+          fi
+          if [ "${{ needs.mutation-swift-prep.result == 'success' && needs.mutation-swift-merge.result != 'success' }}" = "true" ]; then
+            echo "Complete native mutation campaign verification did not succeed"
             exit 1
           fi
 

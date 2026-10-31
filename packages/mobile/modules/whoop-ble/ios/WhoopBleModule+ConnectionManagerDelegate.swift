@@ -91,8 +91,14 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
 
         var newImuSamples: [WhoopImuSample] = []
         var newRealtimeData: [WhoopRealtimeDataSample] = []
+        var newSensorRecords: [[String: Any]] = []
+        var deviceInfo = manager.deviceInfo
+        if let name = manager.connectedPeripheral?.name, !name.isEmpty { deviceInfo["name"] = String(name.prefix(200)) }
 
         for frame in frames {
+            if let record = WhoopBleSensorRecord.serialize(frame: frame, deviceInfo: deviceInfo) {
+                newSensorRecords.append(record)
+            }
             packetTypeCounts[frame.packetType, default: 0] += 1
 
             let count = packetTypeCounts[frame.packetType] ?? 0
@@ -118,14 +124,34 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             realtimeSamples: newRealtimeData
         )
 
-        if newImuSamples.isEmpty && newRealtimeData.isEmpty {
+        if newImuSamples.isEmpty && newRealtimeData.isEmpty && newSensorRecords.isEmpty {
             emptyExtractions += 1
             return
         }
 
         totalSamplesExtracted += UInt64(newImuSamples.count)
 
-        orientationProcessor.processSamples(newImuSamples) { [weak self] quaternion, euler in
+        publishOrientation(newImuSamples)
+
+        do {
+            if !newSensorRecords.isEmpty {
+                try uploader.append(stream: .sensorRecords, deviceId: deviceId, samples: newSensorRecords)
+            }
+            if !newRealtimeData.isEmpty {
+                try uploader.append(stream: .realtime, deviceId: deviceId, samples: WhoopBleSampleSerializer.realtime(newRealtimeData))
+            }
+            if !newImuSamples.isEmpty {
+                try uploader.append(stream: .imu, deviceId: deviceId, samples: WhoopBleSampleSerializer.imu(newImuSamples))
+            }
+        } catch {
+            failCapture(error)
+            return
+        }
+        scheduleDeviceStatePublication()
+    }
+
+    private func publishOrientation(_ samples: [WhoopImuSample]) {
+        orientationProcessor.processSamples(samples) { [weak self] quaternion, euler in
             MainThreadEventEmitter.emit([
                 "w": quaternion.w,
                 "x": quaternion.x,
@@ -138,19 +164,6 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
                 self?.sendEvent("onOrientation", payload)
             }
         }
-
-        do {
-            if !newRealtimeData.isEmpty {
-                try uploader.append(stream: .realtime, deviceId: deviceId, samples: WhoopBleSampleSerializer.realtime(newRealtimeData))
-            }
-            if !newImuSamples.isEmpty {
-                try uploader.append(stream: .imu, deviceId: deviceId, samples: WhoopBleSampleSerializer.imu(newImuSamples))
-            }
-        } catch {
-            failCapture(error)
-            return
-        }
-        scheduleDeviceStatePublication()
     }
 
     func connectionManager(

@@ -27,6 +27,29 @@ private final class Transport: WhoopUploadTransport {
 }
 
 final class WhoopBleBackgroundUploaderTests: XCTestCase {
+    func testSensorUploadUsesOwnRouteAndAcknowledgesWhileRealtimeFails() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(capturedWhoopR18Data()))
+        let record = try XCTUnwrap(WhoopBleSensorRecord.serialize(
+            frame: frame, deviceInfo: ["model": "WHOOP MG", "firmware": "50.42.1.0"]))
+        try uploader.append(stream: .sensorRecords, deviceId: "a", samples: [record])
+        try uploader.flush(); try settle(uploader)
+        let sensorIndex = try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path == "/api/trpc/whoopBleSync.pushSensorRecords" })
+        let realtimeIndex = try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path == "/api/trpc/whoopBleSync.pushRealtimeData" })
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: transport.requests[sensorIndex].1)) as? [String: Any])
+        let samples = try XCTUnwrap(body["samples"] as? [[String: Any]])
+        XCTAssertEqual(samples.count, 1)
+        let sample = try XCTUnwrap(samples.first)
+        XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(sample["captureId"] as? String)))
+        XCTAssertEqual(sample["frameHex"] as? String, try capturedWhoopR18Data().map { String(format: "%02x", $0) }.joined())
+        XCTAssertEqual(sample["deviceInfo"] as? [String: String], ["model": "WHOOP MG", "firmware": "50.42.1.0"])
+        transport.complete(realtimeIndex, status: 500)
+        transport.complete(sensorIndex)
+        try settle(uploader)
+        XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+    }
     private func setup(
         reportError: @escaping (Error) -> Void = { _ in },
         now: @escaping () -> Date = Date.init

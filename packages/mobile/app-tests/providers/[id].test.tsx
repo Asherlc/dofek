@@ -67,14 +67,17 @@ vi.mock("react-native", () => ({
   },
   ScrollView: ({
     children,
+    refreshControl,
     ...props
-  }: { children?: React.ReactNode } & Record<string, unknown>) => {
+  }: { children?: React.ReactNode; refreshControl?: React.ReactNode } & Record<
+    string,
+    unknown
+  >) => {
     const {
       style: _s,
       contentContainerStyle: _cs,
       showsHorizontalScrollIndicator: _sh,
       horizontal: _h,
-      refreshControl: _rc,
       accessibilityLabel,
       accessibilityRole,
       ...rest
@@ -82,10 +85,12 @@ vi.mock("react-native", () => ({
     return React.createElement(
       "div",
       { ...rest, "aria-label": accessibilityLabel, role: accessibilityRole },
+      refreshControl,
       children,
     );
   },
-  RefreshControl: () => null,
+  RefreshControl: ({ onRefresh }: { onRefresh?: () => void }) =>
+    React.createElement("button", { type: "button", onClick: onRefresh }, "Pull to refresh"),
   TouchableOpacity: ({
     children,
     onPress,
@@ -306,6 +311,7 @@ const mockInvalidateAvailableDataTypes = vi.fn();
 const mockInvalidateRecords = vi.fn();
 const mockInvalidateDetailLogs = vi.fn();
 const mockInvalidateLogs = vi.fn();
+const mockInvalidateSensorSnapshot = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
@@ -314,9 +320,9 @@ const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockCaptureException = vi.fn();
 const mockTokenConnect = vi.fn();
-const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
+const mockUseRefresh = vi.fn((options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
-  onRefresh: vi.fn(),
+  onRefresh: vi.fn(() => options?.invalidate?.()),
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -326,6 +332,9 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    whoopBleSync: {
+      sensorSnapshot: { useQuery: () => ({ data: undefined, error: null, isLoading: false }) },
+    },
     processing: {
       status: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
@@ -369,6 +378,7 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
       invalidate: vi.fn(),
+      whoopBleSync: { sensorSnapshot: { invalidate: mockInvalidateSensorSnapshot } },
       processing: {
         status: { invalidate: mockInvalidateDataHealth },
       },
@@ -563,6 +573,7 @@ describe("ProviderDetailScreen", () => {
     mockInvalidateRecords.mockReset();
     mockInvalidateDetailLogs.mockReset();
     mockInvalidateLogs.mockReset();
+    mockInvalidateSensorSnapshot.mockReset();
     mockSyncStatusFetch.mockReset();
     mockOpenBrowserAsync.mockReset();
     mockGetRequestStatus.mockReset();
@@ -787,6 +798,7 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("WHOOP BLE")).toBeTruthy();
+      expect(screen.getByText(/background sensors/i)).toBeTruthy();
       expect(screen.queryByText("Connect")).toBeNull();
       expect(screen.queryByText("Reconnect")).toBeNull();
       expect(screen.queryByText("Sync")).toBeNull();
@@ -1762,6 +1774,18 @@ describe("ProviderDetailScreen", () => {
       fireEvent.click(screen.getByRole("button", { name: "To" }));
 
       expect(screen.queryByText('"From" date must be on or before "To" date')).toBeNull();
+    });
+
+    it("refreshes the WHOOP sensor snapshot on pull-to-refresh", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop_ble" });
+      mockProvidersQuery.mockReturnValue({ data: [pushOnlyProvider], isLoading: false });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Pull to refresh" }));
+
+      await waitFor(() => expect(mockInvalidateSensorSnapshot).toHaveBeenCalledOnce());
+      expect(mockUseRefresh.mock.results.at(-1)?.value.onRefresh).toHaveBeenCalledOnce();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
