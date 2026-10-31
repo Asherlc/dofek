@@ -113,6 +113,12 @@ one interactive map above a grouped list on narrow screens, including same-day
 attachment suggestions under Unattached. Selecting a row or
 map point highlights the same occurrence; Log details opens the existing
 [record modal](./components/providers/provider-record-detail-modal.tsx).
+Selecting a climb also emphasizes its recorded HR chart line or time range.
+The [activity route](<app/activity/[id].tsx>) shares the active annotation ID
+with the [HR chart](components/activity/ActivityDetailCharts.tsx), so subsequent
+scrubbing and accessible chart selections can replace it. Climbs without
+recorded timing retain no chart position.
+
 Coincident coordinates show a counted marker and remain selectable in the grouped list, preserving
 both source coordinates and log identities through the
 [shared marker grouping](../training/src/climbing-map.ts).

@@ -8,7 +8,10 @@ import {
   activityPreviewSource,
   defaultActivityMetricSources,
 } from "@dofek/training/fixtures/activity-metric-sources";
-import { climbingChartAnnotations } from "@dofek/training/fixtures/climbing-chart";
+import {
+  climbingChartAnnotations,
+  climbingHeartRateContext,
+} from "@dofek/training/fixtures/climbing-chart";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
 import { Modal, Platform, Pressable, Text, View } from "react-native";
@@ -41,7 +44,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
-export const TimedClimbs: Story = { args: { climbAnnotations: climbingChartAnnotations } };
+export const TimedClimbs: Story = {
+  args: {
+    climbAnnotations: climbingChartAnnotations,
+    activityWindow: climbingHeartRateContext.window,
+    data: climbingHeartRateContext.points,
+  },
+};
 export const Empty: Story = { args: { data: [] } };
 export const FractionalReadings: Story = {
   args: {

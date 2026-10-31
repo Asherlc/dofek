@@ -755,6 +755,7 @@
     "altitudemeters",
     "strongapp",
     "legendselectchanged",
+    "datazoom",
     "tileerror",
     "zoomend",
     "deauthorize",
