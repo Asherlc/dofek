@@ -67,14 +67,17 @@ vi.mock("react-native", () => ({
   },
   ScrollView: ({
     children,
+    refreshControl,
     ...props
-  }: { children?: React.ReactNode } & Record<string, unknown>) => {
+  }: { children?: React.ReactNode; refreshControl?: React.ReactNode } & Record<
+    string,
+    unknown
+  >) => {
     const {
       style: _s,
       contentContainerStyle: _cs,
       showsHorizontalScrollIndicator: _sh,
       horizontal: _h,
-      refreshControl: _rc,
       accessibilityLabel,
       accessibilityRole,
       ...rest
@@ -82,10 +85,12 @@ vi.mock("react-native", () => ({
     return React.createElement(
       "div",
       { ...rest, "aria-label": accessibilityLabel, role: accessibilityRole },
+      refreshControl,
       children,
     );
   },
-  RefreshControl: () => null,
+  RefreshControl: ({ onRefresh }: { onRefresh?: () => void }) =>
+    React.createElement("button", { type: "button", onClick: onRefresh }, "Pull to refresh"),
   TouchableOpacity: ({
     children,
     onPress,
@@ -315,9 +320,9 @@ const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockCaptureException = vi.fn();
 const mockTokenConnect = vi.fn();
-const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
+const mockUseRefresh = vi.fn((options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
-  onRefresh: vi.fn(),
+  onRefresh: vi.fn(() => options?.invalidate?.()),
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -1777,10 +1782,10 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
-      const refreshOptions = mockUseRefresh.mock.calls.at(-1)?.[0];
-      await refreshOptions?.invalidate?.();
+      fireEvent.click(screen.getByRole("button", { name: "Pull to refresh" }));
 
-      expect(mockInvalidateSensorSnapshot).toHaveBeenCalledOnce();
+      await waitFor(() => expect(mockInvalidateSensorSnapshot).toHaveBeenCalledOnce());
+      expect(mockUseRefresh.mock.results.at(-1)?.value.onRefresh).toHaveBeenCalledOnce();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
