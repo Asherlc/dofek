@@ -1,7 +1,40 @@
+import CoreBluetooth
 import Foundation
 import SQLite3
 import XCTest
 @testable import WhoopBLE
+
+final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
+    let identifier: UUID
+    let name: String? = "WHOOP test peripheral"
+    var state: CBPeripheralState = .connected
+    weak var delegate: CBPeripheralDelegate?
+    var services: [CBService]?
+    private let nativeSource: AnyObject?
+    var notificationSource: AnyObject { nativeSource ?? self }
+    private(set) var connections = 0
+    private(set) var cancellations = 0
+    private(set) var discoveredServices: [CBUUID]?
+    var onCancel: () -> Void = {}
+    private(set) var writes: [(Data, CBCharacteristic, CBCharacteristicWriteType)] = []
+
+    init(identifier: UUID = UUID(), notificationSource: AnyObject? = nil) {
+        self.identifier = identifier
+        nativeSource = notificationSource
+    }
+
+    func connect() { connections += 1 }
+    func cancelConnection() {
+        cancellations += 1
+        onCancel()
+    }
+    func discoverServices(_ serviceUUIDs: [CBUUID]?) { discoveredServices = serviceUUIDs }
+    func discoverCharacteristics(_ characteristicUUIDs: [CBUUID]?, for service: CBService) {}
+    func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) {}
+    func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) {
+        writes.append((data, characteristic, type))
+    }
+}
 
 extension Data {
     init?(hexString: String) {

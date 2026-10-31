@@ -205,6 +205,39 @@ final class WhoopBlePendingReconnectTests: XCTestCase {
 }
 
 final class WhoopBleHandshakeTests: XCTestCase {
+    func testHandshakeDeadlineRetainsItsCallbackAdapterUntilCancellation() {
+        let manager = WhoopBleConnectionManager(connectTimeoutSeconds: 0.01)
+        let cancelled = expectation(description: "callback adapter cancels its native connection")
+        manager.syncOnBleQueue {
+            let callbackAdapter = TestWhoopPeripheralConnection()
+            callbackAdapter.onCancel = { cancelled.fulfill() }
+            manager.autoReconnect = true
+            manager.setState(.discoveringServices)
+            manager.startHandshakeTimeout(for: callbackAdapter)
+        }
+        wait(for: [cancelled], timeout: 0.2)
+    }
+
+    func testPeripheralHandshakeDeadlineCancelsOwnedPeripheralAndPreservesRecovery() {
+        let manager = WhoopBleConnectionManager(connectTimeoutSeconds: 0.01)
+        let peripheral = TestWhoopPeripheralConnection()
+        let checked = expectation(description: "peripheral deadline cancelled")
+        manager.syncOnBleQueue {
+            manager.setConnectedPeripheral(peripheral)
+            manager.autoReconnect = true
+            manager.setState(.discoveringServices)
+            manager.startHandshakeTimeout(for: peripheral)
+            manager.bleQueue.asyncAfter(deadline: .now() + 0.05) {
+                XCTAssertEqual(peripheral.cancellations, 1)
+                XCTAssertTrue(manager.connectedPeripheral === peripheral)
+                XCTAssertEqual(manager.state, .disconnecting)
+                XCTAssertTrue(manager.autoReconnect)
+                checked.fulfill()
+            }
+        }
+        wait(for: [checked], timeout: 1)
+    }
+
     func testServiceDiscoveryErrorCancelsAndSettlesExactlyOnce() {
         let manager = WhoopBleConnectionManager()
         var results: [Result<Bool, WhoopBleConnectionError>] = []

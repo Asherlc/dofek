@@ -191,6 +191,14 @@ Bluetooth delivery separately on a device.
 
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
+Its [peripheral callback regressions](Tests/WhoopBleConnectionManager+CoreBluetoothTests.swift)
+exercise ownership, stale callbacks, cancellation and reconnect through the same
+[peripheral interface](ios/WhoopBlePeripheralConnection.swift) used by the native
+adapter. The adapter preserves the underlying peripheral's notification identity
+across callbacks, and handshake deadlines retain their adapter until settlement.
+These tests cover the manager's callback policy; physical strap capture and
+background delivery still require a device, following Apple's
+[CoreBluetooth background guidance](https://developer.apple.com/documentation/corebluetooth/core-bluetooth-background-processing-for-ios-apps).
 
 The workspace's [React Native patch](../../../../patches/react-native@0.88.1.patch)
 preserves build-flavor markers during [CocoaPods source cleanup](https://github.com/CocoaPods/CocoaPods/blob/1.16.2/lib/cocoapods/sandbox/pod_dir_cleaner.rb#L55).

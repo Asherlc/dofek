@@ -389,7 +389,7 @@ public final class WhoopBleClient: @unchecked Sendable {
 extension WhoopBleClient: WhoopBleConnectionManagerDelegate {
     func connectionManagerDidBecomeReady(
         _ manager: WhoopBleConnectionManager,
-        peripheral _: CBPeripheral,
+        peripheral _: any WhoopBlePeripheralConnection,
         cmdCharacteristic _: CBCharacteristic,
         wasStreaming: Bool
     ) {
