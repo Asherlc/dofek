@@ -11,6 +11,51 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     private func samples(_ seconds: [Int]) -> [[String: Any]] {
         seconds.map { ["timestamp": String(format: "2026-10-28T00:00:%02d.000Z", $0), "heartRateBpm": 70] }
     }
+    func testStatisticsUsesBoundedDatabaseWorkForLargeQueues() throws {
+        let url = try directory()
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
+        try store.configure(owner)
+        try store.append(stream: .imu, deviceId: "a", samples: Array(repeating: samples([2])[0], count: 10_000))
+        let stats = try probe.withInstructionLimit(1_000) { try store.statistics(stream: .imu) }
+        XCTAssertEqual(stats["count"] as? Int, 10_000)
+        XCTAssertEqual(stats["oldestTimestamp"] as? String, "2026-10-28T00:00:02.000Z")
+        XCTAssertEqual(stats["newestTimestamp"] as? String, "2026-10-28T00:00:02.000Z")
+    }
+
+    func testUnlimitedQueueCountUsesBoundedDatabaseWork() throws {
+        let url = try directory()
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
+        try store.configure(owner)
+        try store.append(stream: .imu, deviceId: "a", samples: Array(repeating: samples([2])[0], count: 10_000))
+        let count = try probe.withInstructionLimit(1_000) { try store.queuedCount(stream: .imu, limit: Int.max) }
+        XCTAssertEqual(count, 10_000)
+    }
+
+    func testDiagnosticsBoundsFollowSampleTimeAcrossAcknowledgmentAndErasure() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        try store.append(stream: .realtime, deviceId: "a", samples: samples([9, 1, 8]))
+        try store.append(stream: .imu, deviceId: "a", samples: samples([3, 2]))
+        var stats = try store.statistics(stream: .realtime)
+        XCTAssertEqual(stats["count"] as? Int, 3)
+        XCTAssertEqual(stats["oldestTimestamp"] as? String, "2026-10-28T00:00:01.000Z")
+        XCTAssertEqual(stats["newestTimestamp"] as? String, "2026-10-28T00:00:09.000Z")
+        let batch = try XCTUnwrap(store.reserve(stream: .realtime, limit: 1))
+        XCTAssertTrue(try store.acknowledge(id: batch.id, generation: batch.generation))
+        stats = try store.statistics(stream: .realtime)
+        XCTAssertEqual(stats["count"] as? Int, 2)
+        XCTAssertEqual(stats["newestTimestamp"] as? String, "2026-10-28T00:00:08.000Z")
+        try store.advanceErasureCutoff(to: XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:01Z")))
+        stats = try store.statistics(stream: .realtime)
+        XCTAssertEqual(stats["count"] as? Int, 1)
+        XCTAssertEqual(stats["oldestTimestamp"] as? String, "2026-10-28T00:00:08.000Z")
+        XCTAssertEqual(try store.queuedCount(stream: .imu, limit: Int.max), 2)
+        try store.purge()
+        stats = try store.statistics(stream: .realtime)
+        XCTAssertEqual(stats["count"] as? Int, 0)
+        XCTAssertTrue(stats["oldestTimestamp"] is NSNull)
+        XCTAssertTrue(stats["newestTimestamp"] is NSNull)
+    }
     func testReopenPreservesImmutableReservationAndExactAcknowledgment() throws {
         let url = try directory()
         var store: WhoopBleSampleStore? = try WhoopBleSampleStore(directory: url)

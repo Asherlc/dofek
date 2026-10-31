@@ -1,4 +1,6 @@
 import Foundation
+import SQLite3
+import XCTest
 @testable import WhoopBLE
 
 extension Data {
@@ -28,4 +30,36 @@ func makeRealtimeSample(timestampSeconds: UInt32) -> WhoopRealtimeDataSample {
         quaternionZ: 0,
         opticalBytes: Data(count: 18)
     )
+}
+/// Observe the real store connection without adding a test-only production API.
+final class SQLiteWorkProbe {
+    private let database: OpaquePointer
+
+    private init(database: OpaquePointer) { self.database = database }
+
+    static func opening<T>(_ open: () throws -> T) throws -> (T, SQLiteWorkProbe) {
+        let value = try open()
+        // Borrow the handle only to instrument public calls. Apple does not
+        // support process-global SQLite auto extensions for observing opens.
+        let handle = Mirror(reflecting: value).children.first { $0.label == "database" }?.value
+        let database = try XCTUnwrap(handle as? OpaquePointer)
+        return (value, SQLiteWorkProbe(database: database))
+    }
+
+    func withInstructionLimit<T>(_ limit: Int, _ operation: () throws -> T) rethrows -> T {
+        let remaining = UnsafeMutablePointer<Int>.allocate(capacity: 1)
+        remaining.initialize(to: limit)
+        sqlite3_progress_handler(database, 1, { context in
+            guard let context else { return 1 }
+            let remaining = context.assumingMemoryBound(to: Int.self)
+            remaining.pointee -= 1
+            return remaining.pointee < 0 ? 1 : 0
+        }, remaining)
+        defer {
+            sqlite3_progress_handler(database, 0, nil, nil)
+            remaining.deinitialize(count: 1)
+            remaining.deallocate()
+        }
+        return try operation()
+    }
 }
