@@ -160,7 +160,7 @@ describe("provider-registration", () => {
     expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
   });
 
-  it("registers theCrag with a usable public-profile connection", async () => {
+  it("registers theCrag with a personal API key connection", async () => {
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
     await ensureProvidersRegistered();
 
@@ -170,10 +170,10 @@ describe("provider-registration", () => {
 
     expect(provider?.validate()).toBeNull();
     const setup = provider?.authSetup?.();
-    expect(getProviderAuthTypeFromSetup(setup)).toBe("public-profile");
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
     expect(setup?.manualToken).toMatchObject({
-      label: "theCrag profile URL or username",
-      instructionsUrl: "https://www.thecrag.com/",
+      label: "Personal API key",
+      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
   });
 

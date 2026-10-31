@@ -351,6 +351,7 @@ export function DataSourcesPanel() {
               name: provider.name,
               label: provider.tokenAuth.label,
               instructionsUrl: provider.tokenAuth.instructionsUrl,
+              description: provider.tokenAuth.description,
             });
           } else {
             const error = new Error(
@@ -538,6 +539,7 @@ export function DataSourcesPanel() {
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}
           instructionsUrl={tokenAuthProvider.instructionsUrl}
+          description={tokenAuthProvider.description}
           onClose={() => setTokenAuthProvider(null)}
           onSuccess={() => {
             setTokenAuthProvider(null);

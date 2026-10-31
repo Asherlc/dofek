@@ -15,6 +15,7 @@ function isHttpsUrl(value: string): boolean {
 export const providerTokenAuthSchema = z.object({
   kind: z.enum(PROVIDER_MANUAL_CONNECTION_KINDS),
   label: z.string(),
+  description: z.string().optional(),
   instructionsUrl: z.url().refine(isHttpsUrl, {
     message: "Token instructions URL must use HTTPS",
   }),

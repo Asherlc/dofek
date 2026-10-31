@@ -41,10 +41,10 @@ absent records; the provider record browser retains them. See the
 and [provider records](../../packages/server/src/repositories/provider-detail-repository.ts).
 Failed, malformed, or incomplete discovery never retires records.
 
-theCrag uses additive imports because its public ascent feed describes events
-and does not establish a complete current logbook; see the
-[provider guide](../../docs/thecrag.md) and
-[upstream feed discussion](https://github.com/theCrag/website/issues/1997).
+theCrag uses additive imports because official incremental responses are not
+complete logbook snapshots and the API does not document deletion events; see
+the [provider guide](../../docs/thecrag.md) and
+[official personal API](https://www.thecrag.com/en/article/logbookreadapi).
 
 CSV uploads retain their existing session-scoped reconciliation because an
 upload need not contain the complete remote logbook; see the
@@ -153,20 +153,13 @@ partially unsupported, or failed responses do not retire existing rows.
 
 ## theCrag
 
-theCrag connects a public username or profile URL on web and mobile and imports
-ticks from the public Atom feed and ascent pages. It needs no supporter key,
-account login or browser process. The provider-local HTTP client is Impit
-([documentation](https://apify.github.io/impit/js/)); the feed route is recorded
-in the [upstream discussion](https://github.com/theCrag/website/issues/1997).
-
-The [provider](thecrag/provider.ts) stores standalone climbing log entries without
-creating workouts. Daily polling upserts observed ascents and preserves
-unobserved entries and attachments. Feed history is not guaranteed complete;
-private notes are unavailable. Existing personal-key connections must reconnect
-and owners must revoke their old keys in theCrag's API settings
-([personal API guide](https://www.thecrag.com/en/article/logbookreadapi)).
-See the [theCrag provider guide](../../docs/thecrag.md) for source mapping,
-transport verification, upstream terms and feed limitations.
+theCrag connects a personal API key on web and mobile and imports the owner's
+logbook through the [official personal API](https://www.thecrag.com/en/article/logbookreadapi).
+Active supporter status is required, and the key includes private ascent notes.
+The [provider](thecrag/provider.ts) imports full history once, then source-epoch
+incremental updates, retaining stable ascent IDs and existing attachments.
+Public-profile connections must reconnect. Keys remain owner-revoked in theCrag
+Settings > API Keys; see the [provider guide](../../docs/thecrag.md).
 
 ## OAuth authorization erasure
 

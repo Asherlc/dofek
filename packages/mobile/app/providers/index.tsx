@@ -634,6 +634,7 @@ export default function ProvidersScreen() {
               name: provider.label,
               label: provider.tokenAuth.label,
               instructionsUrl: provider.tokenAuth.instructionsUrl,
+              description: provider.tokenAuth.description,
             });
           } else {
             const error = new Error(
@@ -1011,6 +1012,7 @@ export default function ProvidersScreen() {
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}
           instructionsUrl={tokenAuthProvider.instructionsUrl}
+          description={tokenAuthProvider.description}
           onClose={() => setTokenAuthProvider(null)}
           onSuccess={() => {
             setTokenAuthProvider(null);

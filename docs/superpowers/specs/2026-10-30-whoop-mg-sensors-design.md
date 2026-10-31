@@ -1,9 +1,9 @@
 # WHOOP MG background sensor capture
 
-Status: approved by the user on 2026-10-30; implementation committed. Available
-checks pass; Expo application/bridge build awaits Infisical authentication and
-physical MG/overnight validation remains pending. The user requested finishing
-available checks first.
+Status: approved by the user on 2026-10-30; implementation committed.
+The [hosted iOS native build](https://github.com/Asherlc/dofek/actions/runs/41155587629/job/124402172401) passed. Local Expo generation was deferred
+pending Infisical authentication at the user's request. Physical MG/overnight
+validation remains pending.
 
 ## Intent and agreed scope
 

@@ -78,7 +78,7 @@
 ## Task 5: Whole-change verification and review
 
 - [x] Run native Swift tests, affected TypeScript tests, owned-file lint, typechecks and Swift export checks; record the Expo app/bridge build prerequisite failure separately.
-- [ ] Build the Expo iOS application/bridge after Infisical authentication. User explicitly deferred this check to finish available checks first.
+- [x] Validate the application/bridge through the [hosted iOS native build](https://github.com/Asherlc/dofek/actions/runs/41155587629/job/124402172401). Local generation remains deferred pending Infisical authentication.
 - [x] Request one fresh whole-branch review, resolve important findings with a failing regression test first, then run the necessary checks again.
 - [x] Commit and push the implementation automatically on the current branch. Do not switch branches, deploy or publish.
 - [x] Report physical MG/overnight validation as pending unless performed. Document the next capture needed for any raw-only optical layouts.
@@ -101,3 +101,9 @@ unknown optical maps and physical MG availability remain unverified. See the
 Root/server/web/mobile typechecks, Swift exports, Swiftlint, sandbox lint and
 analytics SQL lint passed. SQLFluff retained its configured large-file skips.
 The final required/optional characteristic error routing suite passed 7 tests.
+
+The [hosted iOS native build](https://github.com/Asherlc/dofek/actions/runs/41155587629/job/124402172401) and all completed functional, type, audit,
+coverage, integration and TypeScript mutation checks passed on `c888cb9`.
+Swift mutation jobs were still queued for macOS runners when main advanced;
+merge verification continues on the combined head. No physical MG validation
+has been performed.

@@ -3,6 +3,7 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import type { TRPCError } from "@trpc/server";
+import { getTokenUserId } from "dofek/db/token-user-context";
 import { ProviderAuthenticationFailedError } from "dofek/providers/auth-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,7 +84,10 @@ describe("tokenAuthRouter", () => {
       expiresAt: new Date("2026-08-01T00:00:00Z"),
       scopes: "read",
     };
-    const exchangeToken = vi.fn().mockResolvedValue(tokens);
+    const exchangeToken = vi.fn().mockImplementation(async () => {
+      expect(getTokenUserId()).toBe("user-123");
+      return tokens;
+    });
     const provider = stubProvider({
       id: "wger",
       name: "Wger",
@@ -512,5 +516,32 @@ describe("tokenAuthRouter", () => {
       message: "Misconfigured Provider personal-token authentication is misconfigured.",
     } satisfies Partial<TRPCError>);
     expect(exchangeToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("theCrag official access failures", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each([400, 403])("returns safe actionable checks for an HTTP %s rejection", async (status) => {
+    const { TheCragProvider } = await import("dofek/providers/thecrag");
+    const provider = new TheCragProvider(
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response("private-key private notes", { status })),
+    );
+    mockGetAllProviders.mockReturnValue([provider]);
+    const caller = createTestCallerFactory(tokenAuthRouter)({
+      db: {},
+      userId: "user-123",
+      timezone: "UTC",
+    });
+    await expect(
+      caller.connect({ providerId: "thecrag", token: "private-key" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringMatching(
+        /Check your API key, active supporter status and weekly usage budget/,
+      ),
+    });
+    expect(mockConnectProviderWithTokens).not.toHaveBeenCalled();
   });
 });
