@@ -15,12 +15,42 @@ function storeWithResponses(responses: unknown[][]): ActivitySensorQueryStore {
 // SQL isolation, date filtering and priority behavior run in the real-engine suite.
 describe("WhoopSensorRepository snapshot presentation", () => {
   it("distinguishes no uploaded records from a decoded measurement", async () => {
-    const repository = new WhoopSensorRepository(storeWithResponses([[], []]), "user-a");
+    const store = storeWithResponses([[], []]);
+    const repository = new WhoopSensorRepository(store, "user-a");
     expect(await repository.snapshot()).toEqual({
       latestReceivedAt: null,
       latestMeasuredAt: null,
       skinTemperatureC: null,
       records: [],
+    });
+    expect(vi.mocked(store.query).mock.calls.map((call) => call[2])).toEqual([
+      { userId: "user-a" },
+      { userId: "user-a" },
+    ]);
+  });
+
+  it.each<{ days: number | null; start: string | null }>([
+    { days: null, start: null },
+    { days: 1, start: "2026-03-29" },
+    { days: 3, start: "2026-03-27" },
+  ])("forwards the selected daily range and user scope: $days", async ({ days, start }) => {
+    const rows = [
+      { date: "2026-03-29", provider_id: "whoop_ble", source_name: "strap-a", skin_temp_c: 32.18 },
+    ];
+    const store = storeWithResponses([rows]);
+    const repository = new WhoopSensorRepository(store, "user-a");
+    expect(
+      await repository.dailyTemperatures({
+        days,
+        endDate: "2026-03-29",
+        timezone: "America/New_York",
+      }),
+    ).toEqual(rows);
+    expect(vi.mocked(store.query).mock.calls[0]?.[2]).toEqual({
+      userId: "user-a",
+      timezone: "America/New_York",
+      spo2EndDate: "2026-03-29",
+      ...(start === null ? {} : { spo2WindowStart: start }),
     });
   });
 
