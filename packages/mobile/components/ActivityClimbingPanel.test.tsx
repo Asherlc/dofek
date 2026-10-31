@@ -12,23 +12,30 @@ import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-
 
 it("selects each repeated occurrence from list and map and keeps details explicit", () => {
   const onOpenEntry = vi.fn();
+  const onSelectEntry = vi.fn();
   const entries = [climbingLogFixture, { ...climbingLogFixture, id: "repeat" }];
   const { container } = render(
     <ActivityClimbingPanel
       entries={entries}
       locations={{ [climbingLogFixture.id]: exactClimbingLocation, repeat: exactClimbingLocation }}
       onOpenEntry={onOpenEntry}
+      onSelectEntry={onSelectEntry}
     />,
   );
   const repeat = screen.getByRole("button", { name: "Select entry 2, Swiss Cheese" });
   fireEvent.click(repeat);
   expect(repeat.getAttribute("aria-selected")).toBe("true");
+  expect(onSelectEntry).toHaveBeenLastCalledWith("repeat");
   expect(onOpenEntry).not.toHaveBeenCalled();
   const mapWrapper = container.querySelector("[data-testid=climbing-map]");
   if (!mapWrapper) throw new Error("Expected shared map");
   fireEvent(mapWrapper, new CustomEvent("layout", { detail: { width: 320, height: 280 } }));
   const marker = screen.getByLabelText(/2 climbs · Swiss Cheese/);
   fireEvent.click(marker);
+  expect(onSelectEntry).toHaveBeenLastCalledWith(climbingLogFixture.id);
+  onSelectEntry.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }));
+  expect(onSelectEntry).toHaveBeenCalledWith(climbingLogFixture.id);
   expect(
     screen
       .getByRole("button", { name: "Select entry 1, Swiss Cheese" })

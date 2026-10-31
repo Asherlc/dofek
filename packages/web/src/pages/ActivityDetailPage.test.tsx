@@ -1,4 +1,7 @@
-import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetricSources,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
@@ -280,6 +283,14 @@ const mockStreamUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const mockHeartRateContextQuery = vi.fn(
+  (_input?: unknown, _options?: unknown): MockQueryResult<ActivityHeartRateContext> => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 type MockRouteData =
   | { status: "processing" | "unavailable" }
   | { status: "ready"; points: Array<{ lat: number | null; lng: number | null }> };
@@ -358,6 +369,7 @@ vi.mock("../lib/trpc.ts", () => ({
       images: { useQuery: mockImagesUseQuery },
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
+      heartRateContext: { useQuery: mockHeartRateContextQuery },
       metricSources: { useQuery: mockMetricSourcesUseQuery },
       hardware: { useQuery: mockHardwareUseQuery },
       route: { useQuery: mockRouteUseQuery },
@@ -421,6 +433,7 @@ vi.mock("../lib/trpc.ts", () => ({
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
+        heartRateContext: { invalidate: vi.fn().mockResolvedValue(undefined) },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
         powerWork: { invalidate: mockActivityPowerWorkInvalidate },
@@ -475,6 +488,13 @@ afterEach(() => {
     isLoading: false,
   });
   mockStreamUseQuery.mockClear();
+  mockHeartRateContextQuery.mockReset();
+  mockHeartRateContextQuery.mockReturnValue({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockStreamUseQuery.mockImplementation((_input?: unknown, _options?: unknown) => ({
     data: mockStreamPoints,
     error: null,
@@ -705,6 +725,39 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("uses the server's surrounding HR observations for a climbing activity", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "climbing" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockHeartRateContextQuery.mockReturnValue({
+      data: {
+        window: { startedAt: "2026-04-14T09:55:00.000Z", endedAt: "2026-04-14T11:05:00.000Z" },
+        points: [
+          { recordedAt: "2026-04-14T09:55:00.000Z", value: 91 },
+          { recordedAt: "2026-04-14T11:05:00.000Z", value: 92 },
+        ],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    await waitFor(() =>
+      expect(
+        capturedOptions.some(
+          (option) =>
+            Array.isArray(option.series) &&
+            option.series.some(
+              (series) => series.name === "Heart Rate" && series.data?.[0]?.value?.[1] === 91,
+            ),
+        ),
+      ).toBe(true),
+    );
+  });
   it("uses the readable primary activity type for the title and breadcrumb when its name is missing", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: {

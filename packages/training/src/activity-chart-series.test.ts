@@ -7,6 +7,29 @@ function sample(second: number, value: number | null) {
 }
 
 describe("activityChartSeries", () => {
+  it("uses the last observation for an activity without a recorded end", () => {
+    const series = activityChartSeries([sample(3, 130), sample(55, 140)], {
+      startedAt: "2026-10-20T16:00:00Z",
+      endedAt: null,
+    });
+    expect([series.startedAt, series.endedAt]).toEqual([startedAt, startedAt + 55000]);
+    expect(series.samples.map(({ position }) => position)).toEqual([3 / 55, 1]);
+  });
+
+  it("uses recorded activity bounds without filling missing endpoint observations", () => {
+    const series = activityChartSeries([sample(3, 130), sample(55, 140)], {
+      startedAt: "2026-10-20T16:00:00Z",
+      endedAt: "2026-10-20T16:01:00Z",
+    });
+    expect([series.startedAt, series.endedAt]).toEqual([startedAt, startedAt + 60000]);
+    expect(
+      series.samples.map(({ timestamp, value, position }) => [timestamp, value, position]),
+    ).toEqual([
+      [startedAt + 3000, 130, 0.05],
+      [startedAt + 55000, 140, 55 / 60],
+    ]);
+  });
+
   it.each([200, 500])(
     "keeps a continuous four-hour recording connected at %i returned points",
     (count) => {
@@ -105,7 +128,12 @@ describe("activityChartSeries", () => {
 
   it("handles a metric with no observations", () => {
     expect(activityChartSeries([sample(0, null)]).samples).toEqual([]);
-    expect(activityChartSeries([]).samples).toEqual([]);
+    expect(activityChartSeries([])).toEqual({ startedAt: -500, endedAt: 500, samples: [] });
+    expect(activityChartSeries([], { startedAt: "2026-10-20T16:00:00Z", endedAt: null })).toEqual({
+      startedAt: startedAt - 500,
+      endedAt: startedAt + 500,
+      samples: [],
+    });
   });
 });
 

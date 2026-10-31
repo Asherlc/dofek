@@ -1,7 +1,10 @@
+import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { expect, fn, waitFor, within } from "storybook/test";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { ActivityClimbingPanel } from "./ActivityClimbingPanel.tsx";
+import { MetricsChart } from "./ActivityDetailCharts.tsx";
 import {
   climbingMapLocations,
   climbingMapLogs,
@@ -90,6 +93,52 @@ export const WithRecordedRoute: Story = {
 };
 export const Empty: Story = { args: { entries: [], locations: {} } };
 export const NoLocations: Story = { args: { locations: {} } };
+
+export const WithHeartRateChart: Story = {
+  render: function Render(args) {
+    const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
+    return (
+      <div className="space-y-6">
+        <MetricsChart
+          points={Array.from({ length: 61 }, (_, index) => ({
+            recordedAt: new Date(Date.UTC(2026, 9, 18, 17, 30, index * 5)).toISOString(),
+            heartRate: Math.round(110 + 30 * Math.sin(index / 8)),
+            power: null,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            lat: null,
+            lng: null,
+          }))}
+          activityType="climbing"
+          hasHr
+          hasPower={false}
+          hasSpeed={false}
+          hasCadence={false}
+          loading={false}
+          units={new UnitConverter("metric")}
+          highlightedClimbId={highlightedClimbId}
+          climbAnnotations={args.entries
+            .filter((_, index) => index !== 2)
+            .map((entry, index) => ({
+              id: entry.id,
+              label: entry.title ?? entry.climb?.name ?? "Climb",
+              startedAt: new Date(Date.UTC(2026, 9, 18, 17, 31 + index)).toISOString(),
+              endedAt: index === 1 ? "2026-10-18T17:32:40Z" : null,
+            }))}
+        />
+        <ActivityClimbingPanel {...args} onHighlightEntry={setHighlightedClimbId} />
+      </div>
+    );
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const row = canvas.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
+    await userEvent.hover(row);
+    await userEvent.hover(canvas.getByRole("heading", { name: "Climbs", level: 2 }));
+    row.focus();
+  },
+};
 
 export const WithAttachmentSuggestions: Story = {
   args: {
