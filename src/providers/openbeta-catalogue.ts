@@ -108,7 +108,7 @@ function matchesArea(
   if (local.externalId && seed.providerId === "mountain-project" && area.metadata.mp_id)
     return local.externalId === area.metadata.mp_id;
   return (
-    normalizeCatalogueName(local.name) === normalizeCatalogueName(area.area_name) &&
+    normalizeCatalogueName(local.name ?? "") === normalizeCatalogueName(area.area_name) &&
     catalogueAreasAreNearby(local, areaLocation(area))
   );
 }

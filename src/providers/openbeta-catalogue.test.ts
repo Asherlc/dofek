@@ -8,7 +8,7 @@ vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
 const id = "6cc9b5d5-02d5-555a-948b-e2fffc9bd82c";
 const areaId = "7120fcf9-ae19-5adc-ab0d-d04f749c2e91";
-const seed: CatalogueSeed = {
+const seed = {
   userId: "u",
   logEntryId: "e",
   providerId: "kaya",
@@ -18,7 +18,7 @@ const seed: CatalogueSeed = {
   kind: null,
   setting: null,
   locations: [],
-};
+} satisfies CatalogueSeed;
 function climb(overrides = {}) {
   return {
     uuid: id,

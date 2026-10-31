@@ -94,7 +94,13 @@ export class ClimbingCatalogueService {
         ? {
             ...seed,
             name: native.name,
-            aliases: [...new Set([seed.name, ...(seed.aliases ?? []), ...(native.aliases ?? [])])],
+            aliases: [
+              ...new Set([
+                ...(seed.name ? [seed.name] : []),
+                ...(seed.aliases ?? []),
+                ...(native.aliases ?? []),
+              ]),
+            ],
             references: [
               ...new Map(
                 [...(seed.references ?? []), ...(native.references ?? [])].map((reference) => [

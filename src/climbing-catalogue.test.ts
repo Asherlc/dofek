@@ -7,7 +7,7 @@ import { MountainProjectCatalogueAdapter } from "./providers/mountain-project-ca
 
 vi.mock("./lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
-const seed: CatalogueSeed = {
+const seed = {
   userId: "user-a",
   logEntryId: "log-a",
   providerId: "kaya",
@@ -24,7 +24,7 @@ const seed: CatalogueSeed = {
       coordinates: { latitude: 37.8921, longitude: -122.2637 },
     },
   ],
-};
+} satisfies CatalogueSeed;
 const candidate: CatalogueCandidate = {
   providerId: "thecrag",
   externalId: "18589309",
@@ -55,6 +55,54 @@ const candidate: CatalogueCandidate = {
 };
 
 describe("ClimbingCatalogueService", () => {
+  it("retains unnamed native source information without inventing discovery names", async () => {
+    const { KayaCatalogueAdapter } = await import("./providers/kaya/catalogue.ts");
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        data: {
+          climb: {
+            id: "2142564",
+            slug: "Pacific-Pipe-2142564",
+            name: null,
+            climb_type: { name: "Routes" },
+            grade: { name: "5.11c" },
+            gym: { id: "pipe", name: "Pacific Pipe" },
+            board: null,
+            destination: null,
+            area: null,
+            subarea: null,
+            angle: null,
+            lead: true,
+            is_trad: false,
+            tags: [],
+          },
+        },
+      }),
+    );
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      new KayaCatalogueAdapter(fetchFn, async () => "token"),
+      new MountainProjectCatalogueAdapter(fetchFn),
+    ]);
+    const unnamed = { ...seed, externalId: "2142564", name: null, setting: "indoor" as const };
+    const result = await service.refresh(unnamed);
+    expect(result).toMatchObject({
+      status: "ready",
+      sources: [
+        {
+          providerId: "kaya",
+          matches: [
+            {
+              confidence: "source",
+              candidate: { name: null, externalId: "2142564", grade: "5.11c" },
+            },
+          ],
+        },
+        { providerId: "mountain-project", matches: [] },
+      ],
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(await service.read(unnamed)).toEqual(result);
+  });
   it("keeps local alias competitors possible after a native rename", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const name = new URL(String(input)).searchParams.get("q");
@@ -198,7 +246,7 @@ describe("ClimbingCatalogueService", () => {
     },
   );
   it("uses the same final native observation for discovery and returned source context", async () => {
-    const observed: string[] = [];
+    const observed: (string | null)[] = [];
     const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
       {
         providerId: "thecrag",

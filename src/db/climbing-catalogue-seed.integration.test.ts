@@ -140,8 +140,15 @@ describe("loadCatalogueSeed PostgreSQL visibility and source metadata", () => {
       .where(eq(climb.externalId, "climb-id"));
     expect((await loadCatalogueSeed(context.db, userId, id))?.name).toBe("Renamed source");
   });
-  it("uses recorded titles for unnamed climbs and excludes nameless logs", async () => {
-    const id = await write({ climb: { externalId: "climb-id", name: null, kind: "summit" } });
+  it("uses recorded titles and preserves unnamed source identities", async () => {
+    const id = await write({
+      climb: {
+        externalId: "climb-id",
+        name: null,
+        kind: "summit",
+        coordinates: { latitude: 37, longitude: -122 },
+      },
+    });
     expect(await loadCatalogueSeed(context.db, userId, id)).toMatchObject({
       name: "Log title",
       kind: null,
@@ -150,7 +157,18 @@ describe("loadCatalogueSeed PostgreSQL visibility and source metadata", () => {
       .update(climbingLogEntry)
       .set({ title: null })
       .where(eq(climbingLogEntry.id, id));
-    expect(await loadCatalogueSeed(context.db, userId, id)).toBeNull();
+    expect(await loadCatalogueSeed(context.db, userId, id)).toMatchObject({
+      name: null,
+      externalId: "climb-id",
+      locations: [
+        {
+          externalId: "climb-id",
+          name: null,
+          scope: "climb",
+          coordinates: { latitude: 37, longitude: -122 },
+        },
+      ],
+    });
   });
   it("does not substitute the log identity when no source climb exists", async () => {
     const id = await write({ climb: undefined });
