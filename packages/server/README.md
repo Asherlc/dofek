@@ -682,6 +682,12 @@ zones follow their respective selected sources.
 `activity.metricSources` lists available sources in the owned activity window,
 including standalone recordings and canonical member activities. `activity.stream`
 accepts a `sources` map; zone endpoints accept their metric's source ID.
+For climbing detail charts, `activity.heartRateContext` returns a separate window
+with five minutes before the recorded activity start and after its recorded end,
+plus downsampled observations from the selected HR source. The
+[context repository](src/repositories/activity-metric-sources-repository.ts)
+reuses the same user/member isolation and source selection. This display window
+does not change the activity, its summaries, or its zone calculations.
 The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
