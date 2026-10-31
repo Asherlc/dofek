@@ -1,5 +1,13 @@
 # Production Incident Baseline
 
+## 2026-10-31 — TestFlight launch freezes on Today (unresolved)
+
+- **Symptoms / impact:** The operator's screenshot shows Today with Recovery and Strain skeletons; the operator confirms that tabs and Settings do not respond in TestFlight. This establishes an interaction freeze, but not which thread is blocked.
+- **Evidence:** Following the [loading runbook](performance/loading-performance-runbook.md), Axiom logs at 22:40:22.488 UTC report `POST /api/trpc/mobileDashboard.dashboardV2 200 149ms`; the dashboard handler reports 63 ms. At inspection both `dofek_web` replicas are running. The latest mobile Axiom record in the preceding 24 hours is at 07:00:01.415 UTC, so fresh client-side progress cannot be inferred from cloud logs. These observations do not prove the phone received or rendered the dashboard response.
+- **Diagnostic blockers:** Sentry issue listing for `east-bay-software/dofek-mobile` returns HTTP 403, `You do not have permission to perform this action.` Homebrew Infisical 0.43.69 and mise-installed 0.44.10 report no valid login session; the latter's automatic login attempt was stopped. `xcrun devicectl list devices` reports the paired physical iPhone unavailable. No thread sample or installed-build identity was obtained.
+- **Root cause / mitigation / remaining risk:** Unknown; no application behavior or production configuration changed. The [previous queue investigation](#2026-10-30--climbing-activity-missing-whoop-bluetooth-heart-rate-unresolved) establishes expensive synchronous native diagnostics in an older build, but does not prove this freeze has that cause. The operator cannot provide the requested USB-connected phone for thread inspection. Next evidence needed is the installed TestFlight version/build and a device hang report or restored telemetry access. The incident remains unresolved.
+- **Retrospective / proposed improvement:** Server timing quickly separated a successful API response from the interaction symptom. Repeat systematic debugging and the check-logs workflow; proposed loading-runbook wording for approval: “When taps also stop responding, capture device thread stacks and installed native/OTA identities before changing request handling; stale cloud telemetry alone cannot locate the blocking thread.”
+
 ## 2026-10-30 — Climbing activity missing WHOOP Bluetooth heart rate (unresolved)
 
 - **Symptoms / impact:** Activity `404369a7-90ef-4cff-9d59-08b02e643423`, October 30 19:23:35–20:27:47 UTC (12:23–13:27 PDT), has WHOOP Cloud heart rate but no WHOOP Bluetooth source. The authenticated activity API returns 640 HR samples, average 122.35625 bpm and maximum 169 bpm.
