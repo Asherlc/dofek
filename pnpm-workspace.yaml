@@ -104,6 +104,7 @@ patchedDependencies:
   "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
   "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
   braces@3.0.3: patches/braces@3.0.3.patch
+  eoas@3.2.7: patches/eoas@3.2.7.patch
   expo-apple-authentication@58.0.2: patches/expo-apple-authentication@58.0.2.patch
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
   react-native@0.88.1: patches/react-native@0.88.1.patch

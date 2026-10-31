@@ -23,7 +23,6 @@ function formatDisplayDate(dateString: string): string {
 export default function DailyHeartRateScreen() {
   const [date, setDate] = useState(() => formatDateYmd());
   const today = useTodayQueryDate();
-  const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });
   const sources = query.data;
@@ -59,7 +58,6 @@ export default function DailyHeartRateScreen() {
             </Pressable>
             <View style={styles.dateLabelContainer}>
               <Text style={styles.dateLabel}>{formatDisplayDate(date)}</Text>
-              <Text style={styles.timezoneLabel}>Local day in {localTimezone}</Text>
             </View>
             <Pressable
               style={[styles.dateButton, isToday && styles.dateButtonDisabled]}
@@ -190,7 +188,6 @@ const styles = StyleSheet.create({
   dateButtonTextDisabled: { color: colors.textSecondary },
   dateLabelContainer: { alignItems: "center" },
   dateLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
-  timezoneLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
   todayButton: {
     paddingHorizontal: 14,
     paddingVertical: 8,

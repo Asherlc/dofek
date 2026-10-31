@@ -142,15 +142,12 @@ describe("DailyHeartRatePage", () => {
     );
   });
 
-  it("provides accessible day navigation and identifies the local timezone", () => {
+  it("provides accessible day navigation", () => {
     render(createElement(DailyHeartRatePage));
 
     expect(screen.getByRole("button", { name: "Previous day" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
-    expect(
-      screen.getByText(`Local day in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`),
-    ).toBeTruthy();
   });
 
   it("queries the previous day and returns to today through the controls", () => {

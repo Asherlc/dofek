@@ -40,10 +40,11 @@ robots, humans and identity rejection. Preserve the empty-identity refusal from
 when changing this check; two empty lookup results must never authenticate.
 
 The [unchanged-publication correction](https://github.com/mercuretechnologies/xprem/pull/312)
-returns the existing manifest UUID in the unchanged response. This lets a
-publisher write a receipt for an unchanged export and retain device signature
-and asset verification. The matching CLI correction must also be installed by
-the publishing workflow.
+returns the existing manifest UUID when an identical export is published. The
+workspace pins EOAS 3.2.7 with the matching [CLI patch](../../patches/eoas@3.2.7.patch),
+and both publishers invoke that installed CLI. Its receipt includes unchanged
+platforms so the existing device signature and asset audit also runs on a no-op.
+With `--emitMetadata`, a missing unchanged identity is an explicit failure.
 
 ## Build
 
@@ -109,8 +110,9 @@ same `expo-app-id` header as the configured client.
 
 The audit detects failures after publication; it does not make publication
 atomic. A failed audit leaves that release advertised until explicit repair.
-EOAS [omits its receipt when the bundle is unchanged](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
-The audit then compares the served launch bundle hash and complete asset hash set
+Unpatched EOAS 3.2.7 [omits its receipt when the bundle is unchanged](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
+The installed patched CLI writes that receipt. Only when no receipt exists does
+the audit compare the served launch bundle hash and complete asset hash set
 against the fresh local export for the explicitly resolved runtime. It verifies
 the device signature and every downloaded asset before writing the existing
 update's verified identity as a receipt. Missing exports, content differences,

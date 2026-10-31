@@ -138,7 +138,7 @@ describe("DailyHeartRateScreen", () => {
     expect(screen.getByText("No heart rate data for this day")).toBeTruthy();
   });
 
-  it("provides accessible day navigation and identifies the local timezone", async () => {
+  it("provides accessible day navigation", async () => {
     const { default: DailyHeartRateScreen } = await import("../app/daily-heart-rate");
 
     render(<DailyHeartRateScreen />);
@@ -146,9 +146,6 @@ describe("DailyHeartRateScreen", () => {
     expect(screen.getByRole("button", { name: "Previous day" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Next day" })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Today" })).toHaveProperty("disabled", true);
-    expect(
-      screen.getByText(`Local day in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`),
-    ).toBeTruthy();
   });
 
   it("queries the previous day and returns to today through the controls", async () => {
