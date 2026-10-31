@@ -167,3 +167,18 @@ export const PersonalTokenError: Story = {
     await canvas.findByRole("alert");
   },
 };
+
+export const TheCragPersonalKey: Story = {
+  render: () => (
+    <TokenAuthModal
+      kind="access-token"
+      providerId="thecrag"
+      providerName="theCrag"
+      tokenLabel="Personal API key"
+      instructionsUrl="https://www.thecrag.com/en/article/logbookreadapi"
+      description="Requires an active theCrag supporter subscription. This key imports public and private ascents and notes into Dofek. Revoke it in theCrag Settings > API Keys when you stop using it."
+      onClose={() => {}}
+      onSuccess={() => {}}
+    />
+  ),
+};

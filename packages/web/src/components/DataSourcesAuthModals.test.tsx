@@ -164,13 +164,13 @@ describe("data source auth dialogs", () => {
 describe("Data source authentication telemetry", () => {
   it.each([
     ["openbeta", "OpenBeta profile URL or username", "text"],
-    ["thecrag", "theCrag profile URL or username", "text"],
+    ["thecrag", "Personal API key", "password"],
     ["wger", "JWT refresh token", "password"],
   ])("uses the appropriate input visibility for %s", async (providerId, label, inputType) => {
     const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
     render(
       <TokenAuthModal
-        kind={providerId === "wger" ? "access-token" : "public-profile"}
+        kind={providerId === "openbeta" ? "public-profile" : "access-token"}
         providerId={providerId}
         providerName={providerId}
         tokenLabel={label}
@@ -401,4 +401,27 @@ describe("Data source authentication telemetry", () => {
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
   });
+});
+
+it("shows theCrag key access disclosure before connection", async () => {
+  const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+  render(
+    <TokenAuthModal
+      kind="access-token"
+      providerId="thecrag"
+      providerName="theCrag"
+      tokenLabel="Personal API key"
+      instructionsUrl="https://www.thecrag.com/en/article/logbookreadapi"
+      description="This key imports your public and private ascent notes."
+      onClose={vi.fn()}
+      onSuccess={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByText("This key imports your public and private ascent notes."),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Personal API key")).toHaveAttribute("type", "password");
+  expect(screen.getByLabelText("Personal API key")).toHaveAccessibleDescription(
+    "This key imports your public and private ascent notes.",
+  );
 });

@@ -27,6 +27,7 @@ const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const zivaUserId = "c0000000-0000-4000-8000-000000001995";
 const publicProfileUserId = "d0000000-0000-4000-8000-000000001995";
 const legacyTheCragConnections = [
+  { userId: "14000000-0000-4000-8000-000000001995", scopes: "thecrag:logbook-read" },
   { userId: "e0000000-0000-4000-8000-000000001995", scopes: "logbook:read" },
   { userId: "f0000000-0000-4000-8000-000000001995", scopes: null },
   {
@@ -337,7 +338,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       ).rejects.toMatchObject({
         name: ProviderRevocationPrerequisiteError.name,
         message: expect.stringMatching(
-          /revoke.*personal.*key.*theCrag.*Settings.*API Keys.*disconnect.*reconnect/i,
+          /revoke.*personal.*key.*theCrag.*Settings.*API Keys.*disconnect.*before deleting/i,
         ),
       });
       expect(await loadTokens(context.db, "thecrag", theCragUserId)).toMatchObject({
