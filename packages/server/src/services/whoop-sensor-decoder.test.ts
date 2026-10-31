@@ -20,6 +20,23 @@ const record = {
   deviceInfo: {},
 };
 
+// Constructed envelopes exercise validation/dispatch only, never establish a sensor map.
+function constructedFrame(length: number, mutate: (frame: Buffer) => void = () => {}) {
+  const frame = Buffer.alloc(length);
+  Buffer.from(capturedFrames[0] ?? "", "hex").copy(frame);
+  frame.writeUInt16LE(length - 8, 2);
+  mutate(frame);
+  let checksum = 0xffff;
+  for (const byte of frame.subarray(0, 6)) {
+    checksum ^= byte;
+    for (let bit = 0; bit < 8; bit++)
+      checksum = (checksum & 1) !== 0 ? (checksum >>> 1) ^ 0xa001 : checksum >>> 1;
+  }
+  frame.writeUInt16LE(checksum, 6);
+  frame.writeUInt32LE(crc32(frame.subarray(8, -4)), length - 4);
+  return frame.toString("hex");
+}
+
 describe("decodeWhoopSensorRecord", () => {
   it("decodes captured R18 thermal words and keeps delayed receipt separate from source time", () => {
     expect(capturedFrames).toHaveLength(71);
@@ -31,13 +48,122 @@ describe("decodeWhoopSensorRecord", () => {
       measuredAt: "2026-03-29T15:28:11.430Z",
       skinTemperatureC: 32.18,
     });
-    expect(result.fields).toEqual(
-      expect.arrayContaining([
-        { label: "Skin temperature word", value: 3218, unit: "raw" },
-        { label: "Thermal channel A", value: 294, unit: "raw" },
-        { label: "Motion counter", value: 65231, unit: "raw" },
-      ]),
+    expect(result.fields).toEqual([
+      { label: "Skin temperature word", value: 3218, unit: "raw" },
+      { label: "Thermal channel A", value: 294, unit: "raw" },
+      { label: "Thermal channel B", value: 307, unit: "raw" },
+      { label: "Motion counter", value: 65231, unit: "raw" },
+      { label: "Cadence word", value: 144, unit: "raw" },
+      { label: "Activity code", value: 0, unit: "raw" },
+      { label: "Cardiac flags", value: 140, unit: "raw" },
+      { label: "Band state", value: 0, unit: "raw" },
+    ]);
+  });
+
+  it.each([12, 13])("rejects a CRC-valid envelope below minimum length: %i", (length) => {
+    expect(() =>
+      decodeWhoopSensorRecord({ ...record, frameHex: constructedFrame(length) }),
+    ).toThrow(/length or format/);
+  });
+
+  it("accepts a minimum-size opaque sensor record", () => {
+    const frameHex = constructedFrame(14, (frame) => {
+      frame[8] = 43;
+      frame[9] = 22;
+    });
+    expect(decodeWhoopSensorRecord({ ...record, frameHex })).toMatchObject({
+      packetType: 43,
+      layout: 22,
+      skinTemperatureC: null,
+      rawFrameHex: frameHex,
+    });
+  });
+
+  it.each([0, 1])("rejects unsupported format byte at offset %i even with valid CRCs", (offset) => {
+    const frameHex = constructedFrame(124, (frame) => {
+      frame[offset] = 0;
+    });
+    expect(() => decodeWhoopSensorRecord({ ...record, frameHex })).toThrow(/length or format/);
+  });
+
+  it("rejects a corrupt header CRC even when the payload CRC is valid", () => {
+    const frame = Buffer.from(capturedFrames[0] ?? "", "hex");
+    frame[6] ^= 1;
+    expect(() => decodeWhoopSensorRecord({ ...record, frameHex: frame.toString("hex") })).toThrow(
+      /CRC/,
     );
+  });
+
+  it.each([16, 17, 21])(
+    "rejects excluded layout %i from the additional sensor stream",
+    (layout) => {
+      for (const type of [43, 47]) {
+        const frameHex = constructedFrame(124, (frame) => {
+          frame[8] = type;
+          frame[9] = layout;
+        });
+        expect(() => decodeWhoopSensorRecord({ ...record, frameHex })).toThrow(
+          /not an additional background sensor record/,
+        );
+      }
+    },
+  );
+
+  it("rejects an unrelated packet type even with a full-size payload", () => {
+    const frameHex = constructedFrame(124, (frame) => {
+      frame[8] = 1;
+    });
+    expect(() => decodeWhoopSensorRecord({ ...record, frameHex })).toThrow(
+      /not an additional background sensor record/,
+    );
+  });
+
+  it("accepts the full realtime size boundary and rejects compact realtime data", () => {
+    const frameHex = constructedFrame(65, (frame) => {
+      frame[8] = 40;
+    });
+    expect(decodeWhoopSensorRecord({ ...record, frameHex })).toMatchObject({
+      packetType: 40,
+      skinTemperatureC: null,
+      rawFrameHex: frameHex,
+    });
+    const compact = constructedFrame(64, (frame) => {
+      frame[8] = 40;
+    });
+    expect(() => decodeWhoopSensorRecord({ ...record, frameHex: compact })).toThrow(
+      /not an additional background sensor record/,
+    );
+  });
+
+  it("leaves records with different R18 lengths, markers or packet types raw", () => {
+    for (const frameHex of [
+      constructedFrame(125),
+      constructedFrame(124, (frame) => {
+        frame[10] = 0;
+      }),
+      constructedFrame(124, (frame) => {
+        frame[8] = 43;
+      }),
+    ])
+      expect(decodeWhoopSensorRecord({ ...record, frameHex })).toMatchObject({
+        skinTemperatureC: null,
+        measuredAt: null,
+        fields: [],
+      });
+  });
+
+  it.each<[number, number | null]>([
+    [499, null],
+    [500, 5],
+    [4500, 45],
+    [4501, null],
+  ])("bounds the thermal projection for raw word %i", (word, temperature) => {
+    const frameHex = constructedFrame(124, (frame) => {
+      frame.writeUInt16LE(word, 73);
+    });
+    const result = decodeWhoopSensorRecord({ ...record, frameHex });
+    expect(result.skinTemperatureC).toBe(temperature);
+    expect(result.fields[0]).toEqual({ label: "Skin temperature word", value: word, unit: "raw" });
   });
 
   it("rejects corrupted records before interpreting plausible thermal bytes", () => {

@@ -115,6 +115,90 @@ describe("whoopBleSyncRouter", () => {
       ]);
     });
 
+    it.each([0, 299_999, 300_000])(
+      "accepts receipt clocks within the tolerance: %i ms",
+      async (offset) => {
+        const now = Date.parse(sample.timestamp);
+        const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+        try {
+          const result = await whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+            deviceId: "strap-a",
+            samples: [{ ...sample, timestamp: new Date(now + offset).toISOString() }],
+          });
+          expect(result).toEqual({ inserted: 1 });
+          expect(logger.info).toHaveBeenCalledWith(
+            "[sensor-upload] upload_published",
+            expect.objectContaining({
+              stream: "sensorRecords",
+              publishedRowCount: 1,
+              boundary: "redpanda",
+            }),
+          );
+        } finally {
+          clock.mockRestore();
+        }
+      },
+    );
+
+    it("rejects the entire batch when one receipt clock exceeds five minutes by one millisecond", async () => {
+      const now = Date.parse(sample.timestamp);
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      try {
+        await expect(
+          whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+            deviceId: "strap-a",
+            samples: [sample, { ...sample, timestamp: new Date(now + 300_001).toISOString() }],
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: "WHOOP packet reception time is in the future; check your phone's clock",
+        });
+        expect(getPublishedRows(metricStreamPublisher)).toEqual([]);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+    it("accepts a batch at the exact byte limit and rejects one extra byte", async () => {
+      // Constructed envelopes test transport bounds, not sensor interpretation.
+      function opaqueFrame(length: number) {
+        const frame = Buffer.alloc(length);
+        frame[0] = 0xaa;
+        frame[1] = 1;
+        frame.writeUInt16LE(length - 8, 2);
+        frame[5] = 1;
+        let checksum = 0xffff;
+        for (const byte of frame.subarray(0, 6)) {
+          checksum ^= byte;
+          for (let bit = 0; bit < 8; bit++)
+            checksum = (checksum & 1) !== 0 ? (checksum >>> 1) ^ 0xa001 : checksum >>> 1;
+        }
+        frame.writeUInt16LE(checksum, 6);
+        frame[8] = 43;
+        frame[9] = 22;
+        frame.writeUInt32LE(crc32(frame.subarray(8, -4)), length - 4);
+        return frame.toString("hex");
+      }
+      const input = {
+        deviceId: "strap-a",
+        samples: [
+          { ...sample, frameHex: "" },
+          { ...sample, frameHex: "" },
+        ],
+      };
+      if ((262_144 - Buffer.byteLength(JSON.stringify(input))) % 2 !== 0) input.deviceId += "a";
+      const totalFrameBytes = (262_144 - Buffer.byteLength(JSON.stringify(input))) / 2;
+      input.samples[0].frameHex = opaqueFrame(65_543);
+      input.samples[1].frameHex = opaqueFrame(totalFrameBytes - 65_543);
+      expect(Buffer.byteLength(JSON.stringify(input))).toBe(262_144);
+      const caller = whoopBleSyncRouter.createCaller(ctx);
+      await expect(caller.pushSensorRecords(input)).resolves.toEqual({ inserted: 2 });
+      await expect(
+        caller.pushSensorRecords({ ...input, deviceId: `${input.deviceId}a` }),
+      ).rejects.toThrow(/262144 bytes/);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledOnce();
+    });
+
     it("rejects damaged frames before acknowledging them", async () => {
       const bytes = Buffer.from(frameHex, "hex");
       bytes[73] ^= 1;
