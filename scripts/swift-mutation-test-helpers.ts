@@ -47,26 +47,23 @@ export function requiredItem<T>(value: T | undefined): T {
 export function mutationFixture(
   projectRoot = "/",
   sources: Record<string, string> = { "ios/Parser.swift": hash("// changed\n") },
-  mutationFiles = Object.keys(sources),
 ) {
-  const mutations = Object.entries(sources)
-    .filter(([file]) => mutationFiles.includes(file))
-    .map(([file, sourceFileHash], index) => ({
-      id: `mut_${index}`,
-      file,
-      sourceFileHash,
-      operatorID: "swift.core.bool-literal-inversion",
-      operatorVersion: 1,
-      originalText: "false",
-      replacementText: "true",
-      line: 1,
-      column: 1,
-      expectedSyntaxKind: "booleanLiteralExpr",
-      occurrenceIndex: 0,
-      prefixTokenFingerprint: "prefix",
-      suffixTokenFingerprint: "suffix",
-      utf8Range: { start: 0, end: 5 },
-    }));
+  const mutations = Object.entries(sources).map(([file, sourceFileHash], index) => ({
+    id: `mut_${index}`,
+    file,
+    sourceFileHash,
+    operatorID: "swift.core.bool-literal-inversion",
+    operatorVersion: 1,
+    originalText: "false",
+    replacementText: "true",
+    line: 1,
+    column: 1,
+    expectedSyntaxKind: "booleanLiteralExpr",
+    occurrenceIndex: 0,
+    prefixTokenFingerprint: "prefix",
+    suffixTokenFingerprint: "suffix",
+    utf8Range: { start: 0, end: 5 },
+  }));
   const plan = {
     schemaVersion: 1 as const,
     planID: "plan_fixture",
@@ -137,74 +134,4 @@ export function mutationFixture(
     verification: { unverifiedRequiredChecks: [] },
   };
   return { plan, report, verification, trust };
-}
-
-export function zeroMutationFixture(
-  projectRoot = "/",
-  sources: Record<string, string> = { "ios/Delegate.swift": hash("protocol Delegate {}") },
-) {
-  const fixture = mutationFixture(projectRoot, sources, []);
-  const report = {
-    ...fixture.report,
-    baseline: {
-      passed: true,
-      buildProductHash: hash("compiled baseline"),
-      buildCommand: { exitCode: 0 },
-      testCommand: { exitCode: 0 },
-      buildDurationSeconds: 1,
-      testDurationSeconds: 1,
-    },
-  };
-  const passing = (names: string[]) => names.map((name) => ({ name, status: "pass" }));
-  const resultFailure = { name: "report.results", status: "fail" };
-  const verification = {
-    schemaVersion: 1,
-    planID: fixture.plan.planID,
-    resultCount: 0,
-    planSupplied: true,
-    passed: false,
-    complete: false,
-    tierAComplete: false,
-    fullEvidenceReverified: false,
-    tierBPerformed: false,
-    passCount: 8,
-    failCount: 1,
-    notVerifiableCount: 0,
-    checks: [
-      resultFailure,
-      ...passing([
-        "plan.identity",
-        "plan.mutationIDs",
-        "source.anchors",
-        "evidence.sourceAfter",
-        "integrity.recompute",
-        "score.recompute",
-        "archive.integrity",
-        "archive.policy",
-      ]),
-    ],
-  };
-  const trust = {
-    ...fixture.trust,
-    trustworthy: false,
-    trustStatus: "mismatch",
-    integrity: { passed: true, violationCount: 0, violations: [] },
-    verification: {
-      ...verification,
-      passCount: 6,
-      checks: [
-        resultFailure,
-        ...passing([
-          "plan.identity",
-          "plan.mutationIDs",
-          "integrity.recompute",
-          "score.recompute",
-          "archive.integrity",
-          "archive.policy",
-        ]),
-      ],
-      unverifiedRequiredChecks: ["report.results", "result.identity", "result.provenance"],
-    },
-  };
-  return { ...fixture, report, verification, trust };
 }

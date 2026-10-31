@@ -1,3 +1,9 @@
+import {
+  WHOOP_SENSOR_BATCH_BYTES,
+  whoopSensorRecordSchema,
+  whoopSensorSnapshotSchema,
+} from "@dofek/providers/whoop-sensors";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   SensorUploadTelemetry,
@@ -5,8 +11,36 @@ import {
 } from "../lib/sensor-upload-telemetry.ts";
 import { logger } from "../logger.ts";
 import { WhoopBleSyncRepository } from "../repositories/whoop-ble-sync-repository.ts";
+import { WhoopSensorRepository } from "../repositories/whoop-sensor-repository.ts";
+import { decodeWhoopSensorRecord } from "../services/whoop-sensor-decoder.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import { filterFutureSamples } from "./sample-validation.ts";
+
+const validatedSensorRecord = whoopSensorRecordSchema.superRefine((record, context) => {
+  try {
+    decodeWhoopSensorRecord(record);
+  } catch (error) {
+    context.addIssue({
+      code: "custom",
+      message: error instanceof Error ? error.message : "Invalid WHOOP sensor record",
+    });
+  }
+});
+const sensorRecordsInput = z
+  .object({
+    deviceId: z.string().min(1).max(200),
+    samples: z.array(validatedSensorRecord).max(16),
+    telemetry: sensorUploadTelemetrySchema.optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (Buffer.byteLength(JSON.stringify(input)) > WHOOP_SENSOR_BATCH_BYTES) {
+      context.addIssue({
+        code: "custom",
+        message: "WHOOP sensor upload exceeds 262144 bytes; reduce the batch size",
+      });
+    }
+  });
 
 // ── Zod schemas ──
 
@@ -36,6 +70,44 @@ const pushRealtimeDataInput = z.object({
 // ── Router ──
 
 export const whoopBleSyncRouter = router({
+  sensorSnapshot: protectedProcedure
+    .output(whoopSensorSnapshotSchema)
+    .query(({ ctx }) => new WhoopSensorRepository(ctx.sensorStore, ctx.userId).snapshot()),
+  pushSensorRecords: protectedProcedure
+    .input(sensorRecordsInput)
+    .output(z.object({ inserted: z.number().int().nonnegative() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.samples.some((sample) => Date.parse(sample.timestamp) > Date.now() + 5 * 60_000)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "WHOOP packet reception time is in the future; check your phone's clock",
+        });
+      }
+      const telemetry = new SensorUploadTelemetry({
+        stream: "sensorRecords",
+        userId: ctx.userId,
+        deviceId: input.deviceId,
+        appVersion: ctx.appVersion,
+        assetsVersion: ctx.assetsVersion,
+        telemetry: input.telemetry,
+        inputSamples: input.samples,
+        acceptedSamples: input.samples,
+      });
+      try {
+        const repository = new WhoopBleSyncRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.metricStreamPublisher,
+        );
+        await repository.ensureProvider();
+        const inserted = await repository.insertSensorRecords(input.deviceId, input.samples);
+        telemetry.published(inserted);
+        return { inserted };
+      } catch (error) {
+        telemetry.failed(error);
+        throw error;
+      }
+    }),
   pushRealtimeData: protectedProcedure
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {

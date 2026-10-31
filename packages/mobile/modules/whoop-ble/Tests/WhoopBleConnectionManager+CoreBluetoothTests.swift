@@ -37,6 +37,33 @@ final class WhoopBlePeripheralCallbackTests: XCTestCase {
         }
     }
 
+    func testMetadataDiscoveryReadsOwnedPeripheralWithoutInterruptingSubscriptions() {
+        let manager = WhoopBleConnectionManager()
+        let owned = TestWhoopPeripheralConnection()
+        let stale = TestWhoopPeripheralConnection()
+        let service = CBMutableService(type: CBUUID(string: "180A"), primary: true)
+        let model = CBMutableCharacteristic(
+            type: CBUUID(string: "2A24"), properties: .read, value: nil, permissions: .readable)
+        let writeOnly = CBMutableCharacteristic(
+            type: CBUUID(string: "2A25"), properties: .write, value: nil, permissions: .writeable)
+        service.characteristics = [model, writeOnly]
+        manager.syncOnBleQueue {
+            manager.setConnectedPeripheral(owned)
+            manager.autoReconnect = true
+            manager.setState(.subscribing)
+
+            manager.handleCharacteristicsDiscovered(stale, service: service)
+            XCTAssertTrue(stale.reads.isEmpty)
+            manager.handleCharacteristicsDiscovered(owned, service: service)
+
+            XCTAssertEqual(owned.reads.count, 1)
+            XCTAssertTrue(owned.reads.first === model)
+            XCTAssertEqual(manager.state, .subscribing)
+            XCTAssertTrue(manager.autoReconnect)
+            XCTAssertEqual(owned.cancellations, 0)
+        }
+    }
+
     func testCommandsUseOwnedPeripheralAndCommandCharacteristicAfterReconnect() throws {
         let manager = WhoopBleConnectionManager()
         let peripheral = TestWhoopPeripheralConnection()
@@ -93,7 +120,7 @@ final class WhoopBlePeripheralCallbackTests: XCTestCase {
             peripheral.state = .connected
             manager.handlePeripheralConnected(peripheral)
             XCTAssertEqual(manager.state, .discoveringServices)
-            XCTAssertEqual(peripheral.discoveredServices, WhoopBleConstants.allServiceUUIDs)
+            XCTAssertEqual(peripheral.discoveredServices, WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
         }
     }
 

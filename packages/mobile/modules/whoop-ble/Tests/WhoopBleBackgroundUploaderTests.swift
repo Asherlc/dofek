@@ -27,6 +27,19 @@ private final class Transport: WhoopUploadTransport {
 }
 
 final class WhoopBleBackgroundUploaderTests: XCTestCase {
+    func testSensorUploadUsesOwnRouteAndAcknowledgesWhileRealtimeFails() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(stream: .sensorRecords, deviceId: "a", samples: rows)
+        try uploader.flush(); try settle(uploader)
+        let sensorIndex = try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path == "/api/trpc/whoopBleSync.pushSensorRecords" })
+        let realtimeIndex = try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path == "/api/trpc/whoopBleSync.pushRealtimeData" })
+        transport.complete(realtimeIndex, status: 500)
+        transport.complete(sensorIndex)
+        try settle(uploader)
+        XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+    }
     private func setup(
         reportError: @escaping (Error) -> Void = { _ in },
         now: @escaping () -> Date = Date.init

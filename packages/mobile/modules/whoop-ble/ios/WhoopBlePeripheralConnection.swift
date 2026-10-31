@@ -15,6 +15,7 @@ protocol WhoopBlePeripheralConnection: AnyObject {
     func discoverServices(_ serviceUUIDs: [CBUUID]?)
     func discoverCharacteristics(_ characteristicUUIDs: [CBUUID]?, for service: CBService)
     func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic)
+    func readValue(for characteristic: CBCharacteristic)
     func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType)
 }
 
@@ -47,6 +48,7 @@ final class WhoopBleCoreBluetoothPeripheral: WhoopBlePeripheralConnection {
     func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) {
         peripheral.setNotifyValue(enabled, for: characteristic)
     }
+    func readValue(for characteristic: CBCharacteristic) { peripheral.readValue(for: characteristic) }
     func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) {
         peripheral.writeValue(data, for: characteristic, type: type)
     }

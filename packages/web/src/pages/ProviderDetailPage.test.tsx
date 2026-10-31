@@ -182,6 +182,9 @@ const mockRecordDetailQuery = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    whoopBleSync: {
+      sensorSnapshot: { useQuery: () => ({ data: undefined, error: null, isLoading: false }) },
+    },
     processing: {
       status: { useQuery: () => mockDataHealth },
       dismiss: { useMutation: () => mockProcessingDismissMutation },

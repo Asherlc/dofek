@@ -16,6 +16,7 @@ final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     private(set) var cancellations = 0
     private(set) var discoveredServices: [CBUUID]?
     var onCancel: () -> Void = {}
+    private(set) var reads: [CBCharacteristic] = []
     private(set) var writes: [(Data, CBCharacteristic, CBCharacteristicWriteType)] = []
 
     init(identifier: UUID = UUID(), notificationSource: AnyObject? = nil) {
@@ -31,9 +32,20 @@ final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     func discoverServices(_ serviceUUIDs: [CBUUID]?) { discoveredServices = serviceUUIDs }
     func discoverCharacteristics(_ characteristicUUIDs: [CBUUID]?, for service: CBService) {}
     func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) {}
+    func readValue(for characteristic: CBCharacteristic) { reads.append(characteristic) }
     func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) {
         writes.append((data, characteristic, type))
     }
+}
+
+func capturedWhoopR18Data() throws -> Data {
+    let url = try XCTUnwrap(Bundle.module.url(forResource: "imu-activation-capture", withExtension: "tsv", subdirectory: "fixtures"))
+    let text = try String(contentsOf: url, encoding: .utf8)
+    let hex = try XCTUnwrap(text.split(separator: "\n").compactMap { line -> String? in
+        let value = String(line.split(separator: "\t").last ?? "")
+        return value.count == 248 && value.dropFirst(16).hasPrefix("2f12") ? value : nil
+    }.first)
+    return try XCTUnwrap(Data(hexString: hex))
 }
 
 extension Data {

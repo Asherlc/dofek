@@ -77,12 +77,11 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     ) {
         if let error = error {
             NSLog("[WhoopBLE] characteristic discovery error: %@", error.localizedDescription)
-            guard let manager = connectionManager else { return }
-            manager.abortHandshake(
-                for: manager.peripheralConnection(peripheral),
-                with: .characteristicDiscoveryFailed(error.localizedDescription),
-                underlyingError: error
-            )
+            guard let manager = connectionManager,
+                  manager.connectedPeripheral?.identifier == peripheral.identifier else { return }
+            manager.handleCharacteristicDiscoveryError(serviceUUID: service.uuid, error: error) {
+                manager.peripheralConnection(peripheral).cancelConnection()
+            }
             return
         }
         guard let manager = connectionManager else { return }

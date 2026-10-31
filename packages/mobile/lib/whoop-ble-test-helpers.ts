@@ -36,6 +36,7 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
       checkpointAt: "2026-10-23T01:00:00.000Z",
       imu: { ...stream },
       realtime: { ...stream },
+      sensorRecords: { ...stream },
     },
   };
 }

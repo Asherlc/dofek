@@ -3,6 +3,65 @@ import SQLite3
 @testable import WhoopBLE
 
 final class WhoopBleSampleStoreTests: XCTestCase {
+    func testUnknownRecordMarkerDoesNotAcquireAnUnverifiedErasureClock() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        try store.advanceErasureCutoff(to: XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:00Z")))
+        var bytes = try capturedWhoopR18Data()
+        bytes[10] = 0x81
+        let crc = WhoopBleFrameParser.crc32ieee(Data(bytes[8..<(bytes.count - 4)]))
+        for index in 0..<4 { bytes[bytes.count - 4 + index] = UInt8(truncatingIfNeeded: crc >> (index * 8)) }
+        let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(bytes))
+        let record = try XCTUnwrap(WhoopBleSensorRecord.serialize(
+            frame: frame, deviceInfo: [:], receivedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        try store.append(stream: .sensorRecords, deviceId: "a", samples: [record])
+        XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 1)
+    }
+    func testLateHistoricalTemperatureCannotResurrectDataBeforeErasure() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        try store.advanceErasureCutoff(to: XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:00Z")))
+        let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(capturedWhoopR18Data()))
+        let record = try XCTUnwrap(WhoopBleSensorRecord.serialize(
+            frame: frame, deviceInfo: [:], receivedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        try store.append(stream: .sensorRecords, deviceId: "a", samples: [record])
+        XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
+        XCTAssertEqual(try store.statistics(stream: .sensorRecords)["erasureDiscardedCount"] as? Int, 1)
+    }
+    func testSensorRecordsSurviveReopenWithBoundedBodiesAndExactIdentity() throws {
+        let url = try directory()
+        var store: WhoopBleSampleStore? = try WhoopBleSampleStore(directory: url)
+        try store!.configure(owner)
+        let captureId = UUID().uuidString
+        let sensor: [String: Any] = [
+            "captureId": captureId, "timestamp": "2026-10-28T00:00:03.000Z",
+            "frameHex": String(repeating: "aa", count: 40_000), "deviceInfo": [:],
+        ]
+        try store!.append(stream: .sensorRecords, deviceId: "a", samples: Array(repeating: sensor, count: 4))
+        let batch = try XCTUnwrap(store!.reserve(stream: .sensorRecords))
+        XCTAssertEqual(batch.sampleCount, 3)
+        XCTAssertLessThanOrEqual(batch.body.count, 262_144)
+        store = nil
+        let reopened = try WhoopBleSampleStore(directory: url)
+        let recovered = try XCTUnwrap(reopened.reserve(stream: .sensorRecords))
+        XCTAssertEqual(recovered.body, batch.body)
+        let input = try XCTUnwrap(JSONSerialization.jsonObject(with: recovered.body) as? [String: Any])
+        XCTAssertEqual((input["samples"] as? [[String: Any]])?.first?["captureId"] as? String, captureId)
+        XCTAssertTrue(try reopened.acknowledge(id: batch.id, generation: batch.generation))
+        XCTAssertEqual(try reopened.queuedCount(stream: .sensorRecords), 1)
+    }
+
+    func testSensorRecordsFollowAccountErasureAndRejectLateAcknowledgments() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        try store.append(stream: .sensorRecords, deviceId: "a", samples: samples([1]))
+        let old = try XCTUnwrap(store.reserve(stream: .sensorRecords))
+        try store.advanceErasureCutoff(to: XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")))
+        XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
+        try store.configure(WhoopUploadBinding(userId: "bob", serverURL: owner.serverURL))
+        XCTAssertFalse(try store.acknowledge(id: old.id, generation: old.generation))
+        XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
+    }
     private let owner = WhoopUploadBinding(userId: "alice", serverURL: "https://example.com")
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -135,6 +135,7 @@ const WhoopBufferCheckpointSchema = z.object({
   checkpointAt: DiagnosticTimestampSchema,
   imu: WhoopBufferStreamDiagnosticsSchema,
   realtime: WhoopBufferStreamDiagnosticsSchema,
+  sensorRecords: WhoopBufferStreamDiagnosticsSchema,
 });
 
 const WhoopConnectionEventSchema = z.object({
@@ -189,7 +190,7 @@ const WhoopDataPathStatsSchema = z.object({
   lastValidHeartRateAt: DiagnosticTimestampSchema.nullable(),
   buffers: WhoopBufferCheckpointSchema.extend({
     activeUploadCount: DiagnosticCountSchema,
-    blockedUploadStreams: z.array(z.enum(["imu", "realtime"])),
+    blockedUploadStreams: z.array(z.enum(["imu", "realtime", "sensorRecords"])),
     lastUploadError: z.string().nullable(),
   }),
 });

@@ -23,7 +23,7 @@ extension WhoopBleConnectionManager {
         if let peripheral = connectedPeripheral, state == .idle {
             if peripheral.state == .connected {
                 setState(.discoveringServices)
-                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
                 startHandshakeTimeout(for: peripheral)
             } else {
                 setState(.connecting)
@@ -42,7 +42,7 @@ extension WhoopBleConnectionManager {
 
         if peripheral.state == .connected {
             setState(.discoveringServices)
-            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
             startHandshakeTimeout(for: peripheral)
         } else if peripheral.state == .connecting {
             setState(.connecting)
@@ -86,7 +86,7 @@ extension WhoopBleConnectionManager {
         else { return }
 
         setState(.discoveringServices)
-        peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+        peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
         if connectCompletion == nil {
             startHandshakeTimeout(for: peripheral)
         }
@@ -142,6 +142,9 @@ extension WhoopBleConnectionManager {
             connectedPeripheral?.identifier == peripheral.identifier
         else { return }
 
+        if let information = peripheral.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
+            peripheral.discoverCharacteristics(["2A24", "2A25", "2A26", "2A27"].map(CBUUID.init(string:)), for: information)
+        }
         guard let service = peripheral.services?.first(where: { service in
             WhoopBleConstants.allServiceUUIDs.contains(service.uuid)
         }) else {
@@ -157,6 +160,13 @@ extension WhoopBleConnectionManager {
     }
 
     func handleCharacteristicsDiscovered(_ peripheral: any WhoopBlePeripheralConnection, service: CBService) {
+        if service.uuid == CBUUID(string: "180A") {
+            guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+            for characteristic in service.characteristics ?? [] where characteristic.properties.contains(.read) {
+                peripheral.readValue(for: characteristic)
+            }
+            return
+        }
         let charUUIDs = service.characteristics?.map { $0.uuid.uuidString } ?? []
         NSLog("[WhoopBLE] characteristics discovered for service %@: %@",
               service.uuid.uuidString, charUUIDs.joined(separator: ", "))
@@ -244,6 +254,7 @@ extension WhoopBleConnectionManager {
 
     /// Route a BLE notification to the appropriate delegate callback.
     func handleNotification(from characteristic: CBCharacteristic, data: Data) {
+        if recordDeviceInformation(uuid: characteristic.uuid.uuidString, data: data) { return }
         if characteristic.uuid == cmdResponseCharacteristic?.uuid {
             delegate?.connectionManager(self, didReceiveCommandResponse: data)
         } else {
