@@ -3,6 +3,7 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
+import { runWithTokenUser } from "dofek/db/token-user-context";
 import { connectProviderWithTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
@@ -35,13 +36,14 @@ export const tokenAuthRouter = router({
       }
 
       const setup = provider.authSetup?.();
-      if (!setup?.manualToken) {
+      const manualToken = setup?.manualToken;
+      if (!manualToken) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Provider ${input.providerId} does not support personal token authentication`,
         });
       }
-      if (!setup.apiBaseUrl) {
+      if (!setup?.apiBaseUrl) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: `${provider.name} personal-token authentication is misconfigured.`,
@@ -50,7 +52,7 @@ export const tokenAuthRouter = router({
 
       let tokens: TokenSet;
       try {
-        tokens = await setup.manualToken.exchangeToken(input.token);
+        tokens = await runWithTokenUser(ctx.userId, () => manualToken.exchangeToken(input.token));
       } catch (error: unknown) {
         if (error instanceof ProviderServiceUnavailableError) {
           throw new TRPCError({

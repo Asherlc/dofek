@@ -338,3 +338,22 @@ describe("ProviderModel", () => {
     expect(model.authType).toBe("oauth1");
   });
 });
+
+it("carries provider-owned token access disclosure to both clients", () => {
+  const model = new ProviderModel(
+    {
+      id: "thecrag",
+      name: "theCrag",
+      authSetup: () => ({
+        manualToken: {
+          kind: "access-token",
+          label: "Personal key",
+          instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
+          description: "Imports private notes.",
+        },
+      }),
+    },
+    new Set(),
+  );
+  expect(model.tokenAuth).toMatchObject({ description: "Imports private notes." });
+});

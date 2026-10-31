@@ -255,7 +255,7 @@ async function loadProviderConnections(
         const tokens = await loadTokens(database, connection.provider_id, userId);
         if (tokens && !isTheCragPublicProfileScope(tokens.scopes)) {
           throw new ProviderRevocationPrerequisiteError(
-            "Revoke your old personal API key in theCrag Settings > API Keys, then disconnect and reconnect theCrag in Dofek before deleting your account.",
+            "Revoke your personal API key in theCrag Settings > API Keys, then disconnect theCrag in Dofek before deleting your account.",
           );
         }
         return {

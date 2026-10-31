@@ -96,6 +96,7 @@ export interface ProviderAuthSetup {
     kind: ProviderManualConnectionKind;
     label: string;
     instructionsUrl: `https://${string}`;
+    description?: string;
     exchangeToken: (token: string) => Promise<TokenSet>;
   };
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */

@@ -623,6 +623,7 @@ export function ProviderDetailPage() {
           providerName={provider.name}
           tokenLabel={provider.tokenAuth.label}
           instructionsUrl={provider.tokenAuth.instructionsUrl}
+          description={provider.tokenAuth.description}
           onClose={() => setReconnectModal(null)}
           onSuccess={handleReconnectSuccess}
         />
