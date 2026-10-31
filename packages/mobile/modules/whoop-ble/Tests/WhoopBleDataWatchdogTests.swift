@@ -35,24 +35,29 @@ final class WhoopBleDataWatchdogTests: XCTestCase {
         XCTAssertEqual(watchdog.retryCount, 1)
     }
 
-    func testRecordDataReceivedResetsTimer() {
-        let silenceExpectation = expectation(description: "watchdog fires")
-        silenceExpectation.isInverted = true
-        delegateHandler.onSilence = { _, _ in
+    func testRecordDataReceivedResetsTimer() throws {
+        let watchdog = try XCTUnwrap(watchdog)
+        let queue = try XCTUnwrap(queue)
+        let silenceExpectation = expectation(description: "silence after the latest heartbeat")
+        var lastHeartbeatAt = CFAbsoluteTimeGetCurrent()
+        let heartbeat = DispatchWorkItem {
+            lastHeartbeatAt = CFAbsoluteTimeGetCurrent()
+            watchdog.recordDataReceived()
+        }
+        delegateHandler.onSilence = { watchdog, _ in
+            watchdog.stop()
+            heartbeat.cancel()
+            XCTAssertGreaterThanOrEqual(CFAbsoluteTimeGetCurrent() - lastHeartbeatAt, 0.3)
             silenceExpectation.fulfill()
         }
 
-        queue.async { self.watchdog.start() }
-
-        // Keep nudging the watchdog before it times out (0.3s timeout)
-        for delay in stride(from: 0.1, through: 0.5, by: 0.1) {
-            queue.asyncAfter(deadline: .now() + delay) {
-                self.watchdog.recordDataReceived()
-            }
+        queue.async {
+            watchdog.start()
+            queue.asyncAfter(deadline: .now() + 0.1, execute: heartbeat)
         }
 
-        // Wait slightly longer than the timeout — should NOT fire because we kept resetting
-        waitForExpectations(timeout: 0.7)
+        // Observe the actual silence deadline, even when the test waiter resumes late.
+        waitForExpectations(timeout: 2)
     }
 
     func testStopPreventsCallback() {
