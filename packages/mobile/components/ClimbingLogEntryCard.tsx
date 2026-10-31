@@ -109,14 +109,8 @@ export function ClimbingLogEntryCard({
         </View>
         {entry.displayGrade && <Text style={styles.grade}>{entry.displayGrade}</Text>}
       </View>
-      {hideMap && (
-        <Text style={styles.summary}>
-          {location
-            ? location.scope === "area"
-              ? "Approximate area location"
-              : "Climb location"
-            : "No recorded location"}
-        </Text>
+      {hideMap && location?.scope !== "area" && (
+        <Text style={styles.summary}>{location ? "Climb location" : "No recorded location"}</Text>
       )}
       {location && !hideMap && (
         <View style={styles.location}>
