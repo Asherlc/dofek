@@ -17,6 +17,7 @@ export function RecomputeActivityButton({ activityId }: { activityId: string }) 
         await Promise.all([
           trpcUtils.activity.byId.invalidate({ id: activityId }),
           trpcUtils.activity.stream.invalidate({ id: activityId, maxPoints: 500 }),
+          trpcUtils.activity.heartRateContext.invalidate({ id: activityId }),
           trpcUtils.activity.hrZones.invalidate({ id: activityId }),
           trpcUtils.activity.powerZones.invalidate({ id: activityId }),
           trpcUtils.activity.powerWork.invalidate({ id: activityId }),

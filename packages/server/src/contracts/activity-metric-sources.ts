@@ -18,6 +18,12 @@ export const activityMetricSourcesSchema = z.array(
 );
 export type ActivityMetricSources = z.infer<typeof activityMetricSourcesSchema>;
 
+export const activityHeartRateContextSchema = z.object({
+  window: z.object({ startedAt: z.iso.datetime(), endedAt: z.iso.datetime().nullable() }),
+  points: z.array(z.object({ recordedAt: z.iso.datetime(), value: z.number().nullable() })),
+});
+export type ActivityHeartRateContext = z.infer<typeof activityHeartRateContextSchema>;
+
 export const activityPowerWorkSchema = z.object({
   workKilojoules: z.number().nonnegative().nullable(),
   coverage: z.object({
