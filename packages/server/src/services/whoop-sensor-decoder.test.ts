@@ -48,7 +48,7 @@ describe("decodeWhoopSensorRecord", () => {
     );
   });
 
-  it("rejects a valid frame followed by unvalidated trailing bytes", () => {
+  it("rejects a valid frame followed by unchecked trailing bytes", () => {
     expect(() =>
       decodeWhoopSensorRecord({ ...record, frameHex: `${capturedFrames[0]}00` }),
     ).toThrow(/length/);
