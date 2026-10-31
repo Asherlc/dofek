@@ -1,5 +1,8 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
-import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetricSources,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
@@ -283,6 +286,13 @@ vi.mock("@dofek/zones/zones", async () => {
 const mockByIdQuery = vi.fn();
 const mockImagesQuery = vi.fn();
 const mockStreamQuery = vi.fn();
+const mockHeartRateContextQuery =
+  vi.fn<
+    (
+      _input?: unknown,
+      _options?: unknown,
+    ) => { data: ActivityHeartRateContext | undefined; isLoading: boolean; error: Error | null }
+  >();
 const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
@@ -354,6 +364,7 @@ vi.mock("../../lib/trpc", () => ({
       metricSources: { useQuery: (...args: unknown[]) => mockMetricSourcesQuery(...args) },
       hardware: { useQuery: (...args: unknown[]) => mockHardwareQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
+      heartRateContext: { useQuery: mockHeartRateContextQuery },
       route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
@@ -422,6 +433,7 @@ vi.mock("../../lib/trpc", () => ({
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
+        heartRateContext: { invalidate: vi.fn().mockResolvedValue(undefined) },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
         powerWork: { invalidate: mockActivityPowerWorkInvalidate },
@@ -600,6 +612,8 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   mockStreamQuery.mockClear();
+  mockHeartRateContextQuery.mockReset();
+  mockHeartRateContextQuery.mockReturnValue({ data: undefined, error: null, isLoading: false });
   mockRouteQuery.mockClear();
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
@@ -656,6 +670,29 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("shows surrounding HR readings supplied by the server for climbing", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockHeartRateContextQuery.mockReturnValue({
+      data: {
+        window: { startedAt: "2026-04-14T09:55:00.000Z", endedAt: "2026-04-14T11:05:00.000Z" },
+        points: [
+          { recordedAt: "2026-04-14T09:55:00.000Z", value: 91 },
+          { recordedAt: "2026-04-14T11:05:00.000Z", value: 92 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    fireEvent.click(await screen.findByRole("button", { name: "View Heart Rate data" }));
+    expect(screen.getByText("91 bpm")).toBeDefined();
+    expect(screen.getByText("92 bpm")).toBeDefined();
+  });
   it("opens device facts with Sources in the real activity header", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, sourceTree: garminActivitySourceTree },

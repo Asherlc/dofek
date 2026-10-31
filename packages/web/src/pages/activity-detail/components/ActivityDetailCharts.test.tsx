@@ -62,6 +62,70 @@ const args = {
   units: new UnitConverter("metric"),
 };
 
+it("retains climbs at activity boundaries outside the HR sample range", () => {
+  render(
+    <MetricsChart
+      {...args}
+      activityWindow={{ startedAt: "2026-10-18T17:29:57Z", endedAt: "2026-10-18T17:31:05Z" }}
+      climbAnnotations={[
+        { id: "first", label: "First climb", startedAt: "2026-10-18T17:29:57Z", endedAt: null },
+        { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:05Z", endedAt: null },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Climbs (2)")).toBeDefined();
+  expect(screen.getByText(/First climb/)).toBeDefined();
+  expect(screen.getByText(/Last climb/)).toBeDefined();
+  expect(captured.option.xAxis).toMatchObject({
+    min: Date.parse("2026-10-18T17:29:57Z"),
+    max: Date.parse("2026-10-18T17:31:05Z"),
+  });
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.data).toHaveLength(2);
+  expect(renderChartSvg().querySelectorAll('path[stroke="#a78bfa"]')).toHaveLength(2);
+  expect(series[0].data.map((sample: { value: [number, number | null] }) => sample.value)).toEqual([
+    [Date.parse(points[0].recordedAt), 140],
+    [Date.parse("2026-10-18T17:30:30Z"), null],
+    [Date.parse(points[1].recordedAt), 150],
+  ]);
+});
+
+it("plots server-provided HR context without extending other metrics", () => {
+  render(
+    <MetricsChart
+      {...args}
+      highlightedClimbId="first"
+      climbAnnotations={[
+        { id: "first", label: "First climb", startedAt: "2026-10-18T17:30:00Z", endedAt: null },
+        { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:00Z", endedAt: null },
+      ]}
+      heartRateContext={{
+        window: { startedAt: "2026-10-18T17:25:00Z", endedAt: "2026-10-18T17:36:00Z" },
+        points: [
+          { recordedAt: "2026-10-18T17:25:00Z", value: 90 },
+          { recordedAt: "2026-10-18T17:36:00Z", value: 100 },
+        ],
+      }}
+    />,
+  );
+  expect(captured.option.xAxis).toMatchObject({
+    min: Date.parse("2026-10-18T17:25:00Z"),
+    max: Date.parse("2026-10-18T17:36:00Z"),
+  });
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.data[0]).toMatchObject({
+    name: "First climb",
+    lineStyle: { width: 3, type: "solid" },
+    label: { show: true },
+  });
+  expect(series[0].markLine.data[1].label.show).toBe(false);
+  expect(series[0].data[0].value).toEqual([Date.parse("2026-10-18T17:25:00Z"), 90]);
+  expect(series[0].data.at(-1).value).toEqual([Date.parse("2026-10-18T17:36:00Z"), 100]);
+  expect(series[1].data[0].value).toEqual([Date.parse(points[0].recordedAt), 200]);
+});
+
 it.each([false, true])(
   "preserves user zoom while highlighting a climb (batched: %s)",
   (batched) => {

@@ -9,6 +9,7 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
+import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
@@ -41,6 +42,7 @@ import {
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
 import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
 import { statsStyles, styles } from "../../components/activity/styles";
+import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MapProcessingState } from "../../components/MapProcessingState";
@@ -327,6 +329,7 @@ export default function ActivityDetailScreen() {
         await Promise.all([
           trpcUtils.activity.byId.invalidate({ id }),
           trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
+          trpcUtils.activity.heartRateContext.invalidate({ id }),
           trpcUtils.activity.hrZones.invalidate({ id }),
           trpcUtils.activity.powerZones.invalidate({ id }),
           trpcUtils.activity.powerWork.invalidate({ id }),
@@ -420,15 +423,7 @@ export default function ActivityDetailScreen() {
     { id: id ?? "", powerSourceId: sources.power },
     {
       enabled: !!id && isCycling,
-      placeholderData: (previousData, previousQuery) => {
-        const previousInput = previousQuery?.queryKey[1]?.input;
-        return previousInput &&
-          typeof previousInput === "object" &&
-          "id" in previousInput &&
-          previousInput.id === id
-          ? previousData
-          : undefined;
-      },
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const powerZones = trpc.activity.powerZones.useQuery(
@@ -446,6 +441,10 @@ export default function ActivityDetailScreen() {
   );
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const heartRateContext = trpc.activity.heartRateContext.useQuery(
+    { id: id ?? "", maxPoints: 200, ...heartRateSourceInput },
+    { enabled: !!id && isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
+  );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id ?? "", responseVersion: 3 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
@@ -527,23 +526,12 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isHangboardingActivity },
   );
 
-  const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const {
+    hoveredPosition,
+    handleHoverIndex,
+    handleHoverTime: handleHeartRateHoverTime,
+  } = useActivityMapHover(points);
   const [scrollEnabled, setScrollEnabled] = useState(true);
-
-  const handleHoverIndex = useCallback(
-    (index: number | null) => {
-      if (index != null) {
-        const point = points[index];
-        if (point?.lat != null && point?.lng != null) {
-          setHoveredPosition({ lat: point.lat, lng: point.lng });
-          return;
-        }
-      }
-      setHoveredPosition(null);
-    },
-    [points],
-  );
-
   const handleScrubStart = useCallback(() => setScrollEnabled(false), []);
   const handleScrubEnd = useCallback(() => setScrollEnabled(true), []);
 
@@ -576,7 +564,9 @@ export default function ActivityDetailScreen() {
   const hasGps = routePoints.length > 0;
   const hasMap = hasGps || climbMarkers.length > 0;
   const routeMapPending = route.isLoading || route.data?.status === "processing";
-  const hasHr = points.some((p) => p.heartRate != null);
+  const hasHr =
+    points.some((p) => p.heartRate != null) ||
+    (isClimbingActivity && (heartRateContext.data?.points.length ?? 0) > 0);
   const hasAltitude = points.some((p) => p.altitude != null);
 
   const exportOptions: Array<{
@@ -847,8 +837,12 @@ export default function ActivityDetailScreen() {
         <QueryStatePanel variant="error" message={metricSources.error.message} />
       )}
       {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
+      {isClimbingActivity && heartRateContext.error && (
+        <QueryStatePanel variant="error" message={heartRateContext.error.message} />
+      )}
       {sourceControls.length > 0 &&
         (stream.isFetching ||
+          heartRateContext.isFetching ||
           hrZones.isFetching ||
           powerZones.isFetching ||
           powerWork.isFetching) && (
@@ -875,22 +869,38 @@ export default function ActivityDetailScreen() {
           />
         ))}
       {hasHr && (
-        <LineChart
-          highlightedClimbId={highlightedClimbId}
-          onSelectClimb={setHighlightedClimbId}
-          climbAnnotations={
-            isClimbingActivity
-              ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
-              : undefined
-          }
-          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
-          color={CHART_COLORS.heartRate}
-          label="Heart Rate"
-          unit="bpm"
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
+        <>
+          <LineChart
+            highlightedClimbId={highlightedClimbId}
+            onSelectClimb={setHighlightedClimbId}
+            activityWindow={
+              isClimbingActivity ? (heartRateContext.data?.window ?? activity) : activity
+            }
+            climbAnnotations={
+              isClimbingActivity
+                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                : undefined
+            }
+            data={
+              isClimbingActivity && heartRateContext.data
+                ? heartRateContext.data.points
+                : points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))
+            }
+            color={CHART_COLORS.heartRate}
+            label="Heart Rate"
+            unit="bpm"
+            onHoverTime={hasGps ? handleHeartRateHoverTime : undefined}
+            onScrubStart={hasGps ? handleScrubStart : undefined}
+            onScrubEnd={hasGps ? handleScrubEnd : undefined}
+          />
+          {isClimbingActivity && heartRateContext.data && (
+            <Text style={styles.chartsLoadingText}>
+              {heartRateContext.data.window.endedAt
+                ? "HR chart spans 5 minutes before and after the activity."
+                : "HR chart starts 5 minutes before the activity."}
+            </Text>
+          )}
+        </>
       )}
 
       {sourceControls
