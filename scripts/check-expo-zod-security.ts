@@ -14,18 +14,25 @@ const item = z.string().superRefine(() => {
   visited += 1;
 });
 assert.equal(z.array(item).max(1).safeParse(["one", "two"]).success, false);
-assert.equal(visited, 0, "Zod must reject oversized arrays before parsing elements");
+assert.equal(
+  visited,
+  0,
+  "The mobile app's Zod must reject oversized arrays before parsing elements",
+);
 
 const { PluginSchema, DevToolsPluginOutputSchema }: Record<string, unknown> = cliRequire(
   "./build/src/start/server/devtools/DevToolsPlugin.schema.js",
 );
-const { validate }: { validate(schema: unknown, value: unknown): void } =
+const {
+  validate,
+  ValidationError,
+}: { validate(schema: unknown, data: unknown): void; ValidationError: typeof Error } =
   cliRequire("@expo/schema-utils");
 const {
   createMCPDevToolsExtensionSchema,
-}: { createMCPDevToolsExtensionSchema(plugin: unknown, zod: typeof z): ZodType } = cliRequire(
-  "./build/src/start/server/mcp/createMCPDevToolsExtensionSchema.js",
-);
+}: {
+  createMCPDevToolsExtensionSchema(plugin: unknown, zod: typeof z): ZodType;
+} = cliRequire("./build/src/start/server/mcp/createMCPDevToolsExtensionSchema.js");
 
 const plugin = {
   packageName: "test-plugin",
@@ -47,9 +54,12 @@ const plugin = {
     ],
   },
 };
+assert.ok(PluginSchema);
 assert.doesNotThrow(() => validate(PluginSchema, plugin));
-assert.throws(() => validate(PluginSchema, { ...plugin, packageName: "" }));
+assert.throws(() => validate(PluginSchema, { ...plugin, packageName: "" }), ValidationError);
 
+// Check the installed factory with the app's caller-supplied Zod. The optional
+// expo-mcp runtime is not installed, so this does not verify its integration.
 const schema = createMCPDevToolsExtensionSchema(plugin, z);
 const command = { command: "inspect", label: "record", count: 2, confirm: true };
 assert.deepEqual(schema.parse(command), command);
@@ -70,6 +80,10 @@ const output = [
   { type: "image", url: "https://example.com/image.png" },
   { type: "audio", url: "https://example.com/audio.mp3", text: "Audio" },
 ];
+assert.ok(DevToolsPluginOutputSchema);
 assert.doesNotThrow(() => validate(DevToolsPluginOutputSchema, output));
-assert.throws(() => validate(DevToolsPluginOutputSchema, [{ type: "image", url: "invalid" }]));
-console.log("Expo Zod security and schema compatibility checks passed.");
+assert.throws(
+  () => validate(DevToolsPluginOutputSchema, [{ type: "image", url: "invalid" }]),
+  ValidationError,
+);
+console.log("Mobile Zod security and Expo schema compatibility checks passed.");

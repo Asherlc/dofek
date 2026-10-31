@@ -12,6 +12,31 @@ export function ensureProvidersRegistered(): Promise<void> {
 
 async function doRegisterProviders() {
   const providers = [
+    ["kilter", () => import("../providers/kilter.ts").then((m) => new m.KilterProvider())],
+    ["tension", () => import("../providers/tension.ts").then((m) => new m.TensionProvider())],
+    [
+      "grasshopper",
+      () => import("../providers/grasshopper.ts").then((m) => new m.GrasshopperProvider()),
+    ],
+    ["decoy", () => import("../providers/decoy.ts").then((m) => new m.DecoyProvider())],
+    ["soill", () => import("../providers/soill.ts").then((m) => new m.SoillProvider())],
+    [
+      "touchstone",
+      () => import("../providers/touchstone.ts").then((m) => new m.TouchstoneProvider()),
+    ],
+    [
+      "aurora-board",
+      () => import("../providers/aurora-board.ts").then((m) => new m.AuroraBoardProvider()),
+    ],
+    ["crimpd", () => import("../providers/crimpd/provider.ts").then((m) => new m.CrimpdProvider())],
+    [
+      "eight-a",
+      () => import("../providers/eight-a/provider.ts").then((m) => new m.EightAProvider()),
+    ],
+    [
+      "moonboard",
+      () => import("../providers/moonboard/provider.ts").then((m) => new m.MoonBoardProvider()),
+    ],
     ["wahoo", () => import("../providers/wahoo/provider.ts").then((m) => new m.WahooProvider())],
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],

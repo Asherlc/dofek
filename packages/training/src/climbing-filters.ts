@@ -32,6 +32,7 @@ export const climbingFiltersSchema = z.object({
     .max(5)
     .optional(),
   setting: multipleChoice(settingSchema, 3),
+  board: multipleChoice(z.enum(["recorded", "not_recorded"]), 2),
 });
 export type ClimbingFilters = z.infer<typeof climbingFiltersSchema>;
 export type ClimbingFilterKey = Exclude<keyof ClimbingFilters, "types">;
@@ -44,9 +45,16 @@ export const climbingAdvancedFilterKeys = [
 ] as const;
 export type ClimbingAdvancedFilterKey = (typeof climbingAdvancedFilterKeys)[number];
 
+export function isClimbingBoardFilterActive(filters: ClimbingFilters): boolean {
+  return (
+    filters.board !== undefined &&
+    !(filters.board.includes("recorded") && filters.board.includes("not_recorded"))
+  );
+}
+
 export function climbingFilterSelection(
   filters: ClimbingFilters,
-  key: ClimbingAdvancedFilterKey,
+  key: ClimbingAdvancedFilterKey | "board",
 ): ReadonlyArray<string | boolean | null> {
   return (
     filters[key] ??
@@ -56,7 +64,7 @@ export function climbingFilterSelection(
 
 export function toggleClimbingFilter(
   filters: ClimbingFilters,
-  key: ClimbingAdvancedFilterKey,
+  key: ClimbingAdvancedFilterKey | "board",
   option: string | boolean | null,
 ): ClimbingFilters {
   const options = climbingFilterOptions[key].map(([value]) => value);
@@ -147,7 +155,15 @@ export function climbingFilterSummary(filters: ClimbingFilters): string {
             .filter(([value]) => filters.setting?.includes(value))
             .map(([, label]) => label)
             .join(" + ");
-  return `${types} · ${settings}`;
+  const board = !isClimbingBoardFilterActive(filters)
+    ? ""
+    : filters.board?.length === 0
+      ? "No board selection"
+      : climbingFilterOptions.board
+          .filter(([value]) => filters.board?.includes(value))
+          .map(([, label]) => label)
+          .join(" + ");
+  return `${types} · ${settings}${board ? ` · ${board}` : ""}`;
 }
 
 export const climbingFilterLabels: Record<ClimbingFilterKey, string> = {
@@ -159,6 +175,7 @@ export const climbingFilterLabels: Record<ClimbingFilterKey, string> = {
   protectionUsed: "Protection used",
   routeProtection: "Route protection",
   setting: "Setting",
+  board: "Board",
 };
 
 export const climbingFilterOptions = {
@@ -208,5 +225,9 @@ export const climbingFilterOptions = {
     ["indoor", "Indoor"],
     ["outdoor", "Outdoor"],
     ["unknown", "Unknown setting"],
+  ],
+  board: [
+    ["recorded", "Board climbs"],
+    ["not_recorded", "No board recorded"],
   ],
 } as const;

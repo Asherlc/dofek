@@ -83,6 +83,9 @@ function formatDuration(ms: number): string {
 }
 
 const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  crimpd: "Crimpd",
+  "eight-a": "8a.nu / Vertical-Life",
+  moonboard: "MoonBoard",
   "apple-health": "Apple Health",
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",

@@ -981,6 +981,35 @@ describe("DataSourcesPanel", () => {
     expect(pollingSignal?.aborted).toBe(true);
   });
 
+  it.each([
+    ["crimpd", "Crimpd", ".zip logbook export from Crimpd", ".zip"],
+    ["eight-a", "8a.nu / Vertical-Life", ".csv logbook export from 8a.nu", ".csv"],
+    ["moonboard", "MoonBoard", ".csv logbook export from BoardLib", ".csv"],
+  ])("offers the correct file import for %s", async (id, name, description, accept) => {
+    vi.resetModules();
+    const { DataSourcesPanel: FreshDataSourcesPanel } = await import("./DataSourcesPanel.tsx");
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id,
+          name,
+          authorized: true,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<FreshDataSourcesPanel />);
+    expect(screen.getByTestId(`file-import-${id}`)).toBeTruthy();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: id, title: name, description, accept, importType: id }),
+    );
+  });
+
   it("shows Kaya as a file import source with export upload routes", () => {
     mockProvidersQuery.mockReturnValue({
       data: [

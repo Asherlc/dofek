@@ -139,7 +139,7 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
 }));
 
 // The real constructor verifies theCrag exposes its per-user auth contract.
-const PROVIDER_COUNT = Object.keys(mockProviders).length + 1;
+const PROVIDER_COUNT = Object.keys(mockProviders).length + 11;
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -158,6 +158,26 @@ describe("provider-registration", () => {
 
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
     expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
+  });
+
+  it("loads account-connected boards and climbing file providers", async () => {
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+    const ids = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "kilter",
+        "tension",
+        "grasshopper",
+        "decoy",
+        "soill",
+        "touchstone",
+        "aurora-board",
+        "crimpd",
+        "eight-a",
+        "moonboard",
+      ]),
+    );
   });
 
   it("registers theCrag with a personal API key connection", async () => {
@@ -197,6 +217,6 @@ describe("provider-registration", () => {
       "Failed to register peloton provider: Peloton init failed",
     );
 
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(3);
+    expect(mockRegisterProvider.mock.calls.at(-1)?.[0].id).toBe("peloton");
   });
 });

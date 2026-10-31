@@ -122,6 +122,13 @@ export function ClimbingFilters({
                     onChange(toggleClimbingSetting(value, setting ?? "all"));
                 },
               )}
+              <div className="border-t border-border" />
+              {checkboxes(
+                climbingFilterLabels.board,
+                climbingFilterOptions.board,
+                climbingFilterSelection(value, "board"),
+                (option) => onChange(toggleClimbingFilter(value, "board", option)),
+              )}
               <button
                 type="button"
                 className="min-h-11 text-sm text-muted"

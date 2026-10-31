@@ -58,6 +58,90 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   const volume = async (filters: ClimbingFilters = {}) =>
     (await repo().getVolumeByGrade(30, filters)).map((row) => row.toDetail());
 
+  it.each([
+    { filters: {}, grades: ["V1", "V2", "V3", "V4"], minutes: 300 },
+    {
+      filters: { board: ["recorded", "not_recorded"] },
+      grades: ["V1", "V2", "V3", "V4"],
+      minutes: 300,
+    },
+    { filters: { board: [] }, grades: [], minutes: 0 },
+    { filters: { board: ["recorded"] }, grades: ["V1", "V3"], minutes: 120 },
+    { filters: { board: ["not_recorded"] }, grades: ["V2", "V4"], minutes: 120 },
+    { filters: { board: ["recorded"], setting: ["indoor"] }, grades: ["V1"], minutes: 60 },
+    { filters: { board: ["recorded"], setting: ["outdoor"] }, grades: ["V3"], minutes: 60 },
+    { filters: { board: ["not_recorded"], setting: ["outdoor"] }, grades: ["V4"], minutes: 60 },
+    {
+      filters: { board: ["recorded", "not_recorded"], setting: ["indoor"] },
+      grades: ["V1", "V2"],
+      minutes: 120,
+    },
+    { filters: { board: ["recorded", "not_recorded"], setting: [] }, grades: [], minutes: 0 },
+  ] satisfies { filters: ClimbingFilters; grades: string[]; minutes: number }[])(
+    "filters recorded board metadata independently of provider before aggregating $filters",
+    async ({ filters, grades, minutes }) => {
+      const date = await climbingTestDate(context.db);
+      await seedClimbingActivity(
+        context.db,
+        "climbing-summary-test",
+        "unlogged-board-outing",
+        new Date(`${date}T12:00:00Z`),
+      );
+      for (const [grade, provider, board, setting] of [
+        ["V1", "climbing-summary-test", { name: "Training Board", externalId: null }, "indoor"],
+        ["V2", "climbing-summary-test", null, "indoor"],
+        ["V3", "openbeta", { name: "Imported Board", externalId: "board-3" }, "outdoor"],
+        ["V4", "openbeta", null, "outdoor"],
+      ] as const) {
+        const outing = await seedClimbingActivity(
+          context.db,
+          provider,
+          `board-${grade}`,
+          new Date(`${date}T12:00:00Z`),
+        );
+        await write(
+          {
+            externalId: `board-${grade}`,
+            activityId: outing.id,
+            board,
+            climb: {
+              externalId: `board-${grade}`,
+              name: `Climb ${grade}`,
+              kind: "boulder",
+              setting,
+              publishedGrades: [{ value: grade, system: "v_scale" }],
+              coordinates: { latitude: 37, longitude: -122 },
+            },
+            attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+          },
+          provider,
+        );
+      }
+      expect((await volume(filters)).map((row) => row.grade)).toEqual(grades);
+      expect((await volume(filters)).map((row) => row.recordedAttempts)).toEqual(
+        grades.map(() => 1),
+      );
+      expect((await repo().getMapEntries(30, filters)).map((row) => row.grade).sort()).toEqual(
+        grades,
+      );
+      const progression = (await repo().getGradeProgressionV2(30, filters))?.toDetail();
+      expect(progression?.grades.map((row) => row.grade) ?? []).toEqual(grades);
+      expect(progression?.periods.reduce((sum, period) => sum + period.sends, 0) ?? 0).toBe(
+        grades.length,
+      );
+      expect(progression?.periods.reduce((sum, period) => sum + period.climbingDays, 0) ?? 0).toBe(
+        grades.length === 0 ? 0 : 1,
+      );
+      const sessions = await repo().getSessionSummaries(30, filters);
+      expect(sessions.map((session) => session.toDetail().hardestBoulderGrade).sort()).toEqual(
+        grades,
+      );
+      expect(await repo().getVolumeOverTime(30, filters)).toEqual(
+        grades.length === 0 ? [] : [expect.objectContaining({ attempts: grades.length, minutes })],
+      );
+    },
+  );
+
   it("labels an unnamed Kaya climb from raw color without inventing a catalogue name", async () => {
     const id = await write(
       {

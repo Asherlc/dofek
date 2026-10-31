@@ -124,10 +124,27 @@ export function inferImportProviderFromFile({
   const normalizedExtension = normalizeExtension(fileExtension);
   const normalizedFileName = fileName.trim().toLowerCase();
 
+  if (normalizedExtension === ".zip" && /^crimpd-logs-.+\.zip$/.test(normalizedFileName))
+    return "crimpd";
   if (isGarminDumpLike(normalizedFileName, normalizedExtension)) return "garmin-dump";
   if (normalizedExtension === ".fit") return "fit-file";
   if (isAppleHealthLike(normalizedExtension, mimeType)) return "apple-health";
   if (!isCsvLike(normalizedExtension, mimeType)) return null;
+  const columns = normalizeCsvHeader(csvHeaderLine)
+    .split(",")
+    .map((column) => column.trim().replace(/^"|"$/g, ""));
+  if (
+    ["route_boulder", "name", "location_name", "date", "type", "difficulty"].every((column) =>
+      columns.includes(column),
+    )
+  )
+    return "eight-a";
+  if (
+    ["board", "angle", "climb_name", "date", "logged_grade", "displayed_grade", "tries"].every(
+      (column) => columns.includes(column),
+    )
+  )
+    return "moonboard";
   if (matchesCsvHeader(csvHeaderLine, ["date", "workout name", "duration", "exercise name"])) {
     return "strong-csv";
   }

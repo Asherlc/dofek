@@ -9,6 +9,24 @@ export const appleHealthFileImportConfig: FileImportZoneProps = {
 };
 
 export const fileImportConfigs: Record<string, FileImportZoneProps> = {
+  crimpd: {
+    title: "Crimpd",
+    description: ".zip logbook export from Crimpd",
+    accept: ".zip",
+    importType: "crimpd",
+  },
+  "eight-a": {
+    title: "8a.nu / Vertical-Life",
+    description: ".csv logbook export from 8a.nu",
+    accept: ".csv",
+    importType: "eight-a",
+  },
+  moonboard: {
+    title: "MoonBoard",
+    description: ".csv logbook export from BoardLib",
+    accept: ".csv",
+    importType: "moonboard",
+  },
   "apple-health": appleHealthFileImportConfig,
   "strong-csv": {
     title: "Strong",

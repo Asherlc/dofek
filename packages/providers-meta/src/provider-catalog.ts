@@ -4,11 +4,15 @@ export interface ProviderFamily {
   methodLabel: string;
 }
 
+export type ProviderCredentialIdentifier = "email" | "username";
+
 export interface ProviderCatalogEntry {
   label: string;
   family?: ProviderFamily;
   logo?: { id?: string; type: "png" | "svg" };
   brandColor?: string;
+  credentialIdentifier?: ProviderCredentialIdentifier;
+  credentialInstructions?: string;
 }
 
 const garminConnect: ProviderFamily = {
@@ -49,6 +53,12 @@ const kayaExport: ProviderFamily = {
   methodLabel: "Data export (CSV file)",
 };
 
+const auroraBoardCredentials = {
+  credentialIdentifier: "username" as const,
+  credentialInstructions:
+    "Use an existing board account after accepting its terms of use and privacy policy in the board app.",
+};
+
 /**
  * Canonical user-facing presentation for technical provider IDs.
  *
@@ -57,6 +67,16 @@ const kayaExport: ProviderFamily = {
  * in client provider settings.
  */
 export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = {
+  kilter: { label: "Kilter Board" },
+  tension: { label: "Tension Board", ...auroraBoardCredentials },
+  grasshopper: { label: "Grasshopper Board", ...auroraBoardCredentials },
+  decoy: { label: "Decoy Board", ...auroraBoardCredentials },
+  soill: { label: "So iLL Board", ...auroraBoardCredentials },
+  touchstone: { label: "Touchstone Board", ...auroraBoardCredentials },
+  "aurora-board": { label: "Aurora Board", ...auroraBoardCredentials },
+  crimpd: { label: "Crimpd" },
+  "eight-a": { label: "8a.nu / Vertical-Life" },
+  moonboard: { label: "MoonBoard" },
   google: { label: "Google", logo: { type: "svg" } },
   apple: { label: "Apple", logo: { type: "svg" } },
   github: { label: "GitHub" },

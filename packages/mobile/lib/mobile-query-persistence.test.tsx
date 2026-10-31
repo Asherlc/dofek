@@ -184,11 +184,13 @@ describe("mobile query persistence", () => {
     function RestorationStatus() {
       return <span>{useIsRestoring() ? "restoring" : "restored"}</span>;
     }
-    render(
-      <MobileQueryPersistenceProvider queryClient={client} userId="image-owner">
-        <RestorationStatus />
-      </MobileQueryPersistenceProvider>,
-    );
+    await act(async () => {
+      render(
+        <MobileQueryPersistenceProvider queryClient={client} userId="image-owner">
+          <RestorationStatus />
+        </MobileQueryPersistenceProvider>,
+      );
+    });
     await screen.findByText("restored");
     await act(async () => {
       await client.fetchQuery({

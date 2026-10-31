@@ -66,6 +66,7 @@ the exact section.
 
 | Provider | Doc | Focus |
 |----------|-----|-------|
+| Climbing boards and exports | [climbing-providers.md](climbing-providers.md) | Kilter/Aurora accounts, Crimpd/8a.nu/historical MoonBoard files, field limits, and remaining vendor access. |
 | Amazfit/Zepp | [src/providers/README.md](../src/providers/README.md#amazfitzepp) | Current US2 credential flow, API hosts, and account limitations. |
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |

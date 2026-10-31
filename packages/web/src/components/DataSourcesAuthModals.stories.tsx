@@ -117,6 +117,13 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const BoardUsername: Story = {
+  args: {
+    providerId: "tension",
+    providerName: "Tension Board",
+  },
+};
+
 export const WithDescription: Story = {
   args: {
     description:

@@ -52,6 +52,18 @@ const importConfig = {
     extensions: [".csv"],
     contentTypes: ["text/csv", "application/octet-stream", "text/plain"],
   },
+  crimpd: {
+    extensions: [".zip"],
+    contentTypes: ["application/zip", "application/x-zip-compressed", "application/octet-stream"],
+  },
+  "eight-a": {
+    extensions: [".csv"],
+    contentTypes: ["text/csv", "application/octet-stream", "text/plain"],
+  },
+  moonboard: {
+    extensions: [".csv"],
+    contentTypes: ["text/csv", "application/octet-stream", "text/plain"],
+  },
   "zos-app": {
     extensions: [".bin"],
     contentTypes: ["application/octet-stream"],

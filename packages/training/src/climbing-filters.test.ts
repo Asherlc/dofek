@@ -1,14 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
+  type ClimbingFilters,
   climbingFilterSelection,
   climbingFilterSummary,
   climbingFiltersSchema,
+  isClimbingBoardFilterActive,
   toggleClimbingFilter,
   toggleClimbingSetting,
   toggleClimbingType,
 } from "./climbing-filters.ts";
 
 describe("climbing filters", () => {
+  it("normalizes recorded-board API choices without inferring a climbing type", () => {
+    expect(climbingFiltersSchema.parse({ board: "recorded" })).toEqual({ board: ["recorded"] });
+    expect(climbingFiltersSchema.parse({ board: "not_recorded" })).toEqual({
+      board: ["not_recorded"],
+    });
+    expect(climbingFiltersSchema.parse({ board: ["recorded", "not_recorded"] })).toEqual({
+      board: ["recorded", "not_recorded"],
+    });
+    expect(climbingFiltersSchema.parse({ board: [] })).toEqual({ board: [] });
+    expect(climbingFiltersSchema.safeParse({ board: "gym" }).success).toBe(false);
+    expect(climbingFiltersSchema.safeParse({ board: Array(3).fill("recorded") }).success).toBe(
+      false,
+    );
+  });
   it("normalizes one-or-many API choices into canonical selections", () => {
     expect(
       climbingFiltersSchema.parse({
@@ -72,6 +88,56 @@ describe("climbing filters", () => {
     expect(climbingFiltersSchema.safeParse({ types: Array(6).fill("lead") }).success).toBe(false);
   });
 });
+
+it("selects and toggles recorded-board choices independently, including all and none", () => {
+  expect(climbingFilterSelection({}, "board")).toEqual(["recorded", "not_recorded"]);
+  expect(climbingFilterSelection({ board: [] }, "board")).toEqual([]);
+  expect(toggleClimbingFilter({ setting: ["indoor"] }, "board", "not_recorded")).toEqual({
+    setting: ["indoor"],
+    board: ["recorded"],
+  });
+  expect(toggleClimbingFilter({ board: ["recorded"] }, "board", "recorded")).toEqual({
+    board: [],
+  });
+  expect(toggleClimbingFilter({ board: ["recorded"] }, "board", "not_recorded")).toEqual({});
+  expect(toggleClimbingFilter({}, "board", "all")).toEqual({ board: [] });
+  expect(toggleClimbingFilter({ board: [] }, "board", "all")).toEqual({});
+  expect(toggleClimbingFilter({ board: ["recorded"], solo: [false] }, "board", "all")).toEqual({
+    solo: [false],
+  });
+});
+
+it("adds one board summary only for restricted or empty selections", () => {
+  expect(climbingFilterSummary({ board: ["recorded"] })).toBe(
+    "All climbing · All settings · Board climbs",
+  );
+  expect(climbingFilterSummary({ board: ["not_recorded"], types: ["bouldering"] })).toBe(
+    "Bouldering · All settings · No board recorded",
+  );
+  expect(climbingFilterSummary({ board: [] })).toBe(
+    "All climbing · All settings · No board selection",
+  );
+  expect(climbingFilterSummary({ board: ["not_recorded", "recorded"] })).toBe(
+    "All climbing · All settings",
+  );
+});
+
+it.each([
+  { filters: {}, active: false },
+  { filters: { board: undefined }, active: false },
+  { filters: { board: ["recorded", "not_recorded"] }, active: false },
+  { filters: { board: ["not_recorded", "recorded"] }, active: false },
+  { filters: { board: [] }, active: true },
+  { filters: { board: ["recorded"] }, active: true },
+  { filters: { board: ["not_recorded"] }, active: true },
+  { filters: { board: ["recorded", "recorded"] }, active: true },
+  { filters: { setting: ["indoor"] }, active: false },
+] satisfies { filters: ClimbingFilters; active: boolean }[])(
+  "recognizes whether board choices restrict the combined view $filters",
+  ({ filters, active }) => {
+    expect(isClimbingBoardFilterActive(filters)).toBe(active);
+  },
+);
 
 it("validates multi-setting filters and toggles them without changing other facts", () => {
   expect(climbingFiltersSchema.parse({ setting: ["indoor", "unknown"] })).toEqual({
