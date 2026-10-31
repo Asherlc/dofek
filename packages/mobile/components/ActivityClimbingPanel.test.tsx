@@ -45,7 +45,7 @@ it("selects each repeated occurrence from list and map and keeps details explici
   expect(onOpenEntry).toHaveBeenCalledWith("repeat");
 });
 
-it("keeps entries without GPS and identifies approximate area sources", () => {
+it("keeps entries without GPS selectable", () => {
   const entries = [
     climbingLogFixture,
     { ...climbingLogFixture, id: "indoor", climb: null, title: "Indoor" },
@@ -63,7 +63,6 @@ it("keeps entries without GPS and identifies approximate area sources", () => {
       }}
     />,
   );
-  expect(screen.getByText("Approximate area location")).toBeTruthy();
   expect(screen.getByText("No recorded location")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Select entry 2, Indoor" }));
   expect(

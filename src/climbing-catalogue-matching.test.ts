@@ -64,6 +64,25 @@ function matches(
 }
 
 describe("catalogue name discovery", () => {
+  it("keeps unnamed climbs out of name discovery while retaining native ID matches", () => {
+    const unnamed = { ...seed, name: null };
+    expect(catalogueSearchNames(unnamed)).toEqual([]);
+    expect(matches([{ ...candidate, name: null }], unnamed)).toEqual([]);
+    expect(
+      matches(
+        [
+          {
+            ...candidate,
+            name: null,
+            providerId: "mountain-project",
+            externalId: "105734732",
+            url: "https://www.mountainproject.com/route/105734732",
+          },
+        ],
+        unnamed,
+      ),
+    ).toMatchObject([{ confidence: "source" }]);
+  });
   it("keeps meaningful alias punctuation and qualifiers while merging case/whitespace duplicates", () => {
     expect(
       catalogueSearchNames({

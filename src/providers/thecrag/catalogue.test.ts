@@ -4,7 +4,7 @@ import { TheCragCatalogueAdapter } from "./catalogue.ts";
 
 const origin = "https://www.thecrag.com";
 const route = "/en/climbing/united-states/route/123";
-const seed: CatalogueSeed = {
+const seed = {
   userId: "u",
   logEntryId: "e",
   providerId: "kaya",
@@ -14,7 +14,7 @@ const seed: CatalogueSeed = {
   kind: null,
   setting: null,
   locations: [],
-};
+} satisfies CatalogueSeed;
 function row(name = "Cragmont Crack", href = route) {
   return `<tr><td class="rt_name"><span class="route"><a href="${href}" title="23 ascents - World › United States › Cragmont Park"><span class="star">★</span>${name}</a></span></td></tr>`;
 }

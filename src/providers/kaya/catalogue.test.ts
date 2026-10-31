@@ -31,6 +31,57 @@ const climb = {
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
 
 describe("KayaCatalogueAdapter", () => {
+  it.each([null, "", "  "])(
+    "loads an unnamed indoor climb by its recorded KAYA identity: %j",
+    async (name) => {
+      // Exercise schema construction for each upstream name shape.
+      vi.resetModules();
+      const { KayaCatalogueAdapter: Adapter } = await import("./catalogue.ts");
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          data: {
+            climb: {
+              ...climb,
+              name,
+              gym: { id: "gym", name: "Pacific Pipe" },
+              destination: null,
+              angle: null,
+              lead: true,
+              is_trad: false,
+            },
+          },
+        }),
+      );
+      const result = await new Adapter(fetchFn, async () => "token").search({
+        ...seed,
+        providerId: "kaya",
+        externalId: "1062267",
+        name: null,
+        setting: "indoor",
+      });
+      expect(result).toMatchObject({
+        complete: true,
+        candidates: [
+          {
+            externalId: "1062267",
+            name: null,
+            grade: "5.6",
+            setting: "indoor",
+            tags: expect.arrayContaining([
+              {
+                kind: "climb_type",
+                sourceKey: "is_trad",
+                label: "Sport",
+                category: null,
+                scope: "direct",
+                inheritedFrom: null,
+              },
+            ]),
+          },
+        ],
+      });
+    },
+  );
   it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()

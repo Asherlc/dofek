@@ -40,20 +40,16 @@ export function ClimbingCatalogueContextView({
         onPress={onToggle}
         style={styles.button}
       >
-        <Text style={styles.heading}>Catalogue context</Text>
+        <Text style={styles.heading}>Catalogue information</Text>
       </Pressable>
       {open && (
         <View style={styles.content}>
-          <Text style={styles.muted}>Cached reference information</Text>
-          {context?.fetchedAt && (
-            <Text style={styles.muted}>Fetched {new Date(context.fetchedAt).toLocaleString()}</Text>
-          )}
           {message && (
             <Text accessibilityRole="alert" style={styles.error}>
               {message}
             </Text>
           )}
-          {loading && !context && <Text style={styles.text}>Loading catalogue context…</Text>}
+          {loading && !context && <Text style={styles.text}>Loading climb information…</Text>}
           {context?.sources.map((source) => (
             <View key={source.providerId} style={styles.content}>
               <Text style={styles.heading}>{providerLabel(source.providerId)}</Text>
@@ -85,7 +81,7 @@ export function ClimbingCatalogueContextView({
                     }}
                     style={styles.button}
                   >
-                    <Text style={styles.link}>{candidate.name}</Text>
+                    <Text style={styles.link}>{candidate.name ?? "View climb"}</Text>
                   </Pressable>
                   {candidate.locations.length > 0 && (
                     <Text style={styles.muted}>
@@ -131,8 +127,8 @@ export function ClimbingCatalogueContextView({
             >
               <Text style={styles.link}>
                 {context && context.status !== "missing"
-                  ? "Refresh catalogue info"
-                  : "Find catalogue info"}
+                  ? "Update climb information"
+                  : "Look up climb"}
               </Text>
             </Pressable>
           )}

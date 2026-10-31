@@ -26,7 +26,11 @@ const location = named.extend({
 const climbSchema = z.object({
   id: z.string().regex(/^\d+$/),
   slug: z.string().min(1),
-  name: z.string().min(1),
+  name: z
+    .string()
+    .trim()
+    .transform((name) => name || null)
+    .nullable(),
   climb_type: z.object({ name: z.string() }).nullable(),
   grade: z.object({ name: z.string() }).nullable(),
   gym: location.nullable(),

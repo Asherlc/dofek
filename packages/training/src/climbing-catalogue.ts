@@ -11,7 +11,7 @@ const identityEvidence = {
 };
 export const catalogueLocationSchema = z.strictObject({
   externalId: z.string().nullable(),
-  name: z.string(),
+  name: z.string().nullable(),
   scope: z.enum(["climb", "area"]),
   coordinates: gpsCoordinatesSchema.nullable(),
 });
@@ -21,7 +21,7 @@ export const catalogueSeedSchema = z.strictObject({
   providerId: z.string().min(1),
   externalId: z.string().nullable(),
   sourceUrl: z.url().nullable(),
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1).nullable(),
   kind: z.enum(["route", "boulder"]).nullable(),
   setting: z.enum(["indoor", "outdoor"]).nullable(),
   locations: z.array(catalogueLocationSchema),
@@ -46,7 +46,7 @@ export const catalogueCandidateSchema = z
     providerId: catalogueProviderSchema,
     externalId: z.string().min(1),
     url: z.url(),
-    name: z.string().trim().min(1),
+    name: z.string().trim().min(1).nullable(),
     kind: z.enum(["route", "boulder"]).nullable(),
     setting: z.enum(["indoor", "outdoor"]).nullable(),
     locations: z.array(catalogueLocationSchema),
