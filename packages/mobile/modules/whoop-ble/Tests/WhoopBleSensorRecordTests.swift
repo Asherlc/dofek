@@ -2,6 +2,27 @@ import XCTest
 @testable import WhoopBLE
 
 final class WhoopBleSensorRecordTests: XCTestCase {
+    func testAdditionalSensorFramesRequireBothPacketTypeAndLayoutBytes() throws {
+        for packetType: UInt8 in [43, 47] {
+            for payload in [Data([packetType]), Data([packetType, 18])] {
+                var bytes = Data([0xAA, 1, UInt8(payload.count + 4), 0, 0, 1])
+                let headerCrc = WhoopBleFrameParser.crc16modbus(bytes)
+                bytes.append(contentsOf: [UInt8(truncatingIfNeeded: headerCrc), UInt8(headerCrc >> 8)])
+                bytes.append(payload)
+                let payloadCrc = WhoopBleFrameParser.crc32ieee(payload)
+                for index in 0..<4 { bytes.append(UInt8(truncatingIfNeeded: payloadCrc >> (index * 8))) }
+                let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(bytes))
+                let record = WhoopBleSensorRecord.serialize(frame: frame, deviceInfo: [:])
+                if bytes.count == 13 {
+                    XCTAssertNil(record, "A CRC-valid frame without a layout must not poison an upload batch")
+                } else {
+                    XCTAssertEqual(bytes.count, 14)
+                    XCTAssertNotNil(record, "The minimum server-accepted sensor frame must be retained")
+                }
+            }
+        }
+    }
+
     func testFullRealtimeFramesRetainTheirOtherwiseDiscardedOpticalRegion() throws {
         // A constructed transport-route variant, not a new optical field map.
         var bytes = try capturedWhoopR18Data()

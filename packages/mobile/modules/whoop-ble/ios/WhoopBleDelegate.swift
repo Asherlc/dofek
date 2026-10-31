@@ -130,6 +130,6 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             NSLog("[WhoopBLE] notification with nil value on %@", characteristic.uuid.uuidString)
             return
         }
-        connectionManager?.handleNotification(from: characteristic, data: data)
+        connectionManager?.handleNotification(from: peripheral, characteristic: characteristic, data: data)
     }
 }

@@ -102,7 +102,7 @@ export function WhoopSensorPanel() {
       } catch (error) {
         captureException(error, { context: "whoop-sensor-capture-status" });
         if (!disposed)
-          setCaptureError("Local sensor queue could not be read. Reopen this screen to retry.");
+          setCaptureError("Local sensor queue could not be read. Retrying automatically.");
       }
     };
     void refresh();
@@ -122,7 +122,7 @@ export function WhoopSensorPanel() {
       localCapture={localCapture}
       data={query.data}
       isLoading={query.isLoading}
-      error={query.error?.message ?? captureError}
+      error={[query.error?.message, captureError].filter(Boolean).join("\n") || null}
     />
   );
 }

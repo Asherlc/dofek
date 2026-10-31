@@ -3,6 +3,28 @@ import XCTest
 @testable import WhoopBLE
 
 final class WhoopBlePeripheralCallbackTests: XCTestCase {
+    func testValueCallbacksRequireCurrentNativePeripheralIdentity() {
+        let manager = WhoopBleConnectionManager()
+        let nativeSource = NSObject()
+        let owned = TestWhoopPeripheralConnection(notificationSource: nativeSource)
+        let callback = TestWhoopPeripheralConnection(identifier: owned.identifier, notificationSource: nativeSource)
+        let stale = TestWhoopPeripheralConnection(identifier: owned.identifier)
+        let firmware = CBMutableCharacteristic(
+            type: CBUUID(string: "2A26"), properties: .read, value: nil, permissions: .readable)
+        manager.syncOnBleQueue {
+            manager.setConnectedPeripheral(owned)
+            manager.handleNotification(from: callback.notificationSource, characteristic: firmware, data: Data("current".utf8))
+            XCTAssertEqual(manager.deviceInfo["firmware"], "current")
+
+            manager.handleNotification(from: stale.notificationSource, characteristic: firmware, data: Data("stale".utf8))
+            XCTAssertEqual(manager.deviceInfo["firmware"], "current", "A matching UUID does not own the current session")
+
+            manager.resetConnectionReferences()
+            manager.handleNotification(from: callback.notificationSource, characteristic: firmware, data: Data("late".utf8))
+            XCTAssertTrue(manager.deviceInfo.isEmpty, "Late values after disconnect cannot repopulate metadata")
+        }
+    }
+
     func testNotificationCallbacksUseUnderlyingIdentityAcrossAdapters() {
         let manager = WhoopBleConnectionManager()
         let nativeSource = NSObject()
@@ -34,6 +56,27 @@ final class WhoopBlePeripheralCallbackTests: XCTestCase {
             XCTAssertTrue(manager.connectedPeripheral === owned)
             XCTAssertTrue(manager.autoReconnect)
             XCTAssertEqual(callback.cancellations, 1)
+        }
+    }
+
+    func testOwnedValuesKeepDataAndCommandResponseRouting() {
+        let manager = WhoopBleConnectionManager()
+        let owned = TestWhoopPeripheralConnection()
+        let observer = ValueCallbackObserver()
+        manager.delegate = observer
+        let command = CBMutableCharacteristic(
+            type: CBUUID(string: "FFFF"), properties: .notify, value: nil, permissions: .readable)
+        let data = CBMutableCharacteristic(
+            type: CBUUID(string: "FFFE"), properties: .notify, value: nil, permissions: .readable)
+        manager.syncOnBleQueue {
+            manager.setConnectedPeripheral(owned)
+            manager.cmdResponseCharacteristic = command
+            for characteristic in [command, data] {
+                manager.handleNotification(from: NSObject(), characteristic: characteristic, data: Data([0]))
+                manager.handleNotification(from: owned.notificationSource, characteristic: characteristic, data: Data([1, 2]))
+            }
+            XCTAssertEqual(observer.commandResponses, [Data([1, 2])])
+            XCTAssertEqual(observer.dataValues, [Data([1, 2])])
         }
     }
 
@@ -184,5 +227,27 @@ final class WhoopBlePeripheralCallbackTests: XCTestCase {
             disconnected.fulfill()
         }
         wait(for: [disconnected], timeout: 1)
+    }
+}
+
+private final class ValueCallbackObserver: WhoopBleConnectionManagerDelegate {
+    var dataValues: [Data] = []
+    var commandResponses: [Data] = []
+
+    func connectionManagerDidBecomeReady(
+        _ manager: WhoopBleConnectionManager, peripheral: any WhoopBlePeripheralConnection,
+        cmdCharacteristic: CBCharacteristic, wasStreaming: Bool
+    ) {}
+
+    func connectionManagerDidDisconnect(
+        _ manager: WhoopBleConnectionManager, peripheralId: String, error: Error?
+    ) {}
+
+    func connectionManager(_ manager: WhoopBleConnectionManager, didReceiveData data: Data) {
+        dataValues.append(data)
+    }
+
+    func connectionManager(_ manager: WhoopBleConnectionManager, didReceiveCommandResponse data: Data) {
+        commandResponses.append(data)
     }
 }

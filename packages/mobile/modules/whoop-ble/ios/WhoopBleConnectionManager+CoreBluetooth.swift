@@ -253,7 +253,8 @@ extension WhoopBleConnectionManager {
     }
 
     /// Route a BLE notification to the appropriate delegate callback.
-    func handleNotification(from characteristic: CBCharacteristic, data: Data) {
+    func handleNotification(from peripheral: AnyObject, characteristic: CBCharacteristic, data: Data) {
+        guard connectedPeripheral?.notificationSource === peripheral else { return }
         if recordDeviceInformation(uuid: characteristic.uuid.uuidString, data: data) { return }
         if characteristic.uuid == cmdResponseCharacteristic?.uuid {
             delegate?.connectionManager(self, didReceiveCommandResponse: data)

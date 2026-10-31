@@ -24,7 +24,7 @@ enum WhoopBleSensorRecord {
     static func serialize(frame: WhoopFrame, deviceInfo: [String: String], receivedAt: Date = Date()) -> [String: Any]? {
         let fullRealtime = frame.packetType == 40 && frame.payload.count >= WhoopBleConstants.realtimeDataMinPayloadSize
         let additionalSensor = [UInt8(43), 47].contains(frame.packetType) && ![UInt8(16), 17, 21].contains(frame.recordType)
-        guard fullRealtime || additionalSensor, !frame.rawData.isEmpty else { return nil }
+        guard fullRealtime || additionalSensor, frame.rawData.count >= 14 else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return [

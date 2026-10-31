@@ -1,9 +1,11 @@
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeWhoopCaptureStats } from "../lib/whoop-ble-test-helpers";
 import { getDataPathStats } from "../modules/whoop-ble";
 import { WhoopSensorDetails, WhoopSensorPanel } from "./WhoopSensorDetails";
+
+const snapshotError = vi.hoisted<{ value: Error | null }>(() => ({ value: null }));
 
 vi.mock("../lib/units", () => ({ useUnitConverter: () => new UnitConverter("metric") }));
 vi.mock("../lib/trpc", () => ({
@@ -18,7 +20,7 @@ vi.mock("../lib/trpc", () => ({
             records: [],
           },
           isLoading: false,
-          error: null,
+          error: snapshotError.value,
         }),
       },
     },
@@ -47,6 +49,51 @@ const data = {
 };
 
 describe("WHOOP background sensor details", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    snapshotError.value = null;
+  });
+
+  it("shows both the snapshot server error and the independent local queue error", async () => {
+    snapshotError.value = new Error("Sensor records could not be loaded. Pull to refresh.");
+    vi.mocked(getDataPathStats).mockImplementationOnce(() => {
+      throw new Error("Queue unavailable");
+    });
+    render(<WhoopSensorPanel />);
+
+    expect(await screen.findByText(/Local sensor queue could not be read/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(snapshotError.value.message);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Local sensor queue could not be read. Retrying automatically.",
+    );
+  });
+
+  it("reports automatic retries after a local queue read failure and recovers", async () => {
+    vi.useFakeTimers();
+    vi.mocked(getDataPathStats).mockImplementationOnce(() => {
+      throw new Error("Queue unavailable");
+    });
+    render(<WhoopSensorPanel />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(
+      screen.getByText("Local sensor queue could not be read. Retrying automatically."),
+    ).toBeTruthy();
+
+    const stats = makeWhoopCaptureStats();
+    stats.buffers.sensorRecords.receivedCount = 11;
+    vi.mocked(getDataPathStats).mockReturnValueOnce(stats);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(screen.getByText(/Captured on this phone: 11/)).toBeTruthy();
+    expect(
+      screen.queryByText("Local sensor queue could not be read. Retrying automatically."),
+    ).toBeNull();
+  });
   it("retains temperature on refresh error and reveals raw sensor records", () => {
     render(
       <WhoopSensorDetails

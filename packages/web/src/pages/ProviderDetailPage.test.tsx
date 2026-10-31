@@ -1218,6 +1218,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByRole("heading", { name: "Mobile sync" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Background sensors" })).toBeTruthy();
     expect(screen.getByText(/Streams live sensor data\. Open the Dofek app/)).toBeTruthy();
     expect(screen.getByText(/Last received:/)).toBeTruthy();
     expect(screen.queryByText("Sync Controls")).toBeNull();

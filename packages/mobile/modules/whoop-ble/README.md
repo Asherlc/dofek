@@ -119,7 +119,10 @@ transport bodies are excluded from backups and use locked-device-accessible
 [iOS file protection](https://developer.apple.com/documentation/foundation/fileprotectiontype/completeuntilfirstuserauthentication).
 
 The [native uploader](ios/WhoopBleBackgroundUploader.swift) uses independent
-500-sample batches per stream and the existing authenticated ingestion routes.
+500-sample batches for IMU and realtime streams. Sensor-record batches contain
+at most 16 records and 262,144 encoded bytes, following the
+[queue reservation limits](ios/WhoopBleSampleStore.swift).
+Each stream uses its existing authenticated ingestion route.
 Actual BLE arrivals coalesce scheduling checks to five seconds, and partial
 batches become eligible after 30 seconds or a lifecycle flush. Submitted requests
 use Apple's [background URLSession service](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background),

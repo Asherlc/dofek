@@ -34,6 +34,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Captured: Story = {};
+export const Loading: Story = {
+  args: { isLoading: true, data: undefined },
+};
 export const WaitingForUpload: Story = {
   args: {
     localCapture: { receivedCount: 7, count: 7, confirmedCount: 0 },

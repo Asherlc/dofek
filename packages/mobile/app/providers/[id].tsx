@@ -635,6 +635,7 @@ function ProviderDetailContent({
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
         trpcUtils.processing.status.invalidate(),
+        ...(providerId === "whoop_ble" ? [trpcUtils.whoopBleSync.sensorSnapshot.invalidate()] : []),
       ]).then(() => undefined),
   });
 

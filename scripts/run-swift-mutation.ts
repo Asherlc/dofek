@@ -490,8 +490,14 @@ if (workerInput || mergeOnly) {
     const jobs = campaign.files.flatMap((file) =>
       file.jobs.map((shard) => ({ file: file.source, shard })),
     );
-    if (prepareOnly) console.log(JSON.stringify(jobs));
-    else {
+    if (prepareOnly) {
+      // https://docs.github.com/en/actions/reference/limits#existing-system-limits
+      if (jobs.length > 256)
+        throw new Error(
+          `Swift mutation campaign requires ${jobs.length} workers, exceeding GitHub Actions' 256-job matrix limit; all candidate plans are retained in ${relative(root, reportRoot)}.`,
+        );
+      console.log(JSON.stringify(jobs));
+    } else {
       for (const job of jobs) executeJob(executable, campaign, job);
       mergeCampaign(executable, campaign);
     }

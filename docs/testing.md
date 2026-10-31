@@ -33,6 +33,13 @@ retained. Missing or malformed selected source still fails. See MutantKit's
 [planning interface](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift)
 and [configuration loading](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/ConfigurationLoader.swift).
 
+Zero-candidate mutation classification does not replace the owning package's
+required functional baseline. The separate `Swift Tests` CI job runs the full
+WHOOP BLE package with `swift test`, alongside Background Refresh, Core Motion,
+HealthKit coverage and Watch transfer tests; see the
+[functional baseline job](../.github/workflows/test.yml) and
+[WHOOP BLE package tests](../packages/mobile/modules/whoop-ble/Package.swift).
+
 Preparation (`--base origin/main --prepare`) writes a commit-bound campaign
 manifest and full per-file plans under `reports/swift-mutation/`. The pinned
 tool's [official sharding](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationPlanner/PlanSharding.swift)

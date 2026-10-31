@@ -67,6 +67,7 @@ function createFixture() {
     zero: false,
     candidates: 1,
     duplicateShard: false,
+    oversizedFirstPartition: false,
     missing: false,
     stale: false,
     corrupt: false,
@@ -216,7 +217,14 @@ function createFixture() {
                 ...parent,
                 mutations: state.duplicateShard
                   ? parent.mutations
-                  : parent.mutations.filter((_: unknown, index: number) => index % total === i),
+                  : parent.mutations.filter((_: unknown, index: number) =>
+                      state.oversizedFirstPartition &&
+                      total === Math.ceil(parent.mutations.length / 12)
+                        ? i === 0
+                          ? index < 13
+                          : index >= 13 && (index - 13) % (total - 1) === i - 1
+                        : index % total === i,
+                    ),
               }),
             );
         } else if (command === "verify")
@@ -343,16 +351,22 @@ describe("run-swift-mutation public CLI", () => {
     );
   });
 
-  it("executes every bounded official shard and merges the complete original campaign", async () => {
+  it("increases the official shard count after an oversized partition, executes every bounded shard, and merges all candidates", async () => {
     const fixture = createFixture();
     fixture.addPackage(whoop);
     const base = fixture.commitBase();
     fixture.change(`${whoop}/ios/Parser.swift`);
     fixture.state.candidates = 25;
+    fixture.state.oversizedFirstPartition = true;
     const prepared = await fixture.run(base, ["--prepare"]);
     expect(prepared.status, prepared.stderr).toBe(0);
     const jobs = JSON.parse(prepared.stdout);
-    expect(jobs.length).toBeGreaterThan(1);
+    expect(jobs).toHaveLength(4);
+    expect(
+      fixture.calls
+        .filter((call) => call.tool === "mutantkit" && call.args[0] === "shard")
+        .map((call) => Number(call.args[call.args.indexOf("--count") + 1])),
+    ).toEqual([3, 4]);
     for (const job of jobs) {
       const result = await fixture.run(base, ["--job", JSON.stringify(job)]);
       expect(result.status, result.stderr).toBe(0);
@@ -372,6 +386,46 @@ describe("run-swift-mutation public CLI", () => {
       fixture.calls.some((call) => call.tool === "mutantkit" && call.args[0] === "merge"),
     ).toBe(true);
   });
+
+  it.each([
+    { candidates: 3072, sources: ["Parser.swift"], workers: 256 },
+    { candidates: 3073, sources: ["Parser.swift"], workers: 257 },
+    { candidates: 1537, sources: ["Parser.swift", "Other.swift"], workers: 258 },
+  ])(
+    "checks the complete $workers-worker matrix against GitHub's limit before emitting it",
+    async ({ candidates, sources, workers }) => {
+      const fixture = createFixture();
+      fixture.addPackage(whoop, "ios", sources);
+      const base = fixture.commitBase();
+      for (const source of sources) fixture.change(`${whoop}/ios/${source}`);
+      fixture.state.candidates = candidates;
+      const result = await fixture.run(base, ["--prepare"]);
+      if (workers <= 256) {
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toHaveLength(workers);
+      } else {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(
+          `Swift mutation campaign requires ${workers} workers, exceeding GitHub Actions' 256-job matrix limit`,
+        );
+        expect(result.stdout).toBe("");
+      }
+      const campaign = JSON.parse(
+        readFileSync(join(fixture.root, "reports/swift-mutation/campaign.json"), "utf8"),
+      );
+      expect(campaign.files.flatMap((file: { jobs: number[] }) => file.jobs)).toHaveLength(workers);
+      const planned = sources.flatMap(
+        (source) =>
+          JSON.parse(
+            readFileSync(
+              join(fixture.root, `reports/swift-mutation/files/${whoop}/ios/${source}/plan.json`),
+              "utf8",
+            ),
+          ).mutations,
+      );
+      expect(planned).toHaveLength(candidates * sources.length);
+    },
+  );
 
   it("rejects a source left changed after the mutation command", async () => {
     const fixture = createFixture();
