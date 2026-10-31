@@ -30,6 +30,7 @@ overrides:
   lerna>minimatch: 3.1.4
   minimatch@3>brace-expansion: 1.1.21
   minimatch: 10.2.5
+  node-forge: 1.4.2
   nanoid@<3.3.17: 3.3.18
   image-size: file:vendor/image-size
   picomatch@>=4.0.0 <4.0.4: 4.0.4
@@ -61,7 +62,6 @@ patchedDependencies:
   '@tanstack/router-generator@1.167.18': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
   braces@3.0.3: 37f95f7d660c05bfd44d4b429ca49ceeede99dcff68389f81ee9b995a8ea24d2
   expo-apple-authentication@58.0.2: 89179b1395738b47e8285e682ae3c0b84d973d1c4870ffed89bf46d08111268a
-  node-forge@1.4.0: 4fa957cddb4b4601a48b535053d0fec7ed013f9d075660a38365f285fc830fe0
   react-native-svg@15.16.0: a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66
   react-native@0.88.1: c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d
 
@@ -14083,8 +14083,8 @@ packages:
     resolution: {integrity: sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
-  node-forge@1.4.0:
-    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+  node-forge@1.4.2:
+    resolution: {integrity: sha512-rRtAR5XLJ8gCKd9du4qrKAsgCG1ObGP4gLeNJMa4vYSeq4bmBMOJk5IHkrviBV0q7uoAJlVd8HEQYQSVUb4FGQ==}
     engines: {node: '>= 6.13.0'}
 
   node-gyp-build-optional-packages@5.2.2:
@@ -20046,7 +20046,7 @@ snapshots:
       glob: 13.0.6
       lan-network: 0.2.1
       multitars: 1.0.2
-      node-forge: 1.4.0(patch_hash=4fa957cddb4b4601a48b535053d0fec7ed013f9d075660a38365f285fc830fe0)
+      node-forge: 1.4.2
       npm-package-arg: 11.0.3
       ora: 3.4.0
       picomatch: 4.0.7
@@ -20083,7 +20083,7 @@ snapshots:
 
   '@expo/code-signing-certificates@0.0.7':
     dependencies:
-      node-forge: 1.4.0(patch_hash=4fa957cddb4b4601a48b535053d0fec7ed013f9d075660a38365f285fc830fe0)
+      node-forge: 1.4.2
 
   '@expo/config-plugins@55.0.11(supports-color@11.0.0)':
     dependencies:
@@ -32949,7 +32949,7 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
-  node-forge@1.4.0(patch_hash=4fa957cddb4b4601a48b535053d0fec7ed013f9d075660a38365f285fc830fe0): {}
+  node-forge@1.4.2: {}
 
   node-gyp-build-optional-packages@5.2.2:
     dependencies:
