@@ -6,6 +6,15 @@ export const toolchain = {
   swiftSyntaxVersion: "604.0.0",
 } as const;
 
+const defaultOperators = [
+  "swift.core.bool-literal-inversion",
+  "swift.core.logical-connector-replacement",
+  "swift.core.relational-operator-replacement",
+  "swift.core.return-value-replacement",
+  "swift.core.ternary-branch-swap",
+  "swift.core.unary-not-removal",
+];
+
 export const requiredChecks = [
   "report.results",
   "plan.identity",
@@ -61,6 +70,7 @@ export function mutationFixture(
     projectRoot,
     toolchain,
     sourceFileHashes: sources,
+    operators: defaultOperators.map((id) => ({ id, version: 1, defaultEnabled: true })),
     mutations,
     skipped: [],
   };

@@ -40,18 +40,20 @@ also restores PEM Buffer-input compatibility after the 1.4.1 security correction
 The superseded 1.4.0 patch and signature-advisory exception are removed together;
 `check-node-forge-security.ts` still exercises the installed Expo signing dependency.
 
-## Expo CLI schema compatibility
+## Expo schema compatibility and Zod security
 
-Expo CLI 58.1.18 removes its Zod dependency, validates plugin descriptors and
-output through `@expo/schema-utils`, and accepts the MCP caller's Zod instance
-for command-input schemas ([upstream change](https://github.com/expo/expo/commit/31450487b140c8bee92b0aaf753c123b54fdec0c)).
-The former CLI-specific override is removed. The application supplies its pinned
-Zod 4.6.7 to the command-schema compatibility check. This version includes the
-[upstream collection-validation fix](https://github.com/colinhacks/zod/commit/a0ebf97)
-that rejects oversized constrained collections before parsing their elements.
+The application pins Zod to 4.6.7. Earlier Expo CLI releases required a scoped
+override for Zod 3's [collection validation advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+Expo CLI 58.1.18 no longer declares that direct dependency
+([upstream manifest](https://github.com/expo/expo/blob/main/packages/%40expo/cli/package.json)),
+so the obsolete scoped override was removed.
+The [upstream fix](https://github.com/colinhacks/zod/commit/a0ebf97)
+rejects oversized constrained collections before parsing their elements.
 
-`pnpm check:dependency-security` exercises that collection behavior and checks
-the installed CLI's plugin descriptor, command-input, and command-output schemas
-with valid and invalid inputs through their current validators. This correction
-adds no audit exception. Review these checks when updating Expo CLI's schema
-consumers.
+`pnpm check:dependency-security` exercises that behavior with the application's
+installed Zod and supplies it to Expo's [MCP command-schema constructor](https://github.com/expo/expo/blob/main/packages/%40expo/cli/src/start/server/mcp/createMCPDevToolsExtensionSchema.ts).
+Plugin descriptors and command output use Expo's JSON schemas and its
+`@expo/schema-utils` validator, matching the [native CLI consumer](https://github.com/expo/expo/blob/main/packages/%40expo/cli/src/start/server/devtools/DevToolsPlugin.ts).
+The same valid/invalid fixtures still cover descriptors, command inputs,
+output URLs and early rejection of oversized constrained arrays. No audit
+exception is added. Review these checks when updating Expo's schema consumers.

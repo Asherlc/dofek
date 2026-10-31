@@ -407,6 +407,10 @@ function executeJob(executable: string, campaign: Campaign, input: unknown): voi
     false,
   );
   const report = validateMutationShardReport(readJson(reportPath), plan);
+  validateMutationPlan(plan, {
+    projectRoot: context.directory,
+    sources: sourceContext(job.file).sources,
+  });
   const archive = join(context.directory, ".mutantkit/evidence", report.evidenceArchive.runID);
   if (!existsSync(join(archive, "manifest.json")))
     throw new Error(`Missing mutation evidence archive ${archive}`);

@@ -6,7 +6,7 @@ import Foundation
 extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
     func connectionManagerDidBecomeReady(
         _ manager: WhoopBleConnectionManager,
-        peripheral: CBPeripheral,
+        peripheral: any WhoopBlePeripheralConnection,
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     ) {

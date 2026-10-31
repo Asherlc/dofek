@@ -16,7 +16,8 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
-        connectionManager?.handleRestoration(peripherals)
+        guard let manager = connectionManager else { return }
+        manager.handleRestoration(peripherals.map(manager.peripheralConnection))
     }
 
     func centralManager(
@@ -25,11 +26,13 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        connectionManager?.handlePeripheralDiscovered(peripheral)
+        guard let manager = connectionManager else { return }
+        manager.handlePeripheralDiscovered(manager.peripheralConnection(peripheral))
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        connectionManager?.handlePeripheralConnected(peripheral)
+        guard let manager = connectionManager else { return }
+        manager.handlePeripheralConnected(manager.peripheralConnection(peripheral))
     }
 
     func centralManager(
@@ -37,7 +40,8 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        connectionManager?.handlePeripheralDisconnected(peripheral, error: error)
+        guard let manager = connectionManager else { return }
+        manager.handlePeripheralDisconnected(manager.peripheralConnection(peripheral), error: error)
     }
 
     func centralManager(
@@ -45,7 +49,8 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
-        connectionManager?.handlePeripheralDisconnected(peripheral, error: error)
+        guard let manager = connectionManager else { return }
+        manager.handlePeripheralDisconnected(manager.peripheralConnection(peripheral), error: error)
     }
 
     // MARK: - CBPeripheralDelegate
@@ -53,14 +58,16 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             NSLog("[WhoopBLE] service discovery error: %@", error.localizedDescription)
-            connectionManager?.abortHandshake(
-                for: peripheral,
+            guard let manager = connectionManager else { return }
+            manager.abortHandshake(
+                for: manager.peripheralConnection(peripheral),
                 with: .serviceDiscoveryFailed(error.localizedDescription),
                 underlyingError: error
             )
             return
         }
-        connectionManager?.handleServicesDiscovered(peripheral)
+        guard let manager = connectionManager else { return }
+        manager.handleServicesDiscovered(manager.peripheralConnection(peripheral))
     }
 
     func peripheral(
@@ -73,11 +80,12 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             guard let manager = connectionManager,
                   manager.connectedPeripheral?.identifier == peripheral.identifier else { return }
             manager.handleCharacteristicDiscoveryError(serviceUUID: service.uuid, error: error) {
-                manager.centralManager?.cancelPeripheralConnection(peripheral)
+                manager.peripheralConnection(peripheral).cancelConnection()
             }
             return
         }
-        connectionManager?.handleCharacteristicsDiscovered(peripheral, service: service)
+        guard let manager = connectionManager else { return }
+        manager.handleCharacteristicsDiscovered(manager.peripheralConnection(peripheral), service: service)
     }
 
     func peripheral(
@@ -85,8 +93,9 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        connectionManager?.handleNotificationStateUpdated(
-            peripheral,
+        guard let manager = connectionManager else { return }
+        manager.handleNotificationStateUpdated(
+            manager.peripheralConnection(peripheral),
             characteristic: characteristic,
             error: error
         )

@@ -75,6 +75,7 @@ final class WhoopBleSampleStore {
         try execute("CREATE INDEX IF NOT EXISTS samples_stream_device ON samples(stream, device, id)")
         try execute("CREATE INDEX IF NOT EXISTS samples_stream_id ON samples(stream, id)")
         try execute("CREATE INDEX IF NOT EXISTS samples_timestamp ON samples(timestamp)")
+        try execute("CREATE INDEX IF NOT EXISTS samples_stream_timestamp ON samples(stream, timestamp)")
         try execute("""
             CREATE TABLE IF NOT EXISTS batches (
                 id TEXT PRIMARY KEY, generation TEXT NOT NULL, stream TEXT NOT NULL UNIQUE,
@@ -204,11 +205,10 @@ final class WhoopBleSampleStore {
         guard limit > 0 else { return 0 }
         return try synchronized {
             let result = try rows("""
-                SELECT COUNT(*) AS count FROM
-                    (SELECT 1 FROM samples WHERE stream = ? LIMIT ?)
-                """, [stream.rawValue, limit])
+                SELECT received - confirmed - erased - cleared AS count FROM stats WHERE stream = ?
+                """, [stream.rawValue])
             guard let row = result.first else { throw StoreError("WHOOP queue count is missing") }
-            return try field("count", in: row)
+            return min(limit, try field("count", in: row) as Int)
         }
     }
     func purge() throws { try transaction { try purgeLocked() } }
@@ -232,18 +232,21 @@ final class WhoopBleSampleStore {
     func statistics(stream: WhoopUploadStream) throws -> [String: Any] {
         try synchronized {
             let counts = try rows("""
-                SELECT COUNT(*) AS count, MIN(timestamp) AS oldest, MAX(timestamp) AS newest
-                FROM samples WHERE stream = ?
-                """, [stream.rawValue])
+                SELECT
+                    (SELECT MIN(timestamp) FROM samples WHERE stream = ?) AS oldest,
+                    (SELECT MAX(timestamp) FROM samples WHERE stream = ?) AS newest
+                """, [stream.rawValue, stream.rawValue])
             guard let row = counts.first,
-                  let counters = try rows("SELECT * FROM stats WHERE stream = ?", [stream.rawValue]).first else {
+                  let counters = try rows("""
+                    SELECT *, received - confirmed - erased - cleared AS count FROM stats WHERE stream = ?
+                    """, [stream.rawValue]).first else {
                 throw StoreError("WHOOP queue diagnostics are missing")
             }
             func date(_ value: Any?) -> Any {
                 (value as? Double).map { formatter.string(from: Date(timeIntervalSince1970: $0)) } ?? (NSNull() as Any)
             }
             return [
-                "count": try field("count", in: row) as Int,
+                "count": try field("count", in: counters) as Int,
                 "oldestTimestamp": date(row["oldest"]),
                 "newestTimestamp": date(row["newest"]),
                 "receivedCount": try field("received", in: counters) as Int,

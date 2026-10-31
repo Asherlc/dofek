@@ -70,6 +70,7 @@ function createFixture() {
     missing: false,
     stale: false,
     corrupt: false,
+    changedAfterRun: false,
     verbose: false,
     verboseExit: 0,
   };
@@ -238,6 +239,7 @@ function createFixture() {
             );
           if (state.omit !== "archive")
             write(cwd, ".mutantkit/evidence/fixture-run/manifest.json", "{}");
+          if (state.changedAfterRun) write(cwd, requiredItem(selected[0]), "// left mutated\n");
         } else if (command === "merge") {
           const reportPaths = argv.slice(argv.indexOf("--config") + 2, argv.indexOf("--plan"));
           fixture.report.results = reportPaths.flatMap(
@@ -369,6 +371,18 @@ describe("run-swift-mutation public CLI", () => {
     expect(
       fixture.calls.some((call) => call.tool === "mutantkit" && call.args[0] === "merge"),
     ).toBe(true);
+  });
+
+  it("rejects a source left changed after the mutation command", async () => {
+    const fixture = createFixture();
+    fixture.addPackage(whoop);
+    const base = fixture.commitBase();
+    fixture.change(`${whoop}/ios/Parser.swift`);
+    fixture.state.changedAfterRun = true;
+    const result = await fixture.run(base);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Stale mutation plan hash");
+    expect(fixture.calls.some((call) => call.args[0] === "verify-run")).toBe(false);
   });
 
   it("fails closed when a selected shard has not produced its report", async () => {

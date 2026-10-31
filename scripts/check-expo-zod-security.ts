@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { type ZodType, z } from "zod";
+import type { ZodType } from "zod";
 
 const mobileRequire = createRequire(new URL("../packages/mobile/package.json", import.meta.url));
 const expoRequire = createRequire(mobileRequire.resolve("expo/package.json"));
 const cliRequire = createRequire(expoRequire.resolve("@expo/cli/package.json"));
-const { validate }: { validate(schema: unknown, value: unknown): void } =
-  cliRequire("@expo/schema-utils");
+const { z }: typeof import("zod") = mobileRequire("zod");
 
 // Oversized constrained input must be rejected before walking its elements.
 // https://github.com/colinhacks/zod/commit/a0ebf97
@@ -15,11 +14,13 @@ const item = z.string().superRefine(() => {
   visited += 1;
 });
 assert.equal(z.array(item).max(1).safeParse(["one", "two"]).success, false);
-assert.equal(visited, 0, "MCP's supplied Zod must reject oversized arrays before parsing elements");
+assert.equal(visited, 0, "Zod must reject oversized arrays before parsing elements");
 
 const { PluginSchema, DevToolsPluginOutputSchema }: Record<string, unknown> = cliRequire(
   "./build/src/start/server/devtools/DevToolsPlugin.schema.js",
 );
+const { validate }: { validate(schema: unknown, value: unknown): void } =
+  cliRequire("@expo/schema-utils");
 const {
   createMCPDevToolsExtensionSchema,
 }: { createMCPDevToolsExtensionSchema(plugin: unknown, zod: typeof z): ZodType } = cliRequire(
@@ -46,7 +47,6 @@ const plugin = {
     ],
   },
 };
-assert.ok(PluginSchema);
 assert.doesNotThrow(() => validate(PluginSchema, plugin));
 assert.throws(() => validate(PluginSchema, { ...plugin, packageName: "" }));
 
@@ -70,7 +70,6 @@ const output = [
   { type: "image", url: "https://example.com/image.png" },
   { type: "audio", url: "https://example.com/audio.mp3", text: "Audio" },
 ];
-assert.ok(DevToolsPluginOutputSchema);
 assert.doesNotThrow(() => validate(DevToolsPluginOutputSchema, output));
 assert.throws(() => validate(DevToolsPluginOutputSchema, [{ type: "image", url: "invalid" }]));
 console.log("Expo Zod security and schema compatibility checks passed.");

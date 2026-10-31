@@ -63,6 +63,21 @@ describe("Swift mutation plan boundary", () => {
     ).toThrow(/source inventory/);
   });
 
+  it.each(["missing", "duplicate", "version", "disabled"])(
+    "rejects an incomplete zero-candidate operator catalogue: %s",
+    (kind) => {
+      const { plan } = mutationFixture();
+      plan.mutations = [];
+      if (kind === "missing") plan.operators.pop();
+      if (kind === "duplicate") plan.operators.push(requiredItem(plan.operators[0]));
+      if (kind === "version") requiredItem(plan.operators[0]).version = 2;
+      if (kind === "disabled") requiredItem(plan.operators[0]).defaultEnabled = false;
+      expect(() =>
+        validateMutationPlan(plan, { projectRoot: "/", sources: plan.sourceFileHashes }),
+      ).toThrow();
+    },
+  );
+
   it("requires a complete disjoint bounded partition with unchanged context", () => {
     const { plan } = mutationFixture("/", {
       "a.swift": `sha256:${"a".repeat(64)}`,

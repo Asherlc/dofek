@@ -22,14 +22,14 @@ final class WhoopBleModuleConnectionManagerDelegateTests: XCTestCase {
         var database: OpaquePointer?
         XCTAssertEqual(sqlite3_open(path, &database), SQLITE_OK)
         defer { sqlite3_close(database) }
-        XCTAssertEqual(sqlite3_exec(database, "ALTER TABLE samples RENAME TO unavailable_samples", nil, nil, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(database, "ALTER TABLE stats RENAME TO unavailable_stats", nil, nil, nil), SQLITE_OK)
         defer {
-            XCTAssertEqual(sqlite3_exec(database, "ALTER TABLE unavailable_samples RENAME TO samples", nil, nil, nil), SQLITE_OK)
+            XCTAssertEqual(sqlite3_exec(database, "ALTER TABLE unavailable_stats RENAME TO stats", nil, nil, nil), SQLITE_OK)
         }
 
         try await assertReadinessDoesNotActivate(module, context: context)
         module.connectionManager.syncOnBleQueue {
-            XCTAssertTrue(module.captureFailure?.contains("samples") == true)
+            XCTAssertTrue(module.captureFailure?.contains("stats") == true)
         }
     }
 

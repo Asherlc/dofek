@@ -25,6 +25,8 @@ The [canonical configuration](../packages/mobile/mutantkit.yml) is shared by
 package-local symlinks. Each run derives an exact source scope while retaining
 the owning package's full tests. The runner validates source with the official
 Swift compiler and matches the plan's complete source inventory and hashes.
+The runner rechecks those hashes immediately after execution. Zero-candidate
+plans must retain the complete pinned default operator catalogue.
 An official verified plan with zero candidates is reported as not applicable,
 without a mutation score; its compiler, source and verification evidence is
 retained. Missing or malformed selected source still fails. See MutantKit's
@@ -62,11 +64,22 @@ Review surviving mutants and add tests for real coverage gaps. Assertion kills,
 confirmed crashes/timeouts, survivors, compile failures and inconclusive outcomes
 remain distinct under the official
 [outcome model](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationModel/MutationOutcome.swift).
-The native runner retains its existing positive-work policy without adding a
-numeric threshold. Default optional independent assertion confirmation can
+Nonempty plans retain the existing positive-work policy without a numeric
+threshold; having candidates but no measurable outcomes still fails. Default optional independent assertion confirmation can
 remain unverified; that status does not establish named-test attribution.
 Native unit tests, app builds and Simulator checks remain separate;
 physical background reconnection and capture still require a device.
+
+For queue query tests, seed persisted SQLite rows directly instead of replaying
+ingestion for every fixture and isolated mutation. SQLite supports bounded
+set-based fixtures through [recursive CTEs](https://www.sqlite.org/lang_with.html#recursive_query_examples).
+The [WHOOP store tests](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStoreTests.swift)
+retain 10,000-row instruction-budget fixtures and cross the former 86,400-row
+queue boundary through public append after restoring a persisted backlog. They
+check actual stored rows as well as lifecycle counters. Keep public ingestion,
+acknowledgment, erasure and failure paths under test; fixture setup must not
+replace the behavior being verified. This reduces repeated fixture cost while
+retaining the full mutation suite and existing CI deadlines.
 
 ## CI build caches
 

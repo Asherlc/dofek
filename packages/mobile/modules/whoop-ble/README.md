@@ -152,6 +152,27 @@ The
 [diagnostic procedure](../../../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
 describes correlation with upload and server events.
 
+### Automatic recovery and queue diagnostics
+
+Automatic collection retains reconnect intent after transient setup timeouts,
+discovery errors, and notification subscription errors. It waits for the
+cancelled peripheral's disconnect callback before reconnecting, following
+[CoreBluetooth's cancellation contract](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/cancelperipheralconnection(_:)).
+Explicit connection requests still reject with their typed error; explicit
+Disconnect and structurally incompatible services remain terminal. Stop prevents
+IMU restoration during recovery.
+
+Queue counts use the sample store's existing transactional lifecycle counters.
+Oldest and newest sample times use separate lookups through the stream/time
+covering index, following SQLite's [covering-index](https://sqlite.org/queryplanner.html#covering_indexes)
+and [MIN/MAX optimizations](https://sqlite.org/optoverview.html#the_min_max_optimization).
+The index is created on the first open after a native upgrade. On the copied
+October 30 incident queue (3,427,798 IMU rows and 39,411 realtime rows), that
+open took 5.85 seconds on the investigation Mac; subsequent diagnostics plus
+unlimited count took 0.04–0.38 ms. These measurements are not device latency
+guarantees; see the [incident evidence](../../../../docs/production-incident-baseline.md#2026-10-30--whoop-recovery-and-queue-diagnostics-corrections).
+Both corrections require a new native iOS build.
+
 ## Native bridge tests
 
 On macOS with Xcode and an installed iPhone Simulator runtime, run from
@@ -179,6 +200,14 @@ Bluetooth delivery separately on a device.
 
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
+Its [peripheral callback regressions](Tests/WhoopBleConnectionManager+CoreBluetoothTests.swift)
+exercise ownership, stale callbacks, cancellation and reconnect through the same
+[peripheral interface](ios/WhoopBlePeripheralConnection.swift) used by the native
+adapter. The adapter preserves the underlying peripheral's notification identity
+across callbacks, and handshake deadlines retain their adapter until settlement.
+These tests cover the manager's callback policy; physical strap capture and
+background delivery still require a device, following Apple's
+[CoreBluetooth background guidance](https://developer.apple.com/documentation/corebluetooth/core-bluetooth-background-processing-for-ios-apps).
 
 The workspace's [React Native patch](../../../../patches/react-native@0.88.1.patch)
 preserves build-flavor markers during [CocoaPods source cleanup](https://github.com/CocoaPods/CocoaPods/blob/1.16.2/lib/cocoapods/sandbox/pod_dir_cleaner.rb#L55).

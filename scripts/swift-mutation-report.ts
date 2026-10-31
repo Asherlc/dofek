@@ -40,6 +40,9 @@ const planSchema = z
     toolchain,
     sourceFileHashes: z.record(z.string(), hash),
     mutations: z.array(point),
+    operators: z.array(
+      z.object({ id: z.string(), version: z.number(), defaultEnabled: z.boolean() }).passthrough(),
+    ),
     skipped: z
       .array(z.unknown())
       .max(0, "Skipped, budgeted or suppressed mutations are not allowed"),
@@ -155,6 +158,24 @@ export function validateMutationPlan(
     requireCondition(
       plan.sourceFileHashes[file] === expectedHash,
       `Stale mutation plan hash for ${file}`,
+    );
+  }
+  if (plan.mutations.length === 0) {
+    sameMembers(
+      plan.operators.map((operator) => operator.id),
+      [
+        "swift.core.bool-literal-inversion",
+        "swift.core.logical-connector-replacement",
+        "swift.core.relational-operator-replacement",
+        "swift.core.return-value-replacement",
+        "swift.core.ternary-branch-swap",
+        "swift.core.unary-not-removal",
+      ],
+      "zero-candidate default operators",
+    );
+    requireCondition(
+      plan.operators.every((operator) => operator.version === 1 && operator.defaultEnabled),
+      "Incomplete zero-candidate operator catalogue",
     );
   }
   const ids = plan.mutations.map((mutation) => mutation.id);
