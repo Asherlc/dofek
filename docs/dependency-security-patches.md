@@ -1,19 +1,23 @@
 # Dependency security patches
 
-Two dependencies currently require checked-in fixes because their published
-releases remain affected. The original package versions are retained; pnpm
-applies the source patches during installation using
+Braces currently requires a checked-in fix because its published release remains
+affected. Its original package version is retained; pnpm applies the source
+patch during installation using
 [`patchedDependencies`](https://pnpm.io/cli/patch#patcheddependencies).
 
 | Package | Advisory | Backported source |
 | --- | --- | --- |
-| `node-forge@1.4.0` | [Signature verification](https://github.com/advisories/GHSA-86w9-cpqp-85rv) | [forge PR #1152 at ceba344](https://github.com/digitalbazaar/forge/pull/1152/commits/ceba34402e329f0365134f23fe19898756527d65) |
 | `braces@3.0.3` | [Recursive traversal](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | [braces PR #72 at d0d575e](https://github.com/micromatch/braces/pull/72/commits/d0d575e55e74a4e0218e5248fafb79efc3e54ebb) |
 
-The forge patch rejects extra elements inside the nested DigestAlgorithm
-sequence during signature verification. The braces patch bounds parsed brace
-and parenthesis nesting and directly supplied AST traversal to 100 levels.
-Both patches contain the upstream runtime changes from the commits above.
+The braces patch bounds parsed brace and parenthesis nesting and directly
+supplied AST traversal to 100 levels. It contains the upstream runtime changes
+from the commit above.
+
+The workspace overrides node-forge to 1.4.2. Its
+[upstream changelog](https://github.com/digitalbazaar/forge/blob/v1.4.2/CHANGELOG.md)
+documents the signature verification correction previously backported here,
+additional security fixes, and PEM Buffer-input compatibility. The obsolete
+1.4.0 source patch and its signature advisory exception have been removed.
 
 Run `pnpm check:dependency-security` to exercise the installed packages through
 their Expo and Metro consumers. The forge regression checks malformed signed
@@ -23,8 +27,8 @@ nesting, direct AST inputs, limit overrides, and ordinary compile/expand behavio
 Both checks failed before patching and passed afterward.
 
 The Dependency Audit CI job runs these regressions before `pnpm audit`. Only
-the two advisory IDs above are excluded from its version-based report, with
-explicit approval, because the patched packages retain affected version numbers.
+the braces advisory ID above is excluded from its version-based report, with
+explicit approval, because the patched package retains its affected version number.
 All other audit findings retain their existing enforcement. The regression
 command fails if the installed vulnerable behavior returns; patch application
 failures also fail installation under [pnpm v11](https://pnpm.io/cli/patch#allowunusedpatches).
