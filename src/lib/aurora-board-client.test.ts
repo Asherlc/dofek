@@ -32,6 +32,281 @@ function client(fetchFn: typeof fetch) {
 }
 
 describe("AuroraBoardClient", () => {
+  it("initializes schemas that preserve normalized session, cursor, attempt and record facts", async () => {
+    vi.resetModules();
+    const { AuroraBoardClient: FreshAuroraBoardClient } = await import("./aurora-board-client.ts");
+    let syncCalls = 0;
+    const instance = new FreshAuroraBoardClient(
+      "tension",
+      "Tension Board",
+      "https://tensionboardapp2.com",
+      async (input, init) => {
+        if (String(input).endsWith("/sessions"))
+          return Response.json({ session: { token: " session ", user_id: 42 } });
+        syncCalls++;
+        if (syncCalls === 1)
+          return Response.json({
+            ascents: [{ ...ascent, uuid: " normalized-ascent ", climb_uuid: " normalized-climb " }],
+            bids: [],
+            attempts: [{ id: 2, name: " Redpoint " }],
+            user_syncs: [{ table_name: " ascents ", last_synchronized_at: " 2026-10-02 " }],
+            _complete: false,
+          });
+        expect(new URLSearchParams(String(init?.body)).get("ascents")).toBe("2026-10-02");
+        return Response.json({ _complete: true });
+      },
+    );
+    const connected = await instance.login("user", "password");
+    expect(connected.accessToken).toBe("session");
+    const result = await instance.fetchLogbook(connected, vi.fn());
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      externalId: "tension:ascent:normalized-ascent",
+      wallAngle: { value: 40, unit: "degrees" },
+      climb: { externalId: "normalized-climb" },
+      attempts: [{ scope: "climb", sourceCompleted: true, sourceResult: "Redpoint" }],
+    });
+    expect(syncCalls).toBe(2);
+  });
+
+  it("returns a structured authentication failure for rejected sessions", async () => {
+    await expect(
+      client(async () => new Response(null, { status: 401 })).login("user", "password"),
+    ).rejects.toMatchObject({
+      name: "ProviderAuthError",
+      authFailureReason: "session_expired",
+      message: expect.stringContaining("Reconnect"),
+    });
+  });
+
+  it("retains listed bids even when their ascent-listing flag is false", async () => {
+    const result = await client(async () =>
+      Response.json({ ascents: [], bids: [{ ...bid, is_listed: false }], _complete: true }),
+    ).fetchLogbook(tokens, vi.fn());
+    expect(result.absentExternalIds).toEqual([]);
+    expect(result.entries).toHaveLength(1);
+  });
+
+  it.each([
+    { ...ascent, climb_uuid: undefined },
+    { ...ascent, climbed_at: "bad" },
+  ])("validates a page before a later tombstone can replace it (%j)", async (invalid) => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ascents: [invalid],
+        bids: [],
+        _complete: false,
+        user_syncs: [{ table_name: "ascents", last_synchronized_at: "2026-10-02" }],
+      }),
+    );
+    fetchFn
+      .mockResolvedValueOnce(
+        Response.json({
+          ascents: [invalid],
+          bids: [],
+          _complete: false,
+          user_syncs: [{ table_name: "ascents", last_synchronized_at: "2026-10-02" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ascents: [{ uuid: ascent.uuid, user_id: 42, is_listed: false }],
+          bids: [],
+          _complete: true,
+        }),
+      );
+    await expect(client(fetchFn).fetchLogbook(tokens, vi.fn())).rejects.toThrow();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a cursor that stalls after previously advancing", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ascents: [],
+        bids: [],
+        _complete: false,
+        user_syncs: [{ table_name: "ascents", last_synchronized_at: "2026-10-02" }],
+      }),
+    );
+    await expect(client(fetchFn).fetchLogbook(tokens, vi.fn())).rejects.toThrow(
+      /pagination did not advance/,
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+  it.each([401, 403, 422, 500])(
+    "rejects failed login HTTP %s with a useful error",
+    async (status) => {
+      await expect(
+        client(async () => new Response(null, { status })).login("user", "secret"),
+      ).rejects.toThrow(status === 500 ? /login failed.*500/ : /Tension Board session.*Reconnect/);
+    },
+  );
+
+  it("sends login and sync transport headers and preserves the supplied abort signal", async () => {
+    const signal = new AbortController().signal;
+    const fetchFn = vi.fn<typeof fetch>(async (input, init) => {
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("accept")).toBe("application/json");
+      if (String(input).endsWith("/sessions")) {
+        expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+        expect(new Headers(init?.headers).get("cookie")).toBeNull();
+        return Response.json({ session: { token: " token ", user_id: 42 } });
+      }
+      expect(String(input)).toBe("https://tensionboardapp2.com/sync");
+      expect(init?.signal).toBe(signal);
+      expect(new Headers(init?.headers).get("content-type")).toBe(
+        "application/x-www-form-urlencoded",
+      );
+      return Response.json({ ascents: [], bids: [], _complete: true });
+    });
+    const instance = client(fetchFn);
+    expect(await instance.login("user", "secret")).toMatchObject({
+      accessToken: "token",
+      expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    });
+    await instance.fetchLogbook(tokens, vi.fn(), signal);
+  });
+
+  it.each([undefined, "", "x42", "42x"])(
+    "rejects invalid account identity %s before requesting data",
+    async (providerAccountId) => {
+      const fetchFn = vi.fn<typeof fetch>();
+      await expect(
+        client(fetchFn).fetchLogbook({ ...tokens, providerAccountId }, vi.fn()),
+      ).rejects.toThrow(/Reconnect/);
+      expect(fetchFn).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports non-authentication sync failures", async () => {
+    await expect(
+      client(async () => new Response(null, { status: 503 })).fetchLogbook(tokens, vi.fn()),
+    ).rejects.toThrow(/logbook request failed.*503/);
+  });
+
+  it.each([false, 0, "0", "false"])(
+    "recognizes ascent tombstone %s without requiring deleted facts",
+    async (is_listed) => {
+      const result = await client(async () =>
+        Response.json({
+          ascents: [{ uuid: " deleted ", user_id: 42, is_listed }],
+          bids: [],
+          _complete: true,
+        }),
+      ).fetchLogbook(tokens, vi.fn());
+      expect(result).toEqual({
+        entries: [],
+        absentExternalIds: ["tension:ascent:deleted"],
+        authoritative: false,
+      });
+    },
+  );
+
+  it.each([undefined, null, 0, 1])(
+    "maps optional facts and positive bid counts exactly (%s)",
+    async (count) => {
+      const raw = {
+        ...bid,
+        angle: 0,
+        wall_uuid: "wall",
+        comment: "  note  ",
+        bid_count: count,
+        climbed_at: "2026-10-02T00:30:00+02:00",
+      };
+      const result = await client(async () =>
+        Response.json({ ascents: [], bids: [raw], _complete: true }),
+      ).fetchLogbook(tokens, vi.fn());
+      expect(result.entries[0]).toMatchObject({
+        climbedOn: "2026-10-01",
+        discipline: "rock_climbing",
+        sourceName: "Tension Board",
+        board: { name: "Tension Board", externalId: "wall" },
+        wallAngle: { value: 0, unit: "degrees" },
+        notes: "  note  ",
+        climb: { externalId: "problem", kind: "boulder", setting: "indoor" },
+      });
+      expect(result.entries[0]?.reportedAttemptCounts).toEqual(
+        count === 1 ? [{ scope: "climb", count: 1 }] : undefined,
+      );
+    },
+  );
+
+  it("omits absent angles, blank comments and unknown attempt results", async () => {
+    const result = await client(async () =>
+      Response.json({
+        ascents: [{ ...ascent, angle: null, comment: "  ", attempt_id: null }],
+        bids: [],
+        _complete: true,
+      }),
+    ).fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]?.wallAngle).toBeUndefined();
+    expect(result.entries[0]?.board).toEqual({ name: "Tension Board", externalId: null });
+    expect(result.entries[0]?.notes).toBeNull();
+    expect(result.entries[0]?.attempts).toStrictEqual([{ scope: "climb", sourceCompleted: true }]);
+  });
+
+  it.each([{ ascents: [] }, { bids: [] }])(
+    "requires evidence of each requested table (%j)",
+    async (tables) => {
+      await expect(
+        client(async () => Response.json({ ...tables, _complete: true })).fetchLogbook(
+          tokens,
+          vi.fn(),
+        ),
+      ).rejects.toThrow(/omitted/);
+    },
+  );
+
+  it("accepts table evidence from shared cursors and ignores unrelated tables", async () => {
+    const result = await client(async () =>
+      Response.json({
+        _complete: true,
+        shared_syncs: ["ascents", "bids", "unknown"].map((table_name) => ({
+          table_name,
+          last_synchronized_at: "2026-10-02",
+          ...(table_name === "unknown" ? { user_id: 99 } : {}),
+        })),
+      }),
+    ).fetchLogbook(tokens, vi.fn());
+    expect(result.entries).toEqual([]);
+  });
+
+  it("rejects foreign cursor ownership", async () => {
+    await expect(
+      client(async () =>
+        Response.json({
+          ascents: [],
+          bids: [],
+          _complete: true,
+          user_syncs: [{ table_name: "ascents", user_id: 99, last_synchronized_at: "2026-10-02" }],
+        }),
+      ).fetchLogbook(tokens, vi.fn()),
+    ).rejects.toThrow(/cursor for another account/);
+  });
+
+  it.each(["1970-01-01 00:00:00.000000", "1969-01-01"])(
+    "rejects stalled or backwards cursors %s",
+    async (last_synchronized_at) => {
+      await expect(
+        client(async () =>
+          Response.json({
+            ascents: [],
+            bids: [],
+            _complete: false,
+            user_syncs: [{ table_name: "ascents", last_synchronized_at }],
+          }),
+        ).fetchLogbook(tokens, vi.fn()),
+      ).rejects.toThrow(/pagination did not advance/);
+    },
+  );
+
+  it.each([-91, 91])("rejects impossible wall angles %s", async (angle) => {
+    await expect(
+      client(async () =>
+        Response.json({ ascents: [{ ...ascent, angle }], bids: [], _complete: true }),
+      ).fetchLogbook(tokens, vi.fn()),
+    ).rejects.toThrow();
+  });
   it("reads separate ascents/bids, native IDs, UTC dates, and raw unknown grades/counts", async () => {
     const instance = client(async () =>
       Response.json({

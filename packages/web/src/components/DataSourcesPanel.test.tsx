@@ -985,7 +985,9 @@ describe("DataSourcesPanel", () => {
     ["crimpd", "Crimpd", ".zip logbook export from Crimpd", ".zip"],
     ["eight-a", "8a.nu / Vertical-Life", ".csv logbook export from 8a.nu", ".csv"],
     ["moonboard", "MoonBoard", ".csv logbook export from BoardLib", ".csv"],
-  ])("offers the correct file import for %s", (id, name, description, accept) => {
+  ])("offers the correct file import for %s", async (id, name, description, accept) => {
+    vi.resetModules();
+    const { DataSourcesPanel: FreshDataSourcesPanel } = await import("./DataSourcesPanel.tsx");
     mockProvidersQuery.mockReturnValue({
       data: [
         {
@@ -1001,7 +1003,7 @@ describe("DataSourcesPanel", () => {
       isLoading: false,
       error: null,
     });
-    render(<DataSourcesPanel />);
+    render(<FreshDataSourcesPanel />);
     expect(screen.getByTestId(`file-import-${id}`)).toBeTruthy();
     expect(mockFileImportProviderCard).toHaveBeenCalledWith(
       expect.objectContaining({ providerId: id, title: name, description, accept, importType: id }),

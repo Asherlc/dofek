@@ -1,7 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ClimbingBoardAccount } from "../lib/climbing-board-account.ts";
 import { AuroraBoardProvider } from "./aurora-board.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createMockDatabase } from "./test-helpers.ts";
 
 describe("AuroraBoardProvider", () => {
+  it("passes the complete sync context to its account and returns the sync result", async () => {
+    const { db } = createMockDatabase();
+    const run = new SyncRun({
+      db,
+      window: SyncWindow.full(new Date("2026-09-01T00:00:00Z")),
+      userId: "board-owner",
+      signal: new AbortController().signal,
+    });
+    const result = { provider: "aurora-board", recordsSynced: 7, errors: [], duration: 25 };
+    const sync = vi.spyOn(ClimbingBoardAccount.prototype, "sync").mockResolvedValueOnce(result);
+    try {
+      expect(await new AuroraBoardProvider().sync(run)).toBe(result);
+      expect(sync).toHaveBeenCalledExactlyOnceWith(run);
+    } finally {
+      sync.mockRestore();
+    }
+  });
+
   it("connects the user's own account on the correct upstream host", async () => {
     const provider = new AuroraBoardProvider(async (input) => {
       expect(String(input)).toBe("https://auroraboardapp.com/sessions");
