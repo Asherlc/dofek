@@ -36,6 +36,7 @@ type Story = StoryObj<typeof meta>;
 export const Captured: Story = {};
 export const WaitingForUpload: Story = {
   args: {
+    localCapture: { receivedCount: 7, count: 7, confirmedCount: 0 },
     data: { latestReceivedAt: null, latestMeasuredAt: null, skinTemperatureC: null, records: [] },
   },
 };

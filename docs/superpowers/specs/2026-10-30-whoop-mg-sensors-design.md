@@ -1,6 +1,9 @@
 # WHOOP MG background sensor capture
 
-Status: approved by the user on 2026-10-30; implementation in progress.
+Status: approved by the user on 2026-10-30; implementation committed. Available
+checks pass; Expo application/bridge build awaits Infisical authentication and
+physical MG/overnight validation remains pending. The user requested finishing
+available checks first.
 
 ## Intent and agreed scope
 

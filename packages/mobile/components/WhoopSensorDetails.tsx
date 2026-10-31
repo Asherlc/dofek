@@ -1,10 +1,12 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import type { WhoopSensorSnapshot } from "@dofek/providers/whoop-sensors";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useUnitConverter } from "../lib/units";
+import type { WhoopBufferStreamDiagnostics } from "../modules/whoop-ble";
 import { colors } from "../theme";
 import { Card } from "./Card";
 import { QueryStatePanel } from "./QueryStatePanel";
@@ -14,12 +16,19 @@ interface Props {
   isLoading: boolean;
   error: string | null;
   units: UnitConverter;
+  localCapture?: Pick<WhoopBufferStreamDiagnostics, "receivedCount" | "count" | "confirmedCount">;
 }
 
-export function WhoopSensorDetails({ data, isLoading, error, units }: Props) {
+export function WhoopSensorDetails({ data, isLoading, error, units, localCapture }: Props) {
   const [expanded, setExpanded] = useState(false);
   return (
     <Card title="Background sensors">
+      {localCapture && (
+        <Text style={styles.detail}>
+          Captured on this phone: {localCapture.receivedCount} · Queued: {localCapture.count} ·
+          Uploaded: {localCapture.confirmedCount}
+        </Text>
+      )}
       {error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
@@ -78,6 +87,31 @@ export function WhoopSensorDetails({ data, isLoading, error, units }: Props) {
 
 export function WhoopSensorPanel() {
   const units = useUnitConverter();
+  const [localCapture, setLocalCapture] = useState<Props["localCapture"]>();
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const native = await import("../modules/whoop-ble");
+        const stats = native.getDataPathStats();
+        if (!disposed) {
+          setLocalCapture(stats.buffers.sensorRecords);
+          setCaptureError(null);
+        }
+      } catch (error) {
+        captureException(error, { context: "whoop-sensor-capture-status" });
+        if (!disposed)
+          setCaptureError("Local sensor queue could not be read. Reopen this screen to retry.");
+      }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 10_000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, []);
   const query = trpc.whoopBleSync.sensorSnapshot.useQuery(undefined, {
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -85,9 +119,10 @@ export function WhoopSensorPanel() {
   return (
     <WhoopSensorDetails
       units={units}
+      localCapture={localCapture}
       data={query.data}
       isLoading={query.isLoading}
-      error={query.error?.message ?? null}
+      error={query.error?.message ?? captureError}
     />
   );
 }
