@@ -26,27 +26,27 @@
 **Files:** `WhoopBleConnectionManager+Handshake.swift`, `WhoopBleConnectionState.swift`, `WhoopBleClient.swift`, and their existing tests under `packages/mobile/modules/whoop-ble/`.
 **Interfaces:** Existing `abortHandshake`, `handleDisconnection`, and readiness transitions; internal disconnecting state maps to public connecting.
 
-- [ ] Add regressions for passive timeout and transient discovery/subscription errors, repeated failure, late callbacks and Stop/Disconnect during cancellation; run the focused Swift tests and observe failure.
-- [ ] Retain automatic recovery through cancellation, then reuse disconnect-driven reconnect. Keep explicit and structural failures terminal.
-- [ ] Run connection/handshake/client tests and review the state transitions.
-- [ ] Commit and push the recovery correction.
+- [x] Add regressions for passive timeout and transient discovery/subscription errors, repeated failure, late callbacks and Stop/Disconnect during cancellation; run the focused Swift tests and observe failure.
+- [x] Retain automatic recovery through cancellation, then reuse disconnect-driven reconnect. Keep explicit and structural failures terminal.
+- [x] Run connection/handshake/client tests and review the state transitions.
+- [x] Commit and push the recovery correction.
 
 ### Task 2: Bound diagnostic work
 
 **Files:** `WhoopBleSampleStore.swift`, `WhoopBleSampleStoreTests.swift`, local test helpers if needed.
 **Interfaces:** Existing `queuedCount(stream:limit:)` and `statistics(stream:)` payload remain unchanged.
 
-- [ ] Add a real SQLite instruction-budget regression for a populated queue and exact mixed-stream/time-bound fixtures; observe scan failures before changing queries.
-- [ ] Derive count from lifecycle counters and use separate bounds through the covering stream/time index.
-- [ ] Run store/uploader tests and benchmark the copied incident queue, including first-open index creation.
-- [ ] Commit and push the diagnostics correction.
+- [x] Add a real SQLite instruction-budget regression for a populated queue and exact mixed-stream/time-bound fixtures; observe scan failures before changing queries.
+- [x] Derive count from lifecycle counters and use separate bounds through the covering stream/time index.
+- [x] Run store/uploader tests and benchmark the copied incident queue, including first-open index creation.
+- [x] Commit and push the diagnostics correction.
 
 ### Task 3: Whole-change validation and review
 
-- [ ] Run the full WHOOP Swift suite, native lint and applicable TypeScript checks.
-- [ ] Update module documentation and incident evidence, including first-open index cost and native rebuild requirement.
-- [ ] Obtain a fresh reviewer, address material findings with regressions, and rerun affected checks.
-- [ ] Commit/push final documentation and report validation and deployment limits.
+- [x] Run the full WHOOP Swift suite, native lint and applicable TypeScript checks.
+- [x] Update module documentation and incident evidence, including first-open index cost and native rebuild requirement.
+- [x] Obtain a fresh reviewer, address material findings with regressions, and rerun affected checks.
+- [x] Commit/push final documentation and report validation and deployment limits.
 
 ## Working notes
 
