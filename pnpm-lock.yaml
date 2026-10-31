@@ -30,8 +30,8 @@ overrides:
   lerna>minimatch: 3.1.4
   minimatch@3>brace-expansion: 1.1.21
   minimatch: 10.2.5
-  node-forge: 1.4.2
   nanoid@<3.3.17: 3.3.18
+  node-forge: 1.4.2
   image-size: file:vendor/image-size
   picomatch@>=4.0.0 <4.0.4: 4.0.4
   postcss: 8.5.23
@@ -61,6 +61,7 @@ patchedDependencies:
   '@tanstack/router-generator@1.167.17': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
   '@tanstack/router-generator@1.167.18': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
   braces@3.0.3: 37f95f7d660c05bfd44d4b429ca49ceeede99dcff68389f81ee9b995a8ea24d2
+  eoas@3.2.7: f04681f7f73a5e6fd864c1a0c8b7f5d5cbbef98f467b5852c9bd52df514e2347
   expo-apple-authentication@58.0.2: 89179b1395738b47e8285e682ae3c0b84d973d1c4870ffed89bf46d08111268a
   react-native-svg@15.16.0: a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66
   react-native@0.88.1: c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d
@@ -330,7 +331,7 @@ importers:
         version: 0.31.10
       eoas:
         specifier: 3.2.7
-        version: 3.2.7(@babel/preset-env@7.29.7)(encoding@0.1.13)(supports-color@11.0.0)
+        version: 3.2.7(patch_hash=f04681f7f73a5e6fd864c1a0c8b7f5d5cbbef98f467b5852c9bd52df514e2347)(@babel/preset-env@7.29.7)(encoding@0.1.13)(supports-color@11.0.0)
       jsdom:
         specifier: 30.1.2
         version: 30.1.2
@@ -345,7 +346,7 @@ importers:
         version: 5.0.1(supports-color@11.0.0)
       msw:
         specifier: 3.0.3
-        version: 3.0.3(@types/node@26.1.2)(graphql@16.14.2)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6)
+        version: 3.0.3(@types/node@26.1.2)(graphql@16.8.1)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6)
       nyc:
         specifier: 18.0.0
         version: 18.0.0(supports-color@11.0.0)
@@ -12592,10 +12593,6 @@ packages:
     peerDependencies:
       graphql: ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  graphql@16.14.2:
-    resolution: {integrity: sha512-Chq1s4CY7jmh8gO2qvLIJyfCDIN+EHLFW/9iShnp1z8FjBQMoodWP1kDC36VAMXXIvAjj4ARa7ntfAV2BrjsbA==}
-    engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
-
   graphql@16.8.1:
     resolution: {integrity: sha512-59LZHPdGZVh695Ud9lRzPBVTtlX9ZCV150Er2W43ro37wVof0ctenSaskPPjN7lVTIN8mSZt8PHUNKZuNQUuxw==}
     engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
@@ -24349,7 +24346,7 @@ snapshots:
       metro: 0.87.1(supports-color@11.0.0)
       semver: 7.8.5
     optionalDependencies:
-      '@react-native/metro-config': 0.88.1(@babel/core@8.0.9)(supports-color@11.0.0)
+      '@react-native/metro-config': 0.88.1(@babel/core@7.29.7)(supports-color@11.0.0)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -24443,7 +24440,7 @@ snapshots:
       invariant: 2.2.4
       nullthrows: 1.1.1
       react: 19.3.0
-      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@8.0.9)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
+      react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@7.29.7)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
     optionalDependencies:
       '@types/react': 19.3.0
 
@@ -28281,7 +28278,7 @@ snapshots:
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
-      msw: 3.0.3(@types/node@26.1.2)(graphql@16.14.2)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6)
+      msw: 3.0.3(@types/node@26.1.2)(graphql@16.8.1)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6)
       vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
@@ -30311,7 +30308,7 @@ snapshots:
 
   environment@1.1.0: {}
 
-  eoas@3.2.7(@babel/preset-env@7.29.7)(encoding@0.1.13)(supports-color@11.0.0):
+  eoas@3.2.7(patch_hash=f04681f7f73a5e6fd864c1a0c8b7f5d5cbbef98f467b5852c9bd52df514e2347)(@babel/preset-env@7.29.7)(encoding@0.1.13)(supports-color@11.0.0):
     dependencies:
       '@clack/prompts': 0.11.0
       '@expo/code-signing-certificates': 0.0.5
@@ -31824,9 +31821,6 @@ snapshots:
     dependencies:
       graphql: 16.8.1
       tslib: 2.8.1
-
-  graphql@16.14.2:
-    optional: true
 
   graphql@16.8.1: {}
 
@@ -33733,7 +33727,7 @@ snapshots:
     optionalDependencies:
       msgpackr-extract: 3.0.4
 
-  msw@3.0.3(@types/node@26.1.2)(graphql@16.14.2)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6):
+  msw@3.0.3(@types/node@26.1.2)(graphql@16.8.1)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6):
     dependencies:
       '@inquirer/confirm': 6.2.0(@types/node@26.1.2)
       '@msw/url': 0.1.2
@@ -33748,7 +33742,7 @@ snapshots:
       until-async: 3.0.2
       yargs: 18.2.0
     optionalDependencies:
-      graphql: 16.14.2
+      graphql: 16.8.1
       typescript: 6.0.3
       vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     transitivePeerDependencies:
