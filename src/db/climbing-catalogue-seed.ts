@@ -40,7 +40,6 @@ export async function loadCatalogueSeed(
       AND source_climb.user_id = entry.user_id AND source_climb.provider_id = entry.provider_id
     WHERE entry.user_id = ${userId}::uuid AND entry.id = ${logEntryId}::uuid
       AND entry.provider_absent_at IS NULL
-      AND COALESCE(NULLIF(BTRIM(source_climb.name), ''), NULLIF(BTRIM(entry.title), '')) IS NOT NULL
       AND (entry.activity_id IS NULL OR EXISTS (
         SELECT 1 FROM fitness.activity AS parent
         WHERE parent.id = entry.activity_id AND parent.user_id = ${userId}::uuid

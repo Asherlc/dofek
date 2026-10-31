@@ -38,20 +38,16 @@ export function ClimbingCatalogueContextView({
         aria-controls={contentId}
         onClick={onToggle}
       >
-        Catalogue context
+        Catalogue information
       </button>
       {open && (
         <div id={contentId} className="space-y-3">
-          <p className="text-subtle">Cached reference information</p>
-          {context?.fetchedAt && (
-            <p className="text-subtle">Fetched {new Date(context.fetchedAt).toLocaleString()}</p>
-          )}
           {message && (
             <p role="alert" className="text-red-500">
               {message}
             </p>
           )}
-          {loading && !context && <p role="status">Loading catalogue context…</p>}
+          {loading && !context && <p role="status">Loading climb information…</p>}
           {context?.sources.map((source) => (
             <div key={source.providerId} className="space-y-2">
               <h5 className="font-medium">{providerLabel(source.providerId)}</h5>
@@ -75,7 +71,7 @@ export function ClimbingCatalogueContextView({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    {candidate.name}
+                    {candidate.name ?? "View climb"}
                   </a>
                   {candidate.locations.length > 0 && (
                     <p className="text-subtle">
@@ -114,8 +110,8 @@ export function ClimbingCatalogueContextView({
               className="min-h-11 text-accent underline"
             >
               {context && context.status !== "missing"
-                ? "Refresh catalogue info"
-                : "Find catalogue info"}
+                ? "Update climb information"
+                : "Look up climb"}
             </button>
           )}
         </div>

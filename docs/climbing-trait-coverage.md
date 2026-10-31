@@ -190,7 +190,7 @@ the existing public-feed integration or select a new enrichment strategy.
 
 ## Informational catalogue cache
 
-Climb details on web and mobile also offer **Catalogue context**, an explicit
+Climb details on web and mobile offer **Catalogue information**, an explicit
 lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
 information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
@@ -200,6 +200,15 @@ create ticks, or change grades, outcomes, deduplication or training metrics.
 The [owned-log repository](../packages/server/src/repositories/climbing-catalogue-repository.ts)
 checks current visibility and the caller's access window before every cache
 read or refresh. Clearing the cache loses only this reference information.
+
+Unnamed climbs retain nullable names through the [seed query](../src/db/climbing-catalogue-seed.ts)
+and [catalogue contract](../packages/training/src/climbing-catalogue.ts). Their recorded
+provider ID can load source information without inventing a search name; the
+[KAYA reader](../src/providers/kaya/catalogue.ts) accepts unnamed source climbs.
+Both clients keep the source link available as **View climb** and omit cache
+terminology and fetch timestamps from the disclosure. The
+[database regression](../src/db/climbing-catalogue-seed.integration.test.ts) and
+[lookup regression](../src/climbing-catalogue.test.ts) cover this path.
 
 Live read-only checks on 2026-10-27 verified these discovery contracts:
 

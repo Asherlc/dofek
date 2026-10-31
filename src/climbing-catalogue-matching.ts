@@ -17,7 +17,7 @@ type AttributedMatch = ClimbingCatalogueContext["sources"][number]["matches"][nu
 export function catalogueSearchNames(seed: CatalogueSeed): string[] {
   const names = new Map<string, string>();
   for (const value of [seed.name, ...(seed.aliases ?? [])]) {
-    const name = value.trim().replace(/\s+/gu, " ");
+    const name = value?.trim().replace(/\s+/gu, " ");
     if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
   }
   return [...names.values()];
@@ -36,12 +36,14 @@ export function normalizeCatalogueName(value: string): string {
 
 /** Fuzzy results are discovery suggestions, never identity evidence. */
 export function catalogueNameMatch(
-  name: string,
-  candidate: { name: string; aliases?: string[] },
+  name: string | null,
+  candidate: { name: string | null; aliases?: string[] },
 ): NameMatch | null {
-  const needle = normalizeCatalogueName(name);
+  const needle = name ? normalizeCatalogueName(name) : "";
   if (!needle) return null;
-  const names = [candidate.name, ...(candidate.aliases ?? [])].map(normalizeCatalogueName);
+  const names = [candidate.name, ...(candidate.aliases ?? [])].map((value) =>
+    value ? normalizeCatalogueName(value) : "",
+  );
   if (needle === names[0]) return "exact";
   if (names.slice(1).includes(needle)) return "alias";
   const suggestions = new Fuse(names, { threshold: 0.25, ignoreLocation: true }).search(needle);
@@ -73,8 +75,8 @@ export function catalogueAreasAreNearby(
 }
 
 function sameAreaName(left: CatalogueLocation, right: CatalogueLocation): boolean {
-  const name = normalizeCatalogueName(left.name);
-  return name.length > 0 && name === normalizeCatalogueName(right.name);
+  const name = normalizeCatalogueName(left.name ?? "");
+  return name.length > 0 && name === normalizeCatalogueName(right.name ?? "");
 }
 
 function geography(
