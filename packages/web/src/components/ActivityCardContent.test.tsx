@@ -59,6 +59,25 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it("uses the primary climbing source for the icon over a cardio representative", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          name: "Kaya climbing",
+          activityType: "cardio",
+          primaryActivityType: "climbing",
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Climbing activity" })).toHaveAttribute(
+      "data-activity-type",
+      "climbing",
+    );
+  });
+
   it("uses the primary activity type for an unnamed activity title and selection label", () => {
     render(
       <ActivityCardContent

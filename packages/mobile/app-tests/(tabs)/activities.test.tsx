@@ -158,6 +158,16 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
+  it("uses the primary climbing source for the icon over a cardio representative", () => {
+    mockQuery = activityListQuery([
+      activity({ name: "Kaya climbing", activityType: "cardio", primaryActivityType: "climbing" }),
+    ]);
+    render(<ActivitiesScreen />);
+    expect(screen.getByLabelText("Climbing activity")).toBeDefined();
+    expect(screen.getByText("Climbing")).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Open Kaya climbing,.*Climbing/ })).toBeDefined();
+  });
+
   it("uses the primary activity type for unnamed activity titles and accessible actions", () => {
     mockQuery = activityListQuery([
       activity({ name: null, activityType: "walking", primaryActivityType: "running" }),

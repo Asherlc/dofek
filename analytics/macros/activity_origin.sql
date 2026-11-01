@@ -99,6 +99,7 @@ origin_graphs AS (
         arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label IN ('hang ten', 'hang ten training'))) AS hang_ten_ids,
         arraySort(groupArrayIf(members.activity_id, members.is_watch_recording)) AS apple_watch_ids,
         arraySort(groupArrayIf(members.activity_id, members.is_native_peloton_recording)) AS native_peloton_ids,
+        arraySort(groupArrayIf(members.activity_id, members.provider_id IN ('kaya', 'kaya-export'))) AS kaya_ids,
         max(members.conflicting) AS conflicting,
         coalesce(any(origin_group_edges.edges), CAST([], 'Array(Tuple(UUID, UUID, String, String))')) AS edges
     FROM origin_members AS members
@@ -130,14 +131,14 @@ origin_decisions AS (
         group_id,
         any(member_ids) AS group_member_ids,
         any(edges) AS group_edges,
-        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids, apple_watch_ids, native_peloton_ids)) AS initiating_origins,
+        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids, apple_watch_ids, native_peloton_ids, kaya_ids)) AS initiating_origins,
         max(conflicting) OR max(has(reached, member_id)) AS invalid,
         arraySort(groupArrayIf(member_id, length(arrayDistinct(arrayConcat([member_id], reached))) = length(member_ids))) AS roots
     FROM origin_reachability
     GROUP BY user_id, group_id
 ),
 origin_selections AS (
-    -- Strong, Hang Ten, Apple Watch, and native Peloton bikes initiate by policy; copy edges remain evidence-only.
+    -- Kaya, Strong, Hang Ten, Apple Watch, and native Peloton bikes initiate by policy; copy edges remain evidence-only.
     SELECT
         *,
         multiIf(

@@ -73,7 +73,7 @@ export function ActivityCard({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <ActivityTypeIcon activityType={activityType} size={40} />
+        <ActivityTypeIcon activityType={primaryActivityType ?? activityType} size={40} />
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={2}>
             {name ?? formatActivityTypeLabel(primaryActivityType ?? activityType)}

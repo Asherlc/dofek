@@ -921,6 +921,14 @@ scopes; a maximum-size scope must use that private-project transport. See the
 
 ## Activity recording origin
 
+Dofek treats Kaya sync (`kaya`) and file-import (`kaya-export`) sessions as
+initiating activity sources in the [origin selector](macros/activity_origin.sql).
+A single Kaya session can establish the primary identity alongside independent
+wearable recordings and their copies. Multiple initiating records remain
+unresolved under the existing policy; this does not invent transfer edges or
+change sensor selection. The [shared real-engine fixtures](../src/test-fixtures/activity-origin.json)
+cover the policy in PostgreSQL and ClickHouse.
+
 The [origin selector](macros/activity_origin.sql) resolves the closest available
 record using supported source-app and recording-device evidence within an existing
 activity group. It never consults field priorities or sensor counts. Primary member
