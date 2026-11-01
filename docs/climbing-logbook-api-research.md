@@ -6,6 +6,47 @@ Checked **2026-10-31**. This records upstream access evidence, not implemented
 Dofek connections. Current product behavior remains documented in
 [climbing-providers.md](climbing-providers.md).
 
+## November 1 direct-sync verification
+
+Using the existing signed-in Firefox session, a fresh Crimpd refresh request
+returned HTTP 200 with `success`, `user`, `token`, `expiresIn`, `refreshToken`
+and `refreshExpiresIn`. The observed access lifetime was 31,536,000 seconds;
+the connector must consume the returned value rather than assume that lifetime.
+The user's native account identifier is `user._id`, a string. The
+[deployed client](https://my.crimpd.com/main.3bcc34bf74e9df68.js) stores raw token
+strings under `auth/jwt` and `auth/refresh`, with millisecond expiry metadata.
+
+The renewed access token independently read `/workout_log` from Node with HTTP
+200 and zero records, and `/analytics/export?format=zip` with HTTP 200,
+`application/zip`, and 899 bytes. Only the bearer header was supplied: no browser
+cookies or app interceptors were used. For this one-time operator check, the
+token crossed the browser/tool boundary only encrypted under an ephemeral local
+public key; the private key was removed afterward. No token values were printed
+or committed. This confirms server usability of renewed access credentials;
+independent password exchange and populated workout coverage remain separate
+validation items. Sources: the [current client](https://my.crimpd.com/) and
+[export reference](https://crimpd.com/docs/data-export/).
+
+Vertical-Life's earlier transport blocker is narrower than originally observed.
+With the repository's existing Impit client, both Chrome and Firefox transports
+returned HTTP 200 for the home page and HTTP 401 JSON for the unauthenticated
+export endpoint. Normal Node fetch still returned Cloudflare HTTP 403. Impit
+documents its browser-compatible HTTP/TLS transport in its
+[JavaScript reference](https://apify.github.io/impit/js/).
+
+An independent `GET /login` returned an authorization-code redirect with PKCE,
+client `8a-nu`, and the vendor's `https://www.8a.nu/callback`. It set an HttpOnly,
+Secure, SameSite=Lax `nu8a_session` cookie with a 604,800-second maximum age.
+A single password-grant probe with intentionally invalid credentials returned
+HTTP 401 `unauthorized_client` / `Invalid client or Invalid client credentials`;
+this does not establish a usable password grant. The existing Firefox session
+returned HTTP 200 from `/api/dotnet/me`, but exposed no token in local storage or
+JavaScript-readable cookies. Server login and session renewal still require
+verification before implementing an automatic connection. Sources:
+[vendor login](https://www.8a.nu/login),
+[OIDC discovery](https://vlatka.vertical-life.info/auth/realms/Vertical-Life/.well-known/openid-configuration),
+[web client](https://www.8a.nu/_nuxt/BvPRvgJk.js).
+
 ## Crimpd: authenticated access verified
 
 Method: inspect the JavaScript served by [Crimpd's web app](https://my.crimpd.com/)

@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-11-01 — Local climbing-sync verification prerequisites
+
+- **Symptoms / impact:** The first local `pnpm test:integration -- src/providers/crimpd/provider.integration.test.ts` stopped before tests because workspace Postgres was unhealthy. No production impact.
+- **Evidence / cause:** The Compose health gate reported the Postgres dependency unhealthy during fresh-volume initialization. Container logs showed extension initialization, temporary-server shutdown, and final readiness at 16:48:59 UTC. The same integration command subsequently passed without timeout or runtime configuration changes. This was cold initialization rather than a provider failure; use the [integration dependency runbook](testing.md#integration-dependencies) and Docker's [healthcheck documentation](https://docs.docker.com/reference/compose-file/services/#healthcheck).
+- **Separate access blocker:** Existing Firefox automation returned `cgWindowNotFound`; a read-only `ioreg` check confirmed `CGSSessionScreenIsLocked = Yes`. User-approved AppleScript additionally reported denied Accessibility access. Vertical-Life owner verification remains pending screen unlock; no permissions were changed or credentials printed.
+- **Retrospective / follow-up:** Inspect initialization logs before changing health gates, and check workstation lock state before repeated native UI retries. Keep the existing integration-test and systematic-debugging workflows; propose documenting these two prerequisite checks in the local testing runbook.
+
 ## 2026-10-31 — TestFlight launch freezes on Today (unresolved)
 
 - **Symptoms / impact:** The operator's screenshot shows Today with Recovery and Strain skeletons; the operator confirms that tabs and Settings do not respond in TestFlight. This establishes an interaction freeze, but not which thread is blocked.
