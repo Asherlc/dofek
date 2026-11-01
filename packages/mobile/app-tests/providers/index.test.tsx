@@ -429,6 +429,7 @@ const credentialProvider = {
 const credentialProviders = [
   credentialProvider,
   { ...credentialProvider, id: "zwift", name: "Zwift" },
+  { ...credentialProvider, id: "crimpd", name: "Crimpd" },
 ];
 
 const tokenProvider = {
@@ -1092,6 +1093,34 @@ describe("ProvidersScreen", () => {
       "Open Strava details",
       "Open Wahoo details",
     ]);
+  });
+
+  it("offers account sync and ZIP import together for connected Crimpd", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [{ ...connectedProvider, id: "crimpd", name: "Crimpd", authType: "credential" }],
+      isLoading: false,
+      error: null,
+    });
+    mockSyncMutateAsync.mockResolvedValue({ jobId: "crimpd-job", providerJobs: [] });
+    mockSyncStatusFetch.mockResolvedValue({
+      status: "done",
+      providers: { crimpd: { status: "done" } },
+    });
+    mockGetDocumentAsync.mockResolvedValue({ canceled: true });
+    await renderProvidersScreen();
+    const card = within(screen.getByTestId("provider-card-crimpd"));
+    fireEvent.click(card.getByText("Sync"));
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledWith({ providerId: "crimpd", sinceDays: 7 });
+    });
+    fireEvent.click(card.getByRole("button", { name: "Import file for Crimpd" }));
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: ["application/zip", "application/x-zip-compressed"],
+        }),
+      );
+    });
   });
 
   it("scopes pull-to-refresh to provider list query families", async () => {

@@ -56,6 +56,35 @@ type ProviderCardStory = StoryObj<typeof providerCardMeta>;
 
 export const Connected: ProviderCardStory = {};
 
+export const CrimpdConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "crimpd",
+      label: "Crimpd",
+      authType: "credential",
+    },
+    onImport: () => {},
+  },
+};
+
+export const CrimpdNotConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "crimpd",
+      label: "Crimpd",
+      authType: "credential",
+      enabled: false,
+      authStatus: "not_connected",
+      lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
+    },
+    onImport: () => {},
+  },
+};
+
 export const NotConnected: ProviderCardStory = {
   args: {
     provider: {

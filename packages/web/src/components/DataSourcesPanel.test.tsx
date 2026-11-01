@@ -981,6 +981,33 @@ describe("DataSourcesPanel", () => {
     expect(pollingSignal?.aborted).toBe(true);
   });
 
+  it("starts account sync for Crimpd when ZIP imports are also supported", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "crimpd",
+          name: "Crimpd",
+          authorized: true,
+          authType: "credential",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockSyncMutateAsync.mockResolvedValue({ providerResults: [] });
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
+        providerId: "crimpd",
+        sinceDays: ROUTINE_SYNC_DAYS,
+      });
+    });
+  });
+
   it.each([
     ["crimpd", "Crimpd", ".zip logbook export from Crimpd", ".zip"],
     ["eight-a", "8a.nu / Vertical-Life", ".csv logbook export from 8a.nu", ".csv"],

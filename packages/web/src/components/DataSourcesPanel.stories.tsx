@@ -15,7 +15,12 @@ import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
 import { PageSection } from "./PageSection.tsx";
 
-type DataSourcesScenario = "default" | "providersLoading" | "empty" | "processingBlocked";
+type DataSourcesScenario =
+  | "default"
+  | "providersLoading"
+  | "empty"
+  | "processingBlocked"
+  | "crimpd";
 
 const providers = [
   {
@@ -56,7 +61,29 @@ function createMockObservable(
     subscribe(observer) {
       if (path === "sync.providers") {
         if (scenario === "providersLoading") return { unsubscribe: () => {} };
-        observer.next?.({ result: { data: scenario === "empty" ? [] : providers } });
+        observer.next?.({
+          result: {
+            data:
+              scenario === "empty"
+                ? []
+                : scenario === "crimpd"
+                  ? [
+                      {
+                        id: "crimpd",
+                        name: "Crimpd",
+                        description:
+                          "Workouts and climbing logs. ZIP uploads remain available in Details.",
+                        authType: "credential",
+                        authorized: false,
+                        lastSyncedAt: null,
+                        importOnly: false,
+                        pushOnly: false,
+                        needsReauth: false,
+                      },
+                    ]
+                  : providers,
+          },
+        });
       } else if (
         path === "sync.providerStats" ||
         path === "sync.logs" ||
@@ -169,6 +196,10 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="empty" />,
+};
+
+export const Crimpd: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="crimpd" />,
 };
 
 export const ProcessingBlocked: Story = {

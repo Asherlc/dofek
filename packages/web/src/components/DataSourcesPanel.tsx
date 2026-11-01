@@ -390,7 +390,7 @@ export function DataSourcesPanel() {
 
   for (const p of allProviders) {
     const importConfig = getFileImportConfig(p.id);
-    if (importConfig) {
+    if (importConfig && p.importOnly) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
     } else {
       unifiedProviders.push({ kind: "sync", provider: p });
