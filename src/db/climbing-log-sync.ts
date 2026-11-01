@@ -126,7 +126,7 @@ const sourceLogSchema = climbingLogEntrySchema
     externalId: climbingLogEntrySchema.shape.externalId.unwrap(),
     climb: sourceClimbWithPitchesSchema.nullable().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
-    attempts: z.array(sourceAttemptSchema).nonempty().readonly(),
+    attempts: z.array(sourceAttemptSchema).readonly(),
   });
 const sourceInputSchema = z.strictObject({
   userId: z.guid(),

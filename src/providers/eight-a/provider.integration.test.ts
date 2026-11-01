@@ -130,6 +130,31 @@ describe("Vertical-Life direct sync persistence", () => {
     ).rejects.toThrow(reason);
     expect(await logs()).toEqual([]);
   });
+  it("preserves projects without inventing tries and expands only positive source counts", async () => {
+    rows = [
+      eightANativeRow({ ascentId: 123, project: true, type: null, tries: 0 }),
+      eightANativeRow({ ascentId: 124, project: true, type: null, tries: 3 }),
+    ];
+    await connect();
+    expect(await sync()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const records = await logs();
+    const unknown = records.find((entry) => entry.externalId?.endsWith(":123"));
+    const known = records.find((entry) => entry.externalId?.endsWith(":124"));
+    if (!unknown || !known) throw new Error("Expected both projects");
+    expect(unknown.raw).toMatchObject({ project: true, tries: 0 });
+    expect(
+      await context.db
+        .select()
+        .from(climbingAttempt)
+        .where(eq(climbingAttempt.climbingLogEntryId, unknown.id)),
+    ).toEqual([]);
+    expect(
+      await context.db
+        .select()
+        .from(climbingAttempt)
+        .where(eq(climbingAttempt.climbingLogEntryId, known.id)),
+    ).toHaveLength(3);
+  });
 
   it("migrates a unique CSV identity in place, retaining manual attachment, attempts and both payloads", async () => {
     await upload(eightAMatchingCsv());

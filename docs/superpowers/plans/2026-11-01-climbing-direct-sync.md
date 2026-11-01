@@ -97,3 +97,20 @@ Both sync providers, the strict CSV/native transition, lifecycle wiring, and web
 The final independent review found two important issues: incomplete CSV equality and a refresh limit across the whole logbook. Failing regressions reproduced both before fixes. Matching now compares all verified shared facts and complete retained CSV payloads, rejects unprovable initial matches, and supports distinct source areas. Renewal is checked throughout pagination with one authentication retry per request and durable token replacement before continuing. No minor findings were deferred.
 
 Validation: 23,902 unit/mobile tests passed (19 skipped), 51 focused database integration tests passed, lint and root/server/web/mobile TypeScript checks passed. Both web/mobile source states and narrow mobile layout were inspected in Storybook. Tests and [live source evidence](../../climbing-logbook-api-research.md) remain distinct: renewal and direct owner reads succeeded for both providers, but both owner histories were empty. Scripted successful password submissions and populated owner/indoor histories remain unverified. The unchecked initial-login item records that limitation rather than claiming a live check that did not occur.
+
+## Approved review follow-up — November 1, 2026
+
+The owner approved empty source attempts for projects with unknown tries and a
+100 MiB streamed Crimpd download limit. The [writer](../../../src/db/climbing-log-sync.ts)
+now retains occurrences without inventing attempts; the [load repository](../../../packages/server/src/repositories/analytical-training-load-repository.ts)
+keeps empty whole-climb attempt coverage unavailable. Crimpd's [client](../../../src/providers/crimpd/client.ts)
+streams into the existing private file and cancels oversized or aborted streams.
+
+Failing parser, writer, download-limit and real-database reporting regressions
+preceded implementation. Validation passed: 23,991 unit/mobile tests (19 skipped),
+61 writer/provider/reporting database tests, 12 Crimpd database tests, lint and
+root/server/web/mobile types. Changed provider modules score 92.37% in the local
+mutation run. A main-branch asynchronous-bootstrap fixture race in the iOS gate
+was corrected; all eight real Expo bridge tests pass. See the
+[incident evidence](../../production-incident-baseline.md#2026-11-01--whoop-bridge-fixture-races-asynchronous-bootstrap).
+PR review responses and replacement CI are the remaining delivery checkpoints.

@@ -46,6 +46,30 @@ describe("atomic climbing log synchronization", () => {
       .where(eq(climbingAttempt.climbingLogEntryId, logEntryId))
       .orderBy(asc(climbingAttempt.id));
   }
+  it("preserves a source occurrence with unknown attempts without counting a try", async () => {
+    const result = await write([
+      {
+        externalId: "project:unknown",
+        title: "Untried project",
+        attempts: [],
+        raw: { project: true, tries: 0 },
+      },
+    ]);
+    expect(result.recordsSynced).toBe(1);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected project occurrence");
+    expect(await attempts(id)).toEqual([]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        z.object({ title: z.string(), recorded_climb_attempt_count: z.coerce.number() }),
+        sql`SELECT title, recorded_climb_attempt_count FROM fitness.v_climbing_log_entry WHERE id = ${id}::uuid`,
+      ),
+    ).toEqual([{ title: "Untried project", recorded_climb_attempt_count: 0 }]);
+    expect(
+      await write([{ externalId: "project:unknown", title: "Untried project", attempts: [] }]),
+    ).toEqual({ recordsSynced: 1, logEntryIds: [id] });
+  });
   it("preserves microsecond creation times through full and partial source updates", async () => {
     const logId = "00000000-0000-4000-8000-000000001991";
     const attemptId = "00000000-0000-4000-8000-000000001992";

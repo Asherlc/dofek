@@ -1,3 +1,5 @@
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
 import {
@@ -75,7 +77,7 @@ export class CrimpdClient {
     return this.#exchange("/auth/refresh", { refreshToken: tokens.refreshToken }, tokens);
   }
 
-  async downloadExport(tokens: TokenSet, signal?: AbortSignal): Promise<Uint8Array> {
+  async downloadExport(tokens: TokenSet, filePath: string, signal?: AbortSignal): Promise<void> {
     const response = await this.#fetch(`${baseUrl}/analytics/export?format=zip`, {
       headers: { Authorization: `Bearer ${tokens.accessToken}` },
       signal,
@@ -88,6 +90,23 @@ export class CrimpdClient {
       "application/zip"
     )
       throw new Error("Crimpd did not return a ZIP logbook export. Try syncing again.");
-    return new Uint8Array(await response.arrayBuffer());
+    if (!response.body)
+      throw new Error("Crimpd returned an empty ZIP response. Try syncing again.");
+    await pipeline(
+      response.body,
+      async function* (source: AsyncIterable<Uint8Array>) {
+        let bytes = 0;
+        for await (const chunk of source) {
+          bytes += chunk.byteLength;
+          if (bytes > 100 * 1024 * 1024)
+            throw new Error(
+              "Crimpd export exceeds the 100 MiB download limit. Contact support before retrying.",
+            );
+          yield chunk;
+        }
+      },
+      createWriteStream(filePath, { mode: 0o600 }),
+      { signal },
+    );
   }
 }

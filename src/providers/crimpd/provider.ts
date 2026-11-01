@@ -63,19 +63,18 @@ export class CrimpdProvider implements SyncProvider {
         "activity",
         async () => {
           if (tokens.expiresAt.getTime() <= Date.now()) await renew();
-          let archive: Uint8Array;
-          try {
-            archive = await this.#client.downloadExport(tokens, run.options.signal);
-          } catch (error) {
-            if (!(error instanceof ProviderAuthError) || refreshed) throw error;
-            await renew();
-            archive = await this.#client.downloadExport(tokens, run.options.signal);
-          }
           run.options.signal?.throwIfAborted();
           const directory = await mkdtemp(join(tmpdir(), "dofek-crimpd-"));
           try {
             const filePath = join(directory, "logbook.zip");
-            await writeFile(filePath, archive, { mode: 0o600 });
+            try {
+              await this.#client.downloadExport(tokens, filePath, run.options.signal);
+            } catch (error) {
+              if (!(error instanceof ProviderAuthError) || refreshed) throw error;
+              await renew();
+              await this.#client.downloadExport(tokens, filePath, run.options.signal);
+            }
+            run.options.signal?.throwIfAborted();
             const imported = await importCrimpdExportFile(run.db, filePath, userId);
             return { recordCount: imported.recordsSynced, result: imported.recordsSynced };
           } finally {
@@ -199,6 +198,6 @@ export async function importCrimpdExportFile(
   return { provider: "crimpd", recordsSynced, errors: [], duration: Date.now() - startedAt };
 }
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

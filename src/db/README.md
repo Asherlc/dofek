@@ -82,8 +82,10 @@ identity. Coordinates use native PostgreSQL
 [points](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
 The [transactional writer](climbing-log-sync.ts) expands reported counts into
-scoped occurrences and retains one partially described occurrence when a total
-is missing. Recorded booleans and raw source result labels remain independently
+scoped occurrences and retains each supplied partially described attempt when a
+total is missing. Sources can supply an empty attempts array when only the log
+occurrence is known; this creates no attempt rows, as verified by the
+[database regression](climbing-log-sync.integration.test.ts). Recorded booleans and raw source result labels remain independently
 nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
 raw completion boolean when supplied, otherwise its original supported label.
 The [completion migration](../../drizzle/0172_source_climbing_completion.sql)

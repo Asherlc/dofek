@@ -64,7 +64,7 @@ describe("Vertical-Life source ascents", () => {
     );
     expect(entry?.raw).toMatchObject({ project: true, repeat: true, duplicate: true });
     expect(entry?.reportedAttemptCounts).toBeUndefined();
-    expect(entry?.attempts).toEqual([{ scope: "climb" }]);
+    expect(entry?.attempts).toEqual([]);
   });
   it.each(["gymroute", "gymboulder"] as const)(
     "retains indoor grades with an unverified system for %s",
@@ -98,7 +98,7 @@ describe("Vertical-Life source ascents", () => {
       climbedOn: null,
       reportedGrades: [],
       notes: null,
-      attempts: [{ scope: "climb" }],
+      attempts: [],
       climb: { name: null, kind: "route" },
     });
   });

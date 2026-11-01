@@ -67,7 +67,7 @@ export function parseEightAAscentPage(
       ...(row.tries != null && row.tries > 0
         ? { reportedAttemptCounts: [{ scope: "climb" as const, count: row.tries }] }
         : {}),
-      attempts: [attempt],
+      attempts: attempt.sourceResult !== undefined ? [attempt] : [],
       notes: nullableExportText(row.comment ?? undefined),
       climb: {
         externalId: null,

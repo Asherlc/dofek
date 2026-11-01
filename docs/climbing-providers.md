@@ -94,6 +94,10 @@ estimated duration for individual climbs; see the
 Connect Crimpd in Settings → Data Sources with your account credentials.
 Dofek stores renewable credentials per user and downloads the logbook ZIP for
 scheduled and manual sync through the same [importer](../src/providers/crimpd/provider.ts).
+Downloads stream into a private temporary file with a 100 MiB limit; oversized,
+failed and cancelled downloads never reach the importer. The file is removed
+after success or failure. See the [streaming tests](../src/providers/crimpd/client.test.ts)
+and Node's [pipeline documentation](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-options).
 The [client](../src/providers/crimpd/client.ts) follows the current
 [Crimpd web application](https://my.crimpd.com/); independent server requests
 verified renewal and export access on November 1, 2026. The tested account had
@@ -160,6 +164,13 @@ initial match. Previously bound historical uploads must retain their complete
 CSV payload; they cannot silently change unverified fields. See the
 [resolver](../src/providers/eight-a/identity.ts) and
 [database regressions](../src/providers/eight-a/provider.integration.test.ts).
+
+Projects with no supported result and zero or unknown tries retain their log
+occurrence without an invented attempt. Positive reported tries expand through
+the canonical writer. Training-load coverage treats entries without recorded
+whole-climb tries as missing attempt information; see the
+[parser](../src/providers/eight-a/ascent.ts) and
+[database reporting regression](../packages/server/src/repositories/analytical-training-load-repository.integration.test.ts).
 
 Complete native syncs reconcile missing native occurrences without deleting raw
 history or attachments. Failed or malformed fetches never retire records.

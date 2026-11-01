@@ -279,8 +279,8 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       },
       climbing_attempts: {
         daily_value: 4,
-        status: "available",
-        coverage: { contributing_records: 3, supported_records: 3 },
+        status: "partial",
+        coverage: { contributing_records: 3, supported_records: 2 },
       },
       finger_load: {
         daily_value: null,
@@ -429,6 +429,36 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       climbing_attempts: { daily_value: 0, status: "not_observed" },
       finger_load: { daily_value: 0, status: "not_observed" },
       strength_volume: { daily_value: 0, status: "not_observed" },
+    });
+  });
+  it("keeps an attached project with no recorded tries unavailable", async () => {
+    const activityId = randomUUID();
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.activity (id, group_id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, raw) VALUES (${activityId}::uuid, ${activityId}::uuid, ${providerId}, ${userId}::uuid, ${activityId}, 'climbing', 'rock_climbing', '2026-06-17T18:00:00Z', '2026-06-17T19:00:00Z', '{}'::jsonb)`,
+    );
+    await persistClimbingLogEntries(postgres.db, {
+      userId,
+      providerId,
+      entries: [
+        {
+          externalId: activityId,
+          activityId,
+          discipline: "rock_climbing",
+          climb: { externalId: activityId, kind: "boulder" },
+          attempts: [],
+        },
+      ],
+    });
+    const result = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).listRange("2026-06-17", "2026-06-17", { providers: [], modalities: [] }, "source_context");
+    expect(result.rows[0]?.channels.climbing_attempts).toMatchObject({
+      daily_value: null,
+      status: "unavailable",
+      coverage: { contributing_records: 1, supported_records: 0 },
     });
   });
 });

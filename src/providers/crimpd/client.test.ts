@@ -1,9 +1,16 @@
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../../auth/oauth.ts";
 
 let ProviderAuthError: typeof import("../auth-errors.ts").ProviderAuthError;
 let CrimpdClient: typeof import("./client.ts").CrimpdClient;
+let directory: string;
+let filePath: string;
 beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), "crimpd-client-test-"));
+  filePath = join(directory, "export.zip");
   vi.resetModules();
   ({ CrimpdClient } = await import("./client.ts"));
   ({ ProviderAuthError } = await import("../auth-errors.ts"));
@@ -25,15 +32,95 @@ const tokens: TokenSet = {
   scopes: null,
 };
 
-afterEach(() => vi.useRealTimers());
+afterEach(async () => {
+  vi.useRealTimers();
+  await rm(directory, { recursive: true, force: true });
+});
 
 describe("Crimpd account API", () => {
+  it("accepts an export exactly at the 100 MiB limit", async () => {
+    let remaining = 100;
+    const chunk = new Uint8Array(1024 * 1024);
+    const client = new CrimpdClient(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              if (remaining-- > 0) controller.enqueue(chunk);
+              else controller.close();
+            },
+          }),
+          { headers: { "content-type": "application/zip" } },
+        ),
+    );
+    await client.downloadExport(tokens, filePath);
+    expect((await stat(filePath)).size).toBe(100 * 1024 * 1024);
+  });
+  it("rejects a ZIP response without a body", async () => {
+    const client = new CrimpdClient(
+      async () => new Response(null, { headers: { "content-type": "application/zip" } }),
+    );
+    await expect(client.downloadExport(tokens, filePath)).rejects.toThrow(/empty ZIP response/);
+  });
+  it("cancels a download while streaming bytes", async () => {
+    const controller = new AbortController();
+    let cancelled = false;
+    let reads = 0;
+    const client = new CrimpdClient(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(source) {
+              source.enqueue(new Uint8Array([80, 75]));
+              if (++reads === 3) controller.abort();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { headers: { "content-type": "application/zip" } },
+        ),
+    );
+    await expect(client.downloadExport(tokens, filePath, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(cancelled).toBe(true);
+  });
+  it("rejects exports above 100 MiB without buffering the response", async () => {
+    let cancelled = false;
+    let reads = 0;
+    const chunk = new Uint8Array(1024 * 1024);
+    const client = new CrimpdClient(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              reads++;
+              if (reads > 103) {
+                controller.error(new Error("Test source exceeded expected read bound"));
+                return;
+              }
+              controller.enqueue(chunk);
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { headers: { "content-type": "application/zip" } },
+        ),
+    );
+    await expect(client.downloadExport(tokens, filePath)).rejects.toThrow(/100 MiB/);
+    expect(cancelled).toBe(true);
+    expect(reads).toBeLessThanOrEqual(103);
+    expect((await stat(filePath)).size).toBeLessThanOrEqual(100 * 1024 * 1024);
+  });
   it("accepts a case-insensitive ZIP media type", async () => {
     const client = new CrimpdClient(
       async () =>
         new Response(new Uint8Array([80, 75]), { headers: { "content-type": "Application/Zip" } }),
     );
-    expect(await client.downloadExport(tokens)).toEqual(new Uint8Array([80, 75]));
+    await client.downloadExport(tokens, filePath);
+    expect(await readFile(filePath)).toEqual(Buffer.from([80, 75]));
   });
   it("exchanges credentials for expiring tokens tied to the native account", async () => {
     vi.useFakeTimers();
@@ -134,19 +221,19 @@ describe("Crimpd account API", () => {
         headers: { "content-type": "application/zip" },
       });
     });
-    expect(await client.downloadExport(tokens, controller.signal)).toEqual(
-      new Uint8Array([80, 75, 3, 4]),
-    );
+    await client.downloadExport(tokens, filePath, controller.signal);
+    expect(await readFile(filePath)).toEqual(Buffer.from([80, 75, 3, 4]));
+    expect((await stat(filePath)).mode & 0o777).toBe(0o600);
   });
 
   it("requires reconnect when the export rejects authentication", async () => {
     const client = new CrimpdClient(async () => Response.json({ success: false }, { status: 401 }));
-    await expect(client.downloadExport(tokens)).rejects.toThrow(ProviderAuthError);
+    await expect(client.downloadExport(tokens, filePath)).rejects.toThrow(ProviderAuthError);
   });
 
   it("rejects a successful non-ZIP response instead of importing it", async () => {
     const client = new CrimpdClient(async () => Response.json({ success: false }));
-    await expect(client.downloadExport(tokens)).rejects.toThrow(/Crimpd.*ZIP/);
+    await expect(client.downloadExport(tokens, filePath)).rejects.toThrow(/Crimpd.*ZIP/);
   });
   it("preserves refreshed account ownership when the previous identity is absent", async () => {
     const client = new CrimpdClient(async () =>
@@ -171,7 +258,7 @@ describe("Crimpd account API", () => {
           headers: { "content-type": "application/zip" },
         }),
     );
-    await expect(client.downloadExport(tokens)).rejects.toThrow(/HTTP 503/);
+    await expect(client.downloadExport(tokens, filePath)).rejects.toThrow(/HTTP 503/);
   });
   it("accepts ZIP media types with parameters and surrounding whitespace", async () => {
     const client = new CrimpdClient(
@@ -180,10 +267,11 @@ describe("Crimpd account API", () => {
           headers: { "content-type": " application/zip ; charset=binary " },
         }),
     );
-    expect(await client.downloadExport(tokens)).toEqual(new Uint8Array([80, 75]));
+    await client.downloadExport(tokens, filePath);
+    expect(await readFile(filePath)).toEqual(Buffer.from([80, 75]));
   });
   it("rejects an export without a media type", async () => {
     const client = new CrimpdClient(async () => new Response(new Uint8Array([80, 75])));
-    await expect(client.downloadExport(tokens)).rejects.toThrow(/ZIP/);
+    await expect(client.downloadExport(tokens, filePath)).rejects.toThrow(/ZIP/);
   });
 });
