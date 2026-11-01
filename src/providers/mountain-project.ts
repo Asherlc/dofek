@@ -170,9 +170,7 @@ export class MountainProjectProvider implements SyncProvider {
         userId,
       );
     } catch (error) {
-      if (shouldReportProviderError(error)) {
-        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
-      }
+      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
       errors.push({
         message: error instanceof Error ? error.message : String(error),
         cause: error,

@@ -205,6 +205,9 @@ describe("theCrag official API provider", () => {
       );
     const result = await new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db));
     expect(result.errors).toHaveLength(1);
+    expect(mocks.captureException).toHaveBeenCalledWith(result.errors[0]?.cause, {
+      tags: { provider: "thecrag", phase: "climbing_activity" },
+    });
     expect(
       inspect({ result, calls: mocks.captureException.mock.calls }, { depth: null }),
     ).not.toMatch(/personal-key|Private training notes/);

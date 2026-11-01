@@ -483,6 +483,14 @@ describe("MountainProjectProvider", () => {
     expect(mocks.persist).not.toHaveBeenCalled();
     expect(mocks.captureException).not.toHaveBeenCalled();
   });
+  it.each([401, 403])("reports unexplained export authorization HTTP %s", async (status) => {
+    const result = await run(provider(async () => new Response(null, { status })));
+    expect(result.errors).toHaveLength(1);
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalledWith(result.errors[0]?.cause, {
+      tags: { provider: "mountain-project", phase: "tick_export" },
+    });
+  });
   it("diagnoses malformed exports before reading route metadata or writing ticks", async () => {
     const result = await run(provider(async () => new Response("<html>Private</html>")));
     expect(result).toMatchObject({
