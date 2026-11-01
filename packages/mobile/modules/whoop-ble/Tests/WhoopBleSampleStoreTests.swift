@@ -172,6 +172,8 @@ final class WhoopBleSampleStoreTests: XCTestCase {
 
         XCTAssertEqual(try store.queuedCount(stream: .imu, limit: Int.max), 10_000)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples WHERE stream = 'imu'"), 10_000)
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples WHERE stream = 'realtime'"), 1)
         XCTAssertEqual(try store.statistics(stream: .realtime)["confirmedCount"] as? Int, 1)
     }
 
