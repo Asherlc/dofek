@@ -23,7 +23,7 @@ describe("TouchstoneProvider", () => {
       async () => new Response("sensitive upstream detail", { status: 422 }),
     );
     await expect(provider.authSetup().automatedLogin?.("climber", "password")).rejects.toThrow(
-      /reconnect/i,
+      /^Sign in failed$/,
     );
   });
 });

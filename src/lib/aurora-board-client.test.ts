@@ -69,13 +69,17 @@ describe("AuroraBoardClient", () => {
     expect(syncCalls).toBe(2);
   });
 
-  it("returns a structured authentication failure for rejected sessions", async () => {
-    await expect(
-      client(async () => new Response(null, { status: 401 })).login("user", "password"),
-    ).rejects.toMatchObject({
+  it.each([401, 403, 422])("reports rejected Touchstone sign-in (%s)", async (status) => {
+    const instance = new AuroraBoardClient(
+      "touchstone",
+      "Touchstone Board",
+      "https://touchstoneboardapp.com",
+      async () => new Response(null, { status }),
+    );
+    await expect(instance.login("user", "password")).rejects.toMatchObject({
       name: "ProviderAuthError",
-      authFailureReason: "session_expired",
-      message: expect.stringContaining("Reconnect"),
+      authFailureReason: "authentication_failed",
+      message: "Sign in failed",
     });
   });
 
@@ -138,7 +142,7 @@ describe("AuroraBoardClient", () => {
     async (status) => {
       await expect(
         client(async () => new Response(null, { status })).login("user", "secret"),
-      ).rejects.toThrow(status === 500 ? /login failed.*500/ : /Tension Board session.*Reconnect/);
+      ).rejects.toThrow(status === 500 ? /login failed.*500/ : /^Sign in failed$/);
     },
   );
 
@@ -245,19 +249,29 @@ describe("AuroraBoardClient", () => {
     expect(result.entries[0]?.attempts).toStrictEqual([{ scope: "climb", sourceCompleted: true }]);
   });
 
-  it.each([{ ascents: [] }, { bids: [] }])(
-    "requires evidence of each requested table (%j)",
-    async (tables) => {
-      await expect(
-        client(async () => Response.json({ ...tables, _complete: true })).fetchLogbook(
-          tokens,
-          vi.fn(),
-        ),
-      ).rejects.toThrow(/omitted/);
+  it.each([
+    {},
+    { ascents: [] },
+    { bids: [] },
+    {
+      attempts: [{ id: 2, position: 2, name: "Redpoint" }],
+      shared_syncs: [{ table_name: "attempts", last_synchronized_at: "2026-10-02" }],
     },
-  );
+  ])("accepts a completed empty logbook (%j)", async (tables) => {
+    const instance = new AuroraBoardClient(
+      "touchstone",
+      "Touchstone Board",
+      "https://touchstoneboardapp.com",
+      async () => Response.json({ ...tables, _complete: true }),
+    );
+    await expect(instance.fetchLogbook(tokens, vi.fn())).resolves.toEqual({
+      entries: [],
+      absentExternalIds: [],
+      authoritative: false,
+    });
+  });
 
-  it("accepts table evidence from shared cursors and ignores unrelated tables", async () => {
+  it("accepts shared cursors for logbook tables and ignores unrelated tables", async () => {
     const result = await client(async () =>
       Response.json({
         _complete: true,
@@ -396,7 +410,6 @@ describe("AuroraBoardClient", () => {
 
   it.each([
     { ascents: [], bids: [] },
-    { _complete: true },
     { ascents: {}, bids: [], _complete: true },
     { ascents: [], bids: [], _complete: false },
     { ascents: [{ ...ascent, user_id: 99 }], bids: [], _complete: true },
