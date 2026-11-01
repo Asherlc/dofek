@@ -352,6 +352,16 @@ publishing. GitHub documents reusable workflow
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
+The stack workflow reports that commit from a separate job after the rollout
+succeeds, using the same checkout that the image resolver requires to match
+the immutable image's `SENTRY_RELEASE`. This job does not load deployment
+secrets: the deploy runner masks exported dotenv values, and GitHub suppresses
+job outputs matching those masks. Both mobile publishers reject an empty or
+malformed commit before checkout. When diagnosing a missing mobile release,
+check the deploy job's final output evaluation for `Skip output 'commit_sha'
+since it may contain secret`; see GitHub's
+[masking semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log).
+
 After rollout, OTA publication performs one
 [manifest validation](../scripts/check-ota-manifest.ts). An unavailable or invalid
 manifest stops publication before upload, including when a transient request
