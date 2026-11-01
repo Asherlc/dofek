@@ -82,7 +82,8 @@ export class AuroraBoardClient implements ClimbingBoardClient {
       headers: { ...this.#headers(), "Content-Type": "application/json" },
       body: JSON.stringify({ username, password, tou: "accepted", pp: "accepted", ua: "app" }),
     });
-    if ([401, 403, 422].includes(response.status)) throw this.#reconnect();
+    if ([401, 403, 422].includes(response.status))
+      throw new ProviderAuthError("authentication_failed", "Sign in failed");
     if (!response.ok) throw new Error(`${this.#name} login failed (HTTP ${response.status}).`);
     const data = z
       .object({ session: z.object({ token: id, user_id: z.number().int().positive() }) })

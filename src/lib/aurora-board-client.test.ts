@@ -69,13 +69,17 @@ describe("AuroraBoardClient", () => {
     expect(syncCalls).toBe(2);
   });
 
-  it("returns a structured authentication failure for rejected sessions", async () => {
-    await expect(
-      client(async () => new Response(null, { status: 401 })).login("user", "password"),
-    ).rejects.toMatchObject({
+  it.each([401, 403, 422])("reports rejected Touchstone sign-in (%s)", async (status) => {
+    const instance = new AuroraBoardClient(
+      "touchstone",
+      "Touchstone Board",
+      "https://touchstoneboardapp.com",
+      async () => new Response(null, { status }),
+    );
+    await expect(instance.login("user", "password")).rejects.toMatchObject({
       name: "ProviderAuthError",
-      authFailureReason: "session_expired",
-      message: expect.stringContaining("Reconnect"),
+      authFailureReason: "authentication_failed",
+      message: "Sign in failed",
     });
   });
 
@@ -138,7 +142,7 @@ describe("AuroraBoardClient", () => {
     async (status) => {
       await expect(
         client(async () => new Response(null, { status })).login("user", "secret"),
-      ).rejects.toThrow(status === 500 ? /login failed.*500/ : /Tension Board session.*Reconnect/);
+      ).rejects.toThrow(status === 500 ? /login failed.*500/ : /^Sign in failed$/);
     },
   );
 
