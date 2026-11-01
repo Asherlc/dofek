@@ -140,8 +140,9 @@ cross-origin final response is rejected as an acknowledgment.
 
 Runtime preparation and background-session attachment use a serial utility queue,
 so opening or upgrading the durable database does not block the application
-lifecycle callback. Synchronous capture consumers share that same runtime, and a
-failed open remains visible through capture diagnostics or Sentry before releasing
+lifecycle callback. Synchronous capture consumers wait for that same runtime,
+including its first database open or upgrade. A failed open remains visible
+through capture diagnostics or Sentry before releasing
 the OS completion. This follows Apple's guidance to avoid immediate main-thread
 file I/O: [file-system performance](https://developer.apple.com/documentation/foundation/improving-performance-and-stability-when-accessing-the-file-system).
 

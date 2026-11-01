@@ -115,7 +115,7 @@ final class WhoopBleSampleStore {
     func append(deviceId: String, samplesByStream: [WhoopUploadStream: [[String: Any]]]) throws {
         try transaction {
             guard try readBinding() != nil else { throw StoreError("Configure an authenticated WHOOP account before capture") }
-            for stream in [WhoopUploadStream.sensorRecords, .realtime, .imu] {
+            for stream in WhoopUploadStream.allCases {
                 guard let samples = samplesByStream[stream], !samples.isEmpty else { continue }
                 try appendLocked(stream: stream, deviceId: deviceId, samples: samples)
             }
