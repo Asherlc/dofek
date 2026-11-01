@@ -101,7 +101,14 @@ const sourceAttemptCountSchema = z
   .strictObject({
     scope: climbingAttemptSchema.shape.scope,
     pitch: sourcePitchReferenceSchema.optional(),
-    count: z.number().int().positive(),
+    count: z
+      .number()
+      .int()
+      .positive()
+      .max(
+        1000,
+        "Source counts above 1,000 attempts cannot be expanded safely. Review the source logbook before syncing again.",
+      ),
   })
   .refine((count) => count.scope === "pitch" || count.pitch === undefined, {
     message: "A whole-climb count cannot identify a pitch.",

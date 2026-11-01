@@ -69,6 +69,38 @@ describe("atomic climbing log synchronization", () => {
     expect(
       await write([{ externalId: "project:unknown", title: "Untried project", attempts: [] }]),
     ).toEqual({ recordsSynced: 1, logEntryIds: [id] });
+    await write([
+      { externalId: "project:unknown", attempts: [{ scope: "climb", notes: "Recorded try" }] },
+    ]);
+    const recorded = await attempts(id);
+    expect(recorded).toHaveLength(1);
+    await write([{ externalId: "project:unknown", attempts: [] }]);
+    expect(await attempts(id)).toEqual(recorded);
+  });
+  it("rejects unsafe source count expansion before any graph writes", async () => {
+    await expect(
+      write([
+        { externalId: "valid-before-overflow", attempts: [{ scope: "climb" }] },
+        {
+          externalId: "oversized-count",
+          attempts: [],
+          reportedAttemptCounts: [{ scope: "climb", count: 1001 }],
+        },
+      ]),
+    ).rejects.toThrow(/1,000/);
+    expect(await context.db.select().from(climbingLogEntry)).toEqual([]);
+  });
+  it("persists the supported count boundary of 1,000 attempts", async () => {
+    const result = await write([
+      {
+        externalId: "maximum-count",
+        attempts: [],
+        reportedAttemptCounts: [{ scope: "climb", count: 1000 }],
+      },
+    ]);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected maximum-count occurrence");
+    expect(await attempts(id)).toHaveLength(1000);
   });
   it("preserves microsecond creation times through full and partial source updates", async () => {
     const logId = "00000000-0000-4000-8000-000000001991";

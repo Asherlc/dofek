@@ -88,6 +88,10 @@ occurrence is known; this creates no attempt rows, as verified by the
 [database regression](climbing-log-sync.integration.test.ts). Recorded booleans and raw source result labels remain independently
 nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
 raw completion boolean when supplied, otherwise its original supported label.
+The writer accepts at most 1,000 attempts per reported count. Larger source
+counts fail validation before any graph writes rather than expanding an
+unbounded number of rows; the same database suite tests the accepted boundary
+and atomic rejection.
 The [completion migration](../../drizzle/0172_source_climbing_completion.sql)
 preserves the existing served shape while extending the
 [canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).

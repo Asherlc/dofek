@@ -87,6 +87,18 @@ function loginProtocol(
 }
 
 describe("Vertical-Life direct client", () => {
+  it.each([400, 401, 403])(
+    "reports an initial exchange HTTP %s as a sign-in failure",
+    async (status) => {
+      const { client } = loginProtocol((stage) =>
+        stage === "token" ? Response.json({ error: "invalid_grant" }, { status }) : undefined,
+      );
+      await expect(client.login("climber", "password")).rejects.toMatchObject({
+        authFailureReason: "authentication_failed",
+        message: "Vertical-Life rejected this sign-in. Try signing in again.",
+      });
+    },
+  );
   it("confirms identity through userinfo and preserves scope and expiry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-01T00:00:00Z"));

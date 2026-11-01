@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
+import { serializeClimbingLogEntryDetailResponse } from "../contracts/climbing-log-contracts.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import {
   climbingAttemptFixture,
@@ -38,6 +39,19 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it.each([1, 2, 3] as const)(
+    "keeps attempt-free project counts unknown in response V%s",
+    async (version) => {
+      const log = named("eight-a");
+      log.attempts = [];
+      const [result] = await repository([log]).getLogEntries([log.id]);
+      if (!result) throw new Error("Expected project log");
+      expect(serializeClimbingLogEntryDetailResponse(result.toDetail(), version)).toMatchObject({
+        recordedClimbAttemptCount: null,
+        attempts: [],
+      });
+    },
+  );
   it("retains distinct recorded times from consolidated sources", async () => {
     const api = named("kaya");
     api.externalId = "kaya:ascent:123";
@@ -462,7 +476,9 @@ describe("ClimbingActivityLogEntryRepository", () => {
     log.attempts = outcomes.map((outcome) => climbingAttemptFixture(log.id, { outcome }));
     const [result] = await repository([log]).getLogEntries([log.id]);
     expect(result?.toDetail().recordedClimbOutcome).toBe(expected);
-    expect(result?.toDetail().recordedClimbAttemptCount).toBe(outcomes.length);
+    expect(result?.toDetail().recordedClimbAttemptCount).toBe(
+      outcomes.length === 0 ? null : outcomes.length,
+    );
   });
   it.each([null, "completed", "failed"] as const)(
     "leaves Mountain Project attempt counts unknown while retaining the %s result and rope method",

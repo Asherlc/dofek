@@ -167,7 +167,10 @@ CSV payload; they cannot silently change unverified fields. See the
 
 Projects with no supported result and zero or unknown tries retain their log
 occurrence without an invented attempt. Positive reported tries expand through
-the canonical writer. Training-load coverage treats entries without recorded
+the canonical writer, which rejects reported counts above 1,000 atomically.
+Attempt-free details expose an unknown count in every response version, as
+verified by the [detail repository tests](../packages/server/src/repositories/climbing-activity-log-entry-repository.test.ts).
+Training-load coverage treats entries without recorded
 whole-climb tries as missing attempt information; see the
 [parser](../src/providers/eight-a/ascent.ts) and
 [database reporting regression](../packages/server/src/repositories/analytical-training-load-repository.integration.test.ts).

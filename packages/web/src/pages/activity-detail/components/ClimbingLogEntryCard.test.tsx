@@ -9,6 +9,23 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
+it("keeps an attempt-free project visible without an invented count or outcome", () => {
+  render(
+    <ul>
+      <ClimbingLogEntryCard
+        entry={climbingLogEntryFixture({
+          title: "Untried project",
+          attempts: [],
+          recordedClimbAttemptCount: null,
+          recordedClimbOutcome: null,
+        })}
+      />
+    </ul>,
+  );
+  expect(screen.getByText("Untried project")).toBeInTheDocument();
+  expect(screen.queryByText(/Attempts:|Attempted|Completed/)).not.toBeInTheDocument();
+});
+
 it.each(["lead", "top_rope", "follow"] as const)(
   "shows recorded falls or hangs on %s without inventing completion",
   (ropeMethod) => {

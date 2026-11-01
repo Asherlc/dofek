@@ -55,8 +55,13 @@ export class EightAClient {
       body,
       signal,
     });
-    if ([400, 401, 403].includes(response.status))
-      throw reconnect(previous ? "refresh_token_revoked" : "authentication_failed");
+    if ([400, 401, 403].includes(response.status)) {
+      if (previous) throw reconnect("refresh_token_revoked");
+      throw new ProviderAuthError(
+        "authentication_failed",
+        "Vertical-Life rejected this sign-in. Try signing in again.",
+      );
+    }
     if (!response.ok)
       throw new Error(`Vertical-Life authentication failed (HTTP ${response.status}). Try again.`);
     const token = tokenSchema.parse(await response.json());

@@ -8,6 +8,22 @@ import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("keeps an attempt-free project visible without an invented count or outcome", () => {
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          title: "Untried project",
+          climb: null,
+          attempts: [],
+          recordedClimbAttemptCount: null,
+          recordedClimbOutcome: null,
+        }}
+      />,
+    );
+    expect(screen.getByText("Untried project")).toBeTruthy();
+    expect(screen.queryByText(/Attempts:|Attempted|Completed/)).toBeNull();
+  });
   it.each(["lead", "top_rope", "follow"] as const)(
     "shows recorded falls or hangs on %s without inventing completion",
     (ropeMethod) => {

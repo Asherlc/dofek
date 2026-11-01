@@ -114,3 +114,18 @@ mutation run. A main-branch asynchronous-bootstrap fixture race in the iOS gate
 was corrected; all eight real Expo bridge tests pass. See the
 [incident evidence](../../production-incident-baseline.md#2026-11-01--whoop-bridge-fixture-races-asynchronous-bootstrap).
 PR review responses and replacement CI are the remaining delivery checkpoints.
+
+Final review also bounded each reported count at 1,000 before expansion,
+preserved existing attempts across an empty resync, returned unknown detail
+counts from the canonical server model, and distinguished initial sign-in
+rejection from refresh revocation. Web and mobile render regressions verify
+attempt-free projects. The [writer tests](../../../src/db/climbing-log-sync.integration.test.ts)
+exercise the accepted boundary and atomic rejection; the
+[detail tests](../../../packages/server/src/repositories/climbing-activity-log-entry-repository.test.ts)
+cover all response versions.
+
+Final local checks pass: 23,999 unit/mobile tests (19 skipped), 87 focused
+database tests, lint and all four TypeScript checks. The changed detail branch
+kills all seven evaluated mutants; the Vertical-Life client scores 94.58%.
+The previous pushed head passed all 106 PR checks, including the repaired iOS
+bridge. The final review commit still requires its own remote CI verification.
