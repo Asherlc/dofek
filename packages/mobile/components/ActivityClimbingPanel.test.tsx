@@ -14,10 +14,16 @@ import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-
 
 it("scrolls the climb list to the selected row using its measured position", () => {
   const scrollTo = vi.fn();
-  const scrollView = vi.spyOn(Native, "ScrollView").mockImplementation(({ children, ref }) => {
-    useImperativeHandle<unknown, { scrollTo: typeof scrollTo }>(ref, () => ({ scrollTo }));
-    return <section aria-label="Climb list">{children}</section>;
-  });
+  const scrollView = vi
+    .spyOn(Native, "ScrollView")
+    .mockImplementation(({ children, ref, onLayout }) => {
+      useImperativeHandle<unknown, { scrollTo: typeof scrollTo }>(ref, () => ({ scrollTo }));
+      return (
+        <Native.View accessibilityLabel="Climb list" onLayout={onLayout}>
+          {children}
+        </Native.View>
+      );
+    });
   try {
     const entries = [climbingLogFixture, { ...climbingLogFixture, id: "repeat" }];
     const view = render(
@@ -25,11 +31,35 @@ it("scrolls the climb list to the selected row using its measured position", () 
     );
     const row = screen.getByLabelText("Climb list").lastElementChild;
     if (!row) throw new Error("Expected row");
+    fireEvent(
+      screen.getByLabelText("Climb list"),
+      new CustomEvent("layout", { detail: { height: 560 } }),
+    );
     fireEvent(row, new CustomEvent("layout", { detail: { y: 720, height: 140 } }));
     view.rerender(
       <ActivityClimbingPanel entries={entries} locations={{}} selectedEntryId="repeat" />,
     );
-    expect(scrollTo).toHaveBeenLastCalledWith({ y: 720, animated: false });
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 300, animated: false });
+    scrollTo.mockClear();
+    // A fresh map or row selection must reveal the same occurrence again.
+    fireEvent.click(screen.getByRole("button", { name: "Select entry 2, Swiss Cheese" }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 300, animated: false });
+    scrollTo.mockClear();
+    fireEvent(row, new CustomEvent("layout", { detail: { y: 100, height: 140 } }));
+    expect(scrollTo).not.toHaveBeenCalled();
+    view.rerender(
+      <ActivityClimbingPanel
+        entries={entries}
+        locations={{}}
+        selectedEntryId={climbingLogFixture.id}
+      />,
+    );
+    view.rerender(
+      <ActivityClimbingPanel entries={entries} locations={{}} selectedEntryId="repeat" />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+    fireEvent(row, new CustomEvent("layout", { detail: { y: 900, height: 140 } }));
+    expect(scrollTo).not.toHaveBeenCalled();
     view.unmount();
   } finally {
     scrollView.mockRestore();

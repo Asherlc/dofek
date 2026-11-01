@@ -11,7 +11,8 @@ import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
 const captured = vi.hoisted(() => {
   const option: Record<string, unknown> = {};
   const events: Record<string, (params: Record<string, unknown>) => void> = {};
-  return { option, events, notMerge: true };
+  const replaceMerge: string[] = [];
+  return { option, events, notMerge: true, renders: 0, replaceMerge };
 });
 
 vi.mock("echarts-for-react", () => ({
@@ -19,14 +20,18 @@ vi.mock("echarts-for-react", () => ({
     option,
     onEvents,
     notMerge,
+    replaceMerge,
   }: {
     option: Record<string, unknown>;
     onEvents: typeof captured.events;
     notMerge: boolean;
+    replaceMerge?: string[];
   }) => {
+    captured.renders += 1;
     captured.option = option;
     captured.events = onEvents;
     captured.notMerge = notMerge;
+    captured.replaceMerge = replaceMerge ?? [];
     return null;
   },
 }));
@@ -64,6 +69,17 @@ const args = {
   loading: false,
   units: new UnitConverter("metric"),
 };
+
+it("records drag zoom without rebuilding the metrics chart", () => {
+  const view = render(<MetricsChart {...args} />);
+  const renders = captured.renders;
+  act(() => captured.events.datazoom?.({ start: 25, end: 75 }));
+  expect(captured.renders).toBe(renders);
+  view.rerender(<MetricsChart {...args} highlightedClimbId="first" />);
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 25, end: 75 })]),
+  );
+});
 
 it("selects annotation IDs from line and range clicks, including repeated names", () => {
   const onSelectClimb = vi.fn();
@@ -132,6 +148,7 @@ it("expands zoom only enough to reveal a selected climb and updates existing cha
     expect.arrayContaining([expect.objectContaining({ start: 0, end: 100 })]),
   );
   expect(captured.notMerge).toBe(false);
+  expect(captured.replaceMerge).toEqual(["series"]);
   const series = captured.option.series;
   if (!Array.isArray(series)) throw new Error("Expected series");
   expect(series[0].markLine.animation).toBe(false);

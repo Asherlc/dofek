@@ -1,7 +1,7 @@
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityRouteMap } from "../../../components/ActivityRouteMap.tsx";
 import { type ClimbingLogAttachmentState, ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
@@ -39,15 +39,20 @@ export function ActivityClimbingPanel({
   const [localSelectedEntryId, setLocalSelectedEntryId] = useState<string | null>(null);
   const selectedEntryId =
     controlledSelectedEntryId === undefined ? localSelectedEntryId : controlledSelectedEntryId;
+  const selectedSection = entries.some((entry) => entry.id === selectedEntryId)
+    ? "attached"
+    : suggestions.some((entry) => entry.id === selectedEntryId)
+      ? "unattached"
+      : null;
   const selectEntry = (entryId: string) => {
     setLocalSelectedEntryId(entryId);
     onSelectEntry?.(entryId);
   };
-  useEffect(() => {
+  const revealEntry = useCallback((entryId: string | null) => {
     const list = listRef.current;
     const control = Array.from(
       list?.querySelectorAll<HTMLButtonElement>("button[data-climb-entry-id]") ?? [],
-    ).find((button) => button.dataset.climbEntryId === selectedEntryId);
+    ).find((button) => button.dataset.climbEntryId === entryId);
     const row = control?.closest("li");
     if (!list || !row) return;
     const bounds = list.getBoundingClientRect();
@@ -56,7 +61,10 @@ export function ActivityClimbingPanel({
       list.scrollTo({ top: list.scrollTop + item.top - bounds.top, behavior: "auto" });
     else if (item.bottom > bounds.bottom)
       list.scrollTo({ top: list.scrollTop + item.bottom - bounds.bottom, behavior: "auto" });
-  }, [selectedEntryId]);
+  }, []);
+  useEffect(() => {
+    if (selectedSection !== null) revealEntry(selectedEntryId);
+  }, [selectedEntryId, selectedSection, revealEntry]);
   const [highlights, highlightEntry] = useState<{ pointer: string | null; focus: string | null }>({
     pointer: null,
     focus: null,
@@ -157,6 +165,7 @@ export function ActivityClimbingPanel({
             highlightedEntryId={highlightedEntryId}
             onSelectEntry={(entryId) => {
               selectEntry(entryId);
+              revealEntry(entryId);
               const control = Array.from(
                 listRef.current?.querySelectorAll<HTMLButtonElement>(
                   "button[data-climb-entry-id]",

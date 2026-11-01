@@ -71,7 +71,7 @@ line or time range, preserving the current zoom. The
 [metrics chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
 matches the server-supplied annotation ID. Selecting a chart line, time range,
 or exact-value climb selects that occurrence in the list and scrolls only the
-list to reveal it. List selections expand the chart's zoom only when the selected
+list to reveal it. Selections expand the chart's zoom only when the selected
 climb is outside the visible window. The chart merges updates and disables marker
 animation to retain existing elements, following the ECharts
 [data update guidance](https://echarts.apache.org/handbook/en/how-to/animation/transition/).

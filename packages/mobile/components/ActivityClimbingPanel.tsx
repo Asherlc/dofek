@@ -4,6 +4,7 @@ import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import {
   type ComponentProps,
   type ComponentRef,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -44,15 +45,42 @@ export function ActivityClimbingPanel({
   const [localSelectedEntryId, selectEntry] = useState<string | null>(null);
   const selectedEntryId =
     controlledSelectedEntryId === undefined ? localSelectedEntryId : controlledSelectedEntryId;
+  const selectedSection = entries.some((entry) => entry.id === selectedEntryId)
+    ? "attached"
+    : suggestions.some((entry) => entry.id === selectedEntryId)
+      ? "unattached"
+      : null;
   const listRef = useRef<ComponentRef<typeof ScrollView>>(null);
-  const rowPositions = useRef(new Map<string, number>());
+  const rowPositions = useRef(new Map<string, { y: number; height: number; section: string }>());
+  const pendingReveal = useRef<string | null>(null);
+  const viewportHeight = useRef(0);
+  const scrollOffset = useRef(0);
+  const revealEntry = useCallback(
+    (entryId: string | null) => {
+      const row = entryId === null ? undefined : rowPositions.current.get(entryId);
+      if (!row || viewportHeight.current === 0) return;
+      if (entryId === selectedEntryId && row.section !== selectedSection) return;
+      const visibleTop = scrollOffset.current;
+      const visibleBottom = visibleTop + viewportHeight.current;
+      if (row.y < visibleTop) listRef.current?.scrollTo({ y: row.y, animated: false });
+      else if (row.y + row.height > visibleBottom)
+        listRef.current?.scrollTo({
+          y: Math.min(row.y, row.y + row.height - viewportHeight.current),
+          animated: false,
+        });
+      pendingReveal.current = null;
+    },
+    [selectedEntryId, selectedSection],
+  );
   useEffect(() => {
-    const rowTop = selectedEntryId === null ? undefined : rowPositions.current.get(selectedEntryId);
-    if (rowTop !== undefined) listRef.current?.scrollTo({ y: rowTop, animated: false });
-  }, [selectedEntryId]);
+    pendingReveal.current = selectedEntryId;
+    revealEntry(selectedEntryId);
+  }, [selectedEntryId, revealEntry]);
   const handleSelectEntry = (entryId: string) => {
     selectEntry(entryId);
     onSelectEntry?.(entryId);
+    pendingReveal.current = entryId;
+    revealEntry(entryId);
   };
   const markers = useMemo(
     () =>
@@ -96,6 +124,14 @@ export function ActivityClimbingPanel({
         nestedScrollEnabled
         style={styles.list}
         contentContainerStyle={styles.group}
+        onLayout={({ nativeEvent: { layout } }) => {
+          viewportHeight.current = layout.height;
+          if (pendingReveal.current !== null) revealEntry(pendingReveal.current);
+        }}
+        onScroll={({ nativeEvent }) => {
+          scrollOffset.current = nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
       >
         {sections
           .filter((section) => section.entries.length > 0)
@@ -120,9 +156,12 @@ export function ActivityClimbingPanel({
                   <View
                     key={entry.id}
                     onLayout={({ nativeEvent: { layout } }) => {
-                      rowPositions.current.set(entry.id, layout.y);
-                      if (entry.id === selectedEntryId)
-                        listRef.current?.scrollTo({ y: layout.y, animated: false });
+                      rowPositions.current.set(entry.id, {
+                        y: layout.y,
+                        height: layout.height,
+                        section: section.key,
+                      });
+                      if (entry.id === pendingReveal.current) revealEntry(entry.id);
                     }}
                   >
                     <ClimbingLogEntryCard

@@ -13,7 +13,15 @@ import {
   climbingChartPositions,
 } from "@dofek/training/climbing-chart";
 import { cadenceAxisLabel } from "@dofek/training/training";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
@@ -151,11 +159,12 @@ export function MetricsChart({
   }) => ReactNode;
 }) {
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
-  const [zoom, setZoom] = useState({ start: 0, end: 100 });
+  const zoomRef = useRef({ start: 0, end: 100 });
+  const [, renderSelectionZoom] = useReducer((revision: number) => revision + 1, 0);
   const handleZoom = useCallback((params: Record<string, unknown>) => {
     const range = Array.isArray(params.batch) ? params.batch[0] : params;
     if (typeof range?.start === "number" && typeof range?.end === "number") {
-      setZoom({ start: range.start, end: range.end });
+      zoomRef.current = { start: range.start, end: range.end };
     }
   }, []);
   const timeline = activityChartSeries(
@@ -169,15 +178,15 @@ export function MetricsChart({
   const selectedEnd = selectedPosition?.endPosition;
   useEffect(() => {
     if (selectedClimbId == null || selectedStart === undefined || selectedEnd === undefined) return;
-    setZoom((previous) => {
-      const start = selectedStart * 100;
-      const end = selectedEnd * 100;
-      if (start >= previous.start && end <= previous.end) return previous;
-      return {
-        start: Math.min(previous.start, Math.max(0, start - 2)),
-        end: Math.max(previous.end, Math.min(100, end + 2)),
-      };
-    });
+    const previous = zoomRef.current;
+    const start = selectedStart * 100;
+    const end = selectedEnd * 100;
+    if (start >= previous.start && end <= previous.end) return;
+    zoomRef.current = {
+      start: Math.min(previous.start, Math.max(0, start - 2)),
+      end: Math.max(previous.end, Math.min(100, end + 2)),
+    };
+    renderSelectionZoom();
   }, [selectedClimbId, selectedStart, selectedEnd]);
   const toggleMetric = useCallback((name: string) => {
     setLegendSelected((previous) => ({ ...previous, [name]: previous[name] === false }));
@@ -446,11 +455,11 @@ export function MetricsChart({
     },
     legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [
-      { type: "inside", xAxisIndex: 0, ...zoom },
+      { type: "inside", xAxisIndex: 0, ...zoomRef.current },
       {
         type: "slider",
         xAxisIndex: 0,
-        ...zoom,
+        ...zoomRef.current,
         height: 32,
         bottom: 16,
         showDataShadow: false,

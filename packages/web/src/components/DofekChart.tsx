@@ -66,6 +66,7 @@ interface DofekChartProps {
   /** Replace the generated data disclosure with a chart-specific accessible exact-values control. */
   dataDisclosure?: ReactNode;
   notMerge?: boolean;
+  /** Component types to replace during merging; applies only when notMerge is false. */
   replaceMerge?: string[];
 }
 
