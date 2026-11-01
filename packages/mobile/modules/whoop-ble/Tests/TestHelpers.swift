@@ -84,6 +84,13 @@ final class SQLiteWorkProbe {
 
     var errorCode: Int32 { sqlite3_errcode(database) }
 
+    var cacheWrites: Int {
+        var current: Int32 = 0
+        var highwater: Int32 = 0
+        XCTAssertEqual(sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 0), SQLITE_OK)
+        return Int(current)
+    }
+
     func executeFixture(_ sql: String) throws {
         let result = sqlite3_exec(database, sql, nil, nil, nil)
         guard result == SQLITE_OK else {

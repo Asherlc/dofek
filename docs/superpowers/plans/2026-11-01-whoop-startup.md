@@ -16,7 +16,7 @@
 - One canonical uploader and SQLite store; no optional-module shim or second consumer.
 - Native-only behavior; web has no corresponding native callback.
 - No timeout, retry, durability, or error-filter changes in this startup correction.
-- Use the existing isolated worktree; push new commits automatically. Do not switch branches.
+- Use the existing isolated workspace; push new commits automatically. Do not switch branches.
 
 ## Review focus
 
@@ -40,13 +40,13 @@
 - `handleBackgroundEvents(completionHandler: @escaping () -> Void)` schedules attachment and releases failed initialization's completion on main.
 - Runtime retains its existing `shared()` API and delegates new asynchronous lifecycle methods to this bootstrap.
 
-- [ ] Write XCTest regressions for blocked initialization/nonblocking lifecycle entry, concurrent shared identity, preparation error propagation/recovery, successful finish-events delivery, and failed attachment's exactly-once main completion. Use real temporary SQLite stores and a stub transport; control factory blocking with semaphores rather than sleeps.
-- [ ] Run `swift test --package-path packages/mobile/modules/whoop-ble --filter WhoopBleUploadBootstrapTests`. Expected: RED because the new bootstrap API is absent.
-- [ ] Implement the bootstrap with a serial utility queue. Only cache a successfully constructed uploader. Keep callbacks free of synchronous queue cycles.
-- [ ] Delegate runtime creation to the bootstrap; enqueue module preparation with failure returned asynchronously to the BLE queue. Delegate the app subscriber's matching-session callback to asynchronous attachment; preserve immediate completion for other sessions.
-- [ ] Run the focused tests and full standalone `swift test --package-path packages/mobile/modules/whoop-ble`. Expected: PASS. Run strict SwiftLint on changed Swift files and compile the real Expo bridge when local prerequisites permit; retain exact prerequisite failures rather than treating SwiftPM as bridge validation.
-- [ ] Review the entire diff for callback ordering, account erasure, singleton identity, and original error propagation; record findings in the execution ledger.
-- [ ] Commit and push the correction, then record test output and remaining physical-device/native-release validation.
+- [x] Write XCTest regressions for blocked initialization and prompt lifecycle return, concurrent shared identity, preparation error propagation/recovery, successful finish-events delivery, and failed attachment's exactly-once main completion. Use real temporary SQLite stores and a stub transport; control factory blocking with semaphores rather than sleeps.
+- [x] Run `swift test --package-path packages/mobile/modules/whoop-ble --filter WhoopBleUploadBootstrapTests`. Expected: RED because the new bootstrap API is absent.
+- [x] Implement the bootstrap with a serial utility queue. Only cache a successfully constructed uploader. Keep callbacks free of synchronous queue cycles.
+- [x] Delegate runtime creation to the bootstrap; enqueue module preparation with failure returned asynchronously to the BLE queue. Delegate the app subscriber's matching-session callback to asynchronous attachment; preserve immediate completion for other sessions.
+- [x] Run the focused tests and full standalone `swift test --package-path packages/mobile/modules/whoop-ble`. Expected: PASS. Run strict SwiftLint on changed Swift files and compile the real Expo bridge when local prerequisites permit; retain exact prerequisite failures rather than treating SwiftPM as bridge validation.
+- [x] Review the entire diff for callback ordering, account erasure, singleton identity, and original error propagation; record findings in the execution ledger.
+- [x] Commit and push the correction, then record test output and remaining physical-device/native-release validation.
 
 Disk-write remediation follows a separate evidence-based change after measurements. Verified Sentry closures and provider reporting classification are tracked separately on the progress dashboard; they do not change the bootstrap interface.
 

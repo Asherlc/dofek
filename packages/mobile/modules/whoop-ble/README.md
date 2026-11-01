@@ -112,7 +112,12 @@ snapshot. Capture timestamps distinguish phone-observed notifications from the
 strap's latest valid reported heart rate; see the [bridge contract](index.ts).
 
 Captured samples are committed to [SQLite](ios/WhoopBleSampleStore.swift) before
-scheduling delivery. Rows survive app recreation and are not evicted at the old
+scheduling delivery. All streams decoded from one BLE notification commit in one
+transaction; an invalid stream rolls back that notification's samples and counters
+together. Capture never buffers across notifications, and FULL synchronous
+durability remains enabled. Grouping transaction work follows Apple's
+[disk-write guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+Rows survive app recreation and are not evicted at the old
 memory limits. Account changes and sign-out purge the old queue and cancel its
 tasks; account erasure also retains its monotonic device cutoff. Queue files and
 transport bodies are excluded from backups and use locked-device-accessible
