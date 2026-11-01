@@ -400,6 +400,7 @@ export function DataSourcesPanel() {
     unifiedProviders.map((entry) => ({
       ...entry,
       id: entry.kind === "import" ? entry.id : entry.provider.id,
+      label: entry.kind === "import" ? entry.config.title : entry.provider.name,
     })),
   );
 

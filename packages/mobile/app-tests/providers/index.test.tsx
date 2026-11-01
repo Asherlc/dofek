@@ -1070,6 +1070,30 @@ describe("ProvidersScreen", () => {
     setupDefaultMocks();
   });
 
+  it("orders provider cards alphabetically, including Apple Health", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        connectedProvider,
+        { ...importOnlyProvider, id: "eight-a", name: "8a.nu / Vertical-Life" },
+        disconnectedProvider,
+      ],
+      isLoading: false,
+      error: null,
+    });
+    await renderProvidersScreen();
+
+    expect(
+      screen
+        .getAllByRole("button", { name: /^Open .* details$/ })
+        .map((card) => card.getAttribute("aria-label")),
+    ).toEqual([
+      "Open 8a.nu / Vertical-Life details",
+      "Open Apple Health details",
+      "Open Strava details",
+      "Open Wahoo details",
+    ]);
+  });
+
   it("scopes pull-to-refresh to provider list query families", async () => {
     await renderProvidersScreen();
 
