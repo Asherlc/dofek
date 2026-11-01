@@ -65,6 +65,8 @@ interface DofekChartProps {
   timeRangeMode?: "context" | "data";
   /** Replace the generated data disclosure with a chart-specific accessible exact-values control. */
   dataDisclosure?: ReactNode;
+  notMerge?: boolean;
+  replaceMerge?: string[];
 }
 
 export function DofekChart({
@@ -77,6 +79,8 @@ export function DofekChart({
   onEvents,
   timeRangeMode = "context",
   dataDisclosure,
+  notMerge = true,
+  replaceMerge,
 }: DofekChartProps) {
   const fetchingCount = useFetchingCount();
   const range = useContext(ChartRangeContext);
@@ -108,7 +112,8 @@ export function DofekChart({
         <ReactECharts
           option={{ backgroundColor: "transparent", ...accessibleChartOption }}
           style={{ height, width: "100%" }}
-          notMerge={true}
+          notMerge={notMerge}
+          replaceMerge={replaceMerge}
           opts={opts}
           onEvents={onEvents}
         />

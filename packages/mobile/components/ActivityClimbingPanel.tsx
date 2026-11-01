@@ -1,8 +1,15 @@
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { type ComponentProps, useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  type ComponentProps,
+  type ComponentRef,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
 import { type ClimbingLogAttachmentState, ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
@@ -21,6 +28,7 @@ export function ActivityClimbingPanel({
   hoveredPosition,
   onOpenEntry,
   onSelectEntry,
+  selectedEntryId: controlledSelectedEntryId,
 }: {
   entries: readonly ClimbingLogEntryDetail[];
   suggestions?: readonly ClimbingLogEntryDetail[];
@@ -31,15 +39,21 @@ export function ActivityClimbingPanel({
   hoveredPosition?: ComponentProps<typeof RouteMap>["hoveredPosition"];
   onOpenEntry?: (entryId: string) => void;
   onSelectEntry?: (entryId: string | null) => void;
+  selectedEntryId?: string | null;
 }) {
-  const [selectedEntryId, selectEntry] = useState<string | null>(null);
+  const [localSelectedEntryId, selectEntry] = useState<string | null>(null);
+  const selectedEntryId =
+    controlledSelectedEntryId === undefined ? localSelectedEntryId : controlledSelectedEntryId;
+  const listRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const rowPositions = useRef(new Map<string, number>());
+  useEffect(() => {
+    const rowTop = selectedEntryId === null ? undefined : rowPositions.current.get(selectedEntryId);
+    if (rowTop !== undefined) listRef.current?.scrollTo({ y: rowTop, animated: false });
+  }, [selectedEntryId]);
   const handleSelectEntry = (entryId: string) => {
     selectEntry(entryId);
     onSelectEntry?.(entryId);
   };
-  useEffect(() => {
-    return () => onSelectEntry?.(null);
-  }, [onSelectEntry]);
   const markers = useMemo(
     () =>
       [...entries, ...suggestions].flatMap((entry, index) => {
@@ -76,24 +90,42 @@ export function ActivityClimbingPanel({
         onSelectEntry={handleSelectEntry}
         hoveredPosition={hoveredPosition}
       />
-      {sections
-        .filter((section) => section.entries.length > 0)
-        .map((section) => (
-          <View key={section.key} accessibilityLabel={section.label} style={styles.group}>
-            {section.key === "unattached" && (
-              <Text accessibilityRole="header" style={styles.heading}>
-                Unattached
-              </Text>
-            )}
-            {groupClimbingLogEntriesByArea(section.entries).map(
-              ({ area, entries: groupEntries }) => (
-                <View key={area?.id ?? "unlocated"} style={styles.group}>
-                  <Text accessibilityRole="header" style={styles.heading}>
-                    {area?.name ?? "Other climbs"}
-                  </Text>
-                  {groupEntries.map(({ entry, entryNumber }) => (
+      <ScrollView
+        ref={listRef}
+        accessibilityLabel="Climb list"
+        nestedScrollEnabled
+        style={styles.list}
+        contentContainerStyle={styles.group}
+      >
+        {sections
+          .filter((section) => section.entries.length > 0)
+          .flatMap((section) => [
+            ...(section.key === "unattached"
+              ? [
+                  <Text key="unattached" accessibilityRole="header" style={styles.heading}>
+                    Unattached
+                  </Text>,
+                ]
+              : []),
+            ...groupClimbingLogEntriesByArea(section.entries).flatMap(
+              ({ area, entries: groupEntries }) => [
+                <Text
+                  key={`${section.key}-${area?.id ?? "unlocated"}`}
+                  accessibilityRole="header"
+                  style={styles.heading}
+                >
+                  {area?.name ?? "Other climbs"}
+                </Text>,
+                ...groupEntries.map(({ entry, entryNumber }) => (
+                  <View
+                    key={entry.id}
+                    onLayout={({ nativeEvent: { layout } }) => {
+                      rowPositions.current.set(entry.id, layout.y);
+                      if (entry.id === selectedEntryId)
+                        listRef.current?.scrollTo({ y: layout.y, animated: false });
+                    }}
+                  >
                     <ClimbingLogEntryCard
-                      key={entry.id}
                       entry={entry}
                       entryNumber={entryNumber + section.offset}
                       location={locations[entry.id]}
@@ -104,20 +136,21 @@ export function ActivityClimbingPanel({
                       onSelect={() => handleSelectEntry(entry.id)}
                       onOpenEntry={onOpenEntry ? () => onOpenEntry(entry.id) : undefined}
                     />
-                  ))}
-                </View>
-              ),
-            )}
-          </View>
-        ))}
-      {entries.length === 0 && suggestions.length === 0 && (
-        <Text style={styles.heading}>No climbing logs attached to this activity.</Text>
-      )}
+                  </View>
+                )),
+              ],
+            ),
+          ])}
+        {entries.length === 0 && suggestions.length === 0 && (
+          <Text style={styles.heading}>No climbing logs attached to this activity.</Text>
+        )}
+      </ScrollView>
     </View>
   );
 }
 const styles = StyleSheet.create({
   panel: { gap: 16, minWidth: 0 },
+  list: { maxHeight: 560 },
   group: { gap: 8 },
   heading: { fontSize: 14, fontWeight: "600", color: colors.text },
 });

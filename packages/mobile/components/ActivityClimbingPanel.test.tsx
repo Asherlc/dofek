@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useImperativeHandle } from "react";
+import * as Native from "react-native";
 import { expect, it, vi } from "vitest";
 
 vi.mock(
@@ -9,6 +11,58 @@ vi.mock(
 
 import { ActivityClimbingPanel } from "./ActivityClimbingPanel";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
+
+it("scrolls the climb list to the selected row using its measured position", () => {
+  const scrollTo = vi.fn();
+  const scrollView = vi.spyOn(Native, "ScrollView").mockImplementation(({ children, ref }) => {
+    useImperativeHandle<unknown, { scrollTo: typeof scrollTo }>(ref, () => ({ scrollTo }));
+    return <section aria-label="Climb list">{children}</section>;
+  });
+  try {
+    const entries = [climbingLogFixture, { ...climbingLogFixture, id: "repeat" }];
+    const view = render(
+      <ActivityClimbingPanel entries={entries} locations={{}} selectedEntryId={null} />,
+    );
+    const row = screen.getByLabelText("Climb list").lastElementChild;
+    if (!row) throw new Error("Expected row");
+    fireEvent(row, new CustomEvent("layout", { detail: { y: 720, height: 140 } }));
+    view.rerender(
+      <ActivityClimbingPanel entries={entries} locations={{}} selectedEntryId="repeat" />,
+    );
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 720, animated: false });
+    view.unmount();
+  } finally {
+    scrollView.mockRestore();
+  }
+});
+
+it("renders chart selections and sends subsequent row selections to the shared owner", () => {
+  const onSelectEntry = vi.fn();
+  const entries = [climbingLogFixture, { ...climbingLogFixture, id: "repeat" }];
+  const view = render(
+    <ActivityClimbingPanel
+      entries={entries}
+      locations={{}}
+      selectedEntryId={null}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  view.rerender(
+    <ActivityClimbingPanel
+      entries={entries}
+      locations={{}}
+      selectedEntryId="repeat"
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Select entry 2, Swiss Cheese" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }));
+  expect(onSelectEntry).toHaveBeenLastCalledWith(climbingLogFixture.id);
+});
 
 it("selects each repeated occurrence from list and map and keeps details explicit", () => {
   const onOpenEntry = vi.fn();

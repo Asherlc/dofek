@@ -11,6 +11,39 @@ vi.mock(
 );
 beforeEach(resetMaps);
 
+it("reveals a chart-selected occurrence inside the list without stealing focus", () => {
+  const onSelectEntry = vi.fn();
+  const view = render(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      selectedEntryId={null}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  const repeat = screen.getByRole("button", { name: "Select entry 4, Swiss Cheese" });
+  const list = screen.getByRole("region", { name: "Climb list" });
+  const row = repeat.closest("li");
+  if (!row) throw new Error("Expected row");
+  vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 300, 500));
+  vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 800, 300, 150));
+  const scrollTo = vi.fn();
+  Object.defineProperty(list, "scrollTo", { value: scrollTo });
+  view.rerender(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      selectedEntryId={climbingMapLogs[3]?.id}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  expect(repeat).toHaveAttribute("aria-pressed", "true");
+  expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+  expect(repeat).not.toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }));
+  expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
+});
+
 it("shares the hovered or focused occurrence with the chart and clears on unmount", () => {
   const onHighlightEntry = vi.fn();
   const { unmount } = render(

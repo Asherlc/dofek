@@ -64,7 +64,11 @@ export const WithHeartRateChart: Story = {
               endedAt: index === 1 ? "2026-10-18T17:32:40Z" : null,
             }))}
         />
-        <ActivityClimbingPanel {...args} onSelectEntry={setHighlightedClimbId} />
+        <ActivityClimbingPanel
+          {...args}
+          selectedEntryId={highlightedClimbId}
+          onSelectEntry={setHighlightedClimbId}
+        />
       </>
     );
   },

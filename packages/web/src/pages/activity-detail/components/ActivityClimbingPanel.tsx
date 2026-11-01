@@ -20,6 +20,8 @@ export function ActivityClimbingPanel({
   onRegisterHoverCallback,
   onOpenEntry,
   onHighlightEntry,
+  selectedEntryId: controlledSelectedEntryId,
+  onSelectEntry,
 }: {
   entries: readonly ClimbingLogEntryDetail[];
   suggestions?: readonly ClimbingLogEntryDetail[];
@@ -30,9 +32,31 @@ export function ActivityClimbingPanel({
   onRegisterHoverCallback?: ComponentProps<typeof ActivityRouteMap>["onRegisterHoverCallback"];
   onOpenEntry?: (entryId: string) => void;
   onHighlightEntry?: (entryId: string | null) => void;
+  selectedEntryId?: string | null;
+  onSelectEntry?: (entryId: string) => void;
 }) {
-  const listRef = useRef<HTMLDivElement>(null);
-  const [selectedEntryId, selectEntry] = useState<string | null>(null);
+  const listRef = useRef<HTMLElement>(null);
+  const [localSelectedEntryId, setLocalSelectedEntryId] = useState<string | null>(null);
+  const selectedEntryId =
+    controlledSelectedEntryId === undefined ? localSelectedEntryId : controlledSelectedEntryId;
+  const selectEntry = (entryId: string) => {
+    setLocalSelectedEntryId(entryId);
+    onSelectEntry?.(entryId);
+  };
+  useEffect(() => {
+    const list = listRef.current;
+    const control = Array.from(
+      list?.querySelectorAll<HTMLButtonElement>("button[data-climb-entry-id]") ?? [],
+    ).find((button) => button.dataset.climbEntryId === selectedEntryId);
+    const row = control?.closest("li");
+    if (!list || !row) return;
+    const bounds = list.getBoundingClientRect();
+    const item = row.getBoundingClientRect();
+    if (item.top < bounds.top)
+      list.scrollTo({ top: list.scrollTop + item.top - bounds.top, behavior: "auto" });
+    else if (item.bottom > bounds.bottom)
+      list.scrollTo({ top: list.scrollTop + item.bottom - bounds.bottom, behavior: "auto" });
+  }, [selectedEntryId]);
   const [highlights, highlightEntry] = useState<{ pointer: string | null; focus: string | null }>({
     pointer: null,
     focus: null,
@@ -76,8 +100,9 @@ export function ActivityClimbingPanel({
         aria-label="Activity climbs and locations"
         className="grid min-w-0 gap-4 @min-[760px]:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
       >
-        <div
+        <section
           ref={listRef}
+          aria-label="Climb list"
           className="order-2 min-w-0 space-y-4 @min-[760px]:order-1 @min-[760px]:max-h-[560px] @min-[760px]:overflow-y-auto @min-[760px]:pr-2"
         >
           {sections
@@ -123,7 +148,7 @@ export function ActivityClimbingPanel({
           {entries.length === 0 && suggestions.length === 0 && (
             <p className="text-sm text-muted">No climbing logs attached to this activity.</p>
           )}
-        </div>
+        </section>
         <div className="order-1 min-w-0 @min-[760px]:order-2">
           <ActivityRouteMap
             points={points}
@@ -137,7 +162,7 @@ export function ActivityClimbingPanel({
                   "button[data-climb-entry-id]",
                 ) ?? [],
               ).find((button) => button.dataset.climbEntryId === entryId);
-              control?.focus();
+              control?.focus({ preventScroll: true });
             }}
             onRegisterHoverCallback={onRegisterHoverCallback}
           />

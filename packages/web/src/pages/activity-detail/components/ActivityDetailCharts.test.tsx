@@ -11,19 +11,22 @@ import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
 const captured = vi.hoisted(() => {
   const option: Record<string, unknown> = {};
   const events: Record<string, (params: Record<string, unknown>) => void> = {};
-  return { option, events };
+  return { option, events, notMerge: true };
 });
 
 vi.mock("echarts-for-react", () => ({
   default: ({
     option,
     onEvents,
+    notMerge,
   }: {
     option: Record<string, unknown>;
     onEvents: typeof captured.events;
+    notMerge: boolean;
   }) => {
     captured.option = option;
     captured.events = onEvents;
+    captured.notMerge = notMerge;
     return null;
   },
 }));
@@ -61,6 +64,79 @@ const args = {
   loading: false,
   units: new UnitConverter("metric"),
 };
+
+it("selects annotation IDs from line and range clicks, including repeated names", () => {
+  const onSelectClimb = vi.fn();
+  render(
+    <MetricsChart
+      {...args}
+      onSelectClimb={onSelectClimb}
+      climbAnnotations={[
+        { id: "first", label: "Same route", startedAt: points[0].recordedAt, endedAt: null },
+        { id: "repeat", label: "Same route", startedAt: points[1].recordedAt, endedAt: null },
+        {
+          id: "range",
+          label: "Timed route",
+          startedAt: points[0].recordedAt,
+          endedAt: points[1].recordedAt,
+        },
+      ]}
+    />,
+  );
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected series");
+  act(() =>
+    captured.events.click?.({ componentType: "markLine", data: series[0].markLine.data[1] }),
+  );
+  expect(onSelectClimb).toHaveBeenLastCalledWith("repeat");
+  act(() =>
+    captured.events.click?.({ componentType: "markArea", data: series[0].markArea.data[0][0] }),
+  );
+  expect(onSelectClimb).toHaveBeenLastCalledWith("range");
+  onSelectClimb.mockClear();
+  act(() => captured.events.click?.({ componentType: "series", data: series[0].data[0] }));
+  expect(onSelectClimb).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /Timed route/ }));
+  expect(onSelectClimb).toHaveBeenLastCalledWith("range");
+});
+
+it("expands zoom only enough to reveal a selected climb and updates existing chart elements", () => {
+  const climbAnnotations = [
+    { id: "first", label: "First", startedAt: points[0].recordedAt, endedAt: null },
+    { id: "middle", label: "Middle", startedAt: "2026-10-18T17:30:30Z", endedAt: null },
+    {
+      id: "range",
+      label: "Range",
+      startedAt: "2026-10-18T17:30:45Z",
+      endedAt: points[1].recordedAt,
+    },
+  ];
+  const view = render(<MetricsChart {...args} climbAnnotations={climbAnnotations} />);
+  act(() => captured.events.datazoom?.({ start: 25, end: 75 }));
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="middle" />,
+  );
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 25, end: 75 })]),
+  );
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="first" />,
+  );
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 0, end: 75 })]),
+  );
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="range" />,
+  );
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 0, end: 100 })]),
+  );
+  expect(captured.notMerge).toBe(false);
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected series");
+  expect(series[0].markLine.animation).toBe(false);
+  expect(series[0].markArea.animation).toBe(false);
+});
 
 it("retains climbs at activity boundaries outside the HR sample range", () => {
   render(
