@@ -176,6 +176,15 @@ unlimited count took 0.04–0.38 ms. These measurements are not device latency
 guarantees; see the [incident evidence](../../../../docs/production-incident-baseline.md#2026-10-30--whoop-recovery-and-queue-diagnostics-corrections).
 Both corrections require a new native iOS build.
 
+Upload acknowledgments find their reserved sample rows through a partial index
+on non-null batch identities, rather than scanning the entire queued backlog.
+Unreserved rows are excluded from this index, following SQLite's
+[partial-index rules](https://www.sqlite.org/partialindex.html#queries_using_partial_indexes).
+The [store](ios/WhoopBleSampleStore.swift) creates the index on the first open
+after upgrading; that initial creation still scans existing rows once. The
+[store regression tests](Tests/WhoopBleSampleStoreTests.swift) exercise an
+acknowledgment with unrelated queued samples under a SQLite instruction budget.
+
 ## Native bridge tests
 
 On macOS with Xcode and an installed iPhone Simulator runtime, run from
