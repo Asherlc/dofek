@@ -22,6 +22,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { shouldReportProviderError } from "../lib/provider-error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -135,7 +136,10 @@ export class MountainProjectProvider implements SyncProvider {
       phase = "area_enrichment";
       await enrichMountainProjectAreas(client, parsed.entries);
     } catch (error) {
-      if (!(error instanceof MountainProjectTickExportError && error.status === 404)) {
+      if (
+        shouldReportProviderError(error) &&
+        !(error instanceof MountainProjectTickExportError && error.status === 404)
+      ) {
         captureException(error, { tags: { provider: this.id, phase } });
       }
       return {
@@ -166,7 +170,9 @@ export class MountainProjectProvider implements SyncProvider {
         userId,
       );
     } catch (error) {
-      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      if (shouldReportProviderError(error)) {
+        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      }
       errors.push({
         message: error instanceof Error ? error.message : String(error),
         cause: error,

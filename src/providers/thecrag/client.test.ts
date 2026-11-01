@@ -66,11 +66,7 @@ describe("theCrag official logbook client", () => {
       const fetchFn = vi.fn<typeof fetch>();
       expect(() => new TheCragClient(fetchFn, key)).toThrow(/personal API key/);
       expect(fetchFn).not.toHaveBeenCalled();
-      if (key) {
-        expect(captureException).toHaveBeenCalledWith(expect.any(ProviderTokenRejectedError), {
-          tags: { provider: "thecrag", phase: "key_validation" },
-        });
-      }
+      expect(captureException).not.toHaveBeenCalled();
     },
   );
 

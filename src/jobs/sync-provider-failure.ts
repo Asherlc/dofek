@@ -4,6 +4,7 @@ import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { shouldReportProviderError } from "../lib/provider-error-reporting.ts";
 import {
   findProviderTransportError,
   isRetryingOpenBetaTransportFailure,
@@ -86,11 +87,6 @@ export function providerSyncFailureEvent(
 
 function isProviderTransportError(error: unknown): boolean {
   return findProviderTransportError(error) !== null;
-}
-
-export function shouldReportProviderError(error: unknown): boolean {
-  if (error instanceof Error && error.name === "AbortError") return false;
-  return !isProviderTransportError(error) && !authFailureReasonFromError(error);
 }
 
 async function scheduleRateLimitRetry(

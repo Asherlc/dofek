@@ -151,3 +151,18 @@ Related records: the [October 27 sweep](../production-incident-baseline.md#2026-
 [October 23 database investigation](../production-incident-baseline.md#2026-10-23--postgres-connection-timeouts-and-slow-calendar-requests),
 [empty-board fix](../production-incident-baseline.md#2026-10-31--empty-aurora-family-logbooks-incorrectly-fail-sync),
 and [Garmin reconnect evidence](../production-incident-baseline.md#2026-10-24--garmin-reconnect-succeeds-while-the-provider-summary-contradicts-sync-history).
+
+## Approved implementation follow-up
+
+After approval, Sentry confirmed eight resolved status updates: SERVER-77,
+SERVER-6E, SERVER-6T, SERVER-6S, SERVER-6W, SERVER-6V, SERVER-75, and SERVER-6X.
+Each activity entry records the deployed correction, retirement, or observed
+recovery used for closure. A fresh 30-day unresolved search returned 21 issues.
+The original triage table above remains the historical pre-implementation snapshot.
+
+The branch contains startup correction `982cef3a8` and grouped-notification
+commit `0358f3e30`. The latter reduces synthetic SQLite page writes while
+preserving durable-before-return capture. These changes have not yet established
+physical-device recovery, so the WHOOP issues remain open. The
+[incident baseline](../production-incident-baseline.md#2026-11-01--whoop-notification-streams-committed-in-redundant-transactions)
+records measured scope and validation limits.
