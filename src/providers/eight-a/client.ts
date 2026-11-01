@@ -162,7 +162,6 @@ export class EightAClient {
   ): Promise<SourceClimbingLogEntry[]> {
     signal?.throwIfAborted();
     let tokens = stored;
-    let refreshed = false;
     const renew = async () => {
       if (!tokens.refreshToken) throw reconnect();
       tokens = await this.#exchange(
@@ -175,17 +174,17 @@ export class EightAClient {
         signal,
       );
       await persistTokens(tokens);
-      refreshed = true;
     };
-    if (tokens.expiresAt.getTime() <= Date.now()) await renew();
     const read = async (url: string): Promise<unknown> => {
+      signal?.throwIfAborted();
+      if (tokens.expiresAt.getTime() <= Date.now()) await renew();
       try {
         return await this.#json(url, {
           headers: { Authorization: `Bearer ${tokens.accessToken}` },
           signal,
         });
       } catch (error) {
-        if (!(error instanceof ProviderAuthError) || refreshed) throw error;
+        if (!(error instanceof ProviderAuthError)) throw error;
         await renew();
         return this.#json(url, {
           headers: { Authorization: `Bearer ${tokens.accessToken}` },

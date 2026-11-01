@@ -150,9 +150,15 @@ record. Once connected or native history exists, uploads only retain provenance
 for uniquely matched records; they cannot overwrite native facts or add new
 ascents. Edited, unmatched and ambiguous CSV rows fail atomically with an
 actionable error. Add new ascents in Vertical-Life and sync them. Matching uses
-the shared source kind, calendar date, name, location/sector, grade, result,
-tries, comment, subtype and project flag; it requires a known name, location
-and date. See the [resolver](../src/providers/eight-a/identity.ts) and
+the shared source kind, calendar date, name, location/sector/area/country, grade,
+result, tries, comment, subtype, project flag, rating and recommendation. Country
+codes are compared with English region names through the server's
+[`Intl.DisplayNames`](https://tc39.es/ecma402/#sec-intl.displaynames.prototype.of).
+Matching requires a known name, location and date. Nonempty CSV fields with no
+verified API counterpart, such as height or repeat counts, block an automatic
+initial match. Previously bound historical uploads must retain their complete
+CSV payload; they cannot silently change unverified fields. See the
+[resolver](../src/providers/eight-a/identity.ts) and
 [database regressions](../src/providers/eight-a/provider.integration.test.ts).
 
 Complete native syncs reconcile missing native occurrences without deleting raw

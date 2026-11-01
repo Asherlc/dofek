@@ -26,5 +26,12 @@ export function eightANativeRow(values: Record<string, unknown> = {}) {
 }
 
 export function eightAMatchingCsv(values: Record<string, string> = {}) {
-  return eightARow({ project: "0", sub_type: "", sector_name: "Unknown Sector", ...values });
+  return eightARow({
+    project: "0",
+    rating: "0",
+    recommended: "0",
+    sub_type: "",
+    sector_name: "Unknown Sector",
+    ...values,
+  });
 }

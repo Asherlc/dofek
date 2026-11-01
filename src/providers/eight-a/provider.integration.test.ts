@@ -177,6 +177,49 @@ describe("Vertical-Life direct sync persistence", () => {
     );
     expect(await logs()).toEqual(before);
   });
+  it("rejects contradictory source areas before migrating legacy identities", async () => {
+    await upload(eightAMatchingCsv({ area_name: "Area B" }));
+    const before = await logs();
+    rows = [eightANativeRow({ areaName: "Area A" })];
+    await connect();
+    expect(await sync()).toMatchObject({
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: expect.stringMatching(/unique exact match/i) })],
+    });
+    expect(await logs()).toEqual(before);
+  });
+  it("rejects edits to retained CSV provenance without any partial raw updates", async () => {
+    await connect();
+    await sync();
+    await upload(eightAMatchingCsv());
+    const before = await logs();
+    const edits: Array<Record<string, string>> = [
+      { rating: "5" },
+      { repeats: "10" },
+      { area_name: "Other area" },
+    ];
+    for (const changed of edits) {
+      await expect(upload(eightAMatchingCsv(), eightAMatchingCsv(changed))).rejects.toThrow(
+        /unique exact match/i,
+      );
+      expect(await logs()).toEqual(before);
+    }
+  });
+  it("binds the correct area when climb and crag names are repeated", async () => {
+    await upload(eightAMatchingCsv({ area_name: "Area A" }));
+    const [original] = await logs();
+    rows = [
+      eightANativeRow({ areaName: "Area A" }),
+      eightANativeRow({ ascentId: 124, areaName: "Area B" }),
+    ];
+    await connect();
+    expect(await sync()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const saved = await logs();
+    expect(saved).toHaveLength(2);
+    expect(saved.find((row) => row.id === original?.id)?.externalId).toBe(
+      "eight-a:native:bouldering:eight_a:123",
+    );
+  });
   it("rejects ambiguous legacy occurrences without changing IDs, attachments or raw", async () => {
     await upload(eightAMatchingCsv(), eightAMatchingCsv());
     const before = await logs();

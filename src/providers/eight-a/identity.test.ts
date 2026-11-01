@@ -117,4 +117,65 @@ describe("Vertical-Life strict source identity", () => {
     expect(uploaded.entries).toEqual([]);
     expect(uploaded.rawUpdates[0]?.raw).toEqual(updated?.raw);
   });
+  it.each([
+    ["area_name", "Other area"],
+    ["country_code", "US"],
+    ["rating", "5"],
+    ["repeats", "10"],
+    ["height", "24"],
+    ["recommended", "1"],
+    ["perceived_hardness", "hard"],
+    ["sits", "1"],
+  ])(
+    "rejects contradictory or unprovable %s on initial and historical CSV matches",
+    (field, value) => {
+      const edited = parseEightAExport(`${eightAHeader}\n${eightAMatchingCsv({ [field]: value })}`);
+      expect(() => resolveEightAIdentities(edited, knownNative, "csv", true)).toThrow(
+        /unique exact match/i,
+      );
+      const bound = resolveEightAIdentities(native, knownCsv, "native", true).entries[0];
+      if (!bound) throw new Error("Expected bound native entry");
+      expect(() =>
+        resolveEightAIdentities(
+          edited,
+          [{ id: "bound", externalId: bound.externalId, raw: bound.raw }],
+          "csv",
+          true,
+        ),
+      ).toThrow(/unique exact match/i);
+      expect(() =>
+        resolveEightAIdentities(
+          native,
+          edited.map((entry) => ({ id: "legacy", externalId: entry.externalId, raw: entry.raw })),
+          "native",
+          true,
+        ),
+      ).toThrow(/unique exact match/i);
+    },
+  );
+  it("distinguishes identical climb/location names in different source areas", () => {
+    const records = parseEightAAscentPage(
+      {
+        ascents: [
+          eightANativeRow({ areaName: "Area A" }),
+          eightANativeRow({ ascentId: 124, areaName: "Area B" }),
+        ],
+        pageIndex: 0,
+        totalItems: 2,
+      },
+      "bouldering",
+      0,
+    );
+    const legacy = parseEightAExport(
+      `${eightAHeader}\n${eightAMatchingCsv({ area_name: "Area A" })}`,
+    );
+    expect(
+      resolveEightAIdentities(
+        records,
+        legacy.map((entry) => ({ id: "legacy", externalId: entry.externalId, raw: entry.raw })),
+        "native",
+        true,
+      ).migrations,
+    ).toEqual([{ id: "legacy", externalId: records[0]?.externalId }]);
+  });
 });

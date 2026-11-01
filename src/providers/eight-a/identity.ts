@@ -5,6 +5,24 @@ import { ClimbingImportValidationError } from "../../lib/climbing-import-error.t
 
 type KnownIdentity = { id: string; externalId: string | null; raw: unknown };
 const nativePrefix = "eight-a:native:";
+const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
+const sharedCsvFields = new Set([
+  "route_boulder",
+  "name",
+  "location_name",
+  "sector_name",
+  "area_name",
+  "country_code",
+  "date",
+  "type",
+  "sub_type",
+  "rating",
+  "project",
+  "tries",
+  "difficulty",
+  "comment",
+  "recommended",
+]);
 function object(value: unknown): Record<string, unknown> | null {
   const parsed = z.record(z.string(), z.unknown()).safeParse(value);
   return parsed.success ? parsed.data : null;
@@ -20,12 +38,29 @@ function nativeRaw(raw: unknown) {
   const value = object(raw);
   return object(value?.native) ?? (value?.ascentId != null ? value : null);
 }
+function csvFingerprint(raw: unknown): string | null {
+  const row = csvRaw(raw);
+  return row ? JSON.stringify(Object.entries(row).sort(([a], [b]) => a.localeCompare(b))) : null;
+}
+function csvFlag(value: unknown) {
+  const normalized = text(value);
+  if (normalized === null) return null;
+  if (normalized === "0" || normalized === "false") return false;
+  if (normalized === "1" || normalized === "true") return true;
+  return undefined;
+}
 
 /** Match only shared source facts; absent identifiers/names/dates cannot prove a transition. */
 function projection(raw: unknown, nativeId?: string | null): string | null {
   const isNative = nativeId?.startsWith(nativePrefix) ?? false;
   const row = isNative ? nativeRaw(raw) : csvRaw(raw);
   if (!row) return null;
+  if (
+    !isNative &&
+    (!z.record(z.string(), z.string()).safeParse(row).success ||
+      Object.entries(row).some(([key, value]) => !sharedCsvFields.has(key) && text(value) !== null))
+  )
+    return null;
   const category = nativeId?.split(":")[2];
   const kind = isNative
     ? category === "bouldering" || category === "gymboulder"
@@ -48,18 +83,25 @@ function projection(raw: unknown, nativeId?: string | null): string | null {
     : text(row.tries) === null
       ? null
       : Number(row.tries);
-  const project = isNative
-    ? row.project
-    : row.project === "0" || row.project === "false"
-      ? false
-      : row.project === "1" || row.project === "true"
-        ? true
-        : null;
+  const project = isNative ? row.project : csvFlag(row.project);
+  const recommended = isNative ? (row.recommended ?? null) : csvFlag(row.recommended);
+  if (project === undefined || recommended === undefined) return null;
+  const code = text(row.country_code);
+  if (!isNative && code !== null && !/^[A-Z]{2}$/.test(code)) return null;
+  const country = isNative ? text(row.countryName) : code === null ? null : regionNames.of(code);
+  const rating = isNative
+    ? (row.rating ?? null)
+    : text(row.rating) === null
+      ? null
+      : Number(row.rating);
+  if (typeof rating === "number" && !Number.isFinite(rating)) return null;
   return JSON.stringify([
     kind,
     date,
     name,
     location,
+    text(isNative ? row.areaName : row.area_name),
+    country,
     sector === "Unknown Sector" ? null : sector,
     text(row.difficulty),
     text(row.type)?.toLowerCase() ?? null,
@@ -67,6 +109,8 @@ function projection(raw: unknown, nativeId?: string | null): string | null {
     text(row.comment),
     text(isNative ? row.subType : row.sub_type),
     project,
+    rating,
+    recommended,
   ]);
 }
 function failure(existing = false): never {
@@ -96,18 +140,32 @@ export function resolveEightAIdentities(
       return { entries: [...incoming], migrations, rawUpdates };
     const matched = new Set<string>();
     const byProjection = new Map<string, KnownIdentity[]>();
+    const byCsvFingerprint = new Map<string, KnownIdentity[]>();
     for (const row of nativeKnown) {
-      const keys = new Set([projection(row.raw, row.externalId), projection(csvRaw(row.raw))]);
-      for (const key of keys)
-        if (key !== null) {
-          const group = byProjection.get(key) ?? [];
-          group.push(row);
-          byProjection.set(key, group);
-        }
+      const key = projection(row.raw, row.externalId);
+      if (key !== null) {
+        const group = byProjection.get(key) ?? [];
+        group.push(row);
+        byProjection.set(key, group);
+      }
+      const fingerprint = csvFingerprint(row.raw);
+      if (fingerprint !== null) {
+        const group = byCsvFingerprint.get(fingerprint) ?? [];
+        group.push(row);
+        byCsvFingerprint.set(fingerprint, group);
+      }
     }
     for (const entry of incoming) {
       const key = projection(entry.raw);
-      const candidates = key === null ? [] : (byProjection.get(key) ?? []);
+      const fingerprint = csvFingerprint(entry.raw);
+      const candidates = [
+        ...new Map(
+          [
+            ...(key === null ? [] : (byProjection.get(key) ?? [])),
+            ...(fingerprint === null ? [] : (byCsvFingerprint.get(fingerprint) ?? [])),
+          ].map((row) => [row.id, row]),
+        ).values(),
+      ];
       if (candidates.length !== 1) failure();
       const row = candidates[0];
       if (!row || matched.has(row.id)) failure();

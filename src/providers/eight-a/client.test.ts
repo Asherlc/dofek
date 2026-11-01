@@ -210,4 +210,51 @@ describe("Vertical-Life direct client", () => {
       client.fetchLogbook({ ...tokens, expiresAt: new Date(0) }, async () => {}),
     ).rejects.toThrow(/invalid credential response/i);
   });
+  it("renews and persists each replacement during a logbook spanning multiple token lifetimes", async () => {
+    vi.useFakeTimers();
+    const start = new Date("2026-11-01T00:00:00Z");
+    vi.setSystemTime(start);
+    let renewals = 0;
+    const persist = vi.fn(async (_tokens: TokenSet) => {});
+    const client = new EightAClient(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/token")) {
+        renewals++;
+        return Response.json({ ...tokenReply, refresh_token: `refresh-${renewals}` });
+      }
+      if (url.pathname.includes("/profile/"))
+        return Response.json({ uuid: "owner-uuid", userSlug: "climber" });
+      const pageIndex = Number(url.searchParams.get("pageIndex"));
+      if (url.searchParams.get("category") === "bouldering" && pageIndex === 0) {
+        vi.setSystemTime(new Date(start.getTime() + 301_000));
+        return Response.json({ ascents: [row], pageIndex, totalItems: 1 });
+      }
+      expect(persist).toHaveBeenCalledTimes(2);
+      return Response.json({ ascents: [], pageIndex, totalItems: 0 });
+    });
+    try {
+      expect(
+        await client.fetchLogbook({ ...tokens, expiresAt: new Date(0) }, persist),
+      ).toHaveLength(1);
+      expect(renewals).toBe(2);
+      expect(persist.mock.calls.map((call) => call[0]?.refreshToken)).toEqual([
+        "refresh-1",
+        "refresh-2",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("bounds a rejected replacement token to one retry per read", async () => {
+    let renewals = 0;
+    const client = new EightAClient(async (input) => {
+      if (String(input).endsWith("/token")) {
+        renewals++;
+        return Response.json(tokenReply);
+      }
+      return new Response(null, { status: 401 });
+    });
+    await expect(client.fetchLogbook(tokens, async () => {})).rejects.toThrow(/Reconnect/);
+    expect(renewals).toBe(1);
+  });
 });

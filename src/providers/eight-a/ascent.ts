@@ -21,6 +21,8 @@ const sourceAscent = z
     duplicate: z.boolean(),
     tries: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
     comment: z.string().nullable().optional(),
+    rating: z.number().nullable().optional(),
+    recommended: z.boolean().nullable().optional(),
   })
   .passthrough();
 const pageSchema = z.object({
