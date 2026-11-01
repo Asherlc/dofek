@@ -3,11 +3,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, strengthSet } from "../../db/schema/activity.ts";
 import { climbingAttempt, climbingLogEntry } from "../../db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../db/schema/core.ts";
+import { userProfile } from "../../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
+import { createIntegrationMswFixture } from "../../test/early-msw-lifecycle.ts";
+import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
 import {
   climbingExportZip,
   crimpdSetHeader,
@@ -15,7 +20,199 @@ import {
   crimpdWorkoutHeader,
   crimpdWorkoutRow,
 } from "../climbing-file-test-helpers.ts";
-import { importCrimpdExportFile } from "./provider.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
+import { CrimpdProvider, importCrimpdExportFile } from "./provider.ts";
+
+const accountServer = createIntegrationMswFixture();
+
+describe("Crimpd automatic account sync", () => {
+  let context: TestContext;
+  let archive: Buffer;
+  let exportStatus: number;
+  let rejectOldAccess: boolean;
+  let expiredRefresh: boolean;
+  let refreshRequests: number;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    accountServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
+  });
+  beforeEach(async () => {
+    exportStatus = 200;
+    rejectOldAccess = false;
+    expiredRefresh = false;
+    refreshRequests = 0;
+    archive = await climbingExportZip({
+      "workouts.csv": `${crimpdWorkoutHeader}\n${crimpdWorkoutRow()}`,
+      "sets.csv": `${crimpdSetHeader}\n${crimpdSetRow({ ASCENT: "true" })}`,
+    });
+    await ensureProvider(context.db, "crimpd", "Crimpd", undefined, TEST_USER_ID);
+    await saveTokens(
+      context.db,
+      "crimpd",
+      {
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: new Date("2099-01-01"),
+        providerAccountId: "owner-1",
+        scopes: null,
+      },
+      TEST_USER_ID,
+    );
+    accountServer.use(
+      http.post("https://api.crimpd.com/auth/refresh", async ({ request }) => {
+        refreshRequests++;
+        expect(await request.json()).toEqual({ refreshToken: "old-refresh" });
+        return expiredRefresh
+          ? HttpResponse.json({ success: false }, { status: 401 })
+          : HttpResponse.json({
+              success: true,
+              user: { _id: "owner-1" },
+              token: "new-access",
+              refreshToken: "new-refresh",
+              expiresIn: 3600,
+              refreshExpiresIn: 7200,
+            });
+      }),
+      http.get("https://api.crimpd.com/analytics/export", async ({ request }) => {
+        expect(new URL(request.url).searchParams.get("format")).toBe("zip");
+        const bearer = request.headers.get("authorization");
+        expect(bearer).toMatch(/^Bearer (old|new)-access$/);
+        if (rejectOldAccess && bearer === "Bearer old-access")
+          return HttpResponse.json({ success: false }, { status: 401 });
+        if (bearer === "Bearer new-access") {
+          // A rotated refresh token must already be durable if this request fails.
+          expect(await loadTokens(context.db, "crimpd", TEST_USER_ID)).toMatchObject({
+            accessToken: "new-access",
+            refreshToken: "new-refresh",
+          });
+        }
+        return exportStatus === 200
+          ? new HttpResponse(new Uint8Array(archive).buffer, {
+              headers: { "content-type": "application/zip" },
+            })
+          : new HttpResponse(null, { status: exportStatus });
+      }),
+    );
+  });
+  afterEach(async () => {
+    accountServer.resetHandlers();
+    await context.db.delete(climbingLogEntry).where(eq(climbingLogEntry.providerId, "crimpd"));
+    await context.db.delete(activity).where(eq(activity.providerId, "crimpd"));
+  });
+  afterAll(async () => {
+    accountServer.deactivate();
+    await context.cleanup();
+  });
+
+  const sync = () =>
+    new CrimpdProvider().sync(
+      new SyncRun({ db: context.db, userId: TEST_USER_ID, window: SyncWindow.full() }),
+    );
+  const activities = () =>
+    context.db.select().from(activity).where(eq(activity.providerId, "crimpd"));
+
+  it("shares native workout identities and manual attachments with file imports", async () => {
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const [original] = await activities();
+    const [entry] = await context.db.select().from(climbingLogEntry);
+    if (!original || !entry) throw new Error("Expected imported workout and climb");
+    await context.db
+      .update(climbingLogEntry)
+      .set({ activityId: null })
+      .where(eq(climbingLogEntry.id, entry.id));
+    const directory = await mkdtemp(join(tmpdir(), "crimpd-sync-test-"));
+    try {
+      const filePath = join(directory, "export.zip");
+      await writeFile(filePath, archive);
+      await importCrimpdExportFile(context.db, filePath, TEST_USER_ID);
+    } finally {
+      await rm(directory, { recursive: true });
+    }
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await activities()).toHaveLength(1);
+    expect((await activities())[0]?.id).toBe(original.id);
+    expect(await context.db.select().from(climbingLogEntry)).toMatchObject([
+      { id: entry.id, activityId: null },
+    ]);
+    expect(await context.db.select().from(climbingAttempt)).toHaveLength(3);
+  });
+
+  it("refreshes expired credentials and persists rotation before exporting", async () => {
+    const saved = await loadTokens(context.db, "crimpd", TEST_USER_ID);
+    if (!saved) throw new Error("Expected account credentials");
+    await saveTokens(context.db, "crimpd", { ...saved, expiresAt: new Date(0) }, TEST_USER_ID);
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(refreshRequests).toBe(1);
+  });
+
+  it("renews an unexpectedly rejected access token once", async () => {
+    rejectOldAccess = true;
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(refreshRequests).toBe(1);
+  });
+
+  it("keeps rotated credentials when a later export fails without writing activities", async () => {
+    rejectOldAccess = true;
+    exportStatus = 503;
+    await expect(sync()).rejects.toMatchObject({
+      name: "ProviderServiceUnavailableError",
+      statusCode: 503,
+    });
+    expect(await loadTokens(context.db, "crimpd", TEST_USER_ID)).toMatchObject({
+      refreshToken: "new-refresh",
+    });
+    expect(await activities()).toEqual([]);
+  });
+
+  it("reports revoked refresh credentials without mutating imported history", async () => {
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const before = await activities();
+    rejectOldAccess = true;
+    expiredRefresh = true;
+    expect(await sync()).toMatchObject({
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: expect.stringMatching(/Reconnect/) })],
+    });
+    expect(await activities()).toEqual(before);
+    expect(refreshRequests).toBe(1);
+  });
+
+  it("preserves existing history when an export is empty", async () => {
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const before = await activities();
+    archive = await climbingExportZip({
+      "workouts.csv": crimpdWorkoutHeader,
+      "sets.csv": crimpdSetHeader,
+    });
+    expect(await sync()).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(await activities()).toEqual(before);
+  });
+
+  it("keeps identical upstream workout IDs isolated between Dofek users", async () => {
+    const otherUserId = randomUUID();
+    await context.db.insert(userProfile).values({ id: otherUserId, name: "Other climber" });
+    await ensureProvider(context.db, "crimpd", "Crimpd", undefined, otherUserId);
+    const credentials = await loadTokens(context.db, "crimpd", TEST_USER_ID);
+    if (!credentials) throw new Error("Expected account credentials");
+    await saveTokens(context.db, "crimpd", credentials, otherUserId);
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(
+      await new CrimpdProvider().sync(
+        new SyncRun({ db: context.db, userId: otherUserId, window: SyncWindow.full() }),
+      ),
+    ).toMatchObject({ recordsSynced: 1, errors: [] });
+    const rows = await activities();
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((row) => row.userId))).toEqual(new Set([TEST_USER_ID, otherUserId]));
+    expect(new Set(rows.map((row) => row.externalId)).size).toBe(1);
+    const climbs = await context.db.select().from(climbingLogEntry);
+    expect(climbs).toHaveLength(2);
+    expect(new Set(climbs.map((row) => row.userId))).toEqual(new Set([TEST_USER_ID, otherUserId]));
+    expect(await loadTokens(context.db, "crimpd", TEST_USER_ID)).toMatchObject(credentials);
+  });
+});
 
 describe("Crimpd ZIP import persistence", () => {
   let context: TestContext;

@@ -234,6 +234,7 @@ async function loadProviderConnections(
       if (
         [
           "kilter",
+          "crimpd",
           "tension",
           "grasshopper",
           "decoy",
