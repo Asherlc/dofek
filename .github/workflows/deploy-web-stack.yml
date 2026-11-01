@@ -117,15 +117,18 @@ jobs:
     outputs:
       commit_sha: ${{ steps.source.outputs.sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-      # resolve-deploy-image.ts requires this exact checkout to match the
+      # resolve-deploy-image.ts requires this exact source commit to match the
       # immutable image's SENTRY_RELEASE before the rollout can succeed.
       - name: Report validated source commit
         id: source
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            exit 1
+          fi
+          echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
 
   web-stack:
     name: Deploy Web Stack

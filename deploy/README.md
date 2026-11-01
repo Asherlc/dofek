@@ -353,8 +353,8 @@ publishing. GitHub documents reusable workflow
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
 The stack workflow reports that commit from a separate job after the rollout
-succeeds, using the same checkout that the image resolver requires to match
-the immutable image's `SENTRY_RELEASE`. This job does not load deployment
+succeeds, using the same full source SHA that the image resolver requires to
+match the immutable image's `SENTRY_RELEASE`. This job does not load deployment
 secrets: the deploy runner masks exported dotenv values, and GitHub suppresses
 job outputs matching those masks. Both mobile publishers reject an empty or
 malformed commit before checkout. For current runs, check the Report deployed
