@@ -249,19 +249,29 @@ describe("AuroraBoardClient", () => {
     expect(result.entries[0]?.attempts).toStrictEqual([{ scope: "climb", sourceCompleted: true }]);
   });
 
-  it.each([{ ascents: [] }, { bids: [] }])(
-    "requires evidence of each requested table (%j)",
-    async (tables) => {
-      await expect(
-        client(async () => Response.json({ ...tables, _complete: true })).fetchLogbook(
-          tokens,
-          vi.fn(),
-        ),
-      ).rejects.toThrow(/omitted/);
+  it.each([
+    {},
+    { ascents: [] },
+    { bids: [] },
+    {
+      attempts: [{ id: 2, position: 2, name: "Redpoint" }],
+      shared_syncs: [{ table_name: "attempts", last_synchronized_at: "2026-10-02" }],
     },
-  );
+  ])("accepts a completed empty logbook (%j)", async (tables) => {
+    const instance = new AuroraBoardClient(
+      "touchstone",
+      "Touchstone Board",
+      "https://touchstoneboardapp.com",
+      async () => Response.json({ ...tables, _complete: true }),
+    );
+    await expect(instance.fetchLogbook(tokens, vi.fn())).resolves.toEqual({
+      entries: [],
+      absentExternalIds: [],
+      authoritative: false,
+    });
+  });
 
-  it("accepts table evidence from shared cursors and ignores unrelated tables", async () => {
+  it("accepts shared cursors for logbook tables and ignores unrelated tables", async () => {
     const result = await client(async () =>
       Response.json({
         _complete: true,
@@ -400,7 +410,6 @@ describe("AuroraBoardClient", () => {
 
   it.each([
     { ascents: [], bids: [] },
-    { _complete: true },
     { ascents: {}, bids: [], _complete: true },
     { ascents: [], bids: [], _complete: false },
     { ascents: [{ ...ascent, user_id: 99 }], bids: [], _complete: true },

@@ -107,7 +107,6 @@ export class AuroraBoardClient implements ClimbingBoardClient {
       throw this.#reconnect();
     const owner = Number(tokens.providerAccountId);
     const cursors = new Map(["ascents", "bids", "attempts"].map((table) => [table, epoch]));
-    const seen = new Set<string>();
     const records = new Map<
       string,
       { kind: "ascent" | "bid"; raw: z.infer<typeof jsonSchema>; absent: boolean }
@@ -128,7 +127,6 @@ export class AuroraBoardClient implements ClimbingBoardClient {
         throw new Error(`${this.#name} logbook request failed (HTTP ${response.status}).`);
       const page = pageSchema.parse(await response.json());
       for (const table of ["ascents", "bids"] as const) {
-        if (page[table] !== undefined) seen.add(table);
         for (const raw of page[table] ?? []) {
           const identity = ownerSchema.parse(raw);
           if (identity.user_id !== owner)
@@ -150,17 +148,12 @@ export class AuroraBoardClient implements ClimbingBoardClient {
         if (!cursors.has(cursor.table_name)) continue;
         if (cursor.user_id !== undefined && cursor.user_id !== owner)
           throw new Error(`${this.#name} returned a cursor for another account.`);
-        seen.add(cursor.table_name);
         if (cursor.last_synchronized_at > (cursors.get(cursor.table_name) ?? epoch)) {
           cursors.set(cursor.table_name, cursor.last_synchronized_at);
           advanced = true;
         }
       }
       if (page._complete) {
-        if (!seen.has("ascents") || !seen.has("bids"))
-          throw new Error(
-            `${this.#name} omitted its requested logbook tables; no data was imported.`,
-          );
         const entries: SourceClimbingLogEntry[] = [];
         const absentExternalIds: string[] = [];
         for (const [externalId, record] of records) {
