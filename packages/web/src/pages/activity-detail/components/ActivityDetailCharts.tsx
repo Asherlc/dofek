@@ -13,7 +13,15 @@ import {
   climbingChartPositions,
 } from "@dofek/training/climbing-chart";
 import { cadenceAxisLabel } from "@dofek/training/training";
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
@@ -119,12 +127,16 @@ export function MetricsChart({
   error,
   climbAnnotations = [],
   highlightedClimbId,
+  selectedClimbId,
+  onSelectClimb,
 }: {
   points: StreamPoint[];
   activityWindow?: ActivityChartWindow;
   heartRateContext?: ActivityHeartRateContext;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
   highlightedClimbId?: string | null;
+  selectedClimbId?: string | null;
+  onSelectClimb?: (entryId: string) => void;
   activityType: string;
   hasHr: boolean;
   hasPower: boolean;
@@ -148,12 +160,34 @@ export function MetricsChart({
 }) {
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
   const zoomRef = useRef({ start: 0, end: 100 });
+  const [, renderSelectionZoom] = useReducer((revision: number) => revision + 1, 0);
   const handleZoom = useCallback((params: Record<string, unknown>) => {
     const range = Array.isArray(params.batch) ? params.batch[0] : params;
     if (typeof range?.start === "number" && typeof range?.end === "number") {
       zoomRef.current = { start: range.start, end: range.end };
     }
   }, []);
+  const timeline = activityChartSeries(
+    heartRateContext?.points ??
+      points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+    heartRateContext?.window ?? activityWindow,
+  );
+  const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
+  const selectedPosition = climbs.find(({ annotation }) => annotation.id === selectedClimbId);
+  const selectedStart = selectedPosition?.startPosition;
+  const selectedEnd = selectedPosition?.endPosition;
+  useEffect(() => {
+    if (selectedClimbId == null || selectedStart === undefined || selectedEnd === undefined) return;
+    const previous = zoomRef.current;
+    const start = selectedStart * 100;
+    const end = selectedEnd * 100;
+    if (start >= previous.start && end <= previous.end) return;
+    zoomRef.current = {
+      start: Math.min(previous.start, Math.max(0, start - 2)),
+      end: Math.max(previous.end, Math.min(100, end + 2)),
+    };
+    renderSelectionZoom();
+  }, [selectedClimbId, selectedStart, selectedEnd]);
   const toggleMetric = useCallback((name: string) => {
     setLegendSelected((previous) => ({ ...previous, [name]: previous[name] === false }));
   }, []);
@@ -176,8 +210,20 @@ export function MetricsChart({
       ...(buildAxisPointerEvents(points, onHoverPosition) ?? {}),
       legendselectchanged: handleLegendChange,
       datazoom: handleZoom,
+      click: (params: Record<string, unknown>) => {
+        if (params.componentType !== "markLine" && params.componentType !== "markArea") return;
+        const data = params.data;
+        if (
+          data &&
+          typeof data === "object" &&
+          "climbId" in data &&
+          typeof data.climbId === "string"
+        ) {
+          onSelectClimb?.(data.climbId);
+        }
+      },
     }),
-    [points, onHoverPosition, handleLegendChange, handleZoom],
+    [points, onHoverPosition, handleLegendChange, handleZoom, onSelectClimb],
   );
 
   if (loading && metricSources.length === 0) return <ChartLoadingSkeleton height={300} />;
@@ -267,12 +313,6 @@ export function MetricsChart({
 
   const isVisible = (name: string) => legendSelected[name] !== false;
 
-  const timeline = activityChartSeries(
-    heartRateContext?.points ??
-      points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
-    heartRateContext?.window ?? activityWindow,
-  );
-  const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
   const climbTooltip = (annotation: ClimbingChartAnnotation) => ({
     formatter: () =>
       `${escapeTooltipHtml(annotation.label)}<br/>${escapeTooltipHtml(formatDateTime(new Date(annotation.startedAt)))}${annotation.endedAt ? ` – ${escapeTooltipHtml(formatDateTime(new Date(annotation.endedAt)))}` : ""}`,
@@ -300,6 +340,7 @@ export function MetricsChart({
   });
 
   const series = metrics.map((metric, index) => ({
+    id: metric.name,
     name: metric.name,
     type: "line" as const,
     yAxisIndex: index,
@@ -325,6 +366,7 @@ export function MetricsChart({
     ...(metric.name === "Heart Rate" && climbs.length > 0
       ? {
           markLine: {
+            animation: false,
             tooltip: { trigger: "item" },
             symbol: "none",
             lineStyle: { color: "#a78bfa", width: 1.5, type: "dashed" },
@@ -332,6 +374,8 @@ export function MetricsChart({
             data: climbs
               .filter(({ annotation }) => annotation.endedAt === null)
               .map(({ annotation }) => ({
+                id: annotation.id,
+                climbId: annotation.id,
                 name: annotation.label,
                 xAxis: Date.parse(annotation.startedAt),
                 tooltip: climbTooltip(annotation),
@@ -348,6 +392,7 @@ export function MetricsChart({
               })),
           },
           markArea: {
+            animation: false,
             tooltip: { trigger: "item" },
             itemStyle: { color: "rgba(167,139,250,0.16)" },
             label: { show: false },
@@ -355,6 +400,8 @@ export function MetricsChart({
               .filter(({ annotation }) => annotation.endedAt !== null)
               .map(({ annotation, startPosition, endPosition }) => [
                 {
+                  id: annotation.id,
+                  climbId: annotation.id,
                   name: annotation.label,
                   xAxis:
                     timeline.startedAt + startPosition * (timeline.endedAt - timeline.startedAt),
@@ -467,7 +514,14 @@ export function MetricsChart({
         error ? null : points.length === 0 && !heartRateContext?.points.length ? (
         <p className="py-6 text-sm text-muted">No samples for the selected sources.</p>
       ) : (
-        <DofekChart option={option} height={380} onEvents={chartEvents} timeRangeMode="data" />
+        <DofekChart
+          option={option}
+          height={380}
+          onEvents={chartEvents}
+          timeRangeMode="data"
+          notMerge={false}
+          replaceMerge={["series"]}
+        />
       )}
       {hasHr && isVisible("Heart Rate") && climbs.length > 0 && (
         <details className="mt-2 text-xs text-muted">
@@ -475,8 +529,15 @@ export function MetricsChart({
           <ul className="mt-2 space-y-1">
             {climbs.map(({ annotation }) => (
               <li key={annotation.id}>
-                {annotation.label} · {formatDateTime(new Date(annotation.startedAt))}
-                {annotation.endedAt && ` – ${formatDateTime(new Date(annotation.endedAt))}`}
+                <button
+                  type="button"
+                  onClick={() => onSelectClimb?.(annotation.id)}
+                  aria-pressed={annotation.id === selectedClimbId}
+                  className="text-left text-accent"
+                >
+                  {annotation.label} · {formatDateTime(new Date(annotation.startedAt))}
+                  {annotation.endedAt && ` – ${formatDateTime(new Date(annotation.endedAt))}`}
+                </button>
               </li>
             ))}
           </ul>

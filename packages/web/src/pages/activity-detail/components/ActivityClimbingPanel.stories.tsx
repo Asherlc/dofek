@@ -97,6 +97,7 @@ export const NoLocations: Story = { args: { locations: {} } };
 export const WithHeartRateChart: Story = {
   render: function Render(args) {
     const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
+    const [selectedClimbId, setSelectedClimbId] = useState<string | null>(null);
     return (
       <div className="space-y-6">
         <MetricsChart
@@ -117,7 +118,9 @@ export const WithHeartRateChart: Story = {
           hasCadence={false}
           loading={false}
           units={new UnitConverter("metric")}
-          highlightedClimbId={highlightedClimbId}
+          highlightedClimbId={highlightedClimbId ?? selectedClimbId}
+          selectedClimbId={selectedClimbId}
+          onSelectClimb={setSelectedClimbId}
           climbAnnotations={args.entries
             .filter((_, index) => index !== 2)
             .map((entry, index) => ({
@@ -127,7 +130,12 @@ export const WithHeartRateChart: Story = {
               endedAt: index === 1 ? "2026-10-18T17:32:40Z" : null,
             }))}
         />
-        <ActivityClimbingPanel {...args} onHighlightEntry={setHighlightedClimbId} />
+        <ActivityClimbingPanel
+          {...args}
+          selectedEntryId={selectedClimbId}
+          onSelectEntry={setSelectedClimbId}
+          onHighlightEntry={setHighlightedClimbId}
+        />
       </div>
     );
   },

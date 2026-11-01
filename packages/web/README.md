@@ -69,8 +69,13 @@ collections retain the responsive [breakdown](src/pages/activity-detail/componen
 Hovering or keyboard focusing a climb also emphasizes its existing HR chart
 line or time range, preserving the current zoom. The
 [metrics chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
-matches the server-supplied annotation ID; climbs without recorded timing do
-not acquire an inferred position.
+matches the server-supplied annotation ID. Selecting a chart line, time range,
+or exact-value climb selects that occurrence in the list and scrolls only the
+list to reveal it. Selections expand the chart's zoom only when the selected
+climb is outside the visible window. The chart merges updates and disables marker
+animation to retain existing elements, following the ECharts
+[data update guidance](https://echarts.apache.org/handbook/en/how-to/animation/transition/).
+Climbs without recorded timing do not acquire an inferred position.
 The provider data viewer's
 [record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
 published and reported grade collections, known attempt facts, and notes.

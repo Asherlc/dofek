@@ -117,7 +117,9 @@ Selecting a climb also emphasizes its recorded HR chart line or time range.
 The [activity route](<app/activity/[id].tsx>) shares the active annotation ID
 with the [HR chart](components/activity/ActivityDetailCharts.tsx), so subsequent
 scrubbing and accessible chart selections can replace it. Climbs without
-recorded timing retain no chart position.
+recorded timing retain no chart position. Chart selections also select the
+matching list occurrence and reveal it in the bounded climb list using measured
+row positions and React Native's [ScrollView.scrollTo](https://reactnative.dev/docs/scrollview#scrollto).
 
 Coincident coordinates show a counted marker and remain selectable in the grouped list, preserving
 both source coordinates and log identities through the
