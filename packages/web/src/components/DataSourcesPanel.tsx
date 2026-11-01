@@ -486,7 +486,9 @@ export function DataSourcesPanel() {
               ))
             : providerGroups.map((group) =>
                 group.kind === "provider" ? (
-                  <div key={group.provider.id}>{renderProviderEntry(group.provider)}</div>
+                  <div key={group.provider.id} className="grid">
+                    {renderProviderEntry(group.provider)}
+                  </div>
                 ) : (
                   <ProviderFamilyCard
                     key={group.family.id}
