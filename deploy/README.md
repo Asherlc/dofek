@@ -357,9 +357,10 @@ succeeds, using the same checkout that the image resolver requires to match
 the immutable image's `SENTRY_RELEASE`. This job does not load deployment
 secrets: the deploy runner masks exported dotenv values, and GitHub suppresses
 job outputs matching those masks. Both mobile publishers reject an empty or
-malformed commit before checkout. When diagnosing a missing mobile release,
-check the deploy job's final output evaluation for `Skip output 'commit_sha'
-since it may contain secret`; see GitHub's
+malformed commit before checkout. For current runs, check the Report deployed
+source commit job and its output evaluation. Runs before this fix may instead
+show `Skip output 'commit_sha' since it may contain secret` in the deploy job;
+see GitHub's
 [masking semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log).
 
 After rollout, OTA publication performs one
