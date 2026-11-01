@@ -82,7 +82,7 @@ jobs:
           {
             echo "## Triggered Deploys"
             echo ""
-            echo "- [Deploy server + matching mobile releases](${REPO_URL}/actions/workflows/deploy-web.yml)"
+            echo "- [Deploy server + matching mobile releases after successful CI](${REPO_URL}/actions/workflows/deploy-web.yml)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Docker image (main push always publishes deploy image; others gated on changes) ──────
