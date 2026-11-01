@@ -50,7 +50,7 @@ the exact section.
 | [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
 | [exercise-metadata.md](exercise-metadata.md) | Strength exercise metadata source, override format, and upstream refresh workflow. |
 | [chart-range-framework.md](chart-range-framework.md) | Backend framework for selected chart ranges, endpoint defaults, and All-history semantics. |
-| [data-exploration.md](data-exploration.md) | Research-backed chart choices, filter scope, comparisons, missingness and climbing navigation. |
+| [data-exploration.md](data-exploration.md) | Research-backed chart choices, filter scope, comparisons, missing data and climbing navigation. |
 | [daily-heart-rate.md](daily-heart-rate.md) | Daily Heart Rate navigation and local calendar-day semantics across web and mobile. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
 | [file-upload-architecture.md](file-upload-architecture.md) | Durable browser import uploads, R2 object verification, transactional outbox delivery, and recovery. |
@@ -67,6 +67,7 @@ the exact section.
 | Provider | Doc | Focus |
 |----------|-----|-------|
 | Climbing boards and exports | [climbing-providers.md](climbing-providers.md) | Kilter/Aurora accounts, Crimpd/8a.nu/historical MoonBoard files, field limits, and remaining vendor access. |
+| Climbing logbook APIs | [climbing-logbook-api-research.md](climbing-logbook-api-research.md) | Authenticated Crimpd checks, Vertical-Life access requirements, and current MoonBoard API/device/export evidence. |
 | Amazfit/Zepp | [src/providers/README.md](../src/providers/README.md#amazfitzepp) | Current US2 credential flow, API hosts, and account limitations. |
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
