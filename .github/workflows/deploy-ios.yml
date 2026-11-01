@@ -110,6 +110,7 @@ jobs:
             exit 1
           fi
       - name: Generate native project
+        # Install pods once, in the explicit step below.
         working-directory: packages/mobile
         run: pnpm expo prebuild --clean --platform ios --no-install
       - name: Install CocoaPods dependencies
@@ -137,6 +138,9 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+      - uses: ./.github/actions/setup-ccache
+        with:
+          cache-key-prefix: ccache-ios
       - name: Archive (Release, signed)
         env:
           SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
@@ -159,6 +163,9 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
+            C_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CXX_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
             2>&1 | tail -40
       - name: Package signed archive
         run: tar -cf "$RUNNER_TEMP/testflight-signed-archive.tar" -C "$RUNNER_TEMP" Dofek.xcarchive
@@ -171,6 +178,9 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true

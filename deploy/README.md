@@ -383,7 +383,9 @@ Signed iOS builds and uploads run in separate macOS jobs, each with a 30-minute
 limit. The archive job packages the signed `.xcarchive` in a tar file to preserve
 bundle permissions and symlinks, and retains it for seven days. The upload job
 downloads that exact artifact by ID, including on an upload-only rerun, and
-exports/uploads it without rebuilding. GitHub documents
+exports/uploads it without rebuilding. After artifact expiry, rerun the archive
+job and its dependent jobs to create a fresh build; an upload-only rerun cannot
+recover an expired archive. GitHub documents
 [passing artifacts between jobs](https://docs.github.com/en/actions/tutorials/store-and-share-data#passing-data-between-jobs-in-a-workflow)
 and preserving file permissions with a
 [tar archive](https://github.com/actions/upload-artifact#permission-loss).
