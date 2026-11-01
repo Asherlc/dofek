@@ -82,8 +82,7 @@ jobs:
           {
             echo "## Triggered Deploys"
             echo ""
-            echo "- [Deploy server](${REPO_URL}/actions/workflows/deploy-web.yml)"
-            echo "- Mobile releases require a manual [Deploy dispatch](${REPO_URL}/actions/workflows/deploy.yml) with target ios, ota, or all."
+            echo "- [Deploy server + matching mobile releases](${REPO_URL}/actions/workflows/deploy-web.yml)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Docker image (main push always publishes deploy image; others gated on changes) ──────
