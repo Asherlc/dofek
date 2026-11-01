@@ -36,6 +36,14 @@ jobs:
     outputs:
       should_deploy: ${{ steps.detect.outputs.should_deploy }}
     steps:
+      - name: Validate deployed source commit
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

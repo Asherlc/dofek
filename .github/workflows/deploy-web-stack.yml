@@ -5,7 +5,7 @@ on:
     outputs:
       commit_sha:
         description: "Source commit verified against the deployed immutable image"
-        value: ${{ jobs.web-stack.outputs.commit_sha }}
+        value: ${{ jobs.release.outputs.commit_sha }}
     inputs:
       commit_sha:
         description: "Commit SHA to deploy (used to compute image tag if image_tag not provided)"
@@ -106,11 +106,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The deploy job masks exported dotenv values. Keep public release metadata
+  # in a separate runner so those masks cannot suppress its job output.
+  release:
+    name: Report deployed source commit
+    needs: [web-stack]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      # resolve-deploy-image.ts requires this exact source commit to match the
+      # immutable image's SENTRY_RELEASE before the rollout can succeed.
+      - name: Report validated source commit
+        id: source
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            exit 1
+          fi
+          echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
   web-stack:
     name: Deploy Web Stack
     runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ steps.pull_images.outputs.sentry_release }}
     permissions:
       contents: read
       actions: read
