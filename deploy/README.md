@@ -332,18 +332,20 @@ of a completed deployment: tasks can restart and service specifications can
 change independently. Correlate the live revision and digest with the parent
 run's selected release and server stack job. Report the server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
-and the overall run conclusion. `Deploy Web` contains only server deployment;
-mobile releases use the separate [Deploy workflow](../.github/workflows/deploy.yml).
+and the overall run conclusion. Automatic `Deploy Web` runs also publish matching
+mobile releases after the server succeeds; manual mobile releases use the
+separate [Deploy workflow](../.github/workflows/deploy.yml).
 See the [web deployment jobs](../.github/workflows/deploy-web.yml)
 and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Automatic and manually dispatched `Deploy Web` runs deploy only the server;
-they do not publish mobile OTA updates or signed iOS builds. Mobile releases
-require an explicit dispatch of the [Deploy workflow](../.github/workflows/deploy.yml)
-with target `ota`, `ios`, or `all`. That workflow completes the matching server
-rollout before publishing and passes the server image's validated
+Automatic `Deploy Web` runs publish mobile OTA updates and check whether a signed
+iOS build is needed after a successful server rollout. Manually dispatched
+`Deploy Web` runs deploy only the server. Explicit mobile releases remain available
+through the [Deploy workflow](../.github/workflows/deploy.yml) with target `ota`,
+`ios`, or `all`. Both release paths complete the matching server
+rollout before publishing and pass the server image's validated
 `SENTRY_RELEASE` commit to the selected reusable mobile publishers. Each publisher
 checks out that exact commit. A failed or cancelled server rollout prevents
 publishing. GitHub documents reusable workflow
