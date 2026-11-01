@@ -126,7 +126,19 @@ const sourceLogSchema = climbingLogEntrySchema
     externalId: climbingLogEntrySchema.shape.externalId.unwrap(),
     climb: sourceClimbWithPitchesSchema.nullable().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
-    attempts: z.array(sourceAttemptSchema).nonempty().readonly(),
+    attempts: z.array(sourceAttemptSchema).readonly(),
+  })
+  .superRefine((entry, context) => {
+    for (const [index, count] of (entry.reportedAttemptCounts ?? []).entries()) {
+      if (count.count <= 1000) continue;
+      const name = entry.climb?.name ?? entry.title;
+      const label = name ? `${name} [${entry.externalId}]` : entry.externalId;
+      context.addIssue({
+        code: "custom",
+        message: `Source count for ${label} exceeds 1,000 attempts. Review this entry in the source logbook before syncing again.`,
+        path: ["reportedAttemptCounts", index, "count"],
+      });
+    }
   });
 const sourceInputSchema = z.strictObject({
   userId: z.guid(),

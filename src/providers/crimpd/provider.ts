@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { and, eq } from "drizzle-orm";
 import { persistClimbingLogEntries } from "../../db/climbing-log-sync.ts";
@@ -6,17 +9,94 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { strengthSet } from "../../db/schema/activity.ts";
 import { climbingLogEntry } from "../../db/schema/climbing.ts";
-import { ensureProvider } from "../../db/tokens.ts";
-import type { ImportProvider, SyncResult } from "../types.ts";
+import { withSyncLog } from "../../db/sync-log.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
+import { captureException } from "../../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { findProviderTransportError } from "../../lib/provider-transport-error.ts";
+import { ProviderAuthError } from "../auth-errors.ts";
+import type { ProviderAuthSetup, SyncProvider, SyncResult, SyncRun } from "../types.ts";
 import { readCrimpdArchive } from "./archive.ts";
+import { CrimpdClient } from "./client.ts";
 import { parseCrimpdExport } from "./parser.ts";
 
-export class CrimpdProvider implements ImportProvider {
+export class CrimpdProvider implements SyncProvider {
   readonly id = "crimpd";
   readonly name = "Crimpd";
-  readonly importOnly = true as const;
+  readonly #client: CrimpdClient;
+
+  constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.#client = new CrimpdClient(createProviderRateLimitFetch(this.id, fetchFn));
+  }
+
   validate(): string | null {
     return null;
+  }
+
+  authSetup(): ProviderAuthSetup {
+    return {
+      apiBaseUrl: "https://api.crimpd.com",
+      automatedLogin: (username, password) => this.#client.login(username, password),
+    };
+  }
+
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const startedAt = Date.now();
+    const result: SyncResult = { provider: this.id, recordsSynced: 0, errors: [], duration: 0 };
+    try {
+      const userId = run.options.userId;
+      if (!userId) throw new Error("Crimpd sync requires a user context.");
+      await ensureProvider(run.db, this.id, this.name, "https://api.crimpd.com", userId);
+      const stored = await loadTokens(run.db, this.id, userId);
+      if (!stored)
+        throw new ProviderAuthError(
+          "authentication_failed",
+          "Crimpd is not connected. Connect Crimpd in Settings → Data Sources.",
+        );
+      let tokens = stored;
+      let refreshed = false;
+      const renew = async () => {
+        tokens = await this.#client.refresh(tokens);
+        await saveTokens(run.db, this.id, tokens, userId);
+        refreshed = true;
+      };
+      result.recordsSynced = await withSyncLog(
+        run.db,
+        this.id,
+        "activity",
+        async () => {
+          if (tokens.expiresAt.getTime() <= Date.now()) await renew();
+          run.options.signal?.throwIfAborted();
+          const directory = await mkdtemp(join(tmpdir(), "dofek-crimpd-"));
+          try {
+            const filePath = join(directory, "logbook.zip");
+            try {
+              await this.#client.downloadExport(tokens, filePath, run.options.signal);
+            } catch (error) {
+              if (!(error instanceof ProviderAuthError) || refreshed) throw error;
+              await renew();
+              await this.#client.downloadExport(tokens, filePath, run.options.signal);
+            }
+            run.options.signal?.throwIfAborted();
+            const imported = await importCrimpdExportFile(run.db, filePath, userId);
+            return { recordCount: imported.recordsSynced, result: imported.recordsSynced };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        },
+        userId,
+      );
+    } catch (error) {
+      run.options.signal?.throwIfAborted();
+      captureException(error, { tags: { provider: this.id, phase: "activity" } });
+      if (findProviderTransportError(error)) throw error;
+      result.errors.push({
+        message: error instanceof Error ? error.message : String(error),
+        cause: error,
+      });
+    }
+    result.duration = Date.now() - startedAt;
+    return result;
   }
 }
 
@@ -29,7 +109,7 @@ export async function importCrimpdExportFile(
   const archive = await readCrimpdArchive(filePath);
   const workouts = parseCrimpdExport(archive.workoutsCsv, archive.setsCsv);
   const recordsSynced = await db.transaction(async (tx) => {
-    await ensureProvider(tx, "crimpd", "Crimpd", undefined, userId);
+    await ensureProvider(tx, "crimpd", "Crimpd", "https://api.crimpd.com", userId);
     let imported = 0;
     for (const workout of workouts) {
       const type =

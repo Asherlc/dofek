@@ -53,6 +53,8 @@ function frequentProvider(concurrency = 3, limiter?: RateLimiterConfig): Provide
  */
 const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map([
   ["kilter", { concurrency: 1, syncTier: "daily" }],
+  ["crimpd", { concurrency: 1, syncTier: "daily" }],
+  ["eight-a", { concurrency: 1, syncTier: "daily" }],
   ["tension", { concurrency: 1, syncTier: "daily" }],
   ["grasshopper", { concurrency: 1, syncTier: "daily" }],
   ["decoy", { concurrency: 1, syncTier: "daily" }],

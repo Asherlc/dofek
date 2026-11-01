@@ -982,6 +982,36 @@ describe("DataSourcesPanel", () => {
   });
 
   it.each([
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+  ])("starts account sync for connected %s", async (id, name) => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id,
+          name,
+          authorized: true,
+          authType: "credential",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockSyncMutateAsync.mockResolvedValue({ providerResults: [] });
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
+        providerId: id,
+        sinceDays: ROUTINE_SYNC_DAYS,
+      });
+    });
+  });
+
+  it.each([
     ["crimpd", "Crimpd", ".zip logbook export from Crimpd", ".zip"],
     ["eight-a", "8a.nu / Vertical-Life", ".csv logbook export from 8a.nu", ".csv"],
     ["moonboard", "MoonBoard", ".csv logbook export from BoardLib", ".csv"],

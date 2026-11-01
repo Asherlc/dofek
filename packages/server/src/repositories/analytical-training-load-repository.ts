@@ -615,9 +615,9 @@ export class AnalyticalTrainingLoadRepository {
             FROM fitness.v_activity AS activity
             LEFT JOIN LATERAL (
               SELECT
-                SUM(entry.recorded_climb_attempt_count)::int AS attempts,
+                SUM(NULLIF(entry.recorded_climb_attempt_count, 0))::int AS attempts,
                 COUNT(*)::int AS entries,
-                COUNT(entry.recorded_climb_attempt_count)::int AS entries_with_attempts
+                COUNT(*) FILTER (WHERE entry.recorded_climb_attempt_count > 0)::int AS entries_with_attempts
               FROM fitness.v_climbing_log_entry AS entry
               WHERE entry.activity_id = ANY(activity.member_activity_ids)
                 AND entry.user_id = activity.user_id AND entry.provider_absent_at IS NULL

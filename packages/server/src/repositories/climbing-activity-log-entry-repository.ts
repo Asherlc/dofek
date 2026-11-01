@@ -404,7 +404,10 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
           rockResultLabels: resultLabels(row, attempt),
         })),
         // Mountain Project ticks retain result facts, but do not record attempt counts.
-        recordedClimbAttemptCount: row.log.providerId === "mountain-project" ? null : whole.length,
+        recordedClimbAttemptCount:
+          row.log.providerId === "mountain-project" || row.attempts.length === 0
+            ? null
+            : whole.length,
         recordedPitchAttemptCount: row.attempts.length - whole.length,
         recordedClimbOutcome: recordedOutcome(whole),
         freeSend: row.freeSend,
