@@ -400,6 +400,7 @@ export function DataSourcesPanel() {
     unifiedProviders.map((entry) => ({
       ...entry,
       id: entry.kind === "import" ? entry.id : entry.provider.id,
+      label: entry.kind === "import" ? entry.config.title : entry.provider.name,
     })),
   );
 
@@ -485,7 +486,9 @@ export function DataSourcesPanel() {
               ))
             : providerGroups.map((group) =>
                 group.kind === "provider" ? (
-                  <div key={group.provider.id}>{renderProviderEntry(group.provider)}</div>
+                  <div key={group.provider.id} className="grid">
+                    {renderProviderEntry(group.provider)}
+                  </div>
                 ) : (
                   <ProviderFamilyCard
                     key={group.family.id}

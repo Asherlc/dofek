@@ -159,11 +159,12 @@ function hasAtLeastTwo<T>(entries: readonly T[]): entries is readonly [T, T, ...
 }
 
 /**
- * Groups only the provider IDs explicitly assigned to the same family.
+ * Groups only the provider IDs explicitly assigned to the same family,
+ * then orders the cards alphabetically by their displayed labels.
  * A family with one available connection method remains a regular provider
  * entry, so the clients do not show a meaningless method chooser.
  */
-export function groupProviderEntries<T extends { id: string }>(
+export function groupProviderEntries<T extends { id: string; label?: string }>(
   providers: readonly T[],
 ): ProviderEntryGroup<T>[] {
   const membersByFamily = new Map<string, T[]>();
@@ -192,5 +193,11 @@ export function groupProviderEntries<T extends { id: string }>(
       providers: members,
     });
   }
-  return groups;
+  const label = (group: ProviderEntryGroup<T>) =>
+    group.kind === "family"
+      ? group.family.label
+      : (group.provider.label ??
+        providerCatalogEntry(group.provider.id)?.label ??
+        group.provider.id);
+  return groups.sort((a, b) => label(a).localeCompare(label(b), "en", { sensitivity: "base" }));
 }

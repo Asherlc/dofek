@@ -736,9 +736,58 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
-  const providerGroups = groupProviderEntries(visibleProviderList);
+  const providerGroups = groupProviderEntries([appleHealthProvider, ...visibleProviderList]);
 
   const renderProviderCard = (provider: Provider) => {
+    if (provider.id === "apple_health") {
+      return (
+        <>
+          <View>
+            <FileImportProviderCard
+              provider={{
+                ...appleHealthProvider,
+              }}
+              stats={statsMap.apple_health}
+              syncing={healthKitSyncing}
+              importing={appleHealthImportProgress !== undefined}
+              syncProgress={
+                appleHealthImportProgress ??
+                (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
+              }
+              onSync={() => handleHealthKitSync()}
+              onConnect={handleHealthKitConnect}
+              onImportProvider={handleFileImportProvider}
+              onPress={() => router.push("/providers/apple_health")}
+            />
+            {appleHealthHistoryError ? (
+              <QueryStatePanel
+                variant="error"
+                title="Could not load Apple Health sync history"
+                message={getQueryErrorMessage(
+                  appleHealthLogsQuery.error,
+                  "Failed to load Apple Health sync history.",
+                )}
+                minHeight={72}
+              />
+            ) : null}
+          </View>
+          {appleHealth.model.shouldShowPermissionBanner() && (
+            <TouchableOpacity
+              style={styles.permissionBanner}
+              onPress={handleHealthKitConnect}
+              disabled={healthKitSyncing}
+              accessibilityRole="button"
+              accessibilityLabel="Review Apple Health permissions"
+              accessibilityState={{ busy: healthKitSyncing, disabled: healthKitSyncing }}
+            >
+              <Text style={styles.permissionBannerText}>
+                Apple Health permissions need updating — tap to review
+              </Text>
+            </TouchableOpacity>
+          )}
+        </>
+      );
+    }
     const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
     const activeImport = activeImportByProvider.get(provider.id);
     const activeImportProgress = activeImport
@@ -857,49 +906,6 @@ export default function ProvidersScreen() {
           minHeight={96}
         />
       ) : null}
-      <View>
-        <FileImportProviderCard
-          provider={{
-            ...appleHealthProvider,
-          }}
-          stats={statsMap.apple_health}
-          syncing={healthKitSyncing}
-          importing={appleHealthImportProgress !== undefined}
-          syncProgress={
-            appleHealthImportProgress ??
-            (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
-          }
-          onSync={() => handleHealthKitSync()}
-          onConnect={handleHealthKitConnect}
-          onImportProvider={handleFileImportProvider}
-          onPress={() => router.push("/providers/apple_health")}
-        />
-        {appleHealthHistoryError ? (
-          <QueryStatePanel
-            variant="error"
-            title="Could not load Apple Health sync history"
-            message={getQueryErrorMessage(
-              appleHealthLogsQuery.error,
-              "Failed to load Apple Health sync history.",
-            )}
-            minHeight={72}
-          />
-        ) : null}
-      </View>
-      {appleHealth.model.shouldShowPermissionBanner() && (
-        <TouchableOpacity
-          style={styles.permissionBanner}
-          onPress={handleHealthKitConnect}
-          disabled={healthKitSyncing}
-          accessibilityRole="button"
-          accessibilityLabel="Review Apple Health permissions"
-          accessibilityState={{ busy: healthKitSyncing, disabled: healthKitSyncing }}
-        >
-          <Text style={styles.permissionBannerText}>
-            Apple Health permissions need updating — tap to review
-          </Text>
-        </TouchableOpacity>
-      )}
       {providers.error ? (
         <View style={styles.card}>
           <QueryStatePanel
