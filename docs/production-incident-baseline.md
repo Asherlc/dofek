@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-11-01 — Climbing activity card displays a cardio icon
+
+- **Symptoms / impact:** [Activity 2590bf35](https://dofek.fit/activity/2590bf35-bfea-4b57-ac9c-5c9ad96ff617) displays the lightning/cardio icon beside its Kaya climbing title.
+- **Evidence / root cause:** Read-only production queries found four grouped source records: Peloton `cardio`, and Apple Health, Kaya, and WHOOP `climbing`. Postgres `fitness.v_activity` returns `canonical_type = climbing`; ClickHouse `analytics.deduped_activities FINAL` returns `canonical_type = cardio`, `provider_id = peloton`, and representative `23a84fea-8873-4a90-b195-139bb29feecf` (refreshed at 23:38:49 UTC). The ClickHouse raw activity mirror contains all four records with the same source classifications. The [dbt representative ranking](../analytics/models/read_models/deduped_activities.sql) puts sensor coverage ahead of activity specificity, whereas the [Postgres ranking](../drizzle/0168_v_activity_primary_title.sql) prefers specific activity types. The [card](../packages/web/src/components/ActivityCardContent.tsx) passes the resulting activity type to the [shared icon resolver](../packages/training/src/activity-icons.ts), which maps `cardio` to the lightning icon. No failing request or fatal application log was observed; this is an incorrect successful result.
+- **Status / remaining work:** Unresolved. No production writes, remediation, or behavior changes performed. Agree on the classification policy before implementation; regression coverage should execute the grouped-source selection against ClickHouse. No retry, timeout, or other resilience adjustment applies.
+- **Retrospective / proposed improvement:** Comparing the same group in Postgres, the raw mirror, and the serving read model localized the divergence. Use `diagnose-cdc` for similar investigations. Proposed runbook addition: inspect representative source and canonical type in each store before treating an incorrect activity icon as a rendering defect.
+
 ## 2026-11-01 — Crimpd sign-in rejects a valid token response
 
 - **Symptoms / impact:** Connecting Crimpd fails with a generic server error, preventing account sync from web and mobile.
