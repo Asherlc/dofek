@@ -76,6 +76,7 @@ final class WhoopBleSampleStore {
         try execute("CREATE INDEX IF NOT EXISTS samples_stream_id ON samples(stream, id)")
         try execute("CREATE INDEX IF NOT EXISTS samples_timestamp ON samples(timestamp)")
         try execute("CREATE INDEX IF NOT EXISTS samples_stream_timestamp ON samples(stream, timestamp)")
+        try execute("CREATE INDEX IF NOT EXISTS samples_batch ON samples(batch) WHERE batch IS NOT NULL")
         try execute("""
             CREATE TABLE IF NOT EXISTS batches (
                 id TEXT PRIMARY KEY, generation TEXT NOT NULL, stream TEXT NOT NULL UNIQUE,
