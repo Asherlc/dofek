@@ -59,8 +59,8 @@ jobs:
         with:
           dispatching_run_id: ${{ inputs.dispatching_run_id }}
 
-  deploy:
-    name: Upload to TestFlight
+  archive:
+    name: Archive signed iOS app
     needs: [check]
     if: needs.check.outputs.should_deploy == 'true'
     runs-on: macos-latest
@@ -69,13 +69,10 @@ jobs:
       contents: read
       actions: read
       id-token: write
-      deployments: write
     outputs:
       commit_sha: ${{ steps.checked-out-sha.outputs.sha }}
       build_number: ${{ steps.build-number.outputs.value }}
-      upload_succeeded: ${{ steps.upload.outcome == 'success' }}
-      deployment_id: ${{ steps.intent.outputs.deployment_id }}
-      upload_run_url: ${{ steps.intent.outputs.upload_run_url }}
+      artifact_id: ${{ steps.signed-archive.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,7 +111,7 @@ jobs:
           fi
       - name: Generate native project
         working-directory: packages/mobile
-        run: pnpm expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios --no-install
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Set build number
@@ -163,6 +160,73 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
             2>&1 | tail -40
+      - name: Package signed archive
+        run: tar -cf "$RUNNER_TEMP/testflight-signed-archive.tar" -C "$RUNNER_TEMP" Dofek.xcarchive
+      - name: Upload signed archive
+        id: signed-archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: testflight-signed-archive-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/testflight-signed-archive.tar
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+
+  deploy:
+    name: Upload to TestFlight
+    needs: [archive]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      deployments: write
+    outputs:
+      commit_sha: ${{ needs.archive.outputs.commit_sha }}
+      build_number: ${{ needs.archive.outputs.build_number }}
+      upload_succeeded: ${{ steps.upload.outcome == 'success' }}
+      deployment_id: ${{ steps.intent.outputs.deployment_id }}
+      upload_run_url: ${{ steps.intent.outputs.upload_run_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.archive.outputs.commit_sha }}
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            APP_STORE_CONNECT_KEY_ID
+            APP_STORE_CONNECT_ISSUER_ID
+            APP_STORE_CONNECT_KEY_BASE64
+            IOS_DISTRIBUTION_CERT_BASE64
+            IOS_DISTRIBUTION_CERT_PASSWORD
+      - name: Download signed archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.archive.outputs.artifact_id }}
+          path: ${{ runner.temp }}
+      - name: Unpack signed archive
+        run: tar -xf "$RUNNER_TEMP/testflight-signed-archive.tar" -C "$RUNNER_TEMP"
+      - name: Setup code signing
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo -n "$IOS_DISTRIBUTION_CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/dist-cert.p12"
+          security import "$RUNNER_TEMP/dist-cert.p12" -P "$IOS_DISTRIBUTION_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+      - name: Setup App Store Connect API key
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
       - name: Check out trusted upload tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -177,8 +241,8 @@ jobs:
         id: intent
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMMIT_SHA: ${{ steps.checked-out-sha.outputs.sha }}
-          BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
+          COMMIT_SHA: ${{ needs.archive.outputs.commit_sha }}
+          BUILD_NUMBER: ${{ needs.archive.outputs.build_number }}
         run: |
           UPLOAD_RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
           DEPLOYMENT_ID=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
@@ -198,11 +262,11 @@ jobs:
       - name: Write job summary
         if: success()
         env:
-          BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
-          COMMIT_SHA: ${{ steps.checked-out-sha.outputs.sha }}
+          BUILD_NUMBER: ${{ needs.archive.outputs.build_number }}
+          COMMIT_SHA: ${{ needs.archive.outputs.commit_sha }}
           CI_RUN_ID: ${{ inputs.ci_run_id }}
         run: |
-          VERSION=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['version'])")
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" "$RUNNER_TEMP/Dofek.xcarchive/Info.plist")
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           {
             echo "## iOS Deploy"

@@ -379,6 +379,15 @@ group until publishing completes, using GitHub's
 [workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
 
+Signed iOS builds and uploads run in separate macOS jobs, each with a 30-minute
+limit. The archive job packages the signed `.xcarchive` in a tar file to preserve
+bundle permissions and symlinks, and retains it for seven days. The upload job
+downloads that exact artifact by ID, including on an upload-only rerun, and
+exports/uploads it without rebuilding. GitHub documents
+[passing artifacts between jobs](https://docs.github.com/en/actions/tutorials/store-and-share-data#passing-data-between-jobs-in-a-workflow)
+and preserving file permissions with a
+[tar archive](https://github.com/actions/upload-artifact#permission-loss).
+
 Signed iOS publishing uses GitHub deployments with environment `testflight` and
 task `testflight-upload`. Immediately before Xcode export/upload, it creates a
 pending deployment for the actual source SHA, build number and original upload
