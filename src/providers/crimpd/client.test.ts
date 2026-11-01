@@ -38,6 +38,26 @@ afterEach(async () => {
 });
 
 describe("Crimpd account API", () => {
+  it.each(["login", "refresh"] as const)(
+    "accepts a valid %s response without a success flag",
+    async (operation) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-01T00:00:00Z"));
+      const { success: _success, ...body } = reply;
+      const client = new CrimpdClient(async () => Response.json(body));
+      const result =
+        operation === "login"
+          ? await client.login("climber@example.com", "example-password")
+          : await client.refresh(tokens);
+      expect(result).toEqual({
+        accessToken: "access-1",
+        refreshToken: "refresh-1",
+        expiresAt: new Date("2026-11-01T01:00:00Z"),
+        providerAccountId: "owner-1",
+        scopes: null,
+      });
+    },
+  );
   it("accepts an export exactly at the 100 MiB limit", async () => {
     let remaining = 100;
     const chunk = new Uint8Array(1024 * 1024);

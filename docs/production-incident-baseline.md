@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-11-01 — Crimpd sign-in rejects a valid token response
+
+- **Symptoms / impact:** Connecting Crimpd fails with a generic server error, preventing account sync from web and mobile.
+- **Evidence / root cause:** At 23:02:53 UTC, `POST /api/trpc/credentialAuth.signIn?batch=1` returned HTTP 500 with `Crimpd returned an invalid authentication response. Try reconnecting.` The chained ZodError in [DOFEK-SERVER-78](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-78) identifies only `success` as invalid; the required account, tokens, and expiry passed validation. Dofek incorrectly required `success: true`. Crimpd's [deployed client](https://my.crimpd.com/main.3bcc34bf74e9df68.js) consumes `user`, `token`, `refreshToken`, and `expiresIn` directly for login and token refresh.
+- **Direct fix / validation:** Make the success flag optional while continuing to reject explicit failure and malformed credentials. Regression cases for login and refresh without the flag failed with the production error before the fix; afterward all 60 focused client, provider, and credential-router tests passed. Root TypeScript checking, Biome checking of both changed TypeScript files, and `git diff --check` passed. Production recovery remains unverified until the fix is deployed and account sign-in succeeds. No retries, waits, or timeout changes are needed.
+- **Retrospective / proposed improvement:** Existing server logs and chained Sentry validation details isolated the failing contract without exposing credentials. Use systematic debugging and check-logs next time. Proposed provider-guide addition: “Base authentication fixtures on verified provider response shapes, and inspect chained validation issue paths before changing response schemas.”
+
 ## 2026-11-01 — Local climbing-sync verification prerequisites
 
 - **Symptoms / impact:** The first local `pnpm test:integration -- src/providers/crimpd/provider.integration.test.ts` stopped before tests because workspace Postgres was unhealthy. No production impact.
