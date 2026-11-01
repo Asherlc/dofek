@@ -984,7 +984,7 @@ describe("DataSourcesPanel", () => {
   it.each([
     ["crimpd", "Crimpd"],
     ["eight-a", "8a.nu / Vertical-Life"],
-  ])("starts account sync for %s when file imports are also supported", async (id, name) => {
+  ])("starts account sync for connected %s", async (id, name) => {
     mockProvidersQuery.mockReturnValue({
       data: [
         {

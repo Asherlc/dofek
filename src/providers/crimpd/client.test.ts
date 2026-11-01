@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../../auth/oauth.ts";
-import { ProviderAuthError } from "../auth-errors.ts";
-import { CrimpdClient } from "./client.ts";
+
+let ProviderAuthError: typeof import("../auth-errors.ts").ProviderAuthError;
+let CrimpdClient: typeof import("./client.ts").CrimpdClient;
+beforeEach(async () => {
+  vi.resetModules();
+  ({ CrimpdClient } = await import("./client.ts"));
+  ({ ProviderAuthError } = await import("../auth-errors.ts"));
+});
 
 const reply = {
   success: true,
@@ -22,6 +28,13 @@ const tokens: TokenSet = {
 afterEach(() => vi.useRealTimers());
 
 describe("Crimpd account API", () => {
+  it("accepts a case-insensitive ZIP media type", async () => {
+    const client = new CrimpdClient(
+      async () =>
+        new Response(new Uint8Array([80, 75]), { headers: { "content-type": "Application/Zip" } }),
+    );
+    expect(await client.downloadExport(tokens)).toEqual(new Uint8Array([80, 75]));
+  });
   it("exchanges credentials for expiring tokens tied to the native account", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-01T00:00:00Z"));
@@ -59,6 +72,9 @@ describe("Crimpd account API", () => {
     { ...reply, expiresIn: 0 },
     { ...reply, expiresIn: -1 },
     { ...reply, user: {} },
+    { ...reply, token: "   " },
+    { ...reply, refreshToken: "   " },
+    { ...reply, user: { _id: "   " } },
   ])(
     "rejects malformed successful token responses before accepting a connection: %j",
     async (body) => {
@@ -98,6 +114,9 @@ describe("Crimpd account API", () => {
   it("makes a revoked refresh authorization actionable", async () => {
     const client = new CrimpdClient(async () => Response.json({ success: false }, { status: 401 }));
     await expect(client.refresh(tokens)).rejects.toThrow(/Reconnect.*Data Sources/);
+    await expect(client.refresh(tokens)).rejects.toMatchObject({
+      authFailureReason: "refresh_token_revoked",
+    });
   });
 
   it("reports server failures without treating them as invalid passwords", async () => {
@@ -128,5 +147,43 @@ describe("Crimpd account API", () => {
   it("rejects a successful non-ZIP response instead of importing it", async () => {
     const client = new CrimpdClient(async () => Response.json({ success: false }));
     await expect(client.downloadExport(tokens)).rejects.toThrow(/Crimpd.*ZIP/);
+  });
+  it("preserves refreshed account ownership when the previous identity is absent", async () => {
+    const client = new CrimpdClient(async () =>
+      Response.json({
+        ...reply,
+        token: " new-access ",
+        refreshToken: " new-refresh ",
+        user: { _id: " owner-1 " },
+      }),
+    );
+    expect(await client.refresh({ ...tokens, providerAccountId: undefined })).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      providerAccountId: "owner-1",
+    });
+  });
+  it("rejects failed exports even when the body resembles a ZIP", async () => {
+    const client = new CrimpdClient(
+      async () =>
+        new Response(new Uint8Array([80, 75]), {
+          status: 503,
+          headers: { "content-type": "application/zip" },
+        }),
+    );
+    await expect(client.downloadExport(tokens)).rejects.toThrow(/HTTP 503/);
+  });
+  it("accepts ZIP media types with parameters and surrounding whitespace", async () => {
+    const client = new CrimpdClient(
+      async () =>
+        new Response(new Uint8Array([80, 75]), {
+          headers: { "content-type": " application/zip ; charset=binary " },
+        }),
+    );
+    expect(await client.downloadExport(tokens)).toEqual(new Uint8Array([80, 75]));
+  });
+  it("rejects an export without a media type", async () => {
+    const client = new CrimpdClient(async () => new Response(new Uint8Array([80, 75])));
+    await expect(client.downloadExport(tokens)).rejects.toThrow(/ZIP/);
   });
 });

@@ -3,7 +3,11 @@ import { load } from "cheerio";
 import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
 import type { SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
-import { ProviderAuthError, ProviderInvalidCredentialsError } from "../auth-errors.ts";
+import {
+  ProviderAuthError,
+  type ProviderAuthFailureReason,
+  ProviderInvalidCredentialsError,
+} from "../auth-errors.ts";
 import { eightACategories, parseEightAAscentPage } from "./ascent.ts";
 
 const issuer = "https://vlatka.vertical-life.info/auth/realms/Vertical-Life";
@@ -19,9 +23,9 @@ const tokenSchema = z.object({
 });
 const identitySchema = z.object({ scim_id: z.string().trim().min(1) });
 const profileSchema = z.object({ uuid: z.string().min(1), userSlug: z.string().min(1) });
-const reconnect = () =>
+const reconnect = (reason: ProviderAuthFailureReason = "authentication_failed") =>
   new ProviderAuthError(
-    "authentication_failed",
+    reason,
     "Vertical-Life authorization expired or was revoked. Reconnect in Settings → Data Sources.",
   );
 
@@ -51,7 +55,8 @@ export class EightAClient {
       body,
       signal,
     });
-    if ([400, 401, 403].includes(response.status)) throw reconnect();
+    if ([400, 401, 403].includes(response.status))
+      throw reconnect(previous ? "refresh_token_revoked" : "authentication_failed");
     if (!response.ok)
       throw new Error(`Vertical-Life authentication failed (HTTP ${response.status}). Try again.`);
     const token = tokenSchema.parse(await response.json());
@@ -206,6 +211,10 @@ export class EightAClient {
     const seen = new Set<string>();
     for (const category of eightACategories) {
       for (let pageIndex = 0; ; pageIndex++) {
+        if (pageIndex === 10_000)
+          throw new Error(
+            "Vertical-Life exceeded the logbook pagination limit; no data was imported. Contact support before retrying.",
+          );
         signal?.throwIfAborted();
         const query = new URLSearchParams({
           category,

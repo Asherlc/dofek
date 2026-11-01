@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
-import { ProviderAuthError, ProviderInvalidCredentialsError } from "../auth-errors.ts";
+import {
+  ProviderAuthError,
+  type ProviderAuthFailureReason,
+  ProviderInvalidCredentialsError,
+} from "../auth-errors.ts";
 
 const baseUrl = "https://api.crimpd.com";
 const tokenResponse = z.object({
@@ -11,9 +15,9 @@ const tokenResponse = z.object({
   expiresIn: z.number().int().positive(),
 });
 
-function reconnect(): ProviderAuthError {
+function reconnect(reason: ProviderAuthFailureReason = "authentication_failed"): ProviderAuthError {
   return new ProviderAuthError(
-    "authentication_failed",
+    reason,
     "Crimpd authorization expired or was revoked. Reconnect in Settings → Data Sources.",
   );
 }
@@ -37,7 +41,9 @@ export class CrimpdClient {
       body: JSON.stringify(body),
     });
     if ([400, 401, 403].includes(response.status))
-      throw previous ? reconnect() : new ProviderInvalidCredentialsError("Crimpd");
+      throw previous
+        ? reconnect("refresh_token_revoked")
+        : new ProviderInvalidCredentialsError("Crimpd");
     if (!response.ok)
       throw new Error(`Crimpd authentication request failed (HTTP ${response.status}). Try again.`);
     const parsed = tokenResponse.safeParse(await response.json());
@@ -77,7 +83,10 @@ export class CrimpdClient {
     if ([401, 403].includes(response.status)) throw reconnect();
     if (!response.ok)
       throw new Error(`Crimpd logbook export failed (HTTP ${response.status}). Try syncing again.`);
-    if (response.headers.get("content-type")?.split(";")[0]?.trim() !== "application/zip")
+    if (
+      response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
+      "application/zip"
+    )
       throw new Error("Crimpd did not return a ZIP logbook export. Try syncing again.");
     return new Uint8Array(await response.arrayBuffer());
   }

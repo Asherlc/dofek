@@ -98,6 +98,8 @@ describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
     expect(ids).toHaveLength(34);
+    expect(ids).toContain("crimpd");
+    expect(ids).toContain("eight-a");
     expect(ids).toContain("strava");
     expect(ids).toContain("garmin");
     expect(ids).toContain("whoop");

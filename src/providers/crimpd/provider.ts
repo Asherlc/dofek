@@ -71,6 +71,7 @@ export class CrimpdProvider implements SyncProvider {
             await renew();
             archive = await this.#client.downloadExport(tokens, run.options.signal);
           }
+          run.options.signal?.throwIfAborted();
           const directory = await mkdtemp(join(tmpdir(), "dofek-crimpd-"));
           try {
             const filePath = join(directory, "logbook.zip");
@@ -84,6 +85,7 @@ export class CrimpdProvider implements SyncProvider {
         userId,
       );
     } catch (error) {
+      run.options.signal?.throwIfAborted();
       captureException(error, { tags: { provider: this.id, phase: "activity" } });
       if (findProviderTransportError(error)) throw error;
       result.errors.push({

@@ -108,6 +108,29 @@ describe("Vertical-Life direct sync persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.providerId, "eight-a"));
 
+  it("propagates cancellation during profile reads without writing history", async () => {
+    await connect();
+    const controller = new AbortController();
+    const reason = new Error("Vertical-Life sync cancelled");
+    server.use(
+      http.get("https://vlcapi.vertical-life.info/profile/v1/web/users/find", () => {
+        controller.abort(reason);
+        return new HttpResponse(null, { status: 500 });
+      }),
+    );
+    await expect(
+      new EightAProvider().sync(
+        new SyncRun({
+          db: context.db,
+          userId: TEST_USER_ID,
+          window: SyncWindow.full(),
+          signal: controller.signal,
+        }),
+      ),
+    ).rejects.toThrow(reason);
+    expect(await logs()).toEqual([]);
+  });
+
   it("migrates a unique CSV identity in place, retaining manual attachment, attempts and both payloads", async () => {
     await upload(eightAMatchingCsv());
     const [original] = await logs();
@@ -156,18 +179,23 @@ describe("Vertical-Life direct sync persistence", () => {
   });
   it("keeps repeated uploads from reverting native edits or richer climb facts", async () => {
     await connect();
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     await upload(eightAMatchingCsv());
     rows = [eightANativeRow({ comment: "new native note" })];
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     const before = await logs();
+    expect(before).toMatchObject([{ notes: "new native note" }]);
+    await expect(upload(eightAMatchingCsv({ comment: "new native note" }))).rejects.toThrow(
+      /unique exact match/i,
+    );
+    expect(await logs()).toEqual(before);
     await upload(eightAMatchingCsv());
     await upload(eightAMatchingCsv());
     expect(await logs()).toEqual(before);
   });
   it("rejects unmatched or edited uploads atomically after connection", async () => {
     await connect();
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     const before = await logs();
     await expect(
       upload(eightAMatchingCsv(), eightAMatchingCsv({ name: "Unmatched climb" })),
@@ -190,7 +218,7 @@ describe("Vertical-Life direct sync persistence", () => {
   });
   it("rejects edits to retained CSV provenance without any partial raw updates", async () => {
     await connect();
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     await upload(eightAMatchingCsv());
     const before = await logs();
     const edits: Array<Record<string, string>> = [
@@ -241,7 +269,7 @@ describe("Vertical-Life direct sync persistence", () => {
   });
   it("does not retire or update history after a failed or malformed fetch", async () => {
     await connect();
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     const before = await logs();
     rows = [eightANativeRow({ comment: "partial update" })];
     failLater = true;
@@ -254,13 +282,13 @@ describe("Vertical-Life direct sync persistence", () => {
   });
   it("reconciles complete native absence and restores the same occurrence", async () => {
     await connect();
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     const [original] = await logs();
     rows = [];
     expect(await sync()).toMatchObject({ recordsSynced: 0, errors: [] });
     expect(await logs()).toMatchObject([{ id: original?.id, providerAbsentAt: expect.any(Date) }]);
     rows = [eightANativeRow()];
-    await sync();
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     expect(await logs()).toMatchObject([{ id: original?.id, providerAbsentAt: null }]);
   });
   it("saves rotated authorization before data reads and surfaces revoked refresh", async () => {
@@ -285,11 +313,11 @@ describe("Vertical-Life direct sync persistence", () => {
     await context.db.insert(userProfile).values({ id: other, name: "Other climber" });
     await connect();
     await connect(other);
-    await sync();
-    await sync(other);
+    expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await sync(other)).toMatchObject({ recordsSynced: 1, errors: [] });
     expect(await logs()).toHaveLength(2);
     rows = [];
-    await sync(other);
+    expect(await sync(other)).toMatchObject({ recordsSynced: 0, errors: [] });
     expect(
       await context.db
         .select()
@@ -301,6 +329,12 @@ describe("Vertical-Life direct sync persistence", () => {
           ),
         ),
     ).toMatchObject([{ providerAbsentAt: null }]);
+    expect(
+      await context.db
+        .select()
+        .from(climbingLogEntry)
+        .where(and(eq(climbingLogEntry.providerId, "eight-a"), eq(climbingLogEntry.userId, other))),
+    ).toMatchObject([{ providerAbsentAt: expect.any(Date) }]);
   });
 });
 
@@ -326,6 +360,7 @@ describe("8a.nu file import persistence", () => {
       .select()
       .from(climbingLogEntry)
       .where(eq(climbingLogEntry.providerId, "eight-a"));
+
     const entry = original.find((log) => log.raw && JSON.stringify(log.raw).includes('"f"'));
     if (!entry) throw new Error("Expected imported flash");
     const [attached] = await context.db

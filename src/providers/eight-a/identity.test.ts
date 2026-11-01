@@ -23,6 +23,130 @@ const knownNative = native.map((entry) => ({
 }));
 
 describe("Vertical-Life strict source identity", () => {
+  it.each(["bouldering", "gymboulder", "sportclimbing", "gymroute"] as const)(
+    "matches verified %s categories and source flags",
+    (category) => {
+      const boulder = category === "bouldering" || category === "gymboulder";
+      const rows = parseEightAAscentPage(
+        {
+          ascents: [
+            eightANativeRow({
+              type: "RP",
+              project: true,
+              recommended: true,
+              rating: 4,
+              tries: 2,
+              sectorName: "Unknown Sector",
+            }),
+          ],
+          pageIndex: 0,
+          totalItems: 1,
+        },
+        category,
+        0,
+      );
+      const upload = parseEightAExport(
+        `${eightAHeader}\n${eightAMatchingCsv({ route_boulder: boulder ? "BOULDER" : "ROUTE", project: "true", recommended: "1", rating: "4", tries: "2", sector_name: "" })}`,
+      );
+      expect(
+        resolveEightAIdentities(
+          rows,
+          [{ id: "csv-id", externalId: upload[0]?.externalId ?? null, raw: upload[0]?.raw }],
+          "native",
+          true,
+        ).migrations,
+      ).toEqual([{ id: "csv-id", externalId: rows[0]?.externalId }]);
+    },
+  );
+  it.each<Record<string, string>>([
+    { name: "" },
+    { location_name: "" },
+    { date: "" },
+    { route_boulder: "UNKNOWN" },
+    { country_code: "xFR" },
+    { country_code: "FRx" },
+    { country_code: "fr" },
+    { project: "unknown" },
+    { recommended: "unknown" },
+    { rating: "Infinity" },
+  ])("rejects source facts that cannot establish identity: %j", (changes) => {
+    const original = csv[0];
+    if (!original) throw new Error("Expected CSV fixture");
+    const row = {
+      ...original,
+      raw: { ...Object.fromEntries(Object.entries(original.raw ?? {})), ...changes },
+    };
+    expect(() => resolveEightAIdentities([row], knownNative, "csv", true)).toThrow(
+      /unique exact match/i,
+    );
+  });
+  it("rejects duplicate uploads and retains strict matching after disconnect", () => {
+    expect(() => resolveEightAIdentities([...csv, ...csv], knownNative, "csv", true)).toThrow(
+      /unique exact match/i,
+    );
+    expect(() =>
+      resolveEightAIdentities(
+        csv,
+        [
+          {
+            ...knownNative[0],
+            id: "native-id",
+            externalId: native[0]?.externalId ?? null,
+            raw: { ...eightANativeRow(), comment: "edited" },
+          },
+        ],
+        "csv",
+        false,
+      ),
+    ).toThrow(/unique exact match/i);
+  });
+  it("matches order-independent retained CSV fields", () => {
+    const original = csv[0];
+    if (!original) throw new Error("Expected CSV fixture");
+    const upload = {
+      ...original,
+      raw: Object.fromEntries(Object.entries(original.raw ?? {}).reverse()),
+    };
+    const retained = original.raw;
+    expect(
+      resolveEightAIdentities(
+        [upload],
+        [
+          {
+            id: "native-id",
+            externalId: native[0]?.externalId ?? null,
+            raw: { native: eightANativeRow({ comment: "edited" }), csv: retained },
+          },
+        ],
+        "csv",
+        true,
+      ).rawUpdates,
+    ).toHaveLength(1);
+  });
+  it("rejects a new CSV matching native edits when it would replace retained provenance", () => {
+    const edited = parseEightAAscentPage(
+      { ascents: [eightANativeRow({ comment: "new native note" })], pageIndex: 0, totalItems: 1 },
+      "bouldering",
+      0,
+    );
+    const upload = parseEightAExport(
+      `${eightAHeader}\n${eightAMatchingCsv({ comment: "new native note" })}`,
+    );
+    expect(() =>
+      resolveEightAIdentities(
+        upload,
+        [
+          {
+            id: "native-id",
+            externalId: edited[0]?.externalId ?? null,
+            raw: { native: edited[0]?.raw, csv: csv[0]?.raw },
+          },
+        ],
+        "csv",
+        true,
+      ),
+    ).toThrow(/unique exact match/i);
+  });
   it("binds a unique exact legacy CSV occurrence to its native identity and preserves both payloads", () => {
     const resolved = resolveEightAIdentities(native, knownCsv, "native", true);
     expect(resolved.migrations).toEqual([{ id: "csv-id", externalId: native[0]?.externalId }]);
@@ -91,7 +215,7 @@ describe("Vertical-Life strict source identity", () => {
         "native",
         true,
       ),
-    ).toThrow(/unique exact match/i);
+    ).toThrow(/Existing CSV history/i);
   });
   it("keeps prior CSV provenance after native edits and accepts the original upload without reverting them", () => {
     const original = resolveEightAIdentities(native, knownCsv, "native", true).entries[0];

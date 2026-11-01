@@ -62,6 +62,7 @@ export class EightAProvider implements SyncProvider {
         userId,
       );
     } catch (error) {
+      run.options.signal?.throwIfAborted();
       captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
       if (findProviderTransportError(error)) throw error;
       result.errors.push({

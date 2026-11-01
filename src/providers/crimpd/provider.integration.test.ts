@@ -113,6 +113,28 @@ describe("Crimpd automatic account sync", () => {
   const activities = () =>
     context.db.select().from(activity).where(eq(activity.providerId, "crimpd"));
 
+  it("propagates cancellation during export without writing activities", async () => {
+    const controller = new AbortController();
+    const reason = new Error("Crimpd sync cancelled");
+    accountServer.use(
+      http.get("https://api.crimpd.com/analytics/export", () => {
+        controller.abort(reason);
+        return new HttpResponse(null, { status: 500 });
+      }),
+    );
+    await expect(
+      new CrimpdProvider().sync(
+        new SyncRun({
+          db: context.db,
+          userId: TEST_USER_ID,
+          window: SyncWindow.full(),
+          signal: controller.signal,
+        }),
+      ),
+    ).rejects.toThrow(reason);
+    expect(await activities()).toEqual([]);
+  });
+
   it("shares native workout identities and manual attachments with file imports", async () => {
     expect(await sync()).toMatchObject({ recordsSynced: 1, errors: [] });
     const [original] = await activities();

@@ -165,7 +165,10 @@ export function resolveEightAIdentities(
             ...(fingerprint === null ? [] : (byCsvFingerprint.get(fingerprint) ?? [])),
           ].map((row) => [row.id, row]),
         ).values(),
-      ];
+      ].filter((row) => {
+        const retained = csvFingerprint(row.raw);
+        return retained === null || retained === fingerprint;
+      });
       if (candidates.length !== 1) failure();
       const row = candidates[0];
       if (!row || matched.has(row.id)) failure();
@@ -195,7 +198,7 @@ export function resolveEightAIdentities(
     if (candidates.length !== 1) failure(true);
     const candidate = candidates[0];
     if (!candidate || bindings.has(candidate.externalId) || nativeById.has(candidate.externalId))
-      failure();
+      failure(true);
     bindings.set(candidate.externalId, row);
     migrations.push({ id: row.id, externalId: candidate.externalId });
   }

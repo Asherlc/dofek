@@ -27,8 +27,12 @@ its export's scope and fields in the [export reference](https://crimpd.com/docs/
 The same investigation verified authenticated 8a.nu ascent pages and export,
 including empty indoor categories and populated public outdoor pages. The
 vendor [announces shared Vertical-Life/8a.nu logbooks](https://www.8a.nu/news/find-your-logbook-in-the-vertical-life-app).
-Independent Node export requests still returned Cloudflare HTTP 403 on November
-1; browser success is not evidence of server access. The
+Initial Node requests to the 8a.nu website returned Cloudflare HTTP 403; later
+November 1 checks verified mobile-client PKCE exchange, renewal and direct Node
+bearer reads from the shared API. Successful scripted password submission and
+populated owner/indoor histories remain unverified; see the
+[mobile-client verification](../../climbing-logbook-api-research.md#vertical-life-mobile-client-verification).
+The
 [OIDC discovery document](https://vlatka.vertical-life.info/auth/realms/Vertical-Life/.well-known/openid-configuration)
 responded with authorization-code, PKCE and refresh support, but this does not
 prove that Dofek can register a client or reuse an existing client's grants.
@@ -114,12 +118,10 @@ safety. Both client suites cover connection plus upload availability. Verify
 real authentication, renewal and reads separately from mocked tests, without
 mutating upstream logbooks or inventing sample owner records.
 
-Run appropriate lint, typechecks, unit/mobile and database checks; independently
-review changes, resolve findings, update current provider documentation, commit
-and push automatically. Do not switch branches or deploy production as part of
-this work. No new dependencies or schema are proposed; either requires current
-evidence and the repository's normal review rules if investigation proves it
-necessary.
+Validation includes lint, typechecks, unit/mobile and database checks, independent
+review, and current provider documentation. No new dependencies or schema are
+proposed. Execution and delivery steps are recorded in the
+[implementation plan](../plans/2026-11-01-climbing-direct-sync.md).
 
 ## Builder discretion and completion
 
