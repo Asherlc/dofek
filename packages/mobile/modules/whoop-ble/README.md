@@ -133,6 +133,13 @@ configuration supplies credentials for new work. Canonical mutation endpoints
 must serve directly: Apple's background service follows redirects, and a
 cross-origin final response is rejected as an acknowledgment.
 
+Runtime preparation and background-session attachment use a serial utility queue,
+so opening or upgrading the durable database does not block the application
+lifecycle callback. Synchronous capture consumers share that same runtime, and a
+failed open remains visible through capture diagnostics or Sentry before releasing
+the OS completion. This follows Apple's guidance to avoid immediate main-thread
+file I/O: [file-system performance](https://developer.apple.com/documentation/foundation/improving-performance-and-stability-when-accessing-the-file-system).
+
 `getDataPathStats().connectionDiagnostics` exposes the latest 64 native
 connection events and a cumulative `overflowCount` for older events removed
 from that bounded history. The [native connection journal](ios/WhoopBleConnectionDiagnostics.swift)
