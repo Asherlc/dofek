@@ -10,7 +10,7 @@ import {
 
 const baseUrl = "https://api.crimpd.com";
 const tokenResponse = z.object({
-  success: z.literal(true),
+  success: z.literal(true).optional(),
   user: z.object({ _id: z.string().trim().min(1) }),
   token: z.string().trim().min(1),
   refreshToken: z.string().trim().min(1),
