@@ -20,7 +20,7 @@ or an account action. Closure review is not a claim that all 15 are ready to clo
 
 | Issue | Last event | Evidence and classification | Proposed next action |
 | --- | --- | --- | --- |
-| [MOBILE-28](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-28) | Nov 1 05:29 | **Active defect.** A 14.2–15-second hang on native release `984572ea4`. Main thread waits for `WhoopBleUploadRuntime.shared`'s lock; thread 12 holds the initialization path while SQLite opens. | Make runtime initialization and background-session attachment nonblocking for the main thread, preserving one runtime and durable initialization failures. Reproduce with a populated queue before and after. |
+| [MOBILE-28](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-28) | Nov 1 05:29 | **Active defect.** A 14.2–15-second hang on native release `984572ea4`. Main thread waits for `WhoopBleUploadRuntime.shared`'s lock; thread 12 holds the initialization path while SQLite opens. | Move runtime initialization and background-session attachment off the main thread, preserving one runtime and durable initialization failures. Reproduce with a populated queue before and after. |
 | [MOBILE-29](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-29) | Nov 1 04:46 | **Active disk-write investigation.** MetricKit attributes 17,179.875 MB of writes to the sample-store transaction under `submitAvailable`, on `984572ea4`. This release already contains the acknowledgment correction in `1d37be0c5`. | Measure reservation, body-file, append, and checkpoint writes separately with synthetic data. Do not claim the earlier acknowledgment fix solved this event. |
 | [MOBILE-27](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-27) | Oct 29 17:42 | **Related disk-write investigation.** MetricKit reports 4,294.973 MB under the append transaction on `cf421b73a`; this is a capture path rather than the later reservation path. | Investigate with MOBILE-29, retaining separate capture/upload measurements and durable-before-return semantics. |
 | [SERVER-76](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-76) | Nov 1 15:30 | **Active account prerequisite.** Current official theCrag sync rejects saved metadata that fails its scope/authorization/account-ID contract. Current production has 19 failed overall syncs in the checked window. The event does not identify which metadata field failed. | Reconnect the account with an official personal API key and verify a successful sync. Inspect names/validity only if needed; do not rewrite old identity metadata or invent a key. Investigate repeated scheduling only after confirming the intended reconnect-state behavior. |
@@ -166,3 +166,37 @@ preserving durable-before-return capture. These changes have not yet established
 physical-device recovery, so the WHOOP issues remain open. The
 [incident baseline](../production-incident-baseline.md#2026-11-01--whoop-notification-streams-committed-in-redundant-transactions)
 records measured scope and validation limits.
+
+### Validation follow-up
+
+- Root and server TypeScript checks pass. Focused provider/worker/escalation suites
+  pass 221 tests with retries disabled; user-status suites pass 28 web and eight
+  mobile tests. Strict SwiftLint, focused Biome/spelling, and the production import
+  boundary check pass (148 modules, 390 dependencies).
+- The complete standalone native suite passes 199 tests. After restoring the
+  Infisical session, canonical Expo prebuild succeeds and the real UIKit/Expo
+  bridge result bundle reports **Passed: 8, Failed: 0, Skipped: 0**.
+- The initial bridge build printed an error-looking `SwiftCompile` console line.
+  It was stopped prematurely; its structured build record had no failed tasks
+  and its test result was cancelled/unknown. The same test command resumed against
+  existing output with unchanged settings and passed. Console wording alone did
+  not establish an Expo compiler defect; no SDK workaround was introduced.
+- The first complete Docker-free test run returned 23,828 passes, 17 failures,
+  and 19 skips across 1,459 files. Its ten failing suites were
+  `cdc-health-state`, `check-ota-manifest`, `collect-clickhouse-ci-diagnostics`,
+  `dependency-cruiser-command`, `exact-versions`, `integration-diagnostics-reporter`,
+  `stack-service-image`, `archive-erasure`, `early-msw-setup`, and `garmin-dump`.
+  Failures were deadlines, missing child-runner events, or timed-out child status;
+  the Garmin parser explicitly exceeded its unchanged ten-second child deadline.
+  A focused rerun passed six suites, then all four remaining suites passed
+  sequentially (42 tests), without source or deadline changes. A direct repeat of
+  the malformed-config CLI returned its expected status in 364 ms. Host load
+  readings exceeded 130 during validation, but these observations do not identify
+  every initiating resource constraint. The final complete run,
+  `pnpm test --maxWorkers 1 --retry 0`, passed **23,845 tests across 1,457 files**,
+  with 19 tests skipped in two files, in 814.54 seconds. No source, assertion,
+  test deadline, CI setting, or runtime resilience setting changed for that run.
+
+The provider reporting correction is commit `60d80dbcb`. User-facing failed-sync
+states and the existing persistence escalation remain intact. No application
+release or physical-device performance recovery is implied by these local checks.
