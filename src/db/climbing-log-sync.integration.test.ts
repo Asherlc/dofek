@@ -83,11 +83,12 @@ describe("atomic climbing log synchronization", () => {
         { externalId: "valid-before-overflow", attempts: [{ scope: "climb" }] },
         {
           externalId: "oversized-count",
+          climb: { externalId: null, name: "Offending project", kind: "boulder" },
           attempts: [],
           reportedAttemptCounts: [{ scope: "climb", count: 1001 }],
         },
       ]),
-    ).rejects.toThrow(/1,000/);
+    ).rejects.toThrow(/Offending project.*oversized-count.*1,000/);
     expect(await context.db.select().from(climbingLogEntry)).toEqual([]);
   });
   it("persists the supported count boundary of 1,000 attempts", async () => {
