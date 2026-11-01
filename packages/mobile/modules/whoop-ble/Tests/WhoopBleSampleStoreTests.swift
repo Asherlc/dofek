@@ -160,11 +160,17 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     }
 
     func testAcknowledgmentUsesBoundedDatabaseWorkForLargeQueues() throws {
-        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
-        try store.configure(owner)
-        try seedPersistedSamples(10_000, stream: .imu, second: 2, probe: probe)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([1, 3]))
-        let batch = try XCTUnwrap(store.reserve(stream: .realtime, limit: 1))
+        let url = try directory()
+        let batch: WhoopStoredBatch
+        do {
+            let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
+            try store.configure(owner)
+            try seedPersistedSamples(10_000, stream: .imu, second: 2, probe: probe)
+            try store.append(stream: .realtime, deviceId: "a", samples: samples([1, 3]))
+            batch = try XCTUnwrap(store.reserve(stream: .realtime, limit: 1))
+            try probe.executeFixture("DROP INDEX IF EXISTS samples_batch")
+        }
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
 
         XCTAssertTrue(try probe.withInstructionLimit(2_000) {
             try store.acknowledge(id: batch.id, generation: batch.generation)
