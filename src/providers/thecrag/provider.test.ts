@@ -116,6 +116,8 @@ describe("theCrag official API provider", () => {
     const fetchFn = fetchPage();
     const result = await new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db));
     expect(result.errors[0]?.message).toMatch(/reconnect/i);
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
+    expect(mocks.captureException).not.toHaveBeenCalled();
     expect(fetchFn).not.toHaveBeenCalled();
   });
   it("imports complete paginated history before advancing progress", async () => {
@@ -203,6 +205,9 @@ describe("theCrag official API provider", () => {
       );
     const result = await new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db));
     expect(result.errors).toHaveLength(1);
+    expect(mocks.captureException).toHaveBeenCalledWith(result.errors[0]?.cause, {
+      tags: { provider: "thecrag", phase: "climbing_activity" },
+    });
     expect(
       inspect({ result, calls: mocks.captureException.mock.calls }, { depth: null }),
     ).not.toMatch(/personal-key|Private training notes/);

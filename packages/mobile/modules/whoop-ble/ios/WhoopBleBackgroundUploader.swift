@@ -96,10 +96,12 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func append(stream: WhoopUploadStream, deviceId: String, samples: [[String: Any]]) throws {
+    func append(deviceId: String, samplesByStream: [WhoopUploadStream: [[String: Any]]]) throws {
         try queue.sync {
-            try store.append(stream: stream, deviceId: deviceId, samples: samples)
-            if firstArrival[stream] == nil { firstArrival[stream] = now() }
+            try store.append(deviceId: deviceId, samplesByStream: samplesByStream)
+            for (stream, samples) in samplesByStream where !samples.isEmpty && firstArrival[stream] == nil {
+                firstArrival[stream] = now()
+            }
             // Capture stays synchronous/durable; only scheduling work is coalesced.
             if lastCaptureSchedule.map({ now().timeIntervalSince($0) >= 5 }) ?? true {
                 lastCaptureSchedule = now()

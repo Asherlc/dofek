@@ -127,6 +127,24 @@ authorization failure expected. Parse/schema evidence anywhere in the chain
 remains reportable; a generic wrapper around a genuine abort remains a handled
 cancellation. See the [shared classifier](../packages/telemetry/src/handled-failure.ts).
 
+## Provider sync failures
+
+Users receive failed-sync status and reconnect/retry guidance through the shared
+sync API and the web/mobile history presentation. Per-attempt exception reporting
+uses the [provider reporting predicate](../src/lib/provider-error-reporting.ts):
+recognized typed auth failures, transport outages/timeouts, rate limits, and
+direct cancellation remain in operational status, logs, and metrics. Unexpected
+schema, parsing, database, and unexplained authorization failures remain
+reportable. A generic HTTP 401/403 alone does not establish an expected account
+failure. This preserves Sentry's role for actionable exceptions; see its
+[capture API](https://docs.sentry.io/platforms/javascript/guides/node/usage/#capturing-errors).
+
+The [sync-log policy](../src/db/sync-log.ts) separately raises a warning at exactly
+two consecutive scheduled overall-sync failures. The
+[user notification policy](../src/db/provider-issue-notification.ts) deduplicates
+notifications until recovery. Suppressing an expected per-attempt exception does
+not disable either persistence escalation or user-facing failure information.
+
 ## Access failures
 
 - `403`: the token does not have read permissions for issues/events.

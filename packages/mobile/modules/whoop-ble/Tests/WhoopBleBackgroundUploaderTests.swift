@@ -29,11 +29,11 @@ private final class Transport: WhoopUploadTransport {
 final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testSensorUploadUsesOwnRouteAndAcknowledgesWhileRealtimeFails() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(capturedWhoopR18Data()))
         let record = try XCTUnwrap(WhoopBleSensorRecord.serialize(
             frame: frame, deviceInfo: ["model": "WHOOP MG", "firmware": "50.42.1.0"]))
-        try uploader.append(stream: .sensorRecords, deviceId: "a", samples: [record])
+        try uploader.append(deviceId: "a", samplesByStream: [.sensorRecords: [record]])
         try uploader.flush(); try settle(uploader)
         let sensorIndex = try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path == "/api/trpc/whoopBleSync.pushSensorRecords" })
         let realtimeIndex = try XCTUnwrap(transport.requests.firstIndex { $0.0.url?.path == "/api/trpc/whoopBleSync.pushRealtimeData" })
@@ -70,20 +70,19 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     }
     func testCaptureCoalescesAndValidZeroAcknowledgesOnlyReservedRows() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
         XCTAssertTrue(transport.requests.isEmpty)
         try uploader.flush(); try settle(uploader)
         XCTAssertEqual(transport.requests.count, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: transport.requests[0].1.path))
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         transport.complete(0); try settle(uploader)
         XCTAssertEqual(try store.statistics(stream: .realtime)["count"] as? Int, 1)
     }
     func testStreamsProgressIndependentlyAndFailuresKeepRows() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
-        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows, .imu: rows])
         try uploader.flush(); try settle(uploader)
         XCTAssertEqual(transport.requests.count, 2)
         for index in 0..<2 { transport.complete(index, status: 500) }
@@ -95,7 +94,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     }
     func testAuthFailureBlocksCaptureRetryUntilConfigureAndMalformedResponseRetainsRows() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         transport.complete(0, status: 401); try settle(uploader)
         try uploader.flush(); try settle(uploader)
@@ -107,19 +106,19 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     }
     func testOwnerChangeAndDisableRejectStaleCompletion() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "new", headers: [:])
         transport.complete(0); try settle(uploader)
         XCTAssertEqual(try store.binding?.userId, "bob")
         try uploader.disable()
         XCTAssertNil(try store.binding)
-        XCTAssertThrowsError(try uploader.append(stream: .realtime, deviceId: "a", samples: rows))
+        XCTAssertThrowsError(try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows]))
     }
 
     func testErasureRevokesTransfersAndRetainsCutoffForNextAccount() throws {
         let (uploader, _, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 1)
         let formatter = ISO8601DateFormatter()
@@ -128,9 +127,9 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 0)
         transport.complete(0); try settle(uploader)
         try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "new", headers: [:])
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows + [
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows + [
             ["timestamp": "2026-10-28T00:00:02.000Z", "heartRateBpm": 71],
-        ])
+        ]])
         XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 1)
     }
     func testRejectsUnsafeOriginsAndCredentialHeaders() throws {
@@ -143,7 +142,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
 
     func testTokenRotationBeforeOldAuthFailureUsesNewTokenWithoutBlocking() throws {
         let (uploader, _, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
@@ -158,7 +157,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
         let store = try WhoopBleSampleStore(directory: directory)
         try store.configure(WhoopUploadBinding(userId: "alice", serverURL: "https://example.com"))
-        try store.append(stream: .realtime, deviceId: "a", samples: rows)
+        try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
         let batch = try XCTUnwrap(store.reserve(stream: .realtime))
         let identity = batch.generation + "." + batch.id
         let transport = Transport()
@@ -183,10 +182,10 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testHundredArrivalsCommitWithoutRepeatedOSReconciliation() throws {
         let (uploader, store, transport) = try setup()
         try settle(uploader)
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
         let before = transport.reconciliationCount
-        for _ in 0..<100 { try uploader.append(stream: .realtime, deviceId: "a", samples: rows) }
+        for _ in 0..<100 { try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows]) }
         try settle(uploader)
         XCTAssertEqual(transport.reconciliationCount, before)
         XCTAssertEqual(try store.statistics(stream: .realtime)["count"] as? Int, 101)
@@ -203,25 +202,25 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             reportError: { _ in }, now: { clock })
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "s", headers: [:])
         try settle(uploader)
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
-        for _ in 0..<499 { try uploader.append(stream: .realtime, deviceId: "a", samples: rows) }
+        for _ in 0..<499 { try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows]) }
         XCTAssertTrue(transport.requests.isEmpty)
         clock = clock.addingTimeInterval(5)
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
         XCTAssertEqual(transport.requests.count, 1)
         transport.complete(0); try settle(uploader)
         XCTAssertEqual(try store.statistics(stream: .realtime)["count"] as? Int, 1)
         clock = clock.addingTimeInterval(30)
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
         XCTAssertEqual(transport.requests.count, 2)
     }
 
     func testBackgroundCompletionRunsOnMainAfterAcknowledgment() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         let completion = expectation(description: "background events finished")
         uploader.handleBackgroundEvents {
@@ -237,13 +236,13 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testDelayedOldOwnerCancellationDoesNotCancelNewOwnerTasks() throws {
         for disableFirst in [false, true] {
             let (uploader, _, transport) = try setup()
-            try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+            try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
             try uploader.flush(); try settle(uploader)
             let old = try XCTUnwrap(transport.requests.first?.2)
             transport.delayCancellation = true
             if disableFirst { try uploader.disable() }
             try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "bob", headers: [:])
-            try uploader.append(stream: .realtime, deviceId: "b", samples: rows)
+            try uploader.append(deviceId: "b", samplesByStream: [.realtime: rows])
             try uploader.flush(); try settle(uploader)
             let current = try XCTUnwrap(transport.requests.last?.2)
             XCTAssertNotEqual(old, current)
@@ -257,7 +256,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
         let store = try WhoopBleSampleStore(directory: directory)
         try store.configure(WhoopUploadBinding(userId: "alice", serverURL: "https://example.com"))
-        try store.append(stream: .realtime, deviceId: "a", samples: rows)
+        try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
         let batch = try XCTUnwrap(store.reserve(stream: .realtime))
         let identity = batch.generation + "." + batch.id
         let transport = Transport()
@@ -280,7 +279,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
 
     func testFinishedEventsBeforeHandlerRegistrationStillCompletesAfterAcknowledgment() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         transport.complete(0)
         transport.onFinishEvents?()
@@ -310,11 +309,11 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
 
     func testErasurePersistsCutoffWhenBodyRemovalFailsAndCancelsReservedIdentity() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         let body = try XCTUnwrap(transport.requests.first?.1)
         let activeIdentity = try XCTUnwrap(transport.requests.first?.2)
-        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
         try settle(uploader)
         let reserved = try XCTUnwrap(store.reserve(stream: .imu))
         let reservedIdentity = reserved.generation + "." + reserved.id
@@ -325,12 +324,12 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         XCTAssertTrue(transport.cancellations.contains(reservedIdentity))
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: body.path)
         try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "new", headers: [:])
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows + [
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows + [
             ["timestamp": "2026-10-28T00:00:02.000Z", "heartRateBpm": 71],
-        ])
+        ]])
         XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 1)
         let reopened = try WhoopBleSampleStore(directory: body.deletingLastPathComponent().deletingLastPathComponent())
-        try reopened.append(stream: .realtime, deviceId: "a", samples: rows)
+        try reopened.append(deviceId: "a", samplesByStream: [.realtime: rows])
         XCTAssertEqual(try reopened.queuedCount(stream: .realtime), 1)
         transport.complete(0); try settle(uploader)
         XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 1)
@@ -339,8 +338,8 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testIMUBodyWriteFailureStillSubmitsRealtimeAndReportsError() throws {
         var errors: [Error] = []
         let (uploader, store, transport) = try setup(reportError: { errors.append($0) })
-        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
         let batch = try XCTUnwrap(store.reserve(stream: .imu))
         // A directory at the exact output path makes atomic file replacement fail.
@@ -367,7 +366,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         var clock = Date(timeIntervalSince1970: 1_800_000_000)
         let (uploader, _, transport) = try setup(reportError: { errors.append($0) }, now: { clock })
         try settle(uploader)
-        try uploader.append(stream: .imu, deviceId: "a", samples: Array(repeating: rows[0], count: 500))
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: Array(repeating: rows[0], count: 500)])
         try settle(uploader)
         let file = try XCTUnwrap(transport.requests.first?.1)
         transport.complete(0, status: 500); try settle(uploader)
@@ -377,13 +376,13 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         let errorsAfterFailure = errors.count
         XCTAssertEqual(errorsAfterFailure, 2)
         clock = clock.addingTimeInterval(5)
-        try uploader.append(stream: .realtime, deviceId: "a", samples: Array(repeating: rows[0], count: 500))
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
         try settle(uploader)
         XCTAssertEqual(errors.count, errorsAfterFailure)
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertTrue(transport.requests.last?.0.url?.path.contains("Realtime") == true)
         clock = clock.addingTimeInterval(25)
-        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
         try settle(uploader)
         XCTAssertEqual(errors.count, errorsAfterFailure + 1)
     }
@@ -391,7 +390,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testAcknowledgedBodyRemovalFailureStillContinuesFullBatches() throws {
         var errors: [Error] = []
         let (uploader, store, transport) = try setup(reportError: { errors.append($0) })
-        try uploader.append(stream: .realtime, deviceId: "a", samples: Array(repeating: rows[0], count: 1000))
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 1000)])
         try uploader.flush(); try settle(uploader)
         let file = try XCTUnwrap(transport.requests.first?.1)
         try obstructRemoval(at: file)
@@ -404,11 +403,11 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testOrphanRemovalFailureStillSubmitsOtherStreamsAndReportsError() throws {
         var errors: [Error] = []
         let (uploader, _, transport) = try setup(reportError: { errors.append($0) })
-        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
         try uploader.flush(); try settle(uploader)
         let directory = try XCTUnwrap(transport.requests.first?.1.deletingLastPathComponent())
         try obstructRemoval(at: directory.appendingPathComponent("orphan.json"))
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertFalse(errors.isEmpty)
@@ -417,12 +416,12 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     func testBodyDirectoryListingFailureStillSubmitsAndReportsError() throws {
         var errors: [Error] = []
         let (uploader, _, transport) = try setup(reportError: { errors.append($0) })
-        try uploader.append(stream: .imu, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
         try uploader.flush(); try settle(uploader)
         let directory = try XCTUnwrap(transport.requests.first?.1.deletingLastPathComponent())
         try FileManager.default.setAttributes([.posixPermissions: 0o300], ofItemAtPath: directory.path)
         addTeardownBlock { try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertFalse(errors.isEmpty)
@@ -430,7 +429,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
 
     func testCrossOriginCompletionRetainsRowsAndBlocksUntilConfigure() throws {
         let (uploader, store, transport) = try setup()
-        try uploader.append(stream: .realtime, deviceId: "a", samples: rows)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try uploader.flush(); try settle(uploader)
         let identity = try XCTUnwrap(transport.requests.first?.2)
         transport.tasks.removeAll()

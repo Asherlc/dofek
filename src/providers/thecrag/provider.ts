@@ -8,6 +8,7 @@ import type { TokenSet } from "../../auth/oauth.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
+import { shouldReportProviderError } from "../../lib/provider-error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { findProviderTransportError } from "../../lib/provider-transport-error.ts";
 import { resolveScopedUserId } from "../../lib/user-context.ts";
@@ -167,7 +168,9 @@ export class TheCragProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors: [], duration: Date.now() - startedAt };
     } catch (error) {
       options.signal?.throwIfAborted();
-      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      if (shouldReportProviderError(error)) {
+        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      }
       if (findProviderTransportError(error)) throw error;
       return {
         provider: this.id,

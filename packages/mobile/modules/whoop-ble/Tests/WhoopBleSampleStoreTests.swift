@@ -3,6 +3,67 @@ import SQLite3
 @testable import WhoopBLE
 
 final class WhoopBleSampleStoreTests: XCTestCase {
+    func testNotificationCommitsEveryStreamBeforeReopening() throws {
+        let url = try directory()
+        var store: WhoopBleSampleStore? = try WhoopBleSampleStore(directory: url)
+        try store!.configure(owner)
+        try store!.append(deviceId: "a", samplesByStream: [
+            .sensorRecords: samples([1]), .realtime: samples([2]), .imu: samples([3, 4]),
+        ])
+        store = nil
+        let reopened = try WhoopBleSampleStore(directory: url)
+        for (stream, count) in [(WhoopUploadStream.sensorRecords, 1), (.realtime, 1), (.imu, 2)] {
+            XCTAssertEqual(try reopened.queuedCount(stream: stream), count)
+            XCTAssertEqual(try reopened.reserve(stream: stream)?.sampleCount, count)
+        }
+    }
+
+    func testMalformedStreamRollsBackTheEntireNotificationAndCounters() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        XCTAssertThrowsError(try store.append(deviceId: "a", samplesByStream: [
+            .sensorRecords: samples([1]), .realtime: samples([2]), .imu: [["timestamp": "bad"]],
+        ]))
+        for stream in WhoopUploadStream.allCases {
+            XCTAssertEqual(try store.queuedCount(stream: stream), 0)
+            XCTAssertEqual(try store.statistics(stream: stream)["receivedCount"] as? Int, 0)
+        }
+    }
+
+    func testNotificationAppliesCutoffIndependentlyToEveryStream() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        try store.advanceErasureCutoff(to: XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")))
+        try store.append(deviceId: "a", samplesByStream: [
+            .sensorRecords: samples([1, 3]), .realtime: samples([1, 3]), .imu: samples([1, 3]),
+        ])
+        for stream in WhoopUploadStream.allCases {
+            XCTAssertEqual(try store.queuedCount(stream: stream), 1)
+            XCTAssertEqual(try store.statistics(stream: stream)["receivedCount"] as? Int, 2)
+            XCTAssertEqual(try store.statistics(stream: stream)["erasureDiscardedCount"] as? Int, 1)
+        }
+    }
+
+    func testOneNotificationWritesFewerPagesThanSeparateStreamCommits() throws {
+        let (combined, combinedProbe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
+        let (separate, separateProbe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
+        try combined.configure(owner)
+        try separate.configure(owner)
+        let combinedBefore = combinedProbe.cacheWrites
+        let separateBefore = separateProbe.cacheWrites
+        for second in 1...20 {
+            let rows = samples([second])
+            try combined.append(deviceId: "a", samplesByStream: [.sensorRecords: rows, .realtime: rows])
+            try separate.append(deviceId: "a", samplesByStream: [.sensorRecords: rows])
+            try separate.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        }
+        XCTAssertLessThan(combinedProbe.cacheWrites - combinedBefore, separateProbe.cacheWrites - separateBefore)
+        for stream in [WhoopUploadStream.sensorRecords, .realtime] {
+            XCTAssertEqual(try combined.queuedCount(stream: stream), 20)
+            XCTAssertEqual(try separate.queuedCount(stream: stream), 20)
+        }
+    }
+
     func testUnknownRecordMarkerDoesNotAcquireAnUnverifiedErasureClock() throws {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
@@ -14,7 +75,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(bytes))
         let record = try XCTUnwrap(WhoopBleSensorRecord.serialize(
             frame: frame, deviceInfo: [:], receivedAt: Date(timeIntervalSince1970: 1_800_000_000)))
-        try store.append(stream: .sensorRecords, deviceId: "a", samples: [record])
+        try store.append(deviceId: "a", samplesByStream: [.sensorRecords: [record]])
         XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 1)
     }
     func testLateHistoricalTemperatureCannotResurrectDataBeforeErasure() throws {
@@ -24,7 +85,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         let frame = try XCTUnwrap(WhoopBleFrameParser.parseFrame(capturedWhoopR18Data()))
         let record = try XCTUnwrap(WhoopBleSensorRecord.serialize(
             frame: frame, deviceInfo: [:], receivedAt: Date(timeIntervalSince1970: 1_800_000_000)))
-        try store.append(stream: .sensorRecords, deviceId: "a", samples: [record])
+        try store.append(deviceId: "a", samplesByStream: [.sensorRecords: [record]])
         XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
         XCTAssertEqual(try store.statistics(stream: .sensorRecords)["erasureDiscardedCount"] as? Int, 1)
     }
@@ -37,7 +98,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
             "captureId": captureId, "timestamp": "2026-10-28T00:00:03.000Z",
             "frameHex": String(repeating: "aa", count: 40_000), "deviceInfo": [:],
         ]
-        try store!.append(stream: .sensorRecords, deviceId: "a", samples: Array(repeating: sensor, count: 4))
+        try store!.append(deviceId: "a", samplesByStream: [.sensorRecords: Array(repeating: sensor, count: 4)])
         let batch = try XCTUnwrap(store!.reserve(stream: .sensorRecords))
         XCTAssertEqual(batch.sampleCount, 3)
         XCTAssertLessThanOrEqual(batch.body.count, 262_144)
@@ -54,7 +115,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     func testSensorRecordsFollowAccountErasureAndRejectLateAcknowledgments() throws {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
-        try store.append(stream: .sensorRecords, deviceId: "a", samples: samples([1]))
+        try store.append(deviceId: "a", samplesByStream: [.sensorRecords: samples([1])])
         let old = try XCTUnwrap(store.reserve(stream: .sensorRecords))
         try store.advanceErasureCutoff(to: XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")))
         XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
@@ -103,8 +164,8 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     func testAcknowledgmentRequiresExactIdentityAmongActiveBatches() throws {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([1, 2]))
-        try store.append(stream: .imu, deviceId: "a", samples: samples([3]))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 2])])
+        try store.append(deviceId: "a", samplesByStream: [.imu: samples([3])])
         let realtime = try XCTUnwrap(store.reserve(stream: .realtime))
         let imu = try XCTUnwrap(store.reserve(stream: .imu))
         XCTAssertFalse(try store.acknowledge(id: "unknown-batch", generation: imu.generation))
@@ -136,7 +197,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     func testSuccessfulCommitLeavesNoSQLiteError() throws {
         let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
         try store.configure(owner)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([1]))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1])])
         XCTAssertEqual(probe.errorCode, SQLITE_OK)
     }
     func testStatisticsUsesBoundedDatabaseWorkForLargeQueues() throws {
@@ -166,7 +227,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
             let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
             try store.configure(owner)
             try seedPersistedSamples(10_000, stream: .imu, second: 2, probe: probe)
-            try store.append(stream: .realtime, deviceId: "a", samples: samples([1, 3]))
+            try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 3])])
             batch = try XCTUnwrap(store.reserve(stream: .realtime, limit: 1))
             try probe.executeFixture("DROP INDEX IF EXISTS samples_batch")
         }
@@ -186,8 +247,8 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     func testDiagnosticsBoundsFollowSampleTimeAcrossAcknowledgmentAndErasure() throws {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([9, 1, 8]))
-        try store.append(stream: .imu, deviceId: "a", samples: samples([3, 2]))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: samples([9, 1, 8])])
+        try store.append(deviceId: "a", samplesByStream: [.imu: samples([3, 2])])
         var stats = try store.statistics(stream: .realtime)
         XCTAssertEqual(stats["count"] as? Int, 3)
         XCTAssertEqual(stats["oldestTimestamp"] as? String, "2026-10-28T00:00:01.000Z")
@@ -211,11 +272,11 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     func testReopenPreservesImmutableReservationAndExactAcknowledgment() throws {
         let url = try directory()
         var store: WhoopBleSampleStore? = try WhoopBleSampleStore(directory: url)
-        XCTAssertThrowsError(try store!.append(stream: .realtime, deviceId: "a", samples: samples([1])))
+        XCTAssertThrowsError(try store!.append(deviceId: "a", samplesByStream: [.realtime: samples([1])]))
         try store!.configure(owner)
-        try store!.append(stream: .realtime, deviceId: "a", samples: samples([1, 2]))
+        try store!.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 2])])
         let batch = try XCTUnwrap(store!.reserve(stream: .realtime))
-        try store!.append(stream: .realtime, deviceId: "a", samples: samples([3]))
+        try store!.append(deviceId: "a", samplesByStream: [.realtime: samples([3])])
         store = nil
         let reopened = try WhoopBleSampleStore(directory: url)
         try reopened.configure(owner)
@@ -234,9 +295,9 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         try store.configure(owner)
         try seedPersistedSamples(85_900, stream: .realtime, second: 1, probe: probe)
         // Cross both the 500-row upload bound and the former 86,400-row queue cap through public ingestion.
-        try store.append(stream: .realtime, deviceId: "a", samples: Array(repeating: samples([1])[0], count: 501))
-        try store.append(stream: .realtime, deviceId: "b", samples: samples([2]))
-        try store.append(stream: .imu, deviceId: "b", samples: [["timestamp": "2026-10-28T00:00:00.000Z", "x": 1, "y": 2, "z": 3]])
+        try store.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: samples([1])[0], count: 501)])
+        try store.append(deviceId: "b", samplesByStream: [.realtime: samples([2])])
+        try store.append(deviceId: "b", samplesByStream: [.imu: [["timestamp": "2026-10-28T00:00:00.000Z", "x": 1, "y": 2, "z": 3]]])
         let realtime = try XCTUnwrap(store.reserve(stream: .realtime, limit: 1000))
         XCTAssertEqual(realtime.sampleCount, 500)
         XCTAssertEqual(realtime.deviceId, "a")
@@ -259,19 +320,19 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         let errors = NSMutableArray()
         let errorLock = NSLock()
         DispatchQueue.concurrentPerform(iterations: 20) { _ in
-            do { try store.append(stream: .realtime, deviceId: "a", samples: samples([1])) } catch {
+            do { try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1])]) } catch {
                 errorLock.lock(); errors.add(error); errorLock.unlock()
             }
         }
         XCTAssertEqual(errors.count, 0)
-        XCTAssertThrowsError(try store.append(stream: .realtime, deviceId: "a", samples: samples([2]) + [["timestamp": "bad"]]))
+        XCTAssertThrowsError(try store.append(deviceId: "a", samplesByStream: [.realtime: samples([2]) + [["timestamp": "bad"]]]))
         XCTAssertEqual(try store.statistics(stream: .realtime)["count"] as? Int, 20)
         XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 20)
     }
     func testOwnerRotationAndPurgeRejectOldCompletion() throws {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([1]))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1])])
         let old = try XCTUnwrap(store.reserve(stream: .realtime))
         try store.configure(WhoopUploadBinding(userId: "bob", serverURL: owner.serverURL))
         XCTAssertNotEqual(try store.generation, old.generation)
@@ -284,11 +345,11 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
         try store.advanceErasureCutoff(to: ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")!)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([1, 3]))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 3])])
         try store.purge()
         try store.configure(WhoopUploadBinding(userId: "bob", serverURL: owner.serverURL))
         XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 0)
-        try store.append(stream: .realtime, deviceId: "a", samples: samples([1, 2]))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 2])])
         XCTAssertNil(try store.reserve(stream: .realtime))
         XCTAssertEqual(try store.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 2)
         let generation = try store.generation
@@ -299,7 +360,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         let url = try directory()
         var store: WhoopBleSampleStore? = try WhoopBleSampleStore(directory: url)
         try store!.configure(owner)
-        try store!.append(stream: .realtime, deviceId: "a", samples: samples([3, 1, 4, 2]))
+        try store!.append(deviceId: "a", samplesByStream: [.realtime: samples([3, 1, 4, 2])])
         let old = try XCTUnwrap(store!.reserve(stream: .realtime))
         let cutoff = ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")!
         try store!.advanceErasureCutoff(to: cutoff)
@@ -307,7 +368,7 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         store = nil
         let reopened = try WhoopBleSampleStore(directory: url)
         try reopened.advanceErasureCutoff(to: cutoff.addingTimeInterval(-1))
-        try reopened.append(stream: .realtime, deviceId: "a", samples: samples([1, 2, 5]))
+        try reopened.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 2, 5])])
         XCTAssertEqual(try reopened.statistics(stream: .realtime)["count"] as? Int, 3)
         XCTAssertEqual(try reopened.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 4)
         let batch = try XCTUnwrap(reopened.reserve(stream: .realtime))
@@ -318,11 +379,11 @@ final class WhoopBleSampleStoreTests: XCTestCase {
     func testFractionalCutoffRetainsOnlySamplesAfterBoundary() throws {
         let store = try WhoopBleSampleStore(directory: directory())
         try store.configure(owner)
-        try store.append(stream: .realtime, deviceId: "a", samples: [
+        try store.append(deviceId: "a", samplesByStream: [.realtime: [
             ["timestamp": "2026-10-28T00:00:02.100Z", "heartRateBpm": 70],
             ["timestamp": "2026-10-28T00:00:02.200Z", "heartRateBpm": 71],
             ["timestamp": "2026-10-28T00:00:02.430Z", "heartRateBpm": 72],
-        ])
+        ]])
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         try store.advanceErasureCutoff(to: XCTUnwrap(formatter.date(from: "2026-10-28T00:00:02.200Z")))
@@ -340,11 +401,11 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         try store.advanceErasureCutoff(to: XCTUnwrap(formatter.date(from: "2026-10-28T00:00:02.200Z")))
-        try store.append(stream: .realtime, deviceId: "a", samples: [
+        try store.append(deviceId: "a", samplesByStream: [.realtime: [
             ["timestamp": "2026-10-28T00:00:02.100Z", "heartRateBpm": 70],
             ["timestamp": "2026-10-28T00:00:02.200Z", "heartRateBpm": 71],
             ["timestamp": "2026-10-28T00:00:02.430Z", "heartRateBpm": 72],
-        ])
+        ]])
         let batch = try XCTUnwrap(store.reserve(stream: .realtime))
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: batch.body) as? [String: Any])
         let samples = try XCTUnwrap(body["samples"] as? [[String: Any]])
