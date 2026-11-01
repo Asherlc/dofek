@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
   ensure: vi.fn(async () => {}),
   archive: vi.fn(),
   upsert: vi.fn(async (..._args: unknown[]) => ({ id: "activity-1" })),
-  graph: vi.fn(async () => ({ recordsSynced: 0, logEntryIds: [] })),
+  graph: vi.fn(async (_db: unknown, _input: { entries: readonly unknown[] }) => ({
+    recordsSynced: 0,
+    logEntryIds: [],
+  })),
   capture: vi.fn(),
   exercise: vi.fn(async () => "exercise-id"),
   log: vi.fn(
@@ -126,6 +129,8 @@ describe("Crimpd account connection", () => {
       expect(mocks.upsert.mock.calls[0]?.[1]).toMatchObject({
         activityType: { canonicalType: "climbing", modality: null, providerType: "Custom" },
       });
+      if (existing)
+        expect(mocks.graph.mock.calls[0]?.[1].entries[0]).not.toHaveProperty("activityId");
     },
   );
   it("imports recorded strength sets with exercise provenance", async () => {

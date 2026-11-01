@@ -117,7 +117,7 @@ describe("Vertical-Life source ascents", () => {
     { ...ascent, ascentId: " " },
     { ...ascent, platform: "" },
     { ...ascent, platform: " " },
-  ])("rejects malformed source facts before persistence", (row) => {
+  ])("rejects malformed source facts before persistence: %j", (row) => {
     expect(() => parseEightAAscentPage(page(row), "bouldering", 0)).toThrow(z.ZodError);
   });
   it("rejects invalid source calendar dates", () => {
