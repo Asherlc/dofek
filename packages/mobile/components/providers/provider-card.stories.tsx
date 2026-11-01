@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
+import { expect, within } from "storybook/test";
 import { AuthProvider } from "../../lib/auth-context";
 import { ProviderCard } from "./provider-card.tsx";
 
@@ -65,6 +66,55 @@ export const CrimpdConnected: ProviderCardStory = {
       authType: "credential",
     },
     onImport: () => {},
+  },
+};
+
+export const VerticalLifeConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "eight-a",
+      label: "8a.nu / Vertical-Life",
+      authType: "credential",
+    },
+    onImport: () => {},
+  },
+};
+
+export const VerticalLifeNarrow: ProviderCardStory = {
+  ...VerticalLifeConnected,
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 340 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = canvas.getByText("8a.nu / Vertical-Life");
+    const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    await expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
+      sync.getBoundingClientRect().left,
+    );
+  },
+};
+
+export const VerticalLifeNotConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "eight-a",
+      label: "8a.nu / Vertical-Life",
+      authType: "credential",
+      enabled: false,
+      authStatus: "not_connected",
+      lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
+    },
+    onImport: () => {},
+    onConnect: () => {},
   },
 };
 

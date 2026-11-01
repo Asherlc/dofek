@@ -430,6 +430,7 @@ const credentialProviders = [
   credentialProvider,
   { ...credentialProvider, id: "zwift", name: "Zwift" },
   { ...credentialProvider, id: "crimpd", name: "Crimpd" },
+  { ...credentialProvider, id: "eight-a", name: "8a.nu / Vertical-Life" },
 ];
 
 const tokenProvider = {
@@ -1095,33 +1096,43 @@ describe("ProvidersScreen", () => {
     ]);
   });
 
-  it("offers account sync and ZIP import together for connected Crimpd", async () => {
-    mockProvidersQuery.mockReturnValue({
-      data: [{ ...connectedProvider, id: "crimpd", name: "Crimpd", authType: "credential" }],
-      isLoading: false,
-      error: null,
-    });
-    mockSyncMutateAsync.mockResolvedValue({ jobId: "crimpd-job", providerJobs: [] });
-    mockSyncStatusFetch.mockResolvedValue({
-      status: "done",
-      providers: { crimpd: { status: "done" } },
-    });
-    mockGetDocumentAsync.mockResolvedValue({ canceled: true });
-    await renderProvidersScreen();
-    const card = within(screen.getByTestId("provider-card-crimpd"));
-    fireEvent.click(card.getByText("Sync"));
-    await waitFor(() => {
-      expect(mockSyncMutateAsync).toHaveBeenCalledWith({ providerId: "crimpd", sinceDays: 7 });
-    });
-    fireEvent.click(card.getByRole("button", { name: "Import file for Crimpd" }));
-    await waitFor(() => {
-      expect(mockGetDocumentAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: ["application/zip", "application/x-zip-compressed"],
-        }),
-      );
-    });
-  });
+  it.each([
+    ["crimpd", "Crimpd", ["application/zip", "application/x-zip-compressed"]],
+    [
+      "eight-a",
+      "8a.nu / Vertical-Life",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+  ])(
+    "offers account sync and file import together for connected %s",
+    async (id, name, mimeTypes) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...connectedProvider, id, name, authType: "credential" }],
+        isLoading: false,
+        error: null,
+      });
+      mockSyncMutateAsync.mockResolvedValue({ jobId: "crimpd-job", providerJobs: [] });
+      mockSyncStatusFetch.mockResolvedValue({
+        status: "done",
+        providers: { [id]: { status: "done" } },
+      });
+      mockGetDocumentAsync.mockResolvedValue({ canceled: true });
+      await renderProvidersScreen();
+      const card = within(screen.getByTestId(`provider-card-${id}`));
+      fireEvent.click(card.getByText("Sync"));
+      await waitFor(() => {
+        expect(mockSyncMutateAsync).toHaveBeenCalledWith({ providerId: id, sinceDays: 7 });
+      });
+      fireEvent.click(card.getByRole("button", { name: `Import file for ${name}` }));
+      await waitFor(() => {
+        expect(mockGetDocumentAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: mimeTypes,
+          }),
+        );
+      });
+    },
+  );
 
   it("scopes pull-to-refresh to provider list query families", async () => {
     await renderProvidersScreen();

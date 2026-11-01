@@ -87,8 +87,11 @@ or silently duplicated. If no sound transition can be established, bring that
 concrete decision back to the user before shipping the connector.
 
 Apply that identity resolution to every subsequent CSV upload as well as the
-initial transition and native-ID sync. A uniquely matched upload updates the
-same canonical record; a genuinely new source occurrence is imported once.
+initial transition and native-ID sync. A uniquely matched upload retains
+provenance on the same canonical record. The approved strict refinement requires
+all existing CSV history to match before initial native sync, rejects unmatched
+or edited connected uploads, and imports new ascents through native sync.
+Connected uploads do not replace native facts.
 Reject ambiguous cross-path matches with an actionable message, without
 partial writes, rather than creating duplicate records or guessing a merge.
 Use the same resolver for both ingestion paths and test upload-before-sync,

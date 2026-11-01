@@ -20,7 +20,8 @@ type DataSourcesScenario =
   | "providersLoading"
   | "empty"
   | "processingBlocked"
-  | "crimpd";
+  | "crimpd"
+  | "eight-a";
 
 const providers = [
   {
@@ -66,13 +67,15 @@ function createMockObservable(
             data:
               scenario === "empty"
                 ? []
-                : scenario === "crimpd"
+                : scenario === "crimpd" || scenario === "eight-a"
                   ? [
                       {
-                        id: "crimpd",
-                        name: "Crimpd",
+                        id: scenario,
+                        name: scenario === "crimpd" ? "Crimpd" : "8a.nu / Vertical-Life",
                         description:
-                          "Workouts and climbing logs. ZIP uploads remain available in Details.",
+                          scenario === "crimpd"
+                            ? "Workouts and climbing logs. ZIP uploads remain available in Details."
+                            : "Personal climbing logbook. Connected CSV uploads require exact matches.",
                         authType: "credential",
                         authorized: false,
                         lastSyncedAt: null,
@@ -200,6 +203,10 @@ export const Empty: Story = {
 
 export const Crimpd: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="crimpd" />,
+};
+
+export const VerticalLife: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="eight-a" />,
 };
 
 export const ProcessingBlocked: Story = {

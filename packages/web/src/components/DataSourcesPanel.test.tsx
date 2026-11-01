@@ -981,12 +981,15 @@ describe("DataSourcesPanel", () => {
     expect(pollingSignal?.aborted).toBe(true);
   });
 
-  it("starts account sync for Crimpd when ZIP imports are also supported", async () => {
+  it.each([
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+  ])("starts account sync for %s when file imports are also supported", async (id, name) => {
     mockProvidersQuery.mockReturnValue({
       data: [
         {
-          id: "crimpd",
-          name: "Crimpd",
+          id,
+          name,
           authorized: true,
           authType: "credential",
           importOnly: false,
@@ -1002,7 +1005,7 @@ describe("DataSourcesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sync" }));
     await waitFor(() => {
       expect(mockSyncMutateAsync).toHaveBeenCalledWith({
-        providerId: "crimpd",
+        providerId: id,
         sinceDays: ROUTINE_SYNC_DAYS,
       });
     });

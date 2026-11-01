@@ -89,10 +89,12 @@ the owner's credentials, persisted the replacement through its callback, and
 completed all four empty categories successfully. Unit fixtures cover populated
 outdoor records, malformed pages, repetition, cancellation and renewal order;
 they do not substitute for populated owner or indoor verification. Indoor grade
-systems remain unknown rather than inferred. Provider activation and CSV/native
-identity reconciliation remain pending: CSV has no native ascent ID, so a changed
-CSV row cannot always be distinguished from a separate occurrence. See the
-[approved design](superpowers/specs/2026-11-01-climbing-direct-sync-design.md).
+systems remain unknown rather than inferred. The [provider](../src/providers/eight-a/provider.ts)
+uses a strict CSV/native transition: unmatched or ambiguous legacy history blocks
+the transition, and connected uploads must match native records exactly and
+uniquely. This avoids guessing whether an edited CSV row is a separate occurrence.
+See the [identity resolver](../src/providers/eight-a/identity.ts) and
+[current connection guide](climbing-providers.md#8anu--vertical-life).
 
 ## Crimpd: authenticated access verified
 

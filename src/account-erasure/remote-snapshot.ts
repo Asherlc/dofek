@@ -235,6 +235,7 @@ async function loadProviderConnections(
         [
           "kilter",
           "crimpd",
+          "eight-a",
           "tension",
           "grasshopper",
           "decoy",

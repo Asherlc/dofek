@@ -15,7 +15,7 @@ and importer tests beside each [provider](../src/providers/README.md).
 | Tension Board | Aurora username/password | Separate native ascent/bid records, dates, angle, notes, explicit outcomes and available named ascent styles. |
 | Grasshopper, Decoy, So iLL, Touchstone Board, Aurora Board | Each board's Aurora username/password | The same upstream protocol, with independent accounts, provider attribution, and host configuration. |
 | Crimpd | Account email/password, or original logbook ZIP | Recorded workouts, climbing sets, board/angle/grade/notes, exact available tries and ascent flags, plus supported nonclimbing set facts. |
-| 8a.nu / Vertical-Life | 8a.nu logbook CSV | Personal ascent history, source dates, names, locations, grades, notes, native result labels and exact positive recorded tries. |
+| 8a.nu / Vertical-Life | Account email/password, or 8a.nu logbook CSV | Native ascent IDs, four logbook categories, source dates, grades, notes and available attempt facts. Connected CSV imports require unique exact matches. |
 | MoonBoard | Previously exported BoardLib CSV | Historical logbook rows. This connection does not fetch the current MoonBoard app. |
 
 Board contracts come from the current [Kilter client](https://github.com/lemeryfertitta/BoardLib/blob/6943d6682431258a5bf6229f659ffaac61040652/src/boardlib/api/kilter.py),
@@ -132,13 +132,42 @@ and are exercised in the [import tests](../src/providers/crimpd/provider.integra
 
 ### 8a.nu / Vertical-Life
 
+Connect your account in Settings → Data Sources. Scheduled and manual sync read
+the shared Vertical-Life logbook using renewable per-user credentials. The
+[client](../src/providers/eight-a/client.ts) reads bouldering, sport climbing,
+indoor routes and indoor boulders until each category returns an empty page,
+including projects, repeats and duplicates. Direct Node renewal and owner reads
+were verified on November 1, 2026; the owner history was empty. Populated outdoor
+responses supplied parser fixtures, while populated indoor behavior remains
+unverified and indoor grade systems stay unknown. See the
+[authentication and source evidence](climbing-logbook-api-research.md#vertical-life-mobile-client-verification)
+and [shared logbook announcement](https://www.8a.nu/news/find-your-logbook-in-the-vertical-life-app).
+
+Before the first native sync, every existing CSV occurrence must have a unique
+exact match in the remote logbook. Dofek migrates those identities in place,
+preserves attachments and attempts, and retains both payloads in the canonical
+record. Once connected or native history exists, uploads only retain provenance
+for uniquely matched records; they cannot overwrite native facts or add new
+ascents. Edited, unmatched and ambiguous CSV rows fail atomically with an
+actionable error. Add new ascents in Vertical-Life and sync them. Matching uses
+the shared source kind, calendar date, name, location/sector, grade, result,
+tries, comment, subtype and project flag; it requires a known name, location
+and date. See the [resolver](../src/providers/eight-a/identity.ts) and
+[database regressions](../src/providers/eight-a/provider.integration.test.ts).
+
+Complete native syncs reconcile missing native occurrences without deleting raw
+history or attachments. Failed or malformed fetches never retire records.
+Upstream session revocation is unverified, so disconnect the source in Dofek
+before requesting account erasure; see the
+[lifecycle prerequisite](../src/account-erasure/remote-snapshot.ts).
+
 Download the CSV through 8a.nu Profile Info → edit → Logbook Export, then upload
 it to **8a.nu / Vertical-Life** in Dofek. The [official FAQ](https://www.8a.nu/faq)
 documents ascent export, and the [shared logbook announcement](https://www.8a.nu/news/find-your-logbook-in-the-vertical-life-app)
 explains Vertical-Life's relationship to the 8a.nu logbook. The parser follows a
 [representative export fixture](https://github.com/edouardmisset/unified-climbing-projects/blob/main/src/domain/fixtures/8a-nu.fixture.ts).
 
-The file has no native ascent/route IDs. Dofek identifies exact source rows by
+Before account connection, the file has no native ascent/route IDs. Dofek identifies exact source rows by
 content plus duplicate occurrence number, preserving repeated rows and stable
 identity when unrelated rows move. An edited row becomes a distinct source
 occurrence: the importer cannot safely infer which earlier row it replaced.
