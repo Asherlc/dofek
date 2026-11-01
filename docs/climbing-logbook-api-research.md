@@ -1,6 +1,6 @@
 # Climbing logbook API access research
 
-<!-- cspell:words vlatka boardlink -->
+<!-- cspell:words vlatka boardlink sportclimbing gymroute gymboulder -->
 
 Checked **2026-10-31**. This records upstream access evidence, not implemented
 Dofek connections. Current product behavior remains documented in
@@ -49,7 +49,7 @@ boundaries. Reusing the documented export through the existing
 does not establish that the JSON read path is more complete. The official
 [export reference](https://crimpd.com/docs/data-export/) documents export limits.
 
-## Vertical-Life: account validation pending
+## Vertical-Life: browser-session access verified
 
 Vertical-Life officially synchronizes its logbook with 8a.nu, making the web
 logbook a candidate access path. That announcement alone does not prove full
@@ -60,9 +60,38 @@ A third-party scraper implements
 `GET /unificationAPI/ascent/v1/web/users/{userSlug}/ascents` on `www.8a.nu`, with
 category, pagination, and filters. Its example requests disable projects,
 repeats, and duplicates; those defaults are unsuitable evidence of a complete
-logbook. The source is historical, and a direct unauthenticated request in this
-investigation returned a Cloudflare HTTP 403 page. Source:
+logbook. The source is historical: direct unauthenticated requests returned a
+Cloudflare HTTP 403 page, and authenticated browser requests to that old route
+returned HTTP 404 for both the owner's and a public climber's logbooks. Source:
 [scraper implementation](https://github.com/SebastianAuerbach/adam_ondra_logbook_scraper/blob/main/scraper.py).
+
+Method: after the owner completed sign-in and email verification, inspect
+browser resource entries and the currently deployed Nuxt client
+[`BvPRvgJk.js`](https://www.8a.nu/_nuxt/BvPRvgJk.js), then make read-only
+same-origin requests. The current prefix is `/api/unification`, replacing the
+historical `/unificationAPI` prefix. The client exposes:
+
+| Request | Observed contract and validation |
+| --- | --- |
+| `GET /api/unification/ascent/v1/web/users/{userSlug}/ascents` | Verified HTTP 200 for the owner's `bouldering`, `sportclimbing`, `gymroute`, and `gymboulder` categories. Each returned `ascents`, `totalItems`, and `pageIndex`, with an empty list in this account. |
+| Same request for a public climber | Verified a populated bouldering response and three successive one-record pages with distinct native ascent IDs. Observed fields include `ascentId`, `platform`, `date`, `difficulty`, route/location names and slugs, `type`, `repeat`, `project`, `rating`, `category`, `secondGo`, `duplicate`, comments, and climbing-trait flags. The sample's platform was `eight_a`. |
+| `GET /api/unification/ascent/v1/web/ascents/export-csv` | Verified HTTP 200 and `text/csv`. With `credentials: "omit"`, the same request returned HTTP 401 JSON. |
+
+The CSV header was
+`route_boulder,name,location_name,sector_name,area_name,country_code,date,type,sub_type,rating,project,tries,repeats,difficulty,perceived_hardness,comment,height,recommended,sits`.
+No populated owner export or populated indoor response was available for
+comparison. Sources: the deployed
+[API client](https://www.8a.nu/_nuxt/BvPRvgJk.js) and
+[user-logbook components](https://www.8a.nu/_nuxt/9KXPQ0_O.js).
+
+**Pagination:** `pageIndex` starts at zero. `totalItems` was `1` on each of
+three distinct one-record pages, so it must not be treated as the whole
+logbook's total. The current indoor and outdoor components both increment
+`pageIndex` after each nonempty result and stop on an empty `ascents` array;
+the normal UI page size is 50. Include `includeProjects=true`,
+`showRepeats=true`, and `showDuplicates=true` when validating complete source
+history rather than copying the UI's default filters. Source:
+[current pagination/filter implementation](https://www.8a.nu/_nuxt/9KXPQ0_O.js).
 
 The live browser login redirects to the `Vertical-Life` realm on
 `vlatka.vertical-life.info`, using authorization code with PKCE and client ID
@@ -73,9 +102,17 @@ credentials can be reused. Source:
 
 Staff describe CSV export under Profile Info → Edit → Logbook Export and say a
 public ascent API was not planned at the time of the response. Later users
-report difficulty finding the export control. Authenticated API access,
-current export availability, and indoor coverage remain unverified. Source:
+report difficulty finding the export control; the authenticated export
+endpoint above worked without locating that control. Source:
 [vendor forum discussion](https://www.8a.nu/forum/site-improvements/thread/export-or-download-scorecard).
+
+The browser-session read contract is verified, including the indoor category
+names, but unattended server authentication and session renewal are not.
+Independent requests from Node still received Cloudflare HTTP 403. A successful
+browser request does not prove a reusable bearer-token integration. Populated
+owner/indoor records and completeness against the app remain validation gaps.
+Sources: [current web app](https://www.8a.nu/),
+[API client](https://www.8a.nu/_nuxt/BvPRvgJk.js).
 
 ## MoonBoard: new app API and device/export alternatives
 
@@ -119,6 +156,17 @@ Neither path was exercised against an actual account here. They must not be
 advertised as supported by Dofek's existing historical BoardLib CSV importer:
 the CSV headers and identity fields differ. See the current
 [MoonBoard parser](../src/providers/moonboard/parser.ts).
+
+An owner-signed-in iPhone app was inspected through iPhone Mirroring. Hub →
+Logbook loaded an empty logbook. Settings showed hold-marker, group-climbing,
+LED, and theme controls; the profile showed an edit action. No export control
+was observed on those inspected screens. The Hub's lower account section was
+not fully inspected because mirrored scrolling did not reliably advance it;
+this is not proof that the app has no export function. No HTTPS capture,
+certificate installation, or authenticated API replay was performed. The
+inspected app is distributed through the vendor-linked
+[App Store listing](https://apps.apple.com/us/app/moon-board/id6446842142);
+the listing alone does not establish available export controls.
 
 The unresolved direct-API check requires fresh user authentication and a known
 read request, then distinguishing an authentication failure from an explicit
