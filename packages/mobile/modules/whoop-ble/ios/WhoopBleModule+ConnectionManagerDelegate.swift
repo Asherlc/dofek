@@ -134,15 +134,11 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         publishOrientation(newImuSamples)
 
         do {
-            if !newSensorRecords.isEmpty {
-                try uploader.append(stream: .sensorRecords, deviceId: deviceId, samples: newSensorRecords)
-            }
-            if !newRealtimeData.isEmpty {
-                try uploader.append(stream: .realtime, deviceId: deviceId, samples: WhoopBleSampleSerializer.realtime(newRealtimeData))
-            }
-            if !newImuSamples.isEmpty {
-                try uploader.append(stream: .imu, deviceId: deviceId, samples: WhoopBleSampleSerializer.imu(newImuSamples))
-            }
+            try uploader.append(deviceId: deviceId, samplesByStream: [
+                .sensorRecords: newSensorRecords,
+                .realtime: WhoopBleSampleSerializer.realtime(newRealtimeData),
+                .imu: WhoopBleSampleSerializer.imu(newImuSamples),
+            ])
         } catch {
             failCapture(error)
             return

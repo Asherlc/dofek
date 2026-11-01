@@ -47,7 +47,9 @@ public class WhoopBleModule: Module {
         OnCreate {
             self.connectionManager.delegate = self
             self.watchdog.delegate = self
-            do { _ = try self.uploader } catch { self.failCapture(error) }
+            WhoopBleUploadRuntime.prepare { [weak self] error in
+                self?.connectionManager.bleQueue.async { [weak self] in self?.failCapture(error) }
+            }
         }
 
         // MARK: - Availability

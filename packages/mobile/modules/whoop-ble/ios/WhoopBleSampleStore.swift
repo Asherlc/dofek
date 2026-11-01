@@ -112,36 +112,43 @@ final class WhoopBleSampleStore {
         }
     }
 
-    func append(stream: WhoopUploadStream, deviceId: String, samples: [[String: Any]]) throws {
+    func append(deviceId: String, samplesByStream: [WhoopUploadStream: [[String: Any]]]) throws {
         try transaction {
             guard try readBinding() != nil else { throw StoreError("Configure an authenticated WHOOP account before capture") }
-            let cutoff = try metadata("cutoff").flatMap(Double.init)
-            try execute("UPDATE stats SET received = received + ? WHERE stream = ?", [samples.count, stream.rawValue])
-            // One prepared statement per notification, including larger replay fixtures.
-            let statement = try prepare("INSERT INTO samples(stream, device, timestamp, payload) VALUES (?, ?, ?, ?)")
-            defer { sqlite3_finalize(statement) }
-            var erased = 0
-            for sample in samples {
-                guard let timestamp = sample["timestamp"] as? String,
-                      let date = formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp) else {
-                    throw StoreError("WHOOP sample requires a valid ISO8601 timestamp")
-                }
-                guard JSONSerialization.isValidJSONObject(sample) else { throw StoreError("WHOOP sample is not valid JSON") }
-                let erasureTime = stream == .sensorRecords
-                    ? WhoopBleSensorRecord.erasureTime(sample: sample, receivedAt: date)
-                    : date.timeIntervalSince1970
-                if let cutoff, erasureTime <= cutoff { erased += 1; continue }
-                let payload = try JSONSerialization.data(withJSONObject: sample, options: [.sortedKeys])
-                guard payload.count <= stream.bodyLimit - 2048 else {
-                    throw StoreError("WHOOP sensor record exceeds the upload body limit")
-                }
-                sqlite3_reset(statement)
-                sqlite3_clear_bindings(statement)
-                try bind([stream.rawValue, deviceId, erasureTime, payload], to: statement)
-                try finish(statement)
+            for stream in WhoopUploadStream.allCases {
+                guard let samples = samplesByStream[stream], !samples.isEmpty else { continue }
+                try appendLocked(stream: stream, deviceId: deviceId, samples: samples)
             }
-            try execute("UPDATE stats SET erased = erased + ? WHERE stream = ?", [erased, stream.rawValue])
         }
+    }
+
+    private func appendLocked(stream: WhoopUploadStream, deviceId: String, samples: [[String: Any]]) throws {
+        let cutoff = try metadata("cutoff").flatMap(Double.init)
+        try execute("UPDATE stats SET received = received + ? WHERE stream = ?", [samples.count, stream.rawValue])
+        // One prepared statement per notification, including larger replay fixtures.
+        let statement = try prepare("INSERT INTO samples(stream, device, timestamp, payload) VALUES (?, ?, ?, ?)")
+        defer { sqlite3_finalize(statement) }
+        var erased = 0
+        for sample in samples {
+            guard let timestamp = sample["timestamp"] as? String,
+                  let date = formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp) else {
+                throw StoreError("WHOOP sample requires a valid ISO8601 timestamp")
+            }
+            guard JSONSerialization.isValidJSONObject(sample) else { throw StoreError("WHOOP sample is not valid JSON") }
+            let erasureTime = stream == .sensorRecords
+                ? WhoopBleSensorRecord.erasureTime(sample: sample, receivedAt: date)
+                : date.timeIntervalSince1970
+            if let cutoff, erasureTime <= cutoff { erased += 1; continue }
+            let payload = try JSONSerialization.data(withJSONObject: sample, options: [.sortedKeys])
+            guard payload.count <= stream.bodyLimit - 2048 else {
+                throw StoreError("WHOOP sensor record exceeds the upload body limit")
+            }
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+            try bind([stream.rawValue, deviceId, erasureTime, payload], to: statement)
+            try finish(statement)
+        }
+        try execute("UPDATE stats SET erased = erased + ? WHERE stream = ?", [erased, stream.rawValue])
     }
 
     func reserve(stream: WhoopUploadStream, limit: Int = 500) throws -> WhoopStoredBatch? {

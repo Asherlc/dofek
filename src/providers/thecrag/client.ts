@@ -37,7 +37,6 @@ export class TheCragClient {
         "theCrag",
         "Your personal API key contains invalid characters. Copy it again from theCrag Settings > API Keys.",
       );
-      captureException(error, { tags: { provider: "thecrag", phase: "key_validation" } });
       throw error;
     }
     this.#fetch = fetchFn;

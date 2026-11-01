@@ -7,6 +7,7 @@ import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { ProviderStoredIdentityMissingError } from "../providers/auth-errors.ts";
 import type { ProviderAuthSetup, SyncResult, SyncRun } from "../providers/types.ts";
 import { captureException } from "./error-reporting.ts";
+import { shouldReportProviderError } from "./provider-error-reporting.ts";
 import { findProviderTransportError } from "./provider-transport-error.ts";
 
 export interface BoardLogbook {
@@ -92,7 +93,9 @@ export class ClimbingBoardAccount {
         userId,
       );
     } catch (error) {
-      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      if (shouldReportProviderError(error)) {
+        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      }
       if (findProviderTransportError(error)) throw error;
       result.errors.push({
         message: error instanceof Error ? error.message : String(error),

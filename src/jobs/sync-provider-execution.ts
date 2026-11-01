@@ -7,6 +7,7 @@ import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { shouldReportProviderError } from "../lib/provider-error-reporting.ts";
 import { logger } from "../logger.ts";
 import { isPushProvider, isWebhookProvider, type SyncProvider } from "../providers/types.ts";
 import {
@@ -24,7 +25,6 @@ import {
   firstAuthFailureReason,
   handleSyncProviderFailure,
   providerSyncFailureEvent,
-  shouldReportProviderError,
   throwRetryableSyncResultError,
 } from "./sync-provider-failure.ts";
 
