@@ -15,6 +15,7 @@
     "packages/scoring/src/**/*.ts",
     "packages/nutrition/src/**/*.ts",
     "packages/training/src/**/*.ts",
+    "packages/cycling-power/src/**/*.ts",
     "packages/climbing-catalogue/src/**/*.ts",
     "packages/recovery/src/**/*.ts",
     "packages/zones/src/**/*.ts",
@@ -61,6 +62,7 @@
     "!packages/zepp/setting/**"
   ],
   "ignorePatterns": [
+    ".stryker-tmp*/**",
     "packages/training/src/terminology.ts",
     "dist/**",
     "packages/mobile/modules/whoop-ble/.build/**",

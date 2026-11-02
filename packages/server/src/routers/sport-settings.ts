@@ -7,7 +7,6 @@ const zonePctsSchema = z.array(z.number().min(0).max(3)).min(2).max(10);
 
 const sportSettingsInput = z.object({
   sport: z.string().min(1),
-  ftp: z.number().int().positive().optional(),
   thresholdHr: z.number().int().positive().optional(),
   thresholdPacePerKm: z.number().positive().optional(),
   powerZonePcts: zonePctsSchema.optional(),

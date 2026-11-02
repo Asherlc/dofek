@@ -155,7 +155,7 @@ describe("fetchHealthspanRawData", () => {
     });
   });
 
-  it("counts missing activity weeks as zero for weekly activity averages", async () => {
+  it("preserves unknown activity weeks in weekly activity averages", async () => {
     const query = vi.fn().mockResolvedValue([
       {
         week_start: "2026-03-03",
@@ -176,6 +176,37 @@ describe("fetchHealthspanRawData", () => {
 
     const row = await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
+    expect(row).toMatchObject({
+      weekly_aerobic_min: null,
+      weekly_high_intensity_min: null,
+      sessions_per_week: null,
+    });
+  });
+
+  it("retains measured zero weeks when averaging known activity coverage", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        week_start: "2026-03-03",
+        ...makeRawHealthspanRow({
+          weekly_aerobic_min: 120,
+          weekly_high_intensity_min: 30,
+          sessions_per_week: 3,
+        }),
+      },
+      {
+        week_start: "2026-03-10",
+        ...makeRawHealthspanRow({
+          weekly_aerobic_min: 0,
+          weekly_high_intensity_min: 0,
+          sessions_per_week: 0,
+        }),
+      },
+    ]);
+    const row = await fetchHealthspanRawData(
+      makeFetchContext({ sensorStore: makeSensorStore({ query }) }),
+      "2026-03-15",
+      14,
+    );
     expect(row).toMatchObject({
       weekly_aerobic_min: 60,
       weekly_high_intensity_min: 15,

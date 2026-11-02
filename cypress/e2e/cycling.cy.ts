@@ -18,7 +18,7 @@ describe("Cycling Page", () => {
     cy.visit("/training/cycling");
     cy.contains("Power Duration Curve").should("be.visible");
     cy.contains("Fitness, Fatigue & Form").should("be.visible");
-    cy.contains("Estimated Threshold Power Trend").should("be.visible");
+    cy.contains("Ongoing Estimated Threshold Power").should("be.visible");
     cy.contains("Aerobic Efficiency").should("be.visible");
     cy.contains("Vertical Ascent Rate").should("be.visible");
   });

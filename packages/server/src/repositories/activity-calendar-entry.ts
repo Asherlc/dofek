@@ -9,7 +9,7 @@ import {
 } from "@dofek/format/record-local-time";
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
+import type { TrainingStressCalculator } from "@dofek/training/training-load";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import type { ActivityLocation } from "../contracts/activity-location.ts";
@@ -96,6 +96,7 @@ export const activityRowSchema = z.object({
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
   avg_power: z.coerce.number().nullable(),
+  power_tss: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
   centroid_lat: z.coerce.number().nullable(),
@@ -112,7 +113,6 @@ export const activityRowSchema = z.object({
 export const baselineRowSchema = z.object({
   max_hr: z.coerce.number().nullable(),
   resting_hr: z.coerce.number().nullable(),
-  ftp: z.coerce.number().nullable(),
 });
 
 function authoritativeLocalTimeContext(
@@ -244,12 +244,11 @@ function projectCalendarEntry(
   const { baseline, calculator } = context;
   const trainingStress = computeActivityTrainingStress({
     durationMin: row.duration_min,
-    avgPower: row.avg_power,
     avgHr: row.avg_hr,
     maxHr: row.max_hr,
     baselineMaxHr: baseline.max_hr,
     baselineRestingHr: baseline.resting_hr,
-    ftp: baseline.ftp,
+    powerTss: row.power_tss,
     calculator,
   });
   const tss = trainingStress.status === "available" ? trainingStress.score : null;
@@ -288,12 +287,11 @@ function projectCalendarEntry(
 
 interface TssInput {
   durationMin: number;
-  avgPower: number | null;
   avgHr: number | null;
   maxHr: number | null;
   baselineMaxHr: number | null;
   baselineRestingHr: number | null;
-  ftp: number | null;
+  powerTss: number | null;
   calculator: TrainingStressCalculator;
 }
 
@@ -314,10 +312,10 @@ function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress 
       reason: "Record an activity duration greater than zero.",
     };
   }
-  if (input.avgPower != null && input.avgPower > 0 && input.ftp != null && input.ftp > 0) {
+  if (input.powerTss != null) {
     return {
       status: "available",
-      score: TrainingStressCalculator.computePowerTss(input.avgPower, input.ftp, input.durationMin),
+      score: input.powerTss,
     };
   }
   const effectiveMaxHr = input.baselineMaxHr ?? input.maxHr;
@@ -349,14 +347,6 @@ function formatTrainingStressUnavailableReason(
   effectiveMaxHr: number | null,
   effectiveRestingHr: number,
 ): string {
-  const powerActions: string[] = [];
-  if (input.avgPower == null || input.avgPower <= 0) {
-    powerActions.push("record average power");
-  }
-  if (input.ftp == null || input.ftp <= 0) {
-    powerActions.push("set functional threshold power");
-  }
-
   const heartRateActions: string[] = [];
   if (input.avgHr == null || input.avgHr <= 0) {
     heartRateActions.push("record average heart rate");
@@ -367,7 +357,8 @@ function formatTrainingStressUnavailableReason(
     heartRateActions.push("set maximum heart rate above resting heart rate");
   }
 
-  const powerAction = joinActions(powerActions);
+  const powerAction =
+    "record cycling power with sufficient sustained-effort evidence for computed eFTP";
   const heartRateAction = joinActions(heartRateActions);
   return `${capitalize(powerAction)}, or ${heartRateAction}.`;
 }

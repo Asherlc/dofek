@@ -4,6 +4,7 @@ import {
   type SportVolumeResult,
   sportVolumeMetrics,
 } from "@dofek/training/sport-volume";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { RangeDays } from "../lib/date-window.ts";
@@ -110,6 +111,7 @@ export class SportVolumeRepository {
         const result = computeCyclingPowerWork(
           observations,
           row.duration_seconds ?? 0,
+          cyclingPowerCoveragePolicy,
           observations
             .filter((sample) => sample.powerWatts == null || sample.powerWatts < 0)
             .map((sample) => sample.elapsedSeconds),

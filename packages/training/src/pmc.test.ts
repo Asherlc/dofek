@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mockLinearRegression = vi.fn();
-vi.mock("./power-analysis.ts", async (importOriginal) => {
+vi.mock("@dofek/cycling-power/regression", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
@@ -9,14 +9,7 @@ vi.mock("./power-analysis.ts", async (importOriginal) => {
   };
 });
 
-import {
-  type ActivityRow,
-  buildTssModel,
-  computeHrTss,
-  computePowerTss,
-  computeTrimp,
-  estimateFtp,
-} from "./pmc.ts";
+import { buildTssModel, computeHrTss, computeTrimp } from "./pmc.ts";
 
 // --- computeTrimp ---
 
@@ -115,61 +108,6 @@ describe("computeHrTss", () => {
   });
 });
 
-// --- computePowerTss ---
-
-describe("computePowerTss", () => {
-  it("returns 0 when ftp is 0", () => {
-    expect(computePowerTss(200, 0, 60)).toBe(0);
-  });
-
-  it("returns 0 when ftp is negative", () => {
-    expect(computePowerTss(200, -100, 60)).toBe(0);
-  });
-
-  it("returns 0 when durationMin is 0", () => {
-    expect(computePowerTss(200, 250, 0)).toBe(0);
-  });
-
-  it("returns 0 when durationMin is negative", () => {
-    expect(computePowerTss(200, 250, -10)).toBe(0);
-  });
-
-  it("returns 0 when normalizedPower is 0", () => {
-    expect(computePowerTss(0, 250, 60)).toBe(0);
-  });
-
-  it("returns 0 when normalizedPower is negative", () => {
-    expect(computePowerTss(-100, 250, 60)).toBe(0);
-  });
-
-  it("returns exactly 100 for 1 hour at FTP", () => {
-    // (250/250)^2 * (60/60) * 100 = 100
-    expect(computePowerTss(250, 250, 60)).toBe(100);
-  });
-
-  it("computes correct value: IF^2 * hours * 100", () => {
-    // NP=200, FTP=250, 60min: IF=0.8, TSS = 0.64 * 1 * 100 = 64
-    expect(computePowerTss(200, 250, 60)).toBeCloseTo(64, 5);
-  });
-
-  it("scales linearly with duration", () => {
-    // 30 min at FTP: (1)^2 * 0.5 * 100 = 50
-    expect(computePowerTss(250, 250, 30)).toBe(50);
-  });
-
-  it("scales with intensity squared", () => {
-    // NP=300, FTP=200, 60min: IF=1.5, TSS = 2.25 * 1 * 100 = 225
-    expect(computePowerTss(300, 200, 60)).toBe(225);
-  });
-
-  it("handles non-standard values", () => {
-    // NP=150, FTP=300, 90min: IF=0.5, TSS = 0.25 * 1.5 * 100 = 37.5
-    expect(computePowerTss(150, 300, 90)).toBe(37.5);
-  });
-});
-
-// --- buildTssModel ---
-
 describe("buildTssModel", () => {
   it("returns null when fewer than 10 data points", () => {
     const paired = Array.from({ length: 9 }, (_, i) => ({
@@ -250,118 +188,3 @@ describe("buildTssModel", () => {
 });
 
 // --- estimateFtp ---
-
-describe("estimateFtp", () => {
-  function makeActivity(overrides: Partial<ActivityRow> = {}): ActivityRow {
-    return {
-      id: "a1",
-      date: "2024-01-01",
-      duration_min: 60,
-      avg_hr: 155,
-      max_hr: 180,
-      avg_power: 200,
-      power_samples: 3600,
-      hr_samples: 3600,
-      ...overrides,
-    };
-  }
-
-  it("returns null when no activities", () => {
-    expect(estimateFtp([])).toBeNull();
-  });
-
-  it("returns null when all activities too short", () => {
-    const activities = [makeActivity({ duration_min: 15 })];
-    expect(estimateFtp(activities)).toBeNull();
-  });
-
-  it("returns null when no power data", () => {
-    const activities = [makeActivity({ avg_power: null })];
-    expect(estimateFtp(activities)).toBeNull();
-  });
-
-  it("returns null when avg_power is 0", () => {
-    const activities = [makeActivity({ avg_power: 0 })];
-    expect(estimateFtp(activities)).toBeNull();
-  });
-
-  it("ignores NP and uses avg_power to avoid inflated interval estimates", () => {
-    const activities = [makeActivity({ id: "a1", avg_power: 220 })];
-    expect(estimateFtp(activities)).toBe(Math.round(220 * 0.95)); // 209
-  });
-
-  it("uses avg_power for estimation", () => {
-    const activities = [makeActivity({ avg_power: 200 })];
-    expect(estimateFtp(activities)).toBe(Math.round(200 * 0.95)); // 190
-  });
-
-  it("uses the highest avg_power among qualifying activities", () => {
-    const activities = [
-      makeActivity({ id: "a1", avg_power: 200 }),
-      makeActivity({ id: "a2", avg_power: 250 }),
-      makeActivity({ id: "a3", avg_power: 180 }),
-    ];
-    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
-  });
-
-  it("uses Math.max not Math.min for best power", () => {
-    const activities = [
-      makeActivity({ id: "a1", avg_power: 100 }),
-      makeActivity({ id: "a2", avg_power: 300 }),
-    ];
-    const result = estimateFtp(activities);
-    expect(result).toBe(Math.round(300 * 0.95)); // 285
-    expect(result).not.toBe(Math.round(100 * 0.95)); // not 95
-  });
-
-  it("excludes activities shorter than 20 minutes", () => {
-    const activities = [
-      makeActivity({ id: "a1", duration_min: 19, avg_power: 400 }),
-      makeActivity({ id: "a2", duration_min: 20, avg_power: 200 }),
-    ];
-    expect(estimateFtp(activities)).toBe(Math.round(200 * 0.95)); // 190
-  });
-
-  it("includes activity with exactly 20 minutes", () => {
-    const activities = [makeActivity({ duration_min: 20, avg_power: 250 })];
-    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
-  });
-
-  it("returns null when avg_power is null on all activities", () => {
-    const activities = [makeActivity({ id: "a1", avg_power: null, duration_min: 30 })];
-    expect(estimateFtp(activities)).toBeNull();
-  });
-
-  it("multiplies by 0.95 not divides", () => {
-    const activities = [makeActivity({ avg_power: 200 })];
-    const result = estimateFtp(activities);
-    expect(result).toBe(190);
-    expect(result).not.toBe(211);
-  });
-
-  it("filters by duration_min >= 20 not > 20", () => {
-    const activities = [
-      makeActivity({ id: "a1", duration_min: 19, avg_power: 300 }),
-      makeActivity({ id: "a2", duration_min: 20, avg_power: 200 }),
-    ];
-    const result = estimateFtp(activities);
-    expect(result).toBe(Math.round(200 * 0.95)); // 190, not 285
-    expect(result).not.toBe(Math.round(300 * 0.95));
-  });
-
-  it("filters by avg_power > 0 not >= 0", () => {
-    const activities = [makeActivity({ avg_power: 0, duration_min: 60 })];
-    expect(estimateFtp(activities)).toBeNull();
-  });
-
-  it("rounds result to nearest integer", () => {
-    // 210 * 0.95 = 199.5 → 200 (Math.round)
-    const activities = [makeActivity({ avg_power: 210 })];
-    expect(estimateFtp(activities)).toBe(200);
-  });
-
-  it("handles single qualifying activity correctly", () => {
-    const activities = [makeActivity({ id: "a1", avg_power: 250, duration_min: 20 })];
-    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
-  });
-});

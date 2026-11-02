@@ -25,14 +25,9 @@ function makeAlgorithms(
   overrides: Partial<PmcTrainingLoadAlgorithms> = {},
 ): PmcTrainingLoadAlgorithms {
   return {
-    estimateThresholdPower: () => 190,
     computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) => {
       if (maxHr <= restingHr || avgHr <= restingHr) return 0;
       return durationMin + avgHr - restingHr;
-    },
-    computePowerTrainingStressScore: (normalizedPower, thresholdPower, durationMin) => {
-      if (thresholdPower <= 0) return 0;
-      return normalizedPower + thresholdPower + durationMin;
     },
     computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) => {
       if (maxHr <= restingHr || avgHr <= restingHr) return 0;
@@ -50,230 +45,109 @@ function makeCalculator(
 }
 
 describe("PmcTrainingLoadCalculator", () => {
-  it("uses the injected heart-rate training stress algorithm", () => {
+  it("uses each activity's canonical stress without requiring heart rate", () => {
     const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ avg_power: null, power_samples: 0 })],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: null,
-      trainingStressModel: null,
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(150);
-  });
-
-  it("estimates threshold power from activity rows", () => {
-    const calculator = makeCalculator({ estimateThresholdPower: () => 209 });
-
-    const thresholdPower = calculator.estimateThresholdPower([
-      makeActivityRow({ id: "low", avg_power: 190, power_samples: 3600 }),
-      makeActivityRow({ id: "high", avg_power: 220, power_samples: 3600 }),
-    ]);
-
-    expect(thresholdPower).toBe(209);
-  });
-
-  it("uses power training stress when normalized power and threshold power exist", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ id: "power-activity" })],
-      normalizedPowerByActivity: new Map([["power-activity", 220]]),
-      thresholdPower: 190,
-      trainingStressModel: null,
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(470);
-  });
-
-  it("aggregates multiple activities on the same day", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
+    const result = calculator.calculateDailyLoad({
       activities: [
-        makeActivityRow({ id: "morning", avg_power: null, power_samples: 0 }),
-        makeActivityRow({ id: "evening", avg_power: null, power_samples: 0 }),
+        makeActivityRow({ id: "one", avg_hr: null }),
+        makeActivityRow({ id: "two", avg_hr: null }),
       ],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: null,
+      powerTssByActivity: new Map([
+        ["one", 80],
+        ["two", 25],
+      ]),
+      trainingStressModel: null,
+      globalMaxHeartRate: null,
+      restingHeartRate: 60,
+    });
+    expect(result.get("2026-05-20")).toBe(105);
+  });
+  it("keeps missing power and missing heart rate unavailable", () => {
+    const result = makeCalculator().calculateDailyLoad({
+      activities: [makeActivityRow({ avg_hr: null })],
+      powerTssByActivity: new Map(),
       trainingStressModel: null,
       globalMaxHeartRate: 190,
       restingHeartRate: 60,
     });
-
-    const singleActivityLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ id: "single", avg_power: null, power_samples: 0 })],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: null,
+    expect(result.size).toBe(0);
+  });
+  it("retains recorded zero power stress", () => {
+    const result = makeCalculator().calculateDailyLoad({
+      activities: [makeActivityRow()],
+      powerTssByActivity: new Map([["activity-1", 0]]),
       trainingStressModel: null,
       globalMaxHeartRate: 190,
       restingHeartRate: 60,
     });
-
-    expect(dailyLoad.get("2026-05-20")).toBeCloseTo(
-      (singleActivityLoad.get("2026-05-20") ?? 0) * 2,
-    );
+    expect(result.get("2026-05-20")).toBe(0);
   });
-
-  it("uses heart-rate training stress when power data is unavailable", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ avg_power: null, power_samples: 0 })],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: null,
+  it("falls back to the heart rate algorithm when canonical stress is unavailable", () => {
+    const result = makeCalculator().calculateDailyLoad({
+      activities: [makeActivityRow()],
+      powerTssByActivity: new Map(),
       trainingStressModel: null,
       globalMaxHeartRate: 190,
       restingHeartRate: 60,
     });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(150);
+    expect(result.get("2026-05-20")).toBe(150);
   });
-
-  it("uses heart-rate training stress when threshold power is unavailable", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ id: "power-without-threshold" })],
-      normalizedPowerByActivity: new Map([["power-without-threshold", 220]]),
-      thresholdPower: null,
-      trainingStressModel: null,
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(150);
-  });
-
-  it("uses heart-rate training stress when threshold power exists but normalized power is missing", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ id: "missing-normalized-power" })],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: 190,
-      trainingStressModel: null,
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(150);
-  });
-
-  it("uses heart-rate training stress when normalized power is zero", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ id: "zero-normalized-power" })],
-      normalizedPowerByActivity: new Map([["zero-normalized-power", 0]]),
-      thresholdPower: 190,
-      trainingStressModel: null,
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(150);
-  });
-
-  it("uses a learned training stress model for heart-rate-only activities when one exists", () => {
-    const calculator = makeCalculator();
-    const trainingImpulse = 150;
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ avg_power: null, power_samples: 0 })],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: 190,
-      trainingStressModel: { slope: 1.5, intercept: 10, r2: 0.75 },
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(1.5 * trainingImpulse + 10);
-  });
-
-  it("does not allow a learned model to produce negative daily load", () => {
-    const calculator = makeCalculator();
-
-    const dailyLoad = calculator.calculateDailyLoad({
-      activities: [makeActivityRow({ avg_power: null, power_samples: 0 })],
-      normalizedPowerByActivity: new Map(),
-      thresholdPower: 190,
-      trainingStressModel: { slope: 0, intercept: -20, r2: 0.75 },
-      globalMaxHeartRate: 190,
-      restingHeartRate: 60,
-    });
-
-    expect(dailyLoad.get("2026-05-20")).toBe(0);
-  });
-
-  it("builds paired model inputs only from activities with positive normalized power", () => {
-    const calculator = makeCalculator();
-
-    const result = calculator.buildTrainingStressModel(
-      [
-        makeActivityRow({ id: "positive-power" }),
-        makeActivityRow({ id: "zero-power" }),
-        makeActivityRow({ id: "missing-power" }),
-      ],
+  it("trains regression on canonical activity stress paired with observed heart rate", () => {
+    const result = makeCalculator().buildTrainingStressModel(
+      [makeActivityRow(), makeActivityRow({ id: "no-hr", avg_hr: null })],
       new Map([
-        ["positive-power", 220],
-        ["zero-power", 0],
+        ["activity-1", 91],
+        ["no-hr", 100],
       ]),
       190,
+      60,
+    );
+    expect(result.pairedData).toEqual([{ trimp: 150, powerTss: 91 }]);
+  });
+  it("excludes absent, zero or negative stress and zero or negative training impulse from learned-model pairs", () => {
+    const result = makeCalculator({
+      computeTrainingImpulse: (durationMin) =>
+        durationMin === 30 ? -10 : durationMin === 20 ? 0 : 150,
+    }).buildTrainingStressModel(
+      [
+        makeActivityRow(),
+        makeActivityRow({ id: "missing" }),
+        makeActivityRow({ id: "zero" }),
+        makeActivityRow({ id: "negative" }),
+        makeActivityRow({ id: "zero-impulse", duration_min: 20 }),
+        makeActivityRow({ id: "negative-impulse", duration_min: 30 }),
+      ],
+      new Map([
+        ["activity-1", 91],
+        ["zero", 0],
+        ["negative", -1],
+        ["zero-impulse", 80],
+        ["negative-impulse", 80],
+      ]),
       190,
       60,
     );
-
-    expect(result.pairedData).toHaveLength(1);
-    expect(result.pairedData[0]?.trimp).toBeGreaterThan(0);
-    expect(result.pairedData[0]?.powerTss).toBeGreaterThan(0);
-    expect(result.trainingStressModel).toBeNull();
+    expect(result.pairedData).toEqual([{ trimp: 150, powerTss: 91 }]);
+  });
+  it("uses the learned regression for heart rate fallback", () => {
+    const result = makeCalculator().calculateDailyLoad({
+      activities: [makeActivityRow()],
+      powerTssByActivity: new Map(),
+      trainingStressModel: { slope: 2, intercept: 10, r2: 0.9 },
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+    expect(result.get("2026-05-20")).toBe(310);
   });
 
-  it("does not build paired model inputs from activities with zero heart-rate load", () => {
-    const calculator = makeCalculator();
-
-    const result = calculator.buildTrainingStressModel(
-      [makeActivityRow({ id: "zero-heart-rate-load", avg_hr: 60 })],
-      new Map([["zero-heart-rate-load", 220]]),
-      190,
-      190,
-      60,
-    );
-
-    expect(result).toEqual({ trainingStressModel: null, pairedData: [] });
-  });
-
-  it("does not build paired model inputs from activities with zero power training stress", () => {
-    const calculator = makeCalculator();
-
-    const result = calculator.buildTrainingStressModel(
-      [makeActivityRow({ id: "zero-power-training-stress" })],
-      new Map([["zero-power-training-stress", 220]]),
-      0,
-      190,
-      60,
-    );
-
-    expect(result).toEqual({ trainingStressModel: null, pairedData: [] });
-  });
-
-  it("does not build paired model inputs without threshold power", () => {
-    const calculator = makeCalculator();
-
-    const result = calculator.buildTrainingStressModel(
-      [makeActivityRow({ id: "positive-power" })],
-      new Map([["positive-power", 220]]),
-      null,
-      190,
-      60,
-    );
-
-    expect(result).toEqual({ trainingStressModel: null, pairedData: [] });
+  it("clamps negative learned heart-rate stress to recorded zero daily load", () => {
+    const result = makeCalculator().calculateDailyLoad({
+      activities: [makeActivityRow()],
+      powerTssByActivity: new Map(),
+      trainingStressModel: { slope: 2, intercept: -1000, r2: 0.9 },
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+    expect(result.get("2026-05-20")).toBe(0);
   });
 });

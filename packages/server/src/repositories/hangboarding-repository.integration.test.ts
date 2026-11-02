@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  buildActivitySummaryRowsTableSql,
+  buildActivitySummaryViewSql,
+} from "../../../../src/db/clickhouse-activity-summary.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { HangboardingRepository } from "./hangboarding-repository.ts";
 
@@ -217,15 +221,18 @@ describe("HangboardingRepository integration", () => {
     if (!otherUserActivity) throw new Error("Failed to seed other user Hangboarding activity");
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
-    await clickhouse.command({
-      query: buildTestAnalyticsTableStatement("analytics.activity_summary").replaceAll(
-        "analytics.",
-        `${analyticsDatabase}.`,
-      ),
-    });
+    for (const statement of [
+      buildActivitySummaryRowsTableSql(),
+      ...cyclingPowerSchemaStatements(),
+      buildActivitySummaryViewSql(),
+    ]) {
+      await clickhouse.command({
+        query: statement.replaceAll("analytics.", `${analyticsDatabase}.`),
+      });
+    }
     if (!clickhouse.insert) throw new Error("ClickHouse test client requires inserts");
     await clickhouse.insert({
-      table: `${analyticsDatabase}.activity_summary`,
+      table: `${analyticsDatabase}.activity_summary_rows`,
       format: "JSONEachRow",
       values: [
         { activity_id: firstActivity.group_id, user_id: TEST_USER_ID, avg_hr: 120, max_hr: 145 },

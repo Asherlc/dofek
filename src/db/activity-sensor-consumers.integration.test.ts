@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
@@ -17,16 +18,19 @@ describe("activity sensor consumers before background merges", () => {
     client = createClient({ url });
     const statements = [
       `CREATE DATABASE ${database}`,
+      ...cyclingPowerSchemaStatements().map((query) =>
+        query.replaceAll("analytics.", `${database}.`),
+      ),
       `CREATE TABLE ${database}.activity_summary_rows (
         activity_id UUID, user_id UUID, canonical_type String, name String,
-        started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), is_deleted UInt8
+        started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
       ) ENGINE = ReplacingMergeTree ORDER BY (user_id, activity_id)`,
       `INSERT INTO ${database}.activity_summary_rows
         SELECT toUUID(tupleElement(activity, 1)), toUUID('${userId}'),
           tupleElement(activity, 2), tupleElement(activity, 2),
           toDateTime64(today() - INTERVAL 1 DAY, 6, 'UTC') + INTERVAL 14 HOUR,
           toDateTime64(today() - INTERVAL 1 DAY, 6, 'UTC') + INTERVAL 14 HOUR + INTERVAL 10 MINUTE,
-          0
+          0, now64(9)
         FROM (SELECT arrayJoin([('${cyclingId}', 'cycling'), ('${runningId}', 'running')]) AS activity)`,
       `CREATE TABLE ${database}.deduped_activities
         ENGINE = ReplacingMergeTree ORDER BY (user_id, activity_id) AS
@@ -34,9 +38,9 @@ describe("activity sensor consumers before background merges", () => {
           [activity_id] AS member_activity_ids, is_deleted, now64(9) AS refreshed_at
         FROM ${database}.activity_summary_rows`,
       `CREATE TABLE ${database}.user_profile_current (
-        id UUID, max_hr Int32, resting_hr Int32, ftp Int32
+        id UUID, max_hr Int32, resting_hr Int32, updated_at DateTime64(9, 'UTC')
       ) ENGINE = MergeTree ORDER BY id`,
-      `INSERT INTO ${database}.user_profile_current VALUES ('${userId}', 200, 60, 300)`,
+      `INSERT INTO ${database}.user_profile_current VALUES ('${userId}', 200, 60, now64(9))`,
       `CREATE TABLE ${database}.resting_heart_rate_sleep_window (
         user_id UUID, ended_at DateTime64(6, 'UTC'), resting_hr Int32,
         is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
@@ -134,8 +138,18 @@ describe("activity sensor consumers before background merges", () => {
       model: "healthspan_activity_zone_minutes",
       columns: "aerobic_minutes, high_intensity_minutes, is_deleted",
       expected: [
-        { activity_id: cyclingId, aerobic_minutes: 10, high_intensity_minutes: 0, is_deleted: 0 },
-        { activity_id: runningId, aerobic_minutes: 10, high_intensity_minutes: 0, is_deleted: 0 },
+        {
+          activity_id: cyclingId,
+          aerobic_minutes: 301 / 60,
+          high_intensity_minutes: 0,
+          is_deleted: 0,
+        },
+        {
+          activity_id: runningId,
+          aerobic_minutes: 301 / 60,
+          high_intensity_minutes: 0,
+          is_deleted: 0,
+        },
       ],
     },
     {

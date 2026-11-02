@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cyclingThresholdUncertaintySchema } from "../contracts/cycling-threshold.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -40,6 +41,21 @@ const thresholdSchema = z
     effective_from: z.string(),
     source_record_id: z.uuid(),
     kind: z.literal("configured"),
+  })
+  .strict();
+const computedPowerThresholdSchema = z
+  .object({
+    value: z.number().positive(),
+    unit: z.literal("W"),
+    effective_from: z.string(),
+    kind: z.literal("computed"),
+    method: z.literal("computed_eftp"),
+    model_version: z.string(),
+    uncertainty: cyclingThresholdUncertaintySchema,
+    evidence_activity_id: z.uuid().nullable(),
+    evidence_at: nullableString,
+    evidence_duration_seconds: nullableNumber,
+    evidence_power_watts: nullableNumber,
   })
   .strict();
 const intervalSchema = z
@@ -130,7 +146,7 @@ export const cyclingTrainingMetricsOutputSchema = z
               member_activity_ids: z.array(z.uuid()),
               thresholds: z
                 .object({
-                  ftp: thresholdSchema.nullable(),
+                  ftp: computedPowerThresholdSchema.nullable(),
                   threshold_heart_rate: thresholdSchema.nullable(),
                 })
                 .strict(),
@@ -194,7 +210,6 @@ export const cyclingTrainingMetricsOutputSchema = z
               provider_aggregates: z
                 .object({
                   average_power_watts: nullableNumber,
-                  normalized_power_watts: nullableNumber,
                   average_heart_rate_bpm: nullableNumber,
                   maximum_heart_rate_bpm: nullableNumber,
                   kind: z.literal("calculated_read_model"),

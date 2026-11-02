@@ -66,11 +66,11 @@ exports[`computeCyclingWorkoutMetrics > computes cardiac drift from equal elapse
   "unavailableReasons": [
     {
       "metric": "intensity_factor",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
   ],
 }
@@ -501,11 +501,11 @@ exports[`computeCyclingWorkoutMetrics > does not manufacture FTP-dependent metri
   "unavailableReasons": [
     {
       "metric": "intensity_factor",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "heart_rate",
@@ -527,7 +527,7 @@ exports[`computeCyclingWorkoutMetrics > does not manufacture FTP-dependent metri
 }
 `;
 
-exports[`computeCyclingWorkoutMetrics > sorts irregular samples while excluding invalid and out-of-range observations 1`] = `
+exports[`computeCyclingWorkoutMetrics > sorts irregular samples while preserving invalid-value barriers 1`] = `
 {
   "aerobicEfficiency": {
     "pairedSeconds": 0,
@@ -563,11 +563,11 @@ exports[`computeCyclingWorkoutMetrics > sorts irregular samples while excluding 
       "zeroSeconds": 0,
     },
     "power": {
-      "coveragePct": 100,
-      "coveredSeconds": 12,
-      "largestGapSeconds": 4,
-      "medianSampleIntervalSeconds": 4,
-      "missingSeconds": 0,
+      "coveragePct": 66.7,
+      "coveredSeconds": 8,
+      "largestGapSeconds": 2,
+      "medianSampleIntervalSeconds": 2,
+      "missingSeconds": 4,
       "observedSamples": 4,
       "zeroSeconds": 0,
     },
@@ -582,26 +582,26 @@ exports[`computeCyclingWorkoutMetrics > sorts irregular samples while excluding 
   "intervalSource": "none",
   "intervals": [],
   "power": {
-    "averageWatts": 200,
+    "averageWatts": 175,
     "intensityFactor": null,
     "normalizedWatts": null,
     "trainingStressScore": null,
     "variabilityIndex": null,
-    "workKilojoules": 2.4,
+    "workKilojoules": 1.4,
   },
   "powerZones": null,
   "unavailableReasons": [
     {
       "metric": "normalized_power",
-      "reason": "fewer than 30 seconds of power are available",
+      "reason": "power coverage is below 90%",
     },
     {
       "metric": "intensity_factor",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "heart_rate",
@@ -689,11 +689,11 @@ exports[`computeCyclingWorkoutMetrics > supports native five-second sampling wit
   "unavailableReasons": [
     {
       "metric": "intensity_factor",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no valid FTP was effective for this activity",
+      "reason": "no computed threshold is available for this activity",
     },
     {
       "metric": "cardiac_drift",

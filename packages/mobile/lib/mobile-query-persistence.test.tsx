@@ -41,7 +41,7 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("restores the combined v24 running contract", async () => {
+  it("restores current running data alongside the computed-power cache contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "combined-running-owner";
     const queryKey = [
@@ -51,6 +51,32 @@ describe("mobile query persistence", () => {
     const data = runningData;
     const seedClient = createQueryClient();
     seedClient.setQueryData(queryKey, data);
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: mobileQueryCacheBuster(userId),
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toEqual(data);
+  });
+
+  it("discards cached cycling thresholds from before required computed evidence", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "cycling-evidence-owner";
+    const zonesKey = [["activity", "powerZones"], { input: { id: "ride-1" }, type: "query" }];
+    const trendKey = [["power", "eftpTrend"], { input: { days: 90 }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(zonesKey, { ftp: 250, zones: [] });
+    seedClient.setQueryData(trendKey, { currentEftp: 250, trend: [] });
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
@@ -66,7 +92,9 @@ describe("mobile query persistence", () => {
       maxAge: QUERY_CACHE_MAX_AGE_MS,
       buster: mobileQueryCacheBuster(userId),
     });
-    expect(restoredClient.getQueryData(queryKey)).toEqual(data);
+    expect(restoredClient.getQueryData(zonesKey)).toBeUndefined();
+    expect(restoredClient.getQueryData(trendKey)).toBeUndefined();
+    await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
   });
 
   it.each([21, 22, 23])(

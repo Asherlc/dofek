@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ActivityList } from "../../components/ActivityList.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails.tsx";
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
@@ -181,7 +182,10 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
           </Section>
 
           {/* eFTP Trend */}
-          <Section title="Estimated Threshold Power Trend">
+          <Section title="Ongoing Estimated Threshold Power">
+            {performance.data && (
+              <CyclingThresholdDetails evidence={performance.data.eftpTrend.currentEvidence} />
+            )}
             <EftpTrendChart
               data={performance.data?.eftpTrend.trend ?? []}
               currentEftp={performance.data?.eftpTrend.currentEftp ?? null}

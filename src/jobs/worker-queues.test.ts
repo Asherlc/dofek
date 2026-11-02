@@ -482,6 +482,10 @@ describe("worker queues", () => {
       "./process-activity-delete-analytics-job.ts"
     );
     vi.mocked(processActivityDeleteAnalyticsJob).mockClear();
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    vi.mocked(runQueuedUserWorkUnlessAccountErasing).mockClear();
 
     await invokeProcessor("activity-delete-analytics-queue", {
       type: "activity-delete-analytics-refresh",
@@ -489,7 +493,12 @@ describe("worker queues", () => {
       activityIds: ["00000000-0000-0000-0000-000000000001"],
     });
 
-    expect(processActivityDeleteAnalyticsJob).toHaveBeenCalled();
+    expect(processActivityDeleteAnalyticsJob).toHaveBeenCalledWith(
+      expect.anything(),
+      mockDatabase,
+      dependencies.accountErasureWorkLockPool,
+    );
+    expect(runQueuedUserWorkUnlessAccountErasing).not.toHaveBeenCalled();
   });
 
   it("provider-data-deletion processor delegates to processProviderDataDeletionJob", async () => {

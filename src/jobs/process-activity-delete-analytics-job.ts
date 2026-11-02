@@ -1,16 +1,18 @@
 import {
-  runActivityReadModelBuild,
-  runProviderDeleteReadModelBuild,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
   waitForPeerDbProviderDeletes,
 } from "../analytics/activity-read-model-build.ts";
+import { refreshAnalyticsAndWait } from "../analytics-refresh-queue.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
+import {
+  type AccountErasureWorkLockPool,
+  accountErasureAllowsQueuedUserWork,
+} from "./account-erasure-work-guard.ts";
 import type { ActivityAnalyticsJobData } from "./queues.ts";
 
 export interface ActivityAnalyticsJob {
@@ -29,11 +31,48 @@ async function updateActivityAnalyticsProgress(
   });
 }
 
+async function finishActivityAnalytics(
+  job: ActivityAnalyticsJob,
+  database: Pick<Database, "execute">,
+  workLockPool: AccountErasureWorkLockPool,
+  userId: string,
+  logMessage: string,
+  provider = false,
+): Promise<void> {
+  // Read-only CDC/refresh waits must not prevent account erasure. Only the
+  // cache write needs the shared lock and an erasure check inside that lock.
+  await workLockPool.runWithSharedUserLock(userId, async () => {
+    if (
+      !(await accountErasureAllowsQueuedUserWork(
+        database,
+        userId,
+        "activity analytics cache invalidation",
+      ))
+    )
+      return;
+    await updateActivityAnalyticsProgress(
+      job,
+      90,
+      provider
+        ? "Invalidating provider analytics cache..."
+        : "Invalidating activity analytics cache...",
+    );
+    await invalidateAllUserQueries(userId);
+    logger.info(logMessage);
+    await updateActivityAnalyticsProgress(
+      job,
+      100,
+      provider ? "Provider analytics refresh complete." : "Activity analytics refresh complete.",
+    );
+  });
+}
+
 async function rebuildActivityAnalytics(
   job: ActivityAnalyticsJob,
   database: Pick<Database, "execute">,
   userId: string,
   logMessage: string,
+  workLockPool: AccountErasureWorkLockPool,
 ): Promise<void> {
   if (
     !(await accountErasureAllowsQueuedUserWork(database, userId, "activity read-model rebuild"))
@@ -41,25 +80,14 @@ async function rebuildActivityAnalytics(
     return;
   }
   await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
-  await runActivityReadModelBuild();
-  if (
-    !(await accountErasureAllowsQueuedUserWork(
-      database,
-      userId,
-      "activity analytics cache invalidation",
-    ))
-  ) {
-    return;
-  }
-  await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
-  await invalidateAllUserQueries(userId);
-  logger.info(logMessage);
-  await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
+  await refreshAnalyticsAndWait();
+  await finishActivityAnalytics(job, database, workLockPool, userId, logMessage);
 }
 
 export async function processActivityDeleteAnalyticsJob(
   job: ActivityAnalyticsJob,
   database: Pick<Database, "execute">,
+  workLockPool: AccountErasureWorkLockPool,
 ): Promise<void> {
   const { userId } = job.data;
   if (!(await accountErasureAllowsQueuedUserWork(database, userId, "activity analytics refresh"))) {
@@ -95,22 +123,16 @@ export async function processActivityDeleteAnalyticsJob(
         return;
       }
       await updateActivityAnalyticsProgress(job, 60, "Rebuilding provider analytics...");
-      await runProviderDeleteReadModelBuild();
-      if (
-        !(await accountErasureAllowsQueuedUserWork(
-          database,
-          userId,
-          "provider deletion analytics cache invalidation",
-        ))
-      ) {
-        return;
-      }
-      await updateActivityAnalyticsProgress(job, 90, "Invalidating provider analytics cache...");
-      await invalidateAllUserQueries(userId);
-      logger.info(
+      await refreshAnalyticsAndWait();
+      await finishActivityAnalytics(
+        job,
+        database,
+        workLockPool,
+        userId,
         `[provider-delete-analytics] Refreshed all read models after deleting provider ${job.data.providerId}`,
+        true,
       );
-      await updateActivityAnalyticsProgress(job, 100, "Provider analytics refresh complete.");
+
       return;
     }
     const { activityIds } = job.data;
@@ -120,6 +142,7 @@ export async function processActivityDeleteAnalyticsJob(
         database,
         userId,
         `[activity-recompute-analytics] Refreshed activity read models for ${activityIds.length} activities`,
+        workLockPool,
       );
       return;
     }
@@ -145,6 +168,7 @@ export async function processActivityDeleteAnalyticsJob(
         database,
         userId,
         `[activity-restore-analytics] Refreshed activity read models after restoring ${activityIds.length} activities`,
+        workLockPool,
       );
       return;
     }
@@ -169,6 +193,7 @@ export async function processActivityDeleteAnalyticsJob(
       database,
       userId,
       `[activity-delete-analytics] Refreshed activity read models after deleting ${activityIds.length} activities`,
+      workLockPool,
     );
   } finally {
     await client.close?.();

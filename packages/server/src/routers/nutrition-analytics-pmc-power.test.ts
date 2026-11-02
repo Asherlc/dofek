@@ -1,5 +1,6 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { pmcThresholdHistoryRows } from "../repositories/pmc-test-helpers.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
@@ -113,21 +114,21 @@ function isPmcActivityChartQuery(queryText: string): boolean {
 }
 
 function isPmcNormalizedPowerQuery(queryText: string): boolean {
-  return (
-    queryText.includes("FROM analytics.activity_summary") &&
-    queryText.includes("normalized_power IS NOT NULL")
-  );
+  return queryText.includes("FROM analytics.cycling_activity_power_metrics");
 }
 
 function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
+  currentEftp: number | null = null,
 ): SensorStore {
   return {
     query: vi.fn(
       async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
         let rows: unknown[];
-        if (isPmcNormalizedPowerQuery(queryText)) {
+        if (queryText.includes("cycling_threshold_history")) {
+          rows = pmcThresholdHistoryRows(currentEftp);
+        } else if (isPmcNormalizedPowerQuery(queryText)) {
           rows = normalizedPowerRows;
         } else if (isPmcActivityChartQuery(queryText)) {
           rows = activityRows;
@@ -373,7 +374,8 @@ describe("pmcRouter", () => {
       }
       const normalizedPowerRows = rows.map((row) => ({
         activity_id: String(row.id),
-        np: 200,
+        power_tss: 64,
+        eftp: 250,
       }));
       const caller = createCaller({
         db: makeRawActivityCountDb(
@@ -382,11 +384,11 @@ describe("pmcRouter", () => {
         ),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makePmcSensorStore(rows, normalizedPowerRows),
+        sensorStore: makePmcSensorStore(rows, normalizedPowerRows, 275),
       });
       const result = await caller.chart({ days: 180 });
 
-      expect(result.model.ftp).not.toBeNull();
+      expect(result.model).toMatchObject({ ftp: 275, pairedActivities: rows.length });
       expect(result.data.length).toBeGreaterThan(0);
     });
   });
@@ -416,36 +418,17 @@ describe("pmcRouter", () => {
 describe("powerRouter", () => {
   const createCaller = createTestCallerFactory(powerRouter);
 
-  /** Generate 1-second power samples for a single activity. */
-  function makePowerSamples(
-    activityId: string,
-    activityDate: string,
-    powers: number[],
-    intervalSeconds = 1,
-  ) {
-    return powers.map((power) => ({
-      activity_id: activityId,
-      activity_date: activityDate,
-      power,
-      interval_s: intervalSeconds,
-    }));
-  }
-
   describe("powerCurve", () => {
     it("returns power curve with model", async () => {
-      // 1200 samples at 1s = 20 minutes of data — covers 5s through 1200s durations
-      const samples = makePowerSamples(
-        "act-1",
-        "2024-01-15",
-        Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
-      );
       const caller = createCaller({
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: {
-          query: vi.fn().mockResolvedValue([]),
-          getPowerCurveSamples: vi.fn().mockResolvedValue(samples),
+          query: vi.fn().mockResolvedValue([
+            { duration_seconds: 300, best_power: 300, activity_date: "2024-01-15" },
+            { duration_seconds: 120, best_power: 400, activity_date: "2024-01-15" },
+          ]),
         },
       });
       const result = await caller.powerCurve({ days: 90 });
@@ -488,32 +471,24 @@ describe("powerRouter", () => {
 
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
-      // First call: query() reads from analytics.activity_summary for NP data
-      const npRows = [
-        {
-          activity_id: "act-1",
-          activity_date: "2024-01-15",
-          activity_name: "Ride",
-          normalized_power: 260,
-        },
-      ];
-      // Second call: power curve samples — 1200 samples for CP model fallback
-      const pcSamples = makePowerSamples(
-        "act-1",
-        "2024-01-15",
-        Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
-      );
-
+      const current = {
+        event_at: "2026-08-01T00:00:00Z",
+        activity_id: null,
+        eftp: 245,
+        evidence_activity_id: null,
+        evidence_at: null,
+        evidence_duration_seconds: null,
+        evidence_power: null,
+        model_version: "v1",
+      };
       const caller = createCaller({
         db: makeRawActivityCountDb(1),
         sensorStore: {
-          query: vi.fn(async (_schema, queryText = "") => {
-            if (queryText.includes("activity_power_curve")) {
-              return [];
-            }
-            return npRows;
-          }),
-          getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),
+          query: vi.fn(async (_schema, queryText = "") =>
+            queryText.includes("ORDER BY history.event_at DESC")
+              ? [current]
+              : [{ date: "2024-01-15", eftp: 250, activityName: "Ride" }],
+          ),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -521,8 +496,9 @@ describe("powerRouter", () => {
       const result = await caller.eftpTrend({ days: 365 });
 
       expect(result.trend).toHaveLength(1);
-      // Normalized Power of constant 260W = 260, eFTP = 260 * 0.95 = 247
-      expect(result.trend[0]?.eftp).toBe(247);
+      expect(result.trend[0]?.eftp).toBe(250);
+      expect(result.currentEftp).toBe(245);
+      expect(result.currentEvidence.model_version).toBe("v1");
     });
 
     it("throws PRECONDITION_FAILED when sensor store is missing", async () => {

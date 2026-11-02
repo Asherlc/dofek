@@ -108,7 +108,6 @@ describe("Router transformation logic", () => {
       await query("sportSettings.list");
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
-        ftp: 250,
         thresholdHr: 165,
         effectiveFrom: "2025-01-01",
         notes: "Start of season",
@@ -116,53 +115,53 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const settings = result.result.data;
       expect(settings.sport).toBe("cycling");
-      expect(settings.ftp).toBe(250);
       expect(settings.thresholdHr).toBe(165);
       settingsId = settings.id;
 
       const { result: listResult } = await query("sportSettings.list");
       expect(
-        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
-      ).toBe(250);
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")
+          ?.thresholdHr,
+      ).toBe(165);
     });
 
     it("upsert with same sport+date updates existing entry", async () => {
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
-        ftp: 260,
         thresholdHr: 168,
         effectiveFrom: "2025-01-01",
-        notes: "Updated FTP",
+        notes: "Updated threshold heart rate",
       });
       expect(status).toBe(200);
       const settings = result.result.data;
-      expect(settings.ftp).toBe(260);
+      expect(settings.thresholdHr).toBe(168);
       // Should be same id since ON CONFLICT updates
       expect(settings.id).toBe(settingsId);
 
       const { result: listResult } = await query("sportSettings.list");
       expect(
-        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
-      ).toBe(260);
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")
+          ?.thresholdHr,
+      ).toBe(168);
     });
 
     it("upsert with different date creates new entry", async () => {
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
-        ftp: 270,
         thresholdHr: 170,
         effectiveFrom: "2025-06-01",
         notes: "Mid-season bump",
       });
       expect(status).toBe(200);
       const settings = result.result.data;
-      expect(settings.ftp).toBe(270);
+      expect(settings.thresholdHr).toBe(170);
       expect(settings.id).not.toBe(settingsId);
 
       const { result: listResult } = await query("sportSettings.list");
       expect(
-        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
-      ).toBe(270);
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")
+          ?.thresholdHr,
+      ).toBe(170);
     });
 
     it("list returns most recent per sport", async () => {
@@ -172,18 +171,18 @@ describe("Router transformation logic", () => {
       // Should return only 1 entry for cycling (the most recent by effective_from)
       const cyclingEntries = list.filter((s: { sport: string }) => s.sport === "cycling");
       expect(cyclingEntries).toHaveLength(1);
-      expect(cyclingEntries[0].ftp).toBe(270); // the June entry
+      expect(cyclingEntries[0].thresholdHr).toBe(170); // the June entry
     });
 
     it("getBySport returns setting effective at a specific date", async () => {
-      // Ask for settings as of March 2025 — should get the Jan entry (FTP 260)
+      // Ask for settings as of March 2025 — should get the Jan entry (threshold HR 168)
       const { status, result } = await query("sportSettings.getBySport", {
         sport: "cycling",
         asOfDate: "2025-03-15",
       });
       expect(status).toBe(200);
       const settings = result.result.data;
-      expect(settings.ftp).toBe(260);
+      expect(settings.thresholdHr).toBe(168);
     });
 
     it("getBySport with future date returns latest", async () => {
@@ -192,7 +191,7 @@ describe("Router transformation logic", () => {
         asOfDate: "2025-12-31",
       });
       expect(status).toBe(200);
-      expect(result.result.data.ftp).toBe(270);
+      expect(result.result.data.thresholdHr).toBe(170);
     });
 
     it("history returns all entries ordered by effective_from DESC", async () => {
@@ -203,8 +202,8 @@ describe("Router transformation logic", () => {
       const history = result.result.data;
       expect(history).toHaveLength(2);
       // Most recent first
-      expect(history[0].ftp).toBe(270);
-      expect(history[1].ftp).toBe(260);
+      expect(history[0].thresholdHr).toBe(170);
+      expect(history[1].thresholdHr).toBe(168);
     });
 
     it("delete removes a specific entry", async () => {

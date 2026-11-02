@@ -459,7 +459,6 @@ table fitness.user_profile {
   birth_date date
   max_hr smallint
   resting_hr smallint
-  ftp smallint
   is_admin boolean [not null, default: false]
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
@@ -757,7 +756,6 @@ table fitness.sport_settings {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
   sport text [not null]
-  ftp smallint
   threshold_hr smallint
   threshold_pace_per_km real
   power_zone_pcts jsonb

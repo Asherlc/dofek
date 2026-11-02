@@ -125,23 +125,20 @@ describe("cyclingAdvancedRouter", () => {
 
   describe("activityVariability", () => {
     it("returns empty when FTP estimation has no data", async () => {
-      // First sensor query → FTP rows (empty). Repository short-circuits and
-      // doesn't issue the second query.
-      const caller = makeCaller([[]]);
+      const caller = makeCaller([[], [{ total: 0, power_total: 1 }]]);
       const result = await caller.activityVariability({ days: 90 });
       expect(result).toEqual({ rows: [], totalCount: 0, emptyReason: "no_ftp_estimate" });
     });
 
-    it("computes VI and IF from FTP plus per-activity rows", async () => {
-      // First sensor query → FTP estimate. Second → variability rows.
+    it("computes VI and renders canonical per-activity IF", async () => {
       const caller = makeCaller([
-        [{ ftp: 250 }],
         [
           {
             activity_id: "ride-1",
             date: "2024-01-15",
             name: "Ride",
             np: 230,
+            intensity_factor: 0.92,
             avg_power: 200,
             total_count: 1,
           },

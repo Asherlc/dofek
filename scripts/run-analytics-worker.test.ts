@@ -57,7 +57,9 @@ describe("createAnalyticsWorkerFromEnvironment", () => {
       dependencies,
     );
 
-    await worker.run(controller.signal);
+    await expect(worker.run(controller.signal)).rejects.toThrow(
+      "Analytics refresh aborted before completion",
+    );
 
     expect(dependencies.reportFailure).toHaveBeenCalledOnce();
     expect(dependencies.sleep).toHaveBeenCalledWith(3_000, controller.signal);

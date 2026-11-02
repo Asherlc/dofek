@@ -15,3 +15,8 @@ clean-targets:
 models:
   dofek_analytics:
     +materialized: view
+    read_models:
+      cycling_threshold_history:
+        +materialized: view
+      cycling_activity_power_metrics:
+        +materialized: view

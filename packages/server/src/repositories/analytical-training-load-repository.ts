@@ -1,4 +1,3 @@
-import { computePowerTss } from "@dofek/training/pmc";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -15,8 +14,7 @@ import { SportSettingsRepository, type SportSettingsRow } from "./sport-settings
 const cyclingActivitySchema = z.object({
   activity_id: z.string().uuid().nullable(),
   date: z.string().nullable(),
-  normalized_power: z.coerce.number().positive().nullable(),
-  elapsed_seconds: z.coerce.number().nonnegative().nullable(),
+  power_tss: z.coerce.number().nonnegative().nullable(),
   source_providers: z.array(z.string()),
   first_observed_date: z.string().nullable(),
   date_was_authoritative: z.coerce.boolean().optional().default(false),
@@ -135,10 +133,6 @@ function validZonePcts(value: unknown): number[] | null {
   return parsed.data.every((pct, index) => index === 0 || pct > (parsed.data[index - 1] ?? 0))
     ? parsed.data
     : null;
-}
-
-function effectiveSetting(history: SportSettingsRow[], date: string): SportSettingsRow | null {
-  return history.find((row) => row.effectiveFrom <= date) ?? null;
 }
 
 function emptyChannel(date: string, firstObservedDate: string | null): BaseChannel {
@@ -550,13 +544,14 @@ export class AnalyticalTrainingLoadRepository {
         `/* analytical-load:cycling */
         WITH all_cycling AS (
           SELECT
-            cycling.activity_id,
+            cycling.activity_id AS activity_id,
             ${clickHouseLocalDate} AS date,
-            cycling.normalized_power,
-            cycling.elapsed_seconds,
-            activity.source_providers,
+            metrics.power_tss AS power_tss,
+            activity.source_providers AS source_providers,
             ${clickHouseDateIsAuthoritative} AS date_was_authoritative
           FROM analytics.cycling_activity AS cycling FINAL
+          LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+            ON metrics.activity_id = cycling.activity_id AND metrics.user_id = cycling.user_id
           INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
           WHERE cycling.user_id = {userId:UUID}
@@ -570,15 +565,14 @@ export class AnalyticalTrainingLoadRepository {
         SELECT
           toString(all_cycling.activity_id) AS activity_id,
           toString(all_cycling.date) AS date,
-          normalized_power,
-          elapsed_seconds,
+          power_tss,
           source_providers,
           toString(first_observed.date) AS first_observed_date,
           date_was_authoritative
         FROM all_cycling CROSS JOIN first_observed
         WHERE all_cycling.date BETWEEN toDate({calculationStart:String}) AND toDate({endDate:String})
         UNION ALL
-        SELECT NULL, NULL, NULL, NULL, [], toString(date), false
+        SELECT NULL, NULL, NULL, [], toString(date), false
         FROM first_observed
         WHERE date IS NOT NULL
         ORDER BY date`,
@@ -598,7 +592,7 @@ export class AnalyticalTrainingLoadRepository {
           WITH activity_contributions AS (
             SELECT
               activity.id,
-              activity.source_providers,
+              activity.source_providers AS source_providers,
               ${postgresLocalDate} AS date,
               ${postgresDateIsAuthoritative} AS date_was_authoritative,
               GREATEST(EXTRACT(EPOCH FROM (activity.ended_at - activity.started_at)) / 60.0, 0)
@@ -845,22 +839,14 @@ export class AnalyticalTrainingLoadRepository {
         analysisTimezoneAssumptions: dateCycling.filter((row) => !row.date_was_authoritative)
           .length,
       };
-      const supportedCycling = dateCycling.flatMap((row) => {
-        const setting = effectiveSetting(settingsHistory, date);
-        if (
-          setting?.ftp == null ||
-          setting.ftp <= 0 ||
-          row.normalized_power == null ||
-          row.elapsed_seconds == null
-        )
-          return [];
-        return [computePowerTss(row.normalized_power, setting.ftp, row.elapsed_seconds / 60)];
-      });
+      const supportedCycling = dateCycling.flatMap((row) =>
+        row.power_tss == null ? [] : [row.power_tss],
+      );
       channelMaps.cycling_power_tss.set(
         date,
         dateCycling.length > 0 && supportedCycling.length === 0
           ? unavailableChannel(
-              `No valid FTP was effective for ${dateCycling.length} cycling ${dateCycling.length === 1 ? "activity" : "activities"}.`,
+              `Computed eFTP or normalized power is unavailable for ${dateCycling.length} cycling ${dateCycling.length === 1 ? "activity" : "activities"}.`,
               {
                 sourceActivityIds: dateCycling.map((row) => row.activity_id),
                 sourceProviders: mergeUnique(...dateCycling.map((row) => row.source_providers)),
@@ -889,7 +875,7 @@ export class AnalyticalTrainingLoadRepository {
                 reason:
                   supportedCycling.length === dateCycling.length
                     ? null
-                    : `${dateCycling.length - supportedCycling.length} cycling activities lacked FTP or normalized power.`,
+                    : `${dateCycling.length - supportedCycling.length} cycling activities lacked computed eFTP or normalized power.`,
                 contributingRecords: dateCycling.length,
               }
             : emptyChannel(date, cyclingFirstObserved),

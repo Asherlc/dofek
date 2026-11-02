@@ -70,6 +70,23 @@ describe("activity_sensor_summary_rows historical dirty keys", () => {
     }
   });
 
+  it("counts observed zero power in the same population as average power", async () => {
+    const activeClient = requireClient(client);
+    await seedHistoricalBackfillFixture(activeClient, targetSchema);
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_sensor_sample UPDATE scalar=0 WHERE activity_id=toUUID('${historicalActivityId}') AND channel='power' SETTINGS mutations_sync=1`,
+    });
+    const result = await activeClient.query({
+      query: renderActivitySensorSummaryRowsSelectSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    const rows = await result.json<SensorSummaryResultRow>();
+    expect(rows.find((row) => row.activity_id === historicalActivityId)).toMatchObject({
+      avg_power: 0,
+      power_sample_count: 2,
+    });
+  });
+
   it("summarizes historical samples even after an unrelated row advanced the table watermark", async () => {
     const activeClient = requireClient(client);
     await seedHistoricalBackfillFixture(activeClient, targetSchema);

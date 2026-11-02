@@ -37,7 +37,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -83,7 +83,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      expect.stringContaining("FROM analytics.activity_summary_rows FINAL"),
+      expect.stringContaining("FROM analytics.activity_summary_rows AS summary FINAL"),
       expect.objectContaining({
         userId: "user-1",
         activityIds: ["hidden-1"],
@@ -149,7 +149,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           centroid_lng: -122.4,
         },
       ],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       routePoints.map((point) => ({
         activity_id: "hidden-outdoor",
         lat: point.lat,
@@ -209,7 +209,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: 180, resting_hr: 55, ftp: 250 }],
+      [{ max_hr: 180, resting_hr: 55 }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -257,7 +257,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -312,7 +312,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -366,7 +366,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -418,7 +418,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           }),
         ],
         [],
-        [{ max_hr: null, resting_hr: null, ftp: null }],
+        [{ max_hr: null, resting_hr: null }],
         [],
         [{ activity_id: "absent-member", status }],
       ]);
@@ -471,7 +471,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         elevation_gain_m: null,
         ...row,
       })),
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
       ["no-centroid", "missing-latitude", "missing-longitude"].map((id) => ({
         activity_id: id,

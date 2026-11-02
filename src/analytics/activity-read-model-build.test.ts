@@ -1,18 +1,10 @@
-import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
-import { PassThrough } from "node:stream";
 import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import {
-  ACTIVITY_DELETE_DBT_SELECT,
-  type ActivityReadModelSpawner,
   countActivePeerDbActivities,
   countActivePeerDbProviderRows,
   countProviderAbsentPeerDbActivities,
-  runActivityReadModelBuild,
-  runProviderDeleteReadModelBuild,
-  type SpawnedProcess,
   waitForMetricStreamDeleteAcknowledgement,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
@@ -24,31 +16,6 @@ function createMockClickHouseClient(query: Mock): ClickHouseClient {
     command: vi.fn(),
     query,
   };
-}
-
-function createMockChildProcess() {
-  return Object.assign(new EventEmitter(), {
-    stdout: new PassThrough(),
-    stderr: new PassThrough(),
-  });
-}
-
-// The build functions await a temp `--target-path` before spawning, so emit process
-// events from inside the spawner after its close/error listeners are attached.
-function createDeferredSpawner(
-  child: SpawnedProcess,
-  act: (child: SpawnedProcess) => void,
-): Mock<ActivityReadModelSpawner> {
-  return vi.fn<ActivityReadModelSpawner>().mockImplementation(() => {
-    queueMicrotask(() => act(child));
-    return child;
-  });
-}
-
-function readTargetPath(spawnImpl: Mock<ActivityReadModelSpawner>): string {
-  const spawnArguments = spawnImpl.mock.calls[0]?.[1] ?? [];
-  const targetPathIndex = spawnArguments.indexOf("--target-path");
-  return String(spawnArguments[targetPathIndex + 1]);
 }
 
 describe("activity-read-model-build", () => {
@@ -253,78 +220,6 @@ describe("activity-read-model-build", () => {
     ).rejects.toThrow("Timed out waiting for PeerDB to reflect restoration of 1 activities");
   });
 
-  it("runs the activity delete dbt model chain in an isolated target path", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", 0));
-
-    await expect(runActivityReadModelBuild(spawnImpl)).resolves.toBeUndefined();
-    expect(spawnImpl).toHaveBeenCalledWith(
-      "dbt",
-      [
-        "build",
-        "--project-dir",
-        "analytics",
-        "--profiles-dir",
-        "analytics",
-        "--threads",
-        "1",
-        "--target-path",
-        readTargetPath(spawnImpl),
-        "--select",
-        ACTIVITY_DELETE_DBT_SELECT,
-      ],
-      {
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    expect(readTargetPath(spawnImpl)).toContain("dofek-dbt-delete-artifacts-");
-  });
-
-  it("captures dbt stdout when the activity build fails", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => {
-      if (spawned.stdout instanceof PassThrough) {
-        spawned.stdout.write("  Database Error in model activity_source_records  ");
-      }
-      spawned.emit("close", 2);
-    });
-
-    await expect(runActivityReadModelBuild(spawnImpl)).rejects.toThrow(
-      `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT} failed with exit code 2: Database Error in model activity_source_records`,
-    );
-  });
-
-  it("uses a distinct dbt target path for each activity build", async () => {
-    const firstChild = createMockChildProcess();
-    const firstSpawn = createDeferredSpawner(firstChild, (spawned) => spawned.emit("close", 0));
-    await runActivityReadModelBuild(firstSpawn);
-
-    const secondChild = createMockChildProcess();
-    const secondSpawn = createDeferredSpawner(secondChild, (spawned) => spawned.emit("close", 0));
-    await runActivityReadModelBuild(secondSpawn);
-
-    expect(readTargetPath(firstSpawn)).not.toEqual(readTargetPath(secondSpawn));
-  });
-
-  it("removes the dbt target directory after the activity build finishes", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", 0));
-
-    await runActivityReadModelBuild(spawnImpl);
-
-    expect(existsSync(readTargetPath(spawnImpl))).toBe(false);
-  });
-
-  it("removes the dbt target directory even when the activity build fails", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", 2));
-
-    await expect(runActivityReadModelBuild(spawnImpl)).rejects.toThrow("exit code 2");
-
-    expect(existsSync(readTargetPath(spawnImpl))).toBe(false);
-  });
-
   it("waits until the metric-stream delete event is acknowledged by the ClickHouse sink", async () => {
     const query = vi
       .fn()
@@ -468,95 +363,5 @@ describe("activity-read-model-build", () => {
 
     await expect(waitPromise).resolves.toBeUndefined();
     expect(query).toHaveBeenCalledTimes(2);
-  });
-
-  it("runs every incremental dbt model in an isolated target path after provider deletion", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", 0));
-
-    await expect(runProviderDeleteReadModelBuild(spawnImpl)).resolves.toBeUndefined();
-    expect(spawnImpl).toHaveBeenCalledWith(
-      "dbt",
-      [
-        "build",
-        "--project-dir",
-        "analytics",
-        "--profiles-dir",
-        "analytics",
-        "--threads",
-        "1",
-        "--target-path",
-        readTargetPath(spawnImpl),
-      ],
-      { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-  });
-
-  it("captures dbt stdout when the provider analytics build fails", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => {
-      if (spawned.stdout instanceof PassThrough) spawned.stdout.write("  provider model failed  ");
-      spawned.emit("close", 2);
-    });
-
-    await expect(runProviderDeleteReadModelBuild(spawnImpl)).rejects.toThrow(
-      "dbt build after provider deletion failed with exit code 2: provider model failed",
-    );
-  });
-
-  it("reports an unknown provider analytics build exit status", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", null));
-
-    await expect(runProviderDeleteReadModelBuild(spawnImpl)).rejects.toThrow("exit code unknown");
-  });
-
-  it("rejects when spawning the provider analytics build fails", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) =>
-      spawned.emit("error", new Error("provider dbt not found")),
-    );
-
-    await expect(runProviderDeleteReadModelBuild(spawnImpl)).rejects.toThrow(
-      "provider dbt not found",
-    );
-  });
-
-  it("supports provider analytics child processes without captured streams", async () => {
-    const child: SpawnedProcess = Object.assign(new EventEmitter(), {
-      stdout: null,
-      stderr: null,
-    });
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", 0));
-
-    await expect(runProviderDeleteReadModelBuild(spawnImpl)).resolves.toBeUndefined();
-  });
-
-  it("rejects when dbt exits with a non-zero status", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => spawned.emit("close", 1));
-
-    await expect(runActivityReadModelBuild(spawnImpl)).rejects.toThrow(
-      `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT} failed with exit code 1`,
-    );
-  });
-
-  it("captures dbt stderr in failure errors", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) => {
-      if (spawned.stderr instanceof PassThrough) spawned.stderr.write("  model failed  ");
-      spawned.emit("close", 2);
-    });
-
-    await expect(runActivityReadModelBuild(spawnImpl)).rejects.toThrow(": model failed");
-  });
-
-  it("rejects when spawning dbt fails", async () => {
-    const child = createMockChildProcess();
-    const spawnImpl = createDeferredSpawner(child, (spawned) =>
-      spawned.emit("error", new Error("dbt not found")),
-    );
-
-    await expect(runActivityReadModelBuild(spawnImpl)).rejects.toThrow("dbt not found");
   });
 });

@@ -43,6 +43,7 @@ import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExerti
 import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { ActivitySourceDisclosure } from "../components/ActivitySourceDisclosure.tsx";
+import { CyclingThresholdDetails } from "../components/CyclingThresholdDetails.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -122,7 +123,7 @@ export function ActivityDetailPage() {
   );
   const powerZones = trpc.activity.powerZones.useQuery(
     { id, powerSourceId: sources.power },
-    { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
+    { enabled: isCycling && hasPower, placeholderData: activityQueryPlaceholder(id) },
   );
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
@@ -548,11 +549,14 @@ export function ActivityDetailPage() {
               <QueryStatePanel error={powerZones.error} height={250} />
             ) : powerZones.data ? (
               <>
-                <PowerZonesChart
-                  zones={powerZones.data.zones}
-                  ftp={powerZones.data.ftp}
-                  loading={powerZones.isLoading}
-                />
+                <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
+                {powerZones.data.ftp != null && (
+                  <PowerZonesChart
+                    zones={powerZones.data.zones}
+                    ftp={powerZones.data.ftp}
+                    loading={powerZones.isLoading}
+                  />
+                )}
                 {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
               </>
             ) : null}

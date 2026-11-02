@@ -287,9 +287,8 @@ SELECT
   summary.sample_count,
   summary.power_sample_count,
   summary.hr_sample_count AS heart_rate_sample_count
-FROM analytics.activity_summary_rows AS summary FINAL
+FROM analytics.activity_summary AS summary
 LEFT JOIN temperature ON temperature.activity_id = summary.activity_id
 LEFT JOIN sample_provenance ON sample_provenance.activity_id = summary.activity_id
 WHERE summary.user_id = {userId:UUID}
-  AND summary.is_deleted = 0
   AND has({activityIds:Array(String)}, toString(summary.activity_id))`;

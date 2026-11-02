@@ -27,6 +27,8 @@ export const PRODUCTION_DBT_MODELS = [
   "activity_polarization_zones",
   "activity_power_curve",
   "cycling_activity",
+  "cycling_threshold_history",
+  "cycling_activity_power_metrics",
   "daily_cycling",
   "provider_metric_stream_daily",
   "provider_change_watermark",
@@ -48,6 +50,13 @@ export const PRODUCTION_DBT_MODELS = [
 ] as const;
 
 export type ProductionDbtModel = (typeof PRODUCTION_DBT_MODELS)[number];
+
+export const CYCLING_POWER_DOWNSTREAM_DBT_MODELS = [
+  "cycling_threshold_history",
+  "cycling_activity_power_metrics",
+  "healthspan_activity_zone_minutes",
+  "weekly_healthspan",
+] as const satisfies readonly ProductionDbtModel[];
 
 export const PROCESSING_DATASET_KEYS = [
   "activity",
@@ -177,7 +186,12 @@ export const DATASET_CONTRACTS = [
         cdcEvidence: [{ kind: "clickhouse_sink_ack", sinkName: "metric_stream_clickhouse_sink" }],
       },
     ],
-    analyticsModels: ["cycling_activity", "daily_cycling"],
+    analyticsModels: [
+      "cycling_activity",
+      "daily_cycling",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
+    ],
     cacheQueryFamilies: ["cycling", "cyclingAdvanced"],
     providerIds: ["*"],
     dataTypes: ["cycling"],

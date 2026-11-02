@@ -21,6 +21,7 @@
     "@bull-board/express": "9.10.1",
     "@dofek/auth": "workspace:*",
     "@dofek/climbing-catalogue": "workspace:*",
+    "@dofek/cycling-power": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",

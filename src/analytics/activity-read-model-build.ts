@@ -1,35 +1,6 @@
-import { type SpawnOptions, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE } from "../metric-stream/clickhouse-table.ts";
-
-export const ACTIVITY_DELETE_DBT_SELECT = "activity_source_records+";
-
-export interface SpawnedProcess {
-  stdout: NodeJS.ReadableStream | null;
-  stderr: NodeJS.ReadableStream | null;
-  on(event: "error", listener: (error: Error) => void): this;
-  on(event: "close", listener: (code: number | null) => void): this;
-  emit(event: "error", error: Error): boolean;
-  emit(event: "close", code: number | null): boolean;
-}
-
-export type ActivityReadModelSpawner = (
-  command: string,
-  args: readonly string[],
-  options: Pick<SpawnOptions, "env" | "stdio">,
-) => SpawnedProcess;
-
-function defaultActivityReadModelSpawner(
-  command: string,
-  args: readonly string[],
-  options: Pick<SpawnOptions, "env" | "stdio">,
-): SpawnedProcess {
-  return spawn(command, [...args], options);
-}
 
 export interface WaitForPeerDbActivityDeletesOptions {
   timeoutMs?: number;
@@ -212,75 +183,4 @@ export async function waitForPeerDbProviderDeletes(
   throw new Error(
     `Timed out waiting for PeerDB to reflect provider deletion for provider ${providerId}`,
   );
-}
-
-async function runReadModelDbtBuild(
-  spawnImpl: ActivityReadModelSpawner,
-  selectArguments: readonly string[],
-  failureDescription: string,
-): Promise<void> {
-  const targetPath = await mkdtemp(join(tmpdir(), "dofek-dbt-delete-artifacts-"));
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawnImpl(
-        "dbt",
-        [
-          "build",
-          "--project-dir",
-          "analytics",
-          "--profiles-dir",
-          "analytics",
-          "--threads",
-          "1",
-          "--target-path",
-          targetPath,
-          ...selectArguments,
-        ],
-        {
-          env: process.env,
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      );
-
-      // dbt writes its errors to stdout, so capture both streams to surface the real cause.
-      let output = "";
-      const appendOutput = (chunk: Buffer | string) => {
-        output += String(chunk);
-      };
-      child.stdout?.on("data", appendOutput);
-      child.stderr?.on("data", appendOutput);
-
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-          return;
-        }
-        const trimmedOutput = output.trim();
-        reject(
-          new Error(
-            `${failureDescription} failed with exit code ${code ?? "unknown"}${trimmedOutput ? `: ${trimmedOutput}` : ""}`,
-          ),
-        );
-      });
-    });
-  } finally {
-    await rm(targetPath, { recursive: true, force: true });
-  }
-}
-
-export async function runActivityReadModelBuild(
-  spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
-): Promise<void> {
-  await runReadModelDbtBuild(
-    spawnImpl,
-    ["--select", ACTIVITY_DELETE_DBT_SELECT],
-    `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT}`,
-  );
-}
-
-export async function runProviderDeleteReadModelBuild(
-  spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
-): Promise<void> {
-  await runReadModelDbtBuild(spawnImpl, [], "dbt build after provider deletion");
 }

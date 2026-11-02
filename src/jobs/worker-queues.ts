@@ -236,13 +236,7 @@ export function createWorkerQueues({
     ACTIVITY_DELETE_ANALYTICS_QUEUE,
     (job) =>
       jobContext.run(job, () =>
-        runQueuedUserWorkUnlessAccountErasing(
-          accountErasureWorkLockPool,
-          db,
-          job.data.userId,
-          "activity analytics refresh",
-          () => processActivityDeleteAnalyticsJob(job, db),
-        ),
+        processActivityDeleteAnalyticsJob(job, db, accountErasureWorkLockPool),
       ),
     { autorun: false, connection, concurrency: 1 },
   );

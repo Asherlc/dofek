@@ -1226,6 +1226,13 @@
       "when": 1793577267980,
       "tag": "0174_kaya_activity_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1793594425786,
+      "tag": "0175_remove_configured_cycling_ftp",
+      "breakpoints": true
     }
   ]
 }

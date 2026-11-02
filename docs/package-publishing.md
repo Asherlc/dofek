@@ -6,7 +6,7 @@ only after the `CI` workflow succeeds for the current `main` commit.
 
 ## npm architecture
 
-pnpm remains the workspace and publishing package manager. Lerna 9 is used only
+pnpm remains the workspace and publishing package manager. Lerna is used only
 for the part pnpm does not provide: detecting changed release packages,
 independently patch-versioning them, updating workspace dependency versions,
 and updating the package manifests. The version workflow commits those
@@ -85,6 +85,13 @@ A public package must:
   maintain the local graph;
 - be listed in `lerna.json` and the `release:npm:test` package paths; and
 - pass a clean tarball installation before its first publication.
+
+Include the package in the Docker-free mutation test collection and both Stryker
+source lists as well. Verify related-test discovery with
+`pnpm exec vitest related --config vitest.config.mutation.ts --run <source>` before
+opening the PR; mutation runs cannot use database-backed integration suites.
+See the [test tiers](testing.md#integration-dependencies) and
+[Stryker Vitest configuration](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
 
 The first version must be published by an npm owner with 2FA because npm cannot
 attach a trusted publisher to a package that does not yet exist. After that
@@ -170,3 +177,20 @@ GitHub App on that repository (or its owner), add an exporter that follows the
 `.github/swift-packages.json`. Do not create another release workflow. The App
 installation must be able to push commits and tags and create releases in the
 distribution repository.
+
+### Cycling power release
+
+`@dofek/cycling-power` participates in the shared version/build/test/publish path
+through [lerna.json](../lerna.json), the root release test command, and the public
+package manifest. Version 0.1.0 was bootstrapped manually on 2026-11-02. Its npm
+trusted publisher authorizes `Asherlc/dofek`, workflow `release-npm.yml`, with direct
+publishing enabled; later source fixes are released through the normal patch
+version PR. The trust was created with `npm trust github @dofek/cycling-power
+--file release-npm.yml --repo Asherlc/dofek --allow-publish --yes`. npm requires
+separate two-factor authentication for this configuration operation
+([npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/),
+[trusted publishers](https://docs.npmjs.com/trusted-publishers/)).
+
+A clean install of the published initial package verified all five public module
+exports and its registry checksum. The shared release build and 1,512 release
+tests also passed before PR review fixes; subsequent CI verifies the final tree.

@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@dofek/climbing-catalogue": "workspace:*",
+    "@dofek/cycling-power": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@maplibre/maplibre-gl-style-spec": "26.5.0",

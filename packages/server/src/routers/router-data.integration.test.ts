@@ -8,6 +8,7 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  rebuildClickHouseTestActivityPowerCurve,
   seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -46,7 +47,7 @@ describe("Router data coverage", () => {
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = 190, resting_hr = 50, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 
@@ -458,6 +459,7 @@ describe("Router data coverage", () => {
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    await rebuildClickHouseTestActivityPowerCurve(testCtx);
     if (!polarizationActivity) {
       throw new Error("Polarization activity fixture was not created");
     }
@@ -971,22 +973,18 @@ describe("Router data coverage", () => {
   // PMC — verify model info is populated
   // ══════════════════════════════════════════════════════════════
   describe("pmc", () => {
-    it("chart returns FTP estimate and model type", async () => {
+    it("chart returns heart-rate load and model type", async () => {
       const result = await query<{
         data: { date: string; load: number; ctl: number; atl: number; tsb: number }[];
         model: {
           type: "learned" | "generic";
           pairedActivities: number;
           r2: number | null;
-          ftp: number | null;
         };
       }>("pmc.chart", { days: 90 });
 
       expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model.ftp).not.toBeNull();
-      if (result.model.ftp != null) {
-        expect(result.model.ftp).toBeGreaterThan(100);
-      }
+      expect(result.model.type).toBe("generic");
       expect(result.model.pairedActivities).toBeGreaterThanOrEqual(0);
 
       // Verify daily load computation produces non-zero values

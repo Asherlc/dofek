@@ -72,12 +72,13 @@ active_rows AS (
             cycling.activity_id,
             cycling.started_at,
             cycling.elapsed_seconds / 60.0,
-            assumeNotNull(cycling.average_heart_rate),
-            assumeNotNull(cycling.max_heart_rate),
+            if(cycling.heart_rate_samples > 0 AND isFinite(cycling.average_heart_rate),
+                toFloat64(cycling.average_heart_rate), CAST(null, 'Nullable(Float64)')),
+            if(cycling.heart_rate_samples > 0 AND isFinite(cycling.max_heart_rate),
+                toFloat64(cycling.max_heart_rate), CAST(null, 'Nullable(Float64)')),
             cycling.average_power,
             cycling.power_samples,
             cycling.heart_rate_samples,
-            cycling.normalized_power,
             cycling.activity_name
         )) AS activities,
         toUInt8(0) AS is_deleted,
@@ -90,9 +91,6 @@ active_rows AS (
     CROSS JOIN refresh_clock
     WHERE cycling.is_deleted = 0
         AND cycling.ended_at IS NOT null
-        AND cycling.average_heart_rate IS NOT null
-        AND cycling.max_heart_rate IS NOT null
-        AND cycling.heart_rate_samples > 0
     GROUP BY
         cycling.user_id,
         toDate(cycling.started_at),
@@ -104,7 +102,7 @@ tombstone_dates AS (
     SELECT
         dirty_dates.user_id AS user_id,
         dirty_dates.date AS date,
-        CAST([], 'Array(Tuple(UUID, DateTime64(6, ''UTC''), Float64, Float64, Float64, Nullable(Float64), UInt64, UInt64, Nullable(Float64), Nullable(String)))') AS activities,
+        CAST([], 'Array(Tuple(UUID, DateTime64(6, ''UTC''), Float64, Nullable(Float64), Nullable(Float64), Nullable(Float64), UInt64, UInt64, Nullable(String)))') AS activities,
         toUInt8(1) AS is_deleted,
         refresh_clock.refresh_version AS refresh_version,
         refresh_clock.refreshed_at AS refreshed_at

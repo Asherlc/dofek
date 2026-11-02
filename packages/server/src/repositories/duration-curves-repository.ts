@@ -1,4 +1,5 @@
-import { DURATION_LABELS, linearRegression } from "@dofek/training/power-analysis";
+import { linearRegression } from "@dofek/cycling-power/regression";
+import { DURATION_LABELS } from "@dofek/training/power-analysis";
 import { z } from "zod";
 import type { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";

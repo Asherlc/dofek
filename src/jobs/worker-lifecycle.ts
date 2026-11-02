@@ -10,7 +10,7 @@ import type { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import type { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import type { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
 import type { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
-import { closeAllQueueResources } from "./queues.ts";
+import { closeAllQueueResources, closeAnalyticsRefreshWaiters } from "./queues.ts";
 import type { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 export function createWorkerLifecycle({
@@ -58,8 +58,9 @@ export function createWorkerLifecycle({
       fileUploadOutboxDispatcher.close(),
       fileUploadReconciler.close(),
       activityImageOutboxDispatcher.close(),
-      ...allWorkers.map((worker) => worker.close()),
     ]);
+    await closeAnalyticsRefreshWaiters();
+    await Promise.all(allWorkers.map((worker) => worker.close()));
     await Promise.all([
       garminImportProgressCoordinator.close(),
       accountErasureRuntime.close(),

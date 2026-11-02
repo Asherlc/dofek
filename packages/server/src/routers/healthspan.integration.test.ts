@@ -1,6 +1,7 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
@@ -8,6 +9,8 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  executeClickHouseTestCommand,
+  getClickHouseTestClient,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -26,6 +29,12 @@ describe("healthspan zone time with variable-interval HR data", () => {
 
   const MAX_HR = 190;
   const RESTING_HR = 50;
+  const currentWeekStart = new Date();
+  currentWeekStart.setUTCHours(0, 0, 0, 0);
+  currentWeekStart.setUTCDate(
+    currentWeekStart.getUTCDate() - ((currentWeekStart.getUTCDay() + 6) % 7),
+  );
+  const endDate = new Date(currentWeekStart.getTime() - 86_400_000).toISOString().slice(0, 10);
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -35,7 +44,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
 
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = ${MAX_HR}, resting_hr = ${RESTING_HR}, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = ${MAX_HR}, resting_hr = ${RESTING_HR}, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 
@@ -57,38 +66,33 @@ describe("healthspan zone time with variable-interval HR data", () => {
       );
     }
 
-    // ── Activity with 5-second HR intervals (simulating Apple Health) ──
-    // 600 seconds total (10 minutes), sampled every 5 seconds = 120 samples
-    // First 300 seconds (60 samples): HR 140 (aerobic, below 162 threshold)
-    // Last  300 seconds (60 samples): HR 175 (high intensity, above 162 threshold)
-    const actResult = await testCtx.db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
-          ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'healthspan-apple-watch-hiit', 'cycling', 'cycling',
-            CURRENT_TIMESTAMP - INTERVAL '2 days',
-            (CURRENT_TIMESTAMP - INTERVAL '2 days') + INTERVAL '600 seconds',
-            'Apple Watch HIIT'
-          ) RETURNING id`,
-    );
-    const actId = actResult[0]?.id;
-    if (!actId) throw new Error("Failed to insert activity");
-
+    // Every selected week has measured zone coverage, so unknown weeks do not
+    // obscure the elapsed-time regression under the strict completeness contract.
     const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
-    const activityStartedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    for (let sample = 0; sample < 120; sample++) {
-      const offsetSeconds = sample * 5; // 5-second intervals
-      const hr = sample < 60 ? 140 : 175; // first half aerobic, second half high intensity
-      const recordedAt = new Date(activityStartedAt.getTime() + offsetSeconds * 1000).toISOString();
-      metricStreamSeedRows.push({
-        userId: TEST_USER_ID,
-        recordedAt,
-        providerId: "test_provider",
-        sourceType: "api",
-        channel: "heart_rate",
-        activityId: actId,
-        scalar: hr,
-      });
+    for (let week = 0; week < 4; week++) {
+      const activityStartedAt = new Date(
+        Date.parse(`${endDate}T12:00:00Z`) - week * 7 * 86_400_000,
+      );
+      const activityEndedAt = new Date(activityStartedAt.getTime() + 600_000);
+      const actResult = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.activity (
+          provider_id,user_id,external_id,canonical_type,provider_type,started_at,ended_at,name
+        ) VALUES ('test_provider',${TEST_USER_ID},${`healthspan-apple-watch-hiit-${week}`},
+          'cycling','cycling',${activityStartedAt},${activityEndedAt},'Apple Watch HIIT') RETURNING id`,
+      );
+      const actId = actResult[0]?.id;
+      if (!actId) throw new Error("Failed to insert activity");
+      for (let sample = 0; sample < 120; sample++) {
+        metricStreamSeedRows.push({
+          userId: TEST_USER_ID,
+          recordedAt: new Date(activityStartedAt.getTime() + sample * 5_000).toISOString(),
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "heart_rate",
+          activityId: actId,
+          scalar: sample < 60 ? 140 : 175,
+        });
+      }
     }
 
     // Sleep data (needed to avoid CROSS JOIN eliminating the row)
@@ -180,7 +184,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
   }
 
   it("computes high intensity minutes from actual time intervals, not sample counts", async () => {
-    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4, endDate });
 
     const highIntensity = result.metrics.find((m) => m.name === "High Intensity");
     expect(highIntensity).toBeDefined();
@@ -188,24 +192,20 @@ describe("healthspan zone time with variable-interval HR data", () => {
 
     // Activity has 120 samples at 5-second intervals = 600 seconds total.
     // 60 samples (300 seconds = 5 minutes) are above the 162 bpm threshold.
-    // Weekly average over 4 weeks: ~5 / 4 = ~1.25 min/week.
+    // Four measured weeks each contribute ~5 high-intensity minutes.
     //
-    // BUG (old code): COUNT(*) / 60 = 60 / 60 = 1 minute total → ~0.25 min/week
-    // FIX (new code): SUM(interval) / 60 = 300 / 60 = 5 minutes total → ~1.25 min/week
-    //
-    // The fixed value should be ~5x larger than the buggy value.
-    // We check that the weekly value is > 0.5 min/week (the buggy code would give ~0.25).
+    // Counting samples would yield only one minute per week instead of five.
     if (highIntensity?.value != null) {
-      expect(highIntensity.value).toBeGreaterThan(0.5);
+      expect(highIntensity.value).toBeCloseTo(5, 0);
     }
 
     // And the aerobic minutes should also reflect actual time
     const aerobic = result.metrics.find((m) => m.name === "Aerobic Activity");
     expect(aerobic).toBeDefined();
     expect(aerobic?.value).not.toBeNull();
-    // 60 samples * 5 seconds = 300 seconds = 5 minutes aerobic total → ~1.25 min/week
+    // Each measured week has 60 samples * 5 seconds = 5 aerobic minutes.
     if (aerobic?.value != null) {
-      expect(aerobic.value).toBeGreaterThan(0.5);
+      expect(aerobic.value).toBeCloseTo(5, 0);
     }
   });
 
@@ -260,7 +260,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
       );
     }
 
-    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4, endDate });
 
     const sleepConsistency = result.metrics.find((m) => m.name === "Sleep Consistency");
     expect(sleepConsistency).toBeDefined();
@@ -273,7 +273,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
   });
 
   it("high intensity minutes are proportional to actual time, not sample count", async () => {
-    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4, endDate });
 
     const highIntensity = result.metrics.find((m) => m.name === "High Intensity");
     expect(highIntensity).toBeDefined();
@@ -296,20 +296,21 @@ describe("healthspan zone time with variable-interval HR data", () => {
   });
 
   it("includes power zone high-intensity work when heart-rate samples are absent", async () => {
+    const powerActivityStartedAt = new Date(`${endDate}T13:00:00Z`);
+    const powerActivityEndedAt = new Date(powerActivityStartedAt.getTime() + 600_000);
     const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
             'test_provider', ${TEST_USER_ID}, 'healthspan-power-zone-intervals', 'cycling', 'cycling',
-            CURRENT_TIMESTAMP - INTERVAL '1 day',
-            (CURRENT_TIMESTAMP - INTERVAL '1 day') + INTERVAL '600 seconds',
+            ${powerActivityStartedAt},
+            ${powerActivityEndedAt},
             'Power Zone Intervals'
           ) RETURNING id`,
     );
     const actId = actResult[0]?.id;
     if (!actId) throw new Error("Failed to insert activity");
 
-    const powerActivityStartedAt = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
     const powerMetricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
     for (let sampleIndex = 0; sampleIndex < 120; sampleIndex++) {
       const offsetSeconds = sampleIndex * 5;
@@ -328,15 +329,56 @@ describe("healthspan zone time with variable-interval HR data", () => {
     }
     await syncClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, powerMetricStreamSeedRows);
+    const identitiesResult = await getClickHouseTestClient(testCtx).query({
+      query: `SELECT toString(activity_id) AS activity_id
+        FROM analytics.deduped_activities FINAL
+        WHERE user_id=toUUID('${TEST_USER_ID}')
+          AND has(member_activity_ids,toUUID('${actId}')) AND is_deleted=0`,
+      format: "JSONEachRow",
+    });
+    const identities = z
+      .array(z.object({ activity_id: z.uuid() }))
+      .parse(await identitiesResult.json());
+    expect(identities).toHaveLength(1);
+    const canonicalActivityId = identities[0]?.activity_id;
+    if (!canonicalActivityId) throw new Error("Power fixture has no canonical serving activity");
+    await executeClickHouseTestCommand(
+      testCtx,
+      `INSERT INTO analytics.cycling_power_observation_rows
+      (user_id,activity_id,normalized_power,source_refresh_version,model_version,is_deleted,refresh_version,refreshed_at)
+      SELECT toUUID('${TEST_USER_ID}'),toUUID('${canonicalActivityId}'),230,
+        greatest(toUInt64(1),max(refresh_version)),'test-observed-power',0,
+        toUInt64(toUnixTimestamp64Nano(now64(9))),now64(9)
+      FROM analytics.activity_summary_rows WHERE activity_id=toUUID('${canonicalActivityId}')`,
+    );
+    await executeClickHouseTestCommand(
+      testCtx,
+      `INSERT INTO analytics.cycling_power_history_rows
+      SELECT toUUID('${TEST_USER_ID}'),max(source_refresh_version),today(),'test-reference',
+        [(toFloat64(toUnixTimestamp64Micro(parseDateTime64BestEffort('${powerActivityStartedAt.toISOString()}',6)))/1000000,
+          '${canonicalActivityId}',250.0,0.92,14.106666666666667,'${canonicalActivityId}',
+          toFloat64(toUnixTimestamp64Micro(parseDateTime64BestEffort('${powerActivityStartedAt.toISOString()}',6)))/1000000,
+          1200.0,300.0)],toUInt64(toUnixTimestamp64Nano(now64(9))),now64(9)
+      FROM analytics.cycling_power_observation_rows FINAL WHERE user_id=toUUID('${TEST_USER_ID}')`,
+    );
+    await executeClickHouseTestCommand(
+      testCtx,
+      "REBUILD TEST ANALYTICS TABLE analytics.healthspan_activity_zone_minutes",
+    );
+    await executeClickHouseTestCommand(
+      testCtx,
+      "REBUILD TEST ANALYTICS TABLE analytics.weekly_healthspan",
+    );
 
-    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4, endDate });
 
     const highIntensity = result.metrics.find((m) => m.name === "High Intensity");
     expect(highIntensity).toBeDefined();
     expect(highIntensity?.value).not.toBeNull();
 
     if (highIntensity?.value != null) {
-      expect(highIntensity.value).toBeGreaterThan(3);
+      expect(highIntensity.value).toBeGreaterThanOrEqual(7);
+      expect(highIntensity.value).toBeLessThanOrEqual(8);
     }
   });
 });

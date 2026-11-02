@@ -87,6 +87,10 @@ importers:
       '@clickhouse/client':
         specifier: 1.23.1
         version: 1.23.1
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:packages/cycling-power
+
       '@dofek/climbing-catalogue':
         specifier: workspace:*
         version: link:packages/climbing-catalogue
@@ -388,6 +392,8 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/cycling-power: {}
 
   packages/climbing-catalogue:
     dependencies:
@@ -816,6 +822,10 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:../cycling-power
+
       '@dofek/climbing-catalogue':
         specifier: workspace:*
         version: link:../climbing-catalogue
@@ -980,6 +990,10 @@ importers:
 
   packages/training:
     dependencies:
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:../cycling-power
+
       '@dofek/climbing-catalogue':
         specifier: workspace:*
         version: link:../climbing-catalogue

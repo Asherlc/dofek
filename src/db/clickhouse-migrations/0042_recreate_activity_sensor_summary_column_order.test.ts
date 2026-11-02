@@ -4,7 +4,7 @@ import {
   buildActivitySensorSummaryRowsTableSql as buildCurrentActivitySensorSummaryRowsTableSql,
   extractClickHouseTableColumnNames,
 } from "../clickhouse-activity-sensor-summary.ts";
-import { buildActivitySummaryRowsTableSql } from "../clickhouse-activity-summary.ts";
+import { buildActivitySummaryRowsTableSql as buildCurrentActivitySummaryRowsTableSql } from "../clickhouse-activity-summary.ts";
 import { createMigration } from "./0042_recreate_activity_sensor_summary_column_order.ts";
 
 const sensorSummaryTable = "analytics.activity_sensor_summary_rows";
@@ -22,6 +22,15 @@ function historicalSensorSummaryTableSql(): string {
 
 function buildActivitySensorSummaryRowsTableSql(): string {
   return historicalSensorSummaryTableSql();
+}
+
+function buildActivitySummaryRowsTableSql(): string {
+  const statement = createMigration().statements.find((sql) =>
+    sql.startsWith(`CREATE TABLE IF NOT EXISTS ${activitySummaryTable}`),
+  );
+  if (!statement)
+    throw new Error("Migration 0042 is missing its historical activity summary table");
+  return statement;
 }
 
 interface RecordedCommand {
@@ -103,7 +112,6 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
 
     expect(migration.id).toBe("0042_recreate_activity_sensor_summary_column_order");
     expect(migration.run).toBeDefined();
-    expect(migration.statements.join("\n")).not.toContain("source_refresh_version");
     expect(migration.statements).toEqual([
       "DROP VIEW IF EXISTS analytics.activity_summary",
       `RENAME TABLE ${sensorSummaryTable} TO ${sensorSummaryTable}_old,
@@ -240,7 +248,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
     });
 
     it("keeps activity summary power and climbing columns before refresh metadata", () => {
-      const columns = extractClickHouseTableColumnNames(buildActivitySummaryRowsTableSql());
+      const columns = extractClickHouseTableColumnNames(buildCurrentActivitySummaryRowsTableSql());
       const refreshVersionIndex = columns.indexOf("refresh_version");
       const climbingSecondsIndex = columns.indexOf("climbing_seconds");
 

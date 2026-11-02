@@ -492,10 +492,13 @@ SELECT * REPLACE(
 FROM analytics.activity_sensor_summary_rows FINAL
 WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
     );
-    await executeClickHouseTestCommand(testContext, "TRUNCATE TABLE analytics.activity_summary");
     await executeClickHouseTestCommand(
       testContext,
-      `INSERT INTO analytics.activity_summary (
+      "TRUNCATE TABLE analytics.activity_summary_rows",
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.activity_summary_rows (
         activity_id,
         user_id,
         canonical_type,
@@ -531,7 +534,6 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
         first_sample_at,
         last_sample_at,
         best_twenty_minute_power,
-        normalized_power,
         smoothed_avg_power,
         climbing_elevation_gain_m,
         climbing_seconds,
@@ -571,7 +573,6 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
         0,
         toDateTime64('2026-03-16 10:00:00', 6, 'UTC'),
         toDateTime64('2026-03-16 10:30:00', 6, 'UTC'),
-        NULL,
         NULL,
         NULL,
         NULL,

@@ -6,6 +6,8 @@ import {
   buildActivitySummaryViewSql,
 } from "../../../../src/db/clickhouse-activity-summary.ts";
 import { createMigration } from "../../../../src/db/clickhouse-migrations/0107_running_step_cadence.ts";
+import { buildActivitySummaryRowsTableSql as buildHistoricalActivitySummaryRowsTableSql } from "../../../../src/db/clickhouse-migrations/activity-summary-schema-before-0108.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -45,6 +47,8 @@ describe("running summary query", () => {
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({ query: rewrite(buildActivitySummaryRowsTableSql()) });
+    for (const query of cyclingPowerSchemaStatements())
+      await client.command({ query: rewrite(query) });
     await client.command({ query: rewrite(buildActivitySummaryViewSql()) });
     await client.insert?.({
       table: `${database}.activity_summary_rows`,
@@ -228,9 +232,7 @@ describe("running summary legacy-view upgrade", () => {
         client.query({ ...options, query: rewrite(options.query) }),
     };
     await client.command({ query: `CREATE DATABASE ${database} ENGINE = Atomic` });
-    await mappedClient.command({ query: buildActivitySummaryRowsTableSql() });
-    await mappedClient.command({ query: buildActivitySummaryViewSql() });
-    await mappedClient.command({ query: "DROP VIEW IF EXISTS analytics.activity_summary" });
+    await mappedClient.command({ query: buildHistoricalActivitySummaryRowsTableSql() });
     await mappedClient.command({
       query: `ALTER TABLE analytics.activity_summary_rows
         DROP COLUMN cadence_coverage_percent,

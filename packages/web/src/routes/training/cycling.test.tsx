@@ -193,7 +193,29 @@ vi.mock("../../lib/trpc.ts", () => ({
                     data: [],
                     model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
                   },
-                  eftpTrend: { trend: [], currentEftp: null, model: null },
+                  eftpTrend: {
+                    trend: [],
+                    currentEftp: null,
+                    model: null,
+                    currentEvidence: {
+                      value: null,
+                      unit: "watt",
+                      method: "computed_eftp",
+                      event_at: null,
+                      evidence_activity_id: null,
+                      evidence_at: null,
+                      evidence_duration_seconds: null,
+                      evidence_power: null,
+                      model_version: null,
+                      uncertainty: {
+                        kind: "not_quantifiable" as const,
+                        watts: null,
+                        reason:
+                          "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+                      },
+                      unavailable_reason: "No qualifying sustained power effort is available.",
+                    },
+                  },
                   estimateEvidence: state.estimateEvidenceAvailable
                     ? {
                         recent: {

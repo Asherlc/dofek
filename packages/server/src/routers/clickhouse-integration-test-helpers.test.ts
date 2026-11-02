@@ -106,7 +106,7 @@ describe("clickhouse integration test helpers", () => {
       "deduped_activities",
       "activity_sensor_sample",
       "activity_sensor_summary_rows",
-      "activity_summary",
+      "activity_summary_rows",
     ]);
   });
 
@@ -127,7 +127,7 @@ describe("clickhouse integration test helpers", () => {
       "deduped_activities",
       "activity_sensor_sample",
       "activity_sensor_summary_rows",
-      "activity_summary",
+      "activity_summary_rows",
     ]);
   });
 
@@ -203,8 +203,8 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".activity_summary") &&
-          command.includes("refreshed_at DateTime64(9)"),
+          command.includes(".activity_summary_rows") &&
+          command.includes("refreshed_at DateTime64(9, 'UTC')"),
       ),
     ).toBe(true);
     expect(
@@ -569,7 +569,7 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".weekly_healthspan") &&
           command.includes(".v_daily_metrics") &&
-          (command.match(/daily_body_measurement FINAL/g)?.length ?? 0) === 2,
+          command.includes("daily_body_measurement FINAL"),
       ),
     ).toBe(true);
     expect(

@@ -1,16 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
-import { calculateCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
+import {
+  type CyclingEffortContext,
+  calculateCyclingEffortMetrics,
+  evaluateCyclingEffortMetrics,
+  prepareCyclingEffortMetrics,
+} from "./cycling-effort-metrics.ts";
 import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-repository.ts";
 
 vi.mock("./cycling-effort-metrics.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./cycling-effort-metrics.ts")>();
   return {
     ...actual,
-    calculateCyclingEffortMetrics: vi.fn(actual.calculateCyclingEffortMetrics),
+    prepareCyclingEffortMetrics: vi.fn(actual.prepareCyclingEffortMetrics),
+    evaluateCyclingEffortMetrics: vi.fn(actual.evaluateCyclingEffortMetrics),
   };
 });
 
-const calculateCyclingEffortMetricsMock = vi.mocked(calculateCyclingEffortMetrics);
+const prepareCyclingEffortMetricsMock = vi.mocked(prepareCyclingEffortMetrics);
+const evaluateCyclingEffortMetricsMock = vi.mocked(evaluateCyclingEffortMetrics);
+
+function emptyEffort(context: CyclingEffortContext) {
+  const prepared = prepareCyclingEffortMetrics([], context);
+  return calculateCyclingEffortMetrics(prepared, {
+    activity: { normalizedPowerWatts: null, intensityFactor: null, trainingStressScore: null },
+    intervals: prepared.powerWindows.map(() => ({
+      normalizedPowerWatts: null,
+      intensityFactor: null,
+      trainingStressScore: null,
+    })),
+  });
+}
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const activityId = "00000000-0000-4000-8000-000000000010";
@@ -48,7 +67,6 @@ function settingsRow(overrides: Record<string, unknown> = {}) {
     id: "00000000-0000-4000-8000-000000000100",
     user_id: userId,
     sport: "cycling",
-    ftp: 250,
     threshold_hr: 175,
     threshold_pace_per_km: null,
     power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
@@ -103,10 +121,56 @@ function samples() {
 }
 
 describe("CyclingTrainingMetricsRepository", () => {
+  it("renders canonical activity power metrics with computed threshold evidence", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn(async (_schema, text: string) => {
+      if (text.includes("cycling-training-metrics:activities")) return [activityRow()];
+      if (text.includes("cycling-training-metrics:samples")) return samples();
+      if (text.includes("analytics.cycling_activity_power_metrics"))
+        return [
+          {
+            activity_id: activityId,
+            started_at: "2026-06-15T15:00:00.000Z",
+            normalized_power: 227,
+            model_version: "test-cycling-model",
+            eftp: 275,
+            power_tss: 68.135,
+            intensity_factor: 0.825455,
+            evidence_activity_id: memberActivityId,
+            evidence_at: "2026-06-14T15:00:00.000Z",
+            evidence_duration_seconds: 600,
+            evidence_power: 320,
+          },
+        ];
+      return [];
+    });
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+    expect(result.activities[0]?.metrics.power).toMatchObject({
+      normalized_watts: 227,
+      intensity_factor: 0.825455,
+      training_stress_score: 68.135,
+    });
+    expect(result.activities[0]?.thresholds.ftp).toMatchObject({
+      value: 275,
+      kind: "computed",
+      evidence_activity_id: memberActivityId,
+    });
+  });
+
   it("matches interval evidence by index and both clipped boundaries", async () => {
-    const actual = await vi.importActual<typeof import("./cycling-effort-metrics.ts")>(
-      "./cycling-effort-metrics.ts",
-    );
     const intervalInputs = [
       {
         index: 1,
@@ -163,10 +227,11 @@ describe("CyclingTrainingMetricsRepository", () => {
       },
       memberActivityIds: [memberActivityId],
     }));
-    const calculated = actual.calculateCyclingEffortMetrics([], {
+    const calculated = emptyEffort({
       durationSeconds: 60,
       activityDate: "2026-06-15",
       settingsHistory: [],
+      activityPowerMetrics: null,
       intervals: intervalInputs,
       intervalEvidence,
       weightObservations: [],
@@ -177,20 +242,23 @@ describe("CyclingTrainingMetricsRepository", () => {
     const first = calculated.intervals[0];
     const third = calculated.intervals[2];
     if (!first || !third) throw new Error("Expected three calculated intervals");
-    calculateCyclingEffortMetricsMock.mockReturnValueOnce({
-      workout: calculated.workout,
-      intervals: [
-        {
-          ...first,
-          index: 2,
-          evidence: first.evidence
-            ? { ...first.evidence, sourceProvider: "wrong-index-provider" }
-            : null,
-        },
-        ...calculated.intervals.slice(0, 2),
-        { ...third, source: "inferred" },
-      ],
-    });
+    evaluateCyclingEffortMetricsMock.mockResolvedValueOnce([
+      {
+        ...calculated,
+        workout: calculated.workout,
+        intervals: [
+          {
+            ...first,
+            index: 2,
+            evidence: first.evidence
+              ? { ...first.evidence, sourceProvider: "wrong-index-provider" }
+              : null,
+          },
+          ...calculated.intervals.slice(0, 2),
+          { ...third, source: "inferred" },
+        ],
+      },
+    ]);
     const execute = vi.fn().mockResolvedValue([]);
     const query = vi.fn(async (_schema, text: string) =>
       text.includes("cycling-training-metrics:activities") ? [activityRow()] : [],
@@ -245,13 +313,11 @@ describe("CyclingTrainingMetricsRepository", () => {
   });
 
   it("returns explicit unknown and nullable evidence when no normalized interval matches", async () => {
-    const actual = await vi.importActual<typeof import("./cycling-effort-metrics.ts")>(
-      "./cycling-effort-metrics.ts",
-    );
-    const calculated = actual.calculateCyclingEffortMetrics([], {
+    const calculated = emptyEffort({
       durationSeconds: 60,
       activityDate: "2026-06-15",
       settingsHistory: [],
+      activityPowerMetrics: null,
       intervals: [
         {
           index: 1,
@@ -267,10 +333,13 @@ describe("CyclingTrainingMetricsRepository", () => {
       sourceProviders: [],
       sourceDevices: [],
     });
-    calculateCyclingEffortMetricsMock.mockReturnValueOnce({
-      workout: calculated.workout,
-      intervals: [],
-    });
+    evaluateCyclingEffortMetricsMock.mockResolvedValueOnce([
+      {
+        ...calculated,
+        workout: calculated.workout,
+        intervals: [],
+      },
+    ]);
     const execute = vi.fn().mockResolvedValue([]);
     const query = vi.fn(async (_schema, text: string) =>
       text.includes("cycling-training-metrics:activities") ? [activityRow()] : [],
@@ -320,7 +389,7 @@ describe("CyclingTrainingMetricsRepository", () => {
   });
 
   it("passes complete provider and sensor provenance to effort calculation", async () => {
-    calculateCyclingEffortMetricsMock.mockClear();
+    prepareCyclingEffortMetricsMock.mockClear();
     const execute = vi.fn().mockResolvedValue([]);
     const query = vi.fn(async (_schema, text: string) => {
       if (text.includes("cycling-training-metrics:activities")) {
@@ -353,8 +422,8 @@ describe("CyclingTrainingMetricsRepository", () => {
       limit: 10,
     });
 
-    expect(calculateCyclingEffortMetricsMock).toHaveBeenCalledOnce();
-    expect(calculateCyclingEffortMetricsMock.mock.calls[0]?.[1]).toMatchObject({
+    expect(prepareCyclingEffortMetricsMock).toHaveBeenCalledOnce();
+    expect(prepareCyclingEffortMetricsMock.mock.calls[0]?.[1]).toMatchObject({
       weightObservations: [],
       powerMeasurementKinds: ["direct", "estimated", "unknown"],
       sourceProviders: ["garmin", "apple_health", "garmin"],
@@ -460,6 +529,22 @@ describe("CyclingTrainingMetricsRepository", () => {
     const query = vi.fn(async (_schema, queryText: string) => {
       if (queryText.includes("cycling-training-metrics:activities")) return [activityRow()];
       if (queryText.includes("cycling-training-metrics:samples")) return samples();
+      if (queryText.includes("analytics.cycling_activity_power_metrics"))
+        return [
+          {
+            activity_id: activityId,
+            started_at: "2026-06-15T15:00:00.000Z",
+            normalized_power: 200,
+            model_version: "test-cycling-model",
+            eftp: 250,
+            power_tss: 64,
+            intensity_factor: 0.8,
+            evidence_activity_id: memberActivityId,
+            evidence_at: "2026-06-14T15:00:00.000Z",
+            evidence_duration_seconds: 600,
+            evidence_power: 300,
+          },
+        ];
       if (queryText.includes("cycling-training-metrics:power-curve")) {
         return [
           {
@@ -517,9 +602,10 @@ describe("CyclingTrainingMetricsRepository", () => {
       thresholds: {
         ftp: {
           value: 250,
-          effective_from: "2026-01-01",
-          source_record_id: "00000000-0000-4000-8000-000000000100",
-          kind: "configured",
+          effective_from: "2026-06-15T15:00:00.000Z",
+          kind: "computed",
+          method: "computed_eftp",
+          evidence_activity_id: memberActivityId,
         },
       },
       metrics: {
@@ -593,14 +679,14 @@ describe("CyclingTrainingMetricsRepository", () => {
     expect(sampleCall?.[2]).toMatchObject({ activityIds: [activityId] });
   });
 
-  it("uses the setting effective on each activity date and explains missing FTP", async () => {
+  it("retains historical heart-rate settings and explains an unpublished canonical power projection", async () => {
     const execute = vi
       .fn()
       .mockResolvedValueOnce([
         settingsRow({
           id: "00000000-0000-4000-8000-000000000101",
           effective_from: "2026-06-20",
-          ftp: 275,
+          threshold_hr: 190,
         }),
         settingsRow(),
       ])
@@ -611,9 +697,9 @@ describe("CyclingTrainingMetricsRepository", () => {
         return [
           activityRow({
             activity_id: noFtpActivityId,
-            activity_date: "2025-12-20",
-            started_at: "2025-12-20T15:00:00.000Z",
-            ended_at: "2025-12-20T15:05:00.000Z",
+            activity_date: "2026-06-15",
+            started_at: "2026-06-15T15:00:00.000Z",
+            ended_at: "2026-06-15T15:05:00.000Z",
             elapsed_seconds: 300,
             member_activity_ids: [noFtpActivityId],
           }),
@@ -637,8 +723,8 @@ describe("CyclingTrainingMetricsRepository", () => {
     const repository = new CyclingTrainingMetricsRepository({ execute }, { query }, userId, "UTC");
 
     const result = await repository.listRange({
-      startDate: "2025-12-01",
-      endDate: "2025-12-31",
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
       modalities: [],
       providers: [],
       durationsSeconds: [],
@@ -654,18 +740,23 @@ describe("CyclingTrainingMetricsRepository", () => {
         parameters,
       })),
     ).toMatchSnapshot();
+    expect(result.activities[0]?.thresholds.threshold_heart_rate).toMatchObject({
+      value: 175,
+      effective_from: "2026-01-01",
+    });
     expect(result.activities[0]?.thresholds.ftp).toBeNull();
     expect(result.activities[0]?.metrics.power.intensity_factor).toBeNull();
     expect(result.activities[0]?.metrics.unavailable_reasons).toContainEqual({
       metric: "intensity_factor",
-      reason: "no valid FTP was effective for this activity",
+      reason:
+        "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
     });
   });
 
   it("preserves limited estimated-power, timezone, and recorded-interval evidence", async () => {
     const execute = vi
       .fn()
-      .mockResolvedValueOnce([settingsRow({ ftp: 0, threshold_hr: 0 })])
+      .mockResolvedValueOnce([settingsRow({ threshold_hr: 0 })])
       .mockResolvedValueOnce([
         {
           member_activity_id: memberActivityId,

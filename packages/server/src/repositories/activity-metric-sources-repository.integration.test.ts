@@ -106,7 +106,7 @@ describe("activity metric source selection", () => {
         "CREATE TABLE IF NOT EXISTS postgres_fitness.sensor_provider_priority (",
         "CREATE TABLE IF NOT EXISTS postgres_fitness.sensor_device_priority (",
         "CREATE TABLE IF NOT EXISTS postgres_fitness.user_profile (",
-        "CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current AS",
+        "CREATE OR REPLACE VIEW postgres_fitness.user_profile_current AS",
       ].some((prefix) => query.startsWith(prefix)),
     );
     const scalarSchemas = buildIncrementalDedupedSensorBaseTableStatements().filter((query) =>

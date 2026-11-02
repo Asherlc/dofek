@@ -1,15 +1,24 @@
 import {
   type CyclingWorkoutIntervalInput,
+  type CyclingWorkoutPowerMetrics,
   type CyclingWorkoutSample,
   type CyclingWorkoutSettings,
   computeCyclingWorkoutMetrics,
+  prepareCyclingWorkoutMetrics,
   resampleCyclingStream,
 } from "@dofek/training/cycling-workout-metrics";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { evaluateCyclingPowerWindows } from "./cycling-power-window-metrics.ts";
+import {
+  type CyclingActivityPowerMetrics,
+  CyclingThresholdRepository,
+} from "./cycling-threshold-repository.ts";
 import {
   type ComparableInterval,
   inferIntervalResult,
@@ -36,6 +45,7 @@ export interface CyclingEffortContext {
   durationSeconds: number;
   activityDate: string;
   settingsHistory: SportSettingsRow[];
+  activityPowerMetrics: CyclingActivityPowerMetrics | null;
   intervals: CyclingWorkoutIntervalInput[];
   weightObservations: DirectWeightObservation[];
   powerMeasurementKinds: Array<"direct" | "estimated" | "unknown">;
@@ -88,8 +98,13 @@ function cleanSamples(samples: CyclingEffortSample[], duration: number) {
     const count = counts[stream];
     for (const sample of samples) {
       const value = sample[field];
-      if (value == null) continue;
+      if (value === undefined) continue;
       const offset = sample.elapsedSeconds;
+      if (value === null) {
+        if (Number.isFinite(offset) && offset >= 0 && offset < duration)
+          count.barriers.push(offset);
+        continue;
+      }
       // Physical validity only; no athlete-specific performance ceilings.
       if (
         !Number.isFinite(value) ||
@@ -99,13 +114,17 @@ function cleanSamples(samples: CyclingEffortSample[], duration: number) {
         (field !== "altitudeMeters" && field !== "temperatureC" && value < 0)
       ) {
         count.suspiciousSamples++;
+        if (Number.isFinite(offset) && offset >= 0 && offset < duration)
+          count.barriers.push(offset);
         continue;
       }
       const atOffset = values.get(offset) ?? new Set<number>();
       atOffset.add(value);
       values.set(offset, atOffset);
     }
+    const barriers = new Set(count.barriers);
     for (const [offset, distinct] of values) {
+      if (barriers.has(offset)) continue;
       if (distinct.size > 1) {
         count.conflictingSamples++;
         count.barriers.push(offset);
@@ -129,16 +148,29 @@ function mean(values: Array<number | null>): number | null {
     : observed.reduce((sum, value) => sum + value, 0) / observed.length;
 }
 
-/** Server-only composition of the existing workout algorithms and effort evidence. */
-export function calculateCyclingEffortMetrics(
+/** Project stored canonical values without recalculating or substituting estimates. */
+function cyclingActivityPowerMetrics(
+  row: CyclingActivityPowerMetrics | null,
+): CyclingWorkoutPowerMetrics {
+  return {
+    normalizedPowerWatts: row?.normalized_power ?? null,
+    intensityFactor: row?.intensity_factor ?? null,
+    trainingStressScore: row?.power_tss ?? null,
+  };
+}
+
+/** Prepare interval boundaries and cleaned power windows before evaluating power metrics. */
+export function prepareCyclingEffortMetrics(
   samples: CyclingEffortSample[],
   context: CyclingEffortContext,
 ) {
   const duration = Math.max(0, Math.floor(context.durationSeconds));
   const clean = cleanSamples(samples, duration);
   const settings = effectiveSettings(context.settingsHistory, context.activityDate);
-  const workout = computeCyclingWorkoutMetrics({
+  const workout = prepareCyclingWorkoutMetrics({
+    coveragePolicy: cyclingPowerCoveragePolicy,
     durationSeconds: duration,
+    thresholdWatts: context.activityPowerMetrics?.eftp ?? null,
     samples: clean.samples,
     settings: workoutSettings(settings),
     intervals: context.intervals,
@@ -148,6 +180,19 @@ export function calculateCyclingEffortMetrics(
       cadence: clean.counts.cadence?.barriers,
     },
   });
+  return { context, duration, clean, settings, workout, powerWindows: workout.powerWindows };
+}
+
+/** Assemble effort evidence with required canonical activity and evaluated interval power metrics. */
+export function calculateCyclingEffortMetrics(
+  prepared: ReturnType<typeof prepareCyclingEffortMetrics>,
+  computed: {
+    activity: CyclingWorkoutPowerMetrics;
+    intervals: readonly CyclingWorkoutPowerMetrics[];
+  },
+) {
+  const { context, duration, clean, settings } = prepared;
+  const workout = computeCyclingWorkoutMetrics(prepared.workout, computed);
   const intervalEvidence = (interval: CyclingWorkoutIntervalInput) =>
     context.intervalEvidence?.find(
       (item) =>
@@ -171,6 +216,7 @@ export function calculateCyclingEffortMetrics(
     clean.samples,
     duration,
     (sample) => sample.speedMetersPerSecond,
+    cyclingPowerCoveragePolicy,
     0,
     clean.counts.speed?.barriers,
   );
@@ -178,6 +224,7 @@ export function calculateCyclingEffortMetrics(
     clean.samples,
     duration,
     (sample) => sample.heartRateBpm,
+    cyclingPowerCoveragePolicy,
     0,
     clean.counts.heartRate?.barriers,
   );
@@ -186,6 +233,7 @@ export function calculateCyclingEffortMetrics(
       clean.samples,
       duration,
       (sample) => sample[field],
+      cyclingPowerCoveragePolicy,
       -Infinity,
       clean.counts[field === "altitudeMeters" ? "altitude" : "temperature"]?.barriers,
     );
@@ -247,17 +295,29 @@ export function calculateCyclingEffortMetrics(
     } else loss -= rise;
   }
   const weight = selectNearbyWeight(context.activityDate, context.weightObservations);
+  const activityPower = context.activityPowerMetrics;
   const ftp =
-    settings?.ftp != null && settings.ftp > 0 && Number.isFinite(settings.ftp)
+    activityPower?.eftp != null && activityPower.eftp > 0 && Number.isFinite(activityPower.eftp)
       ? {
-          value: settings.ftp,
-          effectiveFrom: settings.effectiveFrom,
-          sourceRecordId: settings.id,
-          kind: "configured" as const,
+          value: activityPower.eftp,
+          effectiveFrom: activityPower.started_at,
+          kind: "computed" as const,
+          method: "computed_eftp" as const,
+          modelVersion: activityPower.model_version,
+          uncertainty: cyclingThresholdUncertainty,
+          evidenceActivityId: activityPower.evidence_activity_id,
+          evidenceAt: activityPower.evidence_at,
+          evidenceDurationSeconds: activityPower.evidence_duration_seconds,
+          evidencePowerWatts: activityPower.evidence_power,
         }
       : null;
-  const ageDays = settings
-    ? Math.round((Date.parse(context.activityDate) - Date.parse(settings.effectiveFrom)) / 86400000)
+  const ageDays = activityPower?.evidence_at
+    ? Math.max(
+        0,
+        Math.round(
+          (Date.parse(activityPower.started_at) - Date.parse(activityPower.evidence_at)) / 86400000,
+        ),
+      )
     : null;
   const qualityEvidence = (stream: keyof typeof streamFields) => {
     const evidence = [
@@ -299,14 +359,28 @@ export function calculateCyclingEffortMetrics(
   if (providerMoving?.status === "conflicting") reasons.push("Provider moving durations conflict");
   if (providerMoving?.seconds != null && !validProviderMoving)
     reasons.push("Provider moving duration exceeds elapsed duration");
-  const unavailableReasons = adjustedWorkout.unavailableReasons.map((item) =>
-    ftp == null && ["intensity_factor", "training_stress_score"].includes(item.metric)
-      ? { ...item, reason: "no contemporaneous FTP" }
-      : item,
+  const missingProjectionReason =
+    "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.";
+  const workoutUnavailableReasons = adjustedWorkout.unavailableReasons.map((item) =>
+    context.activityPowerMetrics == null &&
+    ["normalized_power", "intensity_factor", "training_stress_score"].includes(item.metric)
+      ? { ...item, reason: missingProjectionReason }
+      : ftp == null && ["intensity_factor", "training_stress_score"].includes(item.metric)
+        ? {
+            ...item,
+            reason:
+              "No qualifying computed cycling threshold evidence is available for this activity.",
+          }
+        : item,
   );
+  const unavailableReasons = [...workoutUnavailableReasons];
   const unavailable = (metric: string, reason: string) =>
     unavailableReasons.push({ metric, reason });
-  if (!ftp) unavailable("power_zones", "no contemporaneous FTP");
+  if (!ftp)
+    unavailable(
+      "power_zones",
+      "No qualifying computed cycling threshold evidence is available for this activity.",
+    );
   if (!adjustedWorkout.heartRateZones)
     unavailable("heart_rate_zones", "no contemporaneous threshold HR and valid zone boundaries");
   if (weight.value_kg == null) unavailable("watts_per_kg", weight.reason);
@@ -353,16 +427,16 @@ export function calculateCyclingEffortMetrics(
   if (ftp && !adjustedWorkout.powerZones)
     unavailable("power_zones", "no valid contemporaneous power zone boundaries");
   return {
-    workout: adjustedWorkout,
+    workout: { ...adjustedWorkout, unavailableReasons: workoutUnavailableReasons },
     thresholds: {
       ftp,
       thresholdHeartRateBpm: settings?.thresholdHr ?? null,
       ageDays,
-      freshness: ftp == null ? ("unavailable" as const) : ("unverified" as const),
+      freshness: ftp == null ? ("unavailable" as const) : ("computed" as const),
       freshnessReason:
         ftp == null
-          ? "no contemporaneous FTP"
-          : "Effective-dated configuration may be stale; physiological freshness is unverified. No expiry is inferred.",
+          ? "No qualifying computed cycling threshold evidence is available for this activity."
+          : "Computed from the canonical cycling power history effective for this activity; physiological accuracy is unverified.",
     },
     movement: {
       elapsedSeconds: duration,
@@ -446,6 +520,26 @@ export function calculateCyclingEffortMetrics(
   };
 }
 
+/** Evaluate every identified interval in one batch, then assemble each prepared effort. */
+export async function evaluateCyclingEffortMetrics(
+  prepared: Array<ReturnType<typeof prepareCyclingEffortMetrics>>,
+) {
+  const windows = prepared.flatMap((effort) => effort.powerWindows);
+  const computed = windows.length === 0 ? [] : await evaluateCyclingPowerWindows(windows);
+  if (computed.length !== windows.length) {
+    throw new Error("Every prepared interval requires computed power metrics");
+  }
+  let offset = 0;
+  return prepared.map((effort) => {
+    const intervals = computed.slice(offset, offset + effort.powerWindows.length);
+    offset += effort.powerWindows.length;
+    return calculateCyclingEffortMetrics(effort, {
+      activity: cyclingActivityPowerMetrics(effort.context.activityPowerMetrics),
+      intervals,
+    });
+  });
+}
+
 export interface CyclingEffortRequest extends CyclingEffortActivity {
   activityDate: string;
   durationSeconds: number;
@@ -484,7 +578,7 @@ export async function loadCyclingEffortMetrics(
   const firstDate = dates[0];
   const lastDate = dates.at(-1);
   if (!firstDate || !lastDate) throw new Error("Cycling activities require local dates");
-  const [data, movementSamples, distances, weights] = await Promise.all([
+  const [data, movementSamples, distances, weights, activityPowerMetrics] = await Promise.all([
     loadCyclingEffortData(db, store, userId, activities, durationsSeconds),
     store.query(
       movementSampleSchema,
@@ -512,15 +606,22 @@ export async function loadCyclingEffortMetrics(
       { userId, activityIds },
     ),
     loadDirectWeightObservations(store, userId, timezone, firstDate, lastDate),
+    new CyclingThresholdRepository(store, userId, timezone).getForActivities(activityIds),
   ]);
-  return activities.map((activity) => {
+  const preparations = activities.map((activity) => {
     const coreSamples = data.sampleRows.filter((row) => row.activity_id === activity.activity_id);
     const extraSamples = movementSamples.filter((row) => row.activity_id === activity.activity_id);
     const samples: CyclingEffortSample[] = coreSamples.map((row) => ({
       elapsedSeconds: row.elapsed_seconds,
-      powerWatts: row.power,
-      heartRateBpm: row.heart_rate,
-      cadenceRpm: row.cadence,
+      powerWatts: row.stream_evidence.some(([channel]) => channel === "power")
+        ? row.power
+        : undefined,
+      heartRateBpm: row.stream_evidence.some(([channel]) => channel === "heart_rate")
+        ? row.heart_rate
+        : undefined,
+      cadenceRpm: row.stream_evidence.some(([channel]) => channel === "cadence")
+        ? row.cadence
+        : undefined,
     }));
     const fields = {
       speed: "speedMetersPerSecond",
@@ -554,34 +655,41 @@ export async function loadCyclingEffortMetrics(
     const distance = distances.find(
       (row) => row.activity_id === activity.activity_id,
     )?.distance_meters;
+    return prepareCyclingEffortMetrics(samples, {
+      durationSeconds: activity.durationSeconds,
+      activityDate: activity.activityDate,
+      settingsHistory: data.settingsHistory,
+      activityPowerMetrics: activityPowerMetrics.get(activity.activity_id) ?? null,
+      intervals: intervals.map((item) => item.input),
+      intervalEvidence: intervals,
+      streamEvidence,
+      weightObservations: weights,
+      sourceProviders: [
+        ...activity.sourceProviders,
+        ...coreSamples.flatMap((row) => row.source_providers),
+        ...extraSamples.flatMap((row) => (row.provider_id ? [row.provider_id] : [])),
+      ],
+      sourceDevices: [
+        ...coreSamples.flatMap((row) => row.source_devices),
+        ...extraSamples.flatMap((row) => (row.device_id ? [row.device_id] : [])),
+      ],
+      powerMeasurementKinds: coreSamples.flatMap((row) => row.power_measurement_kinds),
+      movingDuration: activity.movingDuration,
+      ...(distance == null
+        ? {}
+        : { distanceEvidence: { meters: distance, kind: "deduplicated_summary" } }),
+      bestPowers: data.bestPowerRows.filter((row) => row.activity_id === activity.activity_id),
+    });
+  });
+  const metrics = await evaluateCyclingEffortMetrics(preparations);
+  return activities.map((activity, index) => {
+    const calculated = metrics[index];
+    if (!calculated) throw new Error("Every cycling activity requires assembled effort metrics");
     return {
       activityId: activity.activity_id,
       memberActivityIds: activity.member_activity_ids,
       activityDate: activity.activityDate,
-      metrics: calculateCyclingEffortMetrics(samples, {
-        durationSeconds: activity.durationSeconds,
-        activityDate: activity.activityDate,
-        settingsHistory: data.settingsHistory,
-        intervals: intervals.map((item) => item.input),
-        intervalEvidence: intervals,
-        streamEvidence,
-        weightObservations: weights,
-        sourceProviders: [
-          ...activity.sourceProviders,
-          ...coreSamples.flatMap((row) => row.source_providers),
-          ...extraSamples.flatMap((row) => (row.provider_id ? [row.provider_id] : [])),
-        ],
-        sourceDevices: [
-          ...coreSamples.flatMap((row) => row.source_devices),
-          ...extraSamples.flatMap((row) => (row.device_id ? [row.device_id] : [])),
-        ],
-        powerMeasurementKinds: coreSamples.flatMap((row) => row.power_measurement_kinds),
-        movingDuration: activity.movingDuration,
-        ...(distance == null
-          ? {}
-          : { distanceEvidence: { meters: distance, kind: "deduplicated_summary" } }),
-        bestPowers: data.bestPowerRows.filter((row) => row.activity_id === activity.activity_id),
-      }),
+      metrics: calculated,
     };
   });
 }
@@ -675,7 +783,6 @@ export function effectiveSettings(
 function workoutSettings(row: SportSettingsRow | null): CyclingWorkoutSettings | null {
   if (!row) return null;
   return {
-    ftpWatts: row.ftp,
     thresholdHeartRateBpm: row.thresholdHr,
     powerZoneUpperPcts: parseZonePcts(row.powerZonePcts),
     heartRateZoneUpperPcts: parseZonePcts(row.hrZonePcts),

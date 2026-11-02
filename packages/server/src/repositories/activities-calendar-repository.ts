@@ -144,6 +144,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
             asum.avg_power AS avg_power,
+            metrics.power_tss AS power_tss,
             asum.total_distance AS total_distance,
             asum.elevation_gain_m AS elevation_gain_m,
             asum.centroid_lat AS centroid_lat,
@@ -161,6 +162,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
+          LEFT JOIN analytics.cycling_activity_power_metrics metrics
+            ON metrics.user_id = activity.user_id AND metrics.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
@@ -173,8 +176,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         baselineRowSchema,
         `SELECT
             up.max_hr AS max_hr,
-            up.resting_hr AS resting_hr,
-            up.ftp AS ftp
+            up.resting_hr AS resting_hr
           FROM postgres_fitness.user_profile_current up
           WHERE up.id = {userId:UUID}`,
         { userId: this.userId },
@@ -216,7 +218,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
     ]);
 
-    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null };
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
       this.userId,

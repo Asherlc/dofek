@@ -917,6 +917,34 @@ describe("sleepNeedRouter", () => {
 
 describe("sportSettingsRouter", () => {
   const createCaller = createTestCallerFactory(sportSettingsRouter);
+  const storedSettings = {
+    id: "00000000-0000-4000-8000-000000000001",
+    user_id: "user-1",
+    sport: "cycling",
+    threshold_hr: 175,
+    threshold_pace_per_km: null,
+    power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
+    hr_zone_pcts: [0.6, 0.7, 0.8, 0.9],
+    pace_zone_pcts: null,
+    effective_from: "2024-01-01",
+    notes: null,
+    created_at: "2024-01-01T00:00:00.000Z",
+    updated_at: "2024-01-01T00:00:00.000Z",
+  };
+  const returnedSettings = {
+    id: "00000000-0000-4000-8000-000000000001",
+    userId: "user-1",
+    sport: "cycling",
+    thresholdHr: 175,
+    thresholdPacePerKm: null,
+    powerZonePcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
+    hrZonePcts: [0.6, 0.7, 0.8, 0.9],
+    paceZonePcts: null,
+    effectiveFrom: "2024-01-01",
+    notes: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
@@ -929,19 +957,19 @@ describe("sportSettingsRouter", () => {
 
   describe("list", () => {
     it("returns sport settings", async () => {
-      const rows = [{ sport: "cycling", ftp: 250 }];
+      const rows = [storedSettings];
       const caller = makeCaller(rows);
       const result = await caller.list();
-      expect(result).toEqual(rows);
+      expect(result).toEqual([returnedSettings]);
     });
   });
 
   describe("getBySport", () => {
     it("returns setting for sport", async () => {
-      const rows = [{ sport: "cycling", ftp: 250 }];
+      const rows = [storedSettings];
       const caller = makeCaller(rows);
       const result = await caller.getBySport({ sport: "cycling" });
-      expect(result).toEqual(rows[0]);
+      expect(result).toEqual(returnedSettings);
     });
 
     it("returns null when not found", async () => {
@@ -954,8 +982,8 @@ describe("sportSettingsRouter", () => {
   describe("history", () => {
     it("returns setting history for sport", async () => {
       const rows = [
-        { sport: "cycling", ftp: 260, effective_from: "2024-02-01" },
-        { sport: "cycling", ftp: 250, effective_from: "2024-01-01" },
+        { ...storedSettings, threshold_hr: 180, effective_from: "2024-02-01" },
+        storedSettings,
       ];
       const caller = makeCaller(rows);
       const result = await caller.history({ sport: "cycling" });
@@ -965,11 +993,11 @@ describe("sportSettingsRouter", () => {
 
   describe("upsert", () => {
     it("creates sport settings", async () => {
-      const created = { sport: "cycling", ftp: 250 };
+      const created = storedSettings;
       const caller = makeCaller([created]);
       vi.mocked(invalidateUserQueryDomains).mockClear();
-      const result = await caller.upsert({ sport: "cycling", ftp: 250 });
-      expect(result).toEqual(created);
+      const result = await caller.upsert({ sport: "cycling", thresholdHr: 175 });
+      expect(result).toEqual(returnedSettings);
       expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });

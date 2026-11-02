@@ -10,7 +10,10 @@ import {
   resolveAnalyticsMicrobatchBounds,
 } from "../src/processing/analytics-microbatch-bounds.ts";
 import { recordProcessingAnalyticsRun } from "../src/processing/analytics-processing.ts";
-import { PRODUCTION_DBT_MODELS } from "../src/processing/dataset-contracts.ts";
+import {
+  CYCLING_POWER_DOWNSTREAM_DBT_MODELS,
+  PRODUCTION_DBT_MODELS,
+} from "../src/processing/dataset-contracts.ts";
 import { parseDbtRunArtifacts } from "../src/processing/dbt-run-results.ts";
 import {
   listProcessingDatasetsAwaitingAnalytics,
@@ -25,6 +28,11 @@ interface RunAnalyticsBuildInput {
   loadPendingDatasets(): Promise<ProcessingOperationDataset[]>;
   runDbt(argumentsList: readonly string[]): Promise<number>;
   readArtifact(name: "manifest.json" | "run_results.json"): Promise<unknown>;
+  projectCyclingPower(): Promise<{
+    pendingActivities: number;
+    pendingUsers: number;
+    projectedUsers: number;
+  }>;
   recordRun(input: {
     runId: string;
     pendingDatasets: readonly ProcessingOperationDataset[];
@@ -65,36 +73,75 @@ export async function runAnalyticsBuild({
   runDbt,
   readArtifact,
   recordRun,
+  projectCyclingPower,
 }: RunAnalyticsBuildInput): Promise<{ datasets: number; failed: number }> {
   if (selectedModels.length === 0) {
     throw new Error("Analytics build requires at least one selected model");
   }
-  const commandArguments = [
-    "build",
-    "--project-dir",
-    "analytics",
-    "--profiles-dir",
-    "analytics",
-    "--threads",
-    "1",
-    "--target-path",
-    artifactDirectory,
-    "--vars",
-    JSON.stringify(microbatchBounds),
-    "--select",
-    selectedModels.join(" "),
-  ];
+  const downstreamModels = new Set<string>(CYCLING_POWER_DOWNSTREAM_DBT_MODELS);
+  const inputs = selectedModels.filter((model) => !downstreamModels.has(model));
+  const downstream = selectedModels.filter((model) => downstreamModels.has(model));
   const pendingDatasets = await loadPendingDatasets();
-  const exitCode = await runDbt(commandArguments);
-  const artifacts = parseDbtRunArtifacts({
-    manifest: await readDbtArtifact(readArtifact, "manifest.json", exitCode),
-    runResults: await readDbtArtifact(readArtifact, "run_results.json", exitCode),
-    sources: {
-      metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/sources/v3.json" },
-      results: [],
-    },
-    selectedModels,
-  });
+  const modelResults: ReturnType<typeof parseDbtRunArtifacts>["models"] = [];
+  let runId = "";
+  let exitCode = 0;
+  let succeeded = true;
+  const sourceArtifact = {
+    metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/sources/v3.json" },
+    results: [],
+  };
+  const runPhase = async (models: readonly string[]) => {
+    const code = await runDbt([
+      "build",
+      "--project-dir",
+      "analytics",
+      "--profiles-dir",
+      "analytics",
+      "--threads",
+      "1",
+      "--target-path",
+      artifactDirectory,
+      "--vars",
+      JSON.stringify(microbatchBounds),
+      "--select",
+      models.join(" "),
+    ]);
+    const manifest = await readDbtArtifact(readArtifact, "manifest.json", code);
+    const runResults = await readDbtArtifact(readArtifact, "run_results.json", code);
+    const phase = parseDbtRunArtifacts({
+      manifest,
+      runResults,
+      sources: sourceArtifact,
+      selectedModels: models,
+    });
+    runId = phase.invocationId;
+    exitCode = code;
+    succeeded = phase.succeeded;
+    modelResults.push(...phase.models);
+    return { manifest, runResults };
+  };
+  if (inputs.length > 0) {
+    const inputArtifacts = await runPhase(inputs);
+    if ((exitCode !== 0 || !succeeded) && downstream.length > 0) {
+      modelResults.push(
+        ...parseDbtRunArtifacts({
+          ...inputArtifacts,
+          sources: sourceArtifact,
+          selectedModels: downstream,
+        }).models,
+      );
+    }
+  }
+  if (exitCode === 0 && succeeded) {
+    const projection = await projectCyclingPower();
+    if (projection.pendingActivities > 0 || projection.pendingUsers > 0) {
+      throw new Error(
+        `Cycling power projection has pending work: ${projection.pendingActivities} activities and ${projection.pendingUsers} users`,
+      );
+    }
+    if (downstream.length > 0) await runPhase(downstream);
+  }
+  const artifacts = { invocationId: runId, succeeded, models: modelResults };
   const processingResult = await recordRun({
     runId: artifacts.invocationId,
     pendingDatasets,
@@ -159,6 +206,13 @@ export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
             const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
             const parsedArtifact: unknown = JSON.parse(serializedArtifact);
             return parsedArtifact;
+          },
+          projectCyclingPower: async () => {
+            const { projectCyclingPower } = await import(
+              "../src/analytics/cycling-power-projector.ts"
+            );
+            const { cyclingPowerPolicy } = await import("../src/analytics/cycling-power-policy.ts");
+            return projectCyclingPower(clickHouse, cyclingPowerPolicy);
           },
           recordRun: (run) => recordProcessingAnalyticsRun(database, run),
         });

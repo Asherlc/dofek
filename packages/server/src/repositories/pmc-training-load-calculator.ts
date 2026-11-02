@@ -4,8 +4,8 @@ export interface PmcActivityRow {
   id: string;
   date: string;
   duration_min: number;
-  avg_hr: number;
-  max_hr: number;
+  avg_hr: number | null;
+  max_hr: number | null;
   avg_power: number | null;
   power_samples: number;
   hr_samples: number;
@@ -13,7 +13,7 @@ export interface PmcActivityRow {
 
 export interface PmcNormalizedPowerRow {
   activity_id: string;
-  np: number;
+  power_tss: number | null;
 }
 
 export interface PmcTrainingStressModel {
@@ -28,17 +28,11 @@ interface PmcTrainingStressModelResult {
 }
 
 export interface PmcTrainingLoadAlgorithms {
-  estimateThresholdPower(activities: PmcActivityRow[]): number | null;
   computeTrainingImpulse(
     durationMin: number,
     avgHr: number,
     maxHr: number,
     restingHr: number,
-  ): number;
-  computePowerTrainingStressScore(
-    normalizedPower: number,
-    thresholdPower: number,
-    durationMin: number,
   ): number;
   computeHeartRateTrainingStressScore(
     durationMin: number,
@@ -53,11 +47,21 @@ export interface PmcTrainingLoadAlgorithms {
 
 interface PmcDailyLoadInput {
   activities: PmcActivityRow[];
-  normalizedPowerByActivity: Map<string, number>;
-  thresholdPower: number | null;
+  powerTssByActivity: Map<string, number>;
   trainingStressModel: PmcTrainingStressModel | null;
-  globalMaxHeartRate: number;
+  globalMaxHeartRate: number | null;
   restingHeartRate: number;
+}
+
+export function usablePmcHeartRate(
+  activity: Pick<PmcActivityRow, "avg_hr">,
+  maximum: number | null,
+  resting: number,
+) {
+  if (activity.avg_hr == null || activity.avg_hr <= 0 || maximum == null || maximum <= resting) {
+    return null;
+  }
+  return { average: activity.avg_hr, maximum, resting };
 }
 
 export class PmcTrainingLoadCalculator {
@@ -67,44 +71,25 @@ export class PmcTrainingLoadCalculator {
     this.#algorithms = algorithms;
   }
 
-  estimateThresholdPower(activities: PmcActivityRow[]): number | null {
-    return this.#algorithms.estimateThresholdPower(activities);
-  }
-
   buildTrainingStressModel(
     activities: PmcActivityRow[],
-    normalizedPowerByActivity: Map<string, number>,
-    thresholdPower: number | null,
-    globalMaxHeartRate: number,
+    powerTssByActivity: Map<string, number>,
+    globalMaxHeartRate: number | null,
     restingHeartRate: number,
   ): PmcTrainingStressModelResult {
     const pairedData: { trimp: number; powerTss: number }[] = [];
-
-    if (thresholdPower != null) {
-      for (const activity of activities) {
-        const durationMin = Number(activity.duration_min);
-        const avgHr = Number(activity.avg_hr);
-        const normalizedPower = normalizedPowerByActivity.get(activity.id);
-
-        if (normalizedPower != null && normalizedPower > 0) {
-          const trimp = this.#algorithms.computeTrainingImpulse(
-            durationMin,
-            avgHr,
-            globalMaxHeartRate,
-            restingHeartRate,
-          );
-          const powerTss = this.#algorithms.computePowerTrainingStressScore(
-            normalizedPower,
-            thresholdPower,
-            durationMin,
-          );
-          if (trimp > 0 && powerTss > 0) {
-            pairedData.push({ trimp, powerTss });
-          }
-        }
-      }
+    for (const activity of activities) {
+      const powerTss = powerTssByActivity.get(activity.id);
+      const heartRate = usablePmcHeartRate(activity, globalMaxHeartRate, restingHeartRate);
+      if (powerTss == null || powerTss <= 0 || heartRate == null) continue;
+      const trimp = this.#algorithms.computeTrainingImpulse(
+        activity.duration_min,
+        heartRate.average,
+        heartRate.maximum,
+        heartRate.resting,
+      );
+      if (trimp > 0) pairedData.push({ trimp, powerTss });
     }
-
     return {
       trainingStressModel: this.#algorithms.buildTrainingStressModel(pairedData),
       pairedData,
@@ -113,44 +98,37 @@ export class PmcTrainingLoadCalculator {
 
   calculateDailyLoad(input: PmcDailyLoadInput): Map<string, number> {
     const dailyLoad = new Map<string, number>();
-
     for (const activity of input.activities) {
-      const durationMin = Number(activity.duration_min);
-      const avgHr = Number(activity.avg_hr);
-      const normalizedPower = input.normalizedPowerByActivity.get(activity.id);
-
-      let trainingStressScore: number;
-
-      if (input.thresholdPower != null && normalizedPower != null && normalizedPower > 0) {
-        trainingStressScore = this.#algorithms.computePowerTrainingStressScore(
-          normalizedPower,
-          input.thresholdPower,
-          durationMin,
-        );
-      } else if (input.trainingStressModel != null) {
-        const trimp = this.#algorithms.computeTrainingImpulse(
-          durationMin,
-          avgHr,
+      let trainingStressScore = input.powerTssByActivity.get(activity.id);
+      if (trainingStressScore == null) {
+        const heartRate = usablePmcHeartRate(
+          activity,
           input.globalMaxHeartRate,
           input.restingHeartRate,
         );
-        trainingStressScore = Math.max(
-          0,
-          input.trainingStressModel.slope * trimp + input.trainingStressModel.intercept,
-        );
-      } else {
-        trainingStressScore = this.#algorithms.computeHeartRateTrainingStressScore(
-          durationMin,
-          avgHr,
-          input.globalMaxHeartRate,
-          input.restingHeartRate,
-        );
+        if (heartRate == null) continue;
+        if (input.trainingStressModel != null) {
+          const trimp = this.#algorithms.computeTrainingImpulse(
+            activity.duration_min,
+            heartRate.average,
+            heartRate.maximum,
+            heartRate.resting,
+          );
+          trainingStressScore = Math.max(
+            0,
+            input.trainingStressModel.slope * trimp + input.trainingStressModel.intercept,
+          );
+        } else {
+          trainingStressScore = this.#algorithms.computeHeartRateTrainingStressScore(
+            activity.duration_min,
+            heartRate.average,
+            heartRate.maximum,
+            heartRate.resting,
+          );
+        }
       }
-
-      const dateStr = String(activity.date);
-      dailyLoad.set(dateStr, (dailyLoad.get(dateStr) ?? 0) + trainingStressScore);
+      dailyLoad.set(activity.date, (dailyLoad.get(activity.date) ?? 0) + trainingStressScore);
     }
-
     return dailyLoad;
   }
 }

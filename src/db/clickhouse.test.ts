@@ -150,7 +150,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     );
     expect(activityDefinition).toContain("ORDER BY id");
     expect(activityDefinition).not.toContain("ORDER BY (user_id, started_at, id)");
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
+    expect(sql).toContain("CREATE OR REPLACE VIEW postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM ingest.metric_stream FINAL");
@@ -175,7 +175,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("parsed_points.point.1");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
     expect(sql).toContain("CREATE OR REPLACE VIEW analytics.activity_summary\nAS");
-    expect(sql).toContain("FROM analytics.activity_summary_rows FINAL");
+    expect(sql).toContain("FROM analytics.activity_summary_rows AS summary FINAL");
     expect(sql).not.toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_summary");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_summary");

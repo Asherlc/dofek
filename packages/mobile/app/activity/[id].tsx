@@ -44,6 +44,7 @@ import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMe
 import { statsStyles, styles } from "../../components/activity/styles";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
+import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MapProcessingState } from "../../components/MapProcessingState";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -433,7 +434,7 @@ export default function ActivityDetailScreen() {
     { id: id ?? "", powerSourceId: sources.power },
     {
       enabled: !!id && isCycling && hasPower,
-      placeholderData: (previousData) => previousData,
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const isStrengthActivity =
@@ -1026,7 +1027,10 @@ export default function ActivityDetailScreen() {
       {/* Power Zones (cycling only, requires eFTP) */}
       {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
       {isCycling && hasPower && powerZones.data != null && (
-        <PowerZonesChart zones={powerZones.data.zones} />
+        <View style={{ gap: 8 }}>
+          <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
+          {powerZones.data.ftp != null && <PowerZonesChart zones={powerZones.data.zones} />}
+        </View>
       )}
 
       <Pressable

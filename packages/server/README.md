@@ -353,24 +353,16 @@ are calculated in one bounded ClickHouse query over deduplicated activity sensor
 returning raw samples to the model. Formula and historical-refresh details are documented in
 [`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
 
-`get_threshold_history` requires `activity:read`, an inclusive date range, and cursor pagination. It
-returns effective-dated cycling FTP from `fitness.sport_settings` plus the legacy current
-`user_profile.ftp`. The legacy value has unknown historical validity and is never silently applied
-to an old workout.
+`get_threshold_history` requires `activity:read`, a date range and cursor pagination.
+It returns the canonical computed eFTP history, including the supporting effort,
+effective time, model version and unquantified physiological uncertainty.
 
-`estimate_cycling_threshold` requires `activity:read` and the ClickHouse analytics store. Its
-selectable methods are `configured`, `twenty_minute_95_percent`,
-`sustained_40_to_70_minutes`, `critical_power_model`, and `best_supported`. The 20-minute method is
-explicitly the 95% heuristic described by
-[TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).
-The critical-power method fits the two-parameter Monod–Scherrer work-time relationship
-([Monod and Scherrer](https://doi.org/10.1080/00140136508930810)) over valid 120–600-second range
-bests. It returns CP, W′, R², power residuals, and residual RMSE. RMSE describes model fit only; it is
-not physiological uncertainty. Every method returns its source efforts and activity IDs,
-assumptions, confidence, and either an explicit uncertainty value or a reason one cannot be
-quantified. Calculated results have `classification: "estimated"` and are never labeled measured
-FTP. W/kg uses body-weight evidence selected for the requested range end date under the same nearby-
-weight policy as the power curve.
+`estimate_cycling_threshold` reads the same ongoing computed estimate applicable
+to the requested range end. It exposes no selectable alternative estimator or
+configured-value fallback. W/kg uses nearby body-weight evidence. CP exploration
+remains separately named and cannot supply another FTP for zones or load.
+See the [pure algorithms package](../cycling-power/README.md) and the
+[application projector](../../src/analytics/README.md).
 
 `get_cycling_training_metrics` requires `activity:read`, an inclusive date range, and the
 ClickHouse analytics store. It returns newest-first pages of at most 25 canonical cycling
@@ -383,9 +375,10 @@ The response labels sample-derived values `calculated_from_samples`, reports per
 covered, missing, and measured-zero seconds, and preserves merged activity IDs, providers, devices,
 power measurement kinds, timezone evidence, and a longitudinal-comparison quality assessment.
 Provider aggregate read-model values remain visible separately and do not override the
-sample-derived metrics. Effective-dated `fitness.sport_settings` are resolved independently for
-each activity; intensity factor, power TSS, and power zones remain `null` with an explicit reason
-when no valid contemporaneous FTP exists. Heart-rate zones follow the same rule for threshold HR.
+sample-derived metrics. Computed eFTP is resolved independently for each activity;
+intensity factor, power TSS and power zones remain unavailable with an explicit
+reason when supported eFTP evidence is missing. Effective-dated sport settings
+continue to supply heart-rate and custom-zone configuration.
 
 Recorded interval boundaries from any merged member activity take precedence and exact duplicate
 boundaries are consolidated while retaining their member activity IDs. When no recorded boundary
@@ -404,7 +397,7 @@ those units into a total: `total_daily_load.value` is explicitly `null` because 
 climbing, finger/tendon, and strength exposures are not biologically interchangeable.
 
 Power TSS is `elapsed_hours × (normalized_power / effective_FTP)² × 100`; FTP is resolved from the
-effective-dated history for each ride, and absent FTP or normalized power produces `null`, not zero.
+computed history for each ride, and absent eFTP or normalized power produces `null`, not zero.
 The heart-rate channel sums covered minutes in configured threshold-HR zones multiplied by the
 one-based zone number. Its weighting resembles Edwards-style zone load, but it is deliberately
 named `heart_rate_zone_load` because Dofek uses the athlete's configured threshold-HR boundaries,
@@ -493,8 +486,8 @@ or rejection, and does not downgrade an exact provider-route identity. See the
 Cycling values and candidate-minus-baseline deltas use the
 [shared cycling effort metrics](src/repositories/cycling-effort-metrics.ts): deduplicated sensor
 samples, historical threshold and weight evidence, intervals, observed best powers, environment
-and movement metrics, stream quality, provenance, and explicit unavailable reasons. A current
-FTP with unknown historical validity never supplies an old activity's threshold. Ordinary workout
+and movement metrics, stream quality, provenance, and explicit unavailable reasons.
+Each activity uses its own computed threshold; later rides cannot rewrite it. Ordinary workout
 bests are lower-bound observations, not maximal capacity; identity alone does not establish
 maximal intent or justify a fitness-decline conclusion. Segment/climb identity does not imply
 segment-specific sensor boundaries: metrics describe the containing activity. These limitations

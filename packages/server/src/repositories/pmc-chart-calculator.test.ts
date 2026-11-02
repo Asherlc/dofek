@@ -8,17 +8,9 @@ import {
 
 function makeTrainingLoadCalculator(): PmcTrainingLoadCalculator {
   return new PmcTrainingLoadCalculator({
-    estimateThresholdPower: (activities) =>
-      activities.some((activity) => activity.avg_power != null && activity.power_samples > 0)
-        ? 190
-        : null,
     computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) => {
       if (maxHr <= restingHr || avgHr <= restingHr) return 0;
       return durationMin * ((avgHr - restingHr) / (maxHr - restingHr));
-    },
-    computePowerTrainingStressScore: (normalizedPower, thresholdPower, durationMin) => {
-      if (thresholdPower <= 0) return 0;
-      return (normalizedPower / thresholdPower) * durationMin;
     },
     computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) => {
       if (maxHr <= restingHr || avgHr <= restingHr) return 0;
@@ -60,7 +52,6 @@ function makeLearnedModelInput(): {
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
 } {
-  const thresholdPower = 190;
   const globalMaxHeartRate = 190;
   const restingHeartRate = 60;
   const genderFactor = 1.92;
@@ -75,7 +66,6 @@ function makeLearnedModelInput(): {
     const trimp =
       60 * deltaHeartRateRatio * genderFactor * Math.exp(exponent * deltaHeartRateRatio);
     const powerTss = trimp * 1.25 + 4;
-    const normalizedPower = thresholdPower * Math.sqrt(powerTss / 100);
     const date = new Date();
     date.setDate(date.getDate() - 20 + index);
     const activityId = `learned-model-${index}`;
@@ -88,17 +78,119 @@ function makeLearnedModelInput(): {
         avg_power: 200,
       }),
     );
-    normalizedPowerRows.push({ activity_id: activityId, np: normalizedPower });
+    normalizedPowerRows.push({ activity_id: activityId, power_tss: powerTss });
   }
 
   return { activityRows, normalizedPowerRows };
 }
 
 describe("PmcChartCalculator", () => {
+  it("passes the configured chronic and acute time constants into the chart", () => {
+    const calculator = new PmcChartCalculator({
+      chronicTrainingLoadDays: 2,
+      acuteTrainingLoadDays: 1,
+      trainingLoadCalculator: makeTrainingLoadCalculator(),
+    });
+    const activity = makeActivityRow({ avg_hr: null });
+    const result = calculator.buildChart({
+      currentEftp: null,
+      activityRows: [activity],
+      normalizedPowerRows: [{ activity_id: activity.id, power_tss: 100 }],
+      queryDays: 4,
+      displayDays: 4,
+    });
+    expect(result.data.find((point) => point.date === activity.date)).toEqual({
+      date: activity.date,
+      load: 100,
+      ctl: 50,
+      atl: 100,
+      tsb: -50,
+    });
+  });
+  it("returns an empty chart and generic metadata when no activities are present", () => {
+    expect(
+      makeCalculator().buildChart({
+        currentEftp: 265,
+        activityRows: [],
+        normalizedPowerRows: [],
+        queryDays: 407,
+        displayDays: 90,
+      }),
+    ).toEqual({
+      data: [],
+      unavailableReason: null,
+      model: { type: "generic", pairedActivities: 0, r2: null, ftp: 265 },
+    });
+  });
+
+  it.each([{ avg_hr: 0 }, { avg_hr: -1 }, { global_max_hr: 60 }, { global_max_hr: 50 }])(
+    "withholds HR fallback when heart-rate evidence is unusable %j",
+    (overrides) => {
+      const result = makeCalculator().buildChart({
+        currentEftp: null,
+        activityRows: [makeActivityRow(overrides)],
+        normalizedPowerRows: [],
+        queryDays: 407,
+        displayDays: 90,
+      });
+      expect(result.data).toEqual([]);
+      expect(result.unavailableReason).toContain("1 cycling activity");
+    },
+  );
+
+  it("treats a canonical null stress row as unknown and reports multiple unsupported activities", () => {
+    const result = makeCalculator().buildChart({
+      currentEftp: 190,
+      activityRows: [
+        makeActivityRow({ id: "one", avg_hr: null }),
+        makeActivityRow({ id: "two", avg_hr: null }),
+      ],
+      normalizedPowerRows: [
+        { activity_id: "one", power_tss: null },
+        { activity_id: "two", power_tss: null },
+      ],
+      queryDays: 407,
+      displayDays: 90,
+    });
+    expect(result.data).toEqual([]);
+    expect(result.unavailableReason).toBe(
+      "Training load is unavailable for 2 cycling activities: computed power stress and usable heart-rate data are missing.",
+    );
+  });
+
+  it("keeps measured zero canonical stress available without heart-rate evidence", () => {
+    const activity = makeActivityRow({ avg_hr: null, global_max_hr: null });
+    const result = makeCalculator().buildChart({
+      currentEftp: null,
+      activityRows: [activity],
+      normalizedPowerRows: [{ activity_id: activity.id, power_tss: 0 }],
+      queryDays: 407,
+      displayDays: 90,
+    });
+    expect(result.unavailableReason).toBeNull();
+    expect(result.data.find((point) => point.date === activity.date)?.load).toBe(0);
+    expect(result.model.pairedActivities).toBe(0);
+  });
+  it("withholds a chart when any activity has unknown load", () => {
+    const result = makeCalculator().buildChart({
+      currentEftp: 190,
+      activityRows: [
+        makeActivityRow({ id: "known" }),
+        makeActivityRow({ id: "unknown", avg_hr: null }),
+      ],
+      normalizedPowerRows: [{ activity_id: "known", power_tss: 100 }],
+      queryDays: 407,
+      displayDays: 90,
+    });
+    expect(result.data).toEqual([]);
+    expect(result.unavailableReason).toContain("1 cycling activity");
+  });
+
   it("returns the generic empty model when there is no global max heart rate", () => {
     const calculator = makeCalculator();
 
     const result = calculator.buildChart({
+      currentEftp: 190,
       activityRows: [makeActivityRow({ global_max_hr: null })],
       normalizedPowerRows: [],
       queryDays: 407,
@@ -107,16 +199,26 @@ describe("PmcChartCalculator", () => {
 
     expect(result).toEqual({
       data: [],
-      model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+      unavailableReason:
+        "Training load is unavailable for 1 cycling activity: computed power stress and usable heart-rate data are missing.",
+      model: { type: "generic", pairedActivities: 0, r2: null, ftp: 190 },
     });
   });
 
-  it("builds chart data and threshold power from activity rows", () => {
+  it("builds a power-only chart from canonical per-activity stress", () => {
     const calculator = makeCalculator();
 
     const result = calculator.buildChart({
-      activityRows: [makeActivityRow({ id: "power-activity", avg_power: 200 })],
-      normalizedPowerRows: [{ activity_id: "power-activity", np: 220 }],
+      currentEftp: 190,
+      activityRows: [
+        makeActivityRow({
+          id: "power-activity",
+          avg_power: 200,
+          avg_hr: null,
+          global_max_hr: null,
+        }),
+      ],
+      normalizedPowerRows: [{ activity_id: "power-activity", power_tss: 125 }],
       queryDays: 407,
       displayDays: 90,
     });
@@ -130,6 +232,7 @@ describe("PmcChartCalculator", () => {
     const { activityRows, normalizedPowerRows } = makeLearnedModelInput();
 
     const result = calculator.buildChart({
+      currentEftp: 190,
       activityRows,
       normalizedPowerRows,
       queryDays: 407,
@@ -149,12 +252,14 @@ describe("PmcChartCalculator", () => {
     const highRestingCalculator = makeCalculator();
 
     const lowRestingResult = lowRestingCalculator.buildChart({
+      currentEftp: null,
       activityRows: [makeActivityRow({ avg_power: null, power_samples: 0, resting_hr: 40 })],
       normalizedPowerRows: [],
       queryDays: 407,
       displayDays: 90,
     });
     const highRestingResult = highRestingCalculator.buildChart({
+      currentEftp: null,
       activityRows: [makeActivityRow({ avg_power: null, power_samples: 0, resting_hr: 80 })],
       normalizedPowerRows: [],
       queryDays: 407,

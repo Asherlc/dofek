@@ -146,7 +146,6 @@ entity "user_profile" {
   birth_date : date
   max_hr : smallint
   resting_hr : smallint
-  ftp : smallint
   is_admin : boolean
   created_at : timestamp
   updated_at : timestamp
@@ -375,7 +374,6 @@ entity "sport_settings" {
   --
   user_id : uuid <<FK>>
   sport : text
-  ftp : smallint
   threshold_hr : smallint
   threshold_pace_per_km : real
   power_zone_pcts : jsonb

@@ -45,8 +45,11 @@ describe("worker lifecycle", () => {
   });
 
   it("closes readiness and Garmin progress resources during graceful shutdown", async () => {
-    const { closeAllQueueResources } = await import("./queues.ts");
+    const { closeAllQueueResources, closeAnalyticsRefreshWaiters } = await import("./queues.ts");
     const shutdownOrder: string[] = [];
+    vi.mocked(closeAnalyticsRefreshWaiters).mockImplementation(async () => {
+      shutdownOrder.push("refresh waiters");
+    });
     mockClose.mockImplementation(async () => {
       shutdownOrder.push("worker");
     });
@@ -76,6 +79,7 @@ describe("worker lifecycle", () => {
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     expect(closeAllQueueResources).toHaveBeenCalledOnce();
     expect(shutdownOrder).toEqual([
+      "refresh waiters",
       ...Array.from({ length: EXPECTED_WORKER_COUNT }, () => "worker"),
       "Garmin progress",
     ]);

@@ -461,7 +461,34 @@ let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedDataExportQueue: Queue<ExportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
+let cachedAnalyticsRefreshQueue: Queue<AnalyticsRefreshJobData> | null = null;
+let cachedAnalyticsRefreshQueueEvents: QueueEvents | null = null;
+let analyticsRefreshWaitController = new AbortController();
+
+export function getAnalyticsRefreshWaitSignal(): AbortSignal {
+  return analyticsRefreshWaitController.signal;
+}
 let cachedFlowProducer: FlowProducer | null = null;
+
+export function createAnalyticsRefreshQueue(
+  connection?: ConnectionOptions,
+): Queue<AnalyticsRefreshJobData> {
+  return new Queue(ANALYTICS_REFRESH_QUEUE, {
+    connection: connection ?? getRedisCommandConnection(),
+  });
+}
+
+export function getAnalyticsRefreshQueue(): Queue<AnalyticsRefreshJobData> {
+  cachedAnalyticsRefreshQueue ??= createAnalyticsRefreshQueue();
+  return cachedAnalyticsRefreshQueue;
+}
+
+export function getAnalyticsRefreshQueueEvents(): QueueEvents {
+  cachedAnalyticsRefreshQueueEvents ??= new QueueEvents(ANALYTICS_REFRESH_QUEUE, {
+    connection: getRedisConnection(),
+  });
+  return cachedAnalyticsRefreshQueueEvents;
+}
 
 export function getImportQueue(): Queue<ImportJobData> {
   if (!cachedImportQueue) {
@@ -747,6 +774,13 @@ export async function enqueueDebouncedUserRefit(
 }
 
 /** Close all cached queues, flow producers, and the shared Redis connection. */
+/** Cancel read-only analytics waits before draining the workers awaiting them. */
+export async function closeAnalyticsRefreshWaiters(): Promise<void> {
+  analyticsRefreshWaitController.abort(
+    new Error("Analytics refresh wait cancelled because the worker is shutting down"),
+  );
+}
+
 export async function closeAllQueueResources(): Promise<void> {
   if (cachedActivityImageQueue) {
     await cachedActivityImageQueue.close();
@@ -769,6 +803,9 @@ export async function closeAllQueueResources(): Promise<void> {
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
+  if (cachedAnalyticsRefreshQueue) closePromises.push(cachedAnalyticsRefreshQueue.close());
+  if (cachedAnalyticsRefreshQueueEvents)
+    closePromises.push(cachedAnalyticsRefreshQueueEvents.close());
 
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
@@ -779,8 +816,11 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
-
   await Promise.allSettled(closePromises);
+
+  cachedAnalyticsRefreshQueue = null;
+  cachedAnalyticsRefreshQueueEvents = null;
+  analyticsRefreshWaitController = new AbortController();
 
   if (sharedRedisConnection) {
     await sharedRedisConnection.close();

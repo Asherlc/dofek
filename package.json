@@ -154,7 +154,8 @@
     "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts",
     "./db/activity-images": "./src/db/activity-images.ts",
     "./activity-images/storage": "./src/activity-images/storage.ts",
-    "./activity-images/gallery": "./src/activity-images/gallery.ts"
+    "./activity-images/gallery": "./src/activity-images/gallery.ts",
+    "./analytics/cycling-power-policy": "./src/analytics/cycling-power-policy.ts"
   },
   "scripts": {
     "dev": "tsx scripts/with-env.ts -- tsx src/index.ts",
@@ -175,7 +176,7 @@
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
     "release:npm:build": "lerna run build --stream",
-    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client packages/climbing-catalogue",
+    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/cycling-power packages/eight-sleep packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client packages/climbing-catalogue",
     "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
     "check:dependency-security": "tsx scripts/check-node-forge-security.ts && tsx scripts/check-braces-security.ts && tsx scripts/check-expo-zod-security.ts",
@@ -259,6 +260,7 @@
     "@aws-sdk/s3-request-presigner": "3.1154.0",
     "@clickhouse/client": "1.23.1",
     "@dofek/climbing-catalogue": "workspace:*",
+    "@dofek/cycling-power": "workspace:*",
     "@dofek/eight-sleep": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",

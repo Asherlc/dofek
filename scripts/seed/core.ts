@@ -66,9 +66,9 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
 export async function seedCore(sql: Sql): Promise<void> {
   await sql`
     INSERT INTO fitness.user_profile (
-      id, name, email, birth_date, max_hr, resting_hr, ftp
+      id, name, email, birth_date, max_hr, resting_hr
     ) VALUES (
-      ${USER_ID}, 'Review User', 'review@example.com', '1988-04-12', 190, 52, 285
+      ${USER_ID}, 'Review User', 'review@example.com', '1988-04-12', 190, 52
     )
     ON CONFLICT (id) DO UPDATE
       SET name = EXCLUDED.name,
@@ -76,7 +76,6 @@ export async function seedCore(sql: Sql): Promise<void> {
           birth_date = EXCLUDED.birth_date,
           max_hr = EXCLUDED.max_hr,
           resting_hr = EXCLUDED.resting_hr,
-          ftp = EXCLUDED.ftp,
           updated_at = NOW()
   `;
 
@@ -149,11 +148,11 @@ async function seedSportSettings(sql: Sql): Promise<void> {
   const effectiveFrom = daysBefore(new Date(), 180);
   await sql`
     INSERT INTO fitness.sport_settings (
-      user_id, sport, ftp, threshold_hr, threshold_pace_per_km,
+      user_id, sport, threshold_hr, threshold_pace_per_km,
       power_zone_pcts, hr_zone_pcts, pace_zone_pcts, effective_from, notes
     ) VALUES
       (
-        ${USER_ID}, 'cycling', 285, 172, NULL,
+        ${USER_ID}, 'cycling', 172, NULL,
         '[0.55,0.75,0.9,1.05,1.2,1.5]'::jsonb,
         '[0.68,0.83,0.9,0.95,1]'::jsonb,
         NULL,
@@ -161,7 +160,7 @@ async function seedSportSettings(sql: Sql): Promise<void> {
         'Review seed cycling zones'
       ),
       (
-        ${USER_ID}, 'running', NULL, 176, 4.55,
+        ${USER_ID}, 'running', 176, 4.55,
         NULL,
         '[0.68,0.83,0.9,0.95,1]'::jsonb,
         '[1.25,1.12,1,0.92,0.85]'::jsonb,
@@ -169,8 +168,7 @@ async function seedSportSettings(sql: Sql): Promise<void> {
         'Review seed running zones'
       )
     ON CONFLICT (user_id, sport, effective_from) DO UPDATE
-      SET ftp = EXCLUDED.ftp,
-          threshold_hr = EXCLUDED.threshold_hr,
+      SET threshold_hr = EXCLUDED.threshold_hr,
           threshold_pace_per_km = EXCLUDED.threshold_pace_per_km,
           power_zone_pcts = EXCLUDED.power_zone_pcts,
           hr_zone_pcts = EXCLUDED.hr_zone_pcts,
