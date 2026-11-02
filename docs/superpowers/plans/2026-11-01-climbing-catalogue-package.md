@@ -94,3 +94,31 @@ shared training catalogue contracts, affected imports, manifests, lockfile,
   Suggested runbook refinement: add a public-export migration and moved-tooling
   checklist to package extraction tasks. Use executing-plans and independent
   code review again for similar extractions.
+
+## PR review follow-up
+
+- PR 3198 confirms the package in Lerna's public release set and the existing
+  release build/test/publish path. Review corrections are versioned 0.1.1 for
+  automatic publication after merge; the bootstrapped 0.1.0 remains available.
+- Three regressions were reproduced RED, then fixed: a native climb point must
+  not replace recorded area ancestry during discovery; exported source results
+  must reject candidate/provider attribution mismatches; malformed OpenBeta JSON
+  must retain a provider-specific error message and original cause.
+- All 537 focused library/consumer tests pass. The package builds, and root,
+  training, and server typechecks pass. Full unit/mobile verification passes
+  24,130 tests (19 skipped). A clean 0.1.1 tarball installation loads all nine
+  exports and verifies source-attribution rejection.
+- Review documentation now states nullable location identity fields, names the
+  proxy in the bootstrap procedure, and labels the standalone OpenBeta adapter.
+- CI identified the missing package include in the mutation-only test project.
+  A direct Vitest listing reproduced zero geometry tests, then discovered them
+  after the package include was added. Both local and CI mutation targets now
+  include the package, while integration suites remain excluded.
+- Geometry and search mutation runs now score 100%, with no surviving or
+  uncovered mutants (24 and 55 killed, respectively). Import-time geometry
+  schemas are reloaded in their tests, with explicit degree-boundary coverage.
+- After the added mutation coverage, 544 focused library/consumer tests pass;
+  the package's eight test files account for 463 tests. No production code was
+  changed solely for mutation testing.
+- Added the package to the image's manifest-copy, runtime-source, and root-link
+  lists after E2E server startup proved it missing from the image workspace.

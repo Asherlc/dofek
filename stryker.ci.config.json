@@ -15,6 +15,7 @@
     "packages/scoring/src/**/*.ts",
     "packages/nutrition/src/**/*.ts",
     "packages/training/src/**/*.ts",
+    "packages/climbing-catalogue/src/**/*.ts",
     "packages/recovery/src/**/*.ts",
     "packages/zones/src/**/*.ts",
     "packages/stats/src/**/*.ts",

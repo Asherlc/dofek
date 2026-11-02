@@ -360,12 +360,15 @@ describe("OpenBetaCatalogueAdapter", () => {
     ).rejects.toThrow(/response URL/);
   });
 
-  it("propagates invalid JSON to the caller for error reporting", async () => {
+  it("preserves provider context and the cause for invalid JSON", async () => {
     const parseError = new SyntaxError("invalid upstream payload");
     const response = new Response("not JSON");
     vi.spyOn(response, "json").mockRejectedValue(parseError);
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response);
-    await expect(new OpenBetaCatalogueAdapter(fetchFn).search(seed)).rejects.toBe(parseError);
+    await expect(new OpenBetaCatalogueAdapter(fetchFn).search(seed)).rejects.toMatchObject({
+      message: "OpenBeta catalogue returned invalid JSON. Retry when public access is available.",
+      cause: parseError,
+    });
   });
 
   it.each([

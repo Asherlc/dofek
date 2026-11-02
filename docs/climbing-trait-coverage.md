@@ -249,7 +249,7 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   [Climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
   [search client](https://github.com/OpenBeta/open-tacos/blob/develop/src/js/typesense/TypesenseClient.ts),
   [public browser search configuration](https://github.com/OpenBeta/open-tacos/blob/develop/.env),
-  and [Dofek reader](../packages/climbing-catalogue/src/openbeta.ts). The browser search
+  and [OpenBeta catalogue adapter](../packages/climbing-catalogue/src/openbeta.ts). The browser search
   credential is public and search-only; no new private credential or service is
   provisioned. Upstream 502 responses remain actionable lookup errors.
 

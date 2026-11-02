@@ -1,6 +1,6 @@
 {
   "name": "@dofek/climbing-catalogue",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cross-provider climbing route search and conservative identity matching with attributed evidence",
   "type": "module",
   "license": "MIT",

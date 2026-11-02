@@ -92,9 +92,9 @@ one-time bootstrap, configure `Asherlc/dofek` and `release-npm.yml` as the
 package's GitHub Actions trusted publisher. Subsequent releases require no
 registry credential or maintainer action.
 
-On macOS, if an authenticated bootstrap publish immediately requires a one-time
-password instead of offering interactive authentication through a command proxy, preserve
-a terminal for npm itself:
+If an authenticated `npm publish` on macOS requires a one-time password but
+does not offer interactive authentication through `rtk`, run it under `script`
+to preserve a terminal for npm:
 
 ```sh
 rtk proxy script -q /dev/null npm publish /path/to/package.tgz --access public

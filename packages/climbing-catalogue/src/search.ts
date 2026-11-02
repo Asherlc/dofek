@@ -55,7 +55,9 @@ export class ClimbingCatalogueSearch {
           ],
           kind: seed.kind ?? native.kind,
           setting: seed.setting ?? native.setting,
-          locations: native.locations.length ? native.locations : seed.locations,
+          locations: native.locations.some((location) => location.scope === "area")
+            ? native.locations
+            : seed.locations,
         }
       : seed;
     const sources = await Promise.all(

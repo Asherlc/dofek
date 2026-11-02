@@ -232,7 +232,12 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
       throw new Error(
         "OpenBeta catalogue response URL is invalid. Retry when public access is available.",
       );
-    return response.json();
+    return response.json().then(undefined, (cause: unknown) => {
+      throw new Error(
+        "OpenBeta catalogue returned invalid JSON. Retry when public access is available.",
+        { cause },
+      );
+    });
   }
 
   async #climb(id: string): Promise<CatalogueCandidate> {

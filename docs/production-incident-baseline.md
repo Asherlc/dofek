@@ -34841,7 +34841,54 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   declaration and its lockfile entries; preserve unrelated peer resolutions.
 - Validation: local Sherif passes without ignored rules; the package build and
   all 452 standalone tests pass with the shared compiler. The corrected hosted
-  run is pending. No resilience knobs were added.
+  [Sherif job](https://github.com/Asherlc/dofek/actions/runs/41467475078/job/125353850905)
+  passed without retries or ignored rules. No resilience knobs were added.
 - Retrospective: runtime/type checks did not exercise workspace manifest policy.
   Proposed extraction checklist addition: run Sherif before publication and PR
   creation. Reuse gh-fix-ci for exact failing-step evidence and the minimum fix.
+
+## 2026-11-02 — Extracted catalogue missing from mutation test discovery
+
+- Impact: [PR 3198 mutation shard 1](https://github.com/Asherlc/dofek/actions/runs/41467475078/job/125354234739)
+  failed before mutation testing; no production impact.
+- Evidence: `pnpm exec stryker run stryker.ci.config.json --mutate
+  packages/climbing-catalogue/src/geometry.ts:1-18` first failed with
+  `No tests were executed. Stryker will exit prematurely.` A direct Vitest
+  listing under the mutation config returned an empty array for geometry tests.
+- Root cause: the explicit mutation-only node test include list did not include
+  the extracted package. Normal unit tests used a broader include, so they passed.
+- Direct fix: include package unit tests in the mutation test project and add
+  package source to the local and CI mutation target lists. Preserve integration
+  exclusions, related-test discovery, and the existing mutation threshold; see
+  [mutation config](../vitest.config.mutation.ts) and the
+  [Stryker Vitest runner](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
+- Validation: mutation-config Vitest listing now discovers the geometry tests;
+  the exact geometry scope kills all 24 non-ignored mutants, and search kills
+  all 55. Geometry tests reload import-time schemas and cover degree boundaries;
+  search tests cover native identity selection, query evidence, one native lookup,
+  and local completeness. The corrected hosted run is pending.
+  No waits, retries, or weakened checks were introduced.
+- Retrospective: package extraction needs both normal and mutation test discovery.
+  Proposed checklist addition: verify moved tests under each explicit test tier.
+  Reuse gh-fix-ci to distinguish missing discovery from surviving mutants.
+
+## 2026-11-02 — Catalogue missing from server image workspace graph
+
+- Impact: [PR 3198 web E2E](https://github.com/Asherlc/dofek/actions/runs/41467475078/job/125353851499)
+  could build the image but its server failed to start; no production deployment.
+- Evidence: E2E dependency startup logged `Error [ERR_MODULE_NOT_FOUND]: Cannot
+  find package '@dofek/climbing-catalogue' imported from
+  /app/packages/training/src/climbing-catalogue.ts` in the server container.
+- Root cause: the Dockerfile's explicit workspace manifest, runtime source, and
+  root-link lists omitted the extracted package, so the image lacked its package
+  directory and dependency wiring. Normal workspace builds used the complete
+  checkout and did not reproduce that image boundary.
+- Direct fix: add the package to those same existing Dockerfile lists. Preserve
+  the production dependency install and runtime layout; no fallback resolution,
+  readiness waits, or retries were added. See the [image recipe](../Dockerfile).
+- Validation: package unit/build and packed-consumer checks pass; corrected
+  hosted image startup and E2E validation are pending.
+- Retrospective: extracted runtime dependencies need both workspace and image
+  inclusion. Proposed package checklist addition: inspect manifest-copy,
+  source-copy, and runtime-link lists before shipping an extraction; reuse
+  gh-fix-ci to trace startup failures to the first fatal container log.

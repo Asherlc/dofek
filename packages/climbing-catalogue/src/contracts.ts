@@ -64,18 +64,26 @@ export const catalogueSearchResultSchema = z.strictObject({
   complete: z.boolean(),
   searchArea: catalogueLocationSchema.optional(),
 });
-export const catalogueSourceResultSchema = z.strictObject({
-  providerId: catalogueProviderSchema,
-  searchComplete: z.boolean(),
-  searchArea: catalogueLocationSchema.optional(),
-  matches: z.array(
-    z.strictObject({
-      confidence: z.enum(["source", "reference", "corroborated", "possible"]),
-      candidate: catalogueCandidateSchema,
-      evidence: z.array(z.string()).optional(),
-    }),
-  ),
-});
+export const catalogueSourceResultSchema = z
+  .strictObject({
+    providerId: catalogueProviderSchema,
+    searchComplete: z.boolean(),
+    searchArea: catalogueLocationSchema.optional(),
+    matches: z.array(
+      z.strictObject({
+        confidence: z.enum(["source", "reference", "corroborated", "possible"]),
+        candidate: catalogueCandidateSchema,
+        evidence: z.array(z.string()).optional(),
+      }),
+    ),
+  })
+  .refine(
+    (source) => source.matches.every((match) => match.candidate.providerId === source.providerId),
+    {
+      message: "Catalogue matches must belong to the recorded source provider.",
+      path: ["matches"],
+    },
+  );
 export type CatalogueProviderId = z.infer<typeof catalogueProviderSchema>;
 export type CatalogueLocation = z.infer<typeof catalogueLocationSchema>;
 export type CatalogueSeed = z.infer<typeof catalogueSeedSchema>;

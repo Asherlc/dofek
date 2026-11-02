@@ -49,8 +49,8 @@ user messages, caching, scheduling, and retry policy.
 All seed fields shown above are required; `externalId`, `sourceUrl`, `name`,
 `kind`, and `setting` may be null. Optional `aliases` and `references` carry
 source-declared identity evidence. No user ID or log-entry ID is needed.
-Location ancestry is ordered root to leaf. Each location has `externalId`,
-`name`, `scope: "area" | "climb"`, and nullable
+Location ancestry is ordered root to leaf. Each location has nullable `externalId`
+and `name`, `scope: "area" | "climb"`, and nullable
 `coordinates: { latitude, longitude }`. Area coordinates and route coordinates
 remain distinct observations.
 

@@ -27,6 +27,118 @@ const native: CatalogueCandidate = {
 };
 
 describe("ClimbingCatalogueSearch", () => {
+  it("hydrates the matching native ID first, reuses that lookup, and preserves local coverage", async () => {
+    const events: string[] = [];
+    const queries: CatalogueSeed[] = [];
+    const searchArea: CatalogueSeed["locations"][number] = {
+      externalId: "crag",
+      name: "Local crag",
+      scope: "area",
+      coordinates: null,
+    };
+    const search = new ClimbingCatalogueSearch([
+      {
+        providerId: "openbeta",
+        search: async (query) => {
+          events.push("openbeta");
+          queries.push(query);
+          return { candidates: [], complete: false, searchArea };
+        },
+      },
+      {
+        providerId: "kaya",
+        search: async () => {
+          events.push("kaya");
+          return {
+            candidates: [
+              native,
+              {
+                ...native,
+                externalId: "999",
+                url: "https://kaya-app.kayaclimb.com/climb/999",
+                name: "Unrelated route",
+              },
+            ],
+            complete: true,
+          };
+        },
+      },
+    ]);
+    const result = await search.search({ ...seed, kind: null, setting: null });
+    expect(events).toEqual(["kaya", "openbeta"]);
+    expect(queries[0]).toMatchObject({ name: "Current name", kind: "route", setting: "outdoor" });
+    expect(result[0]).toMatchObject({ providerId: "openbeta", searchComplete: false, searchArea });
+  });
+
+  it("keeps absent name, alias, and reference evidence empty for an unnamed native climb", async () => {
+    const queries: CatalogueSeed[] = [];
+    const search = new ClimbingCatalogueSearch([
+      {
+        providerId: "kaya",
+        search: async () => ({
+          candidates: [{ ...native, name: null, aliases: undefined, references: undefined }],
+          complete: true,
+        }),
+      },
+      {
+        providerId: "openbeta",
+        search: async (query) => {
+          queries.push(query);
+          return { candidates: [], complete: false };
+        },
+      },
+    ]);
+    await search.search({ ...seed, name: null });
+    expect(queries[0]).toMatchObject({ name: null, aliases: [], references: [] });
+  });
+
+  it.each(["none", "climb", "area"] as const)(
+    "retains recorded area context unless native ancestry provides an area: %s",
+    async (scope) => {
+      const recordedLocations: CatalogueSeed["locations"] = [
+        {
+          externalId: "recorded-area",
+          name: "Recorded crag",
+          scope: "area",
+          coordinates: { latitude: 37, longitude: -122 },
+        },
+      ];
+      const nativeLocations: CatalogueSeed["locations"] =
+        scope === "none"
+          ? []
+          : [
+              {
+                externalId: "native-location",
+                name: "Current location",
+                scope,
+                coordinates: { latitude: 38, longitude: -122 },
+              },
+            ];
+      const queries: CatalogueSeed[] = [];
+      const input = { ...seed, locations: recordedLocations };
+      const search = new ClimbingCatalogueSearch([
+        {
+          providerId: "kaya",
+          search: async () => ({
+            candidates: [{ ...native, locations: nativeLocations }],
+            complete: true,
+          }),
+        },
+        {
+          providerId: "openbeta",
+          search: async (query) => {
+            queries.push(query);
+            return { candidates: [], complete: false };
+          },
+        },
+      ]);
+      const result = await search.search(input);
+      expect(queries[0]?.locations).toEqual(scope === "area" ? nativeLocations : recordedLocations);
+      expect(input.locations).toEqual(recordedLocations);
+      expect(result[0]?.matches[0]?.candidate.locations).toEqual(nativeLocations);
+    },
+  );
+
   it("enriches discovery from the native source without app IDs or mutating the input", async () => {
     const queries: CatalogueSeed[] = [];
     const original = structuredClone(seed);

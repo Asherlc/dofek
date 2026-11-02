@@ -19,6 +19,16 @@ const candidate = {
 };
 
 describe("catalogue contracts", () => {
+  it("rejects matches attributed to a different source provider", () => {
+    expect(
+      catalogueSourceResultSchema.safeParse({
+        providerId: "kaya",
+        searchComplete: true,
+        matches: [{ confidence: "possible", candidate }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates climb facts with nullable names and independent source references", () => {
     const seed = {
       providerId: "my-logbook",
