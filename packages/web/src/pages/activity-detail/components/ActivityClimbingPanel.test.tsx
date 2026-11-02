@@ -11,6 +11,101 @@ vi.mock(
 );
 beforeEach(resetMaps);
 
+it("reveals the selected suggestion after attachment moves it into another section", () => {
+  const entry = climbingMapLogs[0];
+  if (!entry) throw new Error("Expected entry");
+  const scrollTo = vi.fn();
+  const bounds = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(function (this: HTMLElement) {
+      return this.tagName === "LI" ? new DOMRect(0, 800, 300, 150) : new DOMRect(0, 100, 300, 500);
+    });
+  try {
+    const view = render(
+      <ActivityClimbingPanel
+        entries={[]}
+        suggestions={[entry]}
+        locations={{}}
+        selectedEntryId={null}
+      />,
+    );
+    Object.defineProperty(screen.getByRole("region", { name: "Climb list" }), "scrollTo", {
+      value: scrollTo,
+    });
+    view.rerender(
+      <ActivityClimbingPanel
+        entries={[]}
+        suggestions={[entry]}
+        locations={{}}
+        selectedEntryId={entry.id}
+      />,
+    );
+    scrollTo.mockClear();
+    view.rerender(
+      <ActivityClimbingPanel
+        entries={[entry]}
+        suggestions={[]}
+        locations={{}}
+        selectedEntryId={entry.id}
+      />,
+    );
+    expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+  } finally {
+    bounds.mockRestore();
+  }
+});
+
+it("reveals the same map selection again after the list scrolls away", async () => {
+  const entry = climbingMapLogs[0];
+  if (!entry) throw new Error("Expected entry");
+  render(<ActivityClimbingPanel entries={[entry]} locations={climbingMapLocations} />);
+  const marker = await screen.findByRole("button", { name: /^Swiss Cheese · Climb location/ });
+  const list = screen.getByRole("region", { name: "Climb list" });
+  const row = screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }).closest("li");
+  if (!row) throw new Error("Expected row");
+  vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 300, 500));
+  vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 800, 300, 150));
+  const scrollTo = vi.fn();
+  Object.defineProperty(list, "scrollTo", { value: scrollTo });
+  fireEvent.click(marker);
+  scrollTo.mockClear();
+  fireEvent.click(marker);
+  expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+});
+
+it("reveals a chart-selected occurrence inside the list without stealing focus", () => {
+  const onSelectEntry = vi.fn();
+  const view = render(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      selectedEntryId={null}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  const repeat = screen.getByRole("button", { name: "Select entry 4, Swiss Cheese" });
+  const list = screen.getByRole("region", { name: "Climb list" });
+  const row = repeat.closest("li");
+  if (!row) throw new Error("Expected row");
+  vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 300, 500));
+  vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 800, 300, 150));
+  const scrollTo = vi.fn();
+  Object.defineProperty(list, "scrollTo", { value: scrollTo });
+  view.rerender(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      selectedEntryId={climbingMapLogs[3]?.id}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  expect(repeat).toHaveAttribute("aria-pressed", "true");
+  expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+  expect(repeat).not.toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }));
+  expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
+});
+
 it("shares the hovered or focused occurrence with the chart and clears on unmount", () => {
   const onHighlightEntry = vi.fn();
   const { unmount } = render(
