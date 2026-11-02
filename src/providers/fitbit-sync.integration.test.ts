@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -757,7 +760,9 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("token");
-    await expect(client.getSleepLogs("2026-03-01")).rejects.toThrow("API error 500");
+    const error = await client.getSleepLogs("2026-03-01").catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({ providerId: "fitbit", statusCode: 500 });
   });
 
   it("throws on non-OK weight log response", async () => {

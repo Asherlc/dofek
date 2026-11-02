@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -302,7 +303,8 @@ describe("Concept2Provider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "concept2", statusCode: 500 });
     expect(result.recordsSynced).toBe(1);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "concept2"));
@@ -400,6 +402,7 @@ describe("Concept2Provider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "concept2", statusCode: 500 });
   });
 });

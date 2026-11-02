@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { exchangeForAccessToken, fatsecretApi, getRequestToken } from "./client.ts";
 import type { OAuth1Credentials } from "./signing.ts";
@@ -39,9 +42,11 @@ describe("fatsecretApi", () => {
   it("throws a labelled error on a non-OK response", async () => {
     const mockFetch: typeof globalThis.fetch = async () =>
       new Response("server boom", { status: 500 });
-    await expect(fatsecretApi("food.get", {}, creds, mockFetch)).rejects.toThrow(
-      "FatSecret API error (500): server boom",
+    const error = await fatsecretApi("food.get", {}, creds, mockFetch).catch(
+      (error: unknown) => error,
     );
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({ providerId: "fatsecret", statusCode: 500 });
   });
 
   it("surfaces the shared rate-limit error when throttled", async () => {

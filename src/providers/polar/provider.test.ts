@@ -148,7 +148,9 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    await expect(setup.exchangeCode?.("oauth-code")).rejects.toThrow("registration failed");
+    await expect(setup.exchangeCode?.("oauth-code")).rejects.toThrow(
+      "polar API service unavailable (500)",
+    );
   });
 
   it("exchangeCode throws when token response is missing x_user_id", async () => {
@@ -341,7 +343,7 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
     const setup = provider.authSetup();
     const { exchangeCode } = setup;
     if (!exchangeCode) throw new Error("exchangeCode not defined");
-    await expect(exchangeCode("auth-code")).rejects.toThrow("registration failed");
+    await expect(exchangeCode("auth-code")).rejects.toThrow("polar API service unavailable (500)");
   });
 
   it("succeeds when registration returns 409 (already registered)", async () => {
