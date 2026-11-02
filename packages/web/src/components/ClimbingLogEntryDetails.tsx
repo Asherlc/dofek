@@ -112,9 +112,13 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.attempts.length > 0 && (
         <section className="space-y-3">
           <h4 className="font-medium">
-            {entry.recordedClimbAttemptCount === null ? "Recorded result" : "Attempts"}
+            {entry.recordedClimbAttemptCount === null
+              ? "Recorded result"
+              : entry.recordedClimbAttemptCount > 0
+                ? `Attempts: ${entry.recordedClimbAttemptCount}`
+                : "Attempts"}
           </h4>
-          {entry.attempts.map((attempt, index) => {
+          {entry.attempts.map((attempt) => {
             const pitch = climb?.pitches.find((candidate) => candidate.id === attempt.pitchId);
             const name =
               pitch?.name ??
@@ -124,7 +128,9 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
                   ? "Pitch attempt"
                   : entry.recordedClimbAttemptCount === null && attempt.attemptIndex === null
                     ? "Climb"
-                    : `Attempt ${attempt.attemptIndex ?? index + 1}`);
+                    : attempt.attemptIndex === null
+                      ? "Attempt (order unknown)"
+                      : `Attempt ${attempt.attemptIndex}`);
             return (
               <div key={attempt.id} className="space-y-2 rounded border border-border p-3">
                 <h5 className="text-xs font-medium">

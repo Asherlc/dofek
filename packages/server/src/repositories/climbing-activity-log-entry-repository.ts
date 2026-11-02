@@ -145,6 +145,63 @@ function identity(log: ClimbingLogEntryDetail): string | null {
     targets,
   ]);
 }
+function kayaFailedSessionSource(log: ClimbingLogEntryDetail): string | null {
+  if (
+    log.providerId !== "kaya" ||
+    log.providerAbsentAt !== null ||
+    !log.externalId?.startsWith("kaya:ascent:")
+  )
+    return null;
+  const source = z
+    .object({
+      session_id: z.string(),
+      attempts: z.null(),
+      ascent_type: z.object({ name: z.string() }),
+    })
+    .safeParse(log.raw);
+  if (
+    !source.success ||
+    !log.climb?.externalId ||
+    !["redpoint", "send", "repeat"].includes(source.data.ascent_type.name.trim().toLowerCase())
+  )
+    return null;
+  return `kaya:session:${source.data.session_id}:attempted:${source.data.session_id}_${log.climb.externalId}`;
+}
+
+/** Join observed failures to an uncounted send without assigning attempt order. */
+function combineKayaSessionAttempts(logs: HydratedLogEntry[]): HydratedLogEntry[] {
+  const combined = new Map<string, HydratedLogEntry>();
+  const consumed = new Set<string>();
+  for (const log of logs) {
+    const sourceId = kayaFailedSessionSource(log);
+    if (
+      sourceId === null ||
+      logs.filter((candidate) => kayaFailedSessionSource(candidate) === sourceId).length !== 1
+    )
+      continue;
+    const failed = logs.find(
+      (candidate) => candidate.providerId === "kaya" && candidate.externalId === sourceId,
+    );
+    if (
+      !failed ||
+      failed.climbId !== log.climbId ||
+      failed.activityId !== log.activityId ||
+      !failed.attempts.length ||
+      !failed.attempts.every((attempt) => attempt.scope === "climb" && attempt.outcome === "failed")
+    )
+      continue;
+    const attempts = [...log.attempts, ...failed.attempts];
+    combined.set(log.id, {
+      ...log,
+      attempts,
+      recordedClimbAttemptCount: attempts.filter((attempt) => attempt.scope === "climb").length,
+      recordedClimbOutcome: recordedOutcome(attempts),
+      chartAnnotations: [...log.chartAnnotations, ...failed.chartAnnotations],
+    });
+    consumed.add(failed.id);
+  }
+  return logs.filter((log) => !consumed.has(log.id)).map((log) => combined.get(log.id) ?? log);
+}
 function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
   const output: HydratedLogEntry[] = [];
   const groups = new Map<
@@ -159,7 +216,7 @@ function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
     ),
     log.attempts.length,
   ];
-  for (const log of logs) {
+  for (const log of combineKayaSessionAttempts(logs)) {
     const key = identity(log);
     if (key === null) {
       output.push(log);
@@ -298,7 +355,17 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       sql`entry.provider_id=${providerId} AND entry.id=${id}::uuid`,
       "retained",
     );
-    return log ?? null;
+    if (!log) return null;
+    const failedSource = kayaFailedSessionSource(log);
+    if (failedSource === null) return log;
+    const related = await this.#load(
+      sql`entry.provider_id=${providerId} AND entry.id <> ${id}::uuid AND (
+        entry.external_id=${failedSource} OR (
+          entry.climb_id=${log.climbId}::uuid AND entry.activity_id IS NOT DISTINCT FROM ${log.activityId}::uuid
+        )
+      )`,
+    );
+    return combineKayaSessionAttempts([log, ...related])[0] ?? log;
   }
   async getActivityLogEntries(activityId: string): Promise<ClimbingActivityLogEntry[]> {
     const logs = await this.#load(

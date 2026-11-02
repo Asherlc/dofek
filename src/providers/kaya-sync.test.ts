@@ -902,7 +902,7 @@ describe("KayaSyncProvider", () => {
     const sync = run(db);
 
     expect(await new KayaSyncProvider().sync(sync)).toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(mocks.persist).toHaveBeenCalledWith(db, { userId, providerId: "kaya", entries: [] });
+    expect(mocks.persist).toHaveBeenCalledWith(db, { userId, providerId: "kaya", entries: [] }, []);
     expect(mocks.reconcileActivities).toHaveBeenCalledWith(db, {
       userId,
       providerId: "kaya",
