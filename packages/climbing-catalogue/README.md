@@ -107,8 +107,9 @@ const matches = matchCatalogueCandidates(seed, providerResult, seed.locations);
 
 `matching` exports name normalization, query-name preparation, name comparison,
 local-area selection, the 100-metre proximity policy, and candidate matching.
-`contracts` exports the Zod schemas and inferred types for seeds, locations,
-tags, candidates, search results, and attributed source results. `geometry`
+`contracts` exports Zod schemas for seeds, locations, tags, candidates, search
+results, and attributed source results, with named inferred types for each
+except tags. Use `CatalogueCandidate["tags"][number]` for a candidate tag. `geometry`
 exports coordinate and numeric wall-angle schemas. `kaya-tags` exposes literal
 Kaya tag decoding independently of the search adapter. Import subpaths when
 only one provider or pure contract is needed.

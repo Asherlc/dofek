@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { GpsCoordinates } from "@dofek/climbing-catalogue/geometry";
 import {
   type AttemptScope,
   areaSchema,
@@ -8,7 +9,6 @@ import {
   type GradeComponent,
   pitchSchema,
 } from "@dofek/training/climbing-log";
-import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase, TransactionDatabase } from "./index.ts";

@@ -101,7 +101,7 @@ rtk proxy script -q /dev/null npm publish /path/to/package.tgz --access public
 ```
 
 First confirm `npm whoami` succeeds; use `npm login --auth-type=web` if it returns
-401. npm's [interactive authentication implementation](https://github.com/npm/cli/blob/latest/lib/utils/auth.js)
+401. npm's [interactive authentication implementation](https://github.com/npm/cli/blob/v11.19.0/lib/utils/auth.js)
 requires both stdin and stdout to be terminals before starting its OTP flow.
 Use an already verified pnpm tarball so compiled export overrides are retained.
 After upload, wait for registry processing and verify with `npm view` and a fresh

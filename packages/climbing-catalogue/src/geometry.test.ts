@@ -3,18 +3,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 describe("catalogue geometry", () => {
   beforeEach(() => vi.resetModules());
   it.each([
+    { latitude: 0, longitude: 0 },
     { latitude: 90, longitude: 180 },
     { latitude: -90, longitude: -180 },
+    { latitude: 37.5, longitude: -122.25 },
   ])("retains boundary coordinates: %o", async (coordinates) => {
     const { gpsCoordinatesSchema } = await import("./geometry.ts");
     expect(gpsCoordinatesSchema.parse(coordinates)).toEqual(coordinates);
   });
 
   it.each([
-    { latitude: 91, longitude: 0 },
-    { latitude: 0, longitude: -181 },
-    { latitude: Number.NaN, longitude: 0 },
     { latitude: 0 },
+    { longitude: 0 },
+    { latitude: null, longitude: 0 },
+    { latitude: Number.NaN, longitude: 0 },
+    { latitude: 0, longitude: Number.POSITIVE_INFINITY },
+    { latitude: Number.NEGATIVE_INFINITY, longitude: 0 },
+    { latitude: 90.01, longitude: 0 },
+    { latitude: -90.01, longitude: 0 },
+    { latitude: 0, longitude: 180.01 },
+    { latitude: 0, longitude: -180.01 },
   ])("rejects invalid or incomplete coordinates: %o", async (coordinates) => {
     const { gpsCoordinatesSchema } = await import("./geometry.ts");
     expect(gpsCoordinatesSchema.safeParse(coordinates).success).toBe(false);

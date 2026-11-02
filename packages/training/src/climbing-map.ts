@@ -1,5 +1,5 @@
+import type { GpsCoordinates } from "@dofek/climbing-catalogue/geometry";
 import { type ClimbKind, climbingLogEntryName } from "./climbing-log.ts";
-import type { GpsCoordinates } from "./gps-coordinates.ts";
 
 export interface ClimbingMapLocation {
   coordinates: GpsCoordinates;

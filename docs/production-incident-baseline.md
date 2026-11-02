@@ -34804,7 +34804,7 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   failed with `EOTP` / `This operation requires a one-time password.`
 - Root cause: invalid local registry authentication first, then missing terminal
   semantics in the proxied npm process. npm's
-  [authentication implementation](https://github.com/npm/cli/blob/latest/lib/utils/auth.js)
+  [authentication implementation](https://github.com/npm/cli/blob/v11.19.0/lib/utils/auth.js)
   skips its interactive OTP flow unless both stdin and stdout are terminals.
 - Direct fix: complete `npm login --auth-type=web`, verify `npm whoami`, and run
   the same verified tarball through macOS `script -q /dev/null` to preserve a PTY.
@@ -34866,7 +34866,10 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   the exact geometry scope kills all 24 non-ignored mutants, and search kills
   all 55. Geometry tests reload import-time schemas and cover degree boundaries;
   search tests cover native identity selection, query evidence, one native lookup,
-  and local completeness. The corrected hosted run is pending.
+  and local completeness. Corrected hosted
+  [search](https://github.com/Asherlc/dofek/actions/runs/41470417773/job/125364476534)
+  and [geometry](https://github.com/Asherlc/dofek/actions/runs/41470417773/job/125364476376)
+  shards both pass with the existing thresholds and related-test discovery.
   No waits, retries, or weakened checks were introduced.
 - Retrospective: package extraction needs both normal and mutation test discovery.
   Proposed checklist addition: verify moved tests under each explicit test tier.
@@ -34886,8 +34889,10 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
 - Direct fix: add the package to those same existing Dockerfile lists. Preserve
   the production dependency install and runtime layout; no fallback resolution,
   readiness waits, or retries were added. See the [image recipe](../Dockerfile).
-- Validation: package unit/build and packed-consumer checks pass; corrected
-  hosted image startup and E2E validation are pending.
+- Validation: package unit/build and packed-consumer checks pass. Corrected
+  hosted [web E2E](https://github.com/Asherlc/dofek/actions/runs/41470417773/job/125363903763)
+  passes with the original readiness policy; the server image starts with the
+  extracted package available. No added waits or retries were needed.
 - Retrospective: extracted runtime dependencies need both workspace and image
   inclusion. Proposed package checklist addition: inspect manifest-copy,
   source-copy, and runtime-link lists before shipping an extraction; reuse

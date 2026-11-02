@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { climbingAttemptSchema, gradeComponentSchema } from "@dofek/training/climbing-log";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";

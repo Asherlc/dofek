@@ -122,3 +122,14 @@ shared training catalogue contracts, affected imports, manifests, lockfile,
   changed solely for mutation testing.
 - Added the package to the image's manifest-copy, runtime-source, and root-link
   lists after E2E server startup proved it missing from the image workspace.
+- A second review identified duplicate geometry schemas. Consolidated them in
+  the standalone geometry module, migrated application/training imports, retained
+  training's composed wall-angle API, and documented the removed training GPS
+  module in the 0.2.0 migration notes. Its coordinate cases now live beside the
+  canonical geometry implementation. No duplicate definitions or GPS facade remain.
+- Pinned the npm source citation to the inspected CLI release and clarified the
+  README's named-type exports without adding an unused tag-type export.
+- Final full unit/mobile run after consolidation: 24,131 pass, 19 skipped;
+  root/server/web/mobile typechecks, the training build, and sandbox lint pass.
+  Canonical geometry still kills all 24 mutants. Hosted validation of the final
+  cleanup remains pending.

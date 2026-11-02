@@ -816,6 +816,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/climbing-catalogue':
+        specifier: workspace:*
+        version: link:../climbing-catalogue
       '@dofek/filter-columns':
         specifier: workspace:*
         version: link:../filter-columns
