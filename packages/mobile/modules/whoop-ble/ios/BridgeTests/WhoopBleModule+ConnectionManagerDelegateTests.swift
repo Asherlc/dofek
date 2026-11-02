@@ -15,7 +15,7 @@ final class WhoopBleModuleConnectionManagerDelegateTests: XCTestCase {
     func testReadinessSnapshotFailureDoesNotPublishOrRestartWatchdog() async throws {
         let (context, module) = try makeModule()
         // OnCreate prepares asynchronously; fault injection needs the completed schema.
-        _ = try module.uploader
+        try await Task.detached { _ = try WhoopBleUploadRuntime.shared() }.value
         let directory = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: false

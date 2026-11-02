@@ -283,6 +283,23 @@ describe("ProviderDetailPage import-only providers", () => {
     mockProviders.data = [];
   });
 
+  it.each([
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+  ])("retains file uploads for connected %s", async (id, name) => {
+    mockUseParams.mockReturnValue({ id });
+    mockProviders.data = [
+      { id, name, authorized: true, authType: "credential", lastSyncedAt: null, importOnly: false },
+    ];
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    expect(screen.getByRole("heading", { name: "Import" })).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: id, showDetailsLink: false }),
+    );
+  });
+
   it("hides sync controls for import-only providers", async () => {
     mockProviders.data = [
       {

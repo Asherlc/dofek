@@ -508,6 +508,8 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
 
   it.each([
     ["kilter", "Kilter Board"],
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
     ["tension", "Tension Board"],
     ["grasshopper", "Grasshopper Board"],
     ["decoy", "Decoy Board"],

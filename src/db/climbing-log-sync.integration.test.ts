@@ -46,6 +46,63 @@ describe("atomic climbing log synchronization", () => {
       .where(eq(climbingAttempt.climbingLogEntryId, logEntryId))
       .orderBy(asc(climbingAttempt.id));
   }
+  it("preserves a source occurrence with unknown attempts without counting a try", async () => {
+    const result = await write([
+      {
+        externalId: "project:unknown",
+        title: "Untried project",
+        attempts: [],
+        raw: { project: true, tries: 0 },
+      },
+    ]);
+    expect(result.recordsSynced).toBe(1);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected project occurrence");
+    expect(await attempts(id)).toEqual([]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        z.object({ title: z.string(), recorded_climb_attempt_count: z.coerce.number() }),
+        sql`SELECT title, recorded_climb_attempt_count FROM fitness.v_climbing_log_entry WHERE id = ${id}::uuid`,
+      ),
+    ).toEqual([{ title: "Untried project", recorded_climb_attempt_count: 0 }]);
+    expect(
+      await write([{ externalId: "project:unknown", title: "Untried project", attempts: [] }]),
+    ).toEqual({ recordsSynced: 1, logEntryIds: [id] });
+    await write([
+      { externalId: "project:unknown", attempts: [{ scope: "climb", notes: "Recorded try" }] },
+    ]);
+    const recorded = await attempts(id);
+    expect(recorded).toHaveLength(1);
+    await write([{ externalId: "project:unknown", attempts: [] }]);
+    expect(await attempts(id)).toEqual(recorded);
+  });
+  it("rejects unsafe source count expansion before any graph writes", async () => {
+    await expect(
+      write([
+        { externalId: "valid-before-overflow", attempts: [{ scope: "climb" }] },
+        {
+          externalId: "oversized-count",
+          climb: { externalId: null, name: "Offending project", kind: "boulder" },
+          attempts: [],
+          reportedAttemptCounts: [{ scope: "climb", count: 1001 }],
+        },
+      ]),
+    ).rejects.toThrow(/Offending project.*oversized-count.*1,000/);
+    expect(await context.db.select().from(climbingLogEntry)).toEqual([]);
+  });
+  it("persists the supported count boundary of 1,000 attempts", async () => {
+    const result = await write([
+      {
+        externalId: "maximum-count",
+        attempts: [],
+        reportedAttemptCounts: [{ scope: "climb", count: 1000 }],
+      },
+    ]);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected maximum-count occurrence");
+    expect(await attempts(id)).toHaveLength(1000);
+  });
   it("preserves microsecond creation times through full and partial source updates", async () => {
     const logId = "00000000-0000-4000-8000-000000001991";
     const attemptId = "00000000-0000-4000-8000-000000001992";

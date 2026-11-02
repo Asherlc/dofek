@@ -1,6 +1,6 @@
 # Climbing board and file providers
 
-Access research checked **2026-10-31**. The implementations use the existing
+Access research checked **2026-11-01**. The implementations use the existing
 [provider connections](adding-a-provider.md), [climbing graph](climbing-context.md),
 and durable file uploads on web and iOS. Contract tests and PostgreSQL fixtures
 verify the implementation; authenticated requests to real board accounts have
@@ -14,8 +14,8 @@ and importer tests beside each [provider](../src/providers/README.md).
 | Kilter Board | Current account email/password | Native log IDs, dates, names, board angle, attempts, explicit completion and available grade/rating facts. Uses the current Kilter backend, independently of the retired Aurora Kilter service. |
 | Tension Board | Aurora username/password | Separate native ascent/bid records, dates, angle, notes, explicit outcomes and available named ascent styles. |
 | Grasshopper, Decoy, So iLL, Touchstone Board, Aurora Board | Each board's Aurora username/password | The same upstream protocol, with independent accounts, provider attribution, and host configuration. |
-| Crimpd | Original logbook ZIP | Recorded workouts, climbing sets, board/angle/grade/notes, exact available tries and ascent flags, plus supported nonclimbing set facts. |
-| 8a.nu / Vertical-Life | 8a.nu logbook CSV | Personal ascent history, source dates, names, locations, grades, notes, native result labels and exact positive recorded tries. |
+| Crimpd | Account email/password, or original logbook ZIP | Recorded workouts, climbing sets, board/angle/grade/notes, exact available tries and ascent flags, plus supported nonclimbing set facts. |
+| 8a.nu / Vertical-Life | Account email/password, or 8a.nu logbook CSV | Native ascent IDs, four logbook categories, source dates, grades, notes and available attempt facts. Connected CSV imports require unique exact matches. |
 | MoonBoard | Previously exported BoardLib CSV | Historical logbook rows. This connection does not fetch the current MoonBoard app. |
 
 Board contracts come from the current [Kilter client](https://github.com/lemeryfertitta/BoardLib/blob/6943d6682431258a5bf6229f659ffaac61040652/src/boardlib/api/kilter.py),
@@ -91,6 +91,27 @@ estimated duration for individual climbs; see the
 
 ### Crimpd
 
+Connect Crimpd in Settings → Data Sources with your account credentials.
+Dofek stores renewable credentials per user and downloads the logbook ZIP for
+scheduled and manual sync through the same [importer](../src/providers/crimpd/provider.ts).
+Downloads stream into a private temporary file with a 100 MiB limit; oversized,
+failed and cancelled downloads never reach the importer. The file is removed
+after success or failure. See the [streaming tests](../src/providers/crimpd/client.test.ts)
+and Node's [pipeline documentation](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-options).
+The [client](../src/providers/crimpd/client.ts) follows the current
+[Crimpd web application](https://my.crimpd.com/); independent server requests
+verified renewal and export access on November 1, 2026. The tested account had
+an empty history, so populated mapping is covered by export fixtures rather
+than an owner-account smoke test. See the [research record](climbing-logbook-api-research.md).
+
+Uploads remain available on the web provider detail screen and the mobile
+provider card. Sync and uploads preserve manual climbing attachments and do
+not interpret missing export rows as deletions; see the
+[persistence tests](../src/providers/crimpd/provider.integration.test.ts).
+Upstream authorization revocation is unverified: disconnect Crimpd in Dofek
+before requesting account erasure, as enforced by the
+[erasure prerequisites](../src/account-erasure/remote-snapshot.ts).
+
 In Crimpd, choose Analytics → Export Log Data → Download, or Settings → Download
 Logbook, then upload the original ZIP in Dofek. Crimpd documents
 `workouts.csv`, `sets.csv`, and `observations.csv` in its
@@ -115,13 +136,58 @@ and are exercised in the [import tests](../src/providers/crimpd/provider.integra
 
 ### 8a.nu / Vertical-Life
 
+Connect your account in Settings → Data Sources. Scheduled and manual sync read
+the shared Vertical-Life logbook using renewable per-user credentials. The
+[client](../src/providers/eight-a/client.ts) reads bouldering, sport climbing,
+indoor routes and indoor boulders until each category returns an empty page,
+including projects, repeats and duplicates. Direct Node renewal and owner reads
+were verified on November 1, 2026; the owner history was empty. Populated outdoor
+responses supplied parser fixtures, while populated indoor behavior remains
+unverified and indoor grade systems stay unknown. See the
+[authentication and source evidence](climbing-logbook-api-research.md#vertical-life-mobile-client-verification)
+and [shared logbook announcement](https://www.8a.nu/news/find-your-logbook-in-the-vertical-life-app).
+
+Before the first native sync, every existing CSV occurrence must have a unique
+exact match in the remote logbook. Dofek migrates those identities in place,
+preserves attachments and attempts, and retains both payloads in the canonical
+record. Once connected or native history exists, uploads only retain provenance
+for uniquely matched records; they cannot overwrite native facts or add new
+ascents. Edited, unmatched and ambiguous CSV rows fail atomically with an
+actionable error. Add new ascents in Vertical-Life and sync them. Matching uses
+the shared source kind, calendar date, name, location/sector/area/country, grade,
+result, tries, comment, subtype, project flag, rating and recommendation. Country
+codes are compared with English region names through the server's
+[`Intl.DisplayNames`](https://tc39.es/ecma402/#sec-intl.displaynames.prototype.of).
+Matching requires a known name, location and date. Nonempty CSV fields with no
+verified API counterpart, such as height or repeat counts, block an automatic
+initial match. Previously bound historical uploads must retain their complete
+CSV payload; they cannot silently change unverified fields. See the
+[resolver](../src/providers/eight-a/identity.ts) and
+[database regressions](../src/providers/eight-a/provider.integration.test.ts).
+
+Projects with no supported result and zero or unknown tries retain their log
+occurrence without an invented attempt. Positive reported tries expand through
+the canonical writer, which rejects reported counts above 1,000 atomically.
+Attempt-free details expose an unknown count in every response version, as
+verified by the [detail repository tests](../packages/server/src/repositories/climbing-activity-log-entry-repository.test.ts).
+Training-load coverage treats entries without recorded
+whole-climb tries as missing attempt information; see the
+[parser](../src/providers/eight-a/ascent.ts) and
+[database reporting regression](../packages/server/src/repositories/analytical-training-load-repository.integration.test.ts).
+
+Complete native syncs reconcile missing native occurrences without deleting raw
+history or attachments. Failed or malformed fetches never retire records.
+Upstream session revocation is unverified, so disconnect the source in Dofek
+before requesting account erasure; see the
+[lifecycle prerequisite](../src/account-erasure/remote-snapshot.ts).
+
 Download the CSV through 8a.nu Profile Info → edit → Logbook Export, then upload
 it to **8a.nu / Vertical-Life** in Dofek. The [official FAQ](https://www.8a.nu/faq)
 documents ascent export, and the [shared logbook announcement](https://www.8a.nu/news/find-your-logbook-in-the-vertical-life-app)
 explains Vertical-Life's relationship to the 8a.nu logbook. The parser follows a
 [representative export fixture](https://github.com/edouardmisset/unified-climbing-projects/blob/main/src/domain/fixtures/8a-nu.fixture.ts).
 
-The file has no native ascent/route IDs. Dofek identifies exact source rows by
+Before account connection, the file has no native ascent/route IDs. Dofek identifies exact source rows by
 content plus duplicate occurrence number, preserving repeated rows and stable
 identity when unrelated rows move. An edited row becomes a distinct source
 occurrence: the importer cannot safely infer which earlier row it replaced.

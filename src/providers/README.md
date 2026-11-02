@@ -52,9 +52,9 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, Concept2, Cycling Analytics, Decoy Board, Eight Sleep, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, Concept2, Crimpd, Cycling Analytics, Decoy Board, Eight Sleep, 8a.nu/Vertical-Life, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
 - **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
-- **Import-only providers**: Crimpd ZIP, 8a.nu/Vertical-Life CSV, historical MoonBoard BoardLib CSV, Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
+- **Import-only providers**: Historical MoonBoard BoardLib CSV, Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. Crimpd and 8a.nu/Vertical-Life retain uploads alongside account sync ([Crimpd](crimpd/provider.ts), [Vertical-Life](eight-a/provider.ts)). FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
 The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
@@ -78,14 +78,23 @@ worker registries:
 
 Kilter connects to its current backend. Tension, Grasshopper, Decoy, So iLL,
 Touchstone Board, and Aurora Board connect to independent accounts through
-Aurora's shared protocol. Crimpd, 8a.nu/Vertical-Life, and historical MoonBoard
-BoardLib files use the existing upload/import flow. The
+Aurora's shared protocol. Crimpd connects per user and downloads its ZIP export
+through the existing importer ([implementation](crimpd/provider.ts)). Crimpd,
+8a.nu/Vertical-Life, and historical MoonBoard BoardLib files also use the existing
+upload/import flow. The
 [climbing provider guide](../../docs/climbing-providers.md) documents exact
 access, field limits, source evidence, account-erasure prerequisites, and
 unavailable 27 Crags/Griptonite/current MoonBoard contracts. See the
 [Aurora app directory](https://auroraclimbing.com/),
 [Crimpd export](https://crimpd.com/docs/data-export/), and
 [8a.nu export](https://www.8a.nu/faq).
+
+8a.nu/Vertical-Life also connects per user and reads the four shared logbook
+categories. Its strict CSV/native transition requires unique exact matches,
+preserves attachments and both source payloads, and rejects unmatched connected
+uploads rather than guessing identities. See the [provider](eight-a/provider.ts),
+[identity resolver](eight-a/identity.ts), and
+[verified protocol evidence](../../docs/climbing-logbook-api-research.md#vertical-life-mobile-client-verification).
 
 ## Ziva
 

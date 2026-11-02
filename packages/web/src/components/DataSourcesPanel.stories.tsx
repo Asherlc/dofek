@@ -15,7 +15,13 @@ import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
 import { PageSection } from "./PageSection.tsx";
 
-type DataSourcesScenario = "default" | "providersLoading" | "empty" | "processingBlocked";
+type DataSourcesScenario =
+  | "default"
+  | "providersLoading"
+  | "empty"
+  | "processingBlocked"
+  | "crimpd"
+  | "eight-a";
 
 const providers = [
   {
@@ -56,7 +62,31 @@ function createMockObservable(
     subscribe(observer) {
       if (path === "sync.providers") {
         if (scenario === "providersLoading") return { unsubscribe: () => {} };
-        observer.next?.({ result: { data: scenario === "empty" ? [] : providers } });
+        observer.next?.({
+          result: {
+            data:
+              scenario === "empty"
+                ? []
+                : scenario === "crimpd" || scenario === "eight-a"
+                  ? [
+                      {
+                        id: scenario,
+                        name: scenario === "crimpd" ? "Crimpd" : "8a.nu / Vertical-Life",
+                        description:
+                          scenario === "crimpd"
+                            ? "Workouts and climbing logs. ZIP uploads remain available in Details."
+                            : "Personal climbing logbook. Connected CSV uploads require exact matches.",
+                        authType: "credential",
+                        authorized: false,
+                        lastSyncedAt: null,
+                        importOnly: false,
+                        pushOnly: false,
+                        needsReauth: false,
+                      },
+                    ]
+                  : providers,
+          },
+        });
       } else if (
         path === "sync.providerStats" ||
         path === "sync.logs" ||
@@ -169,6 +199,14 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="empty" />,
+};
+
+export const Crimpd: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="crimpd" />,
+};
+
+export const VerticalLife: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="eight-a" />,
 };
 
 export const ProcessingBlocked: Story = {
