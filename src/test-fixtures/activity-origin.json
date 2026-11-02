@@ -1,5 +1,118 @@
 [
   {
+    "name": "Kaya initiates alongside WHOOP and its copies",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "kaya",
+        "sourceName": "Kaya",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "externalId": "22b39dea58e942c1acc9ec6db6b33045",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": { "sourceBundle": "com.whoop.iphone" }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "peloton",
+        "externalId": "22b39dea58e942c1acc9ec6db6b33045",
+        "sourceName": null,
+        "raw": { "platform": "whoop", "deviceType": "whoop" }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"],
+    "expectedEvidence": [
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000002",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000003",
+        "field": "source_name",
+        "value": "whoop"
+      },
+      {
+        "upstreamMemberActivityId": "00000000-0000-4000-8000-000000000002",
+        "downstreamMemberActivityId": "00000000-0000-4000-8000-000000000004",
+        "field": "external_id",
+        "value": "22b39dea58e942c1acc9ec6db6b33045"
+      }
+    ]
+  },
+  {
+    "name": "Kaya export initiates alongside an independent wearable",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "kaya-export",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Multiple Kaya sessions remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "kaya",
+        "sourceName": "Kaya",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "kaya",
+        "sourceName": "Kaya",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ],
+    "expectedEvidence": []
+  },
+  {
+    "name": "Kaya and another initiating recording remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "kaya",
+        "sourceName": "Kaya",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ],
+    "expectedEvidence": []
+  },
+  {
     "name": "Personalized Apple Watch initiates alongside WHOOP and its copies",
     "members": [
       {

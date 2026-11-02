@@ -369,15 +369,22 @@ describe("dbt merged activity field priorities", () => {
     ]);
   });
 
-  it.each([null, "", "   "])(
-    "skips a blank preferred name (%j) and uses the next named source",
-    async (name) => {
+  it.each([
+    { providerId: "whoop", name: null, expectedName: "Peloton fallback" },
+    { providerId: "whoop", name: "", expectedName: "Peloton fallback" },
+    { providerId: "whoop", name: "   ", expectedName: "Peloton fallback" },
+    { providerId: "kaya", name: null, expectedName: null },
+    { providerId: "kaya", name: "", expectedName: null },
+    { providerId: "kaya", name: "   ", expectedName: null },
+  ])(
+    "uses $expectedName for a blank $providerId title ($name)",
+    async ({ providerId, name, expectedName }) => {
       const id = randomUUID();
       await insertSources([
         {
           id: randomUUID(),
           groupId: id,
-          providerId: "kaya",
+          providerId,
           canonicalType: "climbing",
           providerType: "rock_climbing",
           name,
@@ -396,9 +403,9 @@ describe("dbt merged activity field priorities", () => {
       await refreshDeduped(true);
       expect(await mergedFields(id)).toEqual([
         {
-          name: "Peloton fallback",
+          name: expectedName,
           notes: null,
-          provider_id: "kaya",
+          provider_id: providerId,
           canonical_type: "climbing",
         },
       ]);
@@ -733,6 +740,20 @@ describe("dbt merged activity field priorities", () => {
 
   it("refreshes the merged row and summary when a field priority changes", async () => {
     const id = randomUUID();
+    const provider = `field-priority-${id}`;
+    await client.insert({
+      table: `${database}.provider_field_priority`,
+      format: "JSONEachRow",
+      values: [
+        {
+          provider_id: provider,
+          field_key: "activity.name",
+          priority: 10,
+          _peerdb_is_deleted: 0,
+          _peerdb_version: 1,
+        },
+      ],
+    });
     await insertSources([
       {
         id: randomUUID(),
@@ -755,24 +776,24 @@ describe("dbt merged activity field priorities", () => {
       {
         id: randomUUID(),
         groupId: id,
-        providerId: "kaya",
+        providerId: provider,
         canonicalType: "climbing",
         providerType: "rock_climbing",
-        name: "Kaya title",
+        name: "Preferred title",
         priority: 100,
       },
     ]);
     await refreshDeduped(true);
     await refreshSummary(false);
-    expect((await mergedFields(id))[0]?.name).toBe("Kaya title");
-    expect(await summaryName(id)).toEqual([{ name: "Kaya title" }]);
+    expect((await mergedFields(id))[0]?.name).toBe("Preferred title");
+    expect(await summaryName(id)).toEqual([{ name: "Preferred title" }]);
 
     await client.insert({
       table: `${database}.provider_field_priority`,
       format: "JSONEachRow",
       values: [
         {
-          provider_id: "kaya",
+          provider_id: provider,
           field_key: "activity.name",
           priority: 50,
           _peerdb_is_deleted: 0,

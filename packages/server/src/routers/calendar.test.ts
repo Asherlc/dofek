@@ -59,11 +59,11 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-maplibre-v9",
+      keyVersion: "activity-calendar-primary-type-v10",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-states-v2",
+      keyVersion: "activity-calendar-primary-type-v3",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 3_600_000,

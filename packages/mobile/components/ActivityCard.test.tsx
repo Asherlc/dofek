@@ -34,12 +34,24 @@ describe("ActivityCard", () => {
     );
 
     expect(screen.getByText("Running")).toBeDefined();
-    expect(screen.getByLabelText("Walking activity")).toBeDefined();
+    expect(screen.getByLabelText("Running activity")).toBeDefined();
   });
 
   it("falls back to activityType when name is missing", () => {
     render(<ActivityCard {...baseProps} name={null} />);
     expect(screen.getByText("Running")).toBeTruthy();
+  });
+
+  it("uses the primary climbing source for the icon over a cardio representative", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        name="Kaya climbing"
+        activityType="cardio"
+        primaryActivityType="climbing"
+      />,
+    );
+    expect(screen.getByLabelText("Climbing activity").querySelector("SvgXml")).toBeTruthy();
   });
 
   it("shows avg HR when provided", () => {
