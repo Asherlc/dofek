@@ -15,7 +15,7 @@ no missing-record tombstones or synthetic workouts are produced. See the
 [provider guide](../../../docs/thecrag.md) and
 [Postgres integration suite](../thecrag-sync.integration.test.ts).
 
-The separate [catalogue reader](catalogue.ts) performs disposable public route
+The separate [catalogue reader](../../../packages/climbing-catalogue/src/thecrag.ts) performs disposable public route
 lookups, including multiple/inherited steepness tags. Its
 [Impit transport](public-transport.ts) is not used for official logbook requests;
 see [Impit documentation](https://apify.github.io/impit/js/) and the

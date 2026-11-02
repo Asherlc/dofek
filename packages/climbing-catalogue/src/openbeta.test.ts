@@ -1,16 +1,11 @@
-import type { CatalogueLocation, CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { describe, expect, it, vi } from "vitest";
-import { captureException } from "../lib/error-reporting.ts";
-import { OpenBetaCatalogueAdapter } from "./openbeta-catalogue.ts";
-import { goatRockArea, goatRockDiscovery } from "./openbeta-catalogue-fixture.ts";
-
-vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
+import type { CatalogueLocation, CatalogueSeed } from "./contracts.ts";
+import { goatRockArea, goatRockDiscovery } from "./fixtures/openbeta.ts";
+import { OpenBetaCatalogueAdapter } from "./openbeta.ts";
 
 const id = "6cc9b5d5-02d5-555a-948b-e2fffc9bd82c";
 const areaId = "7120fcf9-ae19-5adc-ab0d-d04f749c2e91";
 const seed = {
-  userId: "u",
-  logEntryId: "e",
   providerId: "kaya",
   externalId: null,
   sourceUrl: null,
@@ -365,18 +360,14 @@ describe("OpenBetaCatalogueAdapter", () => {
     ).rejects.toThrow(/response URL/);
   });
 
-  it("reports invalid JSON with the source error and actionable catalogue context", async () => {
-    vi.mocked(captureException).mockClear();
+  it("preserves provider context and the cause for invalid JSON", async () => {
     const parseError = new SyntaxError("invalid upstream payload");
     const response = new Response("not JSON");
     vi.spyOn(response, "json").mockRejectedValue(parseError);
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response);
     await expect(new OpenBetaCatalogueAdapter(fetchFn).search(seed)).rejects.toMatchObject({
-      message: expect.stringContaining("OpenBeta catalogue returned invalid JSON"),
+      message: "OpenBeta catalogue returned invalid JSON. Retry when public access is available.",
       cause: parseError,
-    });
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { provider: "openbeta", phase: "catalogue" },
     });
   });
 

@@ -1,6 +1,6 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { z } from "zod";
 import type { ClimbingMapLocation } from "./climbing-map.ts";
-import { gpsCoordinatesSchema } from "./gps-coordinates.ts";
 
 export const climbingMapLocationSchema = z.strictObject({
   coordinates: gpsCoordinatesSchema,

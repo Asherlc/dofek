@@ -181,6 +181,12 @@ Shared cross-client logic belongs in domain packages such as
 `@dofek/stats`, `@dofek/onboarding`, and `@dofek/providers`. Web and mobile
 clients render server-computed metric values rather than recomputing them.
 
+[`@dofek/climbing-catalogue`](packages/climbing-catalogue/README.md) is an
+independent public library for climbing route discovery and identity evidence.
+Dofek's [catalogue service](src/climbing-catalogue.ts) supplies application cache
+policy; [source composition](src/climbing-catalogue-sources.ts) supplies credentials
+and rate-limited transport.
+
 ## Data and Provider Contracts
 
 - Providers implement the interfaces in

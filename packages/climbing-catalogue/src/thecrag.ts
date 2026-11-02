@@ -1,12 +1,12 @@
+import { load } from "cheerio";
 import type {
   CatalogueCandidate,
   CatalogueLocation,
   CatalogueSearchResult,
   CatalogueSeed,
   ClimbingCatalogueAdapter,
-} from "@dofek/training/climbing-catalogue";
-import { load } from "cheerio";
-import { catalogueNameMatch, catalogueSearchNames } from "../../climbing-catalogue-matching.ts";
+} from "./contracts.ts";
+import { catalogueNameMatch, catalogueSearchNames } from "./matching.ts";
 
 const ORIGIN = "https://www.thecrag.com";
 const SEARCH_PATH = "/en/climbing/world/search";

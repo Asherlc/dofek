@@ -1,9 +1,10 @@
-import type { CatalogueCandidate, CatalogueSeed } from "@dofek/training/climbing-catalogue";
+import type { CatalogueCandidate } from "@dofek/climbing-catalogue/contracts";
+import { MountainProjectCatalogueAdapter } from "@dofek/climbing-catalogue/mountain-project";
+import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
 import { MemoryCacheStore } from "./lib/cache.ts";
 import { captureException } from "./lib/error-reporting.ts";
-import { MountainProjectCatalogueAdapter } from "./providers/mountain-project-catalogue.ts";
 
 vi.mock("./lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
@@ -56,7 +57,7 @@ const candidate: CatalogueCandidate = {
 
 describe("ClimbingCatalogueService", () => {
   it("retains unnamed native source information without inventing discovery names", async () => {
-    const { KayaCatalogueAdapter } = await import("./providers/kaya/catalogue.ts");
+    const { KayaCatalogueAdapter } = await import("@dofek/climbing-catalogue/kaya");
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         data: {

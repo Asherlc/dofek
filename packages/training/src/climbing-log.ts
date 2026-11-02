@@ -1,7 +1,7 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { z } from "zod";
 import { climbingBoardSchema, climbingWallAngleSchema } from "./climbing-experience.ts";
 import { gradeSystemSchema, isValidClimbingGrade } from "./climbing-grades.ts";
-import { gpsCoordinatesSchema } from "./gps-coordinates.ts";
 
 export const CLIMB_KINDS = ["boulder", "route", "summit"] as const;
 export const CLIMB_SETTINGS = ["indoor", "outdoor"] as const;

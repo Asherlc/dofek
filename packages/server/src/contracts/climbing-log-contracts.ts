@@ -1,3 +1,4 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { climbingChartAnnotationSchema } from "@dofek/training/climbing-chart";
 import { climbingSourceLinkSchema } from "@dofek/training/climbing-context";
 import {
@@ -15,7 +16,6 @@ import {
 } from "@dofek/training/climbing-log-response";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { climbingTagSchema } from "@dofek/training/climbing-tags";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
 
 export const climbingMapLocationSchema = z.strictObject({

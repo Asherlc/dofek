@@ -1,10 +1,8 @@
-import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { describe, expect, it, vi } from "vitest";
-import { KayaCatalogueAdapter } from "./catalogue.ts";
+import type { CatalogueSeed } from "./contracts.ts";
+import { KayaCatalogueAdapter } from "./kaya.ts";
 
 const seed: CatalogueSeed = {
-  userId: "u",
-  logEntryId: "l",
   providerId: "manual",
   externalId: null,
   sourceUrl: null,
@@ -36,7 +34,7 @@ describe("KayaCatalogueAdapter", () => {
     async (name) => {
       // Exercise schema construction for each upstream name shape.
       vi.resetModules();
-      const { KayaCatalogueAdapter: Adapter } = await import("./catalogue.ts");
+      const { KayaCatalogueAdapter: Adapter } = await import("./kaya.ts");
       const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
         Response.json({
           data: {

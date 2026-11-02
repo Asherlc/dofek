@@ -66,6 +66,7 @@ const nodeTestIncludes = [
   "packages/nutrition/src/**/*.test.ts",
   "packages/training/src/**/*.test.ts",
   "packages/cycling-power/src/**/*.test.ts",
+  "packages/climbing-catalogue/src/**/*.test.ts",
   "packages/recovery/src/**/*.test.ts",
   "packages/zones/src/**/*.test.ts",
   "packages/stats/src/**/*.test.ts",
