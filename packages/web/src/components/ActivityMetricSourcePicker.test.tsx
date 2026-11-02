@@ -38,6 +38,33 @@ const sources: ActivityMetricSource[] = [
   },
 ];
 
+it("shows WHOOP with a Peloton delivery badge in the trigger and option", () => {
+  const source: ActivityMetricSource = {
+    id: "peloton-copy",
+    label: "WHOOP via Peloton",
+    presentation: {
+      displayName: "WHOOP",
+      providerId: "whoop",
+      sourceName: null,
+      attribution: { kind: "provider", providerId: "peloton", label: "Peloton" },
+    },
+  };
+  render(
+    <ActivityMetricSourcePicker
+      label="Heart Rate"
+      sources={[source]}
+      selectedId={source.id}
+      onChange={() => {}}
+    />,
+  );
+  const trigger = screen.getByRole("button", { name: "Heart Rate source: WHOOP via Peloton" });
+  expect(trigger.querySelector('img[src="/logos/whoop.png"]')).toBeTruthy();
+  expect(trigger.querySelector('img[src="/logos/peloton.svg"]')).toBeTruthy();
+  fireEvent.click(trigger);
+  const option = screen.getByRole("radio", { name: "WHOOP via Peloton" }).closest("label");
+  expect(option?.querySelector('img[src="/logos/peloton.svg"]')).toBeTruthy();
+});
+
 function PickerHarness({ initialId = "watch-recording" }: { initialId?: string }) {
   const [selectedId, setSelectedId] = useState(initialId);
   return (

@@ -2,6 +2,7 @@ import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { normalizeActivityHardware } from "../models/activity-hardware.ts";
+import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
 import {
   activityMetricParams,
   getActivityHeartRateContext,
@@ -70,6 +71,113 @@ function storeWithRows(rows: unknown[]) {
     ),
   };
 }
+
+describe("canonical metric source inheritance", () => {
+  it("preserves per-sample device attribution instead of replacing it with workout ancestry", async () => {
+    const tree = buildActivitySourceTree(
+      {
+        status: "resolved",
+        memberActivityId: "whoop-member",
+        providerId: "whoop",
+        sourceName: null,
+      },
+      ["whoop", "apple_health"].map((providerId) => ({
+        memberActivityId: `${providerId}-member`,
+        providerId,
+        externalId: providerId,
+        subsource: null,
+        label: providerId,
+        url: null,
+      })),
+      [
+        {
+          upstreamMemberActivityId: "whoop-member",
+          downstreamMemberActivityId: "apple_health-member",
+          field: "external_id",
+          value: "reference",
+        },
+      ],
+    );
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        {
+          channel: "heart_rate",
+          provider_id: "apple_health",
+          device_id: "Apple Watch",
+          source_id: "watch-recording",
+          activity_ids: ["apple_health-member"],
+        },
+      ]),
+      window,
+      { items: [], power: [] },
+      tree,
+    );
+    expect(result[0]?.sources[0]?.presentation).toMatchObject({
+      displayName: "Apple Watch",
+      providerId: "apple_health",
+      sourceName: "Apple Watch",
+      attribution: { kind: "apple_health" },
+    });
+  });
+  it.each(["peloton", "strava"])(
+    "projects WHOOP ancestry through %s without changing selection identity",
+    async (providerId) => {
+      const tree = buildActivitySourceTree(
+        {
+          status: "resolved",
+          memberActivityId: "whoop-member",
+          providerId: "whoop",
+          sourceName: null,
+        },
+        ["whoop", providerId].map((provider) => ({
+          memberActivityId: `${provider}-member`,
+          providerId: provider,
+          externalId: provider,
+          subsource: null,
+          label: provider,
+          url: null,
+        })),
+        [
+          {
+            upstreamMemberActivityId: "whoop-member",
+            downstreamMemberActivityId: `${providerId}-member`,
+            field: "external_id",
+            value: "reference",
+          },
+        ],
+      );
+      const result = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: providerId,
+            device_id: null,
+            source_id: "held-recording",
+            activity_ids: [`${providerId}-member`],
+          },
+        ]),
+        window,
+        { items: [], power: [] },
+        tree,
+      );
+      expect(result[0]?.sources[0]).toEqual({
+        id: "held-recording",
+        label: `WHOOP via ${providerId === "peloton" ? "Peloton" : "Strava"}`,
+        presentation: {
+          displayName: "WHOOP",
+          providerId: "whoop",
+          sourceName: null,
+          attribution: {
+            kind: "provider",
+            providerId,
+            label: providerId === "peloton" ? "Peloton" : "Strava",
+          },
+        },
+      });
+      expect(result[0]?.defaultSourceId).toBe("held-recording");
+    },
+  );
+});
 
 describe("heart-rate default ranking", () => {
   it.each([

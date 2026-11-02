@@ -71,7 +71,7 @@ export function ActivityDetailPage() {
   const detail = trpc.activity.byId.useQuery({ id });
   const hardware = trpc.activity.hardware.useQuery({ id });
   const images = trpc.activity.images.useQuery({ id }, ACTIVITY_IMAGES_QUERY_OPTIONS);
-  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" });
+  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "", responseVersion: 2 });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
     sources: ActivityMetricSourceSelection;

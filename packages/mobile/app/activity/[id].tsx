@@ -375,7 +375,10 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: !!id },
   );
-  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const metricSources = trpc.activity.metricSources.useQuery(
+    { id: id ?? "", responseVersion: 2 },
+    { enabled: !!id },
+  );
   const hardware = trpc.activity.hardware.useQuery({ id: id ?? "" }, { enabled: !!id });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;

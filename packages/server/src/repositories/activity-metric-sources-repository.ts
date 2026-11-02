@@ -1,5 +1,9 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
-import { activityMetricSourcePresentation } from "@dofek/providers/activity-metric-source";
+import {
+  activityMetricSourceInheritance,
+  activityMetricSourcePresentation,
+} from "@dofek/providers/activity-metric-source";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
 import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { mapHrZones } from "@dofek/zones/zones";
@@ -154,6 +158,7 @@ export async function getActivityMetricSources(
   store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
   hardware: ActivityHardware = { items: [], power: [] },
+  sourceTree: ActivitySourceTree = { primary: null, otherSources: [] },
 ): Promise<ActivityMetricSources> {
   const rows = await store.query(
     sourceRowSchema,
@@ -213,6 +218,12 @@ export async function getActivityMetricSources(
       );
     }
     const sources = metricRows.map((row) => {
+      // A workout's ancestry does not override an explicitly attributed sample device.
+      const inherited =
+        row.device_id === null
+          ? activityMetricSourceInheritance(sourceTree, row.activity_ids)
+          : null;
+      if (inherited) return { id: row.source_id, ...inherited };
       const peripheralName = peripheralNames.find(
         (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
       )?.device_name;

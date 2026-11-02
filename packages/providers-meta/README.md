@@ -23,6 +23,15 @@ Metadata and statistics for data providers.
   the closest available recording or explicitly unresolved attribution. Field
   priorities never establish recording origin.
 
+  Metric source inheritance projects the same [canonical source tree](../server/src/models/activity-source-tree.ts)
+  used by the activity source disclosure through the [shared metric presentation](src/activity-metric-source.ts).
+  It retains recording selection IDs and explicit per-sample device attribution;
+  clients render the original provider with a delivery-provider badge.
+  The [metric-sources API](../server/src/routers/activity.ts) serves this presentation
+  to `responseVersion: 2` requests; omitted/version-1 requests retain the installed
+  clients' original attribution contract. Publish the API before updating clients
+  to request version 2.
+
 - **Provider Identity**: Mapping of provider IDs to human-readable labels and logo types (SVG vs PNG).
 - **WHOOP Wear Locations**: Definitions and parsing for WHOOP-specific sensor placement (wrist, bicep, etc.).
 - **Provider Stats**: Utilities for aggregating and labeling record counts across different data types (activities, sleep, nutrition, etc.).

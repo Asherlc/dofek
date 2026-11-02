@@ -1,9 +1,87 @@
 import { describe, expect, it } from "vitest";
 import {
+  activityMetricSourceInheritance,
   activityMetricSourcePresentation,
   activityMetricSourceSchema,
   activityMetricSourceText,
 } from "./activity-metric-source.ts";
+import type { ActivitySourceTree, ActivitySourceTreeNode } from "./activity-source-tree.ts";
+
+describe("activityMetricSourceInheritance", () => {
+  const node = (
+    id: string,
+    providerId: string,
+    children: ActivitySourceTreeNode[] = [],
+  ): ActivitySourceTreeNode => ({
+    id,
+    providerId,
+    sourceName: null,
+    label: providerId === "whoop" ? "WHOOP (Cloud)" : providerId,
+    description: null,
+    url: null,
+    children,
+  });
+  const tree: ActivitySourceTree = {
+    primary: node("origin", "whoop", [
+      node("copy", "peloton", [node("health-copy", "apple_health")]),
+    ]),
+    otherSources: [node("unrelated", "garmin")],
+  };
+  it("retains every delivery step in a multi-hop accessible label", () => {
+    expect(activityMetricSourceInheritance(tree, ["health-copy"])).toEqual({
+      label: "WHOOP via Peloton → Apple Health",
+      presentation: {
+        displayName: "WHOOP",
+        providerId: "whoop",
+        sourceName: null,
+        attribution: { kind: "apple_health", label: "Apple Health" },
+      },
+    });
+  });
+  it("uses a proven branch when the activity's overall origin is unresolved", () => {
+    expect(
+      activityMetricSourceInheritance(
+        {
+          primary: null,
+          otherSources: [
+            node("unrelated", "kaya"),
+            node("origin", "whoop", [node("copy", "peloton")]),
+          ],
+        },
+        ["copy"],
+      )?.label,
+    ).toBe("WHOOP via Peloton");
+  });
+  it("retains a model-specific recording label supplied by the canonical tree", () => {
+    const watch = {
+      ...node("watch-origin", "apple-watch", [node("health-copy", "apple_health")]),
+      label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+    };
+    const result = activityMetricSourceInheritance({ primary: watch, otherSources: [] }, [
+      "health-copy",
+    ]);
+    expect(result?.label).toBe("Apple Watch Series 7 (GPS + Cellular, 45mm) via Apple Health");
+    expect(result?.presentation.displayName).toBe("Apple Watch Series 7 (GPS + Cellular, 45mm)");
+  });
+  it.each([
+    ["origin"],
+    ["missing"],
+    ["copy", "unrelated"],
+    ["copy", "missing"],
+    ["copy", "health-copy"],
+    [],
+  ])("leaves unresolved or mixed paths to the existing presentation: %j", (...ids) => {
+    expect(activityMetricSourceInheritance(tree, ids)).toBeNull();
+  });
+  it("does not confuse a same-provider held copy with a different upstream provider", () => {
+    expect(
+      activityMetricSourceInheritance(
+        { primary: node("one", "whoop", [node("two", "whoop")]), otherSources: [] },
+        ["two"],
+      ),
+    ).toBeNull();
+  });
+});
 
 describe("activityMetricSourcePresentation", () => {
   it.each(["apple_health", "apple-health"])(

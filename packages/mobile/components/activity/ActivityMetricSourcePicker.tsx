@@ -23,8 +23,12 @@ export function AttributionIcon({
       importantForAccessibility="no-hide-descendants"
       style={styles.badge}
     >
-      {attribution.kind === "apple_health" ? (
-        <ProviderLogo provider="apple_health" serverUrl={serverUrl} size={14} />
+      {attribution.kind === "apple_health" || attribution.kind === "provider" ? (
+        <ProviderLogo
+          provider={attribution.kind === "provider" ? attribution.providerId : "apple_health"}
+          serverUrl={serverUrl}
+          size={14}
+        />
       ) : (
         <Ionicons
           name={attribution.kind === "cloud" ? "cloud-outline" : "bluetooth-outline"}
