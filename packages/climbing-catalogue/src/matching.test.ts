@@ -1,10 +1,10 @@
+import { describe, expect, it } from "vitest";
 import type {
   CatalogueCandidate,
   CatalogueLocation,
   CatalogueSearchResult,
   CatalogueSeed,
-} from "@dofek/training/climbing-catalogue";
-import { describe, expect, it } from "vitest";
+} from "./contracts.ts";
 import {
   catalogueAreasAreNearby,
   catalogueLocalArea,
@@ -12,7 +12,7 @@ import {
   catalogueSearchNames,
   matchCatalogueCandidates,
   normalizeCatalogueName,
-} from "./climbing-catalogue-matching.ts";
+} from "./matching.ts";
 
 it("applies the shared 100 metre great-circle policy at high latitude and rejects unknown points", () => {
   const point = (longitude: number): CatalogueLocation => ({
@@ -33,8 +33,6 @@ const area = (name = "Goat Rock", latitude = 37.2304): CatalogueLocation => ({
   coordinates: { latitude, longitude: -122.096 },
 });
 const seed: CatalogueSeed = {
-  userId: "user-a",
-  logEntryId: "log-a",
   providerId: "mountain-project",
   externalId: "105734732",
   sourceUrl: null,

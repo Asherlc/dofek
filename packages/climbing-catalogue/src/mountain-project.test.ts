@@ -1,10 +1,8 @@
-import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { describe, expect, it, vi } from "vitest";
-import { MountainProjectCatalogueAdapter } from "./mountain-project-catalogue.ts";
+import type { CatalogueSeed } from "./contracts.ts";
+import { MountainProjectCatalogueAdapter } from "./mountain-project.ts";
 
 const seed: CatalogueSeed = {
-  userId: "u",
-  logEntryId: "l",
   providerId: "manual",
   externalId: null,
   sourceUrl: null,

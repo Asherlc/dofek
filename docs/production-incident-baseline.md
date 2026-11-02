@@ -34794,3 +34794,106 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
 - The partial rerun then failed in Coverage at `pnpm tsx scripts/update-integration-test-timings.ts merge ...`, with `Timing provenance mismatch: GITHUB_RUN_ATTEMPT`. The [timing merger](../scripts/update-integration-test-timings.ts) requires matching attempt provenance; retained integration artifacts came from attempt 1 while aggregation ran in attempt 2. All integration shards and native builds themselves passed.
 - Operator action: use a fresh complete CI run so all timing artifacts and aggregation belong to one attempt. Preserve the provenance guard, test deadlines and retry settings. Validation of that fresh run is pending. No runtime or workflow behavior changed.
 - Retrospective: inspect unresolved review threads before declaring merge readiness, and use the address-pr-comments skill for coverage feedback. Proposed CI runbook note: when the timing merger enforces attempt identity, rerun the complete workflow rather than only failed jobs; do not weaken provenance checks. Investigate the reporter child startup separately if it repeats.
+
+## 2026-11-02 — Climbing catalogue npm bootstrap authentication
+
+- Impact: workstation publication of `@dofek/climbing-catalogue@0.1.0` was blocked;
+  no deployed application or stored data was affected.
+- Evidence: `npm whoami` failed with `E401` / `401 Unauthorized`. After successful
+  owner web login, `rtk proxy npm publish <verified-tarball> --access public`
+  failed with `EOTP` / `This operation requires a one-time password.`
+- Root cause: invalid local registry authentication first, then missing terminal
+  semantics in the proxied npm process. npm's
+  [authentication implementation](https://github.com/npm/cli/blob/v11.19.0/lib/utils/auth.js)
+  skips its interactive OTP flow unless both stdin and stdout are terminals.
+- Direct fix: complete `npm login --auth-type=web`, verify `npm whoami`, and run
+  the same verified tarball through macOS `script -q /dev/null` to preserve a PTY.
+  npm accepted the upload with `+ @dofek/climbing-catalogue@0.1.0`; the
+  `Asherlc/dofek` / `release-npm.yml` trusted publisher was created and confirmed
+  by `npm trust list`. No auth bypasses, runtime retries, or resilience knobs
+  were introduced; the [publishing runbook](package-publishing.md) records the procedure.
+- Validation: after asynchronous registry processing, `npm view` returned 0.1.0
+  with the verified tarball's SHA-1 checksum
+  `ceffd828ff0dd459761a900d9c1bf1e39846c55e`. A fresh registry installation
+  loaded all nine public exports, ran matching/search, and confirmed only
+  Zod, Cheerio, and Fuse.js runtime dependencies. No publication blocker remains;
+  automatic releases still depend on merging the checked-in release wiring.
+- Retrospective: checking identity separately isolated the login failure;
+  inspecting npm's terminal guard identified the second cause. Reuse the package
+  publishing runbook and verification-before-completion for future bootstrap
+  releases. Proposed checklist addition: verify the real child process has a PTY
+  when interactive npm authentication fails under a command proxy.
+
+## 2026-11-02 — Climbing catalogue manifest consistency gate
+
+- Impact: [PR 3198](https://github.com/Asherlc/dofek/pull/3198) was blocked by
+  [Test / Sherif](https://github.com/Asherlc/dofek/actions/runs/41466603354/job/125349771396).
+  No production impact; the already published package's runtime is unaffected.
+- Evidence: `pnpm exec sherif` first failed with `dependencies should be ordered
+  alphabetically. unordered-dependencies`, then reported
+  `Dependency typescript has multiple versions defined in the workspace.`
+  The same command reproduced all three issues locally.
+- Root cause: the extraction appended dependency entries in the root/training
+  manifests and added a package-local compiler version different from the
+  workspace compiler, violating existing manifest consistency rules.
+- Direct fix: sort the two dependency lists and use the shared workspace compiler,
+  following training's existing tooling pattern. Remove the redundant compiler
+  declaration and its lockfile entries; preserve unrelated peer resolutions.
+- Validation: local Sherif passes without ignored rules; the package build and
+  all 452 standalone tests pass with the shared compiler. The corrected hosted
+  [Sherif job](https://github.com/Asherlc/dofek/actions/runs/41467475078/job/125353850905)
+  passed without retries or ignored rules. No resilience knobs were added.
+- Retrospective: runtime/type checks did not exercise workspace manifest policy.
+  Proposed extraction checklist addition: run Sherif before publication and PR
+  creation. Reuse gh-fix-ci for exact failing-step evidence and the minimum fix.
+
+## 2026-11-02 — Extracted catalogue missing from mutation test discovery
+
+- Impact: [PR 3198 mutation shard 1](https://github.com/Asherlc/dofek/actions/runs/41467475078/job/125354234739)
+  failed before mutation testing; no production impact.
+- Evidence: `pnpm exec stryker run stryker.ci.config.json --mutate
+  packages/climbing-catalogue/src/geometry.ts:1-18` first failed with
+  `No tests were executed. Stryker will exit prematurely.` A direct Vitest
+  listing under the mutation config returned an empty array for geometry tests.
+- Root cause: the explicit mutation-only node test include list did not include
+  the extracted package. Normal unit tests used a broader include, so they passed.
+- Direct fix: include package unit tests in the mutation test project and add
+  package source to the local and CI mutation target lists. Preserve integration
+  exclusions, related-test discovery, and the existing mutation threshold; see
+  [mutation config](../vitest.config.mutation.ts) and the
+  [Stryker Vitest runner](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
+- Validation: mutation-config Vitest listing now discovers the geometry tests;
+  the exact geometry scope kills all 24 non-ignored mutants, and search kills
+  all 55. Geometry tests reload import-time schemas and cover degree boundaries;
+  search tests cover native identity selection, query evidence, one native lookup,
+  and local completeness. Corrected hosted
+  [search](https://github.com/Asherlc/dofek/actions/runs/41470417773/job/125364476534)
+  and [geometry](https://github.com/Asherlc/dofek/actions/runs/41470417773/job/125364476376)
+  shards both pass with the existing thresholds and related-test discovery.
+  No waits, retries, or weakened checks were introduced.
+- Retrospective: package extraction needs both normal and mutation test discovery.
+  Proposed checklist addition: verify moved tests under each explicit test tier.
+  Reuse gh-fix-ci to distinguish missing discovery from surviving mutants.
+
+## 2026-11-02 — Catalogue missing from server image workspace graph
+
+- Impact: [PR 3198 web E2E](https://github.com/Asherlc/dofek/actions/runs/41467475078/job/125353851499)
+  could build the image but its server failed to start; no production deployment.
+- Evidence: E2E dependency startup logged `Error [ERR_MODULE_NOT_FOUND]: Cannot
+  find package '@dofek/climbing-catalogue' imported from
+  /app/packages/training/src/climbing-catalogue.ts` in the server container.
+- Root cause: the Dockerfile's explicit workspace manifest, runtime source, and
+  root-link lists omitted the extracted package, so the image lacked its package
+  directory and dependency wiring. Normal workspace builds used the complete
+  checkout and did not reproduce that image boundary.
+- Direct fix: add the package to those same existing Dockerfile lists. Preserve
+  the production dependency install and runtime layout; no fallback resolution,
+  readiness waits, or retries were added. See the [image recipe](../Dockerfile).
+- Validation: package unit/build and packed-consumer checks pass. Corrected
+  hosted [web E2E](https://github.com/Asherlc/dofek/actions/runs/41470417773/job/125363903763)
+  passes with the original readiness policy; the server image starts with the
+  extracted package available. No added waits or retries were needed.
+- Retrospective: extracted runtime dependencies need both workspace and image
+  inclusion. Proposed package checklist addition: inspect manifest-copy,
+  source-copy, and runtime-link lists before shipping an extraction; reuse
+  gh-fix-ci to trace startup failures to the first fatal container log.

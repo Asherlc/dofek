@@ -1,14 +1,12 @@
 import { createHash } from "node:crypto";
+import { ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
+import type { ClimbingCatalogueAdapter } from "@dofek/climbing-catalogue/contracts";
 import {
-  type CatalogueSearchResult,
   type CatalogueSeed,
-  type ClimbingCatalogueAdapter,
   type ClimbingCatalogueContext,
-  catalogueSearchResultSchema,
   catalogueSeedSchema,
   climbingCatalogueContextSchema,
 } from "@dofek/training/climbing-catalogue";
-import { matchCatalogueCandidates } from "./climbing-catalogue-matching.ts";
 import type { CacheStore } from "./lib/cache.ts";
 import { captureException } from "./lib/error-reporting.ts";
 
@@ -26,16 +24,6 @@ function key(seed: CatalogueSeed): string {
     .update(JSON.stringify(catalogueSeedSchema.parse(seed)))
     .digest("hex");
   return `${seed.userId}:climbing.catalogueContext:v2:${fingerprint}`;
-}
-
-async function search(
-  adapter: ClimbingCatalogueAdapter,
-  seed: CatalogueSeed,
-): Promise<CatalogueSearchResult> {
-  const found = catalogueSearchResultSchema.parse(await adapter.search(seed));
-  if (found.candidates.some((candidate) => candidate.providerId !== adapter.providerId))
-    throw new Error(`Unexpected provider in ${adapter.providerId} catalogue response.`);
-  return found;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */
@@ -82,52 +70,8 @@ export class ClimbingCatalogueService {
 
   async refresh(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
     try {
-      const nativeAdapter = seed.externalId
-        ? this.adapters.find((adapter) => adapter.providerId === seed.providerId)
-        : undefined;
-      const nativeFound = nativeAdapter ? await search(nativeAdapter, seed) : undefined;
-      const native = nativeFound?.candidates
-        .filter((candidate) => candidate.externalId === seed.externalId)
-        .at(-1);
-      // This context exists only for this lookup. The logged seed still owns the cache key.
-      const discoverySeed: CatalogueSeed = native
-        ? {
-            ...seed,
-            name: native.name,
-            aliases: [
-              ...new Set([
-                ...(seed.name ? [seed.name] : []),
-                ...(seed.aliases ?? []),
-                ...(native.aliases ?? []),
-              ]),
-            ],
-            references: [
-              ...new Map(
-                [...(seed.references ?? []), ...(native.references ?? [])].map((reference) => [
-                  `${reference.providerId}:${reference.externalId}`,
-                  reference,
-                ]),
-              ).values(),
-            ],
-            kind: seed.kind ?? native.kind,
-            setting: seed.setting ?? native.setting,
-            locations: native.locations.length ? native.locations : seed.locations,
-          }
-        : seed;
-      const sources = await Promise.all(
-        this.adapters.map(async (adapter) => {
-          const found =
-            adapter === nativeAdapter && nativeFound
-              ? nativeFound
-              : await search(adapter, discoverySeed);
-          return {
-            providerId: adapter.providerId,
-            searchComplete: found.complete,
-            ...(found.searchArea ? { searchArea: found.searchArea } : {}),
-            matches: matchCatalogueCandidates(discoverySeed, found, seed.locations),
-          };
-        }),
-      );
+      const { userId: _userId, logEntryId: _logEntryId, ...query } = seed;
+      const sources = await new ClimbingCatalogueSearch(this.adapters).search(query);
       const ttl = sources.some((source) => source.matches.length > 0) ? 7 * DAY : DAY;
       const result = climbingCatalogueContextSchema.parse({
         status: "ready",

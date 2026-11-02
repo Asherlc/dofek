@@ -1,3 +1,4 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
@@ -14,7 +15,6 @@ import {
 } from "@dofek/kaya-client";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { sql } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";

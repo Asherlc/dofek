@@ -65,7 +65,6 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-log-response` | [Supported response-version input schema and faithful version-1 projection of canonical grip collections and wall angles](src/climbing-log-response.ts) |
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `map-style` | Shared light/dark [MapLibre style specification](https://maplibre.org/maplibre-style-spec/) using [OpenFreeMap vector tiles](https://openfreemap.org/quick_start/) for interactive maps and snapshots |
-| `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed combined grade-stack contract](src/climbing-progression.ts), display grade labels with scale disambiguation, and period/exact-value formatting shared by web and mobile; the [server](../server/src/repositories/climbing-grade-progression.ts) pools selected types and settings using distinct climbing dates |
 | `climbing-progression-v1` | [Supported V1 lane contract](src/climbing-progression-v1.ts) for older clients; the [versioned routers](../server/src/routers/climbing.ts) preserve its per-type/per-setting response while current clients explicitly request the combined V2 projection |
 | `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles plus server-computed grade-adjusted strength differences, with rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
@@ -190,6 +189,32 @@ Area IDs for the same path, the match is ambiguous and those areas remain
 separate. Grouping preserves every log and its original occurrence number.
 
 ### Climbing catalogue evidence
+
+Route discovery, provider adapters, and identity evidence live in the independent
+[`@dofek/climbing-catalogue` package](../climbing-catalogue/README.md).
+This module adds Dofek's user/log seed, cache status, and shared web/mobile labels
+around the package's [source-result contract](../climbing-catalogue/src/contracts.ts).
+
+Version 0.2.0 moves these public exports from
+`@dofek/training/climbing-catalogue` to
+`@dofek/climbing-catalogue/contracts`:
+
+- `catalogueProviderSchema`, `catalogueLocationSchema`, `catalogueTagSchema`,
+  `catalogueCandidateSchema`, and `catalogueSearchResultSchema`;
+- `CatalogueProviderId`, `CatalogueLocation`, `CatalogueCandidate`,
+  `CatalogueSearchResult`, and `ClimbingCatalogueAdapter`.
+
+The former `@dofek/training/gps-coordinates` module also moves to
+`@dofek/climbing-catalogue/geometry`, retaining `gpsCoordinatesSchema` and
+`GpsCoordinates`. Training's climbing schemas compose that canonical coordinate
+and numeric wall-angle validation; see the [geometry module](../climbing-catalogue/src/geometry.ts).
+
+Update those imports and add `@dofek/climbing-catalogue` as a direct dependency.
+`CatalogueSeed` and `catalogueSeedSchema` in this package retain Dofek's user/log
+fields; use their independent equivalents from the new package for standalone
+search. Cache context schemas and presentation labels remain here. This minor
+version marks an incompatible change during initial development, when SemVer
+allows public APIs to change; see [SemVer section 4](https://semver.org/spec/v2.0.0.html#spec-item-4).
 
 The [catalogue response contract](src/climbing-catalogue.ts) keeps disposable
 reference observations separate from recorded climb facts. Both clients use

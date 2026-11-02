@@ -92,6 +92,37 @@ one-time bootstrap, configure `Asherlc/dofek` and `release-npm.yml` as the
 package's GitHub Actions trusted publisher. Subsequent releases require no
 registry credential or maintainer action.
 
+If an authenticated `npm publish` on macOS requires a one-time password but
+does not offer interactive authentication through `rtk`, run it under `script`
+to preserve a terminal for npm:
+
+```sh
+rtk proxy script -q /dev/null npm publish /path/to/package.tgz --access public
+```
+
+First confirm `npm whoami` succeeds; use `npm login --auth-type=web` if it returns
+401. npm's [interactive authentication implementation](https://github.com/npm/cli/blob/v11.19.0/lib/utils/auth.js)
+requires both stdin and stdout to be terminals before starting its OTP flow.
+Use an already verified pnpm tarball so compiled export overrides are retained.
+After upload, wait for registry processing and verify with `npm view` and a fresh
+installation before declaring the package available; see [npm view](https://docs.npmjs.com/cli/v11/commands/npm-view).
+
+### Climbing catalogue extraction
+
+[`@dofek/climbing-catalogue`](../packages/climbing-catalogue/README.md) starts
+at 0.1.0 with standalone search, matching, and provider adapters. The corresponding
+`@dofek/training` 0.2.0 release removes generic catalogue exports; follow its
+[import migration guide](../packages/training/README.md#climbing-catalogue-evidence).
+The explicit training version records this incompatible pre-1.0 change rather
+than letting the automatic patch workflow version it; the existing pending-version
+guard leaves unpublished manifest versions for the release workflow. See the
+[version workflow](../.github/workflows/version-npm.yml) and
+[SemVer's initial-development rule](https://semver.org/spec/v2.0.0.html#spec-item-4).
+
+The [0.1.0 registry release](https://www.npmjs.com/package/@dofek/climbing-catalogue/v/0.1.0)
+was bootstrapped on 2026-11-02, verified through a clean registry installation,
+and configured to trust `Asherlc/dofek` / `release-npm.yml` for subsequent releases.
+
 ## SwiftPM architecture
 
 `.github/workflows/release-swift-packages.yml` is shared by every native

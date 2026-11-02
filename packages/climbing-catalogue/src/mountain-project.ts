@@ -1,12 +1,12 @@
+import { z } from "zod";
 import {
   type CatalogueCandidate,
   type CatalogueSearchResult,
   type CatalogueSeed,
   type ClimbingCatalogueAdapter,
   catalogueCandidateSchema,
-} from "@dofek/training/climbing-catalogue";
-import { z } from "zod";
-import { catalogueNameMatch, catalogueSearchNames } from "../climbing-catalogue-matching.ts";
+} from "./contracts.ts";
+import { catalogueNameMatch, catalogueSearchNames } from "./matching.ts";
 
 const origin = "https://www.mountainproject.com";
 const coordinates = z.tuple([

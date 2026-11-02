@@ -1,15 +1,15 @@
+import Fuse from "fuse.js";
 import type {
   CatalogueCandidate,
   CatalogueLocation,
+  CatalogueMatch,
   CatalogueSearchResult,
   CatalogueSeed,
-  ClimbingCatalogueContext,
-} from "@dofek/training/climbing-catalogue";
-import Fuse from "fuse.js";
+} from "./contracts.ts";
 
 type NameMatch = "exact" | "alias" | "approximate";
 type Geography = "compatible" | "conflict" | "unknown";
-type AttributedMatch = ClimbingCatalogueContext["sources"][number]["matches"][number] & {
+type AttributedMatch = CatalogueMatch & {
   evidence: string[];
 };
 

@@ -1,12 +1,10 @@
-import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { describe, expect, it, vi } from "vitest";
-import { TheCragCatalogueAdapter } from "./catalogue.ts";
+import type { CatalogueSeed } from "./contracts.ts";
+import { TheCragCatalogueAdapter } from "./thecrag.ts";
 
 const origin = "https://www.thecrag.com";
 const route = "/en/climbing/united-states/route/123";
 const seed = {
-  userId: "u",
-  logEntryId: "e",
   providerId: "kaya",
   externalId: null,
   sourceUrl: null,
