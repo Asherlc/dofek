@@ -34970,3 +34970,31 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   inclusion. Proposed package checklist addition: inspect manifest-copy,
   source-copy, and runtime-link lists before shipping an extraction; reuse
   gh-fix-ci to trace startup failures to the first fatal container log.
+
+## 2026-11-02 — Earlier Peloton aerobic-efficiency points excluded
+
+- Symptoms / impact: the cycling aerobic-efficiency chart displays no points
+  from November 2025 through February 2026 despite retained rides with power
+  and heart-rate data. Read-only production queries found 27 Peloton-only rides
+  with both channels across those four months; none passed the chart filter.
+- Evidence / root cause: the [efficiency model](../analytics/models/read_models/activity_aerobic_efficiency.sql)
+  uses `HAVING count() >= 300`, and the [cycling repository](../packages/server/src/repositories/cycling-analytics-repository.ts)
+  also requires `z2_samples >= 300`. The [Peloton importer](../src/providers/peloton.ts)
+  requests and timestamps samples every five seconds. Counting 300 observations
+  therefore imposes approximately 25 minutes rather than the advertised five.
+  Reproducing the production ASOF pairing for the February 10 02:17 UTC ride
+  returned 256 paired Zone 2 observations, average power 171.1 W and average
+  heart rate 128.5 bpm; its 541 heart-rate observations span 2,700 seconds.
+- Instrumentation: production analytics logs showed the 44-model dbt stage
+  completed successfully at 19:05:59 UTC; this exclusion is a semantic filter,
+  not a query exception. A subsequent cycling-power projector pending-work error
+  is separate from the reproduced sample-count exclusion.
+- Status / remaining work: unresolved; no production writes or runtime changes.
+  Proposed correction is elapsed-time-based Zone 2 eligibility with explicit
+  sample-gap handling, a real ClickHouse regression fixture for five-second
+  samples, corresponding shared API eligibility, and bounded historical
+  recomputation after implementation approval. No retries or waits proposed.
+- Retrospective: comparing monthly eligibility with the original sample cadence
+  exposed the failure directly. Proposed analytics checklist addition: verify
+  duration thresholds using both one-second and sparse provider observations.
+  Reuse systematic-debugging and integration-tests-ready for the correction.
