@@ -25,7 +25,7 @@ import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityLocation } from "dofek-server/types";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Alert,
@@ -173,19 +173,31 @@ export default function ActivitiesScreen() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [selectMode, setSelectMode] = useState(false);
-  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const [selectedActivities, setSelectedActivities] = useState<Map<string, string>>(new Map());
+  const selectedActivityIds = new Set(selectedActivities.keys());
   const [activityPage, setActivityPage] = useState(0);
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
-  const queryInput = {
-    weeks,
-    endDate,
-    ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
-  };
+  const queryInput = useMemo(
+    () => ({
+      weeks,
+      endDate,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+    }),
+    [weeks, endDate, selectedActivityType],
+  );
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput, {
+  const pageInput = useMemo(
+    () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
+    [queryInput, activityPage],
+  );
+  const rangeKey = JSON.stringify(queryInput);
+  const lastSuccessfulInput = useRef<{ rangeKey: string; input: typeof pageInput } | undefined>(
+    undefined,
+  );
+  const query = trpc.calendar.weekListV2.useQuery(pageInput, {
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
-      query.state.data?.some((day) =>
+      query.state.data?.days.some((day) =>
         day.activities.some((activity) => activity.location?.kind === "processing"),
       )
         ? processingPollInterval("active")
@@ -194,6 +206,17 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData && !query.isError) {
+      lastSuccessfulInput.current = { rangeKey, input: pageInput };
+    }
+  }, [query.data, query.isPlaceholderData, query.isError, rangeKey, pageInput]);
+  const previousInput = lastSuccessfulInput.current;
+  const pageData =
+    query.data ??
+    (previousInput?.rangeKey === rangeKey
+      ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
+      : undefined);
   const calendarQuery = trpc.calendar.calendarData.useQuery(
     { days: weeks * 7 },
     {
@@ -204,21 +227,21 @@ export default function ActivitiesScreen() {
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
-      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.weekListV2.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
     },
   });
   const mergeActivities = trpc.activity.merge.useMutation({
     onSuccess: async () => {
-      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.weekListV2.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
     },
     onError: (error) => Alert.alert("Unable to merge activities", error.message),
@@ -226,7 +249,7 @@ export default function ActivitiesScreen() {
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
@@ -234,56 +257,30 @@ export default function ActivitiesScreen() {
       ]).then(() => undefined),
   });
 
-  const dayGroups = query.data;
+  const dayGroups = pageData?.days;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
-  const activityCount = dayGroups?.reduce((total, day) => total + day.activities.length, 0) ?? 0;
-  const totalActivityPages = Math.ceil(activityCount / ACTIVITY_PAGE_SIZE);
-  const currentActivityPage = Math.min(activityPage, Math.max(totalActivityPages - 1, 0));
-  const visibleDayGroups = useMemo(() => {
-    if (!dayGroups) return undefined;
-    const visibleActivities = dayGroups
-      .flatMap((day) =>
-        day.activities.map((activity) => ({
-          date: day.date,
-          activity,
-        })),
-      )
-      .slice(
-        currentActivityPage * ACTIVITY_PAGE_SIZE,
-        (currentActivityPage + 1) * ACTIVITY_PAGE_SIZE,
-      );
-    const grouped = new Map<string, typeof visibleActivities>();
-    for (const entry of visibleActivities) {
-      const existing = grouped.get(entry.date) ?? [];
-      existing.push(entry);
-      grouped.set(entry.date, existing);
-    }
-    return [...grouped.entries()].map(([date, entries]) => ({
-      date,
-      activities: entries.map((entry) => entry.activity),
-    }));
-  }, [currentActivityPage, dayGroups]);
+  const activityCount = pageData?.totalCount ?? 0;
+  const currentActivityPage = pageData?.page ?? activityPage;
+  const visibleDayGroups = dayGroups;
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData) setActivityPage(query.data.page);
+  }, [query.data, query.isPlaceholderData]);
   const selectedCount = selectedActivityIds.size;
-  const selectedTypes = new Set(
-    (dayGroups ?? [])
-      .flatMap((day) => day.activities)
-      .filter((activity) => selectedActivityIds.has(activity.id))
-      .map((activity) => activity.activityType),
-  );
+  const selectedTypes = new Set(selectedActivities.values());
   const mergeEligible = selectedCount >= 2 && selectedTypes.size === 1;
-  const toggleSelectedActivity = (activityId: string) => {
-    setSelectedActivityIds((current) => {
-      const next = new Set(current);
+  const toggleSelectedActivity = (activityId: string, activityType: string) => {
+    setSelectedActivities((current) => {
+      const next = new Map(current);
       if (next.has(activityId)) {
         next.delete(activityId);
       } else {
-        next.add(activityId);
+        next.set(activityId, activityType);
       }
       return next;
     });
   };
   const cancelSelection = () => {
-    setSelectedActivityIds(new Set());
+    setSelectedActivities(new Map());
     setSelectMode(false);
   };
   const updateActivityType = (nextActivityType: string) => {
@@ -402,10 +399,15 @@ export default function ActivitiesScreen() {
         </>
       )}
 
-      {query.isLoading && !query.data ? (
+      {query.isLoading && !pageData ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : query.isError && !query.data ? (
-        <QueryStatePanel variant="error" message={userFacingErrorMessage(query.error)} />
+      ) : query.isError && !pageData ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(query.error)}
+          onRetry={() => void query.refetch()}
+          retrying={query.isFetching}
+        />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />
       ) : (
@@ -416,6 +418,8 @@ export default function ActivitiesScreen() {
               message={userFacingErrorMessage(query.error)}
               minHeight={72}
               style={styles.backgroundErrorPanel}
+              onRetry={() => void query.refetch()}
+              retrying={query.isFetching}
             />
           ) : null}
           {visibleDayGroups?.map((day) => (
@@ -436,7 +440,7 @@ export default function ActivitiesScreen() {
                     activeOpacity={0.7}
                     onPress={() => {
                       if (selectMode) {
-                        toggleSelectedActivity(activity.id);
+                        toggleSelectedActivity(activity.id, activity.activityType);
                         return;
                       }
                       router.push(`/activity/${activity.id}`);

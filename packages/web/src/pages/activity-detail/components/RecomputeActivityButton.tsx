@@ -23,7 +23,7 @@ export function RecomputeActivityButton({ activityId }: { activityId: string }) 
           trpcUtils.activity.powerWork.invalidate({ id: activityId }),
           trpcUtils.activity.strengthExercises.invalidate({ id: activityId }),
           trpcUtils.activity.list.invalidate(),
-          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.weekListV2.invalidate(),
           trpcUtils.calendar.activityOverview.invalidate(),
         ]);
       } finally {

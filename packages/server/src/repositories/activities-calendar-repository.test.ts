@@ -17,6 +17,77 @@ const dialect = new PgDialect();
 
 describe("ActivitiesCalendarRepository", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("enriches only the requested visible page and returns the full count", async () => {
+    const rows = Array.from({ length: 5 }, (_, index) =>
+      makeActivityRow({
+        id: `activity-${index}`,
+        started_at: `2026-03-${20 - index}T12:00:00.000Z`,
+        local_date: `2026-03-${20 - index}`,
+        centroid_lat: 40,
+        centroid_lng: -105,
+      }),
+    );
+    const sensorStore = makeSensorStore([rows, [], []]);
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPage({
+      weeks: 1,
+      endDate: "2026-03-20",
+      page: 1,
+      pageSize: 2,
+    });
+
+    expect(result).toMatchObject({ totalCount: 5, page: 1, pageSize: 2 });
+    expect(result.days.flatMap((day) => day.activities.map((entry) => entry.id))).toEqual([
+      "activity-2",
+      "activity-3",
+    ]);
+    expect(sensorStore.query).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), {
+      userId: "user-1",
+      activityIds: ["activity-2", "activity-3"],
+      maxPoints: 96,
+    });
+  });
+
+  it("keeps source-location hydration bounded to the selected page", async () => {
+    const rows = Array.from({ length: 5 }, (_, index) =>
+      makeActivityRow({
+        id: `activity-${index}`,
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T12:00:00.000Z",
+        centroid_lat: null,
+        centroid_lng: null,
+      }),
+    );
+    const locations = vi
+      .spyOn(ClimbingActivityLogEntryRepository.prototype, "getActivityMapLocations")
+      .mockResolvedValue(new Map());
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    );
+
+    const result = await repository.getPage({
+      weeks: 1,
+      endDate: "2026-03-20",
+      page: 1,
+      pageSize: 2,
+    });
+
+    expect(result.days[0]?.activities.map((entry) => entry.id)).toEqual([
+      "activity-2",
+      "activity-3",
+    ]);
+    expect(locations).toHaveBeenCalledExactlyOnceWith(["activity-2", "activity-3"]);
+  });
   it.each(
     [false, true].flatMap((isProviderAbsent) =>
       ["indoor", "virtual", "road", null].map((modality) => ({ isProviderAbsent, modality })),

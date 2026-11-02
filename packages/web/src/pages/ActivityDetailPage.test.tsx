@@ -441,7 +441,7 @@ vi.mock("../lib/trpc.ts", () => ({
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
       climbing: {

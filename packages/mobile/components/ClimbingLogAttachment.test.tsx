@@ -156,7 +156,7 @@ describe("ClimbingLogAttachment", () => {
       getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade),
       getQueryKey(trpc.activity.list),
-      getQueryKey(trpc.calendar.weekList),
+      getQueryKey(trpc.calendar.weekListV2),
     ];
     for (const key of affectedKeys) fixture.queryClient.setQueryData(key, []);
 

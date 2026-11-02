@@ -291,6 +291,7 @@ describe("climbingRouter", () => {
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.training:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.trainingV2:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.weekList:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.weekListV2:");
   });
   it("returns server-computed volume with the canonical kind", async () => {
     const { caller } = makeCaller([

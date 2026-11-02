@@ -442,7 +442,7 @@ vi.mock("../../lib/trpc", () => ({
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
         calendarData: { invalidate: mockCalendarDataInvalidate },
       },

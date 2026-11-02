@@ -7,6 +7,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { mergeDayGroups } from "./activity-calendar-day-groups.ts";
 import {
+  type ActivityListPage,
   activityRowSchema,
   baselineRowSchema,
   type CalendarActivityEntry,
@@ -36,7 +37,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
-    const activeDays = await this.#getActiveWeekList(input);
+    const { rows, baselineRows } = await this.#getActiveRows(input);
+    const activeDays = await this.#getActiveDayGroups(rows, baselineRows);
     if (!input.includeProviderAbsent) {
       return activeDays;
     }
@@ -51,7 +53,59 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return mergeDayGroups(activeDays, hiddenDays);
   }
 
-  async #getActiveWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
+  async getPage(
+    input: WeekListInput & { page: number; pageSize: number },
+  ): Promise<ActivityListPage> {
+    const hiddenRepository = new ProviderAbsentActivitiesCalendarRepository(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.#sensorStore,
+      this.accessWindow,
+    );
+    const [{ rows, baselineRows }, hiddenRows] = await Promise.all([
+      this.#getActiveRows(input),
+      input.includeProviderAbsent ? hiddenRepository.getRows(input) : Promise.resolve([]),
+    ]);
+    const candidates = new Map<string, { row: z.infer<typeof activityRowSchema>; hidden: boolean }>(
+      [...rows.map((row) => [row.id, { row, hidden: false }] as const)],
+    );
+    for (const row of hiddenRows) {
+      if (!candidates.has(row.id)) candidates.set(row.id, { row, hidden: true });
+    }
+    const ordered = [...candidates.values()].sort(
+      (left, right) =>
+        right.row.local_date.localeCompare(left.row.local_date) ||
+        right.row.started_at.localeCompare(left.row.started_at) ||
+        left.row.id.localeCompare(right.row.id),
+    );
+    const totalCount = ordered.length;
+    const page = Math.min(input.page, Math.max(0, Math.ceil(totalCount / input.pageSize) - 1));
+    const selected = ordered.slice(page * input.pageSize, (page + 1) * input.pageSize);
+    const activeIds = new Set(
+      selected.filter((entry) => !entry.hidden).map((entry) => entry.row.id),
+    );
+    const hiddenIds = new Set(
+      selected.filter((entry) => entry.hidden).map((entry) => entry.row.id),
+    );
+    const [activeDays, hiddenDays] = await Promise.all([
+      this.#getActiveDayGroups(
+        rows.filter((row) => activeIds.has(row.id)),
+        baselineRows,
+      ),
+      hiddenRepository.getDayGroups(hiddenRows.filter((row) => hiddenIds.has(row.id))),
+    ]);
+    const days = mergeDayGroups(activeDays, hiddenDays);
+    for (const day of days) {
+      day.activities.sort(
+        (left, right) =>
+          right.startedAt.localeCompare(left.startedAt) || left.id.localeCompare(right.id),
+      );
+    }
+    return { days, totalCount, page, pageSize: input.pageSize };
+  }
+
+  async #getActiveRows(input: WeekListInput) {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = input.activityType
@@ -136,6 +190,13 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.timezone,
       this.accessWindow,
     ).filterToVisibleCanonicalActivities(activityRowsMatchingType);
+    return { rows: filteredActivityRows, baselineRows };
+  }
+
+  async #getActiveDayGroups(
+    filteredActivityRows: z.infer<typeof activityRowSchema>[],
+    baselineRows: z.infer<typeof baselineRowSchema>[],
+  ): Promise<CalendarDayActivities[]> {
     const locationActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
       .map((row) => row.id);

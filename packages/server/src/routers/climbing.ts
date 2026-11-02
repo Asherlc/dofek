@@ -267,6 +267,7 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingLogEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:activity.list:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:calendar.weekList:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:calendar.weekListV2:`),
         ]);
         return { attached: true as const };
       }),
