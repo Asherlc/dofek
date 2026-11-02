@@ -58,7 +58,9 @@ describe("ActivityMetricSourcePicker", () => {
       />,
     );
     const trigger = screen.getByRole("button", { name: "Heart Rate source: WHOOP via Peloton" });
-    expect(trigger.querySelector("image")).toBeTruthy();
+    expect(
+      trigger.querySelector('[data-source-uri="https://api.example.test/logos/whoop.png"]'),
+    ).toBeTruthy();
     expect(
       trigger.querySelector('[uri="https://api.example.test/logos/peloton.svg"]'),
     ).toBeTruthy();

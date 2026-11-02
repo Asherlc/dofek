@@ -73,6 +73,78 @@ function storeWithRows(rows: unknown[]) {
 }
 
 describe("canonical metric source inheritance", () => {
+  it.each(["recorder", "creator"] as const)(
+    "retains %s hardware qualifiers alongside inherited attribution",
+    async (role) => {
+      const tree = buildActivitySourceTree(
+        { status: "resolved", memberActivityId: "original", providerId: "wahoo", sourceName: null },
+        [
+          {
+            memberActivityId: "original",
+            providerId: "wahoo",
+            externalId: "original",
+            subsource: null,
+            label: "Wahoo",
+            url: null,
+          },
+          {
+            memberActivityId: "copy",
+            providerId: "strava",
+            externalId: "copy",
+            subsource: null,
+            label: "Strava",
+            url: null,
+          },
+        ],
+        [
+          {
+            upstreamMemberActivityId: "original",
+            downstreamMemberActivityId: "copy",
+            field: "external_id",
+            value: "original",
+          },
+        ],
+      );
+      const hardware = normalizeActivityHardware([
+        {
+          activityId: "copy",
+          providerId: "strava",
+          sourceName: null,
+          raw: role === "recorder" ? { device_name: "Edge 530" } : null,
+          observations:
+            role === "creator"
+              ? [{ sequence: 0, messageType: "file_id", raw: { product_name: "Export platform" } }]
+              : [],
+        },
+      ]);
+      const result = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "strava",
+            device_id: null,
+            source_id: "copy-recording",
+            activity_ids: ["copy"],
+          },
+        ]),
+        window,
+        hardware,
+        tree,
+      );
+      expect(result[0]?.sources[0]).toMatchObject({
+        id: "copy-recording",
+        label:
+          role === "recorder"
+            ? "Wahoo via Strava · recorded by Edge 530"
+            : "Wahoo via Strava · file created by Export platform",
+        presentation: {
+          displayName: role === "recorder" ? "Edge 530" : "Wahoo",
+          providerId: "wahoo",
+          attribution: { kind: "provider", providerId: "strava" },
+        },
+      });
+    },
+  );
   it("preserves per-sample device attribution instead of replacing it with workout ancestry", async () => {
     const tree = buildActivitySourceTree(
       {
@@ -117,6 +189,56 @@ describe("canonical metric source inheritance", () => {
       providerId: "apple_health",
       sourceName: "Apple Watch",
       attribution: { kind: "apple_health" },
+    });
+  });
+  it("keeps a sample provider distinct from its member activity's delivery provider", async () => {
+    const tree = buildActivitySourceTree(
+      { status: "resolved", memberActivityId: "original", providerId: "whoop", sourceName: null },
+      [
+        {
+          memberActivityId: "original",
+          providerId: "whoop",
+          externalId: "original",
+          subsource: null,
+          label: "WHOOP",
+          url: null,
+        },
+        {
+          memberActivityId: "copy",
+          providerId: "peloton",
+          externalId: "copy",
+          subsource: null,
+          label: "Peloton",
+          url: null,
+        },
+      ],
+      [
+        {
+          upstreamMemberActivityId: "original",
+          downstreamMemberActivityId: "copy",
+          field: "external_id",
+          value: "original",
+        },
+      ],
+    );
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        {
+          channel: "heart_rate",
+          provider_id: "strava",
+          device_id: null,
+          source_id: "strava-recording",
+          activity_ids: ["copy"],
+        },
+      ]),
+      window,
+      { items: [], power: [] },
+      tree,
+    );
+    expect(result[0]?.sources[0]).toMatchObject({
+      id: "strava-recording",
+      label: "Strava",
+      presentation: { providerId: "strava", attribution: null },
     });
   });
   it.each(["peloton", "strava"])(

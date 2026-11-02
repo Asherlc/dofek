@@ -24,7 +24,7 @@ Metadata and statistics for data providers.
   priorities never establish recording origin.
 
   Metric source inheritance projects the same [canonical source tree](../server/src/models/activity-source-tree.ts)
-  used by the activity source disclosure through the [shared metric presentation](src/activity-metric-source.ts).
+  used by the activity source disclosure through the [shared tree projection](src/activity-source-tree.ts).
   It retains recording selection IDs and explicit per-sample device attribution;
   clients render the original provider with a delivery-provider badge.
   The [metric-sources API](../server/src/routers/activity.ts) serves this presentation

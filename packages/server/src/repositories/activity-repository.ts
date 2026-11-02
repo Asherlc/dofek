@@ -1,4 +1,3 @@
-import { providerLabel } from "@dofek/providers/providers";
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { retireActivityImages } from "dofek/db/activity-images";
@@ -804,7 +803,7 @@ export class ActivityRepository extends BaseRepository {
       ActivitySourceAttribution.fromEntries(
         ancestry.source_external_ids,
         ancestry.absent_source_external_ids,
-      ).toSourceLinks((id) => ({ name: providerLabel(id) })),
+      ).toSourceLinks(() => undefined),
       ancestry.origin_evidence,
     );
     return getActivityMetricSources(store, window, hardware, sourceTree);

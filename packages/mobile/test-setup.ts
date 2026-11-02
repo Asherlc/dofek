@@ -270,6 +270,10 @@ vi.mock("react-native", () => {
         ...props,
         "aria-label": accessibilityLabel,
         "data-testid": testID,
+        "data-source-uri":
+          typeof props.source === "object" && props.source !== null && "uri" in props.source
+            ? props.source.uri
+            : undefined,
         onError,
         style: flattenStyle(style),
       },

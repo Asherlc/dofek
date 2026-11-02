@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { activityMetricSourcePresentation } from "./activity-metric-source.ts";
+import {
+  type ActivityMetricSource,
+  activityMetricSourcePresentation,
+} from "./activity-metric-source.ts";
 import { providerFamily } from "./provider-catalog.ts";
 import { providerLabel } from "./providers.ts";
 
@@ -40,3 +43,66 @@ export const activitySourceTreeSchema = z.object({
 });
 
 export type ActivitySourceTree = z.infer<typeof activitySourceTreeSchema>;
+
+/** Project proven ancestry from the canonical disclosure tree, never infer new edges. */
+export function activityMetricSourceInheritance(
+  tree: ActivitySourceTree,
+  memberActivityIds: string[],
+  deliveryProviderId: string,
+): Pick<ActivityMetricSource, "label" | "presentation"> | null {
+  function findPath(nodes: ActivitySourceTreeNode[], id: string): ActivitySourceTreeNode[] | null {
+    for (const node of nodes) {
+      if (node.id === id) return [node];
+      const path = findPath(node.children, id);
+      if (path) return [node, ...path];
+    }
+    return null;
+  }
+  const roots = tree.primary ? [tree.primary, ...tree.otherSources] : tree.otherSources;
+  const paths = memberActivityIds.map((id) => findPath(roots, id));
+  const path = paths[0];
+  const normalizeProviderId = (id: string | undefined) =>
+    id === "apple-health" ? "apple_health" : id;
+  if (
+    !path ||
+    path.length < 2 ||
+    paths.some(
+      (candidate) =>
+        !candidate ||
+        candidate.length !== path.length ||
+        candidate.slice(0, -1).some((node, index) => node.id !== path[index]?.id) ||
+        normalizeProviderId(candidate.at(-1)?.providerId) !==
+          normalizeProviderId(deliveryProviderId),
+    )
+  )
+    return null;
+  const origin = path[0];
+  const delivery = path[path.length - 1];
+  if (
+    !origin ||
+    !delivery ||
+    normalizeProviderId(origin.providerId) === normalizeProviderId(delivery.providerId)
+  )
+    return null;
+  const original = activityMetricSourcePresentation(
+    origin.providerId,
+    origin.sourceName,
+    origin.label,
+    origin.label,
+  );
+  const providers = path.slice(1).map((node) => providerLabel(node.providerId));
+  return {
+    label: `${original.displayName} via ${providers.join(" → ")}`,
+    presentation: {
+      ...original,
+      attribution:
+        delivery.providerId === "apple_health" || delivery.providerId === "apple-health"
+          ? { kind: "apple_health", label: "Apple Health" }
+          : {
+              kind: "provider",
+              providerId: delivery.providerId,
+              label: providerLabel(delivery.providerId),
+            },
+    },
+  };
+}

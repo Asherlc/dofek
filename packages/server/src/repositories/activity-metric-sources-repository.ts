@@ -1,9 +1,12 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import {
-  activityMetricSourceInheritance,
   activityMetricSourcePresentation,
+  activityMetricSourceText,
 } from "@dofek/providers/activity-metric-source";
-import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import {
+  type ActivitySourceTree,
+  activityMetricSourceInheritance,
+} from "@dofek/providers/activity-source-tree";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
 import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { mapHrZones } from "@dofek/zones/zones";
@@ -221,16 +224,16 @@ export async function getActivityMetricSources(
       // A workout's ancestry does not override an explicitly attributed sample device.
       const inherited =
         row.device_id === null
-          ? activityMetricSourceInheritance(sourceTree, row.activity_ids)
+          ? activityMetricSourceInheritance(sourceTree, row.activity_ids, row.provider_id)
           : null;
-      if (inherited) return { id: row.source_id, ...inherited };
       const peripheralName = peripheralNames.find(
         (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
       )?.device_name;
       const originalLabel =
-        row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
+        inherited?.label ??
+        (row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
           ? providerSourceLabel(row.provider_id, row.device_id)
-          : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id);
+          : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id));
       const provenance = hardware.items.filter(
         (item) =>
           item.providerId === row.provider_id &&
@@ -256,21 +259,31 @@ export async function getActivityMetricSources(
         if (role === "recorder") {
           label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
         } else {
-          const baseLabel = includesHardwareName
-            ? providerRecordLabel(row.provider_id, null)
-            : originalLabel;
+          const baseLabel =
+            includesHardwareName && !inherited
+              ? providerRecordLabel(row.provider_id, null)
+              : originalLabel;
           label = `${baseLabel} · file created by ${name}`;
         }
       }
-      return {
-        id: row.source_id,
-        label,
-        presentation: activityMetricSourcePresentation(
+      const presentation =
+        inherited?.presentation ??
+        activityMetricSourcePresentation(
           row.provider_id,
           peripheralName ?? row.device_id,
           label,
           name,
-        ),
+        );
+      return {
+        id: row.source_id,
+        label,
+        presentation:
+          inherited &&
+          role === "recorder" &&
+          name &&
+          activityMetricSourceText(presentation) === null
+            ? { ...presentation, displayName: name }
+            : presentation,
       };
     });
     const first = sources[0];
