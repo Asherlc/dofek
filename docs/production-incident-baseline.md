@@ -34980,3 +34980,29 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   approval: document how to inspect workspace network ownership and unused
   address allocations before cleanup. Reuse systematic debugging for this
   infrastructure failure; do not alter application retry or timeout settings.
+
+## 2026-11-02 — Provider 5xx integration expectations lag shared classification
+
+- Impact: [PR 3200 CI](https://github.com/Asherlc/dofek/actions/runs/41502413735)
+  failed all four integration shards; nine tests failed, with no production
+  deployment or production impact.
+- Evidence: `pnpm exec vitest run --project integration --coverage --shard=N/4`
+  failed for each shard. Shard 2's first failing assertion was
+  `expected 'activity: decathlon API service unava…' to contain 'Decathlon API error'`.
+  theCrag's HTTP fixture instead rejected with `ProviderServiceUnavailableError`.
+  Shards 1/3/4 recorded the equivalent old generic-error assumptions for
+  Concept2, Fitbit, Komoot and Wger.
+- Root cause / direct fix: the integration fixtures still expected generic
+  HTTP 500 errors after the [shared classifier](../packages/provider-http/src/rate-limit.ts)
+  intentionally mapped every 5xx to an upstream error. Assert the typed cause,
+  provider and status; expect theCrag's HTTP case to reject while retaining its
+  saved-data/progress assertions. Keep the existing HTTP 500 network fixtures
+  and real database checks; no runtime behavior, waits or retries are changed.
+- Validation / status: formatting and type checks cover the edits locally;
+  database execution remains blocked by the local Docker address-pool issue
+  above. Hosted rerun is required before declaring the integration fix complete.
+- Retrospective: full unit/mobile validation did not include provider integration
+  fixtures. Proposed provider-runbook addition for approval: review both unit
+  and integration error assertions when changing shared HTTP classification.
+  Reuse gh-fix-ci and integration-tests-ready to distinguish assertion drift
+  from database or transport failures.
