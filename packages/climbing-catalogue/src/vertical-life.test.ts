@@ -48,6 +48,18 @@ function detail(overrides = {}) {
 }
 
 describe("VerticalLifeCatalogueAdapter", () => {
+  it("retains hierarchical area identifiers without treating them as route URL segments", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([
+        page([{ ...row, areaName: "Speyside & Moray", areaSlug: "scotland/speyside-moray" }]),
+      ]),
+    ).search(seed);
+    expect(found.candidates[0]?.locations[1]).toMatchObject({
+      externalId: "scotland/speyside-moray",
+      name: "Speyside & Moray",
+    });
+    expect(found.candidates[0]?.url).toBe(`https://www.8a.nu${path}`);
+  });
   it("accepts literal plus signs in source slugs and safely encodes native detail lookup", async () => {
     const zlaggableSlug = "midnight-lentejuelas-l1+l2";
     const found = await new VerticalLifeCatalogueAdapter(
@@ -122,7 +134,7 @@ describe("VerticalLifeCatalogueAdapter", () => {
     `https://user@www.8a.nu${path}`,
     "https://www.8a.nu/news/story",
     `https://www.8a.nu${path}?redirect=elsewhere`,
-    `https://www.8a.nu${path.replace("camp-4", "%2e%2e")}`,
+    "https://www.8a.nu/crags/bouldering/united-states/%2e%2e/sectors/unknown-sector-5dd83/routes/midnight-lightning",
   ])("rejects unsafe native URLs: %s", async (sourceUrl) => {
     const fetchFn = client([]);
     await expect(
@@ -135,6 +147,54 @@ describe("VerticalLifeCatalogueAdapter", () => {
     await expect(
       new VerticalLifeCatalogueAdapter(client([detail({ unifiedId: 99 })])).search(native),
     ).rejects.toThrow(/ID/);
+  });
+
+  it("loads a native route URL even when its recorded ID and name are unknown", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(client([detail()])).search({
+      ...native,
+      externalId: null,
+      name: null,
+    });
+    expect(found.candidates[0]?.externalId).toBe("36615");
+  });
+
+  it("retains an explicitly referenced Vertical-Life climb despite a changed name", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([page([{ ...row, zlaggableName: "Renamed completely" }])]),
+    ).search({
+      ...seed,
+      references: [{ providerId: "eight-a", externalId: "36615" }],
+    });
+    expect(found.candidates[0]?.externalId).toBe("36615");
+  });
+
+  it("rejects malformed percent encoding with the actionable URL error", async () => {
+    const fetchFn = client([]);
+    for (const sourceUrl of [
+      "https://www.8a.nu/crags/bouldering/united-states/camp-4/sectors/unknown-sector/routes/%ZZ",
+      "https://www.8a.nu/crags/bouldering/united-states/camp-4/sectors/unknown-sector/routes/%FF",
+    ]) {
+      await expect(
+        new VerticalLifeCatalogueAdapter(fetchFn).search({ ...native, sourceUrl }),
+      ).rejects.toThrow("Vertical-Life catalogue source URL must be an 8a.nu route URL.");
+    }
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("stops after three distinct full discovery pages while coverage remains incomplete", async () => {
+    const pages = Array.from({ length: 4 }, (_, pageIndex) =>
+      page(
+        Array.from({ length: 20 }, (_, index) => ({
+          ...row,
+          zlaggableId: pageIndex * 20 + index + 1,
+        })),
+      ),
+    );
+    const fetchFn = client(pages);
+    const found = await new VerticalLifeCatalogueAdapter(fetchFn).search(seed);
+    expect(found.complete).toBe(false);
+    expect(found.candidates).toHaveLength(60);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
   it("finds native IDs without a source URL through name discovery", async () => {

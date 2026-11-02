@@ -18,7 +18,7 @@ const climbSchema = z.object({
   countrySlug: slug,
   countryName: z.string().min(1),
   areaName: z.string().nullish(),
-  areaSlug: slug.nullish(),
+  areaSlug: z.string().min(1).nullish(),
   cragName: z.string().min(1),
   cragSlug: slug,
   cragId: id,
@@ -38,6 +38,14 @@ function category(climb: Climb): string {
 }
 function routePath(climb: Climb): string {
   return `/crags/${category(climb)}/${encodeURIComponent(climb.countrySlug)}/${encodeURIComponent(climb.cragSlug)}/sectors/${encodeURIComponent(climb.sectorSlug)}/routes/${encodeURIComponent(climb.zlaggableSlug)}`;
+}
+function validUrlSegment(value: string): boolean {
+  try {
+    return slug.safeParse(decodeURIComponent(value)).success;
+  } catch (error) {
+    if (error instanceof URIError) return false;
+    throw error;
+  }
 }
 function candidate(climb: Climb, externalId: number): CatalogueCandidate {
   const area = (externalId: string | null, name: string) => ({
@@ -89,7 +97,7 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
   }
 
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
-    if (seed.providerId === this.providerId && seed.externalId && seed.sourceUrl) {
+    if (seed.providerId === this.providerId && seed.sourceUrl) {
       const url = URL.parse(seed.sourceUrl);
       if (
         !url ||
@@ -101,15 +109,13 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
         !/^\/crags\/(bouldering|sportclimbing)\/[\p{L}\p{N}_%+-]+\/[\p{L}\p{N}_%+-]+\/sectors\/[\p{L}\p{N}_%+-]+\/routes\/[\p{L}\p{N}_%+-]+$/u.test(
           url.pathname,
         ) ||
-        url.pathname
-          .split("/")
-          .some((part) => !slug.safeParse(decodeURIComponent(part)).success && part !== "")
+        url.pathname.split("/").some((part) => part !== "" && !validUrlSegment(part))
       )
         throw new Error("Vertical-Life catalogue source URL must be an 8a.nu route URL.");
       const { zlaggable } = detailSchema.parse(
         await this.#request(`/outdoor/v1/web${url.pathname}`),
       );
-      if (String(zlaggable.unifiedId) !== seed.externalId)
+      if (seed.externalId && String(zlaggable.unifiedId) !== seed.externalId)
         throw new Error("Vertical-Life catalogue detail ID does not match the recorded climb.");
       return { candidates: [candidate(zlaggable, zlaggable.unifiedId)], complete: true };
     }
@@ -142,6 +148,11 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
         current.seen.add(item.zlaggableId);
         if (
           (seed.providerId === this.providerId && seed.externalId === String(item.zlaggableId)) ||
+          seed.references?.some(
+            (reference) =>
+              reference.providerId === this.providerId &&
+              reference.externalId === String(item.zlaggableId),
+          ) ||
           [seed.name, ...(seed.aliases ?? [])].some(
             (name) => catalogueNameMatch(name, { name: item.zlaggableName }) !== null,
           )

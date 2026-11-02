@@ -266,6 +266,12 @@ route/boulder kind and country/area/crag/known-sector ancestry. Unknown Sector
 placeholders are omitted. The verified records supply no coordinates, numeric
 wall angles or hold tags, so those remain unknown. Literal plus signs in source
 slugs are preserved and URL-encoded. These contracts are unofficial and may change.
+The application's synced 8a.nu entries currently lack a proven catalogue climb
+ID and the [seed query](../src/db/climbing-catalogue-seed.ts) supplies no source
+URL, so those entries use name discovery. Verified native ingestion identity is
+tracked separately in [issue #3204](https://github.com/Asherlc/dofek/issues/3204);
+the [ascent parser](../src/providers/eight-a/ascent.ts) keeps unknown climb IDs
+null rather than substituting the ascent occurrence ID.
 
 Global name searches share at most three page requests per provider across the
 current name and all meaningful logged/source aliases, rather than three pages

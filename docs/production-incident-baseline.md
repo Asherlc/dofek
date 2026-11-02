@@ -34970,3 +34970,23 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   inclusion. Proposed package checklist addition: inspect manifest-copy,
   source-copy, and runtime-link lists before shipping an extraction; reuse
   gh-fix-ci to trace startup failures to the first fatal container log.
+
+## 2026-11-02 — Vertical-Life enrichment PR checks
+
+- Symptoms and impact: PR #3201 was blocked by Spell Check and CodeQL; no
+  production impact. The [spell job](https://github.com/Asherlc/dofek/actions/runs/41510008251/job/125499674949)
+  failed at `pnpm exec cspell --no-progress` with `Unknown word` errors for
+  literal upstream fixture vocabulary. The
+  [CodeQL annotation](https://github.com/Asherlc/dofek/runs/125500276046)
+  reported `This replaces only the first occurrence of "camp-4"` in the
+  deliberately invalid URL fixture.
+- Root cause and direct fix: register the genuine vendor words in the existing
+  test-file dictionary override and write the malicious URL fixture literally,
+  rather than constructing it with a replacement. No production escaping path
+  or security check was disabled.
+- Validation: focused spell, lint and adapter regression checks pass locally;
+  hosted validation remains pending on the corrective commit. Remaining risk:
+  the PR is not ready until its hosted checks pass. No retries or waits added.
+- Retrospective: include the existing spelling command in adapter fixture
+  verification, and prefer literal malformed URL fixtures. Reuse gh-fix-ci for
+  first-failure evidence before changing checks.

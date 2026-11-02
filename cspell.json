@@ -806,6 +806,10 @@
   ],
   "overrides": [
     {
+      "filename": "packages/climbing-catalogue/src/vertical-life.test.ts",
+      "words": ["lentejuelas", "Speyside", "Zlaggables"]
+    },
+    {
       "filename": ["**/*catalogue*.test.ts", "packages/climbing-catalogue/src/*.test.ts"],
       "words": ["Maße", "Straße", "STRASSE", "ＣＲＡＧＭＯＮＴ", "Ｃｒａｇｍｏｎｔ"]
     },
