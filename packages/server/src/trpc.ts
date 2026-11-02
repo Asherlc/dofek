@@ -271,6 +271,7 @@ interface CachePolicy {
   expiresAt?: CacheExpiry;
   keyVersion?: string;
   outputSchema?: ZodType;
+  shouldCache?: (data: unknown) => boolean;
 }
 
 function localDateString(date: Date, timezone: string): string {
@@ -382,7 +383,7 @@ function cached(policy: CachePolicy) {
       { procedure: path, type, cache_hit: "false" },
       totalDurationMs / 1000,
     );
-    if (result.ok) {
+    if (result.ok && (policy.shouldCache?.(result.data) ?? true)) {
       await queryCache.set(key, result.data, requestCacheTtl(policy, ctx.timezone));
     }
     return result;

@@ -76,6 +76,7 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
 export default function StrainScreen() {
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const [strengthsAllTime, setStrengthsAllTime] = useState(false);
+  const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
   const router = useRouter();
   const utils = trpc.useUtils();
   const { days, isHydrated, setDays } = useTimeRangePreference("training");
@@ -103,9 +104,10 @@ export default function StrainScreen() {
   );
   useReportQueryError(runningQuery);
   const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
-    { days: strengthsAllTime ? null : days, endDate, ...climbingFilters },
+    { days: strengthsAllTime ? null : days, endDate, ...climbingFilters, includeAreaMetadata },
     {
       enabled: isHydrated,
+      refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
@@ -450,6 +452,8 @@ export default function StrainScreen() {
       ) : null}
       <ClimbingStrengths
         data={climbingStrengths.data}
+        includeAreaMetadata={includeAreaMetadata}
+        onIncludeAreaMetadataChange={setIncludeAreaMetadata}
         rangeControl={
           <View
             accessibilityRole="radiogroup"

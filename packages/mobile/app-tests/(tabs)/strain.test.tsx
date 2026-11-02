@@ -37,6 +37,9 @@ let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 let mockTrainingDataDays = 90;
 type MockRangeQueryOptions = {
   enabled?: boolean;
+  refetchInterval?: (query: {
+    state: { data?: { enrichmentPending?: boolean } };
+  }) => number | false;
   placeholderData?: (previousData: unknown) => unknown;
 };
 let mockRangeQueryCalls: Record<
@@ -465,6 +468,22 @@ describe("StrainScreen recent activity navigation", () => {
     }
   });
 
+  it("toggles area metadata and polls pending enrichment without losing previous data", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toMatchObject({
+      includeAreaMetadata: true,
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Include area metadata" }));
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toMatchObject({
+      includeAreaMetadata: false,
+    });
+    const options = mockRangeQueryCalls.strengths.at(-1)?.options;
+    expect(options?.refetchInterval?.({ state: { data: { enrichmentPending: true } } })).toBe(1500);
+    expect(options?.refetchInterval?.({ state: { data: { enrichmentPending: false } } })).toBe(
+      false,
+    );
+  });
   it("offers all time for strengths without changing the other training ranges", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
@@ -472,6 +491,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: null,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
     });
     expect(mockRangeQueryCalls.training.at(-1)?.input.days).toBe(90);
     fireEvent.click(screen.getByRole("radio", { name: "90 days" }));
@@ -483,18 +503,21 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
     });
     mockTodayQueryDate = "2026-03-29";
     rerender(<StrainScreen />);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-29",
+      includeAreaMetadata: true,
     });
     mockTodayQueryDate = "2025-12-31";
     rerender(<StrainScreen />);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2025-12-31",
+      includeAreaMetadata: true,
     });
   });
 
@@ -511,6 +534,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
       types: ["lead"],
     });
   });
@@ -549,6 +573,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
       types: ["lead"],
     });
     expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();

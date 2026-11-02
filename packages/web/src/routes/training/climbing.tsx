@@ -79,6 +79,7 @@ export function ClimbingTab() {
   const { days } = useTrainingDays();
   const endDate = useTodayQueryDate();
   const [filters, setFilters] = useState<Filters>({});
+  const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
   const rangeInput = { ...climbingRangeInput(days), ...filters };
   const climbingQueryOptions = {
     ...TRAINING_SLOW_QUERY_OPTIONS,
@@ -95,8 +96,11 @@ export function ClimbingTab() {
   );
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
   const strengths = trpc.climbing.strengths.useQuery(
-    { ...rangeInput, days, endDate },
-    climbingQueryOptions,
+    { ...rangeInput, days, endDate, includeAreaMetadata },
+    {
+      ...climbingQueryOptions,
+      refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),
+    },
   );
   const sessionSummary = trpc.climbing.sessionSummary.useQuery(rangeInput, climbingQueryOptions);
   const hangboardingSummary = trpc.climbing.hangboardingSummary.useQuery(
@@ -134,7 +138,12 @@ export function ClimbingTab() {
         <Section title="Climbing Strengths">
           {strengths.error ? <QueryStatePanel error={strengths.error} height={0} /> : null}
           {strengths.error && !strengths.data ? null : (
-            <ClimbingStrengths data={strengths.data} loading={strengths.isLoading} />
+            <ClimbingStrengths
+              data={strengths.data}
+              loading={strengths.isLoading}
+              includeAreaMetadata={includeAreaMetadata}
+              onIncludeAreaMetadataChange={setIncludeAreaMetadata}
+            />
           )}
         </Section>
         <Section title="Climbing Locations">

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cataloguePlainText } from "./area-context.ts";
 import type {
   CatalogueCandidate,
   CatalogueLocation,
@@ -60,7 +61,24 @@ const areaSchema = z.object({
   ancestors: z.array(uuid).nullish(),
 });
 const areaSummarySchema = areaSchema.extend({ totalClimbs: z.number().int().nonnegative() });
-const hydratedAreaSchema = areaSummarySchema.extend({ climbs: z.array(z.unknown()) });
+const contextAreaSchema = areaSummarySchema.extend({
+  content: z
+    .object({ description: z.string().nullish(), areaLocation: z.string().nullish() })
+    .nullish(),
+  aggregate: z
+    .object({
+      byGrade: z
+        .array(z.object({ label: z.string().min(1), count: z.number().int().nonnegative() }))
+        .nullish(),
+      byDiscipline: z
+        .record(z.string(), z.object({ total: z.number().int().nonnegative() }).nullable())
+        .nullish(),
+      byGradeBand: z.record(z.string(), z.number().int().nonnegative()).nullish(),
+    })
+    .nullish(),
+});
+const contextFields = `content { description areaLocation } aggregate { byGrade { label count } byDiscipline { trad { total } sport { total } bouldering { total } tr { total } } byGradeBand { unknown beginner intermediate advanced expert } }`;
+const hydratedAreaSchema = contextAreaSchema.extend({ climbs: z.array(z.unknown()) });
 const areaFields =
   "uuid area_name pathTokens ancestors totalClimbs metadata { lat lng mp_id leaf }";
 const climbFields = `uuid name type { trad sport bouldering deepwatersolo alpine snow ice mixed aid tr }
@@ -95,6 +113,44 @@ function areaLocation(area: z.infer<typeof areaSchema>): CatalogueLocation {
     name: area.area_name,
     scope: "area",
     coordinates: coordinates(area.metadata),
+  };
+}
+
+function contextLocation(area: z.infer<typeof contextAreaSchema>): CatalogueLocation {
+  const sections: NonNullable<CatalogueLocation["context"]>["sections"] = [];
+  for (const [key, label] of [
+    ["description", "Description"],
+    ["areaLocation", "Location"],
+  ] as const) {
+    const text = cataloguePlainText(area.content?.[key]);
+    if (text) sections.push({ sourceKey: `content.${key}`, label, text, inheritedFrom: null });
+  }
+  const statistics = [{ sourceKey: "totalClimbs", label: "Total climbs", value: area.totalClimbs }];
+  for (const grade of area.aggregate?.byGrade ?? [])
+    statistics.push({
+      sourceKey: `aggregate.byGrade.${grade.label}`,
+      label: grade.label,
+      value: grade.count,
+    });
+  for (const [key, count] of Object.entries(area.aggregate?.byDiscipline ?? {})) {
+    if (count)
+      statistics.push({
+        sourceKey: `aggregate.byDiscipline.${key}`,
+        label: labels.get(key)?.[0] ?? key,
+        value: count.total,
+      });
+  }
+  for (const [key, value] of Object.entries(area.aggregate?.byGradeBand ?? {}))
+    statistics.push({ sourceKey: `aggregate.byGradeBand.${key}`, label: key, value });
+  return {
+    ...areaLocation(area),
+    context: {
+      url: `https://openbeta.io/area/${area.uuid}`,
+      type: null,
+      sections,
+      tags: [],
+      statistics,
+    },
   };
 }
 
@@ -275,6 +331,7 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
   async #local(
     seed: CatalogueSeed,
     local: CatalogueLocation & { coordinates: NonNullable<CatalogueLocation["coordinates"]> },
+    cache: Map<string, z.infer<typeof contextAreaSchema>>,
   ): Promise<CatalogueSearchResult> {
     const { latitude, longitude } = local.coordinates;
     const degrees = (CATALOGUE_LOCAL_AREA_METRES / 6_371_000) * (180 / Math.PI);
@@ -318,17 +375,18 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
       const summary = z
         .object({
           errors: z.array(z.unknown()).optional(),
-          data: z.object({ area: areaSummarySchema.nullable() }),
+          data: z.object({ area: contextAreaSchema.nullable() }),
         })
         .safeParse(
           await this.#graph(
-            `query CatalogueArea($uuid:ID) { area(uuid:$uuid) { ${areaFields} } }`,
+            `query CatalogueArea($uuid:ID) { area(uuid:$uuid) { ${areaFields} ${contextFields} } }`,
             { uuid: selected.uuid },
           ),
         );
       if (!summary.success || summary.data.errors?.length || !summary.data.data.area)
         throw new Error("OpenBeta catalogue area metadata is unavailable or invalid. Retry later.");
       const area = summary.data.data.area;
+      cache.set(area.uuid, area);
       if (area.uuid !== selected.uuid || !matchesArea(seed, local, area))
         throw new Error(
           "OpenBeta catalogue area identity does not match the selected local area. Retry later.",
@@ -345,7 +403,7 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
         })
         .safeParse(
           await this.#graph(
-            `query CatalogueArea($uuid:ID) { area(uuid:$uuid) { ${areaFields} climbs { ${climbFields} } } }`,
+            `query CatalogueArea($uuid:ID) { area(uuid:$uuid) { ${areaFields} ${contextFields} climbs { ${climbFields} } } }`,
             { uuid: area.uuid },
           ),
         );
@@ -388,14 +446,77 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
     return { candidates: [...candidates.values()], complete, searchArea };
   }
 
+  async #context(
+    result: CatalogueSearchResult,
+    cache: Map<string, z.infer<typeof contextAreaSchema>>,
+  ): Promise<CatalogueSearchResult> {
+    for (const candidate of result.candidates) {
+      const local = candidate.locations.filter((location) => location.scope === "area").at(-1);
+      if (!local?.externalId) continue;
+      const area = await this.#area(local.externalId, cache);
+      const names = area.pathTokens ?? [];
+      const ancestors = area.ancestors ?? [];
+      if (ancestors.length && (ancestors.length !== names.length || ancestors.at(-1) !== area.uuid))
+        throw new Error("OpenBeta catalogue area ancestry is invalid. Retry or contact support.");
+      const parentId = ancestors.at(-2);
+      const parent = parentId && parentId !== area.uuid ? await this.#area(parentId, cache) : null;
+      if (ancestors.length) {
+        const climbLocations = candidate.locations.filter((location) => location.scope === "climb");
+        candidate.locations = [
+          ...climbLocations,
+          ...ancestors.map((id, index): CatalogueLocation => {
+            if (id === area.uuid) return contextLocation(area);
+            if (parent && id === parent.uuid) return contextLocation(parent);
+            return { externalId: id, name: names[index] ?? null, scope: "area", coordinates: null };
+          }),
+        ];
+      } else {
+        const index = candidate.locations.indexOf(local);
+        candidate.locations[index] = contextLocation(area);
+      }
+    }
+    return result;
+  }
+
+  async #area(
+    id: string,
+    cache: Map<string, z.infer<typeof contextAreaSchema>>,
+  ): Promise<z.infer<typeof contextAreaSchema>> {
+    const cached = cache.get(id);
+    if (cached) return cached;
+    const result = z
+      .object({
+        errors: z.array(z.unknown()).optional(),
+        data: z.object({ area: contextAreaSchema.nullable() }).optional(),
+      })
+      .safeParse(
+        await this.#graph(
+          `query CatalogueParentContext($uuid:ID!) { area(uuid:$uuid) { ${areaFields} ${contextFields} } }`,
+          { uuid: id },
+        ),
+      );
+    if (
+      !result.success ||
+      result.data.errors?.length ||
+      !result.data.data?.area ||
+      result.data.data.area.uuid !== id
+    )
+      throw new Error(
+        "OpenBeta catalogue parent area is unavailable or invalid. Check the source area or retry later.",
+      );
+    cache.set(id, result.data.data.area);
+    return result.data.data.area;
+  }
+
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
+    const cache = new Map<string, z.infer<typeof contextAreaSchema>>();
     const id = sourceId(seed);
-    if (id) return { candidates: [await this.#climb(id)], complete: false };
+    if (id) return this.#context({ candidates: [await this.#climb(id)], complete: false }, cache);
     const local = catalogueLocalArea(seed.locations);
     const areaResult = local?.coordinates
-      ? await this.#local(seed, { ...local, coordinates: local.coordinates })
+      ? await this.#local(seed, { ...local, coordinates: local.coordinates }, cache)
       : null;
-    if (areaResult?.complete) return areaResult;
+    if (areaResult?.complete) return this.#context(areaResult, cache);
     const candidates = new Map(
       areaResult?.candidates.map((candidate) => [candidate.externalId, candidate]),
     );
@@ -453,9 +574,12 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
     for (const id of ids) {
       if (!candidates.has(id)) candidates.set(id, await this.#climb(id));
     }
-    return {
-      candidates: [...candidates.values()],
-      complete: areaResult === null && !partial && pending.length === 0,
-    };
+    return this.#context(
+      {
+        candidates: [...candidates.values()],
+        complete: areaResult === null && !partial && pending.length === 0,
+      },
+      cache,
+    );
   }
 }

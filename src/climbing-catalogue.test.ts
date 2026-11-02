@@ -639,9 +639,17 @@ describe("ClimbingCatalogueService", () => {
     });
   });
 
+  it("shares disposable source context across repeated logs while isolating source facts and users", async () => {
+    const { service } = setup();
+    const context = await service.refresh(seed);
+    expect(await service.read({ ...seed, logEntryId: "another-log" })).toEqual(context);
+    expect((await service.read({ ...seed, userId: "other-user" })).status).toBe("missing");
+    expect((await service.read({ ...seed, externalId: "other-climb" })).status).toBe("missing");
+  });
+
   it("invalidates only the requested fingerprint", async () => {
     const { service } = setup();
-    const otherSeed = { ...seed, logEntryId: "log-b" };
+    const otherSeed = { ...seed, externalId: "different-source-climb" };
     const otherResult = await service.refresh(otherSeed);
     await service.refresh(seed);
     await service.invalidate(seed);

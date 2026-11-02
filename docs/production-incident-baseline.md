@@ -35098,3 +35098,25 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   and integration error assertions when changing shared HTTP classification.
   Reuse gh-fix-ci and integration-tests-ready to distinguish assertion drift
   from database or transport failures.
+
+
+## 2026-11-02 — Local Redpanda AIO exhaustion blocked integration startup
+
+- **Symptoms / impact:** `pnpm test:integration src/db/climbing-catalogue-seed.integration.test.ts`
+  failed during dependency startup with `container strong-donkey-redpanda-1 is unhealthy`.
+  This affected local verification only; no production impact was observed.
+- **Evidence / cause:** Redpanda logged `required nr_events 1 exceeds ... aio-max-nr 65536`.
+  The local Linux host exhausted its asynchronous I/O request capacity. The
+  [Linux kernel AIO documentation](https://cdn.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)
+  describes this host-wide limit; Redpanda's
+  [readiness checklist](https://docs.redpanda.com/streaming/current/deploy/redpanda/manual/production/production-readiness/)
+  includes available AIO capacity among its checks.
+- **Validation / status:** The focused real-PostgreSQL seed suite ran with the
+  generated test environment and passed all 9 tests without Redpanda. This
+  verifies the database behavior, not recovery of the full integration wrapper.
+  Local Redpanda capacity remains unresolved. No repository configuration,
+  runtime workaround, retry or timeout change was made.
+- **Retrospective / proposal:** Container logs separated a host prerequisite
+  failure from application database behavior. Add a local AIO-capacity check to
+  the testing runbook after the operator confirms the host remedy; reuse
+  integration-tests-ready and systematic-debugging for a repeated startup failure.

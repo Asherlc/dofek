@@ -191,16 +191,25 @@ the [retired public-feed integration](thecrag.md#public-read-path) or select a n
 ## Informational catalogue cache
 
 Climb details on web and mobile offer **Catalogue information**, an explicit
-lookup across KAYA, Mountain Project, theCrag, OpenBeta and 8a.nu / Vertical-Life
+refresh and reference disclosure across KAYA, Mountain Project, theCrag, OpenBeta and 8a.nu / Vertical-Life
 through the [source composition](../src/climbing-catalogue-sources.ts). This is disposable reference
 information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
 completeness, and source/reference/corroborated/possible-match attribution. It does not
 write catalogue facts or inferred identities into the recorded climbing graph,
-create ticks, or change grades, outcomes, deduplication or training metrics.
+create ticks, or change recorded grades, outcomes or deduplication. Strengths can
+consume eligible cached traits without changing those recorded facts, as
+specified in the [trait projection](../packages/server/src/services/climbing-catalogue-traits.ts).
 The [owned-log repository](../packages/server/src/repositories/climbing-catalogue-repository.ts)
 checks current visibility and the caller's access window before every cache
-read or refresh. Clearing the cache loses only this reference information.
+read or refresh. Strengths also loads authorized seeds in bulk and queues missing
+context through the existing worker; requests read cached evidence rather than
+performing provider HTTP reads. v4 cache keys include the user and source facts,
+excluding the occurrence log ID, so repeated logs share matching source context.
+Clearing the cache removes disposable evidence and leaves recorded facts intact.
+See the [bulk seed query](../src/db/climbing-catalogue-seed.ts),
+[enrichment repository](../packages/server/src/repositories/climbing-strengths-enrichment-repository.ts)
+and [cache service](../src/climbing-catalogue.ts).
 
 Unnamed climbs retain nullable names through the [seed query](../src/db/climbing-catalogue-seed.ts)
 and [catalogue contract](../packages/training/src/climbing-catalogue.ts). Their recorded
@@ -263,8 +272,9 @@ uses the existing `eight-a` identity. Search `zlaggableId` matches detail
 `unifiedId`, while detail `zlaggableId` is a different identifier. Native route
 URLs load details with an ID check; discovery retains published grades,
 route/boulder kind and country/area/crag/known-sector ancestry. Unknown Sector
-placeholders are omitted. The verified records supply no coordinates, numeric
-wall angles or hold tags, so those remain unknown. Literal plus signs in source
+placeholders are omitted. Route details supply no numeric wall angles or hold
+tags. Crag reads can supply a verified area point; this remains area geography,
+not a measured route point. Literal plus signs in source
 slugs are preserved and URL-encoded. These contracts are unofficial and may change.
 The application's synced 8a.nu entries currently lack a proven catalogue climb
 ID and the [seed query](../src/db/climbing-catalogue-seed.ts) supplies no source
@@ -350,8 +360,10 @@ and [reader and regression fixtures](../packages/climbing-catalogue/src/openbeta
 The combined path permits at most seven local requests (one geographic query,
 three metadata reads and three climb reads), then three name-search pages shared
 across all aliases. With the requested `per_page=20` honored, at most 60 unique
-eligible name hits require detail reads, yielding at most 70 requests overall
-and 260 unique candidates before the shared matcher assesses relevance.
+eligible name hits require detail reads, yielding at most 70 discovery/route
+requests and 260 unique candidates before the shared matcher assesses relevance.
+Area-context hydration adds local-area/immediate-parent reads, deduplicated by
+native UUID within the search; 70 is therefore not the total request ceiling.
 This is a request-budget calculation under the documented
 [Typesense pagination contract](https://typesense.org/docs/30.2/api/search.html#pagination-parameters),
 not a response-size guarantee: the [reader](../packages/climbing-catalogue/src/openbeta.ts)
@@ -373,7 +385,7 @@ or vetoes an identity reference. Sources: the linked public records,
 [Climb metadata schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
 and the [MP reader](../packages/climbing-catalogue/src/mountain-project.ts).
 
-All four readers use the shared name relation for presentation aliases and
+All five readers use the shared name relation for presentation aliases and
 bounded approximate suggestions. Original names and directional/start/extension/
 pitch qualifiers remain intact; approximate similarity is discovery evidence,
 not identity confidence. The shared matcher uses source-declared aliases and
@@ -387,12 +399,13 @@ repeated route within one query or omitted detail keeps discovery incomplete;
 overlapping route IDs from different name queries share one detail read. AKA labels come
 only from `.headline__guts > ul.stats > li[title="Alternate name"]`, as observed
 on [this route's "Up" alias](https://www.thecrag.com/en/climbing/thailand/krabi/route/7257755094);
-breadcrumb abbreviations are not route aliases. The displayed `Lat/Lon:` pair
-in a route's location section triggers a separate read of its nearest retained
-native area breadcrumb, when that link has a valid area ID. Only that area's own
-`place:location` metadata, on a page with the verified canonical area ID, supplies
-area coordinates. Parent reads are deduplicated by native area ID within each
-bounded search. The
+breadcrumb abbreviations are not route aliases. Every source-proven native area
+breadcrumb can supply context through an area page with the matching canonical
+numeric ID; named hierarchy links with native IDs use the canonical numeric
+lookup path. Different geographic path spellings do not change that ID. Only
+that area's own `place:location` metadata supplies area coordinates, independent
+of whether the route repeats a `Lat/Lon:` pair. Parent reads are deduplicated by
+native area ID within each search. The
 [Goat Rock route page](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/route/18578485)
 and [parent area](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/area/16447255)
 display coincident points; a separately located route never replaces the parent
@@ -448,16 +461,60 @@ available to version `2` and server analytics. See the
 [projection](../packages/training/src/climbing-log-response.ts) and
 [strengths service](../packages/server/src/services/climbing-strengths.ts).
 
-The strengths response keeps its existing angle/hold/setting `panels` and adds
-`tagPanels` for observed recorded tag categories. Each tag contributes once per
-identified climb and category/source; the same grade-adjusted and monthly
-calculations apply. Catalogue tags, including inherited Area context, remain
-reference information and never affect these metrics. Both clients show every
-catalogue tag under its existing disclosure, including unfamiliar tags, instead
-of hiding the generic `other` kind. See the
-[aggregation](../packages/server/src/services/climbing-strengths.ts),
-[web details](../packages/web/src/components/ClimbingCatalogueContext.tsx) and
-[mobile details](../packages/mobile/components/ClimbingCatalogueContext.tsx).
+### Source-owned area context (2026-11-02)
+
+The [area contract](../packages/climbing-catalogue/src/contracts.ts) attaches
+optional `context` only to area locations: source URL, nullable literal type,
+plain-text sections with inherited provenance, tags with nullable literal source
+counts, and statistics. The five adapters retain different observed fields:
+
+| Source | Current area context and boundary |
+| --- | --- |
+| KAYA | Inline public and authenticated location descriptions/access, type and access flags, plus native parent references and gym profiles. Native selections exclude unsupported public-only short descriptions. No recursive parent crawl. [Reader](../packages/climbing-catalogue/src/kaya.ts), [native client](https://set.plastick.rocks/location-11950.js.map). |
+| Mountain Project | Native route lookup hydrates the local area and immediate parent with source sections, access notes and route-type totals. Search hits without a proven parent ID retain unknown area context. [Reader](../packages/climbing-catalogue/src/mountain-project.ts). |
+| OpenBeta | Local area and immediate parent provide description/location text and grade/discipline totals. UUID-checked reads share a per-search cache. [Reader](../packages/climbing-catalogue/src/openbeta.ts); [Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql). |
+| theCrag | Verified canonical areas provide description, access, approach, summary and history, area type and displayed route count. Tags belong only to owner sections under `.regions__read > .regions__inner > .node-info`; child-route tags are excluded. Header `small.from > a.inherit-from` supplies section/tag inheritance when tag titles are absent; explicit tag inheritance is retained. [Reader](../packages/climbing-catalogue/src/thecrag.ts); [tag definitions](https://www.thecrag.com/en/article/tagging). |
+| 8a.nu / Vertical-Life | Checked crag and broader area records provide descriptions/access, crag flags with literal source counts and source statistics. [Reader](../packages/climbing-catalogue/src/vertical-life.ts). |
+
+The [web](../packages/web/src/components/ClimbingCatalogueContext.tsx) and
+[mobile](../packages/mobile/components/ClimbingCatalogueContext.tsx) views put
+these fields behind each populated area's disclosure. Area names appear once;
+source links and inherited tree labels retain attribution. Counts are displayed
+literally without assuming that they mean votes. Prose is plain text, and neither
+source counts nor descriptions become route measurements; see the
+[plain-text helper](../packages/climbing-catalogue/src/area-context.ts).
+
+### Training evidence and provenance
+
+The strengths response retains angle/hold/setting panels and recorded-tag
+`tagPanels`, adding eligible cached catalogue traits and observed style categories.
+Each tag contributes once per identified climb and source/category under the
+same server-computed grade-adjusted and monthly calculations. The
+[trait projection](../packages/server/src/services/climbing-catalogue-traits.ts)
+requires accepted route identity, compatible kind/setting and no conflict
+evidence for route traits. Area evidence can come from accepted route ancestry
+or an independently corroborated recorded local area; a possible route match
+alone supplies no route trait. Only explicitly observed tags and source numeric
+angles with known degree units can contribute; source descriptions/statistics
+are never interpreted as measurements.
+
+Recorded wall/hold facts retain precedence across repeated observations. Area
+contributions remain separately attributed and can be excluded with
+`includeAreaMetadata: false`; doing so does not remove recorded or eligible
+route evidence. Missing metadata is queued through the existing worker, and the
+response surfaces pending/errors while keeping recorded observations available.
+See the [enrichment repository](../packages/server/src/repositories/climbing-strengths-enrichment-repository.ts),
+[aggregation](../packages/server/src/services/climbing-strengths.ts) and
+[shared contract](../packages/training/src/climbing-strengths.ts).
+
+Both clients keep the existing Styles/Progress chart views and place the source
+tree beside the chart. Expanding the tree identifies route/area attribution;
+there are no separate summary or provider-area tabs. See the paired
+[web](../packages/web/src/components/ClimbingStrengths.tsx) and
+[mobile](../packages/mobile/components/ClimbingStrengths.tsx) views. The native
+8a.nu catalogue-ID gap remains tracked in
+[issue #3204](https://github.com/Asherlc/dofek/issues/3204); public Vertical-Life
+area support does not establish missing native log identities.
 
 ## Repeating the audit
 

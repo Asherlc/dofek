@@ -32,9 +32,11 @@ import {
   climbingSessionSummarySchema,
   climbingVolumeByGradeSchema,
 } from "../repositories/climbing-repository.ts";
+import { ClimbingStrengthsEnrichmentRepository } from "../repositories/climbing-strengths-enrichment-repository.ts";
 import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
+import { catalogueStrengthTraits } from "../services/climbing-catalogue-traits.ts";
 import { buildClimbingLocationMap } from "../services/climbing-location-map.ts";
 import { buildClimbingStrengths } from "../services/climbing-strengths.ts";
 import {
@@ -139,12 +141,14 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v12",
+    keyVersion: "climbing-strengths-v13",
+    shouldCache: (data) => !climbingStrengthsSchema.parse(data).enrichmentPending,
   })
     .input(
       climbingInputSchema.extend({
         days: z.number().int().min(1).max(365).nullable().default(90),
         endDate: z.iso.date().optional(),
+        includeAreaMetadata: z.boolean().default(true),
       }),
     )
     .output(climbingStrengthsSchema)
@@ -159,15 +163,35 @@ export const climbingRouter = router({
           preference,
         );
         const endDate = input.endDate ?? formatDateYmdInTimeZone(new Date(), ctx.timezone);
-        return buildClimbingStrengths(
-          await repository.getObservations(input.days, input, endDate),
-          {
-            ...(input.days === null
-              ? {}
-              : { startDate: dateWindowStartString(endDate, input.days - 1) }),
-            endDate,
-          },
-        );
+        const { includeAreaMetadata, ...filters } = input;
+        const observations = await repository.getObservations(input.days, filters, endDate);
+        const enrichment = await new ClimbingStrengthsEnrichmentRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getContexts([...new Set(observations.map((e) => e.example.logEntryId))]);
+        const enriched = observations.map((entry) => {
+          const seed = enrichment.seeds.get(entry.example.logEntryId);
+          const context = enrichment.contexts.get(entry.example.logEntryId);
+          return seed && context
+            ? { ...entry, catalogueTraits: catalogueStrengthTraits(seed, context) }
+            : entry;
+        });
+        return {
+          ...buildClimbingStrengths(
+            enriched,
+            {
+              ...(input.days === null
+                ? {}
+                : { startDate: dateWindowStartString(endDate, input.days - 1) }),
+              endDate,
+            },
+            { includeAreaMetadata },
+          ),
+          enrichmentPending: enrichment.pending,
+          enrichmentErrors: enrichment.errors,
+        };
       }),
     ),
   fingerLoadingHistory: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })

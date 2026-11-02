@@ -1,16 +1,24 @@
 import { z } from "zod";
+import { cataloguePlainText } from "./area-context.ts";
 import {
+  type CatalogueAreaContext,
   type CatalogueCandidate,
   type CatalogueSearchResult,
   type CatalogueSeed,
   type ClimbingCatalogueAdapter,
   catalogueCandidateSchema,
 } from "./contracts.ts";
+import { gpsCoordinatesSchema } from "./geometry.ts";
 import { catalogueNameMatch, catalogueSearchNames } from "./matching.ts";
 
 const origin = "https://www.8a.nu";
 const api = "https://vlcapi.vertical-life.info";
 const slug = z.string().regex(/^[\p{L}\p{N}_+-]+$/u);
+const areaSlugSchema = z
+  .string()
+  .refine((value) => value.split("/").every((part) => slug.safeParse(part).success), {
+    message: "Invalid Vertical-Life area path.",
+  });
 const id = z.number().int().positive();
 const climbSchema = z.object({
   zlaggableName: z.string().trim().min(1),
@@ -18,7 +26,7 @@ const climbSchema = z.object({
   countrySlug: slug,
   countryName: z.string().min(1),
   areaName: z.string().nullish(),
-  areaSlug: z.string().min(1).nullish(),
+  areaSlug: areaSlugSchema.nullish(),
   cragName: z.string().min(1),
   cragSlug: slug,
   cragId: id,
@@ -31,6 +39,93 @@ const climbSchema = z.object({
 const hitSchema = climbSchema.extend({ zlaggableId: id, type: z.literal(3) });
 const pageSchema = z.object({ items: z.array(hitSchema) });
 const detailSchema = z.object({ zlaggable: climbSchema.extend({ unifiedId: id }) });
+const statisticsSchema = z.object({
+  totalZlaggables: z.number().int().nonnegative().nullish(),
+  totalAscents: z.number().int().nonnegative().nullish(),
+  averageRating: z.number().nonnegative().nullish(),
+});
+const cragSchema = statisticsSchema.extend({
+  unifiedId: id,
+  cragSlug: slug,
+  cragName: z.string().min(1),
+  countrySlug: slug,
+  areaSlug: areaSlugSchema.nullable(),
+  areaName: z.string().min(1).nullable(),
+  category: z.union([z.literal(0), z.literal(1)]),
+  location: gpsCoordinatesSchema.nullable(),
+  description: z.string().nullish(),
+  access: z.string().nullish(),
+  topFlags: z.array(z.object({ name: z.string().min(1), count: z.number().int().nonnegative() })),
+  totalSectors: z.number().int().nonnegative().nullish(),
+});
+const areaSchema = statisticsSchema.extend({
+  unifiedId: id,
+  areaSlug: areaSlugSchema,
+  areaName: z.string().min(1),
+  countrySlug: slug,
+  description: z.string().nullish(),
+  totalRoutes: z.number().int().nonnegative().nullish(),
+  totalBoulders: z.number().int().nonnegative().nullish(),
+});
+function context(
+  url: string,
+  record: z.infer<typeof cragSchema> | z.infer<typeof areaSchema>,
+): CatalogueAreaContext {
+  return {
+    url,
+    type: null,
+    sections: (["description", "access"] as const).flatMap((sourceKey) => {
+      const text = cataloguePlainText(
+        sourceKey === "description"
+          ? record.description
+          : "access" in record
+            ? record.access
+            : null,
+      );
+      return text
+        ? [
+            {
+              sourceKey,
+              label: sourceKey === "description" ? "Description" : "Access",
+              text,
+              inheritedFrom: null,
+            },
+          ]
+        : [];
+    }),
+    tags:
+      "topFlags" in record
+        ? record.topFlags.map(({ name, count }) => ({
+            kind: "other",
+            sourceKey: name,
+            label: name,
+            category: "Style",
+            scope: "direct",
+            inheritedFrom: null,
+            count,
+          }))
+        : [],
+    statistics: [
+      { sourceKey: "totalZlaggables", label: "Climbs", value: record.totalZlaggables },
+      { sourceKey: "totalAscents", label: "Ascents", value: record.totalAscents },
+      { sourceKey: "averageRating", label: "Average rating", value: record.averageRating },
+      ...("totalSectors" in record
+        ? [{ sourceKey: "totalSectors", label: "Sectors", value: record.totalSectors }]
+        : []),
+      ...("totalRoutes" in record
+        ? [{ sourceKey: "totalRoutes", label: "Routes", value: record.totalRoutes }]
+        : []),
+      ...("totalBoulders" in record
+        ? [{ sourceKey: "totalBoulders", label: "Boulders", value: record.totalBoulders }]
+        : []),
+    ].flatMap(({ sourceKey, label, value }) =>
+      typeof value === "number" ? [{ sourceKey, label, value }] : [],
+    ),
+  };
+}
+function areaPath(country: string, area: string): string {
+  return `/areas/${encodeURIComponent(country)}/${area.split("/").map(encodeURIComponent).join("/")}`;
+}
 type Climb = z.infer<typeof climbSchema>;
 
 function category(climb: Climb): string {
@@ -96,6 +191,61 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
     });
   }
 
+  async #hydrate(climbs: Map<number, Climb>): Promise<CatalogueCandidate[]> {
+    const reads = new Map<string, Promise<unknown>>();
+    const read = (path: string) => {
+      let result = reads.get(path);
+      if (!result) {
+        result = this.#request(path);
+        reads.set(path, result);
+      }
+      return result;
+    };
+    const candidates: CatalogueCandidate[] = [];
+    for (const [externalId, climb] of climbs) {
+      const cragPath = `/crags/${category(climb)}/${encodeURIComponent(climb.countrySlug)}/${encodeURIComponent(climb.cragSlug)}`;
+      const { crag } = z
+        .object({ crag: cragSchema })
+        .parse(await read(`/outdoor/v1/web${cragPath}`));
+      if (
+        crag.unifiedId !== climb.cragId ||
+        crag.cragSlug !== climb.cragSlug ||
+        crag.countrySlug !== climb.countrySlug ||
+        crag.category !== climb.category ||
+        (climb.areaSlug != null && crag.areaSlug !== climb.areaSlug)
+      )
+        throw new Error("Vertical-Life catalogue crag identity does not match the climb's parent.");
+      let parent: z.infer<typeof areaSchema> | undefined;
+      let parentPath: string | undefined;
+      if (crag.areaSlug) {
+        parentPath = areaPath(crag.countrySlug, crag.areaSlug);
+        const { area } = z
+          .object({ area: areaSchema })
+          .parse(await read(`/collection/v1/web${parentPath}`));
+        if (area.countrySlug !== crag.countrySlug || area.areaSlug !== crag.areaSlug)
+          throw new Error(
+            "Vertical-Life catalogue area identity does not match the crag's parent.",
+          );
+        parent = area;
+      }
+      const enriched = candidate(
+        { ...climb, areaSlug: crag.areaSlug, areaName: parent?.areaName ?? crag.areaName },
+        externalId,
+      );
+      const cragLocation = enriched.locations[parent || crag.areaName ? 2 : 1];
+      if (cragLocation) {
+        cragLocation.coordinates = crag.location;
+        cragLocation.context = context(origin + cragPath, crag);
+      }
+      if (parent && parentPath) {
+        const location = enriched.locations[1];
+        if (location) location.context = context(origin + parentPath, parent);
+      }
+      candidates.push(catalogueCandidateSchema.parse(enriched));
+    }
+    return candidates;
+  }
+
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
     if (seed.providerId === this.providerId && seed.sourceUrl) {
       const url = URL.parse(seed.sourceUrl);
@@ -117,7 +267,10 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
       );
       if (seed.externalId && String(zlaggable.unifiedId) !== seed.externalId)
         throw new Error("Vertical-Life catalogue detail ID does not match the recorded climb.");
-      return { candidates: [candidate(zlaggable, zlaggable.unifiedId)], complete: true };
+      return {
+        candidates: await this.#hydrate(new Map([[zlaggable.unifiedId, zlaggable]])),
+        complete: true,
+      };
     }
     const pending = catalogueSearchNames(seed).map((name) => ({
       name,
@@ -125,7 +278,7 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
       seen: new Set<number>(),
     }));
     if (!pending.length) return { candidates: [], complete: false };
-    const candidates = new Map<number, CatalogueCandidate>();
+    const candidates = new Map<number, Climb>();
     let partial = false;
     for (let request = 0; request < 3 && pending.length; request++) {
       const current = pending.shift();
@@ -157,12 +310,15 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
             (name) => catalogueNameMatch(name, { name: item.zlaggableName }) !== null,
           )
         )
-          candidates.set(item.zlaggableId, candidate(item, item.zlaggableId));
+          candidates.set(item.zlaggableId, item);
       }
       current.page++;
       if (repeated) partial = true;
       else if (items.length >= 20) pending.push(current);
     }
-    return { candidates: [...candidates.values()], complete: !partial && pending.length === 0 };
+    return {
+      candidates: await this.#hydrate(candidates),
+      complete: !partial && pending.length === 0,
+    };
   }
 }

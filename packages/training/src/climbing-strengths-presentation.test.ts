@@ -74,3 +74,13 @@ it("keeps existing observed defaults before tag categories, including unknown re
   expect(climbingStrengthsDefaultBreakdown([])).toBe("wall_angle");
   expect(climbingStrengthsBreakdownOptions([{ ...tag, rows: [] }])).toHaveLength(2);
 });
+it("offers unified style analysis when source metadata supplies it", () => {
+  const style = { ...base, dimension: "style" as const };
+  expect(climbingStrengthsPanelLabel(style)).toBe("Style");
+  expect(climbingStrengthsBreakdownOptions([style])).toContainEqual({
+    key: "style",
+    label: "Style",
+    providerId: null,
+  });
+  expect(climbingStrengthsDefaultBreakdown([{ ...base, rows: [] }, style])).toBe("style");
+});

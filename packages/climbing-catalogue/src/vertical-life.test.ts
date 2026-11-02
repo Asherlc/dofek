@@ -37,8 +37,66 @@ const native: CatalogueSeed = {
   externalId: "36615",
   sourceUrl: `https://www.8a.nu${path}`,
 };
-function client(values: unknown[]) {
-  return vi.fn<typeof fetch>().mockImplementation(async () => Response.json(values.shift()));
+function crag(overrides = {}) {
+  return {
+    crag: {
+      unifiedId: 5766,
+      cragSlug: "camp-4",
+      cragName: "Camp 4",
+      countrySlug: "united-states",
+      areaSlug: "yosemite-ca",
+      areaName: "Yosemite (CA)",
+      category: 1,
+      location: { latitude: 37.741609, longitude: -119.603679 },
+      topFlags: [
+        { name: "technical", count: 109 },
+        { name: "crimpy", count: 36 },
+      ],
+      description: "<p>Granite <b>boulders</b></p>",
+      access: "<p>Use marked trails.</p>",
+      totalZlaggables: 277,
+      totalAscents: 4774,
+      averageRating: 3.91,
+      totalSectors: 3,
+      ...overrides,
+    },
+  };
+}
+function region(overrides = {}) {
+  return {
+    area: {
+      unifiedId: 2902,
+      areaSlug: "yosemite-ca",
+      areaName: "Yosemite (CA)",
+      countrySlug: "united-states",
+      description: "<p>Valley climbing.</p>",
+      totalZlaggables: 3408,
+      totalRoutes: 1260,
+      totalBoulders: 2148,
+      totalAscents: 24265,
+      averageRating: 3.89,
+      ...overrides,
+    },
+  };
+}
+function client(values: unknown[], parents?: (url: URL) => unknown) {
+  return vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.startsWith("/collection/v1/web/areas/")) {
+      const areaSlug = decodeURIComponent(url.pathname.split("/areas/united-states/")[1] ?? "");
+      return Response.json(parents ? parents(url) : region({ areaSlug }));
+    }
+    if (/\/crags\/[^/]+\/[^/]+\/[^/]+$/.test(url.pathname)) {
+      const category = url.pathname.includes("/sportclimbing/") ? 0 : 1;
+      return Response.json(parents ? parents(url) : crag({ category }));
+    }
+    return Response.json(values.shift());
+  });
+}
+function searchCalls(fetchFn: ReturnType<typeof client>) {
+  return fetchFn.mock.calls.filter(([input]) =>
+    new URL(String(input)).pathname.endsWith("/search"),
+  );
 }
 function page(items: unknown[] = [row]) {
   return { items, totals: 511, totalZlaggables: 463 };
@@ -48,16 +106,182 @@ function detail(overrides = {}) {
 }
 
 describe("VerticalLifeCatalogueAdapter", () => {
+  it("hydrates attributed parent context while keeping route and sector facts separate", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([detail({ sectorName: "Main wall" })]),
+    ).search(native);
+    const candidate = found.candidates[0];
+    expect(candidate?.tags).toEqual([]);
+    expect(candidate?.locations[1]?.context).toMatchObject({
+      url: "https://www.8a.nu/areas/united-states/yosemite-ca",
+      type: null,
+      sections: [
+        {
+          sourceKey: "description",
+          label: "Description",
+          text: "Valley climbing.",
+          inheritedFrom: null,
+        },
+      ],
+      statistics: expect.arrayContaining([
+        { sourceKey: "totalRoutes", label: "Routes", value: 1260 },
+      ]),
+    });
+    expect(candidate?.locations[2]).toMatchObject({
+      externalId: "5766",
+      coordinates: { latitude: 37.741609, longitude: -119.603679 },
+      context: {
+        url: "https://www.8a.nu/crags/bouldering/united-states/camp-4",
+        type: null,
+        sections: [
+          {
+            sourceKey: "description",
+            label: "Description",
+            text: "Granite boulders",
+            inheritedFrom: null,
+          },
+          { sourceKey: "access", label: "Access", text: "Use marked trails.", inheritedFrom: null },
+        ],
+        tags: [
+          {
+            kind: "other",
+            sourceKey: "technical",
+            label: "technical",
+            category: "Style",
+            scope: "direct",
+            inheritedFrom: null,
+            count: 109,
+          },
+          {
+            kind: "other",
+            sourceKey: "crimpy",
+            label: "crimpy",
+            category: "Style",
+            scope: "direct",
+            inheritedFrom: null,
+            count: 36,
+          },
+        ],
+        statistics: expect.arrayContaining([
+          { sourceKey: "averageRating", label: "Average rating", value: 3.91 },
+        ]),
+      },
+    });
+    expect(candidate?.locations.at(-1)).toEqual({
+      externalId: "11438",
+      name: "Main wall",
+      scope: "area",
+      coordinates: null,
+    });
+  });
+
+  it("reuses parent reads after discovery and refreshes them for each search", async () => {
+    const fetchFn = client([page([row, { ...row, zlaggableId: 2 }]), page()]);
+    const adapter = new VerticalLifeCatalogueAdapter(fetchFn);
+    await adapter.search(seed);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    await adapter.search(seed);
+    expect(fetchFn).toHaveBeenCalledTimes(6);
+  });
+
+  it("hydrates parent identities supplied by the crag when discovery omits them", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([page([{ ...row, areaSlug: null, areaName: null }])], (url) =>
+        url.pathname.includes("/areas/") ? region() : crag({ areaName: null }),
+      ),
+    ).search(seed);
+    expect(found.candidates[0]?.locations[1]).toMatchObject({
+      externalId: "yosemite-ca",
+      name: "Yosemite (CA)",
+      context: { url: "https://www.8a.nu/areas/united-states/yosemite-ca" },
+    });
+  });
+
+  it("keeps crags without a parent area in the correct ancestry position", async () => {
+    const fetchFn = client([page([{ ...row, areaSlug: null, areaName: null }])], () =>
+      crag({ areaSlug: null, areaName: null, location: null }),
+    );
+    const found = await new VerticalLifeCatalogueAdapter(fetchFn).search(seed);
+    expect(found.candidates[0]?.locations).toHaveLength(2);
+    expect(found.candidates[0]?.locations[1]).toMatchObject({
+      externalId: "5766",
+      context: { url: "https://www.8a.nu/crags/bouldering/united-states/camp-4" },
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains null crag coordinates", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([page()], (url) =>
+        url.pathname.includes("/areas/") ? region() : crag({ location: null }),
+      ),
+    ).search(seed);
+    expect(found.candidates[0]?.locations[2]?.coordinates).toBeNull();
+  });
+
+  it.each([
+    { unifiedId: 99 },
+    { category: 0 },
+    { countrySlug: "canada" },
+    { cragSlug: "another-crag" },
+    { areaSlug: "another-area" },
+    { topFlags: [{ name: "technical", count: -1 }] },
+    { location: { latitude: 100, longitude: 0 } },
+  ])("rejects mismatched or malformed crags %j", async (overrides) => {
+    await expect(
+      new VerticalLifeCatalogueAdapter(client([page()], () => crag(overrides))).search(seed),
+    ).rejects.toThrow();
+  });
+
+  it.each([{ areaSlug: "another-area" }, { countrySlug: "canada" }, { unifiedId: null }])(
+    "rejects invalid parent areas %j",
+    async (overrides) => {
+      await expect(
+        new VerticalLifeCatalogueAdapter(
+          client([page()], (url) =>
+            url.pathname.includes("/areas/") ? region(overrides) : crag(),
+          ),
+        ).search(seed),
+      ).rejects.toThrow();
+    },
+  );
+
+  it("surfaces parent HTTP failures", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(page()))
+      .mockResolvedValue(new Response("Rejected", { status: 503 }));
+    await expect(new VerticalLifeCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(
+      "HTTP 503",
+    );
+  });
+
+  it.each(["../secret", "scotland/../secret", "scotland//secret", "scotland/%2e%2e"])(
+    "rejects unsafe area paths %s",
+    async (areaSlug) => {
+      await expect(
+        new VerticalLifeCatalogueAdapter(client([page([{ ...row, areaSlug }])])).search(seed),
+      ).rejects.toThrow();
+    },
+  );
+
   it("retains hierarchical area identifiers without treating them as route URL segments", async () => {
     const found = await new VerticalLifeCatalogueAdapter(
-      client([
-        page([{ ...row, areaName: "Speyside & Moray", areaSlug: "scotland/speyside-moray" }]),
-      ]),
+      client(
+        [page([{ ...row, areaName: "Speyside & Moray", areaSlug: "scotland/speyside-moray" }])],
+        (url) =>
+          url.pathname.includes("/areas/")
+            ? region({ areaSlug: "scotland/speyside-moray", areaName: "Speyside & Moray" })
+            : crag({ areaSlug: "scotland/speyside-moray", areaName: "Speyside & Moray" }),
+      ),
     ).search(seed);
     expect(found.candidates[0]?.locations[1]).toMatchObject({
       externalId: "scotland/speyside-moray",
       name: "Speyside & Moray",
     });
+    expect(found.candidates[0]?.locations[1]?.context?.url).toBe(
+      "https://www.8a.nu/areas/united-states/scotland/speyside-moray",
+    );
     expect(found.candidates[0]?.url).toBe(`https://www.8a.nu${path}`);
   });
   it("accepts literal plus signs in source slugs and safely encodes native detail lookup", async () => {
@@ -79,7 +303,7 @@ describe("VerticalLifeCatalogueAdapter", () => {
   it("discovers attributed climbs through the public API with native IDs and ordered ancestry", async () => {
     const fetchFn = client([page()]);
     const found = await new VerticalLifeCatalogueAdapter(fetchFn).search(seed);
-    expect(found).toEqual({
+    expect(found).toMatchObject({
       complete: true,
       candidates: [
         {
@@ -100,7 +324,12 @@ describe("VerticalLifeCatalogueAdapter", () => {
               coordinates: null,
             },
             { externalId: "yosemite-ca", name: "Yosemite (CA)", scope: "area", coordinates: null },
-            { externalId: "5766", name: "Camp 4", scope: "area", coordinates: null },
+            {
+              externalId: "5766",
+              name: "Camp 4",
+              scope: "area",
+              coordinates: { latitude: 37.741609, longitude: -119.603679 },
+            },
           ],
         },
       ],
@@ -194,7 +423,12 @@ describe("VerticalLifeCatalogueAdapter", () => {
     const found = await new VerticalLifeCatalogueAdapter(fetchFn).search(seed);
     expect(found.complete).toBe(false);
     expect(found.candidates).toHaveLength(60);
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(searchCalls(fetchFn)).toHaveLength(3);
+    expect(
+      fetchFn.mock.calls
+        .slice(0, 3)
+        .every(([input]) => new URL(String(input)).pathname.endsWith("/search")),
+    ).toBe(true);
   });
 
   it("finds native IDs without a source URL through name discovery", async () => {
@@ -229,7 +463,7 @@ describe("VerticalLifeCatalogueAdapter", () => {
     expect(found.complete).toBe(true);
     expect(found.candidates).toHaveLength(21);
     expect(
-      fetchFn.mock.calls.map(([input]) => {
+      searchCalls(fetchFn).map(([input]) => {
         const url = new URL(String(input));
         return [url.searchParams.get("query"), url.searchParams.get("pageIndex")];
       }),
@@ -255,7 +489,7 @@ describe("VerticalLifeCatalogueAdapter", () => {
         })
       ).complete,
     ).toBe(false);
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(searchCalls(fetchFn)).toHaveLength(3);
   });
 
   it("does not query without a name or source URL", async () => {

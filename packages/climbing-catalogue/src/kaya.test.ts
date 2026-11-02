@@ -29,6 +29,204 @@ const climb = {
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
 
 describe("KayaCatalogueAdapter", () => {
+  it("retains a declared parent when the corresponding higher-level slot is absent", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          ...climb,
+          destination: null,
+          area: {
+            ...climb.area,
+            slug: "Cragmont-Park",
+            description: null,
+            is_closed: null,
+            parent_location: { id: "1720", name: "Berkeley", slug: "Berkeley-999" },
+          },
+        },
+      ]),
+    );
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search(seed);
+    expect(result.candidates[0]?.locations).toMatchObject([
+      {
+        externalId: "1720",
+        name: "Berkeley",
+        coordinates: null,
+        context: {
+          url: "https://kaya-app.kayaclimb.com/location/Berkeley-999",
+          type: null,
+          sections: [],
+          tags: [],
+          statistics: [],
+        },
+      },
+      { externalId: "46806", context: { sections: [] } },
+    ]);
+  });
+  it("retains source-owned context at every outdoor ancestor without inferring route traits", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          ...climb,
+          destination: {
+            ...climb.destination,
+            slug: "Berkeley-999",
+            location_type: { id: "2", name: "Destination" },
+            description: "<p>Granite &amp; steep bouldering.</p><script>bad()</script>",
+            access_description_bouldering: "Park at the trailhead.",
+            is_closed: false,
+            is_access_sensitive: null,
+            closed_date: null,
+          },
+          area: {
+            ...climb.area,
+            slug: "Cragmont-Park-777",
+            location_type: { id: "3", name: "Area" },
+            description_routes: "Routes overview.",
+            access_issues_description_routes: "Seasonal access.",
+            parent_location: { id: "1720", name: "Berkeley", slug: "Berkeley-999" },
+          },
+          subarea: {
+            id: "12",
+            name: "East Wall",
+            slug: "East-Wall-88",
+            latitude: null,
+            longitude: null,
+            location_type: { id: "4", name: "Subarea" },
+            description_short_routes: "Local summary.",
+            is_closed: true,
+            closed_date: "2026-10-31",
+            is_access_sensitive: true,
+          },
+        },
+      ]),
+    );
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search(seed);
+    const locations = result.candidates[0]?.locations;
+    expect(locations?.map((place) => place.externalId)).toEqual(["1720", "46806", "12"]);
+    expect(locations?.[0]?.context).toEqual({
+      url: "https://kaya-app.kayaclimb.com/location/Berkeley-999",
+      type: "Destination",
+      sections: [
+        {
+          sourceKey: "description",
+          label: "Description",
+          text: "Granite & steep bouldering.",
+          inheritedFrom: null,
+        },
+        {
+          sourceKey: "access_description_bouldering",
+          label: "Bouldering access",
+          text: "Park at the trailhead.",
+          inheritedFrom: null,
+        },
+        { sourceKey: "is_closed", label: "Closed", text: "false", inheritedFrom: null },
+      ],
+      tags: [],
+      statistics: [],
+    });
+    expect(locations?.[1]?.context).toMatchObject({
+      type: "Area",
+      sections: [
+        { sourceKey: "description_routes", text: "Routes overview." },
+        { sourceKey: "access_issues_description_routes", text: "Seasonal access." },
+      ],
+    });
+    expect(locations?.[2]?.context).toMatchObject({
+      type: "Subarea",
+      sections: expect.arrayContaining([
+        { sourceKey: "closed_date", label: "Closed date", text: "2026-10-31", inheritedFrom: null },
+        {
+          sourceKey: "is_access_sensitive",
+          label: "Access sensitive",
+          text: "true",
+          inheritedFrom: null,
+        },
+      ]),
+    });
+    expect(result.candidates[0]?.tags).toEqual([
+      expect.objectContaining({ kind: "climb_type" }),
+      expect.objectContaining({ kind: "steepness" }),
+    ]);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body)).query).toContain(
+      "access_issues_description_routes",
+    );
+  });
+
+  it("retains gym identity, coordinates and source-labelled profile fields", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          ...climb,
+          destination: null,
+          area: null,
+          gym: {
+            id: "209",
+            slug: "movementcolumbia",
+            name: "Movement Columbia",
+            latitude: "39.17770160",
+            longitude: "-76.81064450",
+            address: "7125 Columbia Gateway Drive #110",
+            city: "Columbia",
+            postal_code: "21046",
+            region: "Maryland",
+            country: "United States",
+            website: "https://movementgyms.com/columbia/ ",
+            is_official: true,
+          },
+        },
+      ]),
+    );
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => null).search(seed);
+    expect(result.candidates[0]?.locations).toMatchObject([
+      {
+        externalId: "209",
+        coordinates: { latitude: 39.1777016, longitude: -76.8106445 },
+        context: {
+          url: "https://kaya-app.kayaclimb.com/gym/movementcolumbia",
+          type: "Gym",
+          tags: [],
+          statistics: [],
+          sections: expect.arrayContaining([
+            { sourceKey: "postal_code", label: "Postal code", text: "21046", inheritedFrom: null },
+            {
+              sourceKey: "website",
+              label: "Website",
+              text: "https://movementgyms.com/columbia/",
+              inheritedFrom: null,
+            },
+            { sourceKey: "is_official", label: "Official", text: "true", inheritedFrom: null },
+          ]),
+        },
+      },
+    ]);
+  });
+
+  it("retains public parent context when authenticated details refresh climb traits", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response([
+          {
+            ...climb,
+            area: { ...climb.area, slug: "Cragmont-Park", description: "Area description." },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ data: { climb: { ...climb, lead: true, is_trad: false } } }),
+      );
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search(seed);
+    expect(result.candidates[0]?.locations[1]?.context?.sections).toContainEqual({
+      sourceKey: "description",
+      label: "Description",
+      text: "Area description.",
+      inheritedFrom: null,
+    });
+    expect(result.candidates[0]?.tags).toContainEqual(expect.objectContaining({ label: "Sport" }));
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
   it.each([null, "", "  "])(
     "loads an unnamed indoor climb by its recorded KAYA identity: %j",
     async (name) => {
@@ -390,6 +588,106 @@ describe("KayaCatalogueAdapter", () => {
 });
 
 describe("Kaya authenticated catalogue classification", () => {
+  it.each(["destination", "gym"] as const)(
+    "requests verified native %s context for an unnamed recorded climb",
+    async (parentKey) => {
+      const parent =
+        parentKey === "gym"
+          ? {
+              id: "209",
+              slug: "movementcolumbia",
+              name: "Movement Columbia",
+              latitude: "39.17770160",
+              longitude: "-76.81064450",
+              address: "7125 Columbia Gateway Drive #110",
+              city: "Columbia",
+              postal_code: "21046",
+              region: "Maryland",
+              country: "United States",
+              website: "https://movementgyms.com/columbia/",
+              is_official: true,
+            }
+          : {
+              id: "1812",
+              slug: "Horse-Flats-317843",
+              name: "Horse Flats",
+              latitude: "34.34296000",
+              longitude: "-118.01584000",
+              description_bouldering: "<p>Granite bouldering.</p>",
+              access_description_routes: "Follow the path.",
+              location_type: { id: "2", name: "Destination" },
+              parent_location: null,
+              is_closed: false,
+              is_access_sensitive: true,
+            };
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+        const query = JSON.parse(String(init?.body)).query;
+        const selectedParent = query.includes(`${parentKey} { id slug name`)
+          ? parent
+          : { id: parent.id, name: parent.name };
+        return Response.json({
+          data: {
+            climb: {
+              ...climb,
+              name: null,
+              destination: null,
+              gym: null,
+              area: null,
+              [parentKey]: selectedParent,
+              lead: true,
+              is_trad: false,
+            },
+          },
+        });
+      });
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
+        ...seed,
+        providerId: "kaya",
+        externalId: climb.id,
+        name: null,
+      });
+      expect(result.candidates[0]?.name).toBeNull();
+      expect(result.candidates[0]?.locations[0]?.context).toMatchObject({
+        url:
+          parentKey === "gym"
+            ? "https://kaya-app.kayaclimb.com/gym/movementcolumbia"
+            : "https://kaya-app.kayaclimb.com/location/Horse-Flats-317843",
+        type: parentKey === "gym" ? "Gym" : "Destination",
+        sections: expect.arrayContaining(
+          parentKey === "gym"
+            ? [
+                {
+                  sourceKey: "address",
+                  label: "Address",
+                  text: "7125 Columbia Gateway Drive #110",
+                  inheritedFrom: null,
+                },
+                { sourceKey: "is_official", label: "Official", text: "true", inheritedFrom: null },
+              ]
+            : [
+                {
+                  sourceKey: "description_bouldering",
+                  label: "Bouldering description",
+                  text: "Granite bouldering.",
+                  inheritedFrom: null,
+                },
+                {
+                  sourceKey: "access_description_routes",
+                  label: "Routes access",
+                  text: "Follow the path.",
+                  inheritedFrom: null,
+                },
+                { sourceKey: "is_closed", label: "Closed", text: "false", inheritedFrom: null },
+              ],
+        ),
+      });
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
+      expect(request.query).toContain('climb(id:"1062267")');
+      expect(request.query).toContain("parent_location { id slug name }");
+    },
+  );
+
   it.each(["  Literal STYLE!  ", "\tSource label\n"])(
     "preserves the exact native tag label %j",
     async (name) => {

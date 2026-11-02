@@ -810,6 +810,26 @@
       "words": ["lentejuelas", "Speyside", "Zlaggables"]
     },
     {
+      "filename": "packages/climbing-catalogue/src/vertical-life.ts",
+      "words": ["Zlaggables"]
+    },
+    {
+      "filename": "packages/climbing-catalogue/src/kaya.test.ts",
+      "words": ["trailhead", "movementcolumbia"]
+    },
+    {
+      "filename": "packages/climbing-catalogue/src/thecrag.test.ts",
+      "words": ["Dinda", "Bisio", "Kleiner", "aber", "feiner", "Sektor", "Capricorner", "wurde", "eingerichtet", "Hohe"]
+    },
+    {
+      "filename": "packages/climbing-catalogue/src/thecrag.ts",
+      "words": ["areatypes"]
+    },
+    {
+      "filename": "packages/server/src/services/climbing-catalogue-traits.ts",
+      "words": ["slopey", "juggy", "cruxy"]
+    },
+    {
       "filename": ["**/*catalogue*.test.ts", "packages/climbing-catalogue/src/*.test.ts"],
       "words": ["Maße", "Straße", "STRASSE", "ＣＲＡＧＭＯＮＴ", "Ｃｒａｇｍｏｎｔ"]
     },

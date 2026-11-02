@@ -14,12 +14,45 @@ const identityEvidence = {
     .optional(),
   aliases: z.array(z.string().trim().min(1)).optional(),
 };
-export const catalogueLocationSchema = z.strictObject({
-  externalId: z.string().nullable(),
-  name: z.string().nullable(),
-  scope: z.enum(["climb", "area"]),
-  coordinates: gpsCoordinatesSchema.nullable(),
+export const catalogueTagSchema = z.strictObject({
+  kind: z.enum(["steepness", "hold", "climb_type", "other"]),
+  sourceKey: z.string(),
+  label: z.string().min(1),
+  category: z.string().nullable(),
+  scope: z.enum(["direct", "inherited"]),
+  inheritedFrom: z.string().nullable(),
 });
+export const catalogueAreaContextSchema = z.strictObject({
+  url: z.url(),
+  type: z.string().trim().min(1).nullable(),
+  sections: z.array(
+    z.strictObject({
+      sourceKey: z.string().min(1),
+      label: z.string().trim().min(1),
+      text: z.string().trim().min(1),
+      inheritedFrom: z.string().trim().min(1).nullable(),
+    }),
+  ),
+  tags: z.array(catalogueTagSchema.extend({ count: z.number().int().nonnegative().nullable() })),
+  statistics: z.array(
+    z.strictObject({
+      sourceKey: z.string().min(1),
+      label: z.string().trim().min(1),
+      value: z.number().finite(),
+    }),
+  ),
+});
+export const catalogueLocationSchema = z
+  .strictObject({
+    externalId: z.string().nullable(),
+    name: z.string().nullable(),
+    scope: z.enum(["climb", "area"]),
+    coordinates: gpsCoordinatesSchema.nullable(),
+    context: catalogueAreaContextSchema.optional(),
+  })
+  .refine((location) => location.scope === "area" || !location.context, {
+    message: "Parent context belongs to an area, not a route point.",
+  });
 export const catalogueSeedSchema = z.strictObject({
   providerId: z.string().min(1),
   externalId: z.string().nullable(),
@@ -29,14 +62,6 @@ export const catalogueSeedSchema = z.strictObject({
   setting: z.enum(["indoor", "outdoor"]).nullable(),
   locations: z.array(catalogueLocationSchema),
   ...identityEvidence,
-});
-export const catalogueTagSchema = z.strictObject({
-  kind: z.enum(["steepness", "hold", "climb_type", "other"]),
-  sourceKey: z.string(),
-  label: z.string().min(1),
-  category: z.string().nullable(),
-  scope: z.enum(["direct", "inherited"]),
-  inheritedFrom: z.string().nullable(),
 });
 const origins = {
   kaya: "https://kaya-app.kayaclimb.com",
@@ -62,7 +87,16 @@ export const catalogueCandidateSchema = z
   .refine(
     (candidate) => {
       const url = new URL(candidate.url);
-      return url.origin === origins[candidate.providerId] && !url.username && !url.password;
+      return (
+        url.origin === origins[candidate.providerId] &&
+        !url.username &&
+        !url.password &&
+        candidate.locations.every((location) => {
+          if (!location.context) return true;
+          const area = new URL(location.context.url);
+          return area.origin === origins[candidate.providerId] && !area.username && !area.password;
+        })
+      );
     },
     { message: "Catalogue source URL must belong to the recorded provider." },
   );
@@ -93,6 +127,7 @@ export const catalogueSourceResultSchema = z
   );
 export type CatalogueProviderId = z.infer<typeof catalogueProviderSchema>;
 export type CatalogueLocation = z.infer<typeof catalogueLocationSchema>;
+export type CatalogueAreaContext = z.infer<typeof catalogueAreaContextSchema>;
 export type CatalogueSeed = z.infer<typeof catalogueSeedSchema>;
 export type CatalogueCandidate = z.infer<typeof catalogueCandidateSchema>;
 export type CatalogueSearchResult = z.infer<typeof catalogueSearchResultSchema>;

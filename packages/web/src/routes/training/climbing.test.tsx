@@ -97,17 +97,33 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("requests area metadata initially, toggles its query and polls only pending enrichment", async () => {
+    strengthsQuery.mockReturnValue({
+      data: climbingStrengthsFixture,
+      isLoading: false,
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    expect(strengthsQuery.mock.lastCall?.[0].includeAreaMetadata).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include area metadata" }));
+    expect(strengthsQuery.mock.lastCall?.[0].includeAreaMetadata).toBe(false);
+    const options = strengthsQuery.mock.lastCall?.[1];
+    expect(options.refetchInterval({ state: { data: { enrichmentPending: true } } })).toBe(1500);
+    expect(options.refetchInterval({ state: { data: { enrichmentPending: false } } })).toBe(false);
+    expect(options.placeholderData(climbingStrengthsFixture)).toBe(climbingStrengthsFixture);
+  });
   it("anchors the strengths query to today's date and renews its input when the date changes", async () => {
     const ClimbingTab = await importClimbingTab();
     const { rerender } = render(<ClimbingTab />);
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-26" },
+      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true },
       expect.any(Object),
     );
     queryDate.value = "2026-10-27";
     rerender(<ClimbingTab />);
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-27" },
+      { days: 90, endDate: "2026-10-27", includeAreaMetadata: true },
       expect.any(Object),
     );
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith({ days: 90 }, expect.any(Object));
@@ -133,7 +149,7 @@ describe("ClimbingTab", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-26", types: ["lead"] },
+      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true, types: ["lead"] },
       expect.any(Object),
     );
   });
@@ -349,7 +365,7 @@ describe("ClimbingTab", () => {
 
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(strengthsQuery).toHaveBeenCalledWith(
-      { days: 90, endDate: "2026-10-26" },
+      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true },
       expect.objectContaining({ placeholderData: expect.any(Function) }),
     );
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
@@ -380,7 +396,7 @@ describe("ClimbingTab", () => {
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(locationMapQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(strengthsQuery).toHaveBeenCalledWith(
-      { days: null, endDate: "2026-10-26" },
+      { days: null, endDate: "2026-10-26", includeAreaMetadata: true },
       expect.any(Object),
     );
   });

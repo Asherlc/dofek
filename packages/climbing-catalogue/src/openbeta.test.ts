@@ -46,13 +46,33 @@ function client(values: unknown[]) {
   return vi.fn<typeof fetch>().mockImplementation(async () => Response.json(values.shift()));
 }
 function lookup(overrides = {}) {
-  return new OpenBetaCatalogueAdapter(client([{ data: { climb: climb(overrides) } }])).search({
+  return testAdapter(
+    client([{ data: { climb: climb(overrides) } }]),
+    climb(overrides).parent,
+  ).search({
     ...seed,
     providerId: "openbeta",
     externalId: id,
   });
 }
 
+function testAdapter(fetchFn: typeof fetch, parent = climb().parent) {
+  return new OpenBetaCatalogueAdapter(async (input, init) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+    if (body?.query?.includes("CatalogueParentContext"))
+      return Response.json({
+        data: {
+          area: {
+            uuid: body.variables.uuid,
+            area_name: parent.area_name,
+            metadata: parent.metadata,
+            totalClimbs: 0,
+          },
+        },
+      });
+    return fetchFn(input, init);
+  });
+}
 describe("OpenBetaCatalogueAdapter", () => {
   it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
     const fetchFn = vi
@@ -63,7 +83,7 @@ describe("OpenBetaCatalogueAdapter", () => {
         ),
       );
     expect(
-      await new OpenBetaCatalogueAdapter(fetchFn).search({
+      await testAdapter(fetchFn).search({
         ...seed,
         aliases: ["Up", "Down", "Left start"],
       }),
@@ -83,7 +103,7 @@ describe("OpenBetaCatalogueAdapter", () => {
             : [];
         return Response.json(page(hits.length, 1, hits));
       });
-      const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      const result = await testAdapter(fetchFn).search({
         ...seed,
         aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
       });
@@ -99,7 +119,7 @@ describe("OpenBetaCatalogueAdapter", () => {
       const url = new URL(String(input));
       return Response.json(page(url.searchParams.get("q") === seed.name ? 100 : 0, 1, []));
     });
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...seed,
       aliases: ["Up", "Down", "Left start"],
     });
@@ -117,7 +137,7 @@ describe("OpenBetaCatalogueAdapter", () => {
           page(21, Number(url.searchParams.get("page")), repeated ? unrelatedHits() : []),
         );
       });
-      expect((await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).complete).toBe(false);
+      expect((await testAdapter(fetchFn).search(seed)).complete).toBe(false);
       expect(fetchFn).toHaveBeenCalledTimes(repeated ? 2 : 1);
     }
   });
@@ -138,7 +158,7 @@ describe("OpenBetaCatalogueAdapter", () => {
           : page(),
       );
     });
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] });
+    const result = await testAdapter(fetchFn).search({ ...seed, aliases: ["Up"] });
     expect(result.complete).toBe(true);
     expect(result.candidates).toHaveLength(1);
     expect(
@@ -160,14 +180,14 @@ describe("OpenBetaCatalogueAdapter", () => {
         page(1, 1, [{ document: { climbUUID: id, climbName: name } }]),
         { data: { climb: climb() } },
       ]);
-      expect((await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).candidates).toHaveLength(1);
+      expect((await testAdapter(fetchFn).search(seed)).candidates).toHaveLength(1);
       expect(fetchFn).toHaveBeenCalledTimes(2);
     },
   );
 
   it.each(["Other climb", "Cragmont"])("does not fetch approximate name hit %s", async (name) => {
     const fetchFn = client([page(1, 1, [{ document: { climbUUID: id, climbName: name } }])]);
-    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
+    expect(await testAdapter(fetchFn).search(seed)).toEqual({
       candidates: [],
       complete: true,
     });
@@ -176,9 +196,10 @@ describe("OpenBetaCatalogueAdapter", () => {
 
   it("does not merge distinct Unicode names through uppercase expansion", async () => {
     const fetchFn = client([page(1, 1, [{ document: { climbUUID: id, climbName: "STRASSE" } }])]);
-    expect(await new OpenBetaCatalogueAdapter(fetchFn).search({ ...seed, name: "Straße" })).toEqual(
-      { candidates: [], complete: true },
-    );
+    expect(await testAdapter(fetchFn).search({ ...seed, name: "Straße" })).toEqual({
+      candidates: [],
+      complete: true,
+    });
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -199,7 +220,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   it("ignores another provider's UUID or URL when searching OpenBeta", async () => {
     const fetchFn = client([page(0, 1, [])]);
     expect(
-      await new OpenBetaCatalogueAdapter(fetchFn).search({
+      await testAdapter(fetchFn).search({
         ...seed,
         externalId: "other-provider-id",
         sourceUrl: "https://other.example/route/123",
@@ -220,7 +241,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   ])("rejects invalid public climb URL %s without requesting it", async (sourceUrl) => {
     const fetchFn = client([]);
     await expect(
-      new OpenBetaCatalogueAdapter(fetchFn).search({ ...seed, providerId: "openbeta", sourceUrl }),
+      testAdapter(fetchFn).search({ ...seed, providerId: "openbeta", sourceUrl }),
     ).rejects.toThrow(/source URL/);
     expect(fetchFn).not.toHaveBeenCalled();
   });
@@ -231,7 +252,7 @@ describe("OpenBetaCatalogueAdapter", () => {
       const fetchFn = client([{ data: { climb: climb() } }]);
       expect(
         (
-          await new OpenBetaCatalogueAdapter(fetchFn).search({
+          await testAdapter(fetchFn).search({
             ...seed,
             providerId: "openbeta",
             externalId: id,
@@ -246,7 +267,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   it("rejects conflicts between owned UUID and source URL before requesting either", async () => {
     const fetchFn = client([]);
     await expect(
-      new OpenBetaCatalogueAdapter(fetchFn).search({
+      testAdapter(fetchFn).search({
         ...seed,
         providerId: "openbeta",
         externalId: id,
@@ -285,7 +306,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     "falls back to the explicitly supplied parent when ancestry is unavailable: %o",
     async (path) => {
       const result = await lookup(path);
-      expect(result.candidates[0]?.locations.slice(1)).toEqual([
+      expect(result.candidates[0]?.locations.slice(1)).toMatchObject([
         {
           externalId: areaId,
           name: "Northeast Face",
@@ -298,7 +319,7 @@ describe("OpenBetaCatalogueAdapter", () => {
 
   it("preserves full area hierarchy and scopes coordinates to the nearest parent", async () => {
     const result = await lookup({ pathTokens: ["USA", "Northeast Face"], ancestors: [id, areaId] });
-    expect(result.candidates[0]?.locations.slice(1)).toEqual([
+    expect(result.candidates[0]?.locations.slice(1)).toMatchObject([
       { externalId: id, name: "USA", scope: "area", coordinates: null },
       {
         externalId: areaId,
@@ -311,7 +332,7 @@ describe("OpenBetaCatalogueAdapter", () => {
 
   it("does not invent IDs for ancestors when only their names are supplied", async () => {
     const result = await lookup({ pathTokens: ["USA", "Northeast Face"], ancestors: null });
-    expect(result.candidates[0]?.locations.slice(1)).toEqual([
+    expect(result.candidates[0]?.locations.slice(1)).toMatchObject([
       { externalId: null, name: "USA", scope: "area", coordinates: null },
       {
         externalId: areaId,
@@ -352,7 +373,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     const response = Response.json({ data: { climb: climb() } });
     Object.defineProperty(response, "url", { value: "https://other.example/" });
     await expect(
-      new OpenBetaCatalogueAdapter(vi.fn<typeof fetch>().mockResolvedValue(response)).search({
+      testAdapter(vi.fn<typeof fetch>().mockResolvedValue(response)).search({
         ...seed,
         providerId: "openbeta",
         externalId: id,
@@ -365,7 +386,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     const response = new Response("not JSON");
     vi.spyOn(response, "json").mockRejectedValue(parseError);
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response);
-    await expect(new OpenBetaCatalogueAdapter(fetchFn).search(seed)).rejects.toMatchObject({
+    await expect(testAdapter(fetchFn).search(seed)).rejects.toMatchObject({
       message: "OpenBeta catalogue returned invalid JSON. Retry when public access is available.",
       cause: parseError,
     });
@@ -377,7 +398,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     { errors: [{ message: "upstream error" }], data: { climb: climb() } },
   ])("rejects missing data or GraphQL errors even alongside a climb: %o", async (response) => {
     await expect(
-      new OpenBetaCatalogueAdapter(client([response])).search({
+      testAdapter(client([response])).search({
         ...seed,
         providerId: "openbeta",
         externalId: id,
@@ -387,7 +408,7 @@ describe("OpenBetaCatalogueAdapter", () => {
 
   it("sends explicit anonymous search and JSON query request metadata", async () => {
     const fetchFn = client([page(), { data: { climb: climb() } }]);
-    await new OpenBetaCatalogueAdapter(fetchFn).search(seed);
+    await testAdapter(fetchFn).search(seed);
     const searchUrl = new URL(String(fetchFn.mock.calls[0]?.[0]));
     expect(Object.fromEntries(searchUrl.searchParams)).toEqual({
       q: seed.name,
@@ -409,7 +430,7 @@ describe("OpenBetaCatalogueAdapter", () => {
 
   it("marks repeated page responses incomplete before reading their hits", async () => {
     const fetchFn = client([page(100, 1, unrelatedHits()), page(100, 1)]);
-    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
+    expect(await testAdapter(fetchFn).search(seed)).toEqual({
       candidates: [],
       complete: false,
     });
@@ -418,7 +439,7 @@ describe("OpenBetaCatalogueAdapter", () => {
 
   it("stops at an exact full-page result-count boundary", async () => {
     const fetchFn = client([page(20, 1, unrelatedHits())]);
-    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).toEqual({
+    expect(await testAdapter(fetchFn).search(seed)).toEqual({
       candidates: [],
       complete: true,
     });
@@ -430,7 +451,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response);
     expect(
       (
-        await new OpenBetaCatalogueAdapter(fetchFn).search({
+        await testAdapter(fetchFn).search({
           ...seed,
           providerId: "openbeta",
           externalId: id,
@@ -440,7 +461,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
   it("searches published names then fetches authoritative details and all true type flags", async () => {
     const fetchFn = client([page(), { data: { climb: climb() } }]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(seed);
+    const result = await testAdapter(fetchFn).search(seed);
     expect(result.complete).toBe(true);
     expect(result.candidates[0]).toMatchObject({
       externalId: id,
@@ -468,7 +489,7 @@ describe("OpenBetaCatalogueAdapter", () => {
         inheritedFrom: null,
       },
     ]);
-    expect(result.candidates[0]?.locations).toEqual([
+    expect(result.candidates[0]?.locations).toMatchObject([
       {
         externalId: id,
         name: "Cragmont Crack",
@@ -493,7 +514,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     const fetchFn = client([
       { data: { climb: climb({ name: "Renamed", type: { bouldering: true } }) } },
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...seed,
       providerId: "openbeta",
       externalId: id,
@@ -505,9 +526,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
 
   it("accepts verified same-provider source URLs", async () => {
-    const result = await new OpenBetaCatalogueAdapter(
-      client([{ data: { climb: climb() } }]),
-    ).search({
+    const result = await testAdapter(client([{ data: { climb: climb() } }])).search({
       ...seed,
       providerId: "openbeta",
       sourceUrl: `https://openbeta.io/climb/${id}/cragmont-crack`,
@@ -528,9 +547,11 @@ describe("OpenBetaCatalogueAdapter", () => {
       aid: true,
       tr: true,
     };
-    const result = await new OpenBetaCatalogueAdapter(
-      client([{ data: { climb: climb({ type }) } }]),
-    ).search({ ...seed, providerId: "openbeta", externalId: id });
+    const result = await testAdapter(client([{ data: { climb: climb({ type }) } }])).search({
+      ...seed,
+      providerId: "openbeta",
+      externalId: id,
+    });
     expect(result.candidates[0]?.tags.map((tag) => tag.sourceKey)).toEqual([
       "sport",
       "deepwatersolo",
@@ -544,7 +565,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
 
   it("keeps kind unknown when all type flags are false", async () => {
-    const result = await new OpenBetaCatalogueAdapter(
+    const result = await testAdapter(
       client([{ data: { climb: climb({ type: { trad: false, bouldering: false } }) } }]),
     ).search({ ...seed, providerId: "openbeta", externalId: id });
     expect(result.candidates[0]?.kind).toBeNull();
@@ -557,7 +578,7 @@ describe("OpenBetaCatalogueAdapter", () => {
       page(21, 2, [{ document: { climbUUID: id, climbName: " CRAGMONT  CRACK " } }]),
       { data: { climb: climb() } },
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(seed);
+    const result = await testAdapter(fetchFn).search(seed);
     expect(result.candidates).toHaveLength(1);
     expect(result.complete).toBe(true);
     expect(fetchFn).toHaveBeenCalledTimes(3);
@@ -569,10 +590,10 @@ describe("OpenBetaCatalogueAdapter", () => {
       page(100, 2, unrelatedHits(20)),
       page(100, 3, unrelatedHits(40)),
     ]);
-    expect((await new OpenBetaCatalogueAdapter(fetchFn).search(seed)).complete).toBe(false);
+    expect((await testAdapter(fetchFn).search(seed)).complete).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(3);
     const cutoff = client([{ ...page(0, 1, []), search_cutoff: true }]);
-    expect((await new OpenBetaCatalogueAdapter(cutoff).search(seed)).complete).toBe(false);
+    expect((await testAdapter(cutoff).search(seed)).complete).toBe(false);
   });
 
   it.each([`https://evil.example/climb/${id}`, `https://openbeta.io@evil.example/climb/${id}`])(
@@ -580,7 +601,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     async (sourceUrl) => {
       const fetchFn = client([]);
       await expect(
-        new OpenBetaCatalogueAdapter(fetchFn).search({
+        testAdapter(fetchFn).search({
           ...seed,
           providerId: "openbeta",
           sourceUrl,
@@ -593,7 +614,7 @@ describe("OpenBetaCatalogueAdapter", () => {
   it("rejects invalid UUIDs and mismatched response identities", async () => {
     const fetchFn = client([]);
     await expect(
-      new OpenBetaCatalogueAdapter(fetchFn).search({
+      testAdapter(fetchFn).search({
         ...seed,
         providerId: "openbeta",
         externalId: "invalid",
@@ -601,7 +622,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     ).rejects.toThrow(/UUID/i);
     expect(fetchFn).not.toHaveBeenCalled();
     await expect(
-      new OpenBetaCatalogueAdapter(client([{ data: { climb: climb({ uuid: areaId }) } }])).search({
+      testAdapter(client([{ data: { climb: climb({ uuid: areaId }) } }])).search({
         ...seed,
         providerId: "openbeta",
         externalId: id,
@@ -615,7 +636,7 @@ describe("OpenBetaCatalogueAdapter", () => {
     { data: { climb: { uuid: id } } },
   ])("rejects errors and malformed or missing details", async (response) => {
     await expect(
-      new OpenBetaCatalogueAdapter(client([response])).search({
+      testAdapter(client([response])).search({
         ...seed,
         providerId: "openbeta",
         externalId: id,
@@ -624,11 +645,9 @@ describe("OpenBetaCatalogueAdapter", () => {
   });
 
   it("rejects malformed search responses and HTTP redirects", async () => {
-    await expect(new OpenBetaCatalogueAdapter(client([{}])).search(seed)).rejects.toThrow(
-      /search/i,
-    );
+    await expect(testAdapter(client([{}])).search(seed)).rejects.toThrow(/search/i);
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response("", { status: 302 }));
-    await expect(new OpenBetaCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(/302/);
+    await expect(testAdapter(fetchFn).search(seed)).rejects.toThrow(/302/);
   });
 });
 
@@ -677,7 +696,7 @@ describe("OpenBeta bounded local-area discovery", () => {
         return Response.json({ data: { climb: climb() } });
       throw new Error("Unexpected OpenBeta request");
     });
-    const adapter = new OpenBetaCatalogueAdapter(fetchFn);
+    const adapter = testAdapter(fetchFn);
     const unlocated = await adapter.search(seed);
     const located = await adapter.search({
       ...seed,
@@ -701,7 +720,7 @@ describe("OpenBeta bounded local-area discovery", () => {
   it("preserves complete empty coverage of a matched leaf area", async () => {
     const area = { ...goatRockArea, totalClimbs: 0, climbs: [] };
     const fetchFn = client([nearby(), summary(area), { data: { area } }]);
-    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).toMatchObject({
+    expect(await testAdapter(fetchFn).search(localSeed)).toMatchObject({
       candidates: [],
       complete: true,
       searchArea: { externalId: goatRockArea.uuid },
@@ -727,7 +746,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       page(1, 1, [{ document: { climbUUID: id, climbName: "Cheddar Corner" } }]),
       { data: { climb: climb({ name: "Cheddar Corner" }) } },
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
     });
@@ -765,7 +784,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       page(0, 1, []),
       { data: { climb: climb({ uuid: extraId, name: "Up" }) } },
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...localSeed,
       aliases: ["Up", "Down", "Left start"],
     });
@@ -774,7 +793,9 @@ describe("OpenBeta bounded local-area discovery", () => {
       name: "Cheddar Corner",
       grade: "5.6",
       references: [{ providerId: "mountain-project", externalId: "105736399" }],
-      locations: expect.arrayContaining([{ ...localArea, externalId: goatRockArea.uuid }]),
+      locations: expect.arrayContaining([
+        expect.objectContaining({ ...localArea, externalId: goatRockArea.uuid }),
+      ]),
     });
     expect(result.complete).toBe(false);
     expect(result.searchArea).toBeUndefined();
@@ -811,7 +832,7 @@ describe("OpenBeta bounded local-area discovery", () => {
         .mockResolvedValueOnce(Response.json(summary(area)))
         .mockResolvedValueOnce(Response.json({ data: { area } }))
         .mockResolvedValueOnce(response());
-      await expect(new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).rejects.toThrow(error);
+      await expect(testAdapter(fetchFn).search(localSeed)).rejects.toThrow(error);
       expect(fetchFn).toHaveBeenCalledTimes(4);
     },
   );
@@ -826,14 +847,14 @@ describe("OpenBeta bounded local-area discovery", () => {
     "surfaces local discovery errors without continuing name discovery: $error",
     async ({ response, error }) => {
       const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => response());
-      await expect(new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).rejects.toThrow(error);
+      await expect(testAdapter(fetchFn).search(localSeed)).rejects.toThrow(error);
       expect(fetchFn).toHaveBeenCalledTimes(1);
     },
   );
 
   it("finds Corner Route independently of Cheddar Corner and retains hydrated MP references", async () => {
     const fetchFn = client([nearby(), summary(), { data: { area: goatRockArea } }]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
+    const result = await testAdapter(fetchFn).search(localSeed);
     expect(result.complete).toBe(true);
     expect(result.candidates).toHaveLength(12);
     expect(result.searchArea).toEqual({
@@ -847,12 +868,12 @@ describe("OpenBeta bounded local-area discovery", () => {
       references: [{ providerId: "mountain-project", externalId: "105736399" }],
       setting: null,
       locations: expect.arrayContaining([
-        {
+        expect.objectContaining({
           externalId: goatRockArea.uuid,
           name: "Goat Rock",
           scope: "area",
           coordinates: { latitude: 37.2282, longitude: -122.1079 },
-        },
+        }),
       ]),
     });
     const requests = fetchFn.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
@@ -867,7 +888,7 @@ describe("OpenBeta bounded local-area discovery", () => {
   });
 
   it("selects an owned area reference despite an area rename", async () => {
-    const result = await new OpenBetaCatalogueAdapter(
+    const result = await testAdapter(
       client([nearby(), summary(), { data: { area: goatRockArea } }]),
     ).search({
       ...localSeed,
@@ -878,7 +899,7 @@ describe("OpenBeta bounded local-area discovery", () => {
   });
 
   it("uses normalized area names and distance when area IDs belong to another provider", async () => {
-    const result = await new OpenBetaCatalogueAdapter(
+    const result = await testAdapter(
       client([nearby(), summary(), { data: { area: goatRockArea } }]),
     ).search({
       ...localSeed,
@@ -892,7 +913,7 @@ describe("OpenBeta bounded local-area discovery", () => {
   it("does not treat a same-name area with a different owned reference as matched", async () => {
     const fetchFn = client([nearby(), page(0, 1, [])]);
     expect(
-      await new OpenBetaCatalogueAdapter(fetchFn).search({
+      await testAdapter(fetchFn).search({
         ...localSeed,
         locations: [{ ...localArea, externalId: "999" }],
       }),
@@ -904,9 +925,9 @@ describe("OpenBeta bounded local-area discovery", () => {
     { ...goatRockArea, uuid: areaId },
     { ...goatRockArea, metadata: { ...goatRockArea.metadata, mp_id: "999" } },
   ])("rejects mismatched hydrated area identity", async (area) => {
-    await expect(
-      new OpenBetaCatalogueAdapter(client([nearby(), summary(area)])).search(localSeed),
-    ).rejects.toThrow(/area.*identity/i);
+    await expect(testAdapter(client([nearby(), summary(area)])).search(localSeed)).rejects.toThrow(
+      /area.*identity/i,
+    );
   });
 
   it("deduplicates repeated discovery areas and climbs without claiming partial counts complete", async () => {
@@ -917,7 +938,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       { data: { area } },
       page(0, 1, []),
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
+    const result = await testAdapter(fetchFn).search(localSeed);
     expect(result).toMatchObject({
       complete: false,
       candidates: [{ externalId: "0e68c732-da31-510e-8986-948d65689d45" }],
@@ -932,7 +953,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       summary({ ...goatRockArea, totalClimbs: 201 }),
       page(0, 1, []),
     ]);
-    expect(await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed)).toMatchObject({
+    expect(await testAdapter(fetchFn).search(localSeed)).toMatchObject({
       candidates: [],
       complete: false,
     });
@@ -955,7 +976,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       ...areas.slice(0, 3).flatMap((area) => [summary(area), { data: { area } }]),
       ...Array.from({ length: 3 }, () => page(0, 1, [])),
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
       aliases: ["Up", "Down", "Left start"],
@@ -970,7 +991,7 @@ describe("OpenBeta bounded local-area discovery", () => {
   it("keeps name discovery available when the nearest recorded area has unknown coordinates", async () => {
     const fetchFn = client([page(0, 1, [])]);
     expect(
-      await new OpenBetaCatalogueAdapter(fetchFn).search({
+      await testAdapter(fetchFn).search({
         ...localSeed,
         locations: [{ ...localArea, coordinates: null }],
       }),
@@ -987,7 +1008,7 @@ describe("OpenBeta bounded local-area discovery", () => {
         ...(lat === 37.22909 ? [summary(area), { data: { area } }] : []),
         ...(lat === 37.22909 ? [] : [page(0, 1, [])]),
       ]);
-      const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+      const result = await testAdapter(fetchFn).search({
         ...localSeed,
         providerId: "kaya",
       });
@@ -1014,7 +1035,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       ...areas.slice(2).map((area) => summary(area)),
       page(0, 1, []),
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
     });
@@ -1042,7 +1063,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       ...areas.slice(2).map((area) => summary(area)),
       page(0, 1, []),
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
     });
@@ -1060,7 +1081,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       })),
     };
     const fetchFn = client([nearby(), summary(area), { data: { area } }, page(0, 1, [])]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search(localSeed);
+    const result = await testAdapter(fetchFn).search(localSeed);
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]?.name).toBe("First retained fact");
@@ -1080,7 +1101,7 @@ describe("OpenBeta bounded local-area discovery", () => {
       { data: { area: areas[0] } },
       page(0, 1, []),
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...localSeed,
       providerId: "kaya",
     });
@@ -1096,7 +1117,7 @@ it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
       page(1, 1, [{ document: { climbUUID: id, climbName: name } }]),
       { data: { climb: climb({ name }) } },
     ]);
-    const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    const result = await testAdapter(fetchFn).search({
       ...seed,
       name: "The Great Roof",
     });
@@ -1109,4 +1130,127 @@ it("retains hydrated native-climb MP identity references", async () => {
   expect(result.candidates[0]?.references).toEqual([
     { providerId: "mountain-project", externalId: "105736399" },
   ]);
+});
+
+it("hydrates parent prose and overlapping distributions only as area context", async () => {
+  const fetchFn = client([
+    { data: { climb: climb() } },
+    {
+      data: {
+        area: {
+          uuid: areaId,
+          area_name: "Northeast Face",
+          metadata: { lat: 37.89, lng: -122.26, leaf: true },
+          ancestors: [areaId],
+          pathTokens: ["Northeast Face"],
+          totalClimbs: 7,
+          content: { description: "<p>Sandstone slab.</p>", areaLocation: "Follow the path." },
+          aggregate: {
+            byGrade: [{ label: "5.6", count: 4 }],
+            byDiscipline: { trad: { total: 4 }, tr: { total: 7 } },
+            byGradeBand: { beginner: 7 },
+          },
+        },
+      },
+    },
+  ]);
+  const result = await new OpenBetaCatalogueAdapter(fetchFn).search({
+    ...seed,
+    providerId: "openbeta",
+    externalId: id,
+  });
+  expect(result.candidates[0]?.locations.at(-1)?.context).toMatchObject({
+    url: `https://openbeta.io/area/${areaId}`,
+    sections: [
+      {
+        sourceKey: "content.description",
+        label: "Description",
+        text: "Sandstone slab.",
+        inheritedFrom: null,
+      },
+      {
+        sourceKey: "content.areaLocation",
+        label: "Location",
+        text: "Follow the path.",
+        inheritedFrom: null,
+      },
+    ],
+    statistics: expect.arrayContaining([
+      { sourceKey: "totalClimbs", label: "Total climbs", value: 7 },
+      { sourceKey: "aggregate.byDiscipline.trad", label: "Trad", value: 4 },
+      { sourceKey: "aggregate.byDiscipline.tr", label: "Top rope", value: 7 },
+    ]),
+  });
+  expect(result.candidates[0]?.tags).toHaveLength(2);
+});
+
+it("reuses two parent requests across discovered climbs and preserves their root ancestry", async () => {
+  const parentId = "00000000-0000-4000-8000-000000000002";
+  const rootId = "00000000-0000-4000-8000-000000000003";
+  const second = "00000000-0000-4000-8000-000000000004";
+  const fetchFn = client([
+    page(
+      2,
+      1,
+      [id, second].map((climbUUID) => ({ document: { climbUUID, climbName: seed.name } })),
+    ),
+    { data: { climb: climb() } },
+    { data: { climb: climb({ uuid: second }) } },
+    {
+      data: {
+        area: {
+          uuid: areaId,
+          area_name: "Northeast Face",
+          metadata: {},
+          totalClimbs: 7,
+          pathTokens: ["California", "Cragmont Park", "Northeast Face"],
+          ancestors: [rootId, parentId, areaId],
+        },
+      },
+    },
+    {
+      data: {
+        area: {
+          uuid: parentId,
+          area_name: "Cragmont Park",
+          metadata: { lat: 37.9, lng: -122.2 },
+          totalClimbs: 15,
+          content: { description: "Park access." },
+        },
+      },
+    },
+  ]);
+  const result = await new OpenBetaCatalogueAdapter(fetchFn).search(seed);
+  expect(fetchFn).toHaveBeenCalledTimes(5);
+  for (const candidate of result.candidates) {
+    expect(
+      candidate.locations
+        .filter((location) => location.scope === "area")
+        .map((location) => location.name),
+    ).toEqual(["California", "Cragmont Park", "Northeast Face"]);
+    expect(
+      candidate.locations.find((location) => location.externalId === parentId)?.context?.sections[0]
+        ?.text,
+    ).toBe("Park access.");
+    expect(candidate.locations[0]?.coordinates).toEqual({ latitude: 0, longitude: 0 });
+  }
+});
+
+it.each([
+  null,
+  { uuid: id, area_name: "Wrong area", metadata: {}, totalClimbs: 1 },
+  {
+    uuid: areaId,
+    area_name: "Wrong ancestry",
+    metadata: {},
+    totalClimbs: 1,
+    ancestors: [id],
+    pathTokens: ["Wrong"],
+  },
+])("rejects unavailable, mismatched, or malformed parent context", async (area) => {
+  await expect(
+    new OpenBetaCatalogueAdapter(client([{ data: { climb: climb() } }, { data: { area } }])).search(
+      { ...seed, providerId: "openbeta", externalId: id },
+    ),
+  ).rejects.toThrow(/area.*(?:invalid|unavailable)/);
 });
