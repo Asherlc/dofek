@@ -214,9 +214,11 @@ the cadence-based gap rule used by both clients. This follows the distinction
 between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
 The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.
 
-Activity details use one Sources disclosure for the device/provider inheritance
-tree and reported hardware facts. Device facts attach to their device node by
-activity ID; reported hardware appears beneath the provider that reports it.
-Metadata without a matching source record retains a provider branch. The [source disclosure](src/components/ActivitySourceDisclosure.tsx)
-keeps query errors and retry actions visible while collapsed and follows the
+Activity details use one [Lineage disclosure](src/components/ActivitySourceDisclosure.tsx)
+with an explicit Original heading, labeled Shared to branches, and one divider
+and Other heading for additional recordings. Unresolved origins show Original
+unknown. The [shared projection](../providers-meta/src/activity-source-hardware.ts)
+uses reported recording hardware to name entries without turning device inventory
+into sharing steps. Metadata rows are omitted. Errors and retry actions remain
+visible while collapsed, following the
 [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).

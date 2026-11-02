@@ -7,8 +7,6 @@ import {
   branchingActivitySourceTree,
   recognizedWatchHardware,
   recognizedWatchSourceTree,
-  walkingActivitySourceHardware,
-  walkingActivitySourceTree,
 } from "../app-fixtures/activity-source-tree";
 import { captureException } from "../lib/telemetry";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure";
@@ -81,6 +79,37 @@ vi.mock("./ProviderLogo", () => ({
 }));
 
 describe("ActivitySourceDisclosure", () => {
+  it("labels the original, sharing direction, and all other branches explicitly", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          ...branchingActivitySourceTree,
+          otherSources: [
+            branchingActivitySourceTree.otherSources,
+            branchingActivitySourceTree.otherSources.map((node) => ({
+              ...node,
+              id: `another-${node.id}`,
+            })),
+          ].flat(),
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Hang Ten" }));
+    expect(screen.getByText("Original")).toBeDefined();
+    expect(screen.getAllByText("Other")).toHaveLength(1);
+    expect(screen.getAllByText("Shared to").length).toBeGreaterThan(0);
+  });
+  it("labels unknown origins without assigning a winner", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{ primary: null, otherSources: branchingActivitySourceTree.otherSources }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
+    expect(screen.getByText("Original unknown")).toBeDefined();
+    expect(screen.getByText("WHOOP")).toBeDefined();
+  });
+
   it("opens header sources in a dismissible overlay", () => {
     render(
       <ActivitySourceDisclosure
@@ -88,11 +117,11 @@ describe("ActivitySourceDisclosure", () => {
         heading={<Text>Morning Ride</Text>}
       />,
     );
-    const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
     fireEvent.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: "Activity sources" });
+    const dialog = screen.getByRole("dialog", { name: "Lineage" });
     expect(within(dialog).getByText("Apple Health")).toBeDefined();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Close sources" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close lineage" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText("Morning Ride")).toBeDefined();
@@ -127,7 +156,7 @@ describe("ActivitySourceDisclosure", () => {
         }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Strava" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Strava" }));
     expect(screen.getAllByLabelText(label)).toHaveLength(2);
   });
 
@@ -148,7 +177,7 @@ describe("ActivitySourceDisclosure", () => {
         }}
       />,
     );
-    const trigger = screen.getByRole("button", { name: "Sources: WHOOP (Cloud)" });
+    const trigger = screen.getByRole("button", { name: "Lineage: WHOOP (Cloud)" });
     expect(within(trigger).getByText("WHOOP")).toBeDefined();
     expect(trigger.querySelector('[data-icon="cloud-outline"]')).toBeTruthy();
   });
@@ -162,25 +191,20 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     const trigger = screen.getByRole("button", {
-      name: "Sources: Apple Watch Series 7 (GPS + Cellular, 45mm)",
+      name: "Lineage: Apple Watch Series 7 (GPS + Cellular, 45mm)",
     });
-    expect(screen.queryByText("Device name: Asher’s Apple Watch")).toBeNull();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(1);
+    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(2);
     expect(screen.getAllByText("Garmin Forerunner 955")).toHaveLength(1);
-    expect(screen.getByText("Device name: Asher’s Apple Watch")).toBeDefined();
     expect(screen.getByText("Apple Health")).toBeDefined();
     const garminLink = screen.getByRole("button", {
-      name: "View source for Garmin Forerunner 955",
+      name: "View activity for Garmin Forerunner 955",
     });
     const garmin = garminLink.parentElement?.parentElement?.parentElement?.parentElement;
     if (!garmin) throw new Error("Missing Garmin source branch");
-    expect(within(garmin).getByText("Firmware: 19.18")).toBeDefined();
-    expect(within(garmin).queryByText("Device name: Asher’s Apple Watch")).toBeNull();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Device name: Asher’s Apple Watch")).toBeNull();
     expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeDefined();
   });
 
@@ -191,7 +215,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(container.innerHTML).toBe("");
 
     rerender(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
-    expect(screen.getByRole("button", { name: "Sources: Hang Ten" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Lineage: Hang Ten" })).toBeDefined();
 
     rerender(<ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />);
     expect(container.innerHTML).toBe("");
@@ -199,11 +223,11 @@ describe("ActivitySourceDisclosure", () => {
 
   it("toggles an inline tree with a single primary root and accessible controls", () => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
-    const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
     expect(getComputedStyle(trigger).minHeight).toBe("44px");
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(trigger.textContent).toContain("Hang Ten");
-    expect(trigger.textContent).toContain("Sources");
+    expect(trigger.textContent).toContain("Lineage");
     expect(within(trigger).getByTestId("provider-logo").getAttribute("data-provider")).toBe(
       "hang-ten",
     );
@@ -215,7 +239,7 @@ describe("ActivitySourceDisclosure", () => {
     const controlledId = trigger.getAttribute("aria-controls");
     expect(controlledId).toBeTruthy();
     expect(document.getElementById(controlledId ?? "")?.textContent).toContain("Apple Health");
-    expect(screen.getAllByText("Hang Ten")).toHaveLength(1);
+    expect(screen.getAllByText("Hang Ten")).toHaveLength(2);
     expect(screen.getByText("Apple Health")).toBeDefined();
     expect(screen.getAllByText("Strava")).toHaveLength(2);
     expect(screen.getByText("WHOOP")).toBeDefined();
@@ -229,35 +253,35 @@ describe("ActivitySourceDisclosure", () => {
         tree={{ primary: null, otherSources: branchingActivitySourceTree.primary?.children ?? [] }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
     expect(screen.getByText("Apple Health")).toBeDefined();
     expect(screen.getAllByText("Strava")).toHaveLength(2);
   });
 
   it("opens the server-projected source URL independently of expansion", () => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
-    const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
     fireEvent.click(trigger);
-    fireEvent.click(screen.getAllByRole("button", { name: "View source for Strava" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "View activity for Strava" })[0]);
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("names source controls with their visible action and provider", () => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Hang Ten" }));
-    const controls = screen.getAllByRole("button", { name: "View source for Strava" });
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Hang Ten" }));
+    const controls = screen.getAllByRole("button", { name: "View activity for Strava" });
     expect(controls).toHaveLength(2);
     for (const control of controls) {
-      expect(control.textContent).toContain("View source");
+      expect(control.textContent).toContain("Strava");
     }
   });
 
   it.each(["Enter", " "])("opens a source with the real RN-web %j key", async (key) => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
-    const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
     fireEvent.click(trigger);
-    const source = screen.getAllByRole("button", { name: "View source for Strava" })[0];
+    const source = screen.getAllByRole("button", { name: "View activity for Strava" })[0];
     expect(source).toBeDefined();
     if (!source) throw new Error("Missing Strava source control");
     act(() => source.focus());
@@ -270,74 +294,25 @@ describe("ActivitySourceDisclosure", () => {
     const error = new Error("Cannot open source");
     vi.mocked(Linking.openURL).mockRejectedValueOnce(error);
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Hang Ten" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "View source for Strava" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Hang Ten" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "View activity for Strava" })[0]);
     await waitFor(() => expect(captureException).toHaveBeenCalledWith(error));
     expect(screen.getByText("Cannot open source")).toBeDefined();
   });
 
-  it("opens recorder, nested sensor, and unmatched facts with the source tree", () => {
-    render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} hardware={hardware} />);
-    const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
-    expect(screen.queryByText("Serial number: WATCH-123")).toBeNull();
-    expect(screen.queryByText("Heart rate strap")).toBeNull();
-    fireEvent.click(trigger);
-    const content = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
-    if (!content) throw new Error("Source disclosure content is missing");
-    expect(within(content).getByText("Serial number: WATCH-123")).toBeDefined();
-    expect(screen.getAllByRole("button", { name: "View source for Strava" })).toHaveLength(2);
-  });
-
-  it("places Apple Watch facts at the device root and nests Whoop under Peloton", () => {
-    render(
-      <ActivitySourceDisclosure
-        tree={walkingActivitySourceTree}
-        hardware={walkingActivitySourceHardware}
-      />,
-    );
-    const trigger = screen.getByRole("button", { name: "Sources: Asher’s Apple Watch" });
-    fireEvent.click(trigger);
-    const content = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
-    const root = content?.firstElementChild;
-    const serialFacts = screen.getByText("Serial number: WATCH-123").parentElement;
-    expect(serialFacts?.parentElement).toBe(root);
-    const appleHealth = screen.getByText("Apple Health").parentElement;
-    if (!appleHealth) throw new Error("Apple Health source content is missing");
-    expect(within(appleHealth).queryByText("Serial number: WATCH-123")).toBeNull();
-    const peloton = screen.getByText("Peloton").parentElement?.parentElement?.parentElement;
-    if (!peloton) throw new Error("Peloton source branch is missing");
-    expect(within(peloton).getByText("Whoop")).toBeDefined();
-  });
-
-  it("keeps nested hardware on its exact source record and preserves unmatched metadata", () => {
-    render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} hardware={hardware} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Hang Ten" }));
-    const stravaLink = screen.getAllByRole("button", { name: "View source for Strava" })[0];
-    const stravaSource = stravaLink?.parentElement?.parentElement?.parentElement?.parentElement;
-    if (!stravaSource) throw new Error("Strava source content is missing");
-    expect(within(stravaSource).getByText("Firmware: 3.2")).toBeDefined();
-    expect(within(stravaSource).getByText("Power: Measured")).toBeDefined();
-    const peloton = screen.getByText("Peloton").parentElement?.parentElement?.parentElement;
-    if (!peloton) throw new Error("Peloton source branch is missing");
-    expect(within(peloton).getByText("Peloton Bike+")).toBeDefined();
-    expect(within(peloton).getByText("Platform: Peloton Bike")).toBeDefined();
-    expect(within(peloton).getByText("Power: Measured")).toBeDefined();
-    expect(screen.getAllByText("Firmware: 3.2")).toHaveLength(1);
-  });
-
-  it("offers hardware-only sources and hides their facts again when collapsed", () => {
+  it("offers hardware-only sources and collapses them", () => {
     render(
       <ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} hardware={hardware} />,
     );
-    const trigger = screen.getByRole("button", { name: "Sources" });
+    const trigger = screen.getByRole("button", { name: "Lineage" });
     fireEvent.click(trigger);
-    expect(screen.getByText("Serial number: WATCH-123")).toBeDefined();
+    expect(screen.getByText("Peloton Bike+")).toBeDefined();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Serial number: WATCH-123")).toBeNull();
   });
 
-  it("shows actionable refresh errors while collapsed and retains cached facts on expansion", () => {
+  it("shows actionable refresh errors while collapsed and retains cached devices on expansion", () => {
     const onRetry = vi.fn();
     render(
       <ActivitySourceDisclosure
@@ -351,8 +326,8 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getByRole("alert").textContent).toContain("Reconnect Apple Health");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Hang Ten" }));
-    expect(screen.getByText("Serial number: WATCH-123")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Hang Ten" }));
+    expect(screen.getByText("Peloton Bike+")).toBeDefined();
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
   });
 
@@ -360,7 +335,7 @@ describe("ActivitySourceDisclosure", () => {
     const view = render(
       <ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} hardwareLoading />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
     expect(screen.getByTestId("query-state-loading")).toBeDefined();
     view.rerender(
       <ActivitySourceDisclosure
@@ -368,7 +343,7 @@ describe("ActivitySourceDisclosure", () => {
         hardwareError={new Error("Reconnect Peloton, then retry.")}
       />,
     );
-    expect(screen.getByRole("button", { name: "Sources" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Lineage" })).toBeDefined();
     expect(screen.getByRole("alert").textContent).toContain("Reconnect Peloton");
   });
 });

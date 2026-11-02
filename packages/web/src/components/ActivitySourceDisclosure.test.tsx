@@ -6,21 +6,59 @@ import {
   recognizedWatchHardware,
   recognizedWatchSourceTree,
   sourceHardware,
-  walkingSourceTree,
 } from "./ActivitySourceDisclosure.fixtures.ts";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("labels the original, sharing direction, and all other branches explicitly", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          ...branchingSourceTree,
+          otherSources: [
+            branchingSourceTree.otherSources,
+            branchingSourceTree.otherSources.map((node) => ({ ...node, id: `another-${node.id}` })),
+          ].flat(),
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Lineage" }));
+    expect(screen.getByText("Original")).toBeDefined();
+    expect(screen.getAllByText("Other")).toHaveLength(1);
+    expect(screen.getAllByText("Shared to").length).toBeGreaterThan(0);
+  });
+  it("labels unknown origins without assigning a winner", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{ primary: null, otherSources: branchingSourceTree.otherSources }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
+    expect(screen.getByText("Original unknown")).toBeDefined();
+    expect(screen.getByText("WHOOP")).toBeDefined();
+  });
+
+  it("returns keyboard focus to the inline trigger when closing lineage", () => {
+    render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
+    const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
+    fireEvent.click(trigger);
+    const close = screen.getByRole("button", { name: "Close lineage" });
+    close.focus();
+    fireEvent.click(close);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+  });
+
   it("opens header sources in a flyout and returns focus after Escape", async () => {
     const { container } = render(
       <ActivitySourceDisclosure tree={branchingSourceTree} heading={<h1>Morning Ride</h1>} />,
     );
-    const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
+    const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
     trigger.focus();
     fireEvent.click(trigger);
-    const flyout = screen.getByRole("dialog", { name: "Activity sources" });
+    const flyout = screen.getByRole("dialog", { name: "Lineage" });
     expect(within(flyout).getByRole("link", { name: "Strava" })).toBeVisible();
     expect(container.contains(flyout)).toBe(false);
     fireEvent.keyDown(flyout, { key: "Escape" });
@@ -58,7 +96,7 @@ describe("ActivitySourceDisclosure", () => {
         }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Strava Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Strava Lineage" }));
     expect(screen.getAllByRole("link", { name: label })).toHaveLength(2);
   });
 
@@ -79,7 +117,7 @@ describe("ActivitySourceDisclosure", () => {
         }}
       />,
     );
-    const trigger = screen.getByRole("button", { name: "WHOOP (Cloud) Sources" });
+    const trigger = screen.getByRole("button", { name: "WHOOP (Cloud) Lineage" });
     expect(within(trigger).getByText("WHOOP")).toBeDefined();
     expect(within(trigger).getByTitle("Cloud").querySelector("svg")).toBeTruthy();
   });
@@ -92,91 +130,29 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     const trigger = screen.getByRole("button", {
-      name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Sources",
+      name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Lineage",
     });
-    expect(screen.queryByText("Asher’s Apple Watch")).toBeNull();
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(1);
+    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(2);
     expect(screen.getAllByText("Garmin Forerunner 955")).toHaveLength(1);
-    expect(screen.getByText("Asher’s Apple Watch")).toBeVisible();
     expect(screen.getByText("Apple Health")).toBeVisible();
     const garmin = screen.getByRole("link", { name: "Garmin Forerunner 955" }).closest("li");
     if (!garmin) throw new Error("Missing Garmin source branch");
-    expect(within(garmin).getByText("19.18")).toBeVisible();
-    expect(within(garmin).queryByText("Asher’s Apple Watch")).toBeNull();
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Asher’s Apple Watch")).toBeNull();
     expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeVisible();
   });
-  it("reveals device facts with their source branch through the Sources control", () => {
-    render(<ActivitySourceDisclosure tree={branchingSourceTree} hardware={sourceHardware} />);
-    const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
-    expect(screen.queryByText("12345678")).toBeNull();
-    fireEvent.click(trigger);
-    expect(screen.getByText("12345678")).toBeVisible();
-    const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
-    if (!strava) throw new Error("Missing Strava branch");
-    expect(within(strava).getByText("Measured")).toBeVisible();
-    expect(within(strava).queryByText("12345678")).toBeNull();
-    const others = screen.getByRole("region", { name: "Additional sources" });
-    expect(within(others).queryByText("12345678")).toBeNull();
-    fireEvent.click(trigger);
-    expect(screen.queryByText("12345678")).toBeNull();
-  });
 
-  it("nests reported device metadata beneath its reporting provider", () => {
-    render(<ActivitySourceDisclosure tree={branchingSourceTree} hardware={sourceHardware} />);
-    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Sources" }));
-    const peloton = screen.getByText("Peloton").closest("li");
-    if (!peloton) throw new Error("Missing Peloton branch");
-    const child = within(peloton).getByText("Whoop").closest("li");
-    expect(child?.parentElement?.closest("li")).toBe(peloton);
-  });
-
-  it("places watch model and firmware beneath the watch rather than its importing app", () => {
-    render(
-      <ActivitySourceDisclosure
-        tree={walkingSourceTree}
-        hardware={{
-          items: [
-            {
-              ...sourceHardware.items[0],
-              id: "watch",
-              activityId: "apple-record",
-              providerId: "apple_health",
-              sourceName: "Asher’s Apple Watch",
-              role: "recorder",
-              label: "Apple Watch",
-              model: "Apple Watch Ultra 3",
-              manufacturer: "Apple",
-              evidence: "Reported hardware",
-              details: [{ label: "Firmware", value: "26.0" }],
-            },
-          ],
-          power: [],
-        }}
-      />,
-    );
-    const trigger = screen.getByRole("button", { name: "Asher’s Apple Watch Sources" });
-    fireEvent.click(trigger);
-    expect(screen.getByText("Apple Watch Ultra 3")).toBeVisible();
-    expect(screen.getByText("26.0")).toBeVisible();
-    const appleHealth = screen.getByText("Apple Health").closest("li");
-    if (!appleHealth) throw new Error("Missing Apple Health branch");
-    expect(within(appleHealth).queryByText("26.0")).toBeNull();
-  });
-
-  it("offers device facts when no source tree is available", () => {
+  it("offers reported devices when no source tree is available", () => {
     render(
       <ActivitySourceDisclosure
         tree={{ primary: null, otherSources: [] }}
         hardware={sourceHardware}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
-    expect(screen.getByText("12345678")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
+    expect(screen.getByText("Edge 530")).toBeVisible();
   });
 
   it("keeps a hardware refresh error actionable while Sources is collapsed", () => {
@@ -192,15 +168,15 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getByText("Reconnect Garmin to load device details")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Sources" }));
-    expect(screen.getByText("12345678")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Edge 530 Lineage" }));
+    expect(screen.getAllByText("Edge 530")).toHaveLength(2);
   });
 
   it("keeps pending device details reachable without a source tree", () => {
     const { rerender } = render(
       <ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} hardwareLoading />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
     expect(screen.getByRole("status", { name: "Loading device details." })).toBeVisible();
     rerender(
       <ActivitySourceDisclosure
@@ -209,7 +185,7 @@ describe("ActivitySourceDisclosure", () => {
         hardwareLoading
       />,
     );
-    expect(screen.getByText("12345678")).toBeVisible();
+    expect(screen.getByText("Edge 530")).toBeVisible();
     expect(screen.queryByRole("status", { name: "Loading device details." })).toBeNull();
   });
 
@@ -220,7 +196,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(container).toBeEmptyDOMElement();
 
     rerender(<ActivitySourceDisclosure tree={branchingSourceTree} />);
-    expect(screen.getByRole("button", { name: "Garmin Connect Sources" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Garmin Connect Lineage" })).toBeVisible();
 
     rerender(<ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />);
     expect(container).toBeEmptyDOMElement();
@@ -243,19 +219,19 @@ describe("ActivitySourceDisclosure", () => {
         }}
       />,
     );
-    const trigger = screen.getByRole("button", { name: "Forerunner 965 Sources" });
+    const trigger = screen.getByRole("button", { name: "Forerunner 965 Lineage" });
     expect(trigger.querySelector("img")).toHaveAttribute(
       "src",
       expect.stringContaining("010-02809-00"),
     );
     expect(trigger.querySelector("img")).toHaveAttribute("width", "18");
     fireEvent.click(trigger);
-    expect(screen.getAllByText("Forerunner 965")).toHaveLength(1);
+    expect(screen.getAllByText("Forerunner 965")).toHaveLength(2);
   });
 
   it("expands inline with one primary root and distinct transfer branches", () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
-    const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
+    const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(trigger.querySelectorAll("img")).toHaveLength(1);
     expect(screen.queryByText("Strava")).toBeNull();
@@ -263,7 +239,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     const content = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
     expect(content).toBeVisible();
-    expect(screen.getAllByText("Garmin Connect")).toHaveLength(1);
+    expect(screen.getAllByText("Garmin Connect")).toHaveLength(2);
     const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
     expect(strava).not.toBeNull();
     if (!strava) throw new Error("Missing Strava tree node");
@@ -275,8 +251,8 @@ describe("ActivitySourceDisclosure", () => {
 
   it("retains disconnected components outside the primary tree", () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
-    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Sources" }));
-    const others = screen.getByRole("region", { name: "Additional sources" });
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Lineage" }));
+    const others = screen.getByRole("region", { name: "Other" });
     expect(within(others).getByText("WHOOP")).toBeVisible();
     expect(within(others).getByText("Transfer history unavailable")).toBeVisible();
     expect(within(others).queryByText("Strava")).toBeNull();
@@ -288,7 +264,7 @@ describe("ActivitySourceDisclosure", () => {
         tree={{ primary: null, otherSources: branchingSourceTree.otherSources }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
     expect(screen.getByText("WHOOP")).toBeVisible();
   });
 
@@ -299,7 +275,7 @@ describe("ActivitySourceDisclosure", () => {
         <ActivitySourceDisclosure tree={branchingSourceTree} />
       </>,
     );
-    const triggers = screen.getAllByRole("button", { name: "Garmin Connect Sources" });
+    const triggers = screen.getAllByRole("button", { name: "Garmin Connect Lineage" });
     expect(triggers[0]?.tagName).toBe("BUTTON");
     expect(triggers[0]?.getAttribute("aria-controls")).not.toBe(
       triggers[1]?.getAttribute("aria-controls"),
@@ -313,7 +289,7 @@ describe("ActivitySourceDisclosure", () => {
 
   it("renders server labels and URLs without adding Apple Health logo badges", () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
-    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Lineage" }));
     expect(screen.getByRole("link", { name: "Strava" })).toHaveAttribute(
       "href",
       "https://www.strava.com/activities/123",
@@ -321,8 +297,8 @@ describe("ActivitySourceDisclosure", () => {
     for (const label of screen.getAllByText("Apple Health")) {
       expect(label.parentElement?.querySelectorAll("img")).toHaveLength(1);
     }
-    const primaryLink = screen.getByRole("link", { name: "View activity for Garmin Connect" });
-    expect(primaryLink).toHaveTextContent("View activity");
+    const primaryLink = screen.getByRole("link", { name: "Garmin Connect" });
+    expect(primaryLink).toHaveTextContent("Garmin Connect");
     expect(primaryLink).toHaveAttribute("href", "https://connect.garmin.com/modern/activity/123");
   });
 });

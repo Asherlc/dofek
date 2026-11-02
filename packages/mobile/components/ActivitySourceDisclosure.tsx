@@ -23,29 +23,16 @@ interface Props {
   onRetryHardware?: () => void;
 }
 
-function SourceDetails({ node }: { node: ActivitySourceTreeNode }) {
-  if (!node.details?.length) return null;
-  return (
-    <View style={styles.nodeDetails}>
-      {node.details.map((detail) => (
-        <Text key={`${detail.label}:${detail.value}`} style={styles.description}>
-          {detail.label}: {detail.value}
-        </Text>
-      ))}
-    </View>
-  );
-}
-
-function SourceLink({ node }: { node: ActivitySourceTreeNode }) {
+function SourceLink({ node, children }: { node: ActivitySourceTreeNode; children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const url = node.url;
-  if (!url) return null;
+  if (!url) return <>{children}</>;
   return (
     <View>
       <Pressable
         style={styles.link}
         accessibilityRole="button"
-        accessibilityLabel={`View source for ${node.label}`}
+        accessibilityLabel={`View activity for ${node.label}`}
         onPress={async () => {
           setError(null);
           try {
@@ -56,7 +43,7 @@ function SourceLink({ node }: { node: ActivitySourceTreeNode }) {
           }
         }}
       >
-        <Text style={styles.linkLabel}>View source ↗</Text>
+        {children}
       </Pressable>
       {error ? (
         <Text style={styles.error} accessibilityRole="alert">
@@ -70,20 +57,20 @@ function SourceLink({ node }: { node: ActivitySourceTreeNode }) {
 function SourceNode({ node }: { node: ActivitySourceTreeNode }) {
   return (
     <View>
-      <View style={styles.nodeRow}>
-        <ProviderLogo
-          provider={node.providerId}
-          sourceName={node.sourceName}
-          serverUrl={SERVER_URL}
-          size={20}
-        />
-        <View style={styles.nodeContent}>
-          <SourceLabel node={node} />
-          {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
-          <SourceLink node={node} />
-          <SourceDetails node={node} />
+      <SourceLink node={node}>
+        <View style={styles.nodeRow}>
+          <ProviderLogo
+            provider={node.providerId}
+            sourceName={node.sourceName}
+            serverUrl={SERVER_URL}
+            size={20}
+          />
+          <View style={styles.nodeContent}>
+            <SourceLabel node={node} />
+            {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
+          </View>
         </View>
-      </View>
+      </SourceLink>
       <SourceBranches nodes={node.children} />
     </View>
   );
@@ -93,6 +80,7 @@ function SourceBranches({ nodes }: { nodes: ActivitySourceTreeNode[] }) {
   return nodes.map((node) => (
     <View key={node.id} style={styles.branch}>
       <View style={styles.connector} accessibilityElementsHidden importantForAccessibility="no" />
+      <Text style={styles.relationship}>Shared to</Text>
       <SourceNode node={node} />
     </View>
   ));
@@ -120,16 +108,23 @@ export function ActivitySourceDisclosure({
       ) : null}
       {primary ? (
         <View>
-          {primary.description ? (
-            <Text style={styles.description}>{primary.description}</Text>
-          ) : null}
-          <SourceLink node={primary} />
-          <SourceDetails node={primary} />
-          <SourceBranches nodes={primary.children} />
+          <Text style={styles.sectionTitle} accessibilityRole="header">
+            Original
+          </Text>
+          <SourceNode node={primary} />
         </View>
-      ) : null}
+      ) : (
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          Original unknown
+        </Text>
+      )}
       {otherSources.length > 0 ? (
-        <View style={styles.otherSources}>
+        <View style={[styles.otherSources, primary ? styles.divided : undefined]}>
+          {primary ? (
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              Other
+            </Text>
+          ) : null}
           {otherSources.map((node) => (
             <SourceNode key={node.id} node={node} />
           ))}
@@ -144,8 +139,8 @@ export function ActivitySourceDisclosure({
       <Pressable
         style={[styles.trigger, heading ? styles.headerTrigger : undefined]}
         accessibilityRole="button"
-        accessibilityLabel={primary ? `Sources: ${primary.label}` : "Sources"}
-        accessibilityHint={open ? "Hide activity sources" : "Show activity sources"}
+        accessibilityLabel={primary ? `Lineage: ${primary.label}` : "Lineage"}
+        accessibilityHint={open ? "Hide activity lineage" : "Show activity lineage"}
         accessibilityState={{ expanded: open }}
         aria-haspopup={heading ? "dialog" : undefined}
         aria-expanded={open}
@@ -164,7 +159,7 @@ export function ActivitySourceDisclosure({
           </View>
         ) : null}
         <View style={styles.sourceControl}>
-          <Text style={styles.controlLabel}>Sources</Text>
+          <Text style={styles.controlLabel}>Lineage</Text>
           <Text style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
             {open ? "⌃" : "⌄"}
           </Text>
@@ -188,23 +183,23 @@ export function ActivitySourceDisclosure({
               <Pressable
                 style={StyleSheet.absoluteFill}
                 accessibilityRole="button"
-                accessibilityLabel="Dismiss sources"
+                accessibilityLabel="Dismiss lineage"
                 onPress={() => setOpen(false)}
               />
               <View
                 id={contentId}
                 style={styles.dialog}
                 role="dialog"
-                accessibilityLabel="Activity sources"
+                accessibilityLabel="Lineage"
                 accessibilityViewIsModal
               >
                 <View style={styles.dialogHeader}>
                   <Text style={styles.dialogTitle} accessibilityRole="header">
-                    Sources
+                    Lineage
                   </Text>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Close sources"
+                    accessibilityLabel="Close lineage"
                     onPress={() => setOpen(false)}
                     style={styles.closeButton}
                   >
@@ -217,6 +212,9 @@ export function ActivitySourceDisclosure({
           </Modal>
         ) : (
           <View id={contentId} style={styles.details}>
+            <Text style={styles.dialogTitle} accessibilityRole="header">
+              Lineage
+            </Text>
             {details}
           </View>
         )
@@ -268,7 +266,6 @@ const styles = StyleSheet.create({
   description: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   nodeRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   nodeContent: { flex: 1, minWidth: 0, gap: 2 },
-  nodeDetails: { gap: 2, marginTop: spacing.xs },
   branch: {
     marginLeft: 9,
     borderLeftWidth: 1,
@@ -279,14 +276,23 @@ const styles = StyleSheet.create({
   connector: {
     position: "absolute",
     left: 0,
-    top: 18,
+    top: 15,
     width: 14,
     borderTopWidth: 1,
     borderTopColor: colors.textTertiary,
   },
   otherSources: { gap: spacing.sm, marginTop: spacing.md },
   link: { minHeight: 44, minWidth: 44, justifyContent: "center", alignSelf: "flex-start" },
-  linkLabel: { color: colors.accent, fontSize: 12 },
+  sectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+  },
+  relationship: { color: colors.accent, fontSize: 12, marginBottom: spacing.xs },
+  divided: { borderTopWidth: 1, borderTopColor: colors.textTertiary, paddingTop: spacing.md },
   error: { color: colors.danger, fontSize: 12 },
 });
 

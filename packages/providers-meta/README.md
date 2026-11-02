@@ -12,12 +12,10 @@ Metadata and statistics for data providers.
   evidence, not per-sample attribution; see
   [Garmin's activity-file description](https://developer.garmin.com/fit/articles/file-types/activity.html).
   [`activitySourceTreeWithHardware(tree, hardware)`](src/activity-source-hardware.ts)
-  clones the source tree and nests hardware beneath its reporting record. Recording
-  device facts enrich existing Apple Watch or Garmin device nodes; specific models,
-  reported details, and power evidence use optional node `details`. Unmatched
-  records remain separate reporting-source roots rather than implying import
-  ancestry. This projection preserves the distinction between FIT creators and
-  device inventory described in the linked Garmin activity-file specification.
+  names retained Garmin and Peloton recordings from their reported hardware.
+  Hardware inventory does not create sharing branches; those come from the
+  [server's retained origin evidence](../server/src/models/activity-source-tree.ts).
+  Unmatched reporting records remain separate roots with unresolved ancestry.
 
 - **Activity origin**: The [origin contract](src/activity-origin.ts) identifies
   the closest available recording or explicitly unresolved attribution. Field

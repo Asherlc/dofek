@@ -242,7 +242,7 @@ describe("ActivitiesScreen", () => {
       const icon = screen.getByTestId("activity-type-icon");
       const title = screen.getByText("Trainer Ride");
       expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      const sources = screen.getByRole("button", { name: "Sources: Hang Ten" });
+      const sources = screen.getByRole("button", { name: "Lineage: Hang Ten" });
       expect(
         title.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
@@ -284,7 +284,7 @@ describe("ActivitiesScreen", () => {
       }),
     ]);
     render(<ActivitiesScreen />);
-    const source = screen.getByRole("button", { name: "Sources: Forerunner 965" });
+    const source = screen.getByRole("button", { name: "Lineage: Forerunner 965" });
     const thumbnail = source.querySelector("Image");
     expect(thumbnail).toBeTruthy();
     expect(thumbnail?.getAttribute("resizeMode")).toBe("contain");
@@ -321,7 +321,7 @@ describe("ActivitiesScreen", () => {
       });
       render(<ActivitiesScreen />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-      const sourceButton = screen.getByRole("button", { name: "Sources: Hang Ten" });
+      const sourceButton = screen.getByRole("button", { name: "Lineage: Hang Ten" });
       const cardAction = screen.getByRole("button", {
         name: selectMode ? /^Select Trainer Ride/ : /^Open Trainer Ride/,
       });

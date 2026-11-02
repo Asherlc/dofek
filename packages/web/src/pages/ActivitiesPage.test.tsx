@@ -845,7 +845,7 @@ describe("ActivitiesPage", () => {
       };
       render(<ActivitiesPage />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-      const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
+      const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
       expect(trigger.closest("a")).toBeNull();
       expect(trigger.parentElement?.closest("button")).toBeNull();
       fireEvent.click(trigger);

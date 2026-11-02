@@ -198,7 +198,7 @@ describe("ActivityCardContent", () => {
       );
       const activityIcon = screen.getByTestId("activity-type-icon");
       expect(activityIcon.parentElement?.firstElementChild).toBe(activityIcon);
-      const source = screen.getByRole("button", { name: /Sources/ });
+      const source = screen.getByRole("button", { name: /Lineage/ });
       const logo = source.querySelector("img");
       expect(logo).toHaveAttribute("width", "18");
       expect(logo?.getAttribute("src")).toContain(
@@ -230,7 +230,7 @@ describe("ActivityCardContent", () => {
     );
     expect(screen.getByTestId("activity-type-icon")).toBeVisible();
     expect(screen.getByText("Training Stress Score")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Sources" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Lineage" })).toBeNull();
   });
   it.each([
     { modality: "indoor", distanceMeters: 0, elevationGainM: null },
@@ -470,7 +470,7 @@ describe("ActivityCardContent", () => {
     );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon")).toBeVisible();
-    expect(screen.getByRole("button", { name: "WHOOP (Cloud) Sources" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "WHOOP (Cloud) Lineage" })).toBeVisible();
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
