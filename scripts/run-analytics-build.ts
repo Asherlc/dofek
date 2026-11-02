@@ -133,11 +133,17 @@ export async function runAnalyticsBuild({
     }
   }
   if (exitCode === 0 && succeeded) {
-    const projection = await projectCyclingPower();
-    if (projection.pendingActivities > 0 || projection.pendingUsers > 0) {
-      throw new Error(
-        `Cycling power projection has pending work: ${projection.pendingActivities} activities and ${projection.pendingUsers} users`,
-      );
+    let previousPending = Number.POSITIVE_INFINITY;
+    while (true) {
+      const projection = await projectCyclingPower();
+      const pending = projection.pendingActivities + projection.pendingUsers;
+      if (pending === 0) break;
+      if (pending >= previousPending) {
+        throw new Error(
+          `Cycling power projection made no progress: ${projection.pendingActivities} activities and ${projection.pendingUsers} users remain`,
+        );
+      }
+      previousPending = pending;
     }
     if (downstream.length > 0) await runPhase(downstream);
   }

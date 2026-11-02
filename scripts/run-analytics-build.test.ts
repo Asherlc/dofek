@@ -217,15 +217,68 @@ describe("runAnalyticsBuild", () => {
     );
   });
 
-  it("withholds processing success while cycling projections have pending work", async () => {
+  it("drains activity and user batches before downstream builds and processing success", async () => {
+    const order: string[] = [];
+    const batches = [
+      { pendingActivities: 174, pendingUsers: 34, projectedUsers: 0 },
+      { pendingActivities: 74, pendingUsers: 34, projectedUsers: 0 },
+      { pendingActivities: 0, pendingUsers: 2, projectedUsers: 32 },
+      { pendingActivities: 0, pendingUsers: 0, projectedUsers: 2 },
+    ];
+    const selected = ["activity_summary_rows", "weekly_healthspan"];
+    const result = await runAnalyticsBuild({
+      selectedModels: selected,
+      artifactDirectory: "/tmp/cycling-projection-batches",
+      microbatchBounds: TEST_MICROBATCH_BOUNDS,
+      loadPendingDatasets: async () => [],
+      runDbt: async (args) => {
+        order.push(`dbt:${args.at(-1)}`);
+        return 0;
+      },
+      readArtifact: createArtifactReader(
+        "cycling-batches",
+        selected.map((name) => ({
+          uniqueId: `model.dofek.${name}`,
+          name,
+          status: "success",
+          executionTime: 1,
+          message: null,
+        })),
+      ),
+      projectCyclingPower: async () => {
+        const batch = batches.shift();
+        if (!batch) throw new Error("Projection ran after the backlog was drained");
+        order.push(`project:${batch.pendingActivities}:${batch.pendingUsers}`);
+        return batch;
+      },
+      recordRun: async () => {
+        order.push("record");
+        return { datasets: 1, failed: 0 };
+      },
+    });
+    expect(result).toEqual({ datasets: 1, failed: 0 });
+    expect(order).toEqual([
+      "dbt:activity_summary_rows",
+      "project:174:34",
+      "project:74:34",
+      "project:0:2",
+      "project:0:0",
+      "dbt:weekly_healthspan",
+      "record",
+    ]);
+  });
+
+  it("withholds processing success when cycling projection stops making progress", async () => {
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
+    const runDbt = vi.fn(async () => 0);
+    let batches = 0;
     await expect(
       runAnalyticsBuild({
-        selectedModels: ["cycling_activity"],
+        selectedModels: ["cycling_activity", "weekly_healthspan"],
         artifactDirectory: "/tmp/cycling-projection-gate",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
         loadPendingDatasets: async () => [],
-        runDbt: async () => 0,
+        runDbt,
         readArtifact: createArtifactReader("cycling-run", [
           {
             uniqueId: "model.dofek.cycling_activity",
@@ -235,14 +288,15 @@ describe("runAnalyticsBuild", () => {
             message: null,
           },
         ]),
-        projectCyclingPower: async () => ({
-          pendingActivities: 1,
-          pendingUsers: 1,
-          projectedUsers: 0,
-        }),
+        projectCyclingPower: async () => {
+          if (++batches > 2) throw new Error("Repeated a stalled projection");
+          return { pendingActivities: 1, pendingUsers: 1, projectedUsers: 0 };
+        },
         recordRun,
       }),
-    ).rejects.toThrow("Cycling power projection has pending work");
+    ).rejects.toThrow("Cycling power projection made no progress: 1 activities and 1 users remain");
+    expect(batches).toBe(2);
+    expect(runDbt).toHaveBeenCalledOnce();
     expect(recordRun).not.toHaveBeenCalled();
   });
 

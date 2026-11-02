@@ -34970,3 +34970,31 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   inclusion. Proposed package checklist addition: inspect manifest-copy,
   source-copy, and runtime-link lists before shipping an extraction; reuse
   gh-fix-ci to trace startup failures to the first fatal container log.
+
+## 2026-11-02 — Cycling power backlog prevents threshold history publication
+
+- Status: unresolved in production at investigation time; correction validated
+  locally, deployment and recovery verification outstanding.
+- Symptoms and impact: cycling threshold history is unavailable, and the fitness,
+  fatigue and form chart reports activities without usable training load.
+- Evidence: production analytics-worker logged at 19:06:02 UTC:
+  `analytics-build failed: Cycling power projection has pending work: 1274 activities and 2 users`.
+  Read-only ClickHouse checks found 100 observation rows, zero published user
+  histories, and 308 eligible activities with power samples. Some cycling
+  activities also lack both heart-rate and power samples; finishing projection
+  cannot manufacture missing source evidence.
+- Root cause: the [build orchestrator](../scripts/run-analytics-build.ts) invokes
+  the [bounded projector](../src/analytics/cycling-power-projector.ts) once, then
+  fails on its remaining backlog. The projector intentionally processes at most
+  100 activities and publishes only users whose observations are current.
+- Direct fix: drain successive bounded projection batches before
+  dependent models and processing success, failing explicitly if pending work
+  stops decreasing. No sleeps, increased timeouts, or suppressed errors.
+- Validation and remaining risk: all 14 orchestrator tests pass, including a
+  regression first observed failing on the initial pending batch and a stalled
+  backlog failure case. Production recovery remains unverified. Separately
+  determine whether unsupported rides have sufficient source sensor coverage.
+- Retrospective: worker logs and persisted row counts exposed the orchestration
+  boundary quickly. Proposed runbook addition: check projection backlog and
+  published history counts before advising users to record more rides. Reuse
+  check-logs and systematic-debugging for this investigation.
