@@ -151,20 +151,33 @@ describe("StrengthRepository activity scope", () => {
     expect(await repository.getVolumeOverTime(null)).toEqual([]);
   });
   it("keeps a week with a workout but no sets as unknown set and weight volume", async () => {
+    // A fixed access window isolates this week from the suite's other workouts.
     await testContext.db.execute(sql`INSERT INTO fitness.activity (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
       VALUES ('strength_scope_test', ${TEST_USER_ID}, 'no-sets', 'strength', 'strength',
-        date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week', date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week' + interval '1 hour', 'No sets')`);
-    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
-    const volume = (await repository.getVolumeOverTime(30)).map((week) => week.toDetail());
-    expect(volume).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          recordedSetCount: null,
-          recordedVolumeKg: null,
-          durationMinutes: 60,
-        }),
-      ]),
-    );
+        '2001-01-02T12:00:00Z', '2001-01-02T13:00:00Z', 'No sets')`);
+    try {
+      const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC", {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2001-01-01",
+        endDateExclusive: "2001-01-08",
+      });
+      const volume = (await repository.getVolumeOverTime(null)).map((week) => week.toDetail());
+      expect(volume).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            week: "2001-01-01",
+            recordedSetCount: null,
+            recordedVolumeKg: null,
+            durationMinutes: 60,
+          }),
+        ]),
+      );
+    } finally {
+      await testContext.db.execute(sql`DELETE FROM fitness.activity
+        WHERE user_id = ${TEST_USER_ID} AND provider_id = 'strength_scope_test' AND external_id = 'no-sets'`);
+    }
   });
 
   it("preserves observed week labels and fits slope across calendar gaps", async () => {
