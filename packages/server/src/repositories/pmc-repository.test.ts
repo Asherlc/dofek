@@ -1,8 +1,13 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
+import { pmcThresholdHistoryRows } from "./pmc-test-helpers.ts";
+
+afterEach(() => vi.restoreAllMocks());
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
@@ -46,13 +51,12 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
 function makeSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[],
+  currentEftp: number | null,
 ): ActivitySensorStore {
   const query = vi.fn(
     async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
       if (queryText.includes("cycling_threshold_history"))
-        return [{ eftp: normalizedPowerRows.length > 0 ? 190 : null }].map((row) =>
-          schema.parse(row),
-        );
+        return pmcThresholdHistoryRows(currentEftp).map((row) => schema.parse(row));
       const rows = queryText.includes("cycling_activity_power_metrics")
         ? normalizedPowerRows
         : activityRows;
@@ -85,6 +89,7 @@ function makeRepoHarness(
   normalizedPowerRows: Record<string, unknown>[] = [],
   timezone = "UTC",
   rawActivityCount = activityRows.length,
+  currentEftp: number | null = null,
 ) {
   const execute = vi.fn();
   execute.mockResolvedValueOnce([{ activity_count: rawActivityCount }]);
@@ -93,7 +98,7 @@ function makeRepoHarness(
   }
   execute.mockResolvedValue([]);
   const db = { execute };
-  const sensorStore = makeSensorStore(activityRows, normalizedPowerRows);
+  const sensorStore = makeSensorStore(activityRows, normalizedPowerRows, currentEftp);
   return {
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
     execute: db.execute,
@@ -321,7 +326,22 @@ describe("PmcRepository", () => {
       expect(vi.mocked(query).mock.calls[1]?.[1]).toContain("cycling_activity_power_metrics");
     });
 
-    it("returns chart data built from ClickHouse rows", async () => {
+    it("uses the canonical current threshold reader independently of per-activity thresholds", async () => {
+      const getCurrent = vi
+        .spyOn(CyclingThresholdRepository.prototype, "getCurrent")
+        .mockResolvedValueOnce({
+          value: 287,
+          unit: "watt",
+          method: "computed_eftp",
+          event_at: "2026-06-01T12:00:00Z",
+          evidence_activity_id: null,
+          evidence_at: null,
+          evidence_duration_seconds: null,
+          evidence_power: null,
+          model_version: "test-current-threshold",
+          unavailable_reason: null,
+          uncertainty: cyclingThresholdUncertainty,
+        });
       const { repo } = makeRepoHarness(
         [makeActivityRow({ id: "power-activity" })],
         [{ activity_id: "power-activity", power_tss: 220, eftp: 190 }],
@@ -329,9 +349,17 @@ describe("PmcRepository", () => {
 
       const result = await repo.getChart(ChartRange.fromDays(90));
 
-      expect(result.model.ftp).toBe(190);
+      expect(result.model.ftp).toBe(287);
+      expect(getCurrent).toHaveBeenCalledOnce();
       expect(result.data.length).toBeGreaterThan(0);
       expect(result.unavailableReason).toBeNull();
+    });
+    it("keeps the current threshold unavailable when no current history exists", async () => {
+      const { repo } = makeRepoHarness(
+        [makeActivityRow()],
+        [{ activity_id: "activity-1", power_tss: null, eftp: null }],
+      );
+      expect((await repo.getChart(ChartRange.fromDays(90))).model.ftp).toBeNull();
     });
   });
 });

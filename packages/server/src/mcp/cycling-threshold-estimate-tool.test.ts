@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { cyclingThresholdEstimateOutputSchema } from "./tool-output.ts";
 
 const mocks = vi.hoisted(() => ({ estimate: vi.fn() }));
@@ -28,11 +29,7 @@ function response() {
       watts_per_kg_reason: "No directly measured body weight within 30 days",
       method: "computed_eftp" as const,
       classification: "estimated" as const,
-      uncertainty: {
-        watts: null,
-        kind: "not_quantifiable" as const,
-        reason: "A single heuristic has no statistical interval",
-      },
+      uncertainty: cyclingThresholdUncertainty,
       evidence: {
         value: 285,
         unit: "watt",
@@ -61,6 +58,16 @@ function response() {
     },
   };
 }
+
+it.each([0, -1])("rejects zero or negative threshold watts per kilogram %s", (watts_per_kg) => {
+  const payload = response();
+  expect(
+    cyclingThresholdEstimateOutputSchema.safeParse({
+      ...payload,
+      result: { ...payload.result, watts_per_kg },
+    }).success,
+  ).toBe(false);
+});
 
 describe("estimate_cycling_threshold", () => {
   let client: Client;

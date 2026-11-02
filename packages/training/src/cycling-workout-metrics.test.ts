@@ -10,6 +10,13 @@ import {
   resampleCyclingStream,
 } from "./cycling-workout-metrics.ts";
 
+const fixtureCoveragePolicy = {
+  maximumHoldSeconds: 10,
+  minimumGapSeconds: 5,
+  gapIntervalMultiplier: 2,
+  maximumGapSeconds: 10,
+};
+
 const unavailablePower: CyclingWorkoutPowerMetrics = {
   normalizedPowerWatts: null,
   intensityFactor: null,
@@ -17,11 +24,14 @@ const unavailablePower: CyclingWorkoutPowerMetrics = {
 };
 
 function computeWorkoutFixture(
-  input: Omit<CyclingWorkoutMetricsInput, "thresholdWatts"> & { thresholdWatts?: number | null },
+  input: Omit<CyclingWorkoutMetricsInput, "thresholdWatts" | "coveragePolicy"> & {
+    thresholdWatts?: number | null;
+  },
   activity: CyclingWorkoutPowerMetrics = unavailablePower,
   intervals: CyclingWorkoutPowerMetrics[] = [],
 ) {
   const prepared = prepareCyclingWorkoutMetrics({
+    coveragePolicy: fixtureCoveragePolicy,
     ...input,
     thresholdWatts: input.thresholdWatts ?? null,
   });
@@ -43,6 +53,23 @@ function constantSamples(
 }
 
 describe("resampleCyclingStream", () => {
+  it("uses the caller's hold policy for sparse observations", () => {
+    const result = resampleCyclingStream(
+      [
+        { elapsedSeconds: 0, powerWatts: 200 },
+        { elapsedSeconds: 5, powerWatts: 200 },
+      ],
+      10,
+      (sample) => sample.powerWatts,
+      {
+        maximumHoldSeconds: 3,
+        minimumGapSeconds: 1,
+        gapIntervalMultiplier: 2,
+        maximumGapSeconds: 3,
+      },
+    );
+    expect(result.coverage.coveredSeconds).toBe(6);
+  });
   it.each([1, 5, 0.5])(
     "preserves explicit null barriers across whole and interval power at %s second cadence",
     (cadence) => {
@@ -51,6 +78,7 @@ describe("resampleCyclingStream", () => {
         powerWatts: index * cadence === 30 ? null : 240,
       }));
       const prepared = prepareCyclingWorkoutMetrics({
+        coveragePolicy: fixtureCoveragePolicy,
         durationSeconds: 60,
         thresholdWatts: 240,
         settings: null,
@@ -86,6 +114,7 @@ describe("resampleCyclingStream", () => {
       ],
       2,
       (sample) => sample.powerWatts,
+      fixtureCoveragePolicy,
     );
     expect(result.values).toEqual([240, 240]);
   });
@@ -96,9 +125,19 @@ describe("resampleCyclingStream", () => {
       { elapsedSeconds: 1, powerWatts: 260 },
       { elapsedSeconds: 2, powerWatts: 240 },
     ];
-    const first = resampleCyclingStream(samples, 3, (sample) => sample.powerWatts);
+    const first = resampleCyclingStream(
+      samples,
+      3,
+      (sample) => sample.powerWatts,
+      fixtureCoveragePolicy,
+    );
     expect(first).toEqual(
-      resampleCyclingStream([...samples].reverse(), 3, (sample) => sample.powerWatts),
+      resampleCyclingStream(
+        [...samples].reverse(),
+        3,
+        (sample) => sample.powerWatts,
+        fixtureCoveragePolicy,
+      ),
     );
     expect(first.values).toEqual([240, null, 240]);
     expect(first.coverage.observedSamples).toBe(2);
@@ -106,7 +145,7 @@ describe("resampleCyclingStream", () => {
   const selectPower = (sample: CyclingWorkoutSample) => sample.powerWatts;
 
   it("returns duration-aligned missing buckets when the stream is empty", () => {
-    const result = resampleCyclingStream([], 3, selectPower);
+    const result = resampleCyclingStream([], 3, selectPower, fixtureCoveragePolicy);
 
     expect(result.values).toEqual([null, null, null]);
     expect(result.maximumValue).toBeNull();
@@ -132,6 +171,7 @@ describe("resampleCyclingStream", () => {
       ],
       2,
       selectPower,
+      fixtureCoveragePolicy,
     );
 
     expect(result.values).toEqual([null, null]);
@@ -147,6 +187,7 @@ describe("resampleCyclingStream", () => {
       ],
       1,
       selectPower,
+      fixtureCoveragePolicy,
     );
 
     expect(result.values).toEqual([200]);
@@ -162,6 +203,7 @@ describe("resampleCyclingStream", () => {
       ],
       2,
       selectPower,
+      fixtureCoveragePolicy,
       0,
       [0],
     );
@@ -180,6 +222,7 @@ describe("resampleCyclingStream", () => {
       [{ elapsedSeconds: 1, powerWatts: 100 }],
       4,
       selectPower,
+      fixtureCoveragePolicy,
       0,
       [-1, 4],
     );
@@ -198,6 +241,7 @@ describe("resampleCyclingStream", () => {
       [{ elapsedSeconds: 0, powerWatts: 300 }],
       1,
       selectPower,
+      fixtureCoveragePolicy,
       0,
       [0.5],
     );
@@ -216,6 +260,7 @@ describe("resampleCyclingStream", () => {
       [0, 3, 6, 9, 15].map((elapsedSeconds) => ({ elapsedSeconds, powerWatts: 100 })),
       18,
       selectPower,
+      fixtureCoveragePolicy,
     );
 
     expect(result.values).toEqual(Array.from({ length: 18 }, () => 100));
@@ -236,6 +281,7 @@ describe("resampleCyclingStream", () => {
       ],
       25,
       selectPower,
+      fixtureCoveragePolicy,
     );
 
     expect(result.values).toEqual([
@@ -256,6 +302,7 @@ describe("resampleCyclingStream", () => {
       [{ elapsedSeconds: 1e-9, powerWatts: 100 }],
       1,
       selectPower,
+      fixtureCoveragePolicy,
     );
 
     expect(result.values[0]).toBeCloseTo(99.9999999, 8);
@@ -271,6 +318,7 @@ describe("resampleCyclingStream", () => {
       })),
       1,
       selectPower,
+      fixtureCoveragePolicy,
     );
 
     expect(result.values[0]).toBeCloseTo(100);
@@ -281,7 +329,7 @@ describe("resampleCyclingStream", () => {
 
 describe("computeCyclingPowerWork", () => {
   it("reports missing power across a huge empty activity window", () => {
-    expect(computeCyclingPowerWork([], 10_000_000_000)).toEqual({
+    expect(computeCyclingPowerWork([], 10_000_000_000, fixtureCoveragePolicy)).toEqual({
       workKilojoules: null,
       coverage: {
         observedSamples: 0,
@@ -305,6 +353,7 @@ describe("computeCyclingPowerWork", () => {
         { elapsedSeconds: duration - 1, powerWatts: 100 },
       ],
       duration,
+      fixtureCoveragePolicy,
     );
 
     expect(result).toEqual({
@@ -329,6 +378,7 @@ describe("computeCyclingPowerWork", () => {
           { elapsedSeconds: 86_400, powerWatts: 300 },
         ],
         3 * 86_400,
+        fixtureCoveragePolicy,
       ),
     ).toEqual({
       workKilojoules: 5,
@@ -405,7 +455,9 @@ describe("computeCyclingPowerWork", () => {
         streamBarriers: { power: barriers },
       });
 
-      expect(computeCyclingPowerWork(samples, durationSeconds, barriers)).toEqual({
+      expect(
+        computeCyclingPowerWork(samples, durationSeconds, fixtureCoveragePolicy, barriers),
+      ).toEqual({
         workKilojoules: workout.power.workKilojoules,
         coverage: workout.coverage.power,
       });
@@ -416,6 +468,7 @@ describe("computeCyclingPowerWork", () => {
 describe("prepared cycling workout metrics", () => {
   it("assembles the supplied activity and interval power calculations without recomputing them", () => {
     const prepared = prepareCyclingWorkoutMetrics({
+      coveragePolicy: fixtureCoveragePolicy,
       durationSeconds: 60,
       thresholdWatts: 250,
       samples: constantSamples(60, { powerWatts: 200 }),
@@ -438,6 +491,7 @@ describe("prepared cycling workout metrics", () => {
 
   it("preserves explicit missing power at barriers in prepared interval windows", () => {
     const prepared = prepareCyclingWorkoutMetrics({
+      coveragePolicy: fixtureCoveragePolicy,
       durationSeconds: 60,
       thresholdWatts: 250,
       samples: constantSamples(60, { powerWatts: 200 }),
@@ -450,6 +504,7 @@ describe("prepared cycling workout metrics", () => {
 
   it("rejects an incomplete set of supplied interval calculations", () => {
     const prepared = prepareCyclingWorkoutMetrics({
+      coveragePolicy: fixtureCoveragePolicy,
       durationSeconds: 60,
       thresholdWatts: null,
       samples: [],
@@ -466,6 +521,7 @@ describe("prepared cycling workout metrics", () => {
 
   it("explains unavailable supplied normalized power without claiming complete samples are too short", () => {
     const prepared = prepareCyclingWorkoutMetrics({
+      coveragePolicy: fixtureCoveragePolicy,
       durationSeconds: 60,
       thresholdWatts: 250,
       samples: constantSamples(60, { powerWatts: 200 }),
@@ -484,6 +540,26 @@ describe("prepared cycling workout metrics", () => {
 });
 
 describe("computeCyclingWorkoutMetrics", () => {
+  it("explains unavailable supplied stress fields even with normalized power and a threshold", () => {
+    const result = computeWorkoutFixture(
+      {
+        durationSeconds: 60,
+        thresholdWatts: 250,
+        samples: constantSamples(60, { powerWatts: 220 }),
+        settings: null,
+        intervals: [],
+      },
+      { normalizedPowerWatts: 220, intensityFactor: null, trainingStressScore: null },
+    );
+    expect(result.unavailableReasons).toContainEqual({
+      metric: "intensity_factor",
+      reason: "computed intensity factor is unavailable",
+    });
+    expect(result.unavailableReasons).toContainEqual({
+      metric: "training_stress_score",
+      reason: "computed training stress score is unavailable",
+    });
+  });
   it("averages sequential sub-second observations using their covered durations", () => {
     const result = computeWorkoutFixture(
       {

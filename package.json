@@ -259,6 +259,7 @@
     "@aws-sdk/lib-storage": "3.1154.0",
     "@aws-sdk/s3-request-presigner": "3.1154.0",
     "@clickhouse/client": "1.23.1",
+    "@dofek/cycling-power": "workspace:*",
     "@dofek/eight-sleep": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
@@ -317,8 +318,7 @@
     "winston": "3.19.0",
     "winston-transport": "4.9.0",
     "yauzl": "3.4.0",
-    "zod": "4.6.7",
-    "@dofek/cycling-power": "workspace:*"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",

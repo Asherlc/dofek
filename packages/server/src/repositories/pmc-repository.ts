@@ -10,6 +10,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
 import {
   type PmcActivityRow,
@@ -40,7 +41,6 @@ const combinedActivityRowSchema = z.object({
 const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
   power_tss: z.coerce.number().nullable(),
-  eftp: z.coerce.number().nullable(),
 });
 
 type PmcRepositoryChartResult = PmcChartResult & {
@@ -203,8 +203,7 @@ export class PmcRepository extends BaseRepository {
       normalizedPowerRowSchema,
       `SELECT
         toString(activity_id) AS activity_id,
-        power_tss,
-        eftp
+        power_tss
       FROM analytics.cycling_activity_power_metrics
       WHERE user_id = {userId:UUID}
         ${queryRange.clickHouseTimestampAfter("started_at", "queryDays")}
@@ -216,19 +215,18 @@ export class PmcRepository extends BaseRepository {
       },
     );
 
-    const currentRows = await this.#sensorStore.query(
-      z.object({ eftp: z.coerce.number().nullable() }),
-      `SELECT eftp FROM analytics.cycling_threshold_history
-       WHERE user_id = {userId:UUID} AND event_at <= now64(3)
-       ORDER BY event_at DESC LIMIT 1`,
-      { userId: this.userId },
-    );
+    const currentThreshold = await new CyclingThresholdRepository(
+      this.#sensorStore,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).getCurrent();
 
     return buildPmcChartFromRows({
       db: this.db,
       userId: this.userId,
       range,
-      currentEftp: currentRows[0]?.eftp ?? null,
+      currentEftp: currentThreshold.value,
       activityRows: visibleActivityRows,
       normalizedPowerRows,
       parameters,

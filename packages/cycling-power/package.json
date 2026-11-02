@@ -1,6 +1,6 @@
 {
   "name": "@dofek/cycling-power",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pure elapsed-signal, cycling-power and reference-curve estimation algorithms",
   "type": "module",
   "license": "MIT",
@@ -33,7 +33,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --project tsconfig.build.json",
     "prepack": "pnpm run build",
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"

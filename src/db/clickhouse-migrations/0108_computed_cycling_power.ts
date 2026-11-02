@@ -15,8 +15,10 @@ export function createMigration(): ClickHouseMigration {
     ...["activity_sensor_summary_rows", "activity_summary_rows", "cycling_activity"].map(
       (table) => `ALTER TABLE analytics.${table} DROP COLUMN IF EXISTS normalized_power`,
     ),
-    "ALTER TABLE analytics.healthspan_activity_zone_minutes MODIFY COLUMN aerobic_minutes Nullable(Float64), MODIFY COLUMN high_intensity_minutes Nullable(Float64)",
-    "ALTER TABLE analytics.weekly_healthspan MODIFY COLUMN weekly_aerobic_min Nullable(Float64), MODIFY COLUMN weekly_high_intensity_min Nullable(Float64)",
+    "ALTER TABLE analytics.healthspan_activity_zone_minutes MODIFY COLUMN aerobic_minutes Nullable(Float64)",
+    "ALTER TABLE analytics.healthspan_activity_zone_minutes MODIFY COLUMN high_intensity_minutes Nullable(Float64)",
+    "ALTER TABLE analytics.weekly_healthspan MODIFY COLUMN weekly_aerobic_min Nullable(Float64)",
+    "ALTER TABLE analytics.weekly_healthspan MODIFY COLUMN weekly_high_intensity_min Nullable(Float64)",
   ];
   return {
     id: "0108_computed_cycling_power",
@@ -52,7 +54,7 @@ export function createMigration(): ClickHouseMigration {
         column.type.replaceAll(/\s/g, "") !== dailyCyclingActivitiesType.replaceAll(/\s/g, "")
       ) {
         // This disposable dbt cache must be repopulated at the documented maintenance boundary.
-        // ClickHouse cannot ALTER between tuple types with different arities, even when empty.
+        // ClickHouse cannot ALTER between tuple types with different element counts, even when empty.
         await client.command({ query: "DROP TABLE analytics.daily_cycling" });
       }
       await client.command({ query: buildDailyCyclingTableSql() });

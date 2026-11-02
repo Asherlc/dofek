@@ -27,7 +27,7 @@ describe("activity summary canonical power serving", () => {
     });
   });
   afterAll(async () => {
-    await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close?.();
   });
   async function power(): Promise<number | null> {
@@ -36,6 +36,7 @@ describe("activity summary canonical power serving", () => {
       format: "JSONEachRow",
     });
     const rows = await result.json();
+    expect(rows).toHaveLength(1);
     return rows[0]?.normalized_power ?? null;
   }
   async function observation(

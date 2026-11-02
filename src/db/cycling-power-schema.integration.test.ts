@@ -40,14 +40,81 @@ describe("cycling power projection publication", () => {
     expect(Number(await count("cycling_activity_power_metrics"))).toBe(0);
     expect(Number(await count("cycling_threshold_history"))).toBe(0);
     await client.command({
-      query: `INSERT INTO ${database}.cycling_power_history_rows VALUES ('${userId}',2,today(),'bank-v1',[(1000.0,'${activityId}',250.0,0.8,64.0,'${activityId}',1000.0,1200.0,266.0)],400,now64(6))`,
+      query: `INSERT INTO ${database}.cycling_power_history_rows VALUES ('${userId}',2,today(),'bank-v1',[(1000.0,'${activityId}',250.0,0.8,64.0,'${activityId}',1000.0,1200.0,266.0)],400,toDateTime64('2026-11-02 15:00:00', 6, 'UTC'))`,
     });
     const result = await client.query({
-      query: `SELECT normalized_power,eftp,power_tss,model_version FROM ${database}.cycling_activity_power_metrics`,
+      query: `SELECT normalized_power,eftp,power_tss,model_version,
+        formatDateTime(refreshed_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS refreshed_at
+        FROM ${database}.cycling_activity_power_metrics`,
       format: "JSONEachRow",
     });
     expect(await result.json()).toEqual([
-      { normalized_power: 200, eftp: 250, power_tss: 64, model_version: "bank-v1" },
+      {
+        normalized_power: 200,
+        eftp: 250,
+        power_tss: 64,
+        model_version: "bank-v1",
+        refreshed_at: "2026-11-02T15:00:00Z",
+      },
+    ]);
+  });
+
+  it("publishes nullable calendar identities and missing evidence without empty-string sentinels", async () => {
+    const missingUserId = randomUUID();
+    const missingActivityId = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${database}.cycling_power_history_rows VALUES
+      ('${missingUserId}',1,today(),'bank-v1',[
+        (1000.0,NULL,NULL,NULL,NULL,NULL,0.0,0.0,0.0),
+        (2000.0,'${missingActivityId}',NULL,NULL,NULL,NULL,0.0,0.0,0.0)
+      ],100,now64(6))`,
+    });
+    const stored = await client.query({
+      query: `SELECT
+      tupleElement(arrayElement(events, 1), 'activity_id') AS calendar_id,
+      tupleElement(arrayElement(events, 2), 'evidence_activity_id') AS evidence_id
+      FROM ${database}.cycling_power_history_rows FINAL WHERE user_id={userId:UUID}`,
+      query_params: { userId: missingUserId },
+      format: "JSONEachRow",
+    });
+    expect(await stored.json()).toEqual([{ calendar_id: null, evidence_id: null }]);
+    const result = await client.query({
+      query: `SELECT toString(activity_id) AS activity_id, evidence_activity_id,
+      evidence_at,evidence_duration_seconds,evidence_power FROM ${database}.cycling_threshold_history
+      WHERE user_id={userId:UUID} ORDER BY event_at`,
+      query_params: { userId: missingUserId },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      {
+        activity_id: null,
+        evidence_activity_id: null,
+        evidence_at: null,
+        evidence_duration_seconds: null,
+        evidence_power: null,
+      },
+      {
+        activity_id: missingActivityId,
+        evidence_activity_id: null,
+        evidence_at: null,
+        evidence_duration_seconds: null,
+        evidence_power: null,
+      },
+    ]);
+    const metrics = await client.query({
+      query: `SELECT toString(activity_id) AS activity_id, evidence_activity_id,evidence_at,
+      evidence_duration_seconds,evidence_power FROM ${database}.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
+      query_params: { userId: missingUserId },
+      format: "JSONEachRow",
+    });
+    expect(await metrics.json()).toEqual([
+      {
+        activity_id: missingActivityId,
+        evidence_activity_id: null,
+        evidence_at: null,
+        evidence_duration_seconds: null,
+        evidence_power: null,
+      },
     ]);
   });
 });

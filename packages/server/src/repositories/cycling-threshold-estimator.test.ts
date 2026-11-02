@@ -50,6 +50,7 @@ describe("CyclingThresholdEstimator", () => {
       relevant_activity_ids: [evidence.evidence_activity_id],
     });
     expect(deps.thresholds.getAsOf).toHaveBeenCalledWith("2026-08-01");
+    expect(deps.nearbyWeight.getForDate).toHaveBeenCalledWith("2026-08-01");
   });
   it("preserves a specific missing weight reason", async () => {
     const deps = dependencies();

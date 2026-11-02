@@ -2053,6 +2053,21 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Zone 1")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(screen.getByText("Computed eFTP: 250 W")).toBeTruthy();
+    const previousZones = { ftp: 250, thresholdEvidence: computedThresholdEvidence, zones: [] };
+    const placeholder = getPlaceholderData(mockPowerZonesQuery.mock.calls.at(-1)?.[1]);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [
+          ["activity", "powerZones"],
+          { input: { id: baseCyclingActivity.id, powerSourceId: "old-source" }, type: "query" },
+        ],
+      }),
+    ).toBe(previousZones);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [["activity", "powerZones"], { input: { id: "different-ride" }, type: "query" }],
+      }),
+    ).toBeUndefined();
     expect(screen.getByText(/Evidence:/)).toBeTruthy();
     fireEvent.click(screen.getByText("Estimate uncertainty"));
     expect(

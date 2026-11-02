@@ -6,14 +6,48 @@
     query_settings={'max_threads': 1, 'join_use_nulls': 1}
 ) }}
 
-WITH activity_bounds AS (
+WITH activity_source_bounds AS (
     SELECT
 activity_id,
 user_id,
 started_at,
-ended_at
+ended_at,
+refreshed_at
     FROM {{ ref('activity_summary_rows') }} FINAL
     WHERE is_deleted = 0 AND ended_at IS NOT NULL
+),
+
+{% if is_incremental() %}
+resting_source_state AS (
+    SELECT
+        user_id,
+        max(refreshed_at) AS refreshed_at
+    FROM {{ ref('resting_heart_rate_sleep_window') }} FINAL
+    GROUP BY user_id
+),
+{% endif %}
+
+activity_bounds AS (
+    SELECT
+        bounds.activity_id AS activity_id,
+        bounds.user_id AS user_id,
+        bounds.started_at AS started_at,
+        bounds.ended_at AS ended_at
+    FROM activity_source_bounds AS bounds
+    {% if is_incremental() %}
+    LEFT JOIN {{ this }} AS previous FINAL
+        ON previous.user_id = bounds.user_id AND previous.activity_id = bounds.activity_id
+    LEFT JOIN {{ ref('cycling_activity_power_metrics') }} AS power
+        ON power.user_id = bounds.user_id AND power.activity_id = bounds.activity_id
+    LEFT JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS profile
+        ON profile.id = bounds.user_id
+    LEFT JOIN resting_source_state AS resting ON resting.user_id = bounds.user_id
+    WHERE previous.activity_id IS NULL OR previous.is_deleted = 1
+        OR greatest(bounds.refreshed_at,
+            coalesce(power.refreshed_at, toDateTime64('1970-01-01 00:00:00', 9)),
+            coalesce(profile.updated_at, toDateTime64('1970-01-01 00:00:00', 9)),
+            coalesce(resting.refreshed_at, toDateTime64('1970-01-01 00:00:00', 9))) > previous.refreshed_at
+    {% endif %}
 ),
 
 activity_keys AS (
@@ -31,7 +65,11 @@ ended_at
 FROM activity_bounds
     {% if is_incremental() %}
     UNION DISTINCT
-    SELECT activity_id, user_id, started_at, ended_at FROM {{ this }} FINAL WHERE is_deleted = 0
+    SELECT previous.activity_id, previous.user_id, previous.started_at, previous.ended_at
+    FROM {{ this }} AS previous FINAL
+    LEFT JOIN activity_source_bounds AS bounds
+        ON bounds.user_id = previous.user_id AND bounds.activity_id = previous.activity_id
+    WHERE previous.is_deleted = 0 AND bounds.activity_id IS NULL
     {% endif %}
     )
     GROUP BY activity_id, user_id
@@ -62,7 +100,7 @@ activity_metadata AS (
     LEFT JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS profile
         ON profile.id = bounds.user_id
     LEFT JOIN resting_by_activity AS resting ON resting.activity_id = bounds.activity_id
-    LEFT JOIN {{ source('analytics', 'cycling_activity_power_metrics') }} AS power
+    LEFT JOIN {{ ref('cycling_activity_power_metrics') }} AS power
         ON power.user_id = bounds.user_id AND power.activity_id = bounds.activity_id
 ),
 
@@ -83,6 +121,12 @@ sample_points AS (
     INNER JOIN activity_metadata AS metadata
         ON metadata.activity_id = samples.activity_id AND metadata.user_id = samples.user_id
     WHERE samples.is_deleted = 0 AND samples.channel IN ('heart_rate', 'power')
+        AND (samples.user_id, samples.activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM activity_bounds
+        )
         AND samples.recorded_at >= metadata.started_at AND samples.recorded_at < metadata.ended_at
 ),
 
@@ -149,9 +193,10 @@ zone_minutes AS (
 user_id,
         max_hr IS NOT NULL AND resting_hr IS NOT NULL AND hr_seconds > 0 AS has_hr,
         eftp IS NOT NULL AND power_seconds > 0 AS has_power,
-        if(has_hr, aerobic, CAST(NULL, 'Nullable(Float64)')) AS aerobic_minutes,
-        multiIf(has_hr AND has_power, greatest(hr_high, power_high), has_hr, hr_high,
-            has_power, power_high, CAST(NULL, 'Nullable(Float64)')) AS high_intensity_minutes
+        if(has_hr, coalesce(aerobic, toFloat64(0)), CAST(NULL, 'Nullable(Float64)')) AS aerobic_minutes,
+        multiIf(has_hr AND has_power, greatest(coalesce(hr_high, toFloat64(0)), coalesce(power_high, toFloat64(0))),
+            has_hr, coalesce(hr_high, toFloat64(0)),
+            has_power, coalesce(power_high, toFloat64(0)), CAST(NULL, 'Nullable(Float64)')) AS high_intensity_minutes
     FROM observed_minutes
 )
 

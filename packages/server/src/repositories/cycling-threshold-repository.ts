@@ -11,6 +11,11 @@ export type {
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
@@ -97,10 +102,17 @@ export class CyclingThresholdRepository {
   readonly #store: Pick<ActivitySensorStore, "query">;
   readonly #userId: string;
   readonly #timezone: string;
-  constructor(store: Pick<ActivitySensorStore, "query">, userId: string, timezone: string) {
+  readonly #accessWindow: AccessWindow | undefined;
+  constructor(
+    store: Pick<ActivitySensorStore, "query">,
+    userId: string,
+    timezone: string,
+    accessWindow?: AccessWindow,
+  ) {
     this.#store = store;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#accessWindow = accessWindow;
   }
   async getCurrent(): Promise<CyclingThresholdEvidence> {
     const rows = await this.#store.query(
@@ -108,8 +120,9 @@ export class CyclingThresholdRepository {
       `SELECT ${selectedHistory}
       FROM analytics.cycling_threshold_history AS history
       WHERE history.user_id = {userId:UUID} AND history.event_at <= now64(6)
+      ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
       ORDER BY history.event_at DESC, ifNull(toString(history.activity_id), '') DESC LIMIT 1`,
-      { userId: this.#userId },
+      { userId: this.#userId, ...clickHouseAccessParams(this.#accessWindow) },
     );
     return evidence(rows[0]);
   }
@@ -119,13 +132,19 @@ export class CyclingThresholdRepository {
       `SELECT ${selectedHistory}
       FROM analytics.cycling_threshold_history AS history
       WHERE history.user_id = {userId:UUID}
+        ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
         ${
           /^\d{4}-\d{2}-\d{2}$/.test(timestamp)
             ? "AND history.event_at < toDateTime64(addDays(toDate({asOf:String}), 1), 6, {timezone:String})"
             : "AND history.event_at <= parseDateTime64BestEffort({asOf:String}, 6)"
         }
       ORDER BY history.event_at DESC, ifNull(toString(history.activity_id), '') DESC LIMIT 1`,
-      { userId: this.#userId, asOf: timestamp, timezone: this.#timezone },
+      {
+        userId: this.#userId,
+        asOf: timestamp,
+        timezone: this.#timezone,
+        ...clickHouseAccessParams(this.#accessWindow),
+      },
     );
     return evidence(rows[0]);
   }
@@ -138,8 +157,9 @@ export class CyclingThresholdRepository {
       formatDateTime(metrics.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
       normalized_power, eftp, power_tss, intensity_factor, metrics.model_version AS model_version, ${selectedEvidence("metrics")}
       FROM analytics.cycling_activity_power_metrics AS metrics
-      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})`,
-      { userId: this.#userId, activityIds },
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+      ${clickHouseAccessPredicate(this.#accessWindow, "metrics.started_at")}`,
+      { userId: this.#userId, activityIds, ...clickHouseAccessParams(this.#accessWindow) },
     );
     return new Map(rows.map((row) => [row.activity_id, row]));
   }
@@ -159,6 +179,7 @@ export class CyclingThresholdRepository {
       `SELECT ${selectedHistory}
       FROM analytics.cycling_threshold_history AS history
       WHERE history.user_id = {userId:UUID}
+        ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
         AND toDate(toTimeZone(history.event_at, {timezone:String})) BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
         ${
           cursor
@@ -175,6 +196,7 @@ export class CyclingThresholdRepository {
         startDate: input.startDate,
         endDate: input.endDate,
         pageLimit: input.limit + 1,
+        ...clickHouseAccessParams(this.#accessWindow),
         ...(cursor ? { cursorAt: cursor.eventAt, cursorActivityId: cursor.activityId } : {}),
       },
     );

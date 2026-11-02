@@ -41,7 +41,7 @@ describe("Router coverage", () => {
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = 190, resting_hr = 50, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 
@@ -1361,22 +1361,18 @@ describe("Router coverage", () => {
   // PMC — chart with enough data for model estimation
   // ══════════════════════════════════════════════════════════════
   describe("pmc", () => {
-    it("chart returns FTP estimate and load data", async () => {
+    it("chart returns heart-rate load and regression metadata", async () => {
       const result = await query<{
         data: { date: string; load: number; ctl: number; atl: number; tsb: number }[];
         model: {
           type: "learned" | "generic";
           pairedActivities: number;
           r2: number | null;
-          ftp: number | null;
         };
       }>("pmc.chart", { days: 90 });
 
       expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model.ftp).not.toBeNull();
-      if (result.model.ftp != null) {
-        expect(result.model.ftp).toBeGreaterThan(100);
-      }
+      expect(result.model.type).toBe("generic");
       expect(result.model.pairedActivities).toBeGreaterThanOrEqual(0);
 
       const loadDays = result.data.filter((d) => d.load > 0);

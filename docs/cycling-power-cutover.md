@@ -16,6 +16,11 @@ Old web and worker readers must remain stopped through the schema boundary;
 resume only the matching application image. No compatibility writer or manual
 FTP fallback exists. PostgreSQL documents
 [`ALTER TABLE DROP COLUMN`](https://www.postgresql.org/docs/current/sql-altertable.html).
+`CREATE OR REPLACE VIEW` cannot remove an existing column, so replacing the
+profile projection requires the user-approved statement-scoped Squawk exception
+at this maintenance boundary
+([PostgreSQL view replacement](https://www.postgresql.org/docs/current/sql-createview.html),
+[Squawk view-drop rule](https://squawkhq.com/docs/ban-drop-view)).
 
 [ClickHouse migration 0108](../src/db/clickhouse-migrations/0108_computed_cycling_power.ts)
 creates versioned NP observations and per-user histories before exposing their
@@ -68,3 +73,17 @@ power barriers and use the same resampler/NP calculation. A completed activity
 imported before its end time must become eligible later the same UTC day without
 requiring another source mutation. Corrections/deletions must replay later
 thresholds and update affected healthspan weeks outside the normal lookback.
+
+## Queue lifecycle
+
+Deletion/recomputation waits use the same serialized writer while holding no
+shared user work lock. Cache invalidation acquires that lock and rechecks erasure.
+Worker shutdown explicitly cancels pending application waits before draining
+workers; incomplete work still fails rather than being acknowledged. The
+[Postgres/Redis regression](../src/jobs/process-activity-delete-analytics-job.integration.test.ts)
+verifies that erasure completes while a refresh remains pending.
+
+Serving view transformations live in the two canonical dbt SQL models, with
+bootstrap reading those same SQL files. The user approved their exact read-only
+view-policy entries; the underlying projector tables remain the sole persisted
+computed values.

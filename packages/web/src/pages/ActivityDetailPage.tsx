@@ -123,7 +123,7 @@ export function ActivityDetailPage() {
   );
   const powerZones = trpc.activity.powerZones.useQuery(
     { id, powerSourceId: sources.power },
-    { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
+    { enabled: isCycling && hasPower, placeholderData: activityQueryPlaceholder(id) },
   );
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");

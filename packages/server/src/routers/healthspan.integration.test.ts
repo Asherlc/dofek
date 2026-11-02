@@ -35,7 +35,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
 
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = ${MAX_HR}, resting_hr = ${RESTING_HR}, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = ${MAX_HR}, resting_hr = ${RESTING_HR}, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 

@@ -1615,6 +1615,21 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("Power Zones")).toBeDefined();
     expect(screen.getByText("Power zones refresh failed.")).toBeDefined();
     expect(screen.getByText("Computed eFTP: 250 W")).toBeDefined();
+    const previousZones = { ftp: 250, thresholdEvidence: computedThresholdEvidence, zones: [] };
+    const placeholder = getPlaceholderData(mockPowerZonesUseQuery.mock.calls.at(-1)?.[1]);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [
+          ["activity", "powerZones"],
+          { input: { id: "test-123", powerSourceId: "old-source" }, type: "query" },
+        ],
+      }),
+    ).toBe(previousZones);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [["activity", "powerZones"], { input: { id: "different-ride" }, type: "query" }],
+      }),
+    ).toBeUndefined();
     expect(screen.getByText(/Evidence:/)).toBeDefined();
     fireEvent.click(screen.getByText("Estimate uncertainty"));
     expect(

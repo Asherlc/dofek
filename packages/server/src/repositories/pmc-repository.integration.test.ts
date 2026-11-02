@@ -54,7 +54,9 @@ describe("PmcRepository canonical activity stress", () => {
     });
     await client.command({
       query: `CREATE TABLE ${database}.cycling_threshold_history
-      (user_id UUID, event_at DateTime64(6, 'UTC'), eftp Nullable(Float64)) ENGINE=Memory`,
+      (user_id UUID, event_at DateTime64(6, 'UTC'), activity_id Nullable(UUID), eftp Nullable(Float64),
+      evidence_activity_id Nullable(UUID), evidence_at Nullable(DateTime64(6, 'UTC')),
+      evidence_duration_seconds Nullable(UInt32), evidence_power Nullable(Float64), model_version String) ENGINE=Memory`,
     });
     await client.insert({
       table: `${database}.user_profile_current`,
@@ -90,13 +92,25 @@ describe("PmcRepository canonical activity stress", () => {
     });
     await client.insert({
       table: `${database}.cycling_threshold_history`,
-      values: [{ user_id: userId, event_at: `${day} 12:00:00`, eftp: 275 }],
+      values: [
+        {
+          user_id: userId,
+          event_at: `${day} 12:00:00`,
+          activity_id: null,
+          eftp: 275,
+          evidence_activity_id: activityIds[1],
+          evidence_at: `${day} 10:00:00`,
+          evidence_duration_seconds: 1200,
+          evidence_power: 300,
+          model_version: "integration-cycling-model",
+        },
+      ],
       format: "JSONEachRow",
     });
     repository = new PmcRepository(
       context.db,
       userId,
-      "UTC",
+      "America/Los_Angeles",
       new ClickHouseActivitySensorStore({
         command: (options) => client.command({ ...options, query: rewrite(options.query) }),
         query: (options) => client.query({ ...options, query: rewrite(options.query) }),

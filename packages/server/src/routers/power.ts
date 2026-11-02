@@ -3,6 +3,7 @@ import type { CriticalPowerModel } from "@dofek/cycling-power/critical-power";
 export type { CriticalPowerModel };
 
 import { TRPCError } from "@trpc/server";
+import { cyclingEftpTrendSchema } from "../contracts/cycling-threshold.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
@@ -31,8 +32,8 @@ export const powerRouter = router({
         });
       }
       const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
-      return repo.getEftpTrend(range);
+      return repo.getEftpTrend(range, ctx.accessWindow);
     },
-    { keyVersion: "computed-eftp-v1" },
+    { keyVersion: "computed-eftp-v1", outputSchema: cyclingEftpTrendSchema },
   ),
 });

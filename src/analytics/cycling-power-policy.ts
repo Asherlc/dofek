@@ -1,6 +1,14 @@
-import { cyclingPowerCoveragePolicy } from "@dofek/training/cycling-power-policy";
+import type { PowerCoveragePolicy } from "@dofek/cycling-power/power";
 import type { CyclingPowerPolicy } from "./cycling-power-projector.ts";
 import referenceBank from "./cycling-reference-bank.json" with { type: "json" };
+
+/** Application coverage policy shared by activity and interval adapters. */
+export const cyclingPowerCoveragePolicy: PowerCoveragePolicy = {
+  maximumHoldSeconds: 10,
+  minimumGapSeconds: 5,
+  gapIntervalMultiplier: 2,
+  maximumGapSeconds: 10,
+};
 
 /** Dofek policy, deliberately outside the reusable numerical package. */
 export const cyclingCriticalPowerPolicy = {

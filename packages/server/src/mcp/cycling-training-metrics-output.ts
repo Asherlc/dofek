@@ -210,7 +210,6 @@ export const cyclingTrainingMetricsOutputSchema = z
               provider_aggregates: z
                 .object({
                   average_power_watts: nullableNumber,
-                  normalized_power_watts: nullableNumber,
                   average_heart_rate_bpm: nullableNumber,
                   maximum_heart_rate_bpm: nullableNumber,
                   kind: z.literal("calculated_read_model"),

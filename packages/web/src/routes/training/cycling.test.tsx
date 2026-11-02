@@ -206,7 +206,7 @@ vi.mock("../../lib/trpc.ts", () => ({
                       evidence_at: null,
                       evidence_duration_seconds: null,
                       evidence_power: null,
-                      model_version: "v1",
+                      model_version: null,
                       uncertainty: {
                         kind: "not_quantifiable" as const,
                         watts: null,

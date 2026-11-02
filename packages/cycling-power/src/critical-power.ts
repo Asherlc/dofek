@@ -8,15 +8,19 @@ export interface CriticalPowerFitPolicy {
 export interface CriticalPowerModel {
   cp: number;
   wPrime: number;
+  /** R² of the linearized work-versus-time regression, rounded to 0.001. */
   r2: number;
 }
 
 export interface CriticalPowerModelDiagnostics extends CriticalPowerModel {
+  /** Power-space RMSE from the unrounded fit, rounded to 0.1 watt. */
   rmse: number;
   points: Array<{
     durationSeconds: number;
     observedPower: number;
+    /** Prediction from the unrounded fit, rounded to 0.1 watt for display. */
     predictedPower: number;
+    /** Observed minus unrounded predicted power, rounded to 0.1 watt. */
     residualPower: number;
   }>;
 }
@@ -56,7 +60,15 @@ export function fitCriticalPowerWithDiagnostics(
   const ys = valid.map((p) => p.bestPower * p.durationSeconds);
   if (ys.some((work) => !Number.isFinite(work))) return null;
 
-  const { slope: cp, intercept: wPrime, r2 } = linearRegression(xs, ys);
+  let regression: ReturnType<typeof linearRegression>;
+  try {
+    regression = linearRegression(xs, ys);
+  } catch (error) {
+    // Finite work observations can still exceed the regression's arithmetic range.
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
+  const { slope: cp, intercept: wPrime, r2 } = regression;
 
   if (
     !Number.isFinite(cp) ||
@@ -67,19 +79,19 @@ export function fitCriticalPowerWithDiagnostics(
   )
     return null;
 
+  let squaredResidualTotal = 0;
   const fittedPoints = valid.map((point) => {
     const predictedPower = cp + wPrime / point.durationSeconds;
+    const residualPower = point.bestPower - predictedPower;
+    squaredResidualTotal += residualPower ** 2;
     return {
       durationSeconds: point.durationSeconds,
       observedPower: point.bestPower,
       predictedPower: Math.round(predictedPower * 10) / 10,
-      residualPower: Math.round((point.bestPower - predictedPower) * 10) / 10,
+      residualPower: Math.round(residualPower * 10) / 10,
     };
   });
-  const rmse = Math.sqrt(
-    fittedPoints.reduce((total, point) => total + point.residualPower ** 2, 0) /
-      fittedPoints.length,
-  );
+  const rmse = Math.sqrt(squaredResidualTotal / fittedPoints.length);
 
   return {
     cp: Math.round(cp),

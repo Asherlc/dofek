@@ -1,20 +1,12 @@
 import type { ConnectionOptions } from "bullmq";
-import { Queue, type QueueEvents, Worker } from "bullmq";
+import { type Queue, type QueueEvents, Worker } from "bullmq";
 import {
   ANALYTICS_REFRESH_QUEUE,
   type AnalyticsRefreshJobData,
   getAnalyticsRefreshQueue,
   getAnalyticsRefreshQueueEvents,
-  getRedisCommandConnection,
+  getAnalyticsRefreshWaitSignal,
 } from "./jobs/queues.ts";
-
-export function createAnalyticsRefreshQueue(
-  connection?: ConnectionOptions,
-): Queue<AnalyticsRefreshJobData> {
-  return new Queue(ANALYTICS_REFRESH_QUEUE, {
-    connection: connection ?? getRedisCommandConnection(),
-  });
-}
 
 const refreshJobOptions = {
   deduplication: { id: ANALYTICS_REFRESH_QUEUE },
@@ -34,14 +26,30 @@ export async function enqueueAnalyticsRefresh(
 export async function enqueueAnalyticsRefreshAndWait(
   queue: Pick<Queue<AnalyticsRefreshJobData>, "add">,
   events: QueueEvents,
+  signal: AbortSignal,
 ): Promise<void> {
-  await events.waitUntilReady();
-  const job = await queue.add(
-    ANALYTICS_REFRESH_QUEUE,
-    { type: "analytics-refresh" },
-    refreshJobOptions,
-  );
-  await job.waitUntilFinished(events);
+  signal.throwIfAborted();
+  let onAbort = () => {};
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  const completion = async () => {
+    await events.waitUntilReady();
+    signal.throwIfAborted();
+    const job = await queue.add(
+      ANALYTICS_REFRESH_QUEUE,
+      { type: "analytics-refresh" },
+      refreshJobOptions,
+    );
+    signal.throwIfAborted();
+    await job.waitUntilFinished(events);
+  };
+  try {
+    await Promise.race([completion(), cancelled]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /** The application's one serialized analytics writer owns deletion refreshes too. */
@@ -49,6 +57,7 @@ export async function refreshAnalyticsAndWait(): Promise<void> {
   await enqueueAnalyticsRefreshAndWait(
     getAnalyticsRefreshQueue(),
     getAnalyticsRefreshQueueEvents(),
+    getAnalyticsRefreshWaitSignal(),
   );
 }
 
@@ -100,7 +109,10 @@ export async function runAnalyticsRefreshJobs({
     { connection, concurrency: 1, autorun: false },
   );
   consumer.on("error", reportFailure);
-  consumer.on("failed", (_job, error) => reportFailure(error));
+  consumer.on("failed", (_job, error) => {
+    if (signal.aborted && error.name === "AbortError") return;
+    reportFailure(error);
+  });
   let onAbort = () => {};
   const stopped = new Promise<void>((resolve) => {
     onAbort = resolve;

@@ -1,5 +1,6 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { pmcThresholdHistoryRows } from "../repositories/pmc-test-helpers.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
@@ -119,13 +120,14 @@ function isPmcNormalizedPowerQuery(queryText: string): boolean {
 function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
+  currentEftp: number | null = null,
 ): SensorStore {
   return {
     query: vi.fn(
       async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
         let rows: unknown[];
         if (queryText.includes("cycling_threshold_history")) {
-          rows = [{ eftp: normalizedPowerRows.length ? 250 : null }];
+          rows = pmcThresholdHistoryRows(currentEftp);
         } else if (isPmcNormalizedPowerQuery(queryText)) {
           rows = normalizedPowerRows;
         } else if (isPmcActivityChartQuery(queryText)) {
@@ -382,11 +384,11 @@ describe("pmcRouter", () => {
         ),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makePmcSensorStore(rows, normalizedPowerRows),
+        sensorStore: makePmcSensorStore(rows, normalizedPowerRows, 275),
       });
       const result = await caller.chart({ days: 180 });
 
-      expect(result.model.ftp).toBe(250);
+      expect(result.model).toMatchObject({ ftp: 275, pairedActivities: rows.length });
       expect(result.data.length).toBeGreaterThan(0);
     });
   });

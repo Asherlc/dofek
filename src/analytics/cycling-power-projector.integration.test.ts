@@ -130,6 +130,69 @@ describe("cycling power projector", () => {
     });
   }
 
+  it("publishes one compact observation batch while keeping native reads bounded per activity", async () => {
+    const userId = randomUUID();
+    await seed(
+      userId,
+      Array.from({ length: 101 }, () => randomUUID()),
+    );
+    let nativeReads = 0;
+    let observationWrites = 0;
+    const measuredClient: typeof client = {
+      ...client,
+      query: (options) => {
+        if (options.query.startsWith("SELECT toFloat64(toUnixTimestamp64Milli(recorded_at))"))
+          nativeReads += 1;
+        return client.query(options);
+      },
+      command: (options) => {
+        if (options.query.startsWith("INSERT INTO analytics.cycling_power_observation_rows"))
+          observationWrites += 1;
+        return client.command(options);
+      },
+    };
+    expect(await projectCyclingPower(measuredClient, policy, asOf)).toMatchObject({
+      pendingActivities: 1,
+      projectedUsers: 0,
+    });
+    expect(nativeReads).toBe(100);
+    expect(observationWrites).toBe(1);
+    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
+      pendingActivities: 0,
+      pendingUsers: 0,
+      projectedUsers: 1,
+    });
+  });
+
+  it("converges across the 32-user bound again after daily rollover", async () => {
+    await client.insert({
+      table: "analytics.activity_summary_rows",
+      format: "JSONEachRow",
+      values: Array.from({ length: 33 }, () => ({
+        user_id: randomUUID(),
+        activity_id: randomUUID(),
+        started_at: "2026-10-31 10:00:00",
+        ended_at: "2026-10-31 10:01:00",
+        canonical_type: "cycling",
+        power_sample_count: 0,
+        refresh_version: 100,
+        is_deleted: 0,
+      })),
+    });
+    for (const day of [asOf, new Date("2026-11-02T12:00:00Z")]) {
+      expect(await projectCyclingPower(client, policy, day)).toMatchObject({
+        pendingActivities: 0,
+        pendingUsers: 1,
+        projectedUsers: 32,
+      });
+      expect(await projectCyclingPower(client, policy, day)).toMatchObject({
+        pendingActivities: 0,
+        pendingUsers: 0,
+        projectedUsers: 1,
+      });
+    }
+  });
+
   it.each(["11:00:00", "15:00:00"])(
     "admits a ride only when completed, including same-day maturity and rewind (%s)",
     async (startTime) => {
@@ -401,6 +464,7 @@ describe("cycling power projector", () => {
     expect(await projectCyclingPower(client, policy, next)).toMatchObject({
       pendingActivities: 0,
       pendingUsers: 0,
+      projectedUsers: 1,
     });
     const after = await client
       .query<{ refresh_version: string }>({

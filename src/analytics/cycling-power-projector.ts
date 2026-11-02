@@ -145,6 +145,11 @@ export async function projectCyclingPower(
     ORDER BY source_refresh_version, user_id, activity_id LIMIT ${ACTIVITY_BATCH_SIZE}`,
     params,
   );
+  const computedObservations: Array<{
+    activity: z.infer<typeof sourceSchema>;
+    np: number | null;
+    version: string;
+  }> = [];
   for (const activity of dirtyActivities) {
     let np: number | null = null;
     if (!activity.is_deleted && activity.elapsed_seconds > 0) {
@@ -179,26 +184,35 @@ export async function projectCyclingPower(
         policy.coveragePolicy,
       );
     }
+    computedObservations.push({ activity, np, version: refreshVersion() });
+  }
+  if (computedObservations.length > 0) {
+    // Keep raw sample reads sequential: the retained batch contains only compact
+    // observations, so one write does not multiply native-sample peak memory.
     await client.command({
       query: `INSERT INTO analytics.cycling_power_observation_rows
         (user_id,activity_id,normalized_power,source_refresh_version,is_deleted,model_version,refresh_version,refreshed_at)
-        SELECT {userId:UUID},{activityId:UUID},{normalizedPower:Nullable(Float64)},
-          {sourceVersion:UInt64},{isDeleted:UInt8},{modelVersion:String},{refreshVersion:UInt64},
-          parseDateTime64BestEffort({refreshedAt:String},6)
-        WHERE ${accountIsWritable}`,
+        SELECT observation.1,observation.2,observation.3,toUInt64(observation.4),observation.5,
+          {modelVersion:String},toUInt64(observation.6),parseDateTime64BestEffort({refreshedAt:String},6)
+        FROM (SELECT arrayJoin(arrayZip({userIds:Array(UUID)},{activityIds:Array(UUID)},
+          {normalizedPowers:Array(Nullable(Float64))},{sourceVersions:Array(String)},
+          {deletedFlags:Array(UInt8)},{refreshVersions:Array(String)})) AS observation)
+        WHERE lower(hex(SHA256(toString(observation.1)))) NOT IN
+          (SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL)`,
       query_params: {
-        userId: activity.user_id,
-        activityId: activity.activity_id,
-        normalizedPower: np,
-        sourceVersion: activity.source_refresh_version,
-        isDeleted: activity.is_deleted,
+        userIds: computedObservations.map(({ activity }) => activity.user_id),
+        activityIds: computedObservations.map(({ activity }) => activity.activity_id),
+        normalizedPowers: computedObservations.map(({ np }) => np),
+        sourceVersions: computedObservations.map(({ activity }) => activity.source_refresh_version),
+        deletedFlags: computedObservations.map(({ activity }) => activity.is_deleted),
+        refreshVersions: computedObservations.map(({ version }) => version),
         modelVersion: npVersion,
-        refreshVersion: refreshVersion(),
         refreshedAt: asOf.toISOString(),
       },
       clickhouse_settings: { log_queries: 0 },
     });
   }
+
   const userState = `WITH ${sources},
     user_sources AS (
       SELECT user_id, max(source_refresh_version) AS source_refresh_version, countIf(dirty) AS pending_activities
@@ -289,9 +303,9 @@ export async function projectCyclingPower(
         (user_id,source_refresh_version,as_of_day,model_version,refresh_version,refreshed_at,events)
         SELECT {userId:UUID},{sourceVersion:UInt64},toDate({asOfDay:String}),{modelVersion:String},
           {refreshVersion:UInt64},parseDateTime64BestEffort({refreshedAt:String},6),
-          arrayZip({eventTimes:Array(Float64)},{activityIds:Array(String)},{thresholds:Array(Nullable(Float64))},
+          arrayZip({eventTimes:Array(Float64)},{activityIds:Array(Nullable(String))},{thresholds:Array(Nullable(Float64))},
             {intensities:Array(Nullable(Float64))},{stresses:Array(Nullable(Float64))},
-            {evidenceIds:Array(String)},{evidenceTimes:Array(Float64)},{evidenceDurations:Array(Float64)},
+            {evidenceIds:Array(Nullable(String))},{evidenceTimes:Array(Float64)},{evidenceDurations:Array(Float64)},
             {evidencePowers:Array(Float64)})
         WHERE ${accountIsWritable}`,
       query_params: {
@@ -302,11 +316,11 @@ export async function projectCyclingPower(
         refreshVersion: publicationVersion,
         refreshedAt: asOf.toISOString(),
         eventTimes: history.map((point) => point.atSeconds),
-        activityIds: history.map((point) => point.id ?? ""),
+        activityIds: history.map((point) => point.id),
         thresholds: history.map((point) => point.thresholdWatts),
         intensities: history.map((point) => point.intensityFactor),
         stresses: history.map((point) => point.trainingStressScore),
-        evidenceIds: history.map((point) => point.evidence?.id ?? ""),
+        evidenceIds: history.map((point) => point.evidence?.id ?? null),
         evidenceTimes: history.map((point) => point.evidence?.atSeconds ?? 0),
         evidenceDurations: history.map((point) => point.evidence?.effort.durationSeconds ?? 0),
         evidencePowers: history.map((point) => point.evidence?.effort.watts ?? 0),

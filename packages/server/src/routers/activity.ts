@@ -17,6 +17,7 @@ import {
   activityMetricSourceSelectionSchema,
   activityMetricSourcesSchema,
   activityPowerWorkSchema,
+  activityPowerZonesSchema,
 } from "../contracts/activity-metric-sources.ts";
 import type { CyclingThresholdEvidence } from "../contracts/cycling-threshold.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
@@ -351,6 +352,7 @@ export const activityRouter = router({
 
   powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "computed-eftp-v1" })
     .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
+    .output(activityPowerZonesSchema)
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,

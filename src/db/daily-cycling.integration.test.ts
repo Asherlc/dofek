@@ -20,12 +20,12 @@ describe("daily cycling activity projection", () => {
     });
   });
   afterAll(async () => {
-    await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close?.();
   });
   it("preserves completed power-only rides with nullable heart rate and the activity name", async () => {
     await client.command({
-      query: `INSERT INTO ${database}.cycling_activity VALUES ('${activityId}','${userId}','2026-01-01 12:00:00','2026-01-01 13:00:00',3600,NULL,NULL,220,3600,0,'Power ride',0,1,now64(9))`,
+      query: `INSERT INTO ${database}.cycling_activity VALUES ('${activityId}','${userId}','2026-01-01 12:00:00','2026-01-01 13:00:00',3600,toFloat64('nan'),0,220,3600,0,'Power ride',0,1,now64(9))`,
     });
     const modelSql = renderDbtModelSql(readModelSql("daily_cycling.sql"), {
       isIncremental: false,

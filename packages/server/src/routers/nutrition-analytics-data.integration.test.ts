@@ -38,7 +38,7 @@ describe("Nutrition analytics data coverage", () => {
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = 190, resting_hr = 50, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 

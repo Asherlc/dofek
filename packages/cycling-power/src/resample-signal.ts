@@ -55,7 +55,7 @@ export function resampleSignal(
   const points = [...grouped]
     .sort(([a], [b]) => a - b)
     .map(([elapsedSeconds, point]) => {
-      if (!point.barrier && point.values.size > 1)
+      if (point.values.size > 1)
         throw new RangeError("Conflicting signal values at the same offset");
       return {
         elapsedSeconds,

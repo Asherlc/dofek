@@ -14,6 +14,7 @@
     "packages/scoring/src/**/*.ts",
     "packages/nutrition/src/**/*.ts",
     "packages/training/src/**/*.ts",
+    "packages/cycling-power/src/**/*.ts",
     "packages/recovery/src/**/*.ts",
     "packages/zones/src/**/*.ts",
     "packages/stats/src/**/*.ts",
@@ -54,6 +55,7 @@
     "!packages/zepp/setting/**"
   ],
   "ignorePatterns": [
+    ".stryker-tmp*/**",
     "packages/training/src/terminology.ts",
     "dist/**",
     ".adal/**",

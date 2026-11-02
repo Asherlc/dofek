@@ -4,6 +4,18 @@ import { fitCriticalPower, fitCriticalPowerWithDiagnostics } from "./critical-po
 const policy = { minimumDurationSeconds: 120, maximumDurationSeconds: 600 };
 
 describe("fitCriticalPower", () => {
+  it("withholds a fit when finite work values overflow regression sums", () => {
+    expect(
+      fitCriticalPower(
+        [
+          { durationSeconds: 120, bestPower: 1e304 },
+          { durationSeconds: 300, bestPower: 1.1e304 },
+          { durationSeconds: 600, bestPower: 1.2e304 },
+        ],
+        policy,
+      ),
+    ).toBeNull();
+  });
   it("keeps finite observations usable when another observation is non-finite", () => {
     expect(
       fitCriticalPower(
@@ -100,9 +112,7 @@ describe("fitCriticalPower", () => {
       { durationSeconds: 600, bestPower: 50 },
     ];
     const model = fitCriticalPower(points, policy);
-    if (model) {
-      expect(model.cp).toBeGreaterThan(0);
-    }
+    expect(model).toBeNull();
   });
 
   it("returns null when CP would be exactly zero", () => {
@@ -185,7 +195,7 @@ describe("fitCriticalPower", () => {
       cp: 232,
       wPrime: 15_502,
       r2: 1,
-      rmse: 1,
+      rmse: 1.1,
       points: [
         {
           durationSeconds: 120,
@@ -207,6 +217,22 @@ describe("fitCriticalPower", () => {
         },
       ],
     });
+  });
+
+  it("rounds RMSE only after aggregating unrounded residuals", () => {
+    const model = fitCriticalPowerWithDiagnostics(
+      [
+        { durationSeconds: 120, bestPower: 325 },
+        { durationSeconds: 300, bestPower: 250.05 },
+        { durationSeconds: 600, bestPower: 225 },
+      ],
+      policy,
+    );
+    // Raw residuals are approximately [-0.05102, 0.03265, -0.00612] W.
+    // Their RMS is 0.03515 W: round once to 0.0 W, rather than 0.1 W
+    // from prematurely rounding the individual residuals.
+    expect(model?.rmse).toBe(0);
+    expect(model?.points[0]?.residualPower).toBe(-0.1);
   });
 
   it("returns null for empty input", () => {

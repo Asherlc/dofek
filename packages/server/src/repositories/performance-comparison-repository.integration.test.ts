@@ -3,7 +3,12 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
+import {
+  buildActivitySummaryRowsTableSql,
+  buildActivitySummaryViewSql,
+} from "../../../../src/db/clickhouse-activity-summary.ts";
 import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { performanceComparisonOutputSchema } from "../mcp/performance-comparison-output.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
@@ -227,24 +232,13 @@ describe("PerformanceComparisonRepository database semantics", () => {
     zeroSampleCanonicalId = String(zeroSampleRows[0]?.id);
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    for (const query of cyclingPowerSchemaStatements())
+      await clickhouse.command({ query: query.replaceAll("analytics.", `${analyticsDatabase}.`) });
     await clickhouse.command({
-      query: `CREATE TABLE ${analyticsDatabase}.activity_summary_rows (
-        activity_id UUID,
-        user_id UUID,
-        avg_power Nullable(Float64),
-        normalized_power Nullable(Float64),
-        avg_hr Nullable(Float64),
-        max_hr Nullable(Float64),
-        avg_cadence Nullable(Float64),
-        total_distance Nullable(Float64),
-        elevation_gain_m Nullable(Float64),
-        sample_count Nullable(UInt32),
-        power_sample_count Nullable(UInt32),
-        hr_sample_count Nullable(UInt32),
-        refresh_version UInt64,
-        is_deleted UInt8
-      ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, activity_id)`,
+      query: buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${analyticsDatabase}.`),
+    });
+    await clickhouse.command({
+      query: buildActivitySummaryViewSql().replaceAll("analytics.", `${analyticsDatabase}.`),
     });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.activity_sensor_sample (
@@ -381,13 +375,38 @@ describe("PerformanceComparisonRepository database semantics", () => {
       }),
     });
     await clickhouse.insert({
+      table: `${analyticsDatabase}.cycling_power_observation_rows`,
+      format: "JSONEachRow",
+      values: [
+        {
+          user_id: userId,
+          activity_id: firstCanonicalId,
+          normalized_power: 185,
+          source_refresh_version: 1,
+          is_deleted: 0,
+          model_version: "test-np",
+          refresh_version: 2,
+          refreshed_at: "2026-08-30 00:00:00",
+        },
+        {
+          user_id: userId,
+          activity_id: secondCanonicalId,
+          normalized_power: 200,
+          source_refresh_version: 1,
+          is_deleted: 0,
+          model_version: "test-np",
+          refresh_version: 2,
+          refreshed_at: "2026-08-30 00:00:00",
+        },
+      ],
+    });
+    await clickhouse.insert({
       table: `${analyticsDatabase}.activity_summary_rows`,
       values: [
         {
           activity_id: firstCanonicalId,
           user_id: userId,
           avg_power: 180,
-          normalized_power: 185,
           avg_hr: 145,
           max_hr: 165,
           avg_cadence: 88,
@@ -403,7 +422,6 @@ describe("PerformanceComparisonRepository database semantics", () => {
           activity_id: secondCanonicalId,
           user_id: userId,
           avg_power: 195,
-          normalized_power: 200,
           avg_hr: 143,
           max_hr: 163,
           avg_cadence: 90,
@@ -419,7 +437,6 @@ describe("PerformanceComparisonRepository database semantics", () => {
           activity_id: zeroSampleCanonicalId,
           user_id: userId,
           avg_power: null,
-          normalized_power: null,
           avg_hr: null,
           max_hr: null,
           avg_cadence: null,

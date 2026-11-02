@@ -2,6 +2,36 @@ import { describe, expect, it, vi } from "vitest";
 import { CyclingPerformanceRepository } from "./cycling-performance-repository.ts";
 
 describe("CyclingPerformanceRepository", () => {
+  it("withholds threshold attribution for a ride with power but no supported eFTP", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          activity_id: "ride",
+          activity_date: "2026-08-30",
+          activity_name: "Unsupported ride",
+          modality: "indoor",
+          elapsed_seconds: 3600,
+          average_power: 200,
+          normalized_power: 220,
+          eftp: null,
+          intensity_factor: null,
+          elevation_gain_meters: null,
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const result = await new CyclingPerformanceRepository({ query }, "user", "UTC").listRange(
+      "2026-08-01",
+      "2026-09-01",
+    );
+    expect(result.activities[0]).toMatchObject({
+      normalized_power_watts: 220,
+      estimated_ftp_watts: null,
+      estimated_ftp_source: null,
+      intensity_factor: null,
+    });
+  });
   it("returns per-ride and rolling-90-day load-normalized power without look-ahead", async () => {
     const query = vi
       .fn()
@@ -181,7 +211,7 @@ describe("CyclingPerformanceRepository", () => {
 
     expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.cycling_activity AS ride FINAL");
     expect(query.mock.calls[1]?.[1]).toContain("FROM analytics.activity_power_curve FINAL");
-    expect(query.mock.calls[2]?.[1]).toContain("FROM analytics.cycling_activity FINAL");
+    expect(query.mock.calls[2]?.[1]).toContain("FROM analytics.cycling_activity AS ride FINAL");
     expect(query.mock.calls[2]?.[1]).toContain("'road', 'mountain'");
     expect(query.mock.calls[0]?.[2]).toMatchObject({
       lookbackStartDate: "2026-06-04",

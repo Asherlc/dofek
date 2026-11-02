@@ -4,6 +4,11 @@ import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { cyclingCriticalPowerPolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
 import type { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
@@ -123,7 +128,7 @@ export class PowerRepository {
   }
 
   /** The displayed slice of ongoing history never changes the current threshold. */
-  async getEftpTrend(range: ChartRange) {
+  async getEftpTrend(range: ChartRange, accessWindow?: AccessWindow) {
     const [trend, currentEvidence] = await Promise.all([
       this.#sensorStore.query(
         trendRowSchema,
@@ -135,11 +140,22 @@ export class PowerRepository {
           ON activity.user_id = history.user_id AND activity.activity_id = history.activity_id
         WHERE history.user_id = {userId:UUID} AND history.eftp IS NOT NULL
           AND history.event_at <= now64(6)
+          ${clickHouseAccessPredicate(accessWindow, "history.event_at")}
           ${range.clickHouseTimestampAfter("history.event_at")}
         ORDER BY history.event_at, ifNull(toString(history.activity_id), '')`,
-        { userId: this.#userId, timezone: this.#timezone, ...range.clickHouseParams() },
+        {
+          userId: this.#userId,
+          timezone: this.#timezone,
+          ...range.clickHouseParams(),
+          ...clickHouseAccessParams(accessWindow),
+        },
       ),
-      new CyclingThresholdRepository(this.#sensorStore, this.#userId, this.#timezone).getCurrent(),
+      new CyclingThresholdRepository(
+        this.#sensorStore,
+        this.#userId,
+        this.#timezone,
+        accessWindow,
+      ).getCurrent(),
     ]);
     return { trend, currentEftp: currentEvidence.value, currentEvidence, model: null };
   }

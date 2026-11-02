@@ -1,5 +1,5 @@
 import { normalizedPower } from "@dofek/cycling-power/power";
-import { cyclingPowerCoveragePolicy } from "@dofek/training/cycling-power-policy";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import type { SQL } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
@@ -16,6 +16,7 @@ import {
   prepareCyclingEffortMetrics,
   recordedIntervalsForActivity,
 } from "./cycling-effort-metrics.ts";
+import * as powerWindows from "./cycling-power-window-metrics.ts";
 import type { SportSettingsRow } from "./sport-settings-repository.ts";
 
 const settings: SportSettingsRow = {
@@ -132,6 +133,126 @@ function emptyDatabase() {
 }
 
 describe("calculateCyclingEffortMetrics", () => {
+  it("rejects an interval engine response that contains extra results", async () => {
+    const prepared = prepareCyclingEffortMetrics(samples.slice(0, 60), {
+      ...context,
+      durationSeconds: 60,
+      intervals: [{ index: 1, type: "work", startOffsetSeconds: 0, endOffsetSeconds: 60 }],
+    });
+    const metric = { normalizedPowerWatts: 210, intensityFactor: 0.84, trainingStressScore: 1 };
+    const evaluate = vi
+      .spyOn(powerWindows, "evaluateCyclingPowerWindows")
+      .mockResolvedValueOnce([metric, metric]);
+    try {
+      await expect(evaluateCyclingEffortMetrics([prepared])).rejects.toThrow(
+        "Every prepared interval requires computed power metrics",
+      );
+    } finally {
+      evaluate.mockRestore();
+    }
+  });
+  it.each([null, Number.NaN])(
+    "bounds native %s barriers without misclassifying explicit missing values",
+    (value) => {
+      const prepared = prepareCyclingEffortMetrics(
+        [-Infinity, -1, 0, 1.5, 3, Infinity, Number.NaN].map((elapsedSeconds) => ({
+          elapsedSeconds,
+          powerWatts: value,
+        })),
+        { ...context, durationSeconds: 3 },
+      );
+      expect(prepared.clean.counts.power).toEqual({
+        barriers: [0, 1.5],
+        suspiciousSamples: value === null ? 0 : 7,
+        conflictingSamples: 0,
+      });
+    },
+  );
+  it("does not forward a finite value overridden by an explicit native barrier", () => {
+    const prepared = prepareCyclingEffortMetrics(
+      [
+        { elapsedSeconds: 0, powerWatts: 240 },
+        { elapsedSeconds: 0, powerWatts: null },
+        { elapsedSeconds: 1, powerWatts: 250 },
+      ],
+      { ...context, durationSeconds: 2 },
+    );
+    expect(prepared.clean.samples).toEqual([{ elapsedSeconds: 1, powerWatts: 250 }]);
+    expect(prepared.clean.counts.power).toEqual({
+      barriers: [0],
+      suspiciousSamples: 0,
+      conflictingSamples: 0,
+    });
+  });
+  it("retains the canonical threshold provenance and does not report supported power zones unavailable", () => {
+    const result = calculateCyclingEffortMetrics(samples, context);
+    expect(result.thresholds).toMatchObject({
+      ftp: {
+        value: 250,
+        method: "computed_eftp",
+        evidenceActivityId: context.activityPowerMetrics.evidence_activity_id,
+      },
+      ageDays: 1,
+      freshness: "computed",
+    });
+    expect(
+      result.unavailableReasons.filter((row) =>
+        ["power_zones", "normalized_power", "intensity_factor", "training_stress_score"].includes(
+          row.metric,
+        ),
+      ),
+    ).toEqual([]);
+  });
+  it.each([0, -1, Number.NaN, Infinity])(
+    "keeps inadmissible canonical threshold %s unavailable",
+    (eftp) => {
+      const result = calculateCyclingEffortMetrics(samples, {
+        ...context,
+        activityPowerMetrics: {
+          ...context.activityPowerMetrics,
+          eftp,
+          intensity_factor: null,
+          power_tss: null,
+        },
+      });
+      expect(result.thresholds).toMatchObject({ ftp: null, freshness: "unavailable" });
+      expect(result.unavailableReasons).toContainEqual({
+        metric: "power_zones",
+        reason: "No qualifying computed cycling threshold evidence is available for this activity.",
+      });
+    },
+  );
+  it("distinguishes unavailable canonical stress from a missing threshold and an unpublished projection", () => {
+    const result = calculateCyclingEffortMetrics(samples, {
+      ...context,
+      activityPowerMetrics: {
+        ...context.activityPowerMetrics,
+        intensity_factor: null,
+        power_tss: null,
+      },
+    });
+    expect(result.workout.unavailableReasons).toContainEqual({
+      metric: "intensity_factor",
+      reason: "computed intensity factor is unavailable",
+    });
+    expect(result.workout.unavailableReasons).toContainEqual({
+      metric: "training_stress_score",
+      reason: "computed training stress score is unavailable",
+    });
+    const unsupported = calculateCyclingEffortMetrics(samples, {
+      ...context,
+      activityPowerMetrics: {
+        ...context.activityPowerMetrics,
+        eftp: null,
+        intensity_factor: null,
+        power_tss: null,
+      },
+    });
+    expect(unsupported.workout.unavailableReasons).toContainEqual({
+      metric: "intensity_factor",
+      reason: "No qualifying computed cycling threshold evidence is available for this activity.",
+    });
+  });
   it.each([1, 5, 0.5])(
     "retains a native null through cleaning and real interval evaluation at %s second cadence",
     async (cadence) => {
@@ -1257,6 +1378,17 @@ describe("cycling effort metric loading", () => {
         ],
       },
       {
+        activity_id: activityA,
+        elapsed_seconds: 0.5,
+        power: 9999,
+        heart_rate: 130,
+        cadence: 999,
+        source_providers: ["core-a"],
+        source_devices: ["bike-a"],
+        power_measurement_kinds: [],
+        stream_evidence: [["heart_rate", "strap-a", "strap-device-a", "direct"]],
+      },
+      {
         activity_id: activityB,
         elapsed_seconds: 0,
         power: 200,
@@ -1277,6 +1409,15 @@ describe("cycling effort metric loading", () => {
         provider_id: "move-a",
         device_id: "speed-a",
         measurement_kind: "estimated",
+      },
+      {
+        activity_id: activityA,
+        elapsed_seconds: 0,
+        channel: "temperature",
+        scalar: 20,
+        provider_id: null,
+        device_id: null,
+        measurement_kind: "unknown",
       },
       {
         activity_id: activityB,
@@ -1330,10 +1471,7 @@ describe("cycling effort metric loading", () => {
         } else if (statement.includes("cycling-effort:movement-samples")) {
           rows = movementRows;
         } else if (statement.includes("cycling-effort:distance")) {
-          rows = [
-            { activity_id: activityA, distance_meters: 10 },
-            { activity_id: activityB, distance_meters: 20 },
-          ];
+          rows = [{ activity_id: activityA, distance_meters: 30 }];
         } else if (statement.includes("nearby-weight:observations")) {
           expect(params).toEqual({
             userId: "user",
@@ -1440,8 +1578,16 @@ describe("cycling effort metric loading", () => {
       memberActivityIds: [activityA, memberA],
       activityDate: "2026-06-16",
       metrics: {
-        workout: { power: { averageWatts: 100 } },
-        movement: { distanceMeters: 10, averageMovingSpeedMetersPerSecond: 10 },
+        workout: {
+          power: { averageWatts: 100 },
+          heartRate: { averageBpm: 125 },
+          cadence: { averageRpm: null },
+        },
+        movement: {
+          distanceMeters: 30,
+          distanceKind: "deduplicated_summary",
+          averageMovingSpeedMetersPerSecond: 10,
+        },
         weight: { value_kg: 50, sources: [{ provider: "scale-a" }] },
         averageWattsPerKg: 2,
         bestPowers: [{ watts: 150, wattsPerKg: 3, powerKind: "estimated" }],
@@ -1493,8 +1639,16 @@ describe("cycling effort metric loading", () => {
     expect(result[1]).toMatchObject({
       activityId: activityB,
       metrics: {
-        workout: { power: { averageWatts: 200 } },
-        movement: { distanceMeters: 20, averageMovingSpeedMetersPerSecond: 20 },
+        workout: {
+          power: { averageWatts: 200 },
+          heartRate: { averageBpm: null },
+          cadence: { averageRpm: null },
+        },
+        movement: {
+          distanceMeters: 20,
+          distanceKind: "integrated_covered_speed_samples",
+          averageMovingSpeedMetersPerSecond: 20,
+        },
         weight: { value_kg: 100, sources: [{ provider: "scale-b" }] },
         averageWattsPerKg: 2,
         bestPowers: [{ watts: 300, wattsPerKg: 3, powerKind: "direct" }],

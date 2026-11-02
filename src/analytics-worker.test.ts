@@ -270,9 +270,10 @@ describe("AnalyticsWorker", () => {
         runRefreshJobs: async (processRefresh) => processRefresh(),
       }),
     );
-    await expect(worker.run(controller.signal)).rejects.toThrow(
-      "Analytics refresh aborted before completion",
-    );
+    await expect(worker.run(controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+      message: "Analytics refresh aborted before completion",
+    });
   });
 
   it("consumes refresh requests and retries failures before completing the request", async () => {

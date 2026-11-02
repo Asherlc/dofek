@@ -20,6 +20,7 @@
     "@bull-board/api": "9.10.1",
     "@bull-board/express": "9.10.1",
     "@dofek/auth": "workspace:*",
+    "@dofek/cycling-power": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
@@ -55,8 +56,7 @@
     "qrcode": "1.5.4",
     "simple-statistics": "7.10.2",
     "supercluster": "9.1.0",
-    "zod": "4.6.7",
-    "@dofek/cycling-power": "workspace:*"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/compression": "1.8.1",

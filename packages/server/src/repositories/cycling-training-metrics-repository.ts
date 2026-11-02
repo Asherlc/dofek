@@ -457,7 +457,6 @@ export class CyclingTrainingMetricsRepository {
           })),
         provider_aggregates: {
           average_power_watts: activity.aggregate_average_power,
-          normalized_power_watts: metrics.power.normalizedWatts,
           average_heart_rate_bpm: activity.aggregate_average_heart_rate,
           maximum_heart_rate_bpm: activity.aggregate_max_heart_rate,
           kind: "calculated_read_model" as const,

@@ -2,13 +2,10 @@ import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
-import {
-  createAnalyticsRefreshQueue,
-  runAnalyticsRefreshJobs,
-} from "../src/analytics-refresh-queue.ts";
+import { runAnalyticsRefreshJobs } from "../src/analytics-refresh-queue.ts";
 import type { AnalyticsRefreshStep } from "../src/analytics-worker.ts";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
-import { getRedisConnection } from "../src/jobs/queues.ts";
+import { createAnalyticsRefreshQueue, getRedisConnection } from "../src/jobs/queues.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import { initProductionSentry } from "../src/lib/sentry.ts";
 import { logger } from "../src/logger.ts";

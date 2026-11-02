@@ -1084,9 +1084,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
-    expect(sql).toContain("FROM {{ this }} FINAL");
+    expect(sql).toContain("FROM {{ this }} AS previous FINAL");
     expect(sql).toContain("if(metadata.activity_id IS NULL, 1, 0) AS is_deleted");
-    expect(sql).toContain("source('analytics', 'cycling_activity_power_metrics')");
+    expect(sql).toContain("ref('cycling_activity_power_metrics')");
     expect(sql).toContain("power.eftp AS eftp");
     expect(sql).toContain("samples.scalar >= metadata.eftp * 0.9");
     expect(sql).not.toContain("ref('deduped_sensor')");

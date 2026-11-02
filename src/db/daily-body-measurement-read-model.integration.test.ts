@@ -462,7 +462,8 @@ function createWeeklyHealthspanDependencyTablesSql(targetSchema: string): string
       aerobic_minutes Float64,
       high_intensity_minutes Float64,
       is_deleted UInt8,
-      refresh_version UInt64
+      refresh_version UInt64,
+      refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY user_id`,
     `CREATE TABLE ${targetSchema}.deduped_activities (
       user_id UUID,

@@ -7,6 +7,7 @@ import {
   prepareCyclingWorkoutMetrics,
   resampleCyclingStream,
 } from "@dofek/training/cycling-workout-metrics";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -167,6 +168,7 @@ export function prepareCyclingEffortMetrics(
   const clean = cleanSamples(samples, duration);
   const settings = effectiveSettings(context.settingsHistory, context.activityDate);
   const workout = prepareCyclingWorkoutMetrics({
+    coveragePolicy: cyclingPowerCoveragePolicy,
     durationSeconds: duration,
     thresholdWatts: context.activityPowerMetrics?.eftp ?? null,
     samples: clean.samples,
@@ -214,6 +216,7 @@ export function calculateCyclingEffortMetrics(
     clean.samples,
     duration,
     (sample) => sample.speedMetersPerSecond,
+    cyclingPowerCoveragePolicy,
     0,
     clean.counts.speed?.barriers,
   );
@@ -221,6 +224,7 @@ export function calculateCyclingEffortMetrics(
     clean.samples,
     duration,
     (sample) => sample.heartRateBpm,
+    cyclingPowerCoveragePolicy,
     0,
     clean.counts.heartRate?.barriers,
   );
@@ -229,6 +233,7 @@ export function calculateCyclingEffortMetrics(
       clean.samples,
       duration,
       (sample) => sample[field],
+      cyclingPowerCoveragePolicy,
       -Infinity,
       clean.counts[field === "altitudeMeters" ? "altitude" : "temperature"]?.barriers,
     );

@@ -27,6 +27,15 @@ function store() {
   } satisfies ConstructorParameters<typeof PowerRepository>[2];
 }
 describe("PowerRepository", () => {
+  it("avoids ClickHouse when the database reports no visible cycling activities", async () => {
+    const sensor = store();
+    const db = { execute: vi.fn().mockResolvedValue([{ activity_count: 0 }]) };
+    expect(
+      await new PowerRepository("user", "UTC", sensor, db).getPowerCurve(ChartRange.fromDays(90)),
+    ).toEqual({ points: [], model: null });
+    expect(db.execute).toHaveBeenCalledOnce();
+    expect(sensor.query).not.toHaveBeenCalled();
+  });
   it("aggregates canonical duration evidence for separately labeled CP exploration", async () => {
     const sensor = store();
     sensor.query.mockResolvedValueOnce([

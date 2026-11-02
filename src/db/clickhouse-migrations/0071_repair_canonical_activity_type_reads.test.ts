@@ -47,9 +47,7 @@ describe("0071_repair_canonical_activity_type_reads statements", () => {
   });
 
   it("recreates view bodies that read the canonical column instead of the renamed one", () => {
-    expect(statements.join("\n")).toContain(
-      "assumeNotNull(summary.canonical_type) AS canonical_type",
-    );
+    expect(statements.join("\n")).toContain("assumeNotNull(canonical_type) AS canonical_type");
     expect(statements.join("\n")).not.toContain("activity_type");
   });
 

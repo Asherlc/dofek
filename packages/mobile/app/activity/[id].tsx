@@ -434,7 +434,7 @@ export default function ActivityDetailScreen() {
     { id: id ?? "", powerSourceId: sources.power },
     {
       enabled: !!id && isCycling && hasPower,
-      placeholderData: (previousData) => previousData,
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const isStrengthActivity =

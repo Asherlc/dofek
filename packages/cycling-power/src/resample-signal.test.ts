@@ -8,6 +8,101 @@ const policy = {
   maximumGapSeconds: 10,
 };
 describe("resampleSignal", () => {
+  it("returns zero elapsed coverage for an empty zero-duration recording", () => {
+    const result = resampleSignal([], 0, policy);
+    expect(result.coverage).toEqual({
+      observedSamples: 0,
+      coveredSeconds: 0,
+      missingSeconds: 0,
+      zeroSeconds: 0,
+      coveragePct: 0,
+      medianSampleIntervalSeconds: null,
+      largestGapSeconds: null,
+    });
+    expect(result.maximumValue).toBeNull();
+    expect(result.buckets.size).toBe(0);
+  });
+  it.each([-1, Number.NaN, Infinity])("rejects invalid elapsed offsets %s", (elapsedSeconds) => {
+    expect(() => resampleSignal([{ elapsedSeconds, value: 100 }], 10, policy)).toThrow(RangeError);
+  });
+  it.each([
+    "maximumHoldSeconds",
+    "minimumGapSeconds",
+    "gapIntervalMultiplier",
+    "maximumGapSeconds",
+  ] as const)("rejects a zero %s policy bound", (field) => {
+    expect(() => resampleSignal([], 10, { ...policy, [field]: 0 })).toThrow(RangeError);
+  });
+  it("rejects a reversed gap policy and negative duration", () => {
+    expect(() => resampleSignal([], 10, { ...policy, minimumGapSeconds: 11 })).toThrow(RangeError);
+    expect(() => resampleSignal([], -1, policy)).toThrow(RangeError);
+  });
+  it("ignores out-of-window observations when counting native samples and cadence", () => {
+    const result = resampleSignal(
+      [
+        { elapsedSeconds: 0, value: 100 },
+        { elapsedSeconds: 10, value: 500 },
+      ],
+      10,
+      policy,
+    );
+    expect(result.coverage).toEqual({
+      observedSamples: 1,
+      coveredSeconds: 1,
+      missingSeconds: 9,
+      zeroSeconds: 0,
+      coveragePct: 10,
+      medianSampleIntervalSeconds: null,
+      largestGapSeconds: null,
+    });
+    expect([...result.buckets.keys()]).toEqual([0]);
+  });
+  it("uses sorted even-gap median and counts measured zero seconds", () => {
+    const result = resampleSignal(
+      [
+        { elapsedSeconds: 0, value: 100 },
+        { elapsedSeconds: 4, value: 200 },
+        { elapsedSeconds: 6, value: 0 },
+      ],
+      10,
+      policy,
+    );
+    expect(result.coverage).toEqual({
+      observedSamples: 3,
+      coveredSeconds: 9,
+      missingSeconds: 1,
+      zeroSeconds: 3,
+      coveragePct: 90,
+      medianSampleIntervalSeconds: 3,
+      largestGapSeconds: 4,
+    });
+    expect([...result.buckets.values()].map((bucket) => bucket.value)).toEqual([
+      100, 100, 100, 100, 200, 200, 0, 0, 0,
+    ]);
+  });
+  it("discards a partially covered second and its native peak", () => {
+    const result = resampleSignal(
+      [
+        { elapsedSeconds: 0, value: 500 },
+        { elapsedSeconds: 0.5, value: null },
+        { elapsedSeconds: 1, value: 100 },
+      ],
+      2,
+      policy,
+    );
+    expect(result.buckets.has(0)).toBe(false);
+    expect(result.coverage.coveredSeconds).toBe(0);
+    expect(result.maximumValue).toBeNull();
+  });
+  it("rejects contradictory finite values even when their timestamp also has a null barrier", () => {
+    const samples = [
+      { elapsedSeconds: 0, value: 200 },
+      { elapsedSeconds: 0, value: null },
+      { elapsedSeconds: 0, value: 240 },
+    ];
+    expect(() => resampleSignal(samples, 1, policy)).toThrow(RangeError);
+    expect(() => resampleSignal([...samples].reverse(), 1, policy)).toThrow(RangeError);
+  });
   it("caps every observation at the caller hold even inside gap tolerance", () => {
     const result = resampleSignal(
       Array.from({ length: 12 }, (_, index) => ({ elapsedSeconds: index * 5, value: 200 })),

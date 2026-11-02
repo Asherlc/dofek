@@ -79,11 +79,13 @@ function accessWindowParams(ctx: HealthspanRawDataContext): Record<string, strin
 }
 
 function weeklyActivityAverage(rows: HealthspanReadModelRow[], key: keyof HealthspanReadModelRow) {
-  if (!rows.some((row) => typeof row[key] === "number")) return null;
-  const total = rows.reduce((sum, row) => {
+  if (rows.length === 0) return null;
+  let total = 0;
+  for (const row of rows) {
     const value = row[key];
-    return sum + (typeof value === "number" ? value : 0);
-  }, 0);
+    if (typeof value !== "number") return null;
+    total += value;
+  }
   return total / rows.length;
 }
 

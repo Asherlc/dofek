@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { describe, expect, it } from "vitest";
 import {
@@ -97,41 +98,47 @@ describe("awaited analytics refresh", () => {
     const nextStarted = deferred();
     const finishNext = deferred();
     let builds = 0;
-    await events.waitUntilReady();
-    await queue.pause();
-    await enqueueAnalyticsRefresh(queue);
-    let settled = false;
-    const waiting = enqueueAnalyticsRefreshAndWait(queue, events).then(() => {
-      settled = true;
-    });
-    const consumer = runAnalyticsRefreshJobs({
-      queue,
-      connection,
-      intervalMilliseconds: 900_000,
-      signal: controller.signal,
-      reportFailure: () => {},
-      processRefresh: async () => {
-        builds += 1;
-        if (builds === 1) {
-          started.resolve();
-          await finish.promise;
-        } else {
-          nextStarted.resolve();
-          await finishNext.promise;
-        }
-      },
-    });
+    let consumer: Promise<void> | undefined;
     try {
+      await events.waitUntilReady();
+      await queue.pause();
+      await enqueueAnalyticsRefresh(queue);
+      let settled = false;
+      const waiting = enqueueAnalyticsRefreshAndWait(
+        queue,
+        events,
+        new AbortController().signal,
+      ).then(() => {
+        settled = true;
+      });
+      consumer = runAnalyticsRefreshJobs({
+        queue,
+        connection,
+        intervalMilliseconds: 900_000,
+        signal: controller.signal,
+        reportFailure: () => {},
+        processRefresh: async () => {
+          builds += 1;
+          if (builds === 1) {
+            started.resolve();
+            await finish.promise;
+          } else {
+            nextStarted.resolve();
+            await finishNext.promise;
+          }
+        },
+      });
       await queue.resume();
       await started.promise;
       expect(settled).toBe(false);
-      const followup = enqueueAnalyticsRefreshAndWait(queue, events);
+      const followup = enqueueAnalyticsRefreshAndWait(queue, events, new AbortController().signal);
       finish.resolve();
       await waiting;
       await nextStarted.promise;
       expect(builds).toBe(2);
       finishNext.resolve();
       await followup;
+      expect(builds).toBe(2);
     } finally {
       controller.abort();
       finish.resolve();
@@ -143,23 +150,50 @@ describe("awaited analytics refresh", () => {
     }
   }, 15_000);
 
+  it("rejects an unfinished refresh wait when worker shutdown cancels it", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-shutdown-${randomUUID()}`, {
+      connection,
+    });
+    const events = new QueueEvents(queue.name, { connection });
+    const registered = deferred();
+    EventEmitter.prototype.on.call(queue, "newListener", (event: string | symbol) => {
+      if (event === "closing") registered.resolve();
+    });
+    const controller = new AbortController();
+    const waiting = enqueueAnalyticsRefreshAndWait(queue, events, controller.signal);
+    const rejected = expect(waiting).rejects.toThrow();
+    try {
+      await registered.promise;
+      controller.abort(new Error("Worker shutdown"));
+      await rejected;
+    } finally {
+      await events.close();
+      const cleanup = new Queue(queue.name, { connection });
+      await cleanup.obliterate();
+      await cleanup.close();
+      await queue.close();
+    }
+  }, 15_000);
+
   it("observes an already completed handle and propagates the worker failure", async () => {
     const connection = getRedisConnection();
     const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-completed-${randomUUID()}`, {
       connection,
     });
     const events = new QueueEvents(queue.name, { connection });
-    await events.waitUntilReady();
+    let worker: Worker | undefined;
     let fail = false;
-    const worker = new Worker(
-      queue.name,
-      async () => {
-        if (fail) throw new Error("Projection failed");
-        return "done";
-      },
-      { connection },
-    );
     try {
+      await events.waitUntilReady();
+      worker = new Worker(
+        queue.name,
+        async () => {
+          if (fail) throw new Error("Projection failed");
+          return "done";
+        },
+        { connection },
+      );
       await enqueueAnalyticsRefreshAndWait(
         {
           add: async (...args) => {
@@ -169,13 +203,14 @@ describe("awaited analytics refresh", () => {
           },
         },
         events,
+        new AbortController().signal,
       );
       fail = true;
-      await expect(enqueueAnalyticsRefreshAndWait(queue, events)).rejects.toThrow(
-        "Projection failed",
-      );
+      await expect(
+        enqueueAnalyticsRefreshAndWait(queue, events, new AbortController().signal),
+      ).rejects.toThrow("Projection failed");
     } finally {
-      await worker.close();
+      await worker?.close();
       await events.close();
       await queue.obliterate();
       await queue.close();

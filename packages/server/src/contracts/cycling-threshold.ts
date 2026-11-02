@@ -10,7 +10,7 @@ export const cyclingThresholdUncertainty = cyclingThresholdUncertaintySchema.par
     "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
 });
 
-export const cyclingThresholdEvidenceSchema = z
+const cyclingThresholdEvidenceObject = z
   .object({
     value: z.number().positive().nullable(),
     unit: z.literal("watt"),
@@ -25,12 +25,36 @@ export const cyclingThresholdEvidenceSchema = z
     uncertainty: cyclingThresholdUncertaintySchema,
   })
   .strict();
+const consistentAvailability = (value: {
+  value: number | null;
+  unavailable_reason: string | null;
+}) => (value.value === null) === (value.unavailable_reason !== null);
+export const cyclingThresholdEvidenceSchema = cyclingThresholdEvidenceObject.refine(
+  consistentAvailability,
+  { message: "A computed threshold requires a value or an unavailable reason" },
+);
 export type CyclingThresholdEvidence = z.infer<typeof cyclingThresholdEvidenceSchema>;
-export const cyclingThresholdHistoryItemSchema = cyclingThresholdEvidenceSchema
+export const cyclingThresholdHistoryItemSchema = cyclingThresholdEvidenceObject
   .extend({
     activity_id: z.uuid().nullable(),
     evidence_kind: z.literal("computed"),
     historical_validity: z.literal("effective_dated"),
   })
-  .strict();
+  .strict()
+  .refine(consistentAvailability, {
+    message: "A computed threshold requires a value or an unavailable reason",
+  });
 export type CyclingThresholdHistoryItem = z.infer<typeof cyclingThresholdHistoryItemSchema>;
+
+export const cyclingEftpTrendSchema = z.object({
+  trend: z.array(
+    z.object({
+      date: z.string(),
+      eftp: z.number().positive(),
+      activityName: z.string().nullable(),
+    }),
+  ),
+  currentEftp: z.number().positive().nullable(),
+  currentEvidence: cyclingThresholdEvidenceSchema,
+  model: z.null(),
+});

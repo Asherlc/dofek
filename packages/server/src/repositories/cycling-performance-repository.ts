@@ -99,22 +99,24 @@ ORDER BY started_at ASC, duration_seconds ASC`;
 const powerAvailabilityQuery = `
 WITH
   multiIf(
-    modality IN ('indoor', 'virtual'), 'indoor',
-    modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
+    ride.modality IN ('indoor', 'virtual'), 'indoor',
+    ride.modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
     'unknown'
   ) AS power_modality,
-  (power_samples > 0 OR average_power IS NOT NULL OR normalized_power IS NOT NULL OR best_twenty_minute_power IS NOT NULL) AS has_power
+  (ride.power_samples > 0 OR ride.average_power IS NOT NULL OR metrics.normalized_power IS NOT NULL OR ride.best_twenty_minute_power IS NOT NULL) AS has_power
 SELECT
   power_modality AS modality,
-  nullIf(toString(minIf(toDate(toTimeZone(started_at, {timezone:String})), has_power)), '1970-01-01') AS first_observed,
-  nullIf(toString(maxIf(toDate(toTimeZone(started_at, {timezone:String})), has_power)), '1970-01-01') AS last_observed,
+  nullIf(toString(minIf(toDate(toTimeZone(ride.started_at, {timezone:String})), has_power)), '1970-01-01') AS first_observed,
+  nullIf(toString(maxIf(toDate(toTimeZone(ride.started_at, {timezone:String})), has_power)), '1970-01-01') AS last_observed,
   countIf(has_power) AS activities_with_power,
   count() AS activities_total,
-  arraySort(arrayDistinct(arrayFlatten(groupArrayIf(source_providers, has_power)))) AS source_providers
-FROM analytics.cycling_activity FINAL
-WHERE user_id = {userId:UUID}
-  AND is_deleted = 0
-  AND toDate(toTimeZone(started_at, {timezone:String})) BETWEEN
+  arraySort(arrayDistinct(arrayFlatten(groupArrayIf(ride.source_providers, has_power)))) AS source_providers
+FROM analytics.cycling_activity AS ride FINAL
+LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+  ON metrics.user_id = ride.user_id AND metrics.activity_id = ride.activity_id
+WHERE ride.user_id = {userId:UUID}
+  AND ride.is_deleted = 0
+  AND toDate(toTimeZone(ride.started_at, {timezone:String})) BETWEEN
     toDate({startDate:String}) AND toDate({endDate:String})
 GROUP BY power_modality
 ORDER BY power_modality ASC`;

@@ -686,6 +686,7 @@ describe("CyclingTrainingMetricsRepository", () => {
         settingsRow({
           id: "00000000-0000-4000-8000-000000000101",
           effective_from: "2026-06-20",
+          threshold_hr: 190,
         }),
         settingsRow(),
       ])
@@ -696,9 +697,9 @@ describe("CyclingTrainingMetricsRepository", () => {
         return [
           activityRow({
             activity_id: noFtpActivityId,
-            activity_date: "2025-12-20",
-            started_at: "2025-12-20T15:00:00.000Z",
-            ended_at: "2025-12-20T15:05:00.000Z",
+            activity_date: "2026-06-15",
+            started_at: "2026-06-15T15:00:00.000Z",
+            ended_at: "2026-06-15T15:05:00.000Z",
             elapsed_seconds: 300,
             member_activity_ids: [noFtpActivityId],
           }),
@@ -722,8 +723,8 @@ describe("CyclingTrainingMetricsRepository", () => {
     const repository = new CyclingTrainingMetricsRepository({ execute }, { query }, userId, "UTC");
 
     const result = await repository.listRange({
-      startDate: "2025-12-01",
-      endDate: "2025-12-31",
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
       modalities: [],
       providers: [],
       durationsSeconds: [],
@@ -739,6 +740,10 @@ describe("CyclingTrainingMetricsRepository", () => {
         parameters,
       })),
     ).toMatchSnapshot();
+    expect(result.activities[0]?.thresholds.threshold_heart_rate).toMatchObject({
+      value: 175,
+      effective_from: "2026-01-01",
+    });
     expect(result.activities[0]?.thresholds.ftp).toBeNull();
     expect(result.activities[0]?.metrics.power.intensity_factor).toBeNull();
     expect(result.activities[0]?.metrics.unavailable_reasons).toContainEqual({

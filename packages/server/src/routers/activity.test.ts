@@ -1910,7 +1910,7 @@ describe("activityRouter", () => {
           eftp: 265,
           intensity_factor: 240 / 265,
           power_tss: 82,
-          evidence_activity_id: "00000000-0000-0000-0000-000000000002",
+          evidence_activity_id: "00000000-0000-4000-8000-000000000002",
           evidence_at: "2025-12-01T12:00:00.000000Z",
           evidence_duration_seconds: 1200,
           evidence_power: 280,

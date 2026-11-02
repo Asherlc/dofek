@@ -1,8 +1,9 @@
 import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
-import type {
-  PmcActivityRow,
-  PmcNormalizedPowerRow,
-  PmcTrainingLoadCalculator,
+import {
+  type PmcActivityRow,
+  type PmcNormalizedPowerRow,
+  type PmcTrainingLoadCalculator,
+  usablePmcHeartRate,
 } from "./pmc-training-load-calculator.ts";
 
 interface PmcChartCalculatorOptions {
@@ -58,12 +59,7 @@ export class PmcChartCalculator {
     const unsupportedCount = input.activityRows.filter(
       (activity) =>
         !powerTssByActivity.has(activity.id) &&
-        !(
-          activity.avg_hr != null &&
-          activity.avg_hr > 0 &&
-          globalMaxHeartRate != null &&
-          globalMaxHeartRate > restingHeartRate
-        ),
+        usablePmcHeartRate(activity, globalMaxHeartRate, restingHeartRate) == null,
     ).length;
     if (unsupportedCount > 0) {
       return {

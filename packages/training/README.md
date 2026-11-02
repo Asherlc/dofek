@@ -281,11 +281,14 @@ product heuristics.
 
 ### Cycling workout metrics
 
-`computeCyclingWorkoutMetrics` resamples native power, heart-rate, and cadence streams to elapsed
+`prepareCyclingWorkoutMetrics` resamples native power, heart-rate, and cadence streams to elapsed
 one-second buckets without filling dropouts. A native observation is held only to the next native
 timestamp when the gap is at most the bounded continuity tolerance; measured zero remains zero and
 missing elapsed seconds remain missing. The result reports native observation counts, covered,
 missing, and zero seconds, median sample interval, and largest gap independently for every stream.
+All resampling and power-work inputs require the caller's `PowerCoveragePolicy`; the package
+does not supply application hold or gap defaults. Dofek passes its shared
+[application policy](../../src/analytics/cycling-power-policy.ts) to these adapters.
 
 Average power and work use covered power seconds only. The caller supplies normalized power,
 intensity factor, and power TSS from the canonical numerical engine through the

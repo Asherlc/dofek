@@ -408,12 +408,6 @@ function buildTestAnalyticsSelectSql(
   selectSql: string,
   databases: IsolatedClickHouseDatabases,
 ): string {
-  if (
-    viewName.endsWith(".activity_summary") &&
-    selectSql.includes(".activity_summary_rows FINAL")
-  ) {
-    return buildTestActivitySummarySelectSql(databases);
-  }
   if (viewName.endsWith(".v_activity")) {
     return buildTestActivityOriginSelectSql(selectSql, databases);
   }

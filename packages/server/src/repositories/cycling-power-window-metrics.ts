@@ -4,7 +4,7 @@ import {
   type PowerSample,
   powerTrainingStress,
 } from "@dofek/cycling-power/power";
-import { cyclingPowerCoveragePolicy } from "@dofek/training/cycling-power-policy";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 
 export interface CyclingPowerWindow {
   samples: readonly PowerSample[];

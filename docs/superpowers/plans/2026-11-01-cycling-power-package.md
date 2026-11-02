@@ -78,7 +78,7 @@
 
 - User authorization: “Implement and isolate in a package” follows review of the research/design and authorizes execution without another strategy-selection round.
 - Ruling: user explicitly selected pure TypeScript with no database dependency. Application orchestration calls the package and owns persistence; dbt supplies inputs and downstream projections. There is no SQL numerical counterpart.
-- Ruling: independent decay is explicit versioned Dofek policy (maximum 0.1% daily after 28 observed days, comparing completed 14-day dose windows), not a recovered Intervals formula or physiological constant; unknown power withholds decay. Reference fitting uses the frozen original-CC0 bank, with unsupported tails unavailable and uncertainty unquantified.
+- Ruling: independent decay is explicit versioned Dofek policy (maximum 0.1% daily after 28 elapsed calendar days from the first admitted activity, comparing completed 14-day dose windows), not a recovered Intervals formula or physiological constant; unknown power withholds decay. Reference fitting uses the frozen original-CC0 bank, with unsupported tails unavailable and uncertainty unquantified.
 - Review checkpoints: kernel tests; lifecycle integration tests; consumer/typecheck gate; fresh final review.
 
 ## Verification ledger
@@ -92,3 +92,16 @@
 ## Release retrospective
 
 Inspecting the packed exports and testing an isolated consumer caught packaging risks before publication. npm required separate login and publish-specific authentication; allow registry processing to finish before verifying a normal install. Keep the clean tarball and registry-install smoke checks in the release checklist; use verification-before-completion for future releases.
+
+## PR review verification (2026-11-02)
+
+[PR3199](https://github.com/Asherlc/dofek/pull/3199) integrates current main and records all79 inline review rulings. Confirmed findings have regression fixes; unsupported suggestions retain explicit evidence, including actual ClickHouse predicate-pushdown plans and the default NULL behavior of greatest.
+
+- Final full unit/mobile run:1,472 files and24,198 tests passed;2files/19tests skipped,zero failures.
+- Root/server/web/mobile typechecks, full lint, spelling, Sherif and Squawk2.71.0 passed.
+- All14 public release builds and1,555 release tests passed. Package0.1.1 is queued for the existing main release workflow; npm trusted publisher Asherlc/dofek/release-npm.yml is configured with direct publish permission. Published0.1.0 is unchanged.
+- Focused mutation gates passed: all five numerical modules individually above75%, completecore85.31%,PMC92.92%,thresholdreader85.56%,analytics96.43%,effort/performance97.24%. Tests target behavior; thresholds were not weakened. Generated mutation sandboxes are excluded from copying only.
+- Real-engine regressions cover historical schema bootstrap, independent optional-column guards, nullable publication IDs, profile/eFTP/resting-HR invalidation, moved historical weeks, measuredzero versus unknowncoverage, canonical comparison readers, fixtures and queue cancellation/account erasure.
+- The final hostedCI run remains required for legacy shared-bootstrap integration suites that exceed the approved local1.75GiB ClickHouse server cap. No memory limits or retry/timeout policies were changed.
+
+Review refinements approved by the user: one scoped maintenance DROPVIEW exception, exactly two read-only dbt view-policy entries, and a deletion-worker lifecycle correction that releases user locks during read-only waiting and cancels waiters before shutdown drain.

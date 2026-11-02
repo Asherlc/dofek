@@ -626,7 +626,7 @@ export const cyclingThresholdEstimateOutputSchema = z
         result: z
           .object({
             threshold_watts: z.number().positive(),
-            watts_per_kg: nullableNumber,
+            watts_per_kg: z.number().positive().nullable(),
             watts_per_kg_reason: nullableString,
             method: z.literal("computed_eftp"),
             classification: z.literal("estimated"),

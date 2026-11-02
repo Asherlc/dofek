@@ -55,7 +55,7 @@ function page() {
           ftp: {
             value: 250,
             unit: "W",
-            effective_from: "2026-01-01",
+            effective_from: "2026-06-15T15:00:00.000Z",
             kind: "computed",
             method: "computed_eftp",
             model_version: "test-cycling-model",
@@ -65,7 +65,7 @@ function page() {
               reason: "Individual physiological FTP uncertainty has not been quantified.",
             },
             evidence_activity_id: activityId,
-            evidence_at: "2026-01-01T00:00:00.000Z",
+            evidence_at: "2026-06-15T15:00:00.000Z",
             evidence_duration_seconds: 600,
             evidence_power_watts: 300,
           },
@@ -181,7 +181,6 @@ function page() {
         ],
         provider_aggregates: {
           average_power_watts: 200,
-          normalized_power_watts: 205,
           average_heart_rate_bpm: 140,
           maximum_heart_rate_bpm: 155,
           kind: "calculated_read_model" as const,

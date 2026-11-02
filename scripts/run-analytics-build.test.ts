@@ -74,6 +74,8 @@ describe("runAnalyticsBuild", () => {
     let phase = 0;
     const selected = [
       "activity_summary_rows",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
       "healthspan_activity_zone_minutes",
       "weekly_healthspan",
     ];
@@ -111,7 +113,7 @@ describe("runAnalyticsBuild", () => {
     expect(order).toEqual([
       "dbt:activity_summary_rows",
       "project",
-      "dbt:healthspan_activity_zone_minutes weekly_healthspan",
+      "dbt:cycling_threshold_history cycling_activity_power_metrics healthspan_activity_zone_minutes weekly_healthspan",
       "record",
     ]);
     expect(recordRun).toHaveBeenCalledWith(

@@ -104,6 +104,26 @@ describe("PmcTrainingLoadCalculator", () => {
     );
     expect(result.pairedData).toEqual([{ trimp: 150, powerTss: 91 }]);
   });
+  it("excludes absent, zero or negative stress and zero or negative training impulse from learned-model pairs", () => {
+    const result = makeCalculator().buildTrainingStressModel(
+      [
+        makeActivityRow(),
+        makeActivityRow({ id: "missing" }),
+        makeActivityRow({ id: "zero" }),
+        makeActivityRow({ id: "negative" }),
+        makeActivityRow({ id: "resting", avg_hr: 60 }),
+      ],
+      new Map([
+        ["activity-1", 91],
+        ["zero", 0],
+        ["negative", -1],
+        ["resting", 80],
+      ]),
+      190,
+      60,
+    );
+    expect(result.pairedData).toEqual([{ trimp: 150, powerTss: 91 }]);
+  });
   it("uses the learned regression for heart rate fallback", () => {
     const result = makeCalculator().calculateDailyLoad({
       activities: [makeActivityRow()],
@@ -113,5 +133,16 @@ describe("PmcTrainingLoadCalculator", () => {
       restingHeartRate: 60,
     });
     expect(result.get("2026-05-20")).toBe(310);
+  });
+
+  it("clamps negative learned heart-rate stress to recorded zero daily load", () => {
+    const result = makeCalculator().calculateDailyLoad({
+      activities: [makeActivityRow()],
+      powerTssByActivity: new Map(),
+      trainingStressModel: { slope: 2, intercept: -1000, r2: 0.9 },
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+    expect(result.get("2026-05-20")).toBe(0);
   });
 });

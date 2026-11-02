@@ -1,5 +1,23 @@
 import { activityMetricSourceSchema } from "@dofek/providers/activity-metric-source";
 import { z } from "zod";
+import { cyclingThresholdEvidenceSchema } from "./cycling-threshold.ts";
+
+export const activityPowerZonesSchema = z
+  .object({
+    zones: z.array(
+      z.object({
+        zone: z.number().int().min(1).max(7),
+        label: z.string(),
+        minPct: z.number().nonnegative(),
+        maxPct: z.number().nullable(),
+        seconds: z.number().nonnegative(),
+        percent: z.number().min(0).max(100),
+      }),
+    ),
+    ftp: z.number().positive().nullable(),
+    thresholdEvidence: cyclingThresholdEvidenceSchema,
+  })
+  .nullable();
 
 export const activityMetricSchema = z.enum(["heartRate", "power", "speed", "cadence", "altitude"]);
 export type ActivityMetric = z.infer<typeof activityMetricSchema>;

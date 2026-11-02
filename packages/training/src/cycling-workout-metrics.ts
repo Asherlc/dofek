@@ -1,5 +1,5 @@
+import type { PowerCoveragePolicy } from "@dofek/cycling-power/power";
 import { resampleSignal } from "@dofek/cycling-power/resample-signal";
-import { cyclingPowerCoveragePolicy } from "./cycling-power-policy.ts";
 
 export interface CyclingWorkoutSample {
   elapsedSeconds: number;
@@ -40,6 +40,7 @@ interface ZoneDistribution {
 }
 
 export interface CyclingWorkoutMetricsInput {
+  coveragePolicy: PowerCoveragePolicy;
   durationSeconds: number;
   thresholdWatts: number | null;
   samples: CyclingWorkoutSample[];
@@ -153,6 +154,7 @@ function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
   samples: T[],
   durationSeconds: number,
   select: (sample: T) => number | null | undefined,
+  coveragePolicy: PowerCoveragePolicy,
   minimumValue = 0,
   barriers: number[] = [],
 ) {
@@ -185,8 +187,13 @@ function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
     if (previous !== undefined && previous !== point.value) conflicts.add(point.elapsedSeconds);
     valuesByOffset.set(point.elapsedSeconds, point.value);
   }
-  observations.push(...[...conflicts].map((elapsedSeconds) => ({ elapsedSeconds, value: null })));
-  const stream = resampleSignal(observations, durationSeconds, cyclingPowerCoveragePolicy);
+  const resolvedObservations = observations.filter(
+    (point) => point.value === null || !conflicts.has(point.elapsedSeconds),
+  );
+  resolvedObservations.push(
+    ...[...conflicts].map((elapsedSeconds) => ({ elapsedSeconds, value: null })),
+  );
+  const stream = resampleSignal(resolvedObservations, durationSeconds, coveragePolicy);
   return {
     ...stream,
     coverage: { ...stream.coverage, coveragePct: round(stream.coverage.coveragePct) },
@@ -197,10 +204,18 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   samples: T[],
   durationSeconds: number,
   select: (sample: T) => number | null | undefined,
+  coveragePolicy: PowerCoveragePolicy,
   minimumValue = 0,
   barriers: number[] = [],
 ): ResampledStream {
-  const stream = resampleCyclingBuckets(samples, durationSeconds, select, minimumValue, barriers);
+  const stream = resampleCyclingBuckets(
+    samples,
+    durationSeconds,
+    select,
+    coveragePolicy,
+    minimumValue,
+    barriers,
+  );
   return {
     values: Array.from(
       { length: durationSeconds },
@@ -215,12 +230,14 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
 export function computeCyclingPowerWork(
   samples: CyclingWorkoutSample[],
   durationSeconds: number,
+  coveragePolicy: PowerCoveragePolicy,
   barriers: number[] = [],
 ): { workKilojoules: number | null; coverage: StreamCoverage } {
   const stream = resampleCyclingBuckets(
     samples,
     Math.max(0, Math.floor(durationSeconds)),
     (sample) => sample.powerWatts,
+    coveragePolicy,
     0,
     barriers,
   );
@@ -402,6 +419,7 @@ export function prepareCyclingWorkoutMetrics(
     input.samples,
     durationSeconds,
     (sample) => sample.powerWatts,
+    input.coveragePolicy,
     0,
     input.streamBarriers?.power,
   );
@@ -409,6 +427,7 @@ export function prepareCyclingWorkoutMetrics(
     input.samples,
     durationSeconds,
     (sample) => sample.heartRateBpm,
+    input.coveragePolicy,
     0,
     input.streamBarriers?.heartRate,
   );
@@ -416,6 +435,7 @@ export function prepareCyclingWorkoutMetrics(
     input.samples,
     durationSeconds,
     (sample) => sample.cadenceRpm,
+    input.coveragePolicy,
     0,
     input.streamBarriers?.cadence,
   );
@@ -503,6 +523,11 @@ export function computeCyclingWorkoutMetrics(
   } else if (normalizedPower == null) {
     addUnavailable("intensity_factor", "normalized power is unavailable");
     addUnavailable("training_stress_score", "normalized power is unavailable");
+  } else {
+    if (computed.activity.intensityFactor == null)
+      addUnavailable("intensity_factor", "computed intensity factor is unavailable");
+    if (computed.activity.trainingStressScore == null)
+      addUnavailable("training_stress_score", "computed training stress score is unavailable");
   }
 
   const averageHeartRate = average(heartRate.values);

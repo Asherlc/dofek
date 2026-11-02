@@ -225,7 +225,6 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": 200,
       },
       "provider_id": "peloton",
       "quality": {
@@ -422,7 +421,8 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
     if(metrics.evidence_at IS NULL, NULL, formatDateTime(metrics.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
     metrics.evidence_duration_seconds AS evidence_duration_seconds, metrics.evidence_power AS evidence_power
       FROM analytics.cycling_activity_power_metrics AS metrics
-      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})",
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+",
   },
 ]
 `;
@@ -627,7 +627,6 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": null,
       },
       "provider_id": "peloton",
       "quality": {
@@ -682,9 +681,9 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
     {
       "activity_id": "00000000-0000-4000-8000-000000000012",
       "best_powers": [],
-      "date": "2025-12-20",
+      "date": "2026-06-15",
       "duration_seconds": 300,
-      "ended_at": "2025-12-20T15:05:00.000Z",
+      "ended_at": "2026-06-15T15:05:00.000Z",
       "member_activity_ids": [
         "00000000-0000-4000-8000-000000000012",
       ],
@@ -736,7 +735,42 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
           "average_bpm": null,
           "maximum_bpm": null,
         },
-        "heart_rate_zones": null,
+        "heart_rate_zones": {
+          "threshold": 175,
+          "upper_pcts": [
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+          ],
+          "zones": [
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 1,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 2,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 3,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 4,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 5,
+            },
+          ],
+        },
         "interval_detection": null,
         "interval_source": "none",
         "intervals": [],
@@ -800,7 +834,6 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": null,
       },
       "provider_id": "peloton",
       "quality": {
@@ -815,10 +848,16 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
         "apple_health",
         "peloton",
       ],
-      "started_at": "2025-12-20T15:00:00.000Z",
+      "started_at": "2026-06-15T15:00:00.000Z",
       "thresholds": {
         "ftp": null,
-        "threshold_heart_rate": null,
+        "threshold_heart_rate": {
+          "effective_from": "2026-01-01",
+          "kind": "configured",
+          "source_record_id": "00000000-0000-4000-8000-000000000100",
+          "unit": "bpm",
+          "value": 175,
+        },
       },
     },
   ],
@@ -834,8 +873,8 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
   },
   "next_cursor": null,
   "range": {
-    "end_date": "2025-12-31",
-    "start_date": "2025-12-01",
+    "end_date": "2026-06-30",
+    "start_date": "2026-06-01",
     "timezone": "UTC",
   },
   "requested_best_power_durations_seconds": [],
@@ -853,11 +892,11 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
 [
   {
     "parameters": {
-      "endDate": "2025-12-31",
+      "endDate": "2026-06-30",
       "modalities": [],
       "pageLimit": 11,
       "providers": [],
-      "startDate": "2025-12-01",
+      "startDate": "2026-06-01",
       "timezone": "UTC",
       "userId": "00000000-0000-4000-8000-000000000001",
     },
@@ -941,7 +980,8 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
     if(metrics.evidence_at IS NULL, NULL, formatDateTime(metrics.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
     metrics.evidence_duration_seconds AS evidence_duration_seconds, metrics.evidence_power AS evidence_power
       FROM analytics.cycling_activity_power_metrics AS metrics
-      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})",
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+",
   },
 ]
 `;
@@ -1067,7 +1107,6 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": null,
       },
       "provider_id": "peloton",
       "quality": {
@@ -1209,7 +1248,8 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
     if(metrics.evidence_at IS NULL, NULL, formatDateTime(metrics.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
     metrics.evidence_duration_seconds AS evidence_duration_seconds, metrics.evidence_power AS evidence_power
       FROM analytics.cycling_activity_power_metrics AS metrics
-      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})",
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+",
   },
 ]
 `;
@@ -1335,7 +1375,6 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": null,
       },
       "provider_id": "peloton",
       "quality": {

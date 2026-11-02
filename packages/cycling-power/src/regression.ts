@@ -16,9 +16,15 @@ export function linearRegression(
   const sumY = ys.reduce((a, b) => a + b, 0);
   const sumXY = xs.reduce((a, x, i) => a + x * (ys[i] ?? 0), 0);
   const sumX2 = xs.reduce((a, x) => a + x * x, 0);
+  if (![sumX, sumY, sumXY, sumX2].every(Number.isFinite)) {
+    throw new RangeError("Regression arithmetic exceeded the finite numeric range");
+  }
 
   const denom = pointCount * sumX2 - sumX * sumX;
-  if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
+  if (!Number.isFinite(denom)) {
+    throw new RangeError("Regression arithmetic exceeded the finite numeric range");
+  }
+  if (denom === 0) return { slope: 0, intercept: pointCount === 0 ? 0 : sumY / pointCount, r2: 0 };
 
   const slope = (pointCount * sumXY - sumX * sumY) / denom;
   const intercept = (sumY - slope * sumX) / pointCount;
@@ -27,6 +33,9 @@ export function linearRegression(
   const ssTotal = ys.reduce((a, y) => a + (y - yMean) ** 2, 0);
   const ssResidual = ys.reduce((a, y, i) => a + (y - (slope * (xs[i] ?? 0) + intercept)) ** 2, 0);
   const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
+  if (![slope, intercept, ssTotal, ssResidual, r2].every(Number.isFinite)) {
+    throw new RangeError("Regression arithmetic exceeded the finite numeric range");
+  }
 
   return { slope, intercept, r2 };
 }

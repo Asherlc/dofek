@@ -43,7 +43,6 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
         250,
         3600,
         3600,
-        280,
         300,
         500,
         3600,
@@ -64,7 +63,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
         toUUID('${ZERO_EFFICIENCY_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
         'cycling', 'cycling', NULL, 'Ride Without Zone Two Data', now64(6, 'UTC') - INTERVAL 4 DAY,
         now64(6, 'UTC') - INTERVAL 4 DAY + INTERVAL 1 HOUR, 30000, 145, 175, 200,
-        3600, 3600, 220, 250, 100, 3600, 0, 0, 0, 0, 0, 0, 1,
+        3600, 3600, 250, 100, 3600, 0, 0, 0, 0, 0, 0, 1,
         now64(9, 'UTC'),
         NULL
       )`,
@@ -83,13 +82,22 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
           CAST(250, 'Nullable(Float64)'),
           toUInt64(3600),
           toUInt64(3600),
-          CAST(280, 'Nullable(Float64)'),
           CAST('Threshold Intervals', 'Nullable(String)')
         )],
         0,
         1,
         now64(9, 'UTC')
       )`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.cycling_power_observation_rows VALUES
+        ('${TEST_USER_ID}','${ACTIVITY_ID}',280.0,1,0,'test-np',2,now64(6))`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.cycling_power_history_rows VALUES
+        ('${TEST_USER_ID}',1,today(),'reference-v1',[(toFloat64(toUnixTimestamp64Micro(now64(6)-INTERVAL 2 DAY))/1000000,'${ACTIVITY_ID}',250.0,1.12,125.44,'${ACTIVITY_ID}',toFloat64(toUnixTimestamp64Micro(now64(6)-INTERVAL 2 DAY))/1000000,1200.0,300.0)],3,now64(6))`,
     );
     await executeClickHouseTestCommand(
       testContext,
@@ -106,7 +114,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     await testContext?.cleanup();
   });
 
-  it("serves the full cycling page in three ClickHouse statements", async () => {
+  it("serves cycling metrics and canonical threshold evidence in five ClickHouse statements", async () => {
     const querySpy = vi.spyOn(sensorStore, "query");
     const repository = new CyclingAnalyticsRepository(
       testContext.db,
@@ -123,7 +131,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       variabilityOffset: 0,
     });
 
-    expect(querySpy).toHaveBeenCalledTimes(3);
+    expect(querySpy).toHaveBeenCalledTimes(5);
     expect(performance.powerCurve.recent.points).toEqual(
       expect.arrayContaining([expect.objectContaining({ durationSeconds: 300, bestPower: 400 })]),
     );

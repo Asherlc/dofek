@@ -22,6 +22,7 @@ export function CyclingThresholdDetails({ evidence }: { evidence: CyclingThresho
         )}
       <details className="mt-2">
         <summary className="cursor-pointer">Estimate uncertainty</summary>
+        <p className="mt-1">eFTP means estimated functional threshold power.</p>
         <p className="mt-1">{evidence.uncertainty.reason}</p>
       </details>
     </div>

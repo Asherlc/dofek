@@ -157,7 +157,7 @@ remain unsupported. The [research report](../../cycling-power-algorithms-researc
 and [frozen manifest](../../cycling-power-source-manifest.json) record provenance
 and limitations. Observed long-effort agreement is not physiological FTP validation.
 
-After 28 observed days, compare completed 14-day dose windows using NP² × seconds.
+After 28 elapsed calendar days from the first admitted activity, compare completed 14-day dose windows using NP² × seconds.
 Maintained/increased load holds the estimate. Reduced load applies at most 0.1%
 daily decline, proportional to the load deficit; two empty windows represent
 observed inactivity. Unknown power in either window withholds decline. This

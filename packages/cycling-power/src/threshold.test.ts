@@ -37,6 +37,68 @@ const observation = (
 });
 
 describe("reference-curve threshold algorithms", () => {
+  it("evaluates the three-parameter equation against independent numerical values", () => {
+    expect(modelPower(curves[0], 300)).toBe(242.5);
+    expect(
+      modelPower(
+        { criticalPowerWatts: 200, workCapacityJoules: 12000, timeOffsetSeconds: 60 },
+        540,
+      ),
+    ).toBe(220);
+  });
+  it("matches the upper end of a reference family with more than two curves", () => {
+    const family = [100, 200, 300].map((criticalPowerWatts) => ({
+      criticalPowerWatts,
+      workCapacityJoules: 12000,
+      timeOffsetSeconds: 60,
+    }));
+    const result = estimateThreshold([{ durationSeconds: 300, watts: 300 + 12000 / 360 }], family, {
+      ...thresholdPolicy,
+      targetDurationSeconds: 540,
+    });
+    expect(result?.watts).toBeCloseTo(320, 10);
+  });
+  it.each([{ family: [] }, { family: [curves[0]] }])(
+    "requires at least two reference curves %j",
+    ({ family }) => {
+      expect(() => estimateThreshold([], family, thresholdPolicy)).toThrow();
+    },
+  );
+  it("accepts inclusive qualifying boundaries and a single allowed duration", () => {
+    expect(
+      estimateThreshold([{ durationSeconds: 180, watts: 280 }], curves, thresholdPolicy)?.effort
+        .durationSeconds,
+    ).toBe(180);
+    expect(
+      estimateThreshold([{ durationSeconds: 1800, watts: 290 }], curves, thresholdPolicy)?.effort
+        .durationSeconds,
+    ).toBe(1800);
+    expect(
+      estimateThreshold([{ durationSeconds: 300, watts: 280 }], curves, {
+        ...thresholdPolicy,
+        minimumDurationSeconds: 300,
+        maximumDurationSeconds: 300,
+      }),
+    ).not.toBeNull();
+    expect(
+      estimateThreshold([{ durationSeconds: 1801, watts: 250 }], curves, thresholdPolicy),
+    ).toBeNull();
+    expect(() =>
+      estimateThreshold([], curves, { ...thresholdPolicy, maximumDurationSeconds: 100 }),
+    ).toThrow();
+  });
+  it.each([180, 300])(
+    "rejects reference curves that cross or meet at qualifying duration %s",
+    (durationSeconds) => {
+      const family = [
+        { criticalPowerWatts: 200, workCapacityJoules: 12000, timeOffsetSeconds: 60 },
+        { criticalPowerWatts: 220, workCapacityJoules: 4800, timeOffsetSeconds: 60 },
+      ];
+      expect(() =>
+        estimateThreshold([{ durationSeconds, watts: 230 }], family, thresholdPolicy),
+      ).toThrow("ordered");
+    },
+  );
   it.each([Number.NaN, Number.POSITIVE_INFINITY, 0])(
     "rejects a non-finite or non-positive maximum duration %s",
     (maximumDurationSeconds) => {
@@ -77,16 +139,20 @@ describe("reference-curve threshold algorithms", () => {
     expect(estimateThreshold([], curves, thresholdPolicy)).toBeNull();
   });
   it("chooses the strongest supported candidate and favors longer evidence on an exact tie", () => {
-    const result = estimateThreshold(
-      [
-        { durationSeconds: 300, watts: modelPower(curves[0], 300) },
-        { durationSeconds: 1200, watts: modelPower(curves[1], 1200) },
-      ],
-      curves,
-      thresholdPolicy,
-    );
-    expect(result?.watts).toBeCloseTo(modelPower(curves[1], 3600), 10);
-    expect(result?.effort.durationSeconds).toBe(1200);
+    const weaker = { durationSeconds: 300, watts: modelPower(curves[0], 300) };
+    const short = { durationSeconds: 300, watts: modelPower(curves[1], 300) };
+    const long = { durationSeconds: 1200, watts: modelPower(curves[1], 1200) };
+    const shortCandidate = estimateThreshold([short], curves, thresholdPolicy);
+    const longCandidate = estimateThreshold([long], curves, thresholdPolicy);
+    expect(shortCandidate?.watts).toBe(longCandidate?.watts);
+    for (const efforts of [
+      [weaker, short, long],
+      [long, short, weaker],
+    ]) {
+      const result = estimateThreshold(efforts, curves, thresholdPolicy);
+      expect(result?.watts).toBe(shortCandidate?.watts);
+      expect(result?.effort).toEqual(long);
+    }
   });
   it("rejects invalid or crossing reference curves", () => {
     expect(() =>
@@ -101,6 +167,51 @@ describe("reference-curve threshold algorithms", () => {
 });
 
 describe("chronological maintained thresholds", () => {
+  it.each([
+    { id: "" },
+    { atSeconds: Number.NaN },
+    { durationSeconds: 0 },
+    { durationSeconds: Infinity },
+    { normalizedPowerWatts: -1 },
+    { normalizedPowerWatts: Number.NaN },
+    { normalizedPowerWatts: Infinity },
+  ])("rejects invalid observation fields %j", (overrides) => {
+    expect(() =>
+      projectThresholdHistory([{ ...observation("a", 1, 240), ...overrides }], 2, historyPolicy),
+    ).toThrow();
+  });
+  it("rejects duplicate observation identities rather than depending on input order", () => {
+    expect(() =>
+      projectThresholdHistory(
+        [observation("a", 1, 240), observation("a", 2, 250)],
+        3,
+        historyPolicy,
+      ),
+    ).toThrow("unique");
+  });
+  it.each([
+    { comparisonWindowDays: 0 },
+    { comparisonWindowDays: 14.5, minimumHistoryDays: 30 },
+    { minimumHistoryDays: 28.5 },
+    { minimumHistoryDays: 27 },
+    { maximumDailyDecayFraction: -0.1 },
+    { maximumDailyDecayFraction: Number.NaN },
+  ])("rejects invalid history policy fields %j", (overrides) => {
+    expect(() => projectThresholdHistory([], 2, { ...historyPolicy, ...overrides })).toThrow();
+  });
+  it("retains measured zero power and allows a one-day comparison with zero decay", () => {
+    const result = projectThresholdHistory([observation("zero", 1, 240, 0)], 3 * 86400, {
+      comparisonWindowDays: 1,
+      minimumHistoryDays: 2,
+      maximumDailyDecayFraction: 0,
+    });
+    expect(result.find((point) => point.id === "zero")).toMatchObject({
+      normalizedPowerWatts: 0,
+      trainingStressScore: 0,
+      intensityFactor: 0,
+    });
+    expect(result.at(-1)?.thresholdWatts).toBe(240);
+  });
   it.each([
     { durationSeconds: 0, watts: 250 },
     { durationSeconds: Number.NaN, watts: 250 },

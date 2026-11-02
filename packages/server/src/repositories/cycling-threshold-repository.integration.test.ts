@@ -103,4 +103,22 @@ describe("computed cycling threshold serving semantics", () => {
       ).size,
     ).toBe(0);
   });
+  it("serves only permitted history events without refitting the canonical estimate", async () => {
+    const repository = new CyclingThresholdRepository(store, userId, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-06-01T07:00:00.000000Z",
+      endDateExclusive: "2026-06-03T07:00:00.000000Z",
+    });
+    expect((await repository.getCurrent()).value).toBe(238);
+    expect((await repository.getAsOf("2026-06-01T06:59:59.999999Z")).value).toBeNull();
+    const page = await repository.listHistory({
+      startDate: "2026-05-01",
+      endDate: "2026-07-01",
+      cursor: null,
+      limit: 100,
+    });
+    expect(page.items.map((item) => item.value)).toEqual([238, 239]);
+  });
 });

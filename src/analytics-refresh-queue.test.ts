@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createAnalyticsRefreshQueue } from "./jobs/queues.ts";
 
 const mocks = vi.hoisted(() => ({
   close: vi.fn().mockResolvedValue(undefined),
@@ -16,11 +17,7 @@ vi.mock("bullmq", () => ({
   RedisConnection: vi.fn(),
 }));
 
-import {
-  createAnalyticsRefreshQueue,
-  enqueueAnalyticsRefresh,
-  runAnalyticsRefreshJobs,
-} from "./analytics-refresh-queue.ts";
+import { enqueueAnalyticsRefresh, runAnalyticsRefreshJobs } from "./analytics-refresh-queue.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -168,6 +165,31 @@ describe("runAnalyticsRefreshJobs", () => {
     failed(undefined, failure);
     expect(reportFailure).toHaveBeenCalledExactlyOnceWith(failure);
     expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not report the expected shutdown interruption as another queue failure", async () => {
+    const controller = new AbortController();
+    mocks.run.mockImplementation(async () => {
+      controller.abort();
+    });
+    const reportFailure = vi.fn();
+    await runAnalyticsRefreshJobs({
+      queue: createQueue(),
+      connection: { host: "redis" },
+      processRefresh: vi.fn(),
+      intervalMilliseconds: 900000,
+      reportFailure,
+      signal: controller.signal,
+    });
+    const failed = mocks.on.mock.calls.find(([event]) => event === "failed")?.[1];
+    failed(
+      undefined,
+      new DOMException("Analytics refresh aborted before completion", "AbortError"),
+    );
+    expect(reportFailure).not.toHaveBeenCalled();
+    const unexpected = new Error("Redis lost");
+    failed(undefined, unexpected);
+    expect(reportFailure).toHaveBeenCalledExactlyOnceWith(unexpected);
   });
 
   it("does not start a consumer after shutdown was requested", async () => {

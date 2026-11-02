@@ -2,7 +2,7 @@ import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { cyclingThresholdEvidenceSchema } from "../contracts/cycling-threshold.ts";
+import { cyclingEftpTrendSchema } from "../contracts/cycling-threshold.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
@@ -81,18 +81,7 @@ const performanceOutputSchema = z.object({
     season: powerSummaryPeriodSchema,
   }),
   pmc: pmcSchema,
-  eftpTrend: z.object({
-    trend: z.array(
-      z.object({
-        date: z.string(),
-        eftp: z.number(),
-        activityName: z.string().nullable(),
-      }),
-    ),
-    currentEftp: z.number().nullable(),
-    currentEvidence: cyclingThresholdEvidenceSchema,
-    model: powerModelSchema.nullable(),
-  }),
+  eftpTrend: cyclingEftpTrendSchema,
   availability: z.object({
     powerCurve: trainingChartAvailabilitySchema,
     pmc: trainingChartAvailabilitySchema,

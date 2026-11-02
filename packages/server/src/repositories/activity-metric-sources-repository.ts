@@ -10,6 +10,7 @@ import {
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
 import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { mapHrZones } from "@dofek/zones/zones";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import { z } from "zod";
 import {
   ACTIVITY_CHART_METRICS,
@@ -133,6 +134,7 @@ export async function getActivityPowerWork(
       powerWatts: sample.power,
     })),
     durationSeconds,
+    cyclingPowerCoveragePolicy,
   );
   return {
     workKilojoules: metrics.workKilojoules,

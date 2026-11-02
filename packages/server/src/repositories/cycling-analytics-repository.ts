@@ -1,4 +1,5 @@
 import { type CriticalPowerModel, fitCriticalPower } from "@dofek/cycling-power/critical-power";
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { DURATION_LABELS, STANDARD_DURATIONS } from "@dofek/training/power-analysis";
@@ -6,7 +7,11 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import { cyclingCriticalPowerPolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import { z } from "zod";
-import type { AccessWindow } from "../billing/entitlement.ts";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
 import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import type { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -41,7 +46,6 @@ const performanceActivityRowSchema = z.object({
   hr_samples: z.coerce.number(),
   normalized_power: z.coerce.number().nullable(),
   power_tss: z.coerce.number().nullable(),
-  eftp: z.coerce.number().nullable(),
   activity_name: z.string().nullable(),
   latest_weight_kg: z.coerce.number().nullable(),
 });
@@ -388,7 +392,6 @@ export class CyclingAnalyticsRepository {
         activity.8 AS hr_samples,
         metrics.normalized_power AS normalized_power,
         metrics.power_tss AS power_tss,
-        metrics.eftp AS eftp,
         activity.9 AS activity_name,
         latest_weight.weight_kg AS latest_weight_kg
       FROM (
@@ -419,13 +422,12 @@ export class CyclingAnalyticsRepository {
     const normalizedPowerRows = activityRows.map((row) => ({
       activity_id: row.id,
       power_tss: row.power_tss ?? null,
-      eftp: row.eftp ?? null,
     }));
     const eftpTrend = await new PowerRepository(
       this.#userId,
       this.#timezone,
       this.#sensorStore,
-    ).getEftpTrend(range);
+    ).getEftpTrend(range, this.#accessWindow);
     const { trend, currentEftp, currentEvidence } = eftpTrend;
     const pmc = await buildPmcChartFromRows({
       currentEftp,
@@ -495,7 +497,7 @@ export class CyclingAnalyticsRepository {
                   {
                     id: currentEvidence.evidence_activity_id,
                     name: null,
-                    date: currentEvidence.evidence_at.slice(0, 10),
+                    date: formatDateYmdInTimeZone(currentEvidence.evidence_at, this.#timezone),
                   },
                 ]
               : [],
@@ -677,18 +679,10 @@ export class CyclingAnalyticsRepository {
   }
 
   #accessWindowPredicate(column: string): string {
-    return this.#accessWindow?.kind === "limited"
-      ? `AND ${column} >= parseDateTime64BestEffort({accessStartDate:String}, 6, 'UTC')
-         AND ${column} < parseDateTime64BestEffort({accessEndDateExclusive:String}, 6, 'UTC')`
-      : "";
+    return clickHouseAccessPredicate(this.#accessWindow, column);
   }
 
   #accessWindowParams(): Record<string, string> {
-    return this.#accessWindow?.kind === "limited"
-      ? {
-          accessStartDate: this.#accessWindow.startDate,
-          accessEndDateExclusive: this.#accessWindow.endDateExclusive,
-        }
-      : {};
+    return clickHouseAccessParams(this.#accessWindow);
   }
 }

@@ -463,12 +463,23 @@ let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
 let cachedAnalyticsRefreshQueue: Queue<AnalyticsRefreshJobData> | null = null;
 let cachedAnalyticsRefreshQueueEvents: QueueEvents | null = null;
+let analyticsRefreshWaitController = new AbortController();
+
+export function getAnalyticsRefreshWaitSignal(): AbortSignal {
+  return analyticsRefreshWaitController.signal;
+}
 let cachedFlowProducer: FlowProducer | null = null;
 
-export function getAnalyticsRefreshQueue(): Queue<AnalyticsRefreshJobData> {
-  cachedAnalyticsRefreshQueue ??= new Queue(ANALYTICS_REFRESH_QUEUE, {
-    connection: getRedisCommandConnection(),
+export function createAnalyticsRefreshQueue(
+  connection?: ConnectionOptions,
+): Queue<AnalyticsRefreshJobData> {
+  return new Queue(ANALYTICS_REFRESH_QUEUE, {
+    connection: connection ?? getRedisCommandConnection(),
   });
+}
+
+export function getAnalyticsRefreshQueue(): Queue<AnalyticsRefreshJobData> {
+  cachedAnalyticsRefreshQueue ??= createAnalyticsRefreshQueue();
   return cachedAnalyticsRefreshQueue;
 }
 
@@ -763,6 +774,13 @@ export async function enqueueDebouncedUserRefit(
 }
 
 /** Close all cached queues, flow producers, and the shared Redis connection. */
+/** Cancel read-only analytics waits before draining the workers awaiting them. */
+export async function closeAnalyticsRefreshWaiters(): Promise<void> {
+  analyticsRefreshWaitController.abort(
+    new Error("Analytics refresh wait cancelled because the worker is shutting down"),
+  );
+}
+
 export async function closeAllQueueResources(): Promise<void> {
   if (cachedActivityImageQueue) {
     await cachedActivityImageQueue.close();
@@ -798,10 +816,11 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
+  await Promise.allSettled(closePromises);
+
   cachedAnalyticsRefreshQueue = null;
   cachedAnalyticsRefreshQueueEvents = null;
-
-  await Promise.allSettled(closePromises);
+  analyticsRefreshWaitController = new AbortController();
 
   if (sharedRedisConnection) {
     await sharedRedisConnection.close();

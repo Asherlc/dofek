@@ -142,6 +142,15 @@ changed_zone_weeks AS (
     WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
         AND started_at IS NOT NULL
 ),
+
+previous_zone_user_weeks AS (
+    SELECT
+        previous.user_id AS user_id,
+        previous.week_start AS week_start
+    FROM {{ this }} AS previous FINAL
+    INNER JOIN (SELECT DISTINCT user_id FROM changed_zone_weeks) AS changed
+        ON changed.user_id = previous.user_id
+),
 {% endif %}
 
 week_keys AS (
@@ -204,6 +213,9 @@ week_keys_to_materialize AS (
     UNION DISTINCT
     SELECT changed_zone_weeks.user_id AS user_id, changed_zone_weeks.week_start AS week_start
     FROM changed_zone_weeks
+    UNION DISTINCT
+    SELECT previous_zone_user_weeks.user_id AS user_id, previous_zone_user_weeks.week_start AS week_start
+    FROM previous_zone_user_weeks
     {% endif %}
 ),
 

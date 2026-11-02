@@ -33,7 +33,12 @@ export function CyclingThresholdDetails({ evidence }: { evidence: CyclingThresho
         <Text style={{ color: colors.textSecondary }}>Estimate uncertainty</Text>
       </Pressable>
       {expanded && (
-        <Text style={{ color: colors.textSecondary }}>{evidence.uncertainty.reason}</Text>
+        <View style={{ gap: 4 }}>
+          <Text style={{ color: colors.textSecondary }}>
+            eFTP means estimated functional threshold power.
+          </Text>
+          <Text style={{ color: colors.textSecondary }}>{evidence.uncertainty.reason}</Text>
+        </View>
       )}
     </View>
   );

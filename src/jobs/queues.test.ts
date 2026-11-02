@@ -1132,6 +1132,46 @@ describe("queues", () => {
 });
 
 describe("analytics refresh resource lifecycle", () => {
+  it("retains dispatch handles while their asynchronous close is pending", async () => {
+    await closeAllQueueResources();
+    const queue = getAnalyticsRefreshQueue();
+    const events = getAnalyticsRefreshQueueEvents();
+    const queueCount = MockQueue.mock.calls.length;
+    const eventCount = MockQueueEvents.mock.calls.length;
+    let finish = () => {};
+    mockQueueClose.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const closing = closeAllQueueResources();
+    expect(getAnalyticsRefreshQueue()).toBe(queue);
+    expect(getAnalyticsRefreshQueueEvents()).toBe(events);
+    expect(MockQueue).toHaveBeenCalledTimes(queueCount);
+    expect(MockQueueEvents).toHaveBeenCalledTimes(eventCount);
+    finish();
+    await closing;
+    getAnalyticsRefreshQueue();
+    getAnalyticsRefreshQueueEvents();
+    expect(MockQueue).toHaveBeenCalledTimes(queueCount + 1);
+    expect(MockQueueEvents).toHaveBeenCalledTimes(eventCount + 1);
+    await closeAllQueueResources();
+  });
+
+  it("cancels refresh waiters without recreating their signal before final teardown", async () => {
+    const { closeAnalyticsRefreshWaiters, getAnalyticsRefreshWaitSignal } = await import(
+      "./queues.ts"
+    );
+    await closeAllQueueResources();
+    const signal = getAnalyticsRefreshWaitSignal();
+    await closeAnalyticsRefreshWaiters();
+    expect(signal.aborted).toBe(true);
+    expect(getAnalyticsRefreshWaitSignal()).toBe(signal);
+    await closeAllQueueResources();
+    expect(getAnalyticsRefreshWaitSignal().aborted).toBe(false);
+  });
+
   it("reuses dispatch resources and releases both connections during shutdown", async () => {
     await closeAllQueueResources();
     vi.clearAllMocks();

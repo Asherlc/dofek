@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../clickhouse.ts";
-import { buildActivitySummaryRowsTableSql } from "../clickhouse-activity-summary.ts";
 import { buildPostgresFitnessRawTableStatements } from "../clickhouse-raw-tables.ts";
 import { createMigration } from "./0071_repair_canonical_activity_type_reads.ts";
+import { buildActivitySummaryRowsTableSql } from "./activity-summary-schema-before-0108.ts";
 
 /**
  * The activity summary view body as it stood before 0069 renamed `activity_type` to

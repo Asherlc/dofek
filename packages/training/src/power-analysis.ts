@@ -1,11 +1,10 @@
 /**
- * Standard duration constants and presentation labels for power, HR, and pace curves.
+ * Standard duration constants and presentation labels for power curves.
  *
- * Pure functions with no database or infrastructure dependencies.
  * Shared between web and iOS via @dofek/training.
  */
 
-// ── Standard durations for power/HR/pace curves ─────────────────────
+// ── Standard durations for power curves ─────────────────────
 
 export const STANDARD_DURATIONS = [
   5, 15, 30, 60, 120, 180, 300, 420, 600, 1200, 1800, 3600, 5400, 7200,

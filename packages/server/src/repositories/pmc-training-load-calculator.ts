@@ -14,7 +14,6 @@ export interface PmcActivityRow {
 export interface PmcNormalizedPowerRow {
   activity_id: string;
   power_tss: number | null;
-  eftp: number | null;
 }
 
 export interface PmcTrainingStressModel {
@@ -54,6 +53,17 @@ interface PmcDailyLoadInput {
   restingHeartRate: number;
 }
 
+export function usablePmcHeartRate(
+  activity: Pick<PmcActivityRow, "avg_hr">,
+  maximum: number | null,
+  resting: number,
+) {
+  if (activity.avg_hr == null || activity.avg_hr <= 0 || maximum == null || maximum <= resting) {
+    return null;
+  }
+  return { average: activity.avg_hr, maximum, resting };
+}
+
 export class PmcTrainingLoadCalculator {
   readonly #algorithms: PmcTrainingLoadAlgorithms;
 
@@ -70,20 +80,13 @@ export class PmcTrainingLoadCalculator {
     const pairedData: { trimp: number; powerTss: number }[] = [];
     for (const activity of activities) {
       const powerTss = powerTssByActivity.get(activity.id);
-      if (
-        powerTss == null ||
-        powerTss <= 0 ||
-        activity.avg_hr == null ||
-        activity.avg_hr <= 0 ||
-        globalMaxHeartRate == null ||
-        globalMaxHeartRate <= restingHeartRate
-      )
-        continue;
+      const heartRate = usablePmcHeartRate(activity, globalMaxHeartRate, restingHeartRate);
+      if (powerTss == null || powerTss <= 0 || heartRate == null) continue;
       const trimp = this.#algorithms.computeTrainingImpulse(
         activity.duration_min,
-        activity.avg_hr,
-        globalMaxHeartRate,
-        restingHeartRate,
+        heartRate.average,
+        heartRate.maximum,
+        heartRate.resting,
       );
       if (trimp > 0) pairedData.push({ trimp, powerTss });
     }
@@ -98,19 +101,18 @@ export class PmcTrainingLoadCalculator {
     for (const activity of input.activities) {
       let trainingStressScore = input.powerTssByActivity.get(activity.id);
       if (trainingStressScore == null) {
-        if (
-          activity.avg_hr == null ||
-          activity.avg_hr <= 0 ||
-          input.globalMaxHeartRate == null ||
-          input.globalMaxHeartRate <= input.restingHeartRate
-        )
-          continue;
+        const heartRate = usablePmcHeartRate(
+          activity,
+          input.globalMaxHeartRate,
+          input.restingHeartRate,
+        );
+        if (heartRate == null) continue;
         if (input.trainingStressModel != null) {
           const trimp = this.#algorithms.computeTrainingImpulse(
             activity.duration_min,
-            activity.avg_hr,
-            input.globalMaxHeartRate,
-            input.restingHeartRate,
+            heartRate.average,
+            heartRate.maximum,
+            heartRate.resting,
           );
           trainingStressScore = Math.max(
             0,
@@ -119,9 +121,9 @@ export class PmcTrainingLoadCalculator {
         } else {
           trainingStressScore = this.#algorithms.computeHeartRateTrainingStressScore(
             activity.duration_min,
-            activity.avg_hr,
-            input.globalMaxHeartRate,
-            input.restingHeartRate,
+            heartRate.average,
+            heartRate.maximum,
+            heartRate.resting,
           );
         }
       }

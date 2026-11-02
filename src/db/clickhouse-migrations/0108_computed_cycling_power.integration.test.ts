@@ -3,6 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../clickhouse.ts";
 import { buildActivitySummaryRowsTableSql } from "../clickhouse-activity-summary.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../clickhouse-metric-stream-bootstrap.ts";
+import { createMigration as migration0022 } from "./0022_incremental_activity_summary.ts";
+import { createMigration as migration0035 } from "./0035_activity_summary_power_climbing_columns.ts";
+import { createMigration as migration0042 } from "./0042_recreate_activity_sensor_summary_column_order.ts";
+import { createMigration as migration0064 } from "./0064_activity_summary_freshness.ts";
+import { createMigration as migration0071 } from "./0071_repair_canonical_activity_type_reads.ts";
+import { createMigration as migration0107 } from "./0107_running_step_cadence.ts";
 import { createMigration } from "./0108_computed_cycling_power.ts";
 
 describe("computed cycling power schema upgrade", () => {
@@ -107,6 +113,35 @@ describe("computed cycling power schema upgrade", () => {
     });
     expect(await summary.json()).toEqual([{ normalized_power: 210 }]);
   });
+  it("guards each optional healthspan column independently", async () => {
+    await client.command({
+      query:
+        "ALTER TABLE analytics.healthspan_activity_zone_minutes DROP COLUMN high_intensity_minutes",
+    });
+    await client.command({
+      query: "ALTER TABLE analytics.weekly_healthspan DROP COLUMN weekly_aerobic_min",
+    });
+    await createMigration().run?.(client, "");
+    const result = await client.query<{ name: string; type: string }>({
+      query:
+        "SELECT name,type FROM system.columns WHERE database={database:String} AND ((table='healthspan_activity_zone_minutes' AND name='aerobic_minutes') OR (table='weekly_healthspan' AND name='weekly_high_intensity_min')) ORDER BY name",
+      query_params: { database: "analytics" },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      { name: "aerobic_minutes", type: "Nullable(Float64)" },
+      { name: "weekly_high_intensity_min", type: "Nullable(Float64)" },
+    ]);
+    await client.command({
+      query:
+        "ALTER TABLE analytics.healthspan_activity_zone_minutes ADD COLUMN high_intensity_minutes Nullable(Float64)",
+    });
+    await client.command({
+      query:
+        "ALTER TABLE analytics.weekly_healthspan ADD COLUMN weekly_aerobic_min Nullable(Float64) AFTER user_id",
+    });
+  });
+
   it("serves only newly published canonical power after upgrading populated legacy tables and rerunning", async () => {
     const migration = createMigration();
     await migration.run?.(client, "");
@@ -147,5 +182,41 @@ describe("computed cycling power schema upgrade", () => {
       format: "JSONEachRow",
     });
     expect(await daily.json()).toEqual([{ name: "Power ride" }]);
+  });
+});
+
+describe("historical activity summary schema boundary", () => {
+  const database = `historical_power_${randomUUID().replaceAll("-", "")}`;
+  const client = createClickHouseClientFromEnv();
+  const execute = (query: string) =>
+    client.command({ query: query.replaceAll("analytics.", `${database}.`) });
+  beforeAll(async () => {
+    await client.command({ query: `CREATE DATABASE ${database}` });
+  });
+  afterAll(async () => {
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+    await client.close?.();
+  });
+  it("creates and queries pre-0108 serving views before computed-power tables exist", async () => {
+    for (const query of migration0022().statements) await execute(query);
+    // Execute only view DDL from historical repair migrations: this deliberately
+    // avoids replaying their one-off data copies and provenance backfills.
+    for (const migration of [migration0035(), migration0042(), migration0064(), migration0071()]) {
+      for (const query of migration.statements.filter((query) =>
+        /^CREATE OR REPLACE VIEW analytics\.activity_summary\b/.test(query),
+      ))
+        await execute(query);
+    }
+    for (const query of migration0107().statements) await execute(query);
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    await execute(`INSERT INTO analytics.activity_summary_rows
+      (user_id,activity_id,canonical_type,started_at,normalized_power,refresh_version,is_deleted,refreshed_at)
+      VALUES ('${userId}','${activityId}','cycling','2026-01-01 12:00:00',210,1,0,now64(9))`);
+    const result = await client.query({
+      query: `SELECT normalized_power FROM ${database}.activity_summary`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ normalized_power: 210 }]);
   });
 });

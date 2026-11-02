@@ -52,6 +52,15 @@ explicit caller-supplied duration window. It uses the package's generic
 `regression` module; neither module selects an FTP estimate. The model follows
 [Monod and Scherrer's work-capacity relationship](https://doi.org/10.1080/00140136508930810).
 
+Critical-power fitting returns CP and work capacity rounded to whole units.
+Its diagnostic predictions, residuals and power-space RMSE use the full,
+unrounded fit, with returned diagnostic values rounded to 0.1 watt. They are
+not reconstructed from the rounded coefficients. The reported `r2` describes
+the linearized **work-versus-time** regression, not observed-versus-predicted
+power. Compare power-space residuals and RMSE when assessing power errors.
+The generic regression function throws `RangeError` if finite inputs exceed
+the arithmetic's finite range; critical-power fitting withholds such a model.
+
 Normalized power uses complete 30-second windows, retaining zero power and
 withholding results when elapsed coverage is incomplete. Its mathematical basis
 is documented by [TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).

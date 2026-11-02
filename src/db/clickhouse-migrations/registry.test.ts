@@ -172,7 +172,7 @@ describe("clickHouseMigrations", () => {
       id: "0064_activity_summary_freshness",
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
-        expect.stringContaining("summary.climbing_seconds,\n  summary.refreshed_at"),
+        expect.stringContaining("climbing_seconds,\n  refreshed_at"),
       ],
     });
     expect(

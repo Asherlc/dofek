@@ -1,6 +1,6 @@
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
-import { buildActivitySummaryViewSql } from "../clickhouse-activity-summary.ts";
 import { buildActivityReadModelRefreshStatements } from "../clickhouse-read-models.ts";
+import { buildActivitySummaryViewSql } from "./activity-summary-schema-before-0108.ts";
 import { hasClickHouseColumn } from "./column-introspection.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";

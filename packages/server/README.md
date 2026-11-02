@@ -363,6 +363,7 @@ configured-value fallback. W/kg uses nearby body-weight evidence. CP exploration
 remains separately named and cannot supply another FTP for zones or load.
 See the [pure algorithms package](../cycling-power/README.md) and the
 [application projector](../../src/analytics/README.md).
+
 `get_cycling_training_metrics` requires `activity:read`, an inclusive date range, and the
 ClickHouse analytics store. It returns newest-first pages of at most 25 canonical cycling
 activities and supports modality/provider filters plus a cursor. Each activity is calculated from

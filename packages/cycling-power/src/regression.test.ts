@@ -3,6 +3,14 @@ import { linearRegression } from "./regression.ts";
 
 describe("linearRegression", () => {
   it.each([
+    { xs: [1, 2, 3], ys: [Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE] },
+    { xs: [1, 2, 3], ys: [1e307, 2e307, 3e307] },
+    { xs: [1, 2, 3], ys: [1e155, -1e155, 1e155] },
+    { xs: [6e153, 0, -6e153], ys: [1, 2, 3] },
+  ])("rejects finite pairs whose regression arithmetic overflows %j", ({ xs, ys }) => {
+    expect(() => linearRegression(xs, ys)).toThrow(RangeError);
+  });
+  it.each([
     { xs: [1, 2], ys: [3] },
     { xs: [1], ys: [3, 4] },
     { xs: [], ys: [3] },
@@ -33,10 +41,10 @@ describe("linearRegression", () => {
     expect(r2).toBeCloseTo(1);
   });
 
-  it("returns zero slope and intercept for degenerate input", () => {
+  it("returns a zero slope and mean intercept for constant x observations", () => {
     const { slope, intercept, r2 } = linearRegression([5, 5, 5], [1, 2, 3]);
     expect(slope).toBe(0);
-    expect(intercept).toBe(0);
+    expect(intercept).toBe(2);
     expect(r2).toBe(0);
   });
 

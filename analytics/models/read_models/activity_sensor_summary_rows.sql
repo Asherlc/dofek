@@ -408,7 +408,7 @@ channel_aggs AS (
         CAST(avgIf(scalar, channel = 'heart_rate'), 'Nullable(Float64)') AS avg_hr,
         CAST(maxIf(scalar, channel = 'heart_rate'), 'Nullable(Int16)') AS max_hr,
         CAST(minIf(scalar, channel = 'heart_rate'), 'Nullable(Int16)') AS min_hr,
-        CAST(avgIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Float64)') AS avg_power,
+        CAST(avgOrNullIf(scalar, channel = 'power' AND scalar >= 0), 'Nullable(Float64)') AS avg_power,
         CAST(maxIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Int16)') AS max_power,
         CAST(avgIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS avg_speed,
         CAST(maxIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS max_speed,

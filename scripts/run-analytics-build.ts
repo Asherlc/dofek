@@ -10,7 +10,10 @@ import {
   resolveAnalyticsMicrobatchBounds,
 } from "../src/processing/analytics-microbatch-bounds.ts";
 import { recordProcessingAnalyticsRun } from "../src/processing/analytics-processing.ts";
-import { PRODUCTION_DBT_MODELS } from "../src/processing/dataset-contracts.ts";
+import {
+  CYCLING_POWER_DOWNSTREAM_DBT_MODELS,
+  PRODUCTION_DBT_MODELS,
+} from "../src/processing/dataset-contracts.ts";
 import { parseDbtRunArtifacts } from "../src/processing/dbt-run-results.ts";
 import {
   listProcessingDatasetsAwaitingAnalytics,
@@ -75,7 +78,7 @@ export async function runAnalyticsBuild({
   if (selectedModels.length === 0) {
     throw new Error("Analytics build requires at least one selected model");
   }
-  const downstreamModels = new Set(["healthspan_activity_zone_minutes", "weekly_healthspan"]);
+  const downstreamModels = new Set<string>(CYCLING_POWER_DOWNSTREAM_DBT_MODELS);
   const inputs = selectedModels.filter((model) => !downstreamModels.has(model));
   const downstream = selectedModels.filter((model) => downstreamModels.has(model));
   const pendingDatasets = await loadPendingDatasets();

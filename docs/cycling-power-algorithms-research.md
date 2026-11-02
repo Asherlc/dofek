@@ -1,7 +1,7 @@
 # Cycling power algorithms: research and consolidation
 
-Research date: 2026-11-01. This document describes proposed behavior and measured
-research, not a deployed implementation.
+Research date: 2026-11-01. This document describes measured research and the implemented working-branch
+design. The application changes have not been deployed.
 
 ## Product requirements
 
@@ -279,11 +279,13 @@ pattern. The application labels uncertainty unquantified and unsupported input
 unavailable. It does not claim Intervals.icu numerical parity.
 
 The selected decay policy is separately versioned application configuration:
-after 28 observed days, compare the two completed 14-day dose windows and apply
-at most 0.1% decline per day in proportion to the dose deficit. Two empty
-windows represent observed inactivity; missing power withholds decline. This is
+after 28 elapsed calendar days from the first admitted activity, compare the two completed 14-day dose windows and apply
+at most 0.1% decline per day in proportion to the dose deficit. Days without recorded cycling contribute zero dose; two empty windows are modeled
+as inactivity. A recorded ride with incomplete power coverage withholds decline.
+The elapsed-day gate does not require 28 days containing samples. This is
 a conservative product heuristic, not a recovered Intervals formula or a
 validated universal detraining coefficient.
+
 ## Decay is a model choice, not a known physiological constant
 
 The published Intervals.icu explanation establishes qualitative behavior but
@@ -317,27 +319,27 @@ it must not become a zero-load day. Confirmed absence of cycling activity is a
 different state and can contribute zero. Unknown load must not trigger modeled
 decline merely because the application lacks observations.
 
-## Audit of conflicting current implementations
+## Pre-change audit of conflicting implementations
 
-The following findings come from the linked repository sources.
+The following findings describe the implementation before this change; links are pinned to that source revision.
 
-| Consumer | Current threshold or power behavior |
+| Consumer | Pre-change threshold or power behavior |
 | --- | --- |
-| [Power repository](../packages/server/src/repositories/power-repository.ts) | Current eFTP is a 90-day CP fit; trend and fallback use workout NP × 0.95. A raw fallback uses sample-count duration windows. |
-| [Cycling analytics](../packages/server/src/repositories/cycling-analytics-repository.ts) | Repeats the CP/current and NP/trend split; variability selects another 20-minute-based threshold. |
-| [Advanced cycling](../packages/server/src/repositories/cycling-advanced-repository.ts) | Uses selected-range maximum 20-minute summary power × 0.95. |
-| [Cycling performance](../packages/server/src/repositories/cycling-performance-repository.ts) | Recalculates a rolling-90-day best-20-minute threshold for each ride. |
-| [Threshold estimator](../packages/server/src/repositories/cycling-threshold-estimator.ts) | Exposes configured, sustained-power, 20-minute, and CP strategies through a selection hierarchy. |
-| [Threshold history](../packages/server/src/repositories/cycling-threshold-repository.ts) | Serves manual dated settings and legacy profile FTP. |
-| [PMC](../packages/server/src/repositories/pmc-repository.ts) | Uses 95% of the best whole-ride average from rides lasting at least 20 minutes, applying one threshold across the queried history. |
-| [Calendar scoring](../packages/server/src/repositories/activity-calendar-entry.ts) | Reads profile FTP and passes average power as the normalized-power argument to TSS. |
-| [Workout metrics](../packages/server/src/repositories/cycling-effort-metrics.ts) | Uses dated manual FTP for IF, TSS, zones, and inferred intervals. |
-| [Analytical load](../packages/server/src/repositories/analytical-training-load-repository.ts) | Uses manual dated FTP and summary NP. |
-| [Activity zones](../packages/server/src/routers/activity.ts) | Uses today's 90-day CP estimate to classify historical activities. |
-| [Healthspan](../analytics/models/read_models/healthspan_activity_zone_minutes.sql) | Uses profile FTP and sample-count proportions scaled to full activity duration; unavailable intensity can become zero. |
-| [SQL sensor summary](../analytics/models/read_models/activity_sensor_summary_rows.sql) | Drops zero watts before rolling NP and accepts partial initial windows. |
-| [TypeScript power analysis](../packages/training/src/power-analysis.ts) | Preserves zeros and starts NP with full windows, but the legacy power curve uses inferred sample-count windows. |
-| [Stress functions](../packages/training/src/pmc.ts) / [stress class](../packages/training/src/training-load.ts) | Duplicate TSS, HR stress, regression, and whole-ride FTP formulas. |
+| [Power repository](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/power-repository.ts) | Current eFTP is a 90-day CP fit; trend and fallback use workout NP × 0.95. A raw fallback uses sample-count duration windows. |
+| [Cycling analytics](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/cycling-analytics-repository.ts) | Repeats the CP/current and NP/trend split; variability selects another 20-minute-based threshold. |
+| [Advanced cycling](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/cycling-advanced-repository.ts) | Uses selected-range maximum 20-minute summary power × 0.95. |
+| [Cycling performance](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/cycling-performance-repository.ts) | Recalculates a rolling-90-day best-20-minute threshold for each ride. |
+| [Threshold estimator](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/cycling-threshold-estimator.ts) | Exposes configured, sustained-power, 20-minute, and CP strategies through a selection hierarchy. |
+| [Threshold history](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/cycling-threshold-repository.ts) | Serves manual dated settings and legacy profile FTP. |
+| [PMC](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/pmc-repository.ts) | Uses 95% of the best whole-ride average from rides lasting at least 20 minutes, applying one threshold across the queried history. |
+| [Calendar scoring](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/activity-calendar-entry.ts) | Reads profile FTP and passes average power as the normalized-power argument to TSS. |
+| [Workout metrics](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/cycling-effort-metrics.ts) | Uses dated manual FTP for IF, TSS, zones, and inferred intervals. |
+| [Analytical load](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/repositories/analytical-training-load-repository.ts) | Uses manual dated FTP and summary NP. |
+| [Activity zones](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/server/src/routers/activity.ts) | Uses today's 90-day CP estimate to classify historical activities. |
+| [Healthspan](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/analytics/models/read_models/healthspan_activity_zone_minutes.sql) | Uses profile FTP and sample-count proportions scaled to full activity duration; unavailable intensity can become zero. |
+| [SQL sensor summary](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/analytics/models/read_models/activity_sensor_summary_rows.sql) | Drops zero watts before rolling NP and accepts partial initial windows. |
+| [TypeScript power analysis](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/training/src/power-analysis.ts) | Preserves zeros and starts NP with full windows, but the legacy power curve uses inferred sample-count windows. |
+| [Stress functions](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/training/src/pmc.ts) / [stress class](https://github.com/Asherlc/dofek/blob/17d5b0ab62445b79041e83da077e3a2030158d56/packages/training/src/training-load.ts) | Duplicate TSS, HR stress, regression, and whole-ride FTP formulas. |
 
 ## Recommended ownership and unification
 
