@@ -90,7 +90,11 @@ export function activityMetricSourceInheritance(
     origin.label,
     origin.label,
   );
-  const providers = path.slice(1).map((node) => providerLabel(node.providerId));
+  // Grouped copies can report different devices, so the final hop names their provider.
+  const providers = [
+    ...path.slice(1, -1).map((node) => node.label),
+    providerLabel(delivery.providerId),
+  ];
   return {
     label: `${original.displayName} via ${providers.join(" → ")}`,
     presentation: {

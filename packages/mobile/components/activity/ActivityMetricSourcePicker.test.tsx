@@ -66,6 +66,9 @@ describe("ActivityMetricSourcePicker", () => {
     ).toBeTruthy();
     fireEvent.click(trigger);
     const option = screen.getByRole("radio", { name: "WHOOP via Peloton", checked: true });
+    expect(
+      option.querySelector('[data-source-uri="https://api.example.test/logos/whoop.png"]'),
+    ).toBeTruthy();
     expect(option.querySelector('[uri="https://api.example.test/logos/peloton.svg"]')).toBeTruthy();
   });
   it("uses provider logos while retaining device names and complete accessible choices", () => {

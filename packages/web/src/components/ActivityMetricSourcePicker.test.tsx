@@ -62,6 +62,7 @@ it("shows WHOOP with a Peloton delivery badge in the trigger and option", () => 
   expect(trigger.querySelector('img[src="/logos/peloton.svg"]')).toBeTruthy();
   fireEvent.click(trigger);
   const option = screen.getByRole("radio", { name: "WHOOP via Peloton" }).closest("label");
+  expect(option?.querySelector('img[src="/logos/whoop.png"]')).toBeTruthy();
   expect(option?.querySelector('img[src="/logos/peloton.svg"]')).toBeTruthy();
 });
 

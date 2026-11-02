@@ -5,6 +5,7 @@ import {
   activityMetricSourceInheritance,
   activitySourceNodePresentation,
 } from "./activity-source-tree.ts";
+import { providerLabel } from "./providers.ts";
 
 describe("activitySourceNodePresentation", () => {
   it.each([
@@ -36,7 +37,7 @@ describe("activityMetricSourceInheritance", () => {
     id,
     providerId,
     sourceName: null,
-    label: providerId === "whoop" ? "WHOOP (Cloud)" : providerId,
+    label: providerLabel(providerId),
     description: null,
     url: null,
     children,
@@ -57,6 +58,32 @@ describe("activityMetricSourceInheritance", () => {
         attribution: { kind: "apple_health", label: "Apple Health" },
       },
     });
+  });
+  it("retains device model labels in intermediate import steps", () => {
+    const garmin = {
+      ...node("garmin-copy", "garmin", [node("health-copy", "apple_health")]),
+      sourceName: "Edge 1050",
+      label: "Edge 1050",
+    };
+    const result = activityMetricSourceInheritance(
+      { primary: node("origin", "whoop", [garmin]), otherSources: [] },
+      ["health-copy"],
+      "apple_health",
+    );
+    expect(result?.label).toBe("WHOOP via Edge 1050 → Apple Health");
+  });
+  it("keeps the delivery badge provider-based when copies have different device labels", () => {
+    const copies = ["Edge 530", "Edge 1050"].map((model) => ({
+      ...node(model, "garmin"),
+      sourceName: model,
+      label: model,
+    }));
+    const result = activityMetricSourceInheritance(
+      { primary: node("origin", "whoop", copies), otherSources: [] },
+      ["Edge 530", "Edge 1050"],
+      "garmin",
+    );
+    expect(result?.label).toBe("WHOOP via Garmin");
   });
   it.each(["unresolved", "kaya"])(
     "uses the proven WHOOP branch with a %s activity origin",
