@@ -343,7 +343,8 @@ export class EfficiencyRepository extends BaseRepository {
           pwr.scalar AS power,
           greatest(0, dateDiff('microsecond', events.recorded_at,
             least(events.next_recorded_at, hr.next_recorded_at, coalesce(hr.ended_at, hr.next_recorded_at),
-              pwr.next_recorded_at, pwr.recorded_at + INTERVAL 10 SECOND)
+              pwr.next_recorded_at, hr.recorded_at + INTERVAL 10 SECOND,
+              pwr.recorded_at + INTERVAL 10 SECOND)
           ) / 1000000.0) AS paired_seconds
         FROM sample_events events
         ASOF JOIN z2_heart_rate_samples hr
@@ -355,7 +356,6 @@ export class EfficiencyRepository extends BaseRepository {
          AND events.id = pwr.id
          AND events.recorded_at >= pwr.recorded_at
         WHERE pwr.scalar > 0
-          AND dateDiff('microsecond', hr.recorded_at, hr.next_recorded_at) <= 10000000
       )
       SELECT
         any(max_hr) AS max_hr,

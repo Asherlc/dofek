@@ -229,6 +229,13 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
     expect(rows[0]?.is_deleted).toBe(1);
   });
 
+  it("credits at most ten seconds before a long heart-rate gap", async () => {
+    const rows = await compute([...Array.from({ length: 291 }, (_, i) => i), 600], {
+      powerOffsets: Array.from({ length: 601 }, (_, i) => i),
+    });
+    expect(rows).toEqual([{ avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 291, is_deleted: 0 }]);
+  });
+
   it("weights power and heart rate by elapsed time when cadence changes", async () => {
     const offsets = [
       ...Array.from({ length: 30 }, (_, i) => i * 5),

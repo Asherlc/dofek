@@ -34989,11 +34989,9 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   completed successfully at 19:05:59 UTC; this exclusion is a semantic filter,
   not a query exception. A subsequent cycling-power projector pending-work error
   is separate from the reproduced sample-count exclusion.
-- Status / remaining work: unresolved; no production writes or runtime changes.
-  Proposed correction is elapsed-time-based Zone 2 eligibility with explicit
-  sample-gap handling, a real ClickHouse regression fixture for five-second
-  samples, corresponding shared API eligibility, and bounded historical
-  recomputation after implementation approval. No retries or waits proposed.
+- Status / remaining work: correction implemented and validated locally; production
+  remains unresolved pending deployment and historical count verification. No
+  production writes have occurred. No retries or waits were introduced.
 - Retrospective: comparing monthly eligibility with the original sample cadence
   exposed the failure directly. Proposed analytics checklist addition: verify
   duration thresholds using both one-second and sparse provider observations.
@@ -35010,10 +35008,12 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   Both web and mobile consume these shared server results; no API/schema change.
 - Validation: observed the five-second and oversampling regressions fail before
   implementation; independent-cadence tests also reproduced and then verified
-  a review finding about power updates between heart-rate observations. Twenty
+  a review finding about power updates between heart-rate observations. Twenty-two
   real ClickHouse cases exercise both model and live SQL, and 86 focused unit
-  tests pass. Server and fixture TypeScript checks pass. A read-only production
-  preview bounded to November 1, 2025 through November 3, 2026 recovered 21
+  tests pass. A subsequent boundary fixture reproduced and verified the bounded
+  valid hold before a long heart-rate gap. Server and fixture TypeScript checks
+  pass. A read-only production preview bounded to November 1, 2025 through
+  November 3, 2026 recovered 21
   qualifying points in November–February (2, 7, 7, 5 by month), with the earliest
   at November 15, 2025 20:56:52 UTC. No production data has been rewritten yet.
 - Rollout: deploy the corrected analytics model and server reader together.

@@ -168,7 +168,7 @@ sample_events AS (
 ),
 
 paired_intervals AS (
-    -- Match the cycling signal policy's ten-second maximum hold; never bridge HR outages.
+    -- Match the cycling signal policy's ten-second maximum hold for both channels.
     SELECT
         hr.activity_id AS activity_id,
         hr.user_id AS user_id,
@@ -185,7 +185,7 @@ paired_intervals AS (
             'microsecond',
             events.recorded_at,
             least(events.next_recorded_at, hr.next_recorded_at, hr.ended_at, pwr.next_recorded_at,
-                pwr.recorded_at + INTERVAL 10 SECOND)
+                hr.recorded_at + INTERVAL 10 SECOND, pwr.recorded_at + INTERVAL 10 SECOND)
         ) / 1000000.0) AS paired_seconds
     FROM sample_events AS events
     ASOF JOIN z2_heart_rate_samples AS hr
@@ -197,7 +197,6 @@ paired_intervals AS (
         AND events.activity_id = pwr.activity_id
         AND events.recorded_at >= pwr.recorded_at
     WHERE pwr.scalar > 0
-        AND dateDiff('microsecond', hr.recorded_at, hr.next_recorded_at) <= 10000000
 ),
 
 z2_samples AS (
