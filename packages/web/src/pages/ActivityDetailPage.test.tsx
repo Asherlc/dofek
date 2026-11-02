@@ -1932,7 +1932,11 @@ describe("ActivityDetailPage", () => {
       });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Lineage" }));
+      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("link", { name: "Garmin Edge 530" })).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Original" })).toBeVisible();
     });
 
     it("expands the server source tree inside the real detail header with distinct transfer branches", async () => {

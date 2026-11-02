@@ -712,7 +712,7 @@ describe("ActivityDetailScreen", () => {
             model: "Edge 530",
             manufacturer: "Garmin",
             evidence: "Reported recording device.",
-            details: [{ label: "Serial number", value: "EDGE-123" }],
+            details: [],
           },
         ],
         power: [],

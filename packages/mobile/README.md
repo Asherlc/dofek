@@ -666,8 +666,9 @@ Source-map and release correlation:
 The activities screen leads with the shared rounded-outline activity icon.
 The [Lineage disclosure](components/ActivitySourceDisclosure.tsx) sits after the
 activity content and map, inside the same card. It shows an explicit Original
-heading, labeled Shared to branches, and one divider and Other heading for all
-additional recordings. Unresolved origins show Original unknown. The
+heading and labeled Shared to branches. When an Original is known, one divider
+and Other heading groups all additional recordings. Unresolved origins show
+Original unknown above the available recordings. The
 [shared projection](../providers-meta/src/activity-source-hardware.ts) uses
 recording-device labels without treating hardware inventory as sharing steps;
 technical metadata rows are omitted.

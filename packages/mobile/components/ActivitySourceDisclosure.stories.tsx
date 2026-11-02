@@ -164,6 +164,11 @@ export const SingleRecording: Story = {
         within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
       ).toBeVisible();
     });
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getByText("Original")).toBeVisible();
+    await expect(dialog.getByText("Garmin Edge 530")).toBeVisible();
   },
 };
 
@@ -180,6 +185,13 @@ export const SharingChain: Story = {
         within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
       ).toBeVisible();
     });
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getAllByText("Shared to")).toHaveLength(2);
+    await expect(dialog.getByText("Peloton Bike+")).toBeVisible();
+    await expect(dialog.getByText("Strava")).toBeVisible();
+    await expect(dialog.getByText("Apple Health")).toBeVisible();
   },
 };
 
@@ -196,6 +208,13 @@ export const MultipleRecordings: Story = {
         within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
       ).toBeVisible();
     });
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getAllByText("Other")).toHaveLength(1);
+    await expect(dialog.getAllByText("Shared to")).toHaveLength(2);
+    await expect(dialog.getByText("WHOOP")).toBeVisible();
+    await expect(dialog.getByText("Garmin Forerunner 955")).toBeVisible();
   },
 };
 
@@ -212,5 +231,11 @@ export const UnknownOrigin: Story = {
         within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
       ).toBeVisible();
     });
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getByText("Original unknown")).toBeVisible();
+    await expect(dialog.getByText("Strava")).toBeVisible();
+    await expect(dialog.getByText("WHOOP")).toBeVisible();
   },
 };

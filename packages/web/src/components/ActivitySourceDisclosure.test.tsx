@@ -25,9 +25,10 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Lineage" }));
-    expect(screen.getByText("Original")).toBeDefined();
+    expect(screen.getByText("Original")).toBeVisible();
     expect(screen.getAllByText("Other")).toHaveLength(1);
-    expect(screen.getAllByText("Shared to").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Shared to")).toHaveLength(3);
+    expect(screen.getAllByText("WHOOP")).toHaveLength(2);
   });
   it("labels unknown origins without assigning a winner", () => {
     render(
@@ -36,7 +37,7 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
-    expect(screen.getByText("Original unknown")).toBeDefined();
+    expect(screen.getByText("Original unknown")).toBeVisible();
     expect(screen.getByText("WHOOP")).toBeDefined();
   });
 

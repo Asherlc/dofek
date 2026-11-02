@@ -25,11 +25,3 @@ export const activityHardwareSchema = z.object({
 });
 export type ActivityHardware = z.infer<typeof activityHardwareSchema>;
 export type ActivityHardwareItem = z.infer<typeof activityHardwareItemSchema>;
-export const activityHardwareRoleLabels: Record<ActivityHardwareItem["role"], string> = {
-  creator: "FIT file creator",
-  recorder: "Recording source",
-  sensor: "Observed sensor",
-  source: "Reported source",
-  category: "Equipment category",
-  unknown: "Reported device",
-};

@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Linking, Text } from "react-native";
@@ -95,9 +96,10 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Lineage: Hang Ten" }));
-    expect(screen.getByText("Original")).toBeDefined();
+    expect(screen.getByText("Original")).toBeVisible();
     expect(screen.getAllByText("Other")).toHaveLength(1);
-    expect(screen.getAllByText("Shared to").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Shared to")).toHaveLength(3);
+    expect(screen.getAllByText("WHOOP")).toHaveLength(2);
   });
   it("labels unknown origins without assigning a winner", () => {
     render(
@@ -106,8 +108,31 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
-    expect(screen.getByText("Original unknown")).toBeDefined();
+    expect(screen.getByText("Original unknown")).toBeVisible();
     expect(screen.getByText("WHOOP")).toBeDefined();
+  });
+
+  it("marks linked recordings visibly and preserves their separate notices", () => {
+    const original = branchingActivitySourceTree.primary;
+    if (!original) throw new Error("Missing original fixture");
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          primary: {
+            ...original,
+            url: "https://example.com/activity",
+            description: "Provider recording notice",
+            children: [],
+          },
+          otherSources: [],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Hang Ten" }));
+    const link = screen.getByRole("button", { name: "View activity for Hang Ten" });
+    expect(within(link).getByText("↗")).toBeVisible();
+    expect(screen.getByText("Provider recording notice")).toBeVisible();
+    expect(within(link).queryByText("Provider recording notice")).toBeNull();
   });
 
   it("opens header sources in a dismissible overlay", () => {
@@ -309,7 +334,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getByText("Peloton Bike+")).toBeDefined();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Serial number: WATCH-123")).toBeNull();
+    expect(screen.queryByText("Peloton Bike+")).toBeNull();
   });
 
   it("shows actionable refresh errors while collapsed and retains cached devices on expansion", () => {

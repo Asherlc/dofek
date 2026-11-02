@@ -67,10 +67,15 @@ function SourceNode({ node }: { node: ActivitySourceTreeNode }) {
           />
           <View style={styles.nodeContent}>
             <SourceLabel node={node} />
-            {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
           </View>
+          {node.url ? (
+            <Text style={styles.linkCue} accessibilityElementsHidden importantForAccessibility="no">
+              ↗
+            </Text>
+          ) : null}
         </View>
       </SourceLink>
+      {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
       <SourceBranches nodes={node.children} />
     </View>
   );
@@ -282,6 +287,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.textTertiary,
   },
   otherSources: { gap: spacing.sm, marginTop: spacing.md },
+  linkCue: { color: colors.accent, fontSize: 14 },
   link: { minHeight: 44, minWidth: 44, justifyContent: "center", alignSelf: "flex-start" },
   sectionTitle: {
     color: colors.textSecondary,
