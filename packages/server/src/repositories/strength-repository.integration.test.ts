@@ -151,20 +151,27 @@ describe("StrengthRepository activity scope", () => {
     expect(await repository.getVolumeOverTime(null)).toEqual([]);
   });
   it("keeps a week with a workout but no sets as unknown set and weight volume", async () => {
-    await testContext.db.execute(sql`INSERT INTO fitness.activity (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+    const isolatedContext = await setupTestDatabase();
+    try {
+      await isolatedContext.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
+        VALUES ('strength_scope_test', 'Strength Scope Test', ${TEST_USER_ID})`);
+      await isolatedContext.db.execute(sql`INSERT INTO fitness.activity (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
       VALUES ('strength_scope_test', ${TEST_USER_ID}, 'no-sets', 'strength', 'strength',
         date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week', date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week' + interval '1 hour', 'No sets')`);
-    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
-    const volume = (await repository.getVolumeOverTime(30)).map((week) => week.toDetail());
-    expect(volume).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          recordedSetCount: null,
-          recordedVolumeKg: null,
-          durationMinutes: 60,
-        }),
-      ]),
-    );
+      const repository = new StrengthRepository(isolatedContext.db, TEST_USER_ID, "UTC");
+      const volume = (await repository.getVolumeOverTime(30)).map((week) => week.toDetail());
+      expect(volume).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            recordedSetCount: null,
+            recordedVolumeKg: null,
+            durationMinutes: 60,
+          }),
+        ]),
+      );
+    } finally {
+      await isolatedContext.cleanup();
+    }
   });
 
   it("preserves observed week labels and fits slope across calendar gaps", async () => {
