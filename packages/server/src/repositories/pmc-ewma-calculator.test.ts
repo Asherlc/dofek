@@ -3,7 +3,7 @@ import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
 
 function dateStringDaysAgo(daysAgo: number): string {
   const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
+  date.setUTCDate(date.getUTCDate() - daysAgo);
   return date.toISOString().slice(0, 10);
 }
 
