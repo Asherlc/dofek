@@ -14,6 +14,7 @@ import {
 import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { redactProviderServiceUnavailableError } from "../lib/provider-transport-error.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import { ProviderTokenRejectedError } from "./auth-errors.ts";
@@ -159,6 +160,11 @@ export class CyclingAnalyticsProvider implements SyncProvider {
             Authorization: `Bearer ${token}`,
             Accept: "application/json",
           },
+        }).catch((error: unknown) => {
+          throw redactProviderServiceUnavailableError(
+            error,
+            "Cycling Analytics token validation failed",
+          );
         });
         if (response.status === 401 || response.status === 403) {
           throw new ProviderTokenRejectedError(

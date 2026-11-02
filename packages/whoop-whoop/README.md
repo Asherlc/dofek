@@ -96,8 +96,11 @@ const refreshedClient = new WhoopClient(token);
 ```
 
 The refresh flow normally reuses the supplied Cognito refresh token because the
-observed refresh response does not issue a replacement. Resolving `userId`
-during refresh is best-effort; retain the original value as shown above.
+observed refresh response does not issue a replacement. When bootstrap responds
+without an extractable `userId`, retain the original value as shown above.
+Upstream HTTP `500`–`599`, rate-limit and transport errors propagate so the caller
+can record and retry the operation; see the
+[bootstrap implementation](https://github.com/Asherlc/dofek/blob/main/packages/whoop-whoop/src/client.ts).
 
 Treat access tokens, refresh tokens, MFA sessions, and credentials as secrets.
 
@@ -172,8 +175,8 @@ Actual package behavior:
 - `listDeveloperWorkouts` retries service-unavailable failures up to three
   times after the first attempt. Those retries are immediate and apply to
   all HTTP `500`–`599` responses; they do not apply to `429`. See the
-  [client implementation](./src/client.ts) and the
-  [shared HTTP classifier](../provider-http/src/rate-limit.ts).
+  [client implementation](https://github.com/Asherlc/dofek/blob/main/packages/whoop-whoop/src/client.ts) and the
+  [shared HTTP classifier](https://github.com/Asherlc/dofek/blob/main/packages/provider-http/src/rate-limit.ts).
 - Other internal data methods do not automatically retry.
 - Unsupported heart-rate or steps metric responses (`400` or `404`) become
   `WhoopMetricUnavailableError`.

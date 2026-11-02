@@ -34921,7 +34921,8 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   No added retry, timeout, fallback, or other resilience knob needs justification.
 - Validation / remaining work: the public API probe still fails; keep this
   incident unresolved until an API check and a subsequent Dofek tick sync
-  succeed. No tests were needed for this documentation-only update.
+  succeed. Initial triage changed documentation only; the later application
+  policy change and its regression validation are recorded below.
 - Retrospective: Sentry's provider/phase tags and source frames made the failing
   boundary clear; the external probe distinguished ongoing upstream failure
   from a historical alert. Proposed runbook addition for approval: include a
@@ -34950,6 +34951,15 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   operational telemetry; test the full status class and preserve Sentry for
   unexpected application failures." Reuse test-driven development and the
   provider reporting tests when changing this policy.
+- Review follow-up: retain body-free token-validation errors for Ultrahuman,
+  Cycling Analytics and Wger while preserving typed upstream status and retry
+  metadata through [transport-error redaction](../src/lib/provider-transport-error.ts).
+  Restored HTTP 500 fixtures first reproduced the message exposure. WHOOP
+  bootstrap HTTP 500/503/525 now has explicit typed-error tests, consistent
+  with its pre-existing 503 behavior and the all-5xx policy; the
+  [package contract](../packages/whoop-whoop/README.md#refresh-lifecycle) makes
+  propagation explicit instead of promising unconditional best-effort identity
+  resolution. Client tests also assert error types and provider identity.
 
 ## 2026-11-02 — Local PR validation blocked by Docker network exhaustion
 

@@ -115,7 +115,7 @@ The shared HTTP wrapper throws `ProviderRateLimitError` for `429` and
 `ProviderServiceUnavailableError` for all HTTP `500`–`599` responses, retaining a
 parsed
 [`Retry-After`](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)
-value when supplied; see the [shared HTTP classifier](../provider-http/src/rate-limit.ts).
+value when supplied; see the [shared HTTP classifier](https://github.com/Asherlc/dofek/blob/main/packages/provider-http/src/rate-limit.ts).
 
 If your application handles these classes directly, declare
 `@dofek/provider-http` as a direct dependency:

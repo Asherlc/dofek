@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -956,6 +959,19 @@ describe("OuraProvider properties", () => {
 // ============================================================
 
 describe("OuraClient", () => {
+  it.each([500, 525])("classifies upstream HTTP %s with provider identity", async (status) => {
+    const client = new OuraClient("token", async () => new Response("upstream", { status }));
+    const error = await client
+      .getSleep("2026-03-01", "2026-03-02")
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "oura",
+      statusCode: status,
+      responseBody: "upstream",
+    });
+  });
+
   it("throws on non-OK response for sleep", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });

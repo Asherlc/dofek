@@ -256,7 +256,7 @@ describe("UltrahumanProvider", () => {
 
   it("reports a safe error when personal token validation fails unexpectedly", async () => {
     const setup = new UltrahumanProvider(
-      async () => new Response("sensitive provider error", { status: 422 }),
+      async () => new Response("sensitive provider error", { status: 500 }),
     ).authSetup();
     if (!setup.manualToken) throw new Error("expected manual token authentication");
 
@@ -265,7 +265,11 @@ describe("UltrahumanProvider", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
-      message: "Ultrahuman token validation failed (422). Try again.",
+      name: "ProviderServiceUnavailableError",
+      providerId: "ultrahuman",
+      statusCode: 500,
+      responseBody: "",
+      message: "Ultrahuman token validation failed (500). Try again.",
     });
     expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider error");
   });

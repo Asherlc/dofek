@@ -161,7 +161,7 @@ describe("WhoopClient.signIn", () => {
     );
   });
 
-  it("throws when userId cannot be fetched", async () => {
+  it("propagates bootstrap outages during sign-in", async () => {
     const callCount = { value: 0 };
 
     const fetchFn = createTypedMockFetch();
@@ -181,11 +181,11 @@ describe("WhoopClient.signIn", () => {
         );
       }
       // Bootstrap fails
-      return Promise.resolve(createMockResponse({ ok: false, status: 400, body: {} }));
+      return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
-      "could not determine user ID",
+      "WHOOP API service unavailable (500)",
     );
   });
 
@@ -460,7 +460,7 @@ describe("WhoopClient.refreshAccessToken", () => {
     expect(result.refreshToken).toBe("keep-this-refresh");
   });
 
-  it("returns null userId when bootstrap fails", async () => {
+  it("propagates bootstrap outages during token refresh", async () => {
     const callCount = { value: 0 };
 
     const fetchFn = createTypedMockFetch();
@@ -479,12 +479,12 @@ describe("WhoopClient.refreshAccessToken", () => {
         );
       }
       // Bootstrap fails
-      return Promise.resolve(createMockResponse({ ok: false, status: 400, body: {} }));
+      return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
     });
 
-    const result = await WhoopClient.refreshAccessToken("refresh-token", fetchFn);
-
-    expect(result.userId).toBeNull();
+    await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
+    );
   });
 
   it("throws when no tokens in refresh response", async () => {
@@ -601,10 +601,18 @@ describe("WhoopClient._fetchUserId", () => {
     expect(result).toBe(77);
   });
 
-  it("returns null when response is not ok", async () => {
+  it.each([500, 503, 525])(
+    "propagates bootstrap HTTP %s as an upstream failure",
+    async (status) => {
+      const fetchFn = createMockFetch({ status, ok: false, body: {} });
+      await expect(WhoopClient._fetchUserId("token", fetchFn)).rejects.toBeInstanceOf(
+        ProviderServiceUnavailableError,
+      );
+    },
+  );
+  it("returns null for a rejected bootstrap request", async () => {
     const fetchFn = createMockFetch({ status: 400, ok: false, body: {} });
-    const result = await WhoopClient._fetchUserId("token", fetchFn);
-    expect(result).toBeNull();
+    await expect(WhoopClient._fetchUserId("token", fetchFn)).resolves.toBeNull();
   });
 
   it("returns null when no valid userId in response", async () => {

@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import {
@@ -194,6 +195,17 @@ describe("Wahoo schemas", () => {
 });
 
 describe("WahooClient", () => {
+  it.each([500, 525])("classifies upstream HTTP %s with provider identity", async (status) => {
+    const client = new WahooClient("token", async () => new Response("upstream", { status }));
+    const error = await client.getWorkouts().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "wahoo",
+      statusCode: status,
+      responseBody: "upstream",
+    });
+  });
+
   it("throws an access token expired error for Wahoo's expired token response", async () => {
     const fetchFn = async () =>
       new Response(JSON.stringify({ error: "Access token has expired" }), { status: 401 });

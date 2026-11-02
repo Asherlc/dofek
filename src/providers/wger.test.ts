@@ -247,7 +247,7 @@ describe("WgerProvider", () => {
 
   it("reports a safe error when Wger token refresh fails unexpectedly", async () => {
     const setup = new WgerProvider(
-      async () => new Response("sensitive provider error", { status: 422 }),
+      async () => new Response("sensitive provider error", { status: 500 }),
     ).authSetup();
     if (!setup.manualToken) throw new Error("expected manual token authentication");
 
@@ -256,7 +256,11 @@ describe("WgerProvider", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
-      message: "Wger token refresh failed (422). Try again.",
+      name: "ProviderServiceUnavailableError",
+      providerId: "wger",
+      statusCode: 500,
+      responseBody: "",
+      message: "Wger token refresh failed (500). Try again.",
     });
     expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider error");
   });

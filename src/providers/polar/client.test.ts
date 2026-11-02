@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { PolarClient } from "./client.ts";
 
@@ -163,6 +166,17 @@ describe("PolarClient — response parsing", () => {
 });
 
 describe("PolarClient — API error responses", () => {
+  it.each([500, 525])("classifies upstream HTTP %s with provider identity", async (status) => {
+    const client = new PolarClient("token", async () => new Response("upstream", { status }));
+    const error = await client.getExercises().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "polar",
+      statusCode: status,
+      responseBody: "upstream",
+    });
+  });
+
   it("includes JSON error bodies in API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response('{"message":"bad"}', {
