@@ -184,6 +184,7 @@ function combineKayaSessionAttempts(logs: HydratedLogEntry[]): HydratedLogEntry[
     );
     if (
       !failed ||
+      !z.object({ attempts: z.number().int().positive() }).safeParse(failed.raw).success ||
       failed.climbId !== log.climbId ||
       failed.activityId !== log.activityId ||
       !failed.attempts.length ||

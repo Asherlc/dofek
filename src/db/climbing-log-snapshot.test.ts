@@ -8,6 +8,34 @@ const { persist } = vi.hoisted(() => ({ persist: vi.fn() }));
 vi.mock("./climbing-log-sync.ts", () => ({ persistClimbingLogEntries: persist }));
 
 describe("climbing snapshot parameter binding", () => {
+  it("retains and restores supported source identities within the same user and provider", async () => {
+    const input: ClimbingLogSyncInput = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      providerId: "kaya",
+      entries: [],
+    };
+    const retainedIds = ["kaya:session:1000:attempted:1000_2001"];
+    persist.mockResolvedValueOnce({ logEntryIds: [], recordsSynced: 0 });
+    const execute = vi.fn().mockResolvedValue([]);
+    const db = makeTransactionalTestDatabase({
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute,
+    });
+    expect(await persistClimbingLogSnapshot(db, input, retainedIds)).toEqual({
+      logEntryIds: [],
+      recordsSynced: 0,
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
+    const parameters = execute.mock.calls.map(
+      ([query]) => new PgDialect().sqlToQuery(query).params,
+    );
+    expect(parameters).toEqual([
+      [input.userId, input.providerId, [], retainedIds],
+      [input.userId, input.providerId, retainedIds],
+    ]);
+  });
   it("binds a large logbook as one UUID array within the PostgreSQL parameter limit", async () => {
     const logEntryIds = Array.from(
       { length: 65_534 },
