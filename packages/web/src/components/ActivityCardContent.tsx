@@ -120,7 +120,10 @@ export function ActivityCardContent({
                 className="relative z-20 h-4 w-4 cursor-pointer accent-accent"
               />
             ) : null}
-            <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
+            <ActivityTypeIcon
+              activityType={activity.primaryActivityType ?? activity.activityType}
+              variant="plain"
+            />
             <div className="min-w-0 flex-1">
               <h4 className="truncate text-base font-semibold">
                 {headingAction ?? activity.name ?? activityLabel}

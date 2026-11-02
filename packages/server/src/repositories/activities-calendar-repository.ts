@@ -55,7 +55,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = input.activityType
-      ? "AND activity.canonical_type = {activityType:String}"
+      ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
     const queryParams = {
       userId: this.userId,
@@ -201,6 +201,9 @@ function filterActivityRowsByType(
   activityType: string | undefined,
 ) {
   return activityType
-    ? activityRows.filter((activityRow) => activityRow.canonical_type === activityType)
+    ? activityRows.filter(
+        (activityRow) =>
+          (activityRow.primary_canonical_type ?? activityRow.canonical_type) === activityType,
+      )
     : activityRows;
 }

@@ -16,13 +16,17 @@ import {
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
+import { ActivityOverviewRepository } from "./activity-overview-repository.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
 describe("Activities list source tree hydration", () => {
   let context: TestContext;
   let repository: ActivitiesCalendarRepository;
+  let overviewRepository: ActivityOverviewRepository;
   const groupId = randomUUID();
+  const climbingGroupId = randomUUID();
+  const climbingMemberId = randomUUID();
   const ids = Array.from({ length: 5 }, () => randomUUID());
   const absentId = randomUUID();
   beforeAll(async () => {
@@ -31,6 +35,18 @@ describe("Activities list source tree hydration", () => {
     for (const provider of new Set(providers)) {
       await ensureProvider(context.db, provider, provider, undefined, userId);
     }
+    await ensureProvider(context.db, "kaya", "Kaya", undefined, userId);
+    await context.db.insert(activity).values({
+      id: climbingMemberId,
+      groupId: climbingGroupId,
+      userId,
+      providerId: "kaya",
+      externalId: "primary-type-climbing",
+      canonicalType: "climbing",
+      providerType: "rock_climbing",
+      startedAt: new Date("2026-10-02T14:00:00Z"),
+      endedAt: new Date("2026-10-02T14:30:00Z"),
+    });
     await context.db.insert(activity).values(
       providers.map((providerId, index) => ({
         id: ids[index],
@@ -111,10 +127,47 @@ describe("Activities list source tree hydration", () => {
       command: (options) => client.command({ ...options, query: rewrite(options.query) }),
       query: (options) => client.query({ ...options, query: rewrite(options.query) }),
     });
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_activities
+        (activity_id, user_id, provider_id, canonical_type, primary_canonical_type,
+         provider_type, name, started_at, ended_at, local_time_source,
+         primary_activity_id, primary_provider_id, member_activity_ids, source_external_ids, refreshed_at)
+        VALUES ('${climbingGroupId}','${userId}','peloton','cardio','climbing',
+          'cardio','Kaya climbing','2026-10-02 14:00:00','2026-10-02 14:30:00','unknown',
+          '${climbingMemberId}','kaya',['${climbingMemberId}'],
+          [map('providerId','kaya','externalId','primary-type-climbing','memberActivityId','${climbingMemberId}')],
+          '2026-10-02 14:35:00')`,
+    });
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
+    overviewRepository = new ActivityOverviewRepository(context.db, userId, "UTC", sensorStore);
   });
   afterAll(async () => {
     await context.cleanup();
+  });
+  it("filters cards and overview by primary type with representative fallback", async () => {
+    const input = { weeks: 1, endDate: "2026-10-02", activityType: "climbing" };
+    const days = await repository.getWeekList(input);
+    expect(days.flatMap((day) => day.activities)).toEqual([
+      expect.objectContaining({
+        id: climbingGroupId,
+        activityType: "cardio",
+        primaryActivityType: "climbing",
+      }),
+    ]);
+    expect(await overviewRepository.getActivityOverview(input)).toMatchObject({
+      activityCount: 1,
+      totalMinutes: 30,
+      activityTypes: ["climbing", "cycling"],
+    });
+    expect(
+      (await repository.getWeekList({ ...input, activityType: "cycling" }))
+        .flatMap((day) => day.activities)
+        .map((entry) => entry.id),
+    ).toEqual([groupId]);
+    expect(await repository.getWeekList({ ...input, activityType: "cardio" })).toEqual([]);
+    expect(
+      await overviewRepository.getActivityOverview({ ...input, activityType: "cardio" }),
+    ).toMatchObject({ activityCount: 0 });
   });
   it("hydrates stored evidence branches, duplicate provider records, and disconnected sources", async () => {
     const entries = (await repository.getWeekList({ weeks: 1, endDate: "2026-10-02" })).flatMap(

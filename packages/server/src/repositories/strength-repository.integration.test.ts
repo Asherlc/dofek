@@ -160,15 +160,13 @@ describe("StrengthRepository activity scope", () => {
         date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week', date_trunc('week', CURRENT_TIMESTAMP) - interval '1 week' + interval '1 hour', 'No sets')`);
       const repository = new StrengthRepository(isolatedContext.db, TEST_USER_ID, "UTC");
       const volume = (await repository.getVolumeOverTime(30)).map((week) => week.toDetail());
-      expect(volume).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            recordedSetCount: null,
-            recordedVolumeKg: null,
-            durationMinutes: 60,
-          }),
-        ]),
-      );
+      expect(volume).toEqual([
+        expect.objectContaining({
+          recordedSetCount: null,
+          recordedVolumeKg: null,
+          durationMinutes: 60,
+        }),
+      ]);
     } finally {
       await isolatedContext.cleanup();
     }

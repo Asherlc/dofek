@@ -208,6 +208,14 @@ with incomplete power coverage withheld from weekly totals.
 - **Redis pairing store**: Companion pairing uses Lua scripts over related Redis keys and is intended for the single-node Redis deployment used by Dofek. Redis Cluster requires every key touched by one Lua script to be in the same hash slot; supporting Cluster mode would require redesigning the pairing key names with Redis hash tags. See the Redis Cluster scaling and hash tag documentation: https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/ and https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags.
 - **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
 
+### Activity identity and filters
+
+Activity-list [filtering](src/repositories/activities-calendar-repository.ts) and
+[overview filter options](src/repositories/activity-overview-repository.ts) use
+the resolved primary activity type, falling back to the representative type when
+primary identity is unresolved. This matches web and mobile card icons while
+preserving the representative's sensor and metric responsibilities.
+
 ### Activity map readiness contract
 
 `calendar.weekList` and activity lists use the shared
