@@ -77,8 +77,9 @@ shared training catalogue contracts, affected imports, manifests, lockfile,
   release break. Moved the existing spelling rules (RED: 14 diagnostics; GREEN:
   zero); documented migrated exports and selected training 0.2.0. No compatibility
   aliases were added. Review otherwise confirmed preserved matching behavior.
-- The latest stable compiler for the new package is TypeScript 7.0.2; package
-  build passes with it. Other workspace compiler versions remain unchanged.
+- The package build was checked with TypeScript 7.0.2 as well as the existing
+  workspace compiler. CI's single-version policy requires using the shared
+  compiler, as training does, rather than declaring a second compiler version.
 - Publication completed on 2026-11-02 after the user completed owner web login.
   npm accepted `@dofek/climbing-catalogue@0.1.0`; registry metadata matched the
   verified tarball checksum. A fresh registry installation loaded all nine

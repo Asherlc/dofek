@@ -34823,3 +34823,25 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   publishing runbook and verification-before-completion for future bootstrap
   releases. Proposed checklist addition: verify the real child process has a PTY
   when interactive npm authentication fails under a command proxy.
+
+## 2026-11-02 — Climbing catalogue manifest consistency gate
+
+- Impact: [PR 3198](https://github.com/Asherlc/dofek/pull/3198) was blocked by
+  [Test / Sherif](https://github.com/Asherlc/dofek/actions/runs/41466603354/job/125349771396).
+  No production impact; the already published package's runtime is unaffected.
+- Evidence: `pnpm exec sherif` first failed with `dependencies should be ordered
+  alphabetically. unordered-dependencies`, then reported
+  `Dependency typescript has multiple versions defined in the workspace.`
+  The same command reproduced all three issues locally.
+- Root cause: the extraction appended dependency entries in the root/training
+  manifests and added a package-local compiler version different from the
+  workspace compiler, violating existing manifest consistency rules.
+- Direct fix: sort the two dependency lists and use the shared workspace compiler,
+  following training's existing tooling pattern. Remove the redundant compiler
+  declaration and its lockfile entries; preserve unrelated peer resolutions.
+- Validation: local Sherif passes without ignored rules; the package build and
+  all 452 standalone tests pass with the shared compiler. The corrected hosted
+  run is pending. No resilience knobs were added.
+- Retrospective: runtime/type checks did not exercise workspace manifest policy.
+  Proposed extraction checklist addition: run Sherif before publication and PR
+  creation. Reuse gh-fix-ci for exact failing-step evidence and the minimum fix.

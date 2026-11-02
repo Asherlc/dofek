@@ -47,12 +47,12 @@
     }
   },
   "dependencies": {
+    "@dofek/climbing-catalogue": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@maplibre/maplibre-gl-style-spec": "26.5.0",
     "@openbeta/sandbag": "0.0.55",
-    "zod": "4.6.7",
-    "@dofek/climbing-catalogue": "workspace:*"
+    "zod": "4.6.7"
   },
   "scripts": {
     "build": "tsc",
