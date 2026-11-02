@@ -286,3 +286,101 @@ it("prefers observed tags when wall and hold observations are missing", async ()
     "true",
   );
 });
+
+it("starts with contributing climbs selected and resets a removed selection", () => {
+  const view = renderStrengths(<ClimbingStrengths data={fixture} />);
+  expect(screen.getByText("Evening Arete")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Overhang · Sent/ }));
+  const changed = {
+    ...fixture,
+    panels: fixture.panels.map((panel) => ({
+      ...panel,
+      allGrades: {
+        ...panel.allGrades,
+        rows: panel.allGrades.rows.filter((row) => row.key !== "overhang"),
+      },
+    })),
+  };
+  view.rerender(<ClimbingStrengths data={changed} />);
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent("Vertical");
+  view.rerender(<ClimbingStrengths data={fixture} />);
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent("Vertical");
+});
+it("enables area metadata initially and forwards its toggle", () => {
+  const onChange = vi.fn();
+  const view = render(<ClimbingStrengths data={fixture} onIncludeAreaMetadataChange={onChange} />);
+  const toggle = screen.getByRole("checkbox", { name: "Include area metadata" });
+  expect(toggle).toHaveProperty("checked", true);
+  fireEvent.click(toggle);
+  expect(onChange).toHaveBeenCalledWith(false);
+  view.rerender(
+    <ClimbingStrengths
+      data={fixture}
+      includeAreaMetadata={false}
+      onIncludeAreaMetadataChange={onChange}
+    />,
+  );
+  expect(screen.getByRole("checkbox", { name: "Include area metadata" })).toHaveProperty(
+    "checked",
+    false,
+  );
+});
+it("expands source hierarchies with provider links and inherited area labels", async () => {
+  const initial = fixture;
+  const enriched = {
+    ...initial,
+    panels: initial.panels.map((panel) => ({
+      ...panel,
+      allGrades: {
+        ...panel.allGrades,
+        rows: panel.allGrades.rows.map((row) => ({
+          ...row,
+          cells: row.cells.map((cell) => ({
+            ...cell,
+            examples: cell.examples.map((example) => ({
+              ...example,
+              traitSources: [
+                {
+                  providerId: "mountain-project",
+                  url: "https://www.mountainproject.com/area/12",
+                  scope: "area" as const,
+                  name: "Auburn Quarry",
+                  trait: "Crimp",
+                },
+                {
+                  providerId: "kaya",
+                  url: "https://kaya-app.kayaclimb.com/climb/12",
+                  scope: "route" as const,
+                  name: "Source climb",
+                  trait: "Technical",
+                },
+              ],
+            })),
+          })),
+        })),
+      },
+    })),
+  };
+  render(<ClimbingStrengths data={enriched} />);
+  expect(screen.getByText("Area metadata")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("Sources for Evening Arete · Area metadata"));
+  expect(screen.getByText("Auburn Quarry")).toBeTruthy();
+  expect(screen.getByText("Crimp")).toBeTruthy();
+  expect(screen.getByText("Source climb")).toBeTruthy();
+  expect(screen.getByText("Technical")).toBeTruthy();
+  const link = screen.getByRole("link", { name: "Mountain Project" });
+  expect(link).toHaveAttribute("href", "https://www.mountainproject.com/area/12");
+});
+it("keeps contributing climbs visible alongside enrichment errors", () => {
+  render(
+    <ClimbingStrengths
+      data={{
+        ...fixture,
+        enrichmentPending: true,
+        enrichmentErrors: ["Reconnect Kaya and retry."],
+      }}
+    />,
+  );
+  expect(screen.getByText("Reconnect Kaya and retry.")).toBeTruthy();
+  expect(screen.getByText("Evening Arete")).toBeTruthy();
+});

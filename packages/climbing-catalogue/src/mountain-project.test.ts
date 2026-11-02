@@ -26,6 +26,21 @@ const response = (rows: unknown[], total = rows.length) =>
     total: { value: total, relation: "eq" },
     hits: rows.map((row) => ({ _source: row })),
   });
+function adapter(fetchFn: typeof fetch) {
+  return new MountainProjectCatalogueAdapter(async (input, init) => {
+    const match = /\/areas\/(\d+)/.exec(String(input));
+    if (match)
+      return Response.json({
+        id: Number(match[1]),
+        title: "Northeast Face",
+        coordinates: [-122, 37],
+        sections: [],
+        access_notes: [],
+        route_type_counts: {},
+      });
+    return fetchFn(input, init);
+  });
+}
 describe("MountainProjectCatalogueAdapter", () => {
   it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
     const fetchFn = vi
@@ -38,7 +53,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         ),
       );
     expect(
-      await new MountainProjectCatalogueAdapter(fetchFn).search({
+      await adapter(fetchFn).search({
         ...seed,
         aliases: ["Up", "Down", "Left start"],
       }),
@@ -52,7 +67,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         const name = new URL(String(input)).searchParams.get("q");
         return response(name === "Up" || overlap ? [{ ...route, title: "Up" }] : []);
       });
-      const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+      const result = await adapter(fetchFn).search({
         ...seed,
         aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
       });
@@ -68,7 +83,7 @@ describe("MountainProjectCatalogueAdapter", () => {
       const url = new URL(String(input));
       return response(url.searchParams.get("q") === seed.name ? [route] : [], 100);
     });
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+    const result = await adapter(fetchFn).search({
       ...seed,
       aliases: ["Up", "Down", "Left start"],
     });
@@ -87,10 +102,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         url.searchParams.get("q") === seed.name && url.searchParams.get("from") === "0" ? 2 : 0,
       );
     });
-    expect(
-      (await new MountainProjectCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] }))
-        .complete,
-    ).toBe(true);
+    expect((await adapter(fetchFn).search({ ...seed, aliases: ["Up"] })).complete).toBe(true);
     expect(
       fetchFn.mock.calls.map(([input]) => {
         const url = new URL(String(input));
@@ -112,7 +124,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         types: ["TR"],
       }),
     );
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+    const result = await adapter(fetchFn).search({
       ...seed,
       providerId: "mountain-project",
       references: [{ providerId: "mountain-project", externalId: "105736399" }],
@@ -130,7 +142,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         types: ["TR"],
       }),
     );
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+    const result = await adapter(fetchFn).search({
       ...seed,
       providerId: "openbeta",
       externalId: "f3a2b199-c2d3-59b8-8f12-dd7ce734e88b",
@@ -145,14 +157,14 @@ describe("MountainProjectCatalogueAdapter", () => {
   it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
     "retains name-related result %s without removing qualifiers",
     async (title) => {
-      const result = await new MountainProjectCatalogueAdapter(
+      const result = await adapter(
         vi.fn<typeof fetch>().mockResolvedValue(response([{ ...route, title }])),
       ).search({ ...seed, name: "The Great Roof" });
       expect(result.candidates[0]?.name).toBe(title);
     },
   );
   it("uses the seed's source-declared aliases for discovery", async () => {
-    const result = await new MountainProjectCatalogueAdapter(
+    const result = await adapter(
       vi
         .fn<typeof fetch>()
         .mockImplementation(async (input) =>
@@ -177,7 +189,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         },
       ]),
     );
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search(seed);
+    const result = await adapter(fetchFn).search(seed);
     expect(result).toMatchObject({
       complete: true,
       candidates: [
@@ -215,14 +227,12 @@ describe("MountainProjectCatalogueAdapter", () => {
           2,
         ),
       );
-    expect(
-      (await new MountainProjectCatalogueAdapter(fetchFn).search(seed)).candidates,
-    ).toHaveLength(2);
+    expect((await adapter(fetchFn).search(seed)).candidates).toHaveLength(2);
     expect(String(fetchFn.mock.calls[1]?.[0])).toContain("from=1");
   });
   it("stops repeated pages and caps distinct pages as incomplete", async () => {
     const repeated = vi.fn<typeof fetch>().mockImplementation(async () => response([route], 1000));
-    expect((await new MountainProjectCatalogueAdapter(repeated).search(seed)).complete).toBe(false);
+    expect((await adapter(repeated).search(seed)).complete).toBe(false);
     expect(repeated).toHaveBeenCalledTimes(2);
     let id = 0;
     const unique = vi.fn<typeof fetch>().mockImplementation(async () =>
@@ -237,7 +247,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         1000,
       ),
     );
-    expect((await new MountainProjectCatalogueAdapter(unique).search(seed)).complete).toBe(false);
+    expect((await adapter(unique).search(seed)).complete).toBe(false);
     expect(unique).toHaveBeenCalledTimes(3);
   });
   it("reads original-source route details without searching and scopes parent coordinates", async () => {
@@ -251,7 +261,7 @@ describe("MountainProjectCatalogueAdapter", () => {
         types: ["Trad", "TR"],
       }),
     );
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+    const result = await adapter(fetchFn).search({
       ...seed,
       providerId: "mountain-project",
       externalId: "105734660",
@@ -278,9 +288,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     response([{ ...route, url: "https://evil.example/route/105734660" }]),
   ])("fails loudly on malformed, blocked, or foreign catalogue responses", async (value) => {
     await expect(
-      new MountainProjectCatalogueAdapter(vi.fn<typeof fetch>().mockResolvedValue(value)).search(
-        seed,
-      ),
+      adapter(vi.fn<typeof fetch>().mockResolvedValue(value)).search(seed),
     ).rejects.toThrow(/Mountain Project/);
   });
   it.each([
@@ -289,7 +297,7 @@ describe("MountainProjectCatalogueAdapter", () => {
   ])("validates original source before outbound requests", async (source) => {
     const fetchFn = vi.fn<typeof fetch>();
     await expect(
-      new MountainProjectCatalogueAdapter(fetchFn).search({
+      adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         ...source,
@@ -300,17 +308,13 @@ describe("MountainProjectCatalogueAdapter", () => {
 
   it("reports malformed JSON with source context", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response("not json"));
-    await expect(new MountainProjectCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(
-      /Mountain Project/,
-    );
+    await expect(adapter(fetchFn).search(seed)).rejects.toThrow(/Mountain Project/);
   });
   it("rejects an unexpected response origin", async () => {
     const value = Response.json({});
     Object.defineProperty(value, "url", { value: "https://evil.example" });
     await expect(
-      new MountainProjectCatalogueAdapter(vi.fn<typeof fetch>().mockResolvedValue(value)).search(
-        seed,
-      ),
+      adapter(vi.fn<typeof fetch>().mockResolvedValue(value)).search(seed),
     ).rejects.toThrow(/unexpected redirect/);
   });
 
@@ -326,7 +330,7 @@ describe("MountainProjectCatalogueAdapter", () => {
       }),
     );
     await expect(
-      new MountainProjectCatalogueAdapter(fetchFn).search({
+      adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         externalId: "105734660",
@@ -337,7 +341,7 @@ describe("MountainProjectCatalogueAdapter", () => {
   it("retains every literal public type without converting it to a technique", async () => {
     const types = ["Trad", "Sport", "TR", "Mixed", "Aid", "Alpine"];
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([{ ...route, tags: types }]));
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search(seed);
+    const result = await adapter(fetchFn).search(seed);
     expect(result.candidates[0]?.tags).toEqual(
       types.map((label) => ({
         kind: "climb_type",
@@ -364,7 +368,7 @@ describe("MountainProjectCatalogueAdapter", () => {
       return response([]);
     });
     expect(
-      await new MountainProjectCatalogueAdapter(fetchFn).search({
+      await adapter(fetchFn).search({
         ...seed,
         name: "Crack & Corner",
       }),
@@ -374,9 +378,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     const fetchFn = vi
       .fn<typeof fetch>()
       .mockResolvedValue(response([{ ...route, title: "  ＣＲＡＧＭＯＮＴ\t  Crack  " }]));
-    expect(
-      (await new MountainProjectCatalogueAdapter(fetchFn).search(seed)).candidates,
-    ).toHaveLength(1);
+    expect((await adapter(fetchFn).search(seed)).candidates).toHaveLength(1);
   });
   it("retains distinct Unicode spellings as literal approximate suggestions", async () => {
     const fetchFn = vi
@@ -384,7 +386,7 @@ describe("MountainProjectCatalogueAdapter", () => {
       .mockResolvedValue(response([{ ...route, title: "Straße Crack" }]));
     expect(
       (
-        await new MountainProjectCatalogueAdapter(fetchFn).search({
+        await adapter(fetchFn).search({
           ...seed,
           name: "STRASSE CRACK",
         })
@@ -405,9 +407,7 @@ describe("MountainProjectCatalogueAdapter", () => {
           },
         ]),
       );
-      expect(
-        (await new MountainProjectCatalogueAdapter(fetchFn).search(seed)).candidates[0],
-      ).toMatchObject({
+      expect((await adapter(fetchFn).search(seed)).candidates[0]).toMatchObject({
         kind: "boulder",
         grade: null,
         locations: [{ name: "Wall", coordinates: null }],
@@ -418,9 +418,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     const fetchFn = vi
       .fn<typeof fetch>()
       .mockResolvedValue(response([{ ...route, breadcrumbs: "" }]));
-    expect(
-      (await new MountainProjectCatalogueAdapter(fetchFn).search(seed)).candidates[0]?.locations,
-    ).toEqual([]);
+    expect((await adapter(fetchFn).search(seed)).candidates[0]?.locations).toEqual([]);
   });
   it.each([
     "/prefix/route/105734660/x",
@@ -431,7 +429,7 @@ describe("MountainProjectCatalogueAdapter", () => {
   ])("rejects an invalid source path %s before requesting", async (path) => {
     const fetchFn = vi.fn<typeof fetch>();
     await expect(
-      new MountainProjectCatalogueAdapter(fetchFn).search({
+      adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         externalId: "105734660",
@@ -448,7 +446,7 @@ describe("MountainProjectCatalogueAdapter", () => {
   ])("rejects credentials embedded in source URLs", async (sourceUrl) => {
     const fetchFn = vi.fn<typeof fetch>();
     await expect(
-      new MountainProjectCatalogueAdapter(fetchFn).search({
+      adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         externalId: "105734660",
@@ -462,7 +460,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     async (externalId) => {
       const fetchFn = vi.fn<typeof fetch>();
       await expect(
-        new MountainProjectCatalogueAdapter(fetchFn).search({
+        adapter(fetchFn).search({
           ...seed,
           providerId: "mountain-project",
           externalId,
@@ -474,7 +472,7 @@ describe("MountainProjectCatalogueAdapter", () => {
   it("rejects mismatched source URL and ID before any remote work", async () => {
     const fetchFn = vi.fn<typeof fetch>();
     await expect(
-      new MountainProjectCatalogueAdapter(fetchFn).search({
+      adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         externalId: "99",
@@ -487,7 +485,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([route]));
     expect(
       (
-        await new MountainProjectCatalogueAdapter(fetchFn).search({
+        await adapter(fetchFn).search({
           ...seed,
           providerId: "mountain-project",
         })
@@ -499,7 +497,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([route]));
     expect(
       (
-        await new MountainProjectCatalogueAdapter(fetchFn).search({
+        await adapter(fetchFn).search({
           ...seed,
           providerId: "thecrag",
           externalId: "foreign-climb",
@@ -522,13 +520,13 @@ describe("MountainProjectCatalogueAdapter", () => {
           types: ["Boulder"],
         }),
       );
-      const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+      const result = await adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         externalId: "105734660",
         sourceUrl: "https://www.mountainproject.com/route/105734660",
       });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         complete: true,
         candidates: [
           {
@@ -550,7 +548,14 @@ describe("MountainProjectCatalogueAdapter", () => {
                 inheritedFrom: null,
               },
             ],
-            locations: [{ externalId: "5", name: "Wall", scope: "area", coordinates: null }],
+            locations: [
+              {
+                externalId: "5",
+                name: "Northeast Face",
+                scope: "area",
+                coordinates: { latitude: 37, longitude: -122 },
+              },
+            ],
           },
         ],
       });
@@ -575,7 +580,7 @@ describe("MountainProjectCatalogueAdapter", () => {
       }),
     );
     await expect(
-      new MountainProjectCatalogueAdapter(fetchFn).search({
+      adapter(fetchFn).search({
         ...seed,
         providerId: "mountain-project",
         externalId: "105734660",
@@ -586,9 +591,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     const fetchFn = vi
       .fn<typeof fetch>()
       .mockResolvedValue(response([{ ...route, id: "routes.42" }]));
-    await expect(new MountainProjectCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(
-      /inconsistent route identity/,
-    );
+    await expect(adapter(fetchFn).search(seed)).rejects.toThrow(/inconsistent route identity/);
   });
   it("reports HTTP rejection even when the body is valid search JSON", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
@@ -596,16 +599,14 @@ describe("MountainProjectCatalogueAdapter", () => {
         status: 403,
       }),
     );
-    await expect(new MountainProjectCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(
-      /HTTP 403/,
-    );
+    await expect(adapter(fetchFn).search(seed)).rejects.toThrow(/HTTP 403/);
   });
   it("retains the original malformed-JSON cause for diagnostics", async () => {
     const cause = new SyntaxError("Unexpected JSON token");
     const value = Response.json({});
     vi.spyOn(value, "json").mockRejectedValue(cause);
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(value);
-    await expect(new MountainProjectCatalogueAdapter(fetchFn).search(seed)).rejects.toMatchObject({
+    await expect(adapter(fetchFn).search(seed)).rejects.toMatchObject({
       message: "Mountain Project catalogue returned malformed JSON; retry later.",
       cause,
     });
@@ -616,18 +617,12 @@ describe("MountainProjectCatalogueAdapter", () => {
       value: "https://www.mountainproject.com/api/v2/search",
     });
     expect(
-      (
-        await new MountainProjectCatalogueAdapter(
-          vi.fn<typeof fetch>().mockResolvedValue(allowed),
-        ).search(seed)
-      ).candidates,
+      (await adapter(vi.fn<typeof fetch>().mockResolvedValue(allowed)).search(seed)).candidates,
     ).toHaveLength(1);
     const redirected = response([route]);
     Object.defineProperty(redirected, "redirected", { value: true });
     await expect(
-      new MountainProjectCatalogueAdapter(
-        vi.fn<typeof fetch>().mockResolvedValue(redirected),
-      ).search(seed),
+      adapter(vi.fn<typeof fetch>().mockResolvedValue(redirected)).search(seed),
     ).rejects.toThrow(/unexpected redirect/);
   });
   it.each([
@@ -638,7 +633,7 @@ describe("MountainProjectCatalogueAdapter", () => {
     const fetchFn = vi
       .fn<typeof fetch>()
       .mockImplementation(async () => Response.json({ total, hits: [] }));
-    expect(await new MountainProjectCatalogueAdapter(fetchFn).search(seed)).toEqual({
+    expect(await adapter(fetchFn).search(seed)).toEqual({
       candidates: [],
       complete: false,
     });
@@ -651,9 +646,134 @@ describe("MountainProjectCatalogueAdapter", () => {
         Response.json({ total: { value: 1, relation: "gte" }, hits: [{ _source: route }] }),
       )
       .mockResolvedValueOnce(Response.json({ total: { value: 1, relation: "gte" }, hits: [] }));
-    const result = await new MountainProjectCatalogueAdapter(fetchFn).search(seed);
+    const result = await adapter(fetchFn).search(seed);
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(1);
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });
+
+it("hydrates trusted parent area prose and counts without turning them into route facts", async () => {
+  const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    if (String(input).includes("/areas/"))
+      return Response.json({
+        id: 5,
+        title: "Northeast Face",
+        url: "https://www.mountainproject.com/area/5/northeast-face",
+        parent: null,
+        coordinates: [-122, 37],
+        sections: [{ title: "Description", html: "<p>Sandstone <b>slab</b>.</p>" }],
+        access_notes: [{ title: "Access", html: "<p>Stay on trails.</p>" }],
+        route_type_counts: { total: 7, trad: 4 },
+      });
+    return Response.json({
+      id: 105734660,
+      title: route.title,
+      url: route.url,
+      parent: { id: 5, name: "Northeast Face" },
+      types: ["Trad"],
+    });
+  });
+  const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+    ...seed,
+    providerId: "mountain-project",
+    externalId: "105734660",
+  });
+  expect(result.candidates[0]?.locations[0]).toMatchObject({
+    externalId: "5",
+    coordinates: { latitude: 37, longitude: -122 },
+    context: {
+      sections: [
+        {
+          sourceKey: "sections.0",
+          label: "Description",
+          text: "Sandstone slab.",
+          inheritedFrom: null,
+        },
+        {
+          sourceKey: "access_notes.0",
+          label: "Access",
+          text: "Stay on trails.",
+          inheritedFrom: null,
+        },
+      ],
+      statistics: [
+        { sourceKey: "route_type_counts.total", label: "Total", value: 7 },
+        { sourceKey: "route_type_counts.trad", label: "trad", value: 4 },
+      ],
+    },
+  });
+  expect(result.candidates[0]?.tags).toEqual([
+    {
+      kind: "climb_type",
+      sourceKey: "type",
+      label: "Trad",
+      category: null,
+      scope: "direct",
+      inheritedFrom: null,
+    },
+  ]);
+});
+
+it("retains labelled ancestry and hydrates the immediate broader area", async () => {
+  const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    if (String(input).includes("/routes/"))
+      return Response.json({
+        id: 105734660,
+        title: route.title,
+        url: route.url,
+        parent: { id: 5, name: "Face" },
+        types: ["Trad"],
+      });
+    const id = String(input).endsWith("/5") ? 5 : 6;
+    return Response.json({
+      id,
+      title: id === 5 ? "Face" : "Park",
+      parent: id === 5 ? { id: 6, name: "Park" } : null,
+      breadcrumbs: id === 5 ? "California > Berkeley > Park" : "California > Berkeley",
+      coordinates: id === 5 ? [-122, 37] : [-123, 38],
+      sections: [{ title: "Description", html: `<p>Area ${id}</p>` }],
+      access_notes: [],
+      route_type_counts: {},
+    });
+  });
+  const result = await new MountainProjectCatalogueAdapter(fetchFn).search({
+    ...seed,
+    providerId: "mountain-project",
+    externalId: "105734660",
+  });
+  expect(result.candidates[0]?.locations.map((location) => location.name)).toEqual([
+    "California",
+    "Berkeley",
+    "Park",
+    "Face",
+  ]);
+  expect(result.candidates[0]?.locations.at(-2)?.context?.sections[0]?.text).toBe("Area 6");
+  expect(fetchFn).toHaveBeenCalledTimes(3);
+});
+
+it.each([null, { id: 6, title: "Other", sections: [], access_notes: [], route_type_counts: {} }])(
+  "rejects unavailable or mismatched trusted parent areas",
+  async (area) => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) =>
+      Response.json(
+        String(input).includes("/areas/")
+          ? area
+          : {
+              id: 105734660,
+              title: route.title,
+              url: route.url,
+              parent: { id: 5, name: "Face" },
+              types: ["Trad"],
+            },
+      ),
+    );
+    await expect(
+      new MountainProjectCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "mountain-project",
+        externalId: "105734660",
+      }),
+    ).rejects.toThrow(/area details.*invalid/);
+  },
+);

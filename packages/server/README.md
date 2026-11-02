@@ -116,7 +116,8 @@ with incomplete power coverage withheld from weekly totals.
   category while leaving the original `panels` dimensions unchanged. Tags keep
   provider/category/source identity; repeated observations contribute one climb
   per tag. The [source decoder](../../src/climbing-tags.ts) reads existing raw
-  payloads without a migration. Catalogue tags remain reference information.
+  payloads without a migration. Cached, identity-checked catalogue route/area
+  evidence can additionally supply missing trait dimensions, as described below.
   The [aggregation](src/services/climbing-strengths.ts) supplies one panel per
   breakdown dimension for the selection made by the existing page filters.
   It retains semantic context and display grade system in same-grade radar
@@ -133,6 +134,27 @@ with incomplete power coverage withheld from weekly totals.
   assumes missing Mountain Project/OpenBeta rock settings are outdoor for reads
   and global filters. Explicit settings take precedence; imported raw catalogue
   rows are unchanged. Other missing settings appear as Unknown setting.
+- **Climbing catalogue enrichment**: Strengths loads authorized log seeds in bulk,
+  groups repeated source facts by the user-scoped v4 cache key, and queues missing
+  context through the existing catalogue worker. Provider HTTP requests run in
+  that worker; the chart request consumes cached observations and exposes pending
+  and error states. See the [enrichment repository](src/repositories/climbing-strengths-enrichment-repository.ts),
+  [bulk seed query](../../src/db/climbing-catalogue-seed.ts),
+  [cache service](../../src/climbing-catalogue.ts) and [worker](../../src/jobs/climbing-catalogue-job.ts).
+  The [trait projection](src/services/climbing-catalogue-traits.ts) accepts route
+  evidence only after identity, kind/setting and conflict checks. Area context may
+  come from that accepted ancestry or an independently corroborated recorded
+  local area; a possible route match alone does not establish route traits.
+  Recorded wall/hold facts retain precedence across repeated observations;
+  descriptions, statistics and tag counts never supply measured route values.
+  `includeAreaMetadata: false` excludes area-sourced contributions. The
+  [aggregation](src/services/climbing-strengths.ts) computes metrics on the server
+  and preserves source attribution in the [shared contract](../training/src/climbing-strengths.ts).
+  Paired [web](../web/src/components/ClimbingStrengths.tsx) and
+  [mobile](../mobile/components/ClimbingStrengths.tsx) views place a source tree
+  beside the chart; individual catalogue details keep area prose/statistics in
+  disclosures through the [web catalogue view](../web/src/components/ClimbingCatalogueContext.tsx)
+  and [mobile catalogue view](../mobile/components/ClimbingCatalogueContext.tsx).
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)

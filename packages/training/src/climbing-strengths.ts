@@ -2,6 +2,14 @@ import { z } from "zod";
 
 const count = z.number().int().nonnegative();
 const rate = z.number().min(0).max(100).nullable();
+export const climbingTraitSourceSchema = z.object({
+  providerId: z.string(),
+  url: z.url(),
+  scope: z.enum(["route", "area"]),
+  name: z.string(),
+  trait: z.string(),
+});
+export type ClimbingTraitSource = z.infer<typeof climbingTraitSourceSchema>;
 const example = z.object({
   logEntryId: z.string(),
   activityId: z.string().nullable(),
@@ -12,6 +20,7 @@ const example = z.object({
   sourceName: z.string(),
   sourceUrl: z.string().nullable(),
   outcome: z.enum(["sent", "not_sent"]).nullable(),
+  traitSources: z.array(climbingTraitSourceSchema).optional(),
 });
 const cell = z.object({
   grade: z.string(),
@@ -61,7 +70,7 @@ const panel = profile.extend({
   key: z.string(),
   contextKey: z.string(),
   contextLabel: z.string(),
-  dimension: z.enum(["wall_angle", "hold_type", "setting"]),
+  dimension: z.enum(["wall_angle", "hold_type", "style", "setting"]),
   setting: z.enum(["indoor", "outdoor", "unknown"]).nullable(),
   allGrades: profile,
   gradeAdjustedStrengths: z.array(
@@ -84,6 +93,8 @@ const tagPanel = panel.extend({
 });
 export const climbingStrengthsSchema = z.object({
   panels: z.array(panel),
+  enrichmentPending: z.boolean().optional(),
+  enrichmentErrors: z.array(z.string()).optional(),
   tagPanels: z.array(tagPanel).optional(),
   coverage: z.object({ unknownOutcomes: count, missingGrades: count, missingIdentity: count }),
 });

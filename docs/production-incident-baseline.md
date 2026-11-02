@@ -34971,6 +34971,183 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   source-copy, and runtime-link lists before shipping an extraction; reuse
   gh-fix-ci to trace startup failures to the first fatal container log.
 
+## 2026-11-02 — Vertical-Life enrichment PR checks
+
+- Symptoms and impact: PR #3201 was blocked by Spell Check and CodeQL; no
+  production impact. The [spell job](https://github.com/Asherlc/dofek/actions/runs/41510008251/job/125499674949)
+  failed at `pnpm exec cspell --no-progress` with `Unknown word` errors for
+  literal upstream fixture vocabulary. The
+  [CodeQL annotation](https://github.com/Asherlc/dofek/runs/125500276046)
+  reported `This replaces only the first occurrence of "camp-4"` in the
+  deliberately invalid URL fixture.
+- Root cause and direct fix: register the genuine vendor words in the existing
+  test-file dictionary override and write the malicious URL fixture literally,
+  rather than constructing it with a replacement. No production escaping path
+  or security check was disabled.
+- Validation: focused spell, lint and adapter regression checks pass locally;
+  hosted validation remains pending on the corrective commit. Remaining risk:
+  the PR is not ready until its hosted checks pass. No retries or waits added.
+- Retrospective: include the existing spelling command in adapter fixture
+  verification, and prefer literal malformed URL fixtures. Reuse gh-fix-ci for
+  first-failure evidence before changing checks.
+## 2026-11-02 — Earlier Peloton aerobic-efficiency points excluded
+
+- Symptoms / impact: the cycling aerobic-efficiency chart displays no points
+  from November 2025 through February 2026 despite retained rides with power
+  and heart-rate data. Read-only production queries found 27 Peloton-only rides
+  with both channels across those four months; none passed the chart filter.
+- Evidence / root cause: the [efficiency model](../analytics/models/read_models/activity_aerobic_efficiency.sql)
+  uses `HAVING count() >= 300`, and the [cycling repository](../packages/server/src/repositories/cycling-analytics-repository.ts)
+  also requires `z2_samples >= 300`. The [Peloton importer](../src/providers/peloton.ts)
+  requests and timestamps samples every five seconds. Counting 300 observations
+  therefore imposes approximately 25 minutes rather than the advertised five.
+  Reproducing the production ASOF pairing for the February 10 02:17 UTC ride
+  returned 256 paired Zone 2 observations, average power 171.1 W and average
+  heart rate 128.5 bpm; its 541 heart-rate observations span 2,700 seconds.
+- Instrumentation: production analytics logs showed the 44-model dbt stage
+  completed successfully at 19:05:59 UTC; this exclusion is a semantic filter,
+  not a query exception. A subsequent cycling-power projector pending-work error
+  is separate from the reproduced sample-count exclusion.
+- Status / remaining work: correction implemented and validated locally; production
+  remains unresolved pending deployment and historical count verification. No
+  production writes have occurred. No retries or waits were introduced.
+- Retrospective: comparing monthly eligibility with the original sample cadence
+  exposed the failure directly. Proposed analytics checklist addition: verify
+  duration thresholds using both one-second and sparse provider observations.
+  Reuse systematic-debugging and integration-tests-ready for the correction.
+- Correction prepared: integrate paired intervals split at either sensor's
+  timestamps, require 300 elapsed seconds, and preserve the actual heart-rate
+  observation count. Cap power holds and heart-rate gaps at ten seconds;
+  explicit zero/null power ends coverage. Averages use time weights. The
+  [model](../analytics/models/read_models/activity_aerobic_efficiency.sql) and
+  [live repository query](../packages/server/src/repositories/efficiency-repository.ts)
+  use [ClickHouse window frames](https://clickhouse.com/docs/reference/functions/window-functions/leadInFrame)
+  before zone filtering, so gaps and time outside Zone 2 are not bridged.
+  The cycling reader accepts duration-qualified rows with fewer than 300 samples.
+  Both web and mobile consume these shared server results; no API/schema change.
+- Validation: observed the five-second and oversampling regressions fail before
+  implementation; independent-cadence tests also reproduced and then verified
+  a review finding about power updates between heart-rate observations. Twenty-two
+  real ClickHouse cases exercise both model and live SQL, and 86 focused unit
+  tests pass. A subsequent boundary fixture reproduced and verified the bounded
+  valid hold before a long heart-rate gap. Server and fixture TypeScript checks
+  pass. A read-only production preview bounded to November 1, 2025 through
+  November 3, 2026 recovered 21
+  qualifying points in November–February (2, 7, 7, 5 by month), with the earliest
+  at November 15, 2025 20:56:52 UTC. No production data has been rewritten yet.
+- Rollout: deploy the corrected analytics model and server reader together.
+  The existing model recomputes all activity bounds on every build, and its
+  refreshed rows dirty the downstream cycling model, so the first successful
+  normal build applies the historical correction without a separate full refresh
+  or backfill. Verify the monthly eligibility counts after that build and cache
+  expiry; until deployment, the original exclusion remains active. No resilience
+  knobs were added; the ten-second bound limits credited sensor coverage.
+- Local validation prerequisite: `pnpm compose -- up -d --wait clickhouse` first
+  failed with `all predefined address pools have been fully subnetted`.
+  `docker network prune -f` removed unused networks; the same Compose command
+  then succeeded. No running containers or database volumes were removed.
+- Proposed guideline refinement: duration-based analytics fixtures should include
+  one-second, five-second, subsecond, and independently timed channels. Continue
+  using systematic-debugging, integration-tests-ready, and independent code review.
+- Full-history operability check: the first read-only corrected query exceeded a
+  diagnostic 1 GiB query budget (`MEMORY_LIMIT_EXCEEDED`, 1.09 GiB requested);
+  the original query completed under that same budget in 5.552 seconds. Restricting
+  heart-rate windowing to activity/user keys that have power samples removed
+  work that cannot contribute a paired interval. Repeating the corrected query
+  with the unchanged 1 GiB/60-second operator bounds completed in 14.807 seconds,
+  with 309.59 MiB peak memory, yielding 197 eligible activities across 1,784 retained activity bounds, versus
+  113 with the original query. The 22 integration cases and SQLFluff pass again.
+  These diagnostic bounds are operator-only; no runtime limits were increased.
+- PR validation interruption: after `main` advanced, GitHub reported PR 3202
+  as `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`; the latest commit had
+  no CI run, while the `pull_request_target` automerge check still ran.
+  [GitHub documents](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)
+  that merge conflicts prevent `pull_request` workflows. Merged current
+  `main` into the existing branch and retained both incident-note additions;
+  no branch switch, rebase, or workflow-policy change was needed.
+- CI fixture follow-up: [integration shard 3](https://github.com/Asherlc/dofek/actions/runs/41512763818/job/125510954149)
+  failed `pnpm exec vitest run --project integration --coverage --shard=3/4`.
+  Its only failing case was `activity_aerobic_efficiency resolves corrections
+  and tombstones before aggregation`; the first assertion diff was
+  `z2_samples: expected 301, received 300`. The unmerged-parts fixture has
+  readings at seconds 0–300, which bound 300 contributing elapsed intervals;
+  its final reading contributes no duration under the corrected calculation.
+  Updated that one expected count to 300 with an explanatory comment, retaining
+  all correction/tombstone assertions and production behavior. The same case
+  reproduced locally before the edit; after it, both relevant real-ClickHouse
+  suites pass all 26 tests, and targeted Biome plus diff checks pass. No waits,
+  retries, skips, or runtime knobs were changed. The
+  [hosted rerun](https://github.com/Asherlc/dofek/actions/runs/41517816883)
+  passed all 102 checks, including all four integration shards.
+  Proposed validation refinement: include existing cross-model
+  consumer fixtures alongside model-specific regression tests; reuse gh-fix-ci
+  and integration-tests-ready when CI exposes stale aggregate expectations.
+- Post-merge local verification exposed a fixture resource mismatch:
+  `pnpm exec vitest run --project integration` for the consumer and efficiency
+  suites failed with `(total) memory limit exceeded`, RSS 1.26 GiB against the
+  local server's 1.25 GiB ceiling. Query logs showed roughly 589–602 MB per
+  failing query, with no explicit thread setting; the local default was
+  `auto(10)`. The production model and existing consumer fixture already use
+  `max_threads=1`, but the new model renderer/live-query fixture omitted it.
+  Applied the same one-thread execution setting to both fixture paths. The
+  unchanged 26 cases then passed with `--retry=0`; query logs show one thread
+  and 17–39 MiB peaks. No memory limits, runtime settings, or retries were raised.
+  Both incident-log entries were preserved when resolving a second conflict
+  from an intervening `main` update; the incoming orchestrator's 15 tests pass.
+
+
+- Final review follow-up: merge was blocked by five unresolved conversations,
+  consistent with GitHub's [conversation-resolution protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-conversation-resolution-before-merging).
+  Added real-engine boundary cases before changing behavior: seven failed,
+  identifying the missing final bounded heart-rate hold, zero-denominator model
+  output, and missing access-window predicates on both repository paths.
+  Restored the ten-second trailing hold and denominator guard; reused the
+  existing entitlement predicates for the model and fallback. Added a 299-second
+  exclusion fixture alongside the 300-second inclusion fixture to enforce the
+  upper hold bound. All 36 model/consumer database cases pass without retries.
+- Review performance refinement: use raw positive-power activity keys for the
+  heart-rate membership lookup, keeping window calculations in the pairing
+  path; apply the same restriction to the live fallback. Ordinary ClickHouse
+  [CTEs are substituted at each reference](https://clickhouse.com/docs/reference/statements/select/with),
+  so the key lookup should not reference the windowed power relation.
+  Read-only production comparison completed in 24.712 seconds before and
+  23.989 seconds after, at 325.63/325.66 MiB respectively, with unchanged
+  operator-only 1 GiB/60-second bounds. No runtime limits were increased.
+  Proposed runbook refinement: check required review conversations alongside
+  CI status before merging; retain elapsed-time and access-boundary fixtures
+  when revising shared analytics readers.
+
+## 2026-11-02 — Cycling power backlog prevents threshold history publication
+
+- Status: unresolved in production at investigation time; correction validated
+  locally, deployment and recovery verification outstanding.
+- Symptoms and impact: cycling threshold history is unavailable, and the fitness,
+  fatigue and form chart reports activities without usable training load.
+- Evidence: production analytics-worker logged at 19:06:02 UTC:
+  `analytics-build failed: Cycling power projection has pending work: 1274 activities and 2 users`.
+  Read-only ClickHouse checks found 100 observation rows, zero published user
+  histories, and 308 eligible activities with power samples. Some cycling
+  activities also lack both heart-rate and power samples; finishing projection
+  cannot manufacture missing source evidence.
+- Root cause: the [build orchestrator](../scripts/run-analytics-build.ts) invokes
+  the [bounded projector](../src/analytics/cycling-power-projector.ts) once, then
+  fails on its remaining backlog. The projector intentionally processes at most
+  100 activities and publishes only users whose observations are current.
+- Direct fix: drain successive bounded projection batches before
+  dependent models and processing success, failing explicitly if pending work
+  stops decreasing. No sleeps, increased timeouts, or suppressed errors.
+- Validation and remaining risk: all 15 orchestrator tests pass, including a
+  regression first observed failing on the initial pending batch and a stalled
+  backlog failure case. Review added a fixed projection instant across batches
+  and a regression crossing UTC midnight, preventing completed users from
+  becoming dirty solely because the projection day changes during a build.
+  Production recovery remains unverified. Separately
+  determine whether unsupported rides have sufficient source sensor coverage.
+- Retrospective: worker logs and persisted row counts exposed the orchestration
+  boundary quickly. Proposed runbook addition: check projection backlog and
+  published history counts before advising users to record more rides. Reuse
+  check-logs and systematic-debugging for this investigation.
+
 ## 2026-11-02 — OpenBeta API unavailable during tick sync (unresolved)
 
 - Impact: OpenBeta tick discovery failed for one recorded production sync;
@@ -35080,6 +35257,7 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   Reuse gh-fix-ci and integration-tests-ready to distinguish assertion drift
   from database or transport failures.
 
+<<<<<<< HEAD
 ## 2026-11-02 — Historical Ride with GPS ascent mixes recordings (repaired)
 
 - **Symptoms / impact:** [Lunch Mountain Bike Ride](https://dofek.fit/activity/c2ae2bed-844d-48de-b013-23300d514883), recorded November 5, 2023, serves 5,107.7 m ascent and 5,092.8 m descent over 5,638 seconds. Web and mobile consume the same summary. The altitude range is only 191.2 m.
@@ -35158,3 +35336,56 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Safety / current state:** Public health returned `status: ok`, web replicas were 2/2 using about 234/237 MiB of their 500 MiB limits, replacement worker memory was about 200 MiB under 512 MiB, and disk headroom was 19 GiB. The controller stopped on the failed-job state, not its website/disk guard. No job retry, stalled-limit increase, service restart, storage deletion, merge, or deployment was performed in this check. A read-only diagnostic first failed because the production image has no tsx package; rerunning it with the image's native Node TypeScript support read the queue successfully without modifying the image.
 - **Disposition / next action:** Mark ingestion blocked and leave recomputation/final MTB verification incomplete. Retain the stopped controller, failed job, and temporary scripts as evidence. Remove heartbeat `d2eec35c` after recording this blocker, as the monitoring instruction requires when recovery needs operator input. First resolve the pending branch-integration approval and validate the durable fix through normal merged coverage/CI; agree on rollout and full-history recovery before restarting admission.
 - **Retrospective / proposed runbook wording:** Queue state plus timestamped worker logs distinguished a genuine terminal job failure from healthy website status. Proposed addition for approval: “Before a long history sync, verify durable completed-work checkpoints and coordinate worker rollouts; treat exhausted stalled recovery as a blocker, not a reason to raise retry limits.” Reuse check-logs and systematic-debugging. The operational objective remains unresolved.
+=======
+
+## 2026-11-02 — Local Redpanda AIO exhaustion blocked integration startup
+
+- **Symptoms / impact:** `pnpm test:integration src/db/climbing-catalogue-seed.integration.test.ts`
+  failed during dependency startup with `container strong-donkey-redpanda-1 is unhealthy`.
+  This affected local verification only; no production impact was observed.
+- **Evidence / cause:** Redpanda logged `required nr_events 1 exceeds ... aio-max-nr 65536`.
+  The local Linux host exhausted its asynchronous I/O request capacity. The
+  [Linux kernel AIO documentation](https://cdn.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)
+  describes this host-wide limit; Redpanda's
+  [readiness checklist](https://docs.redpanda.com/streaming/current/deploy/redpanda/manual/production/production-readiness/)
+  includes available AIO capacity among its checks.
+- **Validation / status:** The focused real-PostgreSQL seed suite ran with the
+  generated test environment and passed all 9 tests without Redpanda. This
+  verifies the database behavior, not recovery of the full integration wrapper.
+  Local Redpanda capacity remains unresolved. No repository configuration,
+  runtime workaround, retry or timeout change was made.
+- **Retrospective / proposal:** Container logs separated a host prerequisite
+  failure from application database behavior. Add a local AIO-capacity check to
+  the testing runbook after the operator confirms the host remedy; reuse
+  integration-tests-ready and systematic-debugging for a repeated startup failure.
+
+## 2026-11-02: Climbing enrichment mutation coverage gaps
+
+- **Symptoms / impact:** PR #3201's CI mutation shards 1, 2, 7 and 8 failed;
+  release readiness was blocked, with no production impact. The first fatal
+  line in [shard 7](https://github.com/Asherlc/dofek/actions/runs/41529398889/job/125568677130)
+  was `Final mutation score 69.09 under breaking threshold 75`, from
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+- **Cause:** missing boundary cases in inherited area metadata and trait
+  consolidation tests, plus schema tests retaining an initializer created before
+  the active runtime mutant. The latter required fresh schema imports, consistent
+  with [Stryker's static-mutation explanation](https://stryker-mutator.io/docs/mutation-testing-elements/static-mutants/).
+- **Direct fix:** add executable contract/provenance/identity/dimension cases,
+  reload schemas per test, and keep consolidation as the single authority for
+  route precedence by removing its redundant downstream provenance gate.
+- **Validation:** exact local CI mutation ranges pass for contracts (100%),
+  trait extraction (98.47%), theCrag (98.40%) and aggregation (94.44%); the combined
+  revision and the new CI run are being verified. Remaining survivors in those completed ranges
+  are equivalent guards/defaults with no distinguishable valid input. No
+  mutation threshold, exclusion, timeout or retry change was made.
+- **Follow-up / remaining risk:** keep CI status authoritative for the final
+  combined revision and retain native/public and pending-job cache regression
+  coverage. The new CI run remains pending at this entry's initial recording.
+
+## 2026-11-02 — GitHub OIDC 503 blocked the mobile bundle prerequisite
+
+- **Symptoms / impact:** PR #3201 CI run 41533616052 stopped the Metro bundle job before compilation, with no observed production impact. The [failed job](https://github.com/Asherlc/dofek/actions/runs/41533616052/job/125581746203) logged `curl: (22) The requested URL returned error: 503` at 22:06:30 UTC.
+- **Evidence / cause:** the failing command was the GitHub OIDC token request in `.github/actions/load-infisical-secrets/action.yml`. It is the only curl in that step, and runs before Infisical login. GitHub returned HTTP 503; the underlying service-side cause is unknown. [GitHub status](https://www.githubstatus.com/) reported all systems operational when checked afterward.
+- **Mitigation / status:** an operator job rerun was attempted, but GitHub rejected it with HTTP 403 because the containing workflow was still running. Recovery remains unverified at this recording. No application, retry, timeout, secret or workflow configuration was changed. GitHub documents the [job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
+- **Follow-up / retrospective:** rerun the failed prerequisite after the workflow completes and verify that Metro executes. Keep the token-minting failure distinct from Infisical authentication and bundling failures; reuse gh-fix-ci for log-based classification.
+>>>>>>> origin/main

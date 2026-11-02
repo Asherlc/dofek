@@ -19,11 +19,10 @@ const missing: ClimbingCatalogueContext = {
   sources: [],
 };
 
-function key(seed: CatalogueSeed): string {
-  const fingerprint = createHash("sha256")
-    .update(JSON.stringify(catalogueSeedSchema.parse(seed)))
-    .digest("hex");
-  return `${seed.userId}:climbing.catalogueContext:v2:${fingerprint}`;
+export function catalogueSeedCacheKey(seed: CatalogueSeed): string {
+  const { logEntryId: _logEntryId, ...source } = catalogueSeedSchema.parse(seed);
+  const fingerprint = createHash("sha256").update(JSON.stringify(source)).digest("hex");
+  return `${seed.userId}:climbing.catalogueContext:v4:${fingerprint}`;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */
@@ -36,7 +35,7 @@ export class ClimbingCatalogueService {
   }
 
   async read(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
-    const cached = await this.cache.get(key(seed));
+    const cached = await this.cache.get(catalogueSeedCacheKey(seed));
     if (cached === undefined) return { ...missing, sources: [] };
     const result = climbingCatalogueContextSchema.parse(cached);
     return result.expiresAt && Date.parse(result.expiresAt) <= Date.now()
@@ -45,7 +44,7 @@ export class ClimbingCatalogueService {
   }
 
   async invalidate(seed: CatalogueSeed): Promise<void> {
-    await this.cache.invalidate(key(seed));
+    await this.cache.invalidate(catalogueSeedCacheKey(seed));
   }
 
   async markFailed(seed: CatalogueSeed, error: unknown): Promise<void> {
@@ -56,7 +55,7 @@ export class ClimbingCatalogueService {
         ? previous.expiresAt
         : new Date(Date.now() + DAY).toISOString();
     await this.cache.set(
-      key(seed),
+      catalogueSeedCacheKey(seed),
       {
         ...previous,
         status: "error",
@@ -80,7 +79,7 @@ export class ClimbingCatalogueService {
         fetchedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + ttl).toISOString(),
       });
-      await this.cache.set(key(seed), result, ttl);
+      await this.cache.set(catalogueSeedCacheKey(seed), result, ttl);
       return result;
     } catch (error) {
       await this.markFailed(seed, error);

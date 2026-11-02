@@ -11,6 +11,79 @@ import {
   climbingStrengthsSendLabel,
 } from "./climbing-strengths.ts";
 
+it("retains source-scoped evidence on contributing climbs and style panels", () => {
+  const example = {
+    logEntryId: "log",
+    activityId: null,
+    name: "Route",
+    grade: "5.10a",
+    date: "2026-10-20",
+    providerId: "eight-a",
+    sourceName: "Vertical-Life",
+    sourceUrl: null,
+    outcome: "sent",
+  };
+  const cell = {
+    grade: "5.10a",
+    sends: 1,
+    climbs: 1,
+    unknownOutcomes: 0,
+    successRate: 100,
+    differencePercentagePoints: 0,
+    sampleStatus: "limited",
+    examples: [],
+  };
+  const profile = { grades: [], rows: [], progress: [] };
+  const panel = {
+    ...profile,
+    key: "style",
+    contextKey: "routes",
+    contextLabel: "Routes",
+    dimension: "style",
+    setting: null,
+    allGrades: profile,
+    gradeAdjustedStrengths: [],
+    coverage: { missingTraits: 0, unknownOutcomes: 0 },
+  };
+  const evidence = [
+    {
+      providerId: "eight-a",
+      url: "https://www.8a.nu/crags/test",
+      scope: "area",
+      name: "Quarry",
+      trait: "Crimps",
+    },
+  ];
+  const enriched = {
+    coverage: { missingGrades: 0, missingIdentity: 0, unknownOutcomes: 0 },
+    panels: [
+      {
+        ...panel,
+        rows: [
+          {
+            key: "technical",
+            label: "Technical",
+            cells: [{ ...cell, examples: [{ ...example, traitSources: evidence }] }],
+          },
+        ],
+      },
+    ],
+  };
+  const parsed = climbingStrengthsSchema.parse(enriched);
+  expect(parsed.panels[0]?.rows[0]?.cells[0]?.examples[0]).toMatchObject({
+    traitSources: evidence,
+  });
+});
+it("retains actionable enrichment state without adding display metrics", () => {
+  const state = {
+    panels: [],
+    coverage: { missingGrades: 0, missingIdentity: 0, unknownOutcomes: 0 },
+    enrichmentPending: true,
+    enrichmentErrors: ["Source unavailable; retry later."],
+  };
+  expect(climbingStrengthsSchema.parse(state)).toEqual(state);
+});
+
 it("preserves additive recorded tag panels and selects their supplied pooled profile", () => {
   const profile = { grades: [], rows: [], progress: [] };
   const tagPanel = {

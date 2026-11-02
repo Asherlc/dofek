@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { within } from "storybook/test";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
 import {
@@ -188,4 +189,69 @@ export const SourceCategories: Story = {
 };
 export const SparseUnknownSourceTags: Story = {
   args: { data: climbingStrengthsSparseTagsFixture },
+};
+
+const areaMetadataFixture = {
+  ...fixture,
+  panels: fixture.panels.map((panel) => ({
+    ...panel,
+    allGrades: {
+      ...panel.allGrades,
+      rows: panel.allGrades.rows.map((row) => ({
+        ...row,
+        cells: row.cells.map((cell) => ({
+          ...cell,
+          examples: cell.examples.map((example) => ({
+            ...example,
+            traitSources: [
+              {
+                providerId: "mountain-project",
+                url: "https://www.mountainproject.com/area/105733961/auburn-quarry",
+                scope: "area" as const,
+                name: "Auburn Quarry",
+                trait: row.label,
+              },
+              {
+                providerId: "kaya",
+                url: "https://kaya-app.kayaclimb.com/climb/source-climb",
+                scope: "route" as const,
+                name: example.name,
+                trait: row.label,
+              },
+            ],
+          })),
+        })),
+      })),
+    },
+  })),
+};
+function AreaMetadataPreview() {
+  const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
+  return (
+    <ClimbingStrengths
+      data={areaMetadataFixture}
+      includeAreaMetadata={includeAreaMetadata}
+      onIncludeAreaMetadataChange={setIncludeAreaMetadata}
+    />
+  );
+}
+export const AreaMetadata: Story = {
+  render: () => <AreaMetadataPreview />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByLabelText("Sources for Evening Arete · Area metadata"));
+  },
+};
+export const EnrichmentPending: Story = {
+  args: { data: { ...areaMetadataFixture, enrichmentPending: true } },
+};
+export const EnrichmentError: Story = {
+  args: {
+    data: {
+      ...areaMetadataFixture,
+      enrichmentErrors: [
+        "Kaya catalogue request failed; sync or reconnect Kaya and retry catalogue enrichment.",
+      ],
+    },
+  },
 };

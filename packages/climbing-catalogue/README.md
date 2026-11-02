@@ -54,6 +54,28 @@ and `name`, `scope: "area" | "climb"`, and nullable
 `coordinates: { latitude, longitude }`. Area coordinates and route coordinates
 remain distinct observations.
 
+## Source area context
+
+Area locations may include optional `context` with a source URL, nullable literal
+area type, plain-text sections, attributed tags with nullable source counts, and
+source statistics. Sections and tags retain inherited-area labels when supplied.
+These remain area observations: descriptions, counts and categorical steepness
+do not become route measurements. Climb-scoped locations cannot carry this
+context; see the [schemas](src/contracts.ts) and [plain-text projection](src/area-context.ts).
+
+| Source | Area fields and hydration boundary |
+| --- | --- |
+| KAYA | Inline public and authenticated native destination/area/subarea fields supply descriptions, access text, type and access flags. Gym profiles retain address and website context. The separately verified native selection excludes unsupported public-only short descriptions. Parent references retain native IDs; no recursive location query is added. See the [reader](src/kaya.ts) and [native location client](https://set.plastick.rocks/location-11950.js.map). |
+| Mountain Project | A native route's local area and its immediate parent supply source sections, access notes and route-type counts. Name-discovery hits lack a proven parent ID, so their area context remains unavailable rather than guessed. See the [reader](src/mountain-project.ts). |
+| OpenBeta | The local area and immediate parent supply description/location text and source grade/discipline totals. Area reads are shared within a search and validate native UUIDs. See the [reader](src/openbeta.ts) and upstream [Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql). |
+| theCrag | Proven hierarchy IDs supply area pages with matching canonical native IDs. Only `.regions__read > .regions__inner > .node-info` owns area sections/tags; inherited headers also apply to tags without an inheritance title. Type and displayed route totals retain their source meaning. See the [reader](src/thecrag.ts), [tagging definitions](https://www.thecrag.com/en/article/tagging) and [area documentation](https://www.thecrag.com/en/article/documentingacrag). |
+| 8a.nu / Vertical-Life | Verified crag and broader area records supply descriptions/access, crag flags with literal counts, and source statistics. Native crag/area identities are checked before attaching context. See the [reader](src/vertical-life.ts). |
+
+Absent fields stay absent or nullable; each reader retains its observed source
+contract rather than synthesizing tags from prose. Hydration requests are shared
+within a search; callers own longer-lived caching, as defined by the
+[adapter interface](src/contracts.ts) and readers above.
+
 ## Match decisions
 
 | Confidence | Meaning |
@@ -81,11 +103,25 @@ supply your own adapter for one of the supported provider namespaces.
 | `mountain-project` | `MountainProjectCatalogueAdapter` | `(fetchFn = fetch)` |
 | `openbeta` | `OpenBetaCatalogueAdapter` | `(fetchFn)` |
 | `thecrag` | `TheCragCatalogueAdapter` | `(fetchFn)` |
+| `vertical-life` | `VerticalLifeCatalogueAdapter` | `(fetchFn)` |
 
 Kaya's token resolver returns `Promise<string | null>`; return null for public
 metadata or resolve the current user's access token for authenticated details.
 Supply your own rate-limited fetch, request deadlines, or specialized transport.
 The library does not load credentials or set up sessions.
+
+Vertical-Life uses the `eight-a` provider namespace and public outdoor route
+search. Native detail lookup uses an 8a.nu route URL and validates its unified
+ID against the recorded ID. Discovery shares a three-page budget across names;
+incomplete results remain suggestions. Coordinates, wall angles and tags are
+left unknown when absent from the response. The transport reads the
+[collection search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3)
+and [outdoor detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)
+contracts used by the [deployed web client](https://www.8a.nu/_nuxt/BvPRvgJk.js).
+The search record's `zlaggableId` matches the detail record's `unifiedId`;
+the detail record's separate `zlaggableId` is not the catalogue identity
+([example search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3),
+[example detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)).
 
 The adapters read observed application endpoints and may need updates when
 providers change them. They are unofficial and unaffiliated with the providers.

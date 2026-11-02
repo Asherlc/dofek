@@ -234,6 +234,36 @@ A separate conflict story keeps the candidate possible and displays the server's
 reason. Catalogue grades and tags remain attributed observations, independent
 of that identity decision; see the [matching design](../../docs/superpowers/specs/2026-10-29-climbing-catalogue-matching-design.md).
 
+### Cached catalogue traits in strengths
+
+The [catalogue location contract](../climbing-catalogue/src/contracts.ts) now
+carries optional area-only source context: URL, literal type, plain-text sections,
+attributed tags/counts and statistics. The paired
+[web](../web/src/components/ClimbingCatalogueContext.tsx) and
+[mobile](../mobile/components/ClimbingCatalogueContext.tsx) disclosures keep area
+names concise and expose inherited provenance with the source link.
+
+The [strengths contract](src/climbing-strengths.ts) carries route/area trait
+sources, pending enrichment and errors. The server's
+[enrichment repository](../server/src/repositories/climbing-strengths-enrichment-repository.ts)
+loads seeds in bulk, shares a user/source-fact cache across repeated log entries,
+and enqueues missing context through the existing worker. The
+[cache service](../../src/climbing-catalogue.ts) uses v4 keys and keeps source
+observations disposable; it never writes identities or traits into recorded logs.
+
+Only cached, explicitly observed traits enter the
+[trait projection](../server/src/services/climbing-catalogue-traits.ts). Accepted
+route identity and compatibility checks gate route evidence; independently
+corroborated local areas can contribute area evidence without declaring a route
+match. Recorded route wall/hold facts retain precedence. Descriptions, source
+statistics and tag counts do not become route measurements. The
+[aggregation](../server/src/services/climbing-strengths.ts) supports
+`includeAreaMetadata: false` to exclude area contributions and returns computed
+chart values with source attribution. Both
+[web](../web/src/components/ClimbingStrengths.tsx) and
+[mobile](../mobile/components/ClimbingStrengths.tsx) show source provenance beside
+the chart within the existing Styles/Progress views.
+
 ### Running response versions
 
 The existing `running.dynamics` and `running.dynamicsV2` procedures accept
@@ -367,6 +397,13 @@ Please [open an issue](https://github.com/Asherlc/dofek/issues) for bugs or API
 proposals, or [submit a pull request](https://github.com/Asherlc/dofek/pulls).
 
 ### Climbing strengths view migration
+
+The [strengths query](../server/src/routers/climbing.ts) negotiates
+`responseVersion: 1 | 2`, defaulting to `1`. Version 1 preserves the historical
+panel-dimension vocabulary; version 2 includes the unified `style` dimension.
+Both repository clients explicitly request version 2. This follows the existing
+[climbing response negotiation](src/climbing-log-response.ts) pattern and keeps
+older installed clients able to parse their responses.
 
 The `climbing-strengths-views` subpath now exports
 [`CLIMBING_STRENGTHS_TABS` and `ClimbingStrengthsTab`](src/climbing-strengths-views.ts)

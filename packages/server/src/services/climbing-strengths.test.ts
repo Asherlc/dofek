@@ -18,6 +18,156 @@ const recordedTag = (patch: Partial<ClimbingTag> = {}): ClimbingTag => ({
   ...patch,
 });
 
+describe("catalogue-enriched training", () => {
+  const areaSource = {
+    providerId: "eight-a",
+    scope: "area" as const,
+    name: "Quarry",
+    url: "https://www.8a.nu/crags/quarry",
+  };
+  const routeSource = {
+    ...areaSource,
+    scope: "route" as const,
+    name: "Problem",
+    url: "https://www.8a.nu/routes/problem",
+  };
+  const enriched = () =>
+    observation({
+      catalogueTraits: [
+        { dimension: "hold_type", value: "crimp", source: areaSource },
+        { dimension: "style", value: "technical", source: areaSource },
+        { dimension: "wall_angle", value: "overhang", source: routeSource },
+      ],
+    });
+  it("keeps style evidence independent from recorded holds and angles in mixed source cohorts", () => {
+    const result = analyze([
+      { ...enriched(), holdTypes: ["jug"], wallAngle: { category: "slab" as const } },
+      observation({ identity: "recorded-only", holdTypes: ["pinch"] }),
+    ]);
+    expect(result.panels.find((p) => p.dimension === "style")?.rows).toMatchObject([
+      {
+        key: "technical",
+        cells: [
+          { climbs: 1, examples: [{ traitSources: [{ ...areaSource, trait: "Technical" }] }] },
+        ],
+      },
+    ]);
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows.map((r) => r.key)).toEqual([
+      "jug",
+      "pinch",
+    ]);
+    expect(result.panels.find((p) => p.dimension === "wall_angle")?.rows.map((r) => r.key)).toEqual(
+      ["slab"],
+    );
+  });
+  it("applies the area control to recorded-only observations without requiring catalogue evidence", () => {
+    const result = buildClimbingStrengths(
+      [observation({ holdTypes: ["jug"] })],
+      { endDate: "2026-10-31" },
+      { includeAreaMetadata: false },
+    );
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows).toMatchObject([
+      { key: "jug", cells: [{ climbs: 1 }] },
+    ]);
+  });
+  it("keeps conflicting recorded holds and slopes unknown even when area metadata offers a value", () => {
+    const result = analyze([
+      { ...enriched(), holdTypes: ["jug"], wallAngle: { category: "slab" as const } },
+      observation({ holdTypes: ["pinch"], wallAngle: { category: "vertical" } }),
+    ]);
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.coverage.missingTraits).toBe(1);
+    expect(result.panels.find((p) => p.dimension === "wall_angle")?.coverage.missingTraits).toBe(1);
+    expect(result.panels.find((p) => p.dimension === "style")?.rows).toMatchObject([
+      { key: "technical", cells: [{ climbs: 1 }] },
+    ]);
+  });
+  it("preserves direct source precedence separately for holds and slopes", () => {
+    const entry = enriched();
+    entry.catalogueTraits = [
+      { dimension: "hold_type", value: "crimp", source: routeSource },
+      { dimension: "hold_type", value: "sloper", source: areaSource },
+      { dimension: "wall_angle", value: "overhang", source: areaSource },
+    ];
+    const result = analyze([entry]);
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows.map((r) => r.key)).toEqual([
+      "crimp",
+    ]);
+    expect(result.panels.find((p) => p.dimension === "wall_angle")?.rows.map((r) => r.key)).toEqual(
+      ["overhang"],
+    );
+    expect(result.panels.map((p) => p.dimension)).toEqual(["wall_angle", "hold_type", "setting"]);
+  });
+  it("retains only the selected grip's sources and deduplicates repeated source evidence", () => {
+    const entry = enriched();
+    const sloperSource = { ...routeSource, url: "https://www.8a.nu/routes/sloper" };
+    entry.catalogueTraits = [
+      { dimension: "hold_type", value: "crimp", source: routeSource },
+      { dimension: "hold_type", value: "sloper", source: sloperSource },
+      { dimension: "style", value: "technical", source: areaSource },
+    ];
+    const result = analyze([entry, entry]);
+    const rows = result.panels.find((p) => p.dimension === "hold_type")?.rows;
+    expect(rows?.map((r) => [r.key, r.cells[0]?.examples[0]?.traitSources])).toEqual([
+      ["crimp", [{ ...routeSource, trait: "Crimp" }]],
+      ["sloper", [{ ...sloperSource, trait: "Sloper" }]],
+    ]);
+  });
+  it("uses area tags in the existing dimensions and attributes each contributing example", () => {
+    const result = analyze([enriched()]);
+    const holds = result.panels.find((p) => p.dimension === "hold_type");
+    expect(holds?.rows).toMatchObject([
+      {
+        key: "crimp",
+        cells: [{ climbs: 1, examples: [{ traitSources: [{ ...areaSource, trait: "Crimp" }] }] }],
+      },
+    ]);
+    expect(result.panels.find((p) => p.dimension === "style")?.rows).toMatchObject([
+      { key: "technical", cells: [{ climbs: 1 }] },
+    ]);
+    expect(
+      result.panels.find((p) => p.dimension === "wall_angle")?.rows[0]?.cells[0]?.examples[0]
+        ?.traitSources,
+    ).toEqual([{ ...routeSource, trait: "Overhang" }]);
+  });
+  it("excludes area metadata from charts, progress and examples while keeping direct route evidence", () => {
+    const result = buildClimbingStrengths(
+      [enriched()],
+      { startDate: "2026-10-01", endDate: "2026-10-31" },
+      { includeAreaMetadata: false },
+    );
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows).toEqual([]);
+    expect(result.panels.find((p) => p.dimension === "style")?.progress[0]?.rows).toEqual([]);
+    expect(result.panels.find((p) => p.dimension === "wall_angle")?.rows).toMatchObject([
+      { key: "overhang", cells: [{ climbs: 1 }] },
+    ]);
+  });
+  it("prefers recorded traits across all repeated source observations over catalogue evidence", () => {
+    const result = analyze([
+      enriched(),
+      observation({ holdTypes: ["sloper"], wallAngle: { category: "slab" } }),
+    ]);
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows.map((r) => r.key)).toEqual([
+      "sloper",
+    ]);
+    expect(result.panels.find((p) => p.dimension === "wall_angle")?.rows.map((r) => r.key)).toEqual(
+      ["slab"],
+    );
+    expect(
+      result.panels.find((p) => p.dimension === "hold_type")?.rows[0]?.cells[0]?.examples[0]
+        ?.traitSources,
+    ).toBeUndefined();
+  });
+  it("prefers direct catalogue route traits over area tags and never weights by source tag counts", () => {
+    const entry = enriched();
+    entry.catalogueTraits?.push({ dimension: "hold_type", value: "sloper", source: routeSource });
+    const result = analyze([entry, entry]);
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows).toMatchObject([
+      { key: "sloper", cells: [{ climbs: 1 }] },
+    ]);
+    expect(result.panels.find((p) => p.dimension === "hold_type")?.rows).toHaveLength(1);
+  });
+});
+
 describe("recorded tag strengths", () => {
   it.each([
     { scope: "same-climb", sameDate: false },

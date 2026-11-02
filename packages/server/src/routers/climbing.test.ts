@@ -11,6 +11,7 @@ import {
 } from "../repositories/climbing-test-helpers.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
+import { observation } from "../services/climbing-strengths-test-helpers.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const { signActivityImage, readActivityImage } = vi.hoisted(() => ({
@@ -25,6 +26,22 @@ vi.mock("dofek/activity-images/storage", () => ({
 }));
 
 const catalogue = vi.hoisted(() => ({ read: vi.fn(), requestRefresh: vi.fn() }));
+const enrichment = vi.hoisted(() => ({
+  getContexts: vi.fn(async () => {
+    const errors: string[] = [];
+    return {
+      seeds: new Map(),
+      contexts: new Map(),
+      pending: false,
+      errors,
+    };
+  }),
+}));
+vi.mock("../repositories/climbing-strengths-enrichment-repository.ts", () => ({
+  ClimbingStrengthsEnrichmentRepository: class {
+    getContexts = enrichment.getContexts;
+  },
+}));
 vi.mock("../repositories/climbing-catalogue-repository.ts", () => ({
   ClimbingCatalogueRepository: class {
     read = catalogue.read;
@@ -331,6 +348,123 @@ describe("climbingRouter", () => {
     });
     expect(lookup).toHaveBeenCalledWith(null, { days: null, endDate: "2025-02-05" }, "2025-02-05");
   });
+  it.each([undefined, 1, 2] as const)(
+    "negotiates the strengths panel vocabulary for response version %s",
+    async (responseVersion) => {
+      vi.spyOn(ClimbingStrengthsRepository.prototype, "getObservations").mockResolvedValue([
+        observation({
+          catalogueTraits: [
+            {
+              dimension: "style",
+              value: "technical",
+              source: {
+                providerId: "openbeta",
+                scope: "route",
+                name: "Problem",
+                url: "https://openbeta.io/climb/route",
+              },
+            },
+          ],
+        }),
+      ]);
+      const result = await makeCaller().caller.strengths({
+        days: 30,
+        ...(responseVersion === undefined ? {} : { responseVersion }),
+      });
+      expect(result.panels.filter((p) => p.dimension === "style")).toHaveLength(
+        responseVersion === 2 ? 1 : 0,
+      );
+    },
+  );
+  it.each([true, false])(
+    "calculates training with includeAreaMetadata=%s and reports pending source reads",
+    async (includeAreaMetadata) => {
+      const entry = observation();
+      vi.spyOn(ClimbingStrengthsRepository.prototype, "getObservations").mockResolvedValue([entry]);
+      const seed = {
+        userId: "user-1",
+        logEntryId: "log",
+        providerId: "openbeta",
+        externalId: "route",
+        sourceUrl: null,
+        name: "Problem",
+        kind: "boulder",
+        setting: "indoor",
+        locations: [],
+      };
+      const context = {
+        status: "ready",
+        fetchedAt: null,
+        expiresAt: null,
+        error: null,
+        sources: [
+          {
+            providerId: "openbeta",
+            searchComplete: true,
+            matches: [
+              {
+                confidence: "source",
+                candidate: {
+                  providerId: "openbeta",
+                  externalId: "route",
+                  url: "https://openbeta.io/climb/route",
+                  name: "Problem",
+                  kind: "boulder",
+                  setting: "indoor",
+                  grade: null,
+                  angle: null,
+                  tags: [],
+                  locations: [
+                    {
+                      scope: "area",
+                      externalId: "area",
+                      name: "Wall",
+                      coordinates: null,
+                      context: {
+                        url: "https://openbeta.io/area/area",
+                        type: null,
+                        sections: [],
+                        tags: [
+                          {
+                            kind: "hold",
+                            sourceKey: "crimp",
+                            label: "Crimps",
+                            category: null,
+                            scope: "direct",
+                            inheritedFrom: null,
+                            count: null,
+                          },
+                        ],
+                        statistics: [],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+      enrichment.getContexts.mockResolvedValueOnce({
+        seeds: new Map([["log", seed]]),
+        contexts: new Map([["log", context]]),
+        pending: true,
+        errors: ["Catalogue source is unavailable; retry later."],
+      });
+      const result = await makeCaller().caller.strengths({
+        days: 30,
+        endDate: "2026-10-20",
+        includeAreaMetadata,
+      });
+      expect(
+        result.panels.find((p) => p.dimension === "hold_type")?.rows.map((r) => r.key),
+      ).toEqual(includeAreaMetadata ? ["crimp"] : []);
+      expect(result).toMatchObject({
+        enrichmentPending: true,
+        enrichmentErrors: ["Catalogue source is unavailable; retry later."],
+      });
+    },
+  );
   it("builds strengths panels from owned repository observations with the selected period and filters", async () => {
     const example = {
       logEntryId: "send-log",
