@@ -161,7 +161,7 @@ describe("WhoopClient.signIn", () => {
     );
   });
 
-  it("throws when userId cannot be fetched", async () => {
+  it("propagates bootstrap outages during sign-in", async () => {
     const callCount = { value: 0 };
 
     const fetchFn = createTypedMockFetch();
@@ -185,7 +185,7 @@ describe("WhoopClient.signIn", () => {
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
-      "could not determine user ID",
+      "WHOOP API service unavailable (500)",
     );
   });
 
@@ -207,13 +207,13 @@ describe("WhoopClient.signIn", () => {
   it("throws on non-JSON error response", async () => {
     const fetchFn = createMockFetch({
       ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
+      status: 400,
+      statusText: "Bad Request",
       body: "not json",
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
-      "WHOOP auth failed (500)",
+      "WHOOP auth failed (400)",
     );
   });
 
@@ -460,7 +460,7 @@ describe("WhoopClient.refreshAccessToken", () => {
     expect(result.refreshToken).toBe("keep-this-refresh");
   });
 
-  it("returns null userId when bootstrap fails", async () => {
+  it("propagates bootstrap outages during token refresh", async () => {
     const callCount = { value: 0 };
 
     const fetchFn = createTypedMockFetch();
@@ -482,9 +482,9 @@ describe("WhoopClient.refreshAccessToken", () => {
       return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
     });
 
-    const result = await WhoopClient.refreshAccessToken("refresh-token", fetchFn);
-
-    expect(result.userId).toBeNull();
+    await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
+    );
   });
 
   it("throws when no tokens in refresh response", async () => {
@@ -601,10 +601,18 @@ describe("WhoopClient._fetchUserId", () => {
     expect(result).toBe(77);
   });
 
-  it("returns null when response is not ok", async () => {
-    const fetchFn = createMockFetch({ status: 500, ok: false, body: {} });
-    const result = await WhoopClient._fetchUserId("token", fetchFn);
-    expect(result).toBeNull();
+  it.each([500, 503, 525])(
+    "propagates bootstrap HTTP %s as an upstream failure",
+    async (status) => {
+      const fetchFn = createMockFetch({ status, ok: false, body: {} });
+      await expect(WhoopClient._fetchUserId("token", fetchFn)).rejects.toBeInstanceOf(
+        ProviderServiceUnavailableError,
+      );
+    },
+  );
+  it("returns null for a rejected bootstrap request", async () => {
+    const fetchFn = createMockFetch({ status: 400, ok: false, body: {} });
+    await expect(WhoopClient._fetchUserId("token", fetchFn)).resolves.toBeNull();
   });
 
   it("returns null when no valid userId in response", async () => {
@@ -1383,7 +1391,7 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await expect(client.getWeightliftingWorkout("abc-123")).rejects.toThrow(
-      "WHOOP weightlifting API error (500)",
+      "WHOOP API service unavailable (500)",
     );
   });
 });
@@ -1414,7 +1422,7 @@ describe("WhoopClient API error handling", () => {
 
     await expect(
       client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
-    ).rejects.toThrow("WHOOP API error (500): Request failed.");
+    ).rejects.toThrow("WHOOP API service unavailable (500): Request failed.");
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
@@ -1678,13 +1686,13 @@ describe("cognitoCall error handling", () => {
   it("includes empty body text when response body is empty", async () => {
     const fetchFn = createMockFetch({
       ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
+      status: 400,
+      statusText: "Bad Request",
       body: "",
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
-      "WHOOP auth failed (500): Internal Server Error",
+      "WHOOP auth failed (400): Bad Request",
     );
   });
 });

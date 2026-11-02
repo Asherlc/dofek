@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { PolarClient } from "./client.ts";
 
@@ -163,83 +166,94 @@ describe("PolarClient — response parsing", () => {
 });
 
 describe("PolarClient — API error responses", () => {
+  it.each([500, 525])("classifies upstream HTTP %s with provider identity", async (status) => {
+    const client = new PolarClient("token", async () => new Response("upstream", { status }));
+    const error = await client.getExercises().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "polar",
+      statusCode: status,
+      responseBody: "upstream",
+    });
+  });
+
   it("includes JSON error bodies in API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response('{"message":"bad"}', {
-        status: 500,
+        status: 400,
         headers: { "content-type": "application/json" },
       });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      'Polar API error (500) for /exercises: {"message":"bad"}',
+      'Polar API error (400) for /exercises: {"message":"bad"}',
     );
   });
 
   it("handles API errors with JSON content-type but empty body", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("", {
-        status: 500,
+        status: 400,
         headers: { "content-type": "application/json" },
       });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      "Polar API error (500) for /exercises: (empty error body)",
+      "Polar API error (400) for /exercises: (empty error body)",
     );
   });
 
   it("redacts HTML error pages from API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("<html>error</html>", {
-        status: 500,
+        status: 400,
         headers: { "content-type": "text/html" },
       });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      "Polar API error (500) for /exercises: (HTML error page)",
+      "Polar API error (400) for /exercises: (HTML error page)",
     );
   });
 
   it("includes plain-text error bodies in API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("upstream unavailable", {
-        status: 500,
+        status: 400,
         headers: { "content-type": "text/plain" },
       });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      "Polar API error (500) for /exercises: upstream unavailable",
+      "Polar API error (400) for /exercises: upstream unavailable",
     );
   });
 
-  it("names the path and an empty-body placeholder when a 500 has no body or content type", async () => {
-    const fetchFn: typeof globalThis.fetch = async () => new Response(null, { status: 500 });
+  it("names the path and an empty-body placeholder when a 400 has no body or content type", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => new Response(null, { status: 400 });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getSleep()).rejects.toThrow(
-      "Polar API error (500) for /users/sleep: (empty error body)",
+      "Polar API error (400) for /users/sleep: (empty error body)",
     );
   });
 
   it("uses the empty-body placeholder for a whitespace-only plain-text error body", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("  \n", {
-        status: 500,
+        status: 400,
         headers: { "content-type": "text/plain" },
       });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getDailyActivity()).rejects.toThrow(
-      "Polar API error (500) for /users/activities: (empty error body)",
+      "Polar API error (400) for /users/activities: (empty error body)",
     );
   });
 });

@@ -28,6 +28,7 @@ function createMockFetch(response: {
   return vi.fn().mockResolvedValue({
     ok: response.ok,
     status: response.status ?? (response.ok ? 200 : 500),
+    headers: new Headers(),
     json: () => Promise.resolve(response.body),
     text: () => Promise.resolve(response.text ?? ""),
     arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
@@ -109,7 +110,7 @@ describe("ProviderHttpClient", () => {
       const longText = "x".repeat(600);
       const mockFetch = createMockFetch({
         ok: false,
-        status: 500,
+        status: 400,
         text: longText,
       });
       const client = new TestClient("tok", "https://api.test.com", mockFetch);

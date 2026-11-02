@@ -688,7 +688,7 @@ describe("ZivaMcpClient", () => {
   it("redacts other HTTP response bodies from transport errors", async () => {
     const privateBody = "private-diary-response-body";
     const harness = createFakeZivaMcpHarness({
-      httpErrors: { "tools/call": { status: 500, body: privateBody } },
+      httpErrors: { "tools/call": { status: 400, body: privateBody } },
     });
 
     const error = await withClient(harness, (client) =>
@@ -705,7 +705,7 @@ describe("ZivaMcpClient", () => {
       }),
       {
         tags: { provider: "ziva", mcpPhase: "call_tool" },
-        extra: { statusCode: 500 },
+        extra: { statusCode: 400 },
       },
     );
     expect(telemetryMocks.captureException.mock.calls[0]?.[0]).not.toHaveProperty("cause");

@@ -620,6 +620,10 @@ describe("CyclingAnalyticsProvider", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
+      name: "ProviderServiceUnavailableError",
+      providerId: "cycling_analytics",
+      statusCode: 500,
+      responseBody: "",
       message: "Cycling Analytics token validation failed (500). Try again.",
     });
     expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider outage");

@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -378,8 +379,10 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     expect(result.recordsSynced).toBe(0);
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "wger", statusCode: 500 });
     expect(result.errors.map((error) => error.message)).toContainEqual(
-      expect.stringContaining("activity: Wger API error (500)"),
+      expect.stringContaining("activity: wger API service unavailable (500)"),
     );
     const activityRows = await ctx.db
       .select()
@@ -415,8 +418,10 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     expect(result.recordsSynced).toBe(0);
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "wger", statusCode: 500 });
     expect(result.errors.map((error) => error.message)).toContainEqual(
-      expect.stringContaining("metric_stream: Wger API error (500)"),
+      expect.stringContaining("metric_stream: wger API service unavailable (500)"),
     );
     expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(0);
   });
