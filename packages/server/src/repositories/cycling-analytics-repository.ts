@@ -611,7 +611,7 @@ export class CyclingAnalyticsRepository {
           row.efficiency_factor != null &&
           row.efficiency_factor > 0 &&
           row.z2_samples != null &&
-          row.z2_samples >= 300,
+          row.z2_samples > 0,
       )
       .map((row) => ({
         date: row.date,
