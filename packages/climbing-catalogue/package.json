@@ -1,0 +1,100 @@
+{
+  "name": "@dofek/climbing-catalogue",
+  "version": "0.1.0",
+  "description": "Cross-provider climbing route search and conservative identity matching with attributed evidence",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/climbing-catalogue"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/climbing-catalogue#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "climbing",
+    "routes",
+    "search",
+    "matching",
+    "openbeta",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/search.ts",
+    "./contracts": "./src/contracts.ts",
+    "./matching": "./src/matching.ts",
+    "./geometry": "./src/geometry.ts",
+    "./kaya": "./src/kaya.ts",
+    "./kaya-tags": "./src/kaya-tags.ts",
+    "./mountain-project": "./src/mountain-project.ts",
+    "./openbeta": "./src/openbeta.ts",
+    "./thecrag": "./src/thecrag.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/search.d.ts",
+        "import": "./dist/search.js"
+      },
+      "./contracts": {
+        "types": "./dist/contracts.d.ts",
+        "import": "./dist/contracts.js"
+      },
+      "./matching": {
+        "types": "./dist/matching.d.ts",
+        "import": "./dist/matching.js"
+      },
+      "./geometry": {
+        "types": "./dist/geometry.d.ts",
+        "import": "./dist/geometry.js"
+      },
+      "./kaya": {
+        "types": "./dist/kaya.d.ts",
+        "import": "./dist/kaya.js"
+      },
+      "./kaya-tags": {
+        "types": "./dist/kaya-tags.d.ts",
+        "import": "./dist/kaya-tags.js"
+      },
+      "./mountain-project": {
+        "types": "./dist/mountain-project.d.ts",
+        "import": "./dist/mountain-project.js"
+      },
+      "./openbeta": {
+        "types": "./dist/openbeta.d.ts",
+        "import": "./dist/openbeta.js"
+      },
+      "./thecrag": {
+        "types": "./dist/thecrag.d.ts",
+        "import": "./dist/thecrag.js"
+      }
+    }
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --watch",
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "fuse.js": "7.5.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

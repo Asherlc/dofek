@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
 import {
   catalogueCandidateSchema,
   catalogueSearchResultSchema,
+} from "@dofek/climbing-catalogue/contracts";
+import { describe, expect, it } from "vitest";
+import {
   catalogueSeedSchema,
   climbingCatalogueConfidenceLabel,
   climbingCatalogueContextSchema,

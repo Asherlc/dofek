@@ -1,13 +1,13 @@
+import { z } from "zod";
 import {
   type CatalogueCandidate,
   type CatalogueSearchResult,
   type CatalogueSeed,
   type ClimbingCatalogueAdapter,
   catalogueCandidateSchema,
-} from "@dofek/training/climbing-catalogue";
-import { z } from "zod";
-import { catalogueNameMatch, catalogueSearchNames } from "../../climbing-catalogue-matching.ts";
-import { decodeKayaClimbingTags } from "./climbing-tags.ts";
+} from "./contracts.ts";
+import { decodeKayaClimbingTags } from "./kaya-tags.ts";
+import { catalogueNameMatch, catalogueSearchNames } from "./matching.ts";
 
 const origin = "https://kaya-app.kayaclimb.com";
 const endpoint = "https://kaya-beta.kayaclimb.com/graphql";

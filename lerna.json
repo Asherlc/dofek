@@ -15,7 +15,8 @@
     "packages/xert-client",
     "packages/zepp-client",
     "packages/zwift-client",
-    "packages/mobile/modules/whoop-ble"
+    "packages/mobile/modules/whoop-ble",
+    "packages/climbing-catalogue"
   ],
   "command": {
     "version": {

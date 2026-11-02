@@ -67,14 +67,14 @@ techniques and repository cases, not measured improvements.
 
 ## Gaps to measure before selecting an implementation
 
-The current [catalogue matcher](../src/climbing-catalogue-matching.ts) already
+The current [catalogue matcher](../packages/climbing-catalogue/src/matching.ts) already
 supports exact provider identities, explicit cross-provider references,
 source-declared aliases, normalized names, and fuzzy discovery suggestions.
 Approximate names alone stay `possible`. Geography uses a 100 m great-circle
 comparison and nearest-area hierarchy alignment; ambiguity and conflicts remain
 explicit. The original research text incorrectly described aliases and physical
 distance comparison as absent. The
-[matching tests](../src/climbing-catalogue-matching.test.ts) are the executable
+[matching tests](../packages/climbing-catalogue/src/matching.test.ts) are the executable
 reference for these existing rules.
 
 The fixtures do not provide independently labeled examples of aliases, different
@@ -82,7 +82,7 @@ hierarchy depths, nearby distinct climbs with identical names, source copying,
 or versioned indoor resets. They also cannot establish real-world precision,
 recall, probability calibration, or an appropriate automatic-match threshold.
 The current confidence labels are rule categories, not calibrated probabilities;
-see the [catalogue decision logic](../src/climbing-catalogue-matching.ts).
+see the [catalogue decision logic](../packages/climbing-catalogue/src/matching.ts).
 
 ## Evaluation procedure
 

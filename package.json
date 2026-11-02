@@ -175,7 +175,7 @@
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
     "release:npm:build": "lerna run build --stream",
-    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client",
+    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client packages/climbing-catalogue",
     "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
     "check:dependency-security": "tsx scripts/check-node-forge-security.ts && tsx scripts/check-braces-security.ts && tsx scripts/check-expo-zod-security.ts",
@@ -300,7 +300,6 @@
     "bullmq": "6.3.14",
     "cheerio": "1.2.0",
     "drizzle-orm": "0.45.2",
-    "fuse.js": "7.5.0",
     "impit": "0.14.7",
     "ioredis": "6.0.0",
     "kafkajs": "2.2.4",
@@ -316,7 +315,8 @@
     "winston": "3.19.0",
     "winston-transport": "4.9.0",
     "yauzl": "3.4.0",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@dofek/climbing-catalogue": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",

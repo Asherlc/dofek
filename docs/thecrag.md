@@ -96,7 +96,7 @@ to verify an owner-managed upstream revocation.
 
 ## Informational catalogue
 
-The separate [catalogue reader](../src/providers/thecrag/catalogue.ts) still
+The separate [catalogue reader](../packages/climbing-catalogue/src/thecrag.ts) still
 provides disposable public route context; it is not used by logbook sync. Its
 public HTTP client remains necessary for those lookups. See the
 [catalogue contract](climbing-trait-coverage.md#informational-catalogue-cache).

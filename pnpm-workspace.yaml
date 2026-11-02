@@ -6,6 +6,7 @@ packages:
   - packages/scoring
   - packages/nutrition
   - packages/training
+  - packages/climbing-catalogue
   - packages/stats
   - packages/telemetry
   - packages/recovery

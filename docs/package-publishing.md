@@ -92,6 +92,18 @@ one-time bootstrap, configure `Asherlc/dofek` and `release-npm.yml` as the
 package's GitHub Actions trusted publisher. Subsequent releases require no
 registry credential or maintainer action.
 
+### Climbing catalogue extraction
+
+[`@dofek/climbing-catalogue`](../packages/climbing-catalogue/README.md) starts
+at 0.1.0 with standalone search, matching, and provider adapters. The corresponding
+`@dofek/training` 0.2.0 release removes generic catalogue exports; follow its
+[import migration guide](../packages/training/README.md#climbing-catalogue-evidence).
+The explicit training version records this incompatible pre-1.0 change rather
+than letting the automatic patch workflow version it; the existing pending-version
+guard leaves unpublished manifest versions for the release workflow. See the
+[version workflow](../.github/workflows/version-npm.yml) and
+[SemVer's initial-development rule](https://semver.org/spec/v2.0.0.html#spec-item-4).
+
 ## SwiftPM architecture
 
 `.github/workflows/release-swift-packages.yml` is shared by every native

@@ -191,6 +191,27 @@ separate. Grouping preserves every log and its original occurrence number.
 
 ### Climbing catalogue evidence
 
+Route discovery, provider adapters, and identity evidence live in the independent
+[`@dofek/climbing-catalogue` package](../climbing-catalogue/README.md).
+This module adds Dofek's user/log seed, cache status, and shared web/mobile labels
+around the package's [source-result contract](../climbing-catalogue/src/contracts.ts).
+
+Version 0.2.0 moves these public exports from
+`@dofek/training/climbing-catalogue` to
+`@dofek/climbing-catalogue/contracts`:
+
+- `catalogueProviderSchema`, `catalogueLocationSchema`, `catalogueTagSchema`,
+  `catalogueCandidateSchema`, and `catalogueSearchResultSchema`;
+- `CatalogueProviderId`, `CatalogueLocation`, `CatalogueCandidate`,
+  `CatalogueSearchResult`, and `ClimbingCatalogueAdapter`.
+
+Update those imports and add `@dofek/climbing-catalogue` as a direct dependency.
+`CatalogueSeed` and `catalogueSeedSchema` in this package retain Dofek's user/log
+fields; use their independent equivalents from the new package for standalone
+search. Cache context schemas and presentation labels remain here. This minor
+version marks an incompatible change during initial development, when SemVer
+allows public APIs to change; see [SemVer section 4](https://semver.org/spec/v2.0.0.html#spec-item-4).
+
 The [catalogue response contract](src/climbing-catalogue.ts) keeps disposable
 reference observations separate from recorded climb facts. Both clients use
 `climbingCatalogueConfidenceLabel` for Own source, Provider reference,

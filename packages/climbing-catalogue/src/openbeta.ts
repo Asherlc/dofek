@@ -1,11 +1,11 @@
+import { z } from "zod";
 import type {
   CatalogueCandidate,
   CatalogueLocation,
   CatalogueSearchResult,
   CatalogueSeed,
   ClimbingCatalogueAdapter,
-} from "@dofek/training/climbing-catalogue";
-import { z } from "zod";
+} from "./contracts.ts";
 import {
   CATALOGUE_LOCAL_AREA_METRES,
   catalogueAreasAreNearby,
@@ -13,8 +13,7 @@ import {
   catalogueNameMatch,
   catalogueSearchNames,
   normalizeCatalogueName,
-} from "../climbing-catalogue-matching.ts";
-import { captureException } from "../lib/error-reporting.ts";
+} from "./matching.ts";
 
 const API = "https://api.openbeta.io";
 const SEARCH = "https://typesense-01.openbeta.io/collections/climbs/documents/search";
@@ -233,14 +232,7 @@ export class OpenBetaCatalogueAdapter implements ClimbingCatalogueAdapter {
       throw new Error(
         "OpenBeta catalogue response URL is invalid. Retry when public access is available.",
       );
-    return response.json().catch((cause: unknown) => {
-      const error = new Error(
-        "OpenBeta catalogue returned invalid JSON. Retry when public access is available.",
-        { cause },
-      );
-      captureException(error, { tags: { provider: "openbeta", phase: "catalogue" } });
-      throw error;
-    });
+    return response.json();
   }
 
   async #climb(id: string): Promise<CatalogueCandidate> {

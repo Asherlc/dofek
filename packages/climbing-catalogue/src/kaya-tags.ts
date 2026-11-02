@@ -1,5 +1,12 @@
-import type { ClimbingTag } from "@dofek/training/climbing-tags";
 import { z } from "zod";
+
+export interface KayaClimbingTag {
+  providerId: "kaya";
+  sourceKey: string;
+  label: string;
+  categoryKey: string | null;
+  categoryLabel: string | null;
+}
 
 const sourceIdSchema = z
   .union([z.string().refine((value) => value.trim().length > 0), z.number().int()])
@@ -28,14 +35,14 @@ const categoryLabels: Record<string, string> = {
   "10": "Boldness",
 };
 
-export function decodeKayaClimbingTags(raw: unknown): ClimbingTag[] {
+export function decodeKayaClimbingTags(raw: unknown): KayaClimbingTag[] {
   const source = sourceSchema.safeParse(raw);
   const ascent = ascentSchema.safeParse(raw);
   const values =
     (ascent.success ? ascent.data.climb?.tags : undefined) ??
     (source.success ? source.data.tags : undefined) ??
     [];
-  const tags = new Map<string, ClimbingTag>();
+  const tags = new Map<string, KayaClimbingTag>();
   for (const value of values) {
     const parsed = tagSchema.safeParse(value);
     if (!parsed.success) continue;
