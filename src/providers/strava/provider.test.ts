@@ -65,6 +65,8 @@ vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { SyncDatabase } from "../../db/index.ts";
+import { logger } from "../../logger.ts";
+import { ProviderAuthorizationFailedError } from "../auth-errors.ts";
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import { makeTransactionalTestDatabase } from "../test-helpers.ts";
@@ -2272,6 +2274,74 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(await checkpoint.load()).toBeNull();
   });
 
+  it.each(["completed", "not_found", "unavailable", "unauthorized"])(
+    "persists each matching inventory entry when details are %s",
+    async (detailState) => {
+      setupEnv();
+      const window = SyncWindow.fromIsoRange({
+        sinceIso: "2026-01-01T00:00:00.000Z",
+        untilIso: "2026-04-01T00:00:00.000Z",
+      });
+      const inventory = [
+        { ...MOCK_ACTIVITY, id: 1, name: "First updated ride" },
+        { ...MOCK_ACTIVITY, id: 2, name: "Second updated ride" },
+      ];
+      const checkpoint = createMemoryCheckpointStore({
+        version: 1,
+        sinceIso: window.sinceIso,
+        untilIso: window.untilIso,
+        completedActivityExternalIds: detailState === "completed" ? ["1", "2"] : [],
+      });
+      const warn = vi.spyOn(logger, "warn");
+      const fetch = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/athlete/activities")) return Response.json(inventory);
+        if (url.pathname.endsWith("/streams")) return Response.json([]);
+        return new Response("Detail unavailable", {
+          status: detailState === "unauthorized" ? 401 : detailState === "unavailable" ? 500 : 404,
+        });
+      });
+      const db = createMockDb();
+      const result = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
+      if (detailState === "unauthorized") {
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0]?.cause).toBeInstanceOf(ProviderAuthorizationFailedError);
+        expect(result.recordsSynced).toBe(0);
+        expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalled();
+        expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+        expect(await checkpoint.load()).not.toBeNull();
+        return;
+      }
+      expect(result.errors).toHaveLength(detailState === "unavailable" ? 2 : 0);
+      for (const [index, entry] of inventory.entries()) {
+        expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenNthCalledWith(
+          index + 1,
+          db,
+          expect.objectContaining({ externalId: String(entry.id), name: entry.name, raw: entry }),
+          expect.anything(),
+        );
+      }
+      if (detailState === "completed") {
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(warn).not.toHaveBeenCalled();
+      } else if (detailState === "not_found") {
+        expect(result.recordsSynced).toBe(2);
+        for (const entry of inventory) {
+          expect(warn).toHaveBeenCalledWith(
+            `[strava] Activity ${entry.id} not found (404) — skipping detail`,
+          );
+        }
+      }
+      if (detailState === "unavailable") {
+        expect(result.errors.map((error) => error.externalId)).toEqual(["1", "2"]);
+        expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledOnce();
+        expect(await checkpoint.load()).not.toBeNull();
+      } else {
+        expect(await checkpoint.load()).toBeNull();
+      }
+    },
+  );
+
   it("retries a failed stream while retaining successfully published work later in the page", async () => {
     setupEnv();
     const checkpoint = createMemoryCheckpointStore();
@@ -2364,6 +2434,7 @@ describe("StravaProvider.sync — additional coverage", () => {
 
   it("retries retryable photo discovery instead of checkpointing an incomplete gallery", async () => {
     setupEnv();
+    const getImages = vi.spyOn(StravaClient.prototype, "getActivityImages");
     const checkpoint = createMemoryCheckpointStore();
     const window = SyncWindow.fromIsoRange({
       sinceIso: "2026-01-01T00:00:00.000Z",
@@ -2396,6 +2467,10 @@ describe("StravaProvider.sync — additional coverage", () => {
       new SyncRun({ db, window, checkpoint, userId }),
     );
     expect(first.errors.some((error) => error.message.includes("Photos"))).toBe(true);
+    expect(first.errors.find((error) => error.message.includes("Photos"))?.cause).toMatchObject({
+      message: "gallery_incomplete",
+    });
+    expect(getImages).toHaveBeenNthCalledWith(1, 1, 1, undefined);
     expect(publishedMetricStreamBatches).toHaveLength(1);
     const resumed = await new StravaProvider(fetch).sync(
       new SyncRun({ db, window, checkpoint, userId }),
