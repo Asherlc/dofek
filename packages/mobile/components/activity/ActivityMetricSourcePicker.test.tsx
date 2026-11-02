@@ -37,6 +37,40 @@ const sources: ActivityMetricSource[] = [
 ];
 
 describe("ActivityMetricSourcePicker", () => {
+  it("shows WHOOP with a Peloton badge while retaining accessible source and selection", () => {
+    const source: ActivityMetricSource = {
+      id: "peloton-copy",
+      label: "WHOOP via Peloton",
+      presentation: {
+        displayName: "WHOOP",
+        providerId: "whoop",
+        sourceName: null,
+        attribution: { kind: "provider", providerId: "peloton", label: "Peloton" },
+      },
+    };
+    render(
+      <ActivityMetricSourcePicker
+        label="Heart Rate"
+        sources={[source]}
+        selectedId={source.id}
+        onChange={() => {}}
+        serverUrl="https://api.example.test"
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Heart Rate source: WHOOP via Peloton" });
+    expect(
+      trigger.querySelector('[data-source-uri="https://api.example.test/logos/whoop.png"]'),
+    ).toBeTruthy();
+    expect(
+      trigger.querySelector('[uri="https://api.example.test/logos/peloton.svg"]'),
+    ).toBeTruthy();
+    fireEvent.click(trigger);
+    const option = screen.getByRole("radio", { name: "WHOOP via Peloton", checked: true });
+    expect(
+      option.querySelector('[data-source-uri="https://api.example.test/logos/whoop.png"]'),
+    ).toBeTruthy();
+    expect(option.querySelector('[uri="https://api.example.test/logos/peloton.svg"]')).toBeTruthy();
+  });
   it("uses provider logos while retaining device names and complete accessible choices", () => {
     const choices: ActivityMetricSource[] = [
       {
