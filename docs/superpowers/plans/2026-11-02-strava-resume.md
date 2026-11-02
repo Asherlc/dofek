@@ -4,7 +4,7 @@
 
 **Goal:** Resume interrupted Strava window syncs without repeating committed activity detail/stream requests or losing authoritative presence evidence.
 
-**Architecture:** Reuse the existing `SyncRun.options.checkpoint` store, which the queue persists in job data. Keep Strava's provider-owned state and validation in `src/providers/strava/sync-checkpoint.ts`; no new dependencies, tables, infrastructure, or client behavior. Pin checkpoint state to the requested window, retain completed activity IDs only after all required activity writes finish. Re-list inventory from page one on every attempt, skip completed detail/stream downloads, and reconcile only from the fresh complete inventory. Preserve existing error reporting and provider rate limits. BullMQ documents [stalled job recovery](https://docs.bullmq.io/guide/jobs/stalled); Strava documents [activity pagination and time bounds](https://developers.strava.com/docs/reference/#api-Activities-getLoggedInAthleteActivities).
+**Architecture:** Reuse the existing `SyncRun.options.checkpoint` store, which the queue persists in job data. Keep Strava's provider-owned state and validation in `src/providers/strava/sync-checkpoint.ts`; no new dependencies, tables, infrastructure, or client behavior. Pin checkpoint state to the requested window, retain completed activity IDs only after all required activity writes finish. Re-list inventory from page one on every attempt, skip completed detail/stream downloads, refresh fresh list metadata without discarding detail-only provenance, and reconcile only from the fresh complete inventory. Preserve existing error reporting and provider rate limits. BullMQ documents [stalled job recovery](https://docs.bullmq.io/guide/jobs/stalled); Strava documents [activity pagination and time bounds](https://developers.strava.com/docs/reference/#api-Activities-getLoggedInAthleteActivities).
 
 **Tech Stack:** TypeScript, Zod, Vitest, MSW, existing PostgreSQL integration fixtures.
 
@@ -24,11 +24,11 @@
 - Restart within a page must skip completed detail/stream work while retaining its presence.
 - Restart on a later page must retain earlier presence for reconciliation.
 - Wrong-window or malformed checkpoints must fail loudly rather than silently skip data.
-- Incomplete/error/degraded runs must retain their last safe checkpoint and avoid partial absence reconciliation.
+- Incomplete inventories must avoid absence reconciliation. Per-activity errors retain their last safe checkpoint without blocking reconciliation of a complete inventory.
 
 ### Task 1: Checkpoint and verify Strava window sync
 
-**Files:** Modify `src/providers/strava/provider.ts`, add `src/providers/strava/sync-checkpoint.ts`, its colocated `sync-checkpoint.test.ts`, and shared `test-helpers.ts`; colocate its existing unit suite at `src/providers/strava/provider.test.ts`, extend `src/providers/strava-sync.integration.test.ts`, and update `src/providers/README.md` and `docs/production-incident-baseline.md` with cited behavior/evidence.
+**Files:** Modify `src/providers/strava/provider.ts`, add `src/providers/strava/activity-persistence.ts` and `src/providers/strava/sync-checkpoint.ts`, its colocated `sync-checkpoint.test.ts`, and shared `test-helpers.ts`; colocate its existing unit suite at `src/providers/strava/provider.test.ts`, extend `src/providers/strava-sync.integration.test.ts`, and update `src/providers/README.md` and `docs/production-incident-baseline.md` with cited behavior/evidence.
 
 **Interfaces:** Consume `SyncRun.options.checkpoint.load/save/clear` without changing the shared contract. Keep checkpoint parsing inside the Strava provider directory, exposed only through its provider-owned checkpoint module. The provider's public `sync(run)` result and existing worker queue are the production consumers.
 

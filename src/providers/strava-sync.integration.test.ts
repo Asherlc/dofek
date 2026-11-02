@@ -161,7 +161,7 @@ describe("StravaProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it.each(["unchanged", "deleted", "inserted"])(
+  it.each(["unchanged", "deleted", "inserted", "renamed"])(
     "reconciles fresh inventory after an interrupted sync: %s",
     async (mutation) => {
       const isolated = await setupTestDatabase();
@@ -222,6 +222,13 @@ describe("StravaProvider.sync() (integration)", () => {
         expect(first.errors).toHaveLength(1);
         const publishedBeforeResume = metricStreamCapture.publishedMetricStreamRows.length;
         if (mutation === "deleted") inventory = activities.slice(1);
+        if (mutation === "renamed") {
+          inventory = activities.map((entry, index) =>
+            index === 0
+              ? { ...entry, name: "Renamed mountain ride", sport_type: "MountainBikeRide" }
+              : entry,
+          );
+        }
         if (mutation === "inserted") {
           const inserted = fakeActivity({ id: 6999, start_date: "2026-05-01T09:59:00Z" });
           inventory = [inserted, ...activities];
@@ -249,6 +256,16 @@ describe("StravaProvider.sync() (integration)", () => {
         const present = new Set(inventory.map((entry) => String(entry.id)));
         for (const row of rows)
           expect(row.providerAbsentAt === null).toBe(present.has(row.externalId));
+        if (mutation === "renamed") {
+          const renamed = rows.find((row) => row.externalId === "7000");
+          expect(renamed).toMatchObject({
+            name: "Renamed mountain ride",
+            canonicalType: "cycling",
+            modality: "mountain",
+            sourceName: "Garmin Edge 530",
+            raw: { name: "Renamed mountain ride", device_name: "Garmin Edge 530" },
+          });
+        }
         const last = rows.find((row) => row.externalId === "7030");
         if (!last) throw new Error("Missing resumed Strava activity");
         const newSamples =
@@ -393,6 +410,22 @@ describe("StravaProvider.sync() (integration)", () => {
     });
 
     const activities = [fakeActivity({ id: 3001, start_date: "2026-05-01T10:00:00Z" })];
+    const removed = fakeActivity({ id: 3002, start_date: "2026-05-01T11:00:00Z" });
+    await upsertProviderActivity(
+      ctx.db,
+      { ...parseStravaActivity(removed), providerId: "strava", raw: removed },
+      { name: removed.name },
+    );
+    const window = SyncWindow.fromIsoRange({
+      sinceIso: "2026-05-01T00:00:00.000Z",
+      untilIso: "2026-05-02T00:00:00.000Z",
+    });
+    const checkpoint = createMemoryCheckpointStore({
+      version: 1,
+      sinceIso: window.sinceIso,
+      untilIso: window.untilIso,
+      completedActivityExternalIds: [],
+    });
 
     server.use(...stravaHandlers(activities, { streamsError: true }));
 
@@ -400,7 +433,8 @@ describe("StravaProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-04-01T00:00:00Z") }),
+        window,
+        checkpoint,
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -413,6 +447,9 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const activities2 = await ctx.db.select().from(activity).where(eq(activity.externalId, "3001"));
     expect(activities2).toHaveLength(1);
+    const removedRows = await ctx.db.select().from(activity).where(eq(activity.externalId, "3002"));
+    expect(removedRows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(await checkpoint.load()).not.toBeNull();
   });
 
   it("stops fetching streams on rate limit (429) but keeps synced activities", async () => {

@@ -2299,7 +2299,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const db = createMockDb();
     const first = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
     expect(first.errors).toHaveLength(1);
-    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledOnce();
     const resumed = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
     expect(resumed.errors).toHaveLength(0);
     expect(details).toEqual([1, 2, 3, 2]);
