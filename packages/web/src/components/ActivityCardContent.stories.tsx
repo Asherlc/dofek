@@ -365,7 +365,8 @@ export const KayaProviderLogo: Story = {
     activity: {
       ...strengthActivity,
       name: "Kaya climbing",
-      activityType: "climbing",
+      activityType: "cardio",
+      primaryActivityType: "climbing",
       durationMin: 48,
       source: {
         origin: {

@@ -99,7 +99,9 @@ function formatActivityAccessibilityLabel(
   },
   units: UnitConverter,
 ): string {
-  const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
+  const activityTypeLabel = formatActivityTypeLabel(
+    activity.primaryActivityType ?? activity.activityType,
+  );
   const labelParts = [
     activity.name ?? formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType),
     displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
@@ -460,7 +462,10 @@ export default function ActivitiesScreen() {
                       accessibilityElementsHidden
                       importantForAccessibility="no-hide-descendants"
                     >
-                      <ActivityTypeIcon activityType={activity.activityType} size={40} />
+                      <ActivityTypeIcon
+                        activityType={activity.primaryActivityType ?? activity.activityType}
+                        size={40}
+                      />
                     </View>
                     <View style={styles.cardMain} pointerEvents="box-none">
                       <View
@@ -488,9 +493,14 @@ export default function ActivitiesScreen() {
                           </Text>
                         ) : null}
                         {activity.name !== null &&
-                        activity.name !== formatActivityTypeLabel(activity.activityType) ? (
+                        activity.name !==
+                          formatActivityTypeLabel(
+                            activity.primaryActivityType ?? activity.activityType,
+                          ) ? (
                           <Text style={styles.typePill}>
-                            {formatActivityTypeLabel(activity.activityType)}
+                            {formatActivityTypeLabel(
+                              activity.primaryActivityType ?? activity.activityType,
+                            )}
                           </Text>
                         ) : null}
                       </View>
