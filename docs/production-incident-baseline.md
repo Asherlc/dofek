@@ -35174,3 +35174,10 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Follow-up / remaining risk:** keep CI status authoritative for the final
   combined revision and retain native/public and pending-job cache regression
   coverage. The new CI run remains pending at this entry's initial recording.
+
+## 2026-11-02 — GitHub OIDC 503 blocked the mobile bundle prerequisite
+
+- **Symptoms / impact:** PR #3201 CI run 41533616052 stopped the Metro bundle job before compilation, with no observed production impact. The [failed job](https://github.com/Asherlc/dofek/actions/runs/41533616052/job/125581746203) logged `curl: (22) The requested URL returned error: 503` at 22:06:30 UTC.
+- **Evidence / cause:** the failing command was the GitHub OIDC token request in `.github/actions/load-infisical-secrets/action.yml`. It is the only curl in that step, and runs before Infisical login. GitHub returned HTTP 503; the underlying service-side cause is unknown. [GitHub status](https://www.githubstatus.com/) reported all systems operational when checked afterward.
+- **Mitigation / status:** an operator job rerun was attempted, but GitHub rejected it with HTTP 403 because the containing workflow was still running. Recovery remains unverified at this recording. No application, retry, timeout, secret or workflow configuration was changed. GitHub documents the [job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
+- **Follow-up / retrospective:** rerun the failed prerequisite after the workflow completes and verify that Metro executes. Keep the token-minting failure distinct from Infisical authentication and bundling failures; reuse gh-fix-ci for log-based classification.
