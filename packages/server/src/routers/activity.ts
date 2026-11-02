@@ -312,9 +312,11 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "recording-density-v3",
+    keyVersion: "source-inheritance-v4",
   })
-    .input(z.object({ id: z.guid() }))
+    .input(
+      z.object({ id: z.guid(), responseVersion: z.union([z.literal(1), z.literal(2)]).default(1) }),
+    )
     .output(activityMetricSourcesSchema)
     .query(({ ctx, input }) =>
       new ActivityRepository(
@@ -323,7 +325,7 @@ export const activityRouter = router({
         ctx.timezone,
         ctx.accessWindow,
         ctx.sensorStore,
-      ).getMetricSources(input.id),
+      ).getMetricSources(input.id, input.responseVersion),
     ),
 
   hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
