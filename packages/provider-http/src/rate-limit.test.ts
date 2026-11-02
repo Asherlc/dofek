@@ -4,6 +4,7 @@ import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
   isProviderConnectFailure,
+  isServiceUnavailableStatus,
   PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
   ProviderRateLimitError,
   ProviderRequestTimeoutError,
@@ -15,6 +16,10 @@ import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+it.each([200, 400, 429, 499, 600])("does not classify HTTP %s as a server error", (status) => {
+  expect(isServiceUnavailableStatus(status)).toBe(false);
 });
 
 it("observes HTTP responses before classification without consuming their body", async () => {
@@ -317,8 +322,8 @@ describe("fetchWithRateLimitHandling", () => {
 
     await expect(result).resolves.toBe(callerError);
   });
-  it("treats 502, 503, and 504 as service-unavailable responses", async () => {
-    for (const statusCode of [502, 503, 504]) {
+  it("treats every HTTP 5xx as a service-unavailable response", async () => {
+    for (let statusCode = 500; statusCode <= 599; statusCode++) {
       const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(statusCode));
       const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
         providerId: "example",
@@ -350,25 +355,25 @@ describe("fetchWithRateLimitHandling", () => {
     expect(isProviderConnectFailure(error)).toBe(true);
   });
 
-  it("returns HTTP 500 by default and classifies opted-in HTTP 500 as unavailable", async () => {
+  it("returns HTTP 499 by default and classifies opted-in HTTP 499 as unavailable", async () => {
     const defaultFetchFn = vi
       .fn<typeof globalThis.fetch>()
-      .mockResolvedValue(response(500, "server error"));
+      .mockResolvedValue(response(499, "custom error"));
     const defaultFetch = createRateLimitAwareFetch(defaultFetchFn, {
       providerId: "example",
     });
 
     const defaultResponse = await defaultFetch("https://api.example.com/data");
 
-    expect(defaultResponse.status).toBe(500);
-    expect(await defaultResponse.text()).toBe("server error");
+    expect(defaultResponse.status).toBe(499);
+    expect(await defaultResponse.text()).toBe("custom error");
 
     const configuredFetchFn = vi
       .fn<typeof globalThis.fetch>()
-      .mockResolvedValue(response(500, "server error"));
+      .mockResolvedValue(response(499, "custom error"));
     const configuredFetch = createRateLimitAwareFetch(configuredFetchFn, {
       providerId: "example",
-      additionalServiceUnavailableStatusCodes: [500],
+      additionalServiceUnavailableStatusCodes: [499],
     });
 
     const error = await configuredFetch("https://api.example.com/data").catch(
@@ -376,7 +381,7 @@ describe("fetchWithRateLimitHandling", () => {
     );
 
     expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
-    expect(error).toHaveProperty("statusCode", 500);
+    expect(error).toHaveProperty("statusCode", 499);
   });
 
   it("uses provider scope and null user by default in wrapper errors", async () => {

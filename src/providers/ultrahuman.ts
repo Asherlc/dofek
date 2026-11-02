@@ -3,6 +3,7 @@ import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { redactProviderServiceUnavailableError } from "../lib/provider-transport-error.ts";
 import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -193,7 +194,12 @@ export class UltrahumanProvider implements SyncProvider {
                 Accept: "application/json",
               },
             },
-          );
+          ).catch((error: unknown) => {
+            throw redactProviderServiceUnavailableError(
+              error,
+              "Ultrahuman token validation failed",
+            );
+          });
           if (response.status === 401 || response.status === 403) {
             throw new ProviderTokenRejectedError(
               this.name,

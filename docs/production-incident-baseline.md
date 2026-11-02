@@ -34990,3 +34990,111 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - Retrospective: include the existing spelling command in adapter fixture
   verification, and prefer literal malformed URL fixtures. Reuse gh-fix-ci for
   first-failure evidence before changing checks.
+## 2026-11-02 — OpenBeta API unavailable during tick sync (unresolved)
+
+- Impact: OpenBeta tick discovery failed for one recorded production sync;
+  successful ingestion and subsequent recovery have not been verified.
+- Evidence: [DOFEK-SERVER-7A](https://east-bay-software.sentry.io/issues/7825242117/)
+  records one handled exception at 17:00:32 UTC, release
+  `bf02212dc9ef5b0bbc7139d4b1c05de0716ae836`, phase `tick_export`:
+  `Error: OpenBeta API request failed (525).` The failing operation was the
+  provider's GraphQL POST for paginated `userTicks`. A read-only probe,
+  `curl -sS --max-time 20 -D - -H 'Content-Type: application/json' --data
+  '{"query":"{ __typename }"}' https://api.openbeta.io`, returned HTTP 502
+  with `server: cloudflare` at 17:38:05 UTC, Ray `a544e90e5a2c2386-SJC`.
+- Diagnosis: the recorded 525 indicates a TLS handshake failure between
+  Cloudflare and OpenBeta's origin, per [Cloudflare's error 525 documentation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-525/).
+  The precise origin-side cause is unknown without OpenBeta operator evidence;
+  the later 502 confirms continued API failure from the probe location but
+  does not prove the same TLS cause.
+- Action: recorded the upstream failure; no runtime change or production
+  remediation was performed. The [provider](../src/providers/openbeta.ts)
+  reports failed discovery before tick writes or absence reconciliation.
+  No added retry, timeout, fallback, or other resilience knob needs justification.
+- Validation / remaining work: the public API probe still fails; keep this
+  incident unresolved until an API check and a subsequent Dofek tick sync
+  succeed. Initial triage changed documentation only; the later application
+  policy change and its regression validation are recorded below.
+- Retrospective: Sentry's provider/phase tags and source frames made the failing
+  boundary clear; the external probe distinguished ongoing upstream failure
+  from a historical alert. Proposed runbook addition for approval: include a
+  credential-free GraphQL health probe and Cloudflare Ray/timestamp capture in
+  the provider incident checklist. Reuse the Sentry and systematic-debugging
+  skills; origin TLS diagnosis requires the upstream operator.
+- Application reporting follow-up: the shared [HTTP classifier](../packages/provider-http/src/rate-limit.ts)
+  recognized only 502/503/504 by default. Consequently OpenBeta converted 525
+  into a generic exception and sent it to Sentry. It now classifies all
+  500–599 responses as typed upstream failures, matching the
+  [HTTP server-error class](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.6).
+  Existing transport-error handling retains diagnostics, failed-sync state and
+  terminal error metrics while suppressing exception reporting. Existing retry
+  policies are reused; no attempt count, delay or deadline was increased.
+  Tests first reproduced 500/525/599 misclassification, then verified all 100
+  server status codes, non-5xx boundaries, OpenBeta Sentry suppression and
+  terminal sync metrics. The full unit/mobile run passed 24,094 tests and
+  exposed 50 expectations tied to the former generic HTTP 500 behavior.
+  After updating those expectations and preserving generic response-formatting
+  coverage with 4xx fixtures, all 983 tests in the 25 changed test files pass.
+  The provider HTTP package typecheck and root typecheck pass. Deployment and
+  upstream recovery remain unverified.
+- Follow-up retrospective: the HTTP allowlist explained the unexpected alert;
+  a single shared classifier change covered both clients' sync backend.
+  Proposed provider-runbook wording: "Keep upstream HTTP 5xx failures in typed
+  operational telemetry; test the full status class and preserve Sentry for
+  unexpected application failures." Reuse test-driven development and the
+  provider reporting tests when changing this policy.
+- Review follow-up: retain body-free token-validation errors for Ultrahuman
+  and Cycling Analytics, and token-refresh errors for Wger, preserving typed upstream status and retry
+  metadata through [transport-error redaction](../src/lib/provider-transport-error.ts).
+  Restored HTTP 500 fixtures first reproduced the message exposure. WHOOP
+  bootstrap HTTP 500/503/525 now has explicit typed-error tests, consistent
+  with its pre-existing 503 behavior and the all-5xx policy; the
+  [package contract](../packages/whoop-whoop/README.md#refresh-lifecycle) makes
+  propagation explicit instead of promising unconditional best-effort identity
+  resolution. Client tests also assert error types and provider identity.
+
+## 2026-11-02 — Local PR validation blocked by Docker network exhaustion
+
+- Impact: local ClickHouse startup for provider-error PR validation is blocked;
+  no production impact or application runtime change.
+- Evidence: `pnpm compose -- up -d --wait clickhouse` failed while creating
+  `ragged-liger_default`, with the first fatal daemon response
+  `all predefined address pools have been fully subnetted`. A read-only network
+  inventory showed numerous existing workspace bridge networks.
+- Cause: Docker cannot allocate another network from its configured address
+  pools. Compose did not reach ClickHouse startup. Docker documents bridge
+  allocation through [daemon address pools](https://docs.docker.com/reference/cli/dockerd/#default-network-options).
+- Action / status: unresolved locally; no networks, containers or database
+  volumes were deleted. Database-backed SQL lint requires a functioning local
+  ClickHouse; preserve this validation limitation and inspect hosted CI.
+- Retrospective: the explicit startup command identified the prerequisite
+  failure before any SQL diagnosis. Proposed testing-runbook addition for
+  approval: document how to inspect workspace network ownership and unused
+  address allocations before cleanup. Reuse systematic debugging for this
+  infrastructure failure; do not alter application retry or timeout settings.
+
+## 2026-11-02 — Provider 5xx integration expectations lag shared classification
+
+- Impact: [PR 3200 CI](https://github.com/Asherlc/dofek/actions/runs/41502413735)
+  failed all four integration shards; nine tests failed, with no production
+  deployment or production impact.
+- Evidence: `pnpm exec vitest run --project integration --coverage --shard=N/4`
+  failed for each shard. Shard 2's first failing assertion was
+  `expected 'activity: decathlon API service unava…' to contain 'Decathlon API error'`.
+  theCrag's HTTP fixture instead rejected with `ProviderServiceUnavailableError`.
+  Shards 1/3/4 recorded the equivalent old generic-error assumptions for
+  Concept2, Fitbit, Komoot and Wger.
+- Root cause / direct fix: the integration fixtures still expected generic
+  HTTP 500 errors after the [shared classifier](../packages/provider-http/src/rate-limit.ts)
+  intentionally mapped every 5xx to an upstream error. Assert the typed cause,
+  provider and status; expect theCrag's HTTP case to reject while retaining its
+  saved-data/progress assertions. Keep the existing HTTP 500 network fixtures
+  and real database checks; no runtime behavior, waits or retries are changed.
+- Validation / status: formatting and type checks cover the edits locally;
+  database execution remains blocked by the local Docker address-pool issue
+  above. Hosted rerun is required before declaring the integration fix complete.
+- Retrospective: full unit/mobile validation did not include provider integration
+  fixtures. Proposed provider-runbook addition for approval: review both unit
+  and integration error assertions when changing shared HTTP classification.
+  Reuse gh-fix-ci and integration-tests-ready to distinguish assertion drift
+  from database or transport failures.

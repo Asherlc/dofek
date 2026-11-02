@@ -184,9 +184,9 @@ describe("theCrag official API provider", () => {
         Response.json(logbookPage([apiAscent()], { numberAscents: 2, perPage: 1 })),
       )
       .mockResolvedValueOnce(new Response(null, { status: 500 }));
-    expect(
-      (await new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db))).errors,
-    ).toHaveLength(1);
+    await expect(
+      new TheCragProvider(fetchFn).sync(makeRun(createMockDatabase().db)),
+    ).rejects.toMatchObject({ name: "ProviderServiceUnavailableError", statusCode: 500 });
     expect(mocks.write).not.toHaveBeenCalled();
     expect(mocks.saveProgress).not.toHaveBeenCalled();
   });

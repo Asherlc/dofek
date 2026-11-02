@@ -675,7 +675,9 @@ describe("EightSleepProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toBe("getTrends: Eight Sleep API error (500): upstream down");
+    expect(result.errors[0]?.message).toBe(
+      "getTrends: eight-sleep API service unavailable (500): upstream down",
+    );
     expect(spies.execute).toHaveBeenCalled();
     expect(spies.values).not.toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "eightsleep-2026-03-01" }),

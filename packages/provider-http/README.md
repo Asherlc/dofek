@@ -57,7 +57,9 @@ coordination appropriate to their runtime.
 ## Error and request behavior
 
 - HTTP `429` throws `ProviderRateLimitError`.
-- HTTP `502`, `503`, and `504` throw `ProviderServiceUnavailableError`.
+- Every HTTP `500`–`599` response throws `ProviderServiceUnavailableError`,
+  including nonstandard upstream codes such as Cloudflare's `525`. The server
+  error class is defined by [HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.6).
 - Every request made through `createRateLimitAwareFetch` has a shared two-minute
   deadline. The wrapper composes its timeout signal with a caller-provided
   signal and throws

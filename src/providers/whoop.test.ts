@@ -1448,13 +1448,13 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       "strain",
       { type: "strain_deep_dive", date: "2026-03-01" },
       makeSyncMockFetch({ strainError: true }),
-      "daily_activity: WHOOP API error (500): Strain error",
+      "daily_activity: WHOOP API service unavailable (500): Strain error",
     ],
     [
       "weightlifting",
       { type: "weightlifting", activityId: "activity-1" },
       makeSyncMockFetch({ weightliftingError: true }),
-      "strength: WHOOP weightlifting API error (500): Strength error",
+      "strength: WHOOP API service unavailable (500): Strength error",
     ],
     [
       "heart-rate",
@@ -1464,13 +1464,13 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
         end: "2026-03-01T01:00:00.000Z",
       },
       makeSyncMockFetch({ hrError: true }),
-      "hr_stream: WHOOP API error (500): HR error",
+      "hr_stream: WHOOP API service unavailable (500): HR error",
     ],
     [
       "sleep",
       { type: "sleep_stages", sleepId: "sleep-1" },
       makeSyncMockFetch({ sleepError: true }),
-      "sleep_stages: WHOOP API error (500): Sleep error",
+      "sleep_stages: WHOOP API service unavailable (500): Sleep error",
     ],
   ])("labels failed %s API checkpoints", async (_name, step, fetchFn, expectedMessage) => {
     const { store } = makeCheckpointStore({
@@ -1608,7 +1608,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       recordsSynced: 0,
       errors: [
         expect.objectContaining({
-          message: "WHOOP API service unavailable (500): developer error",
+          message: "whoop API service unavailable (500): developer error",
         }),
       ],
       duration: 0,
