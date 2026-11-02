@@ -664,31 +664,23 @@ Source-map and release correlation:
   symbols belong to the archive build.
 
 The activities screen leads with the shared rounded-outline activity icon.
-The [source disclosure](components/ActivitySourceDisclosure.tsx) sits after the
-activity content and map, inside the same card. Its source row expands into
-propagation branches and doubles as the primary root, avoiding a repeated source
-name. Separate copies from the same provider retain their own branches;
-unconnected records retain separate roots. Dofek remains implicit.
-See the [Activities screen](<app/(tabs)/activities.tsx>).
+The [Lineage disclosure](components/ActivitySourceDisclosure.tsx) sits after the
+activity content and map, inside the same card. It shows an explicit Original
+heading and labeled Shared to branches. When an Original is known, one divider
+and Other heading groups all additional recordings. Unresolved origins show
+Original unknown above the available recordings. The
+[shared projection](../providers-meta/src/activity-source-hardware.ts) uses
+recording-device labels without treating hardware inventory as sharing steps;
+technical metadata rows are omitted.
 
-The [activity detail header](components/activity/ActivityDetailHeader.tsx) uses
-the same source tree with a compact control beside the title, retaining its
-activity identity and removal notice. Opening Sources shows a scrollable overlay
-with a Close action, using React Native's
-[Modal](https://reactnative.dev/docs/modal) like the metric-source picker,
-so source details do not move the activity content. Its single [Sources disclosure](components/ActivitySourceDisclosure.tsx)
-groups provider ancestry and reported device/sensor facts, following the
+The [activity detail header](components/activity/ActivityDetailHeader.tsx) opens
+the same lineage in a scrollable overlay with a Close action, using React Native's
+[Modal](https://reactnative.dev/docs/modal). The disclosure follows the
 [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
-Expanding Sources reveals recording-device facts at the device root and reported
-equipment as children of the reporting provider. Unmatched records retain their
-own provider branch through the [shared projection](../providers-meta/src/activity-source-hardware.ts).
-Hardware refresh
-errors keep their retry action visible while collapsed, and cached facts remain
-available. Sources remains reachable for hardware, loading, and error states
-even without source-tree records; an empty tree with no metadata or query state
-omits the source row. The [detail route](<app/activity/[id].tsx>) keeps the other
-detail content. Removed source records remain visible without actionable URLs,
-and unresolved trees with records remain expandable.
+Refresh errors retain their retry action while collapsed and cached entries
+remain available. Hardware-only, loading, and error states remain reachable;
+an empty tree without metadata or query state omits the control. Removed records
+retain their notice without actionable URLs.
 
 Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
 from the [server projection](../server/src/models/activity-source-tree.ts).

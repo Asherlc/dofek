@@ -1,0 +1,120 @@
+{
+  "single": {
+    "primary": {
+      "id": "garmin",
+      "providerId": "garmin",
+      "label": "Garmin Edge 530",
+      "sourceName": null,
+      "description": null,
+      "url": null,
+      "children": []
+    },
+    "otherSources": []
+  },
+  "chain": {
+    "primary": {
+      "id": "peloton",
+      "providerId": "peloton",
+      "label": "Peloton Bike+",
+      "sourceName": null,
+      "description": null,
+      "url": null,
+      "children": [
+        {
+          "id": "strava",
+          "providerId": "strava",
+          "label": "Strava",
+          "sourceName": null,
+          "description": null,
+          "url": null,
+          "children": [
+            {
+              "id": "health",
+              "providerId": "apple_health",
+              "label": "Apple Health",
+              "sourceName": null,
+              "description": null,
+              "url": null,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "otherSources": []
+  },
+  "multiple": {
+    "primary": {
+      "id": "peloton",
+      "providerId": "peloton",
+      "label": "Peloton Bike+",
+      "sourceName": null,
+      "description": null,
+      "url": null,
+      "children": [
+        {
+          "id": "strava",
+          "providerId": "strava",
+          "label": "Strava",
+          "sourceName": null,
+          "description": null,
+          "url": null,
+          "children": []
+        }
+      ]
+    },
+    "otherSources": [
+      {
+        "id": "whoop",
+        "providerId": "whoop",
+        "label": "WHOOP (Cloud)",
+        "sourceName": null,
+        "description": null,
+        "url": null,
+        "children": [
+          {
+            "id": "health",
+            "providerId": "apple_health",
+            "label": "Apple Health",
+            "sourceName": null,
+            "description": null,
+            "url": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "garmin",
+        "providerId": "garmin",
+        "label": "Garmin Forerunner 955",
+        "sourceName": null,
+        "description": null,
+        "url": null,
+        "children": []
+      }
+    ]
+  },
+  "unknown": {
+    "primary": null,
+    "otherSources": [
+      {
+        "id": "strava",
+        "providerId": "strava",
+        "label": "Strava",
+        "sourceName": null,
+        "description": null,
+        "url": null,
+        "children": []
+      },
+      {
+        "id": "whoop",
+        "providerId": "whoop",
+        "label": "WHOOP (Cloud)",
+        "sourceName": null,
+        "description": null,
+        "url": null,
+        "children": []
+      }
+    ]
+  }
+}

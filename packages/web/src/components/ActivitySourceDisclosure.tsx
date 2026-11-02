@@ -6,7 +6,7 @@ import {
   activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
 import * as Popover from "@radix-ui/react-popover";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { AttributionIcon } from "./ActivityMetricSourcePicker.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -32,6 +32,7 @@ export function ActivitySourceDisclosure({
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const { primary, otherSources } = activitySourceTreeWithHardware(
     tree,
     hardware ?? EMPTY_HARDWARE,
@@ -42,7 +43,8 @@ export function ActivitySourceDisclosure({
   const trigger = (
     <button
       type="button"
-      aria-label={primary ? `${primary.label} Sources` : "Sources"}
+      ref={triggerRef}
+      aria-label={primary ? `${primary.label} Lineage` : "Lineage"}
       aria-expanded={expanded}
       aria-controls={contentId}
       onClick={heading ? undefined : () => setExpanded((current) => !current)}
@@ -61,7 +63,7 @@ export function ActivitySourceDisclosure({
         </>
       ) : null}
       <span className={primary ? "ml-auto shrink-0 text-xs text-muted" : "flex-1 font-medium"}>
-        Sources
+        Lineage
       </span>
       <svg
         width="12"
@@ -85,33 +87,42 @@ export function ActivitySourceDisclosure({
       {!hardware && hardwareLoading && !hardwareError ? (
         <QueryStatePanel variant="loading" contextLabel="Device details" height={72} />
       ) : null}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Lineage</h2>
+        <button
+          type="button"
+          aria-label="Close lineage"
+          onClick={() => {
+            setExpanded(false);
+            triggerRef.current?.focus();
+          }}
+          className="flex size-8 items-center justify-center rounded text-muted hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      </div>
       {primary ? (
-        <>
-          {primary.description ? (
-            <p className="ml-[26px] text-xs text-muted [overflow-wrap:anywhere]">
-              {primary.description}
-            </p>
-          ) : null}
-          {primary.url ? (
-            <a
-              href={primary.url}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`View activity for ${primary.label}`}
-              className="ml-[26px] mt-1 inline-block text-xs text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              View activity ↗
-            </a>
-          ) : null}
-          <SourceNodeDetails node={primary} />
-          <SourceTreeNodes nodes={primary.children} connected />
-        </>
-      ) : null}
+        <section aria-label="Original">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+            Original
+          </h3>
+          <SourceTreeNodes nodes={[primary]} />
+        </section>
+      ) : (
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+          Original unknown
+        </h3>
+      )}
       {otherSources.length > 0 ? (
         <section
-          aria-label="Additional sources"
+          aria-label={primary ? "Other" : "Available recordings"}
           className={primary ? "mt-4 border-t border-border/60 pt-3" : ""}
         >
+          {primary ? (
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+              Other
+            </h3>
+          ) : null}
           <SourceTreeNodes nodes={otherSources} />
         </section>
       ) : null}
@@ -143,7 +154,7 @@ export function ActivitySourceDisclosure({
           <Popover.Portal>
             <Popover.Content
               id={contentId}
-              aria-label="Activity sources"
+              aria-label="Lineage"
               align="end"
               sideOffset={6}
               collisionPadding={16}
@@ -162,20 +173,6 @@ export function ActivitySourceDisclosure({
   );
 }
 
-function SourceNodeDetails({ node }: { node: ActivitySourceTreeNode }) {
-  if (!node.details?.length) return null;
-  return (
-    <dl className="ml-[26px] mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs text-muted [overflow-wrap:anywhere]">
-      {node.details.map((detail) => (
-        <div className="contents" key={detail.label}>
-          <dt>{detail.label}</dt>
-          <dd>{detail.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 function SourceTreeNodes({
   nodes,
   connected = false,
@@ -191,10 +188,11 @@ function SourceTreeNodes({
           key={node.id}
           className={
             connected
-              ? "relative pt-3 before:absolute before:-left-4 before:top-[23px] before:w-3 before:border-t before:border-border"
+              ? "relative pt-3 before:absolute before:-left-4 before:top-[20px] before:w-3 before:border-t before:border-border"
               : ""
           }
         >
+          {connected ? <p className="mb-1 text-xs text-accent">Shared to</p> : null}
           <div className="flex min-w-0 items-center gap-2">
             <ProviderLogo provider={node.providerId} sourceName={node.sourceName} size={18} />
             {node.url ? (
@@ -205,6 +203,9 @@ function SourceTreeNodes({
                 className="min-w-0 font-medium text-accent [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <SourceLabel node={node} />
+                <span aria-hidden="true" className="ml-1">
+                  ↗
+                </span>
               </a>
             ) : (
               <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
@@ -217,7 +218,6 @@ function SourceTreeNodes({
               {node.description}
             </p>
           ) : null}
-          <SourceNodeDetails node={node} />
           <SourceTreeNodes nodes={node.children} connected />
         </li>
       ))}

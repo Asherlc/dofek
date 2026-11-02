@@ -498,12 +498,12 @@ export const SelectionMode: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Select activities" }));
-    await userEvent.click(await canvas.findByRole("button", { name: "Sources: WHOOP (Cloud)" }));
-    await expect(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" })).toHaveAttribute(
+    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
+    await expect(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
     await expect(canvas.getByText("0 activities selected")).toBeVisible();
   },
 };
@@ -532,7 +532,7 @@ export const HangTenViaAppleHealth: Story = {
   parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Sources: Hang Ten" }),
+      await within(canvasElement).findByRole("button", { name: "Lineage: Hang Ten" }),
     );
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Apple Health")).toBeVisible();
@@ -546,10 +546,10 @@ export const BranchingSourcesExpanded: Story = {
   parameters: { branchingSources: true },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    const trigger = await canvas.findByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = await canvas.findByRole("button", { name: "Lineage: Hang Ten" });
     await userEvent.click(trigger);
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(1);
+    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(2);
     await expect(canvas.getAllByText("Strava")).toHaveLength(2);
     await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
