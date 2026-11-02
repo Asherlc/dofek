@@ -35030,3 +35030,12 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - Proposed guideline refinement: duration-based analytics fixtures should include
   one-second, five-second, subsecond, and independently timed channels. Continue
   using systematic-debugging, integration-tests-ready, and independent code review.
+- Full-history operability check: the first read-only corrected query exceeded a
+  diagnostic 1 GiB query budget (`MEMORY_LIMIT_EXCEEDED`, 1.09 GiB requested);
+  the original query completed under that same budget in 5.552 seconds. Restricting
+  heart-rate windowing to activity/user keys that have power samples removed
+  work that cannot contribute a paired interval. Repeating the corrected query
+  with the unchanged 1 GiB/60-second operator bounds completed in 14.807 seconds,
+  with 309.59 MiB peak memory, yielding 197 eligible activities across 1,784 retained activity bounds, versus
+  113 with the original query. The 22 integration cases and SQLFluff pass again.
+  These diagnostic bounds are operator-only; no runtime limits were increased.

@@ -102,6 +102,12 @@ heart_rate_samples AS (
         AND hr.user_id = am.user_id
         AND hr.channel = 'heart_rate'
         AND hr.is_deleted = 0
+    WHERE (am.user_id, am.activity_id) IN (
+        SELECT
+            user_id,
+            activity_id
+        FROM z2_power_samples
+    )
 ),
 
 z2_heart_rate_samples AS (
