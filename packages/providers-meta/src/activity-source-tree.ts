@@ -81,7 +81,9 @@ export function activityMetricSourceInheritance(
   if (
     !origin ||
     !delivery ||
-    normalizeProviderId(origin.providerId) === normalizeProviderId(delivery.providerId)
+    path.every(
+      (node) => normalizeProviderId(node.providerId) === normalizeProviderId(origin.providerId),
+    )
   )
     return null;
   const original = activityMetricSourcePresentation(

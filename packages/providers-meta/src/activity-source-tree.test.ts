@@ -126,14 +126,27 @@ describe("activityMetricSourceInheritance", () => {
   ])("leaves unresolved or mixed paths to the existing presentation: %j", (...ids) => {
     expect(activityMetricSourceInheritance(tree, ids, "peloton")).toBeNull();
   });
-  it("does not confuse a same-provider held copy with a different upstream provider", () => {
+  it.each([
+    ["whoop", "whoop"],
+    ["apple_health", "apple-health"],
+    ["apple-health", "apple_health"],
+  ])("does not invent inheritance between %s and %s copies", (origin, delivery) => {
     expect(
       activityMetricSourceInheritance(
-        { primary: node("one", "whoop", [node("two", "whoop")]), otherSources: [] },
+        { primary: node("one", origin, [node("two", delivery)]), otherSources: [] },
         ["two"],
-        "whoop",
+        delivery,
       ),
     ).toBeNull();
+  });
+  it("retains intermediate providers when a proven path returns to its origin provider", () => {
+    const roundTrip = {
+      primary: node("origin", "whoop", [node("import", "peloton", [node("copy", "whoop")])]),
+      otherSources: [],
+    };
+    expect(activityMetricSourceInheritance(roundTrip, ["copy"], "whoop")?.label).toBe(
+      "WHOOP via Peloton → WHOOP (Cloud)",
+    );
   });
   it("projects shared ancestry for distinct copies delivered by the same provider", () => {
     const copies = {
