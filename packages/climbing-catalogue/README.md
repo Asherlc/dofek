@@ -81,11 +81,25 @@ supply your own adapter for one of the supported provider namespaces.
 | `mountain-project` | `MountainProjectCatalogueAdapter` | `(fetchFn = fetch)` |
 | `openbeta` | `OpenBetaCatalogueAdapter` | `(fetchFn)` |
 | `thecrag` | `TheCragCatalogueAdapter` | `(fetchFn)` |
+| `vertical-life` | `VerticalLifeCatalogueAdapter` | `(fetchFn)` |
 
 Kaya's token resolver returns `Promise<string | null>`; return null for public
 metadata or resolve the current user's access token for authenticated details.
 Supply your own rate-limited fetch, request deadlines, or specialized transport.
 The library does not load credentials or set up sessions.
+
+Vertical-Life uses the `eight-a` provider namespace and public outdoor route
+search. Native detail lookup uses an 8a.nu route URL and validates its unified
+ID against the recorded ID. Discovery shares a three-page budget across names;
+incomplete results remain suggestions. Coordinates, wall angles and tags are
+left unknown when absent from the response. The transport reads the
+[collection search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3)
+and [outdoor detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)
+contracts used by the [deployed web client](https://www.8a.nu/_nuxt/BvPRvgJk.js).
+The search record's `zlaggableId` matches the detail record's `unifiedId`;
+the detail record's separate `zlaggableId` is not the catalogue identity
+([example search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3),
+[example detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)).
 
 The adapters read observed application endpoints and may need updates when
 providers change them. They are unofficial and unaffiliated with the providers.

@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { gpsCoordinatesSchema, numericWallAngleSchema } from "./geometry.ts";
 
-export const catalogueProviderSchema = z.enum(["kaya", "mountain-project", "thecrag", "openbeta"]);
+export const catalogueProviderSchema = z.enum([
+  "kaya",
+  "mountain-project",
+  "thecrag",
+  "openbeta",
+  "eight-a",
+]);
 const identityEvidence = {
   references: z
     .array(z.strictObject({ providerId: catalogueProviderSchema, externalId: z.string().min(1) }))
@@ -37,6 +43,7 @@ const origins = {
   "mountain-project": "https://www.mountainproject.com",
   thecrag: "https://www.thecrag.com",
   openbeta: "https://openbeta.io",
+  "eight-a": "https://www.8a.nu",
 };
 export const catalogueCandidateSchema = z
   .strictObject({

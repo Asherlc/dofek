@@ -191,7 +191,8 @@ the [retired public-feed integration](thecrag.md#public-read-path) or select a n
 ## Informational catalogue cache
 
 Climb details on web and mobile offer **Catalogue information**, an explicit
-lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
+lookup across KAYA, Mountain Project, theCrag, OpenBeta and 8a.nu / Vertical-Life
+through the [source composition](../src/climbing-catalogue-sources.ts). This is disposable reference
 information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
 completeness, and source/reference/corroborated/possible-match attribution. It does not
@@ -252,6 +253,19 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   and [OpenBeta catalogue adapter](../packages/climbing-catalogue/src/openbeta.ts). The browser search
   credential is public and search-only; no new private credential or service is
   provisioned. Upstream 502 responses remain actionable lookup errors.
+
+Additional read-only checks on 2026-11-02 inspected Vertical-Life's
+[deployed API client](https://www.8a.nu/_nuxt/BvPRvgJk.js) and verified public
+[collection search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3)
+and [outdoor route detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)
+responses without credentials. The [adapter](../packages/climbing-catalogue/src/vertical-life.ts)
+uses the existing `eight-a` identity. Search `zlaggableId` matches detail
+`unifiedId`, while detail `zlaggableId` is a different identifier. Native route
+URLs load details with an ID check; discovery retains published grades,
+route/boulder kind and country/area/crag/known-sector ancestry. Unknown Sector
+placeholders are omitted. The verified records supply no coordinates, numeric
+wall angles or hold tags, so those remain unknown. Literal plus signs in source
+slugs are preserved and URL-encoded. These contracts are unofficial and may change.
 
 Global name searches share at most three page requests per provider across the
 current name and all meaningful logged/source aliases, rather than three pages

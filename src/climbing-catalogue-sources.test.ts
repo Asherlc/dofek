@@ -46,9 +46,9 @@ describe("catalogue source composition", () => {
       createClimbingCatalogueAdapters("owner", Object.create(null)).map(
         (adapter) => adapter.providerId,
       ),
-    ).toEqual(["kaya", "mountain-project", "thecrag", "openbeta"]);
+    ).toEqual(["kaya", "mountain-project", "thecrag", "openbeta", "eight-a"]);
     expect(mocks.rateLimit.mock.calls).toEqual(
-      ["kaya", "mountain-project", "thecrag", "openbeta"].map((providerId) => [
+      ["kaya", "mountain-project", "thecrag", "openbeta", "eight-a"].map((providerId) => [
         providerId,
         globalThis.fetch,
         { userId: "owner" },
