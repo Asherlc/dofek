@@ -140,7 +140,7 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
             query: params.query
               .replaceAll("analytics.", `${database}.`)
               .replaceAll("postgres_fitness.", `${database}.`),
-            clickhouse_settings: { join_use_nulls: 1 },
+            clickhouse_settings: { join_use_nulls: 1, max_threads: 1 },
           }),
       });
       const repo = new EfficiencyRepository({ execute: async () => [] }, userId, "UTC", store);
@@ -164,7 +164,7 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
       );
     const result = await client.query({
       query: `SELECT avg_power_z2, avg_hr_z2, z2_samples, is_deleted FROM (${sql})
-        WHERE activity_id = {activityId:UUID} SETTINGS join_use_nulls=1`,
+        WHERE activity_id = {activityId:UUID} SETTINGS join_use_nulls=1, max_threads=1`,
       query_params: { activityId },
       format: "JSONEachRow",
     });

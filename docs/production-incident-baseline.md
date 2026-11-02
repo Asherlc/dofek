@@ -35057,10 +35057,55 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   all correction/tombstone assertions and production behavior. The same case
   reproduced locally before the edit; after it, both relevant real-ClickHouse
   suites pass all 26 tests, and targeted Biome plus diff checks pass. No waits,
-  retries, skips, or runtime knobs were changed. Hosted rerun remains required.
+  retries, skips, or runtime knobs were changed. The
+  [hosted rerun](https://github.com/Asherlc/dofek/actions/runs/41517816883)
+  passed all 102 checks, including all four integration shards.
   Proposed validation refinement: include existing cross-model
   consumer fixtures alongside model-specific regression tests; reuse gh-fix-ci
   and integration-tests-ready when CI exposes stale aggregate expectations.
+- Post-merge local verification exposed a fixture resource mismatch:
+  `pnpm exec vitest run --project integration` for the consumer and efficiency
+  suites failed with `(total) memory limit exceeded`, RSS 1.26 GiB against the
+  local server's 1.25 GiB ceiling. Query logs showed roughly 589–602 MB per
+  failing query, with no explicit thread setting; the local default was
+  `auto(10)`. The production model and existing consumer fixture already use
+  `max_threads=1`, but the new model renderer/live-query fixture omitted it.
+  Applied the same one-thread execution setting to both fixture paths. The
+  unchanged 26 cases then passed with `--retry=0`; query logs show one thread
+  and 17–39 MiB peaks. No memory limits, runtime settings, or retries were raised.
+  Both incident-log entries were preserved when resolving a second conflict
+  from an intervening `main` update; the incoming orchestrator's 15 tests pass.
+
+## 2026-11-02 — Cycling power backlog prevents threshold history publication
+
+- Status: unresolved in production at investigation time; correction validated
+  locally, deployment and recovery verification outstanding.
+- Symptoms and impact: cycling threshold history is unavailable, and the fitness,
+  fatigue and form chart reports activities without usable training load.
+- Evidence: production analytics-worker logged at 19:06:02 UTC:
+  `analytics-build failed: Cycling power projection has pending work: 1274 activities and 2 users`.
+  Read-only ClickHouse checks found 100 observation rows, zero published user
+  histories, and 308 eligible activities with power samples. Some cycling
+  activities also lack both heart-rate and power samples; finishing projection
+  cannot manufacture missing source evidence.
+- Root cause: the [build orchestrator](../scripts/run-analytics-build.ts) invokes
+  the [bounded projector](../src/analytics/cycling-power-projector.ts) once, then
+  fails on its remaining backlog. The projector intentionally processes at most
+  100 activities and publishes only users whose observations are current.
+- Direct fix: drain successive bounded projection batches before
+  dependent models and processing success, failing explicitly if pending work
+  stops decreasing. No sleeps, increased timeouts, or suppressed errors.
+- Validation and remaining risk: all 15 orchestrator tests pass, including a
+  regression first observed failing on the initial pending batch and a stalled
+  backlog failure case. Review added a fixed projection instant across batches
+  and a regression crossing UTC midnight, preventing completed users from
+  becoming dirty solely because the projection day changes during a build.
+  Production recovery remains unverified. Separately
+  determine whether unsupported rides have sufficient source sensor coverage.
+- Retrospective: worker logs and persisted row counts exposed the orchestration
+  boundary quickly. Proposed runbook addition: check projection backlog and
+  published history counts before advising users to record more rides. Reuse
+  check-logs and systematic-debugging for this investigation.
 
 ## 2026-11-02 — OpenBeta API unavailable during tick sync (unresolved)
 

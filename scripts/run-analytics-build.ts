@@ -28,7 +28,7 @@ interface RunAnalyticsBuildInput {
   loadPendingDatasets(): Promise<ProcessingOperationDataset[]>;
   runDbt(argumentsList: readonly string[]): Promise<number>;
   readArtifact(name: "manifest.json" | "run_results.json"): Promise<unknown>;
-  projectCyclingPower(): Promise<{
+  projectCyclingPower(asOf: Date): Promise<{
     pendingActivities: number;
     pendingUsers: number;
     projectedUsers: number;
@@ -133,11 +133,18 @@ export async function runAnalyticsBuild({
     }
   }
   if (exitCode === 0 && succeeded) {
-    const projection = await projectCyclingPower();
-    if (projection.pendingActivities > 0 || projection.pendingUsers > 0) {
-      throw new Error(
-        `Cycling power projection has pending work: ${projection.pendingActivities} activities and ${projection.pendingUsers} users`,
-      );
+    const asOf = new Date();
+    let previousPending = Number.POSITIVE_INFINITY;
+    while (true) {
+      const projection = await projectCyclingPower(asOf);
+      const pending = projection.pendingActivities + projection.pendingUsers;
+      if (pending === 0) break;
+      if (pending >= previousPending) {
+        throw new Error(
+          `Cycling power projection made no progress: ${projection.pendingActivities} activities and ${projection.pendingUsers} users remain`,
+        );
+      }
+      previousPending = pending;
     }
     if (downstream.length > 0) await runPhase(downstream);
   }
@@ -207,12 +214,12 @@ export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
             const parsedArtifact: unknown = JSON.parse(serializedArtifact);
             return parsedArtifact;
           },
-          projectCyclingPower: async () => {
+          projectCyclingPower: async (asOf) => {
             const { projectCyclingPower } = await import(
               "../src/analytics/cycling-power-projector.ts"
             );
             const { cyclingPowerPolicy } = await import("../src/analytics/cycling-power-policy.ts");
-            return projectCyclingPower(clickHouse, cyclingPowerPolicy);
+            return projectCyclingPower(clickHouse, cyclingPowerPolicy, asOf);
           },
           recordRun: (run) => recordProcessingAnalyticsRun(database, run),
         });
