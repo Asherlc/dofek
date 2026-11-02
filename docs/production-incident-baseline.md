@@ -35151,3 +35151,26 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   failure from application database behavior. Add a local AIO-capacity check to
   the testing runbook after the operator confirms the host remedy; reuse
   integration-tests-ready and systematic-debugging for a repeated startup failure.
+
+## 2026-11-02: Climbing enrichment mutation coverage gaps
+
+- **Symptoms / impact:** PR #3201's CI mutation shards 1, 2, 7 and 8 failed;
+  release readiness was blocked, with no production impact. The first fatal
+  line in [shard 7](https://github.com/Asherlc/dofek/actions/runs/41529398889/job/125568677130)
+  was `Final mutation score 69.09 under breaking threshold 75`, from
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+- **Cause:** missing boundary cases in inherited area metadata and trait
+  consolidation tests, plus schema tests retaining an initializer created before
+  the active runtime mutant. The latter required fresh schema imports, consistent
+  with [Stryker's static-mutation explanation](https://stryker-mutator.io/docs/mutation-testing-elements/static-mutants/).
+- **Direct fix:** add executable contract/provenance/identity/dimension cases,
+  reload schemas per test, and keep consolidation as the single authority for
+  route precedence by removing its redundant downstream provenance gate.
+- **Validation:** exact local CI mutation ranges pass for contracts (100%),
+  trait extraction (98.47%), theCrag (98.40%) and aggregation (94.44%); the combined
+  revision and the new CI run are being verified. Remaining survivors in those completed ranges
+  are equivalent guards/defaults with no distinguishable valid input. No
+  mutation threshold, exclusion, timeout or retry change was made.
+- **Follow-up / remaining risk:** keep CI status authoritative for the final
+  combined revision and retain native/public and pending-job cache regression
+  coverage. The new CI run remains pending at this entry's initial recording.

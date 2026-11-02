@@ -1142,3 +1142,216 @@ it.each([
     }
   },
 );
+
+function ownerSection(content: string, header = "", kind = "description") {
+  return `<div class="regions__read"><div class="regions__inner"><div class="node-info ${kind}"><h2>Description ${header}</h2><div class="content">${content}</div></div></div></div>`;
+}
+function areaHeadline(content: string) {
+  return `<div class="regions__title"><h1><span class="heading__byline"><span class="info">${content}</span></span></h1></div>`;
+}
+
+it("normalizes padded source tag keys and skips incomplete hexadecimal escapes", async () => {
+  const result = await lookup(
+    detail(
+      `<a rel="tag" href="/en/article/tagging#%20Ramp%20">Slab</a><a rel="tag" href="/en/article/tagging#%0G">Invalid encoded tag</a>`,
+    ),
+  );
+  expect(result.candidates[0]?.tags).toContainEqual({
+    sourceKey: "Ramp",
+    label: "Slab",
+    kind: "steepness",
+    category: "slab",
+    scope: "direct",
+    inheritedFrom: null,
+  });
+  expect(result.candidates[0]?.tags.map((tag) => tag.sourceKey)).toEqual(["Ramp", "title"]);
+});
+
+it.each([
+  "http://[",
+  "https://elsewhere.example/en/climbing/parent",
+  "https://user@www.thecrag.com/en/climbing/parent",
+  "https://:password@www.thecrag.com/en/climbing/parent",
+  "/en/climbing/parent?filter=1",
+  "/en/climbing/parent#access",
+  "/en/article/tagging",
+])(
+  "keeps source-owned prose and tags direct when the section inheritance URL is invalid: %s",
+  async (href) => {
+    const header = `<small class="from">inherited from <a class="inherit-from" href="${href}">Unverified ancestor</a></small>`;
+    const { result } = await lookupWithParent(
+      detail(),
+      parentArea() +
+        ownerSection(
+          '<div class="markdown">Source description</div><a rel="tag" href="/en/article/tagging#Ramp">Slab</a>',
+          header,
+        ),
+    );
+    expect(result.candidates[0]?.locations[0]?.context?.sections).toEqual([
+      {
+        sourceKey: "description",
+        label: "Description",
+        text: "Source description",
+        inheritedFrom: null,
+      },
+    ]);
+    expect(result.candidates[0]?.locations[0]?.context?.tags).toEqual([
+      {
+        sourceKey: "Ramp",
+        label: "Slab",
+        kind: "steepness",
+        category: "slab",
+        count: null,
+        scope: "direct",
+        inheritedFrom: null,
+      },
+    ]);
+  },
+);
+
+it("does not assign one of two conflicting section ancestors to prose or direct tags", async () => {
+  const header =
+    '<small class="from">inherited from <a class="inherit-from" href="/en/climbing/first">First</a> <a class="inherit-from" href="/en/climbing/second">Second</a></small>';
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      ownerSection(
+        '<div class="markdown">Source description</div><a rel="tag" href="/en/article/tagging#Ramp">Slab</a>',
+        header,
+      ),
+  );
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections[0]?.inheritedFrom).toBeNull();
+  expect(context?.tags[0]).toMatchObject({ scope: "direct", inheritedFrom: null });
+});
+
+it("keeps literal tags in an unclassified section without inventing a prose section", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      ownerSection(
+        '<div class="markdown">Unclassified source text</div><a rel="tag" href="/en/article/tagging#Local">Local character</a>',
+        "",
+        "",
+      ),
+  );
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections).toEqual([]);
+  expect(context?.tags).toEqual([
+    {
+      sourceKey: "Local",
+      label: "Local character",
+      kind: "other",
+      category: null,
+      count: null,
+      scope: "direct",
+      inheritedFrom: null,
+    },
+  ]);
+});
+
+it("omits empty prose while retaining a standalone literal area type", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline('<a href="/en/article/areatypes"> cliff </a>') +
+      ownerSection('<div class="markdown"><p> </p><script>hidden()</script></div>'),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: "cliff",
+    sections: [],
+    tags: [],
+    statistics: [],
+  });
+});
+
+it("retains standalone area prose with missing type, tags and statistics", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline('<a href="/en/article/areatypes"> </a>') +
+      ownerSection('<div class="markdown"><p>Only a description.</p></div>'),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: null,
+    sections: [
+      {
+        sourceKey: "description",
+        label: "Description",
+        text: "Only a description.",
+        inheritedFrom: null,
+      },
+    ],
+    tags: [],
+    statistics: [],
+  });
+});
+
+it.each([
+  "http://[",
+  "https://elsewhere.example/en/climbing/area/456/routes",
+  "https://user@www.thecrag.com/en/climbing/area/456/routes",
+  "https://:password@www.thecrag.com/en/climbing/area/456/routes",
+  "/en/climbing/area/456/routes?filter=1",
+  "/en/climbing/area/456/routes#stats",
+  "/en/climbing/area/456/photos",
+  "/en/climbing/area/789/routes",
+])("ignores route statistics outside the canonical area's routes URL: %s", async (href) => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline(`<a href="/en/article/areatypes">cliff</a><a href="${href}">13 routes</a>`),
+  );
+  expect(result.candidates[0]?.locations[0]?.context?.statistics).toEqual([]);
+});
+
+it.each(["About 13 routes", "13 routes nearby", "No routes", "", "  "])(
+  "does not reinterpret source route totals without a literal count: %j",
+  async (label) => {
+    const { result } = await lookupWithParent(
+      detail(),
+      parentArea() +
+        areaHeadline(
+          `<a href="/en/article/areatypes">cliff</a><a href="/en/climbing/area/456/routes">${label}</a>`,
+        ),
+    );
+    expect(result.candidates[0]?.locations[0]?.context?.statistics).toEqual([]);
+  },
+);
+
+it.each([
+  ["1 route", 1],
+  ["1,234 routes", 1234],
+  ["0 routes", 0],
+])("retains standalone literal area route totals: %s", async (label, value) => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() + areaHeadline(`<a href="/en/climbing/area/456/routes">${label}</a>`),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: null,
+    sections: [],
+    tags: [],
+    statistics: [{ sourceKey: "routes", label: "Routes", value }],
+  });
+});
+
+it.each([
+  "https://user@www.thecrag.com/en/climbing/cragmont-park",
+  "https://:password@www.thecrag.com/en/climbing/cragmont-park",
+  "/en/climbing/cragmont-park?filter=1",
+  "/en/climbing/cragmont-park#access",
+])("does not synthesize a numeric area fetch from an unsafe named breadcrumb: %s", async (href) => {
+  const html = detail().replace('href="/en/climbing/area/456"', `href="${href}"`);
+  const { result, fetchFn } = await lookupWithParent(html);
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+  expect(result.candidates[0]?.locations[0]).toEqual({
+    externalId: "456",
+    name: "Cragmont Park",
+    scope: "area",
+    coordinates: null,
+  });
+});

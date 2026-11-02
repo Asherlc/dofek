@@ -121,6 +121,7 @@ export function buildClimbingStrengths(
     ClimbingStrengthsObservation & {
       observations: ClimbingStrengthsObservation[];
       tagKeysByCategory: Map<string, string[]>;
+      catalogueTraits: ClimbingCatalogueTrait[];
     }
   > = [];
   const tagCategories = new Map<
@@ -351,18 +352,10 @@ export function buildClimbingStrengths(
                     : successRate - g.successRate,
                 sampleStatus: sampleStatus(matching.length),
                 examples: matching.slice(0, 3).map((e) => {
-                  const recorded =
-                    dimension === "hold_type"
-                      ? !!e.holdTypes?.length
-                      : dimension === "wall_angle"
-                        ? !!e.wallAngle &&
-                          ("category" in e.wallAngle || e.wallAngle.unit === "degrees")
-                        : false;
-                  const sources = recorded
-                    ? []
-                    : (e.catalogueTraits
-                        ?.filter((t) => t.dimension === dimension && t.value === key)
-                        .map((t) => ({ ...t.source, trait: label(key) })) ?? []);
+                  // Recorded dimensions already removed their catalogue evidence during consolidation.
+                  const sources = e.catalogueTraits
+                    .filter((t) => t.dimension === dimension && t.value === key)
+                    .map((t) => ({ ...t.source, trait: label(key) }));
                   const unique = [...new Map(sources.map((s) => [JSON.stringify(s), s])).values()];
                   return unique.length ? { ...e.example, traitSources: unique } : e.example;
                 }),

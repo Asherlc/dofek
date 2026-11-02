@@ -819,14 +819,14 @@
     },
     {
       "filename": "packages/climbing-catalogue/src/thecrag.test.ts",
-      "words": ["Dinda", "Bisio", "Kleiner", "aber", "feiner", "Sektor", "Capricorner", "wurde", "eingerichtet", "Hohe"]
+      "words": ["Dinda", "Bisio", "Kleiner", "aber", "feiner", "Sektor", "Capricorner", "wurde", "eingerichtet", "Hohe", "areatypes"]
     },
     {
       "filename": "packages/climbing-catalogue/src/thecrag.ts",
       "words": ["areatypes"]
     },
     {
-      "filename": "packages/server/src/services/climbing-catalogue-traits.ts",
+      "filename": ["packages/server/src/services/climbing-catalogue-traits.ts", "packages/server/src/services/climbing-catalogue-traits.test.ts"],
       "words": ["slopey", "juggy", "cruxy"]
     },
     {
