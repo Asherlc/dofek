@@ -3,22 +3,127 @@ import { formatDateTime } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
-import { buildActivitySummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-summary.ts";
+import {
+  buildActivitySummaryRowsTableSql,
+  buildActivitySummaryViewSql,
+} from "../../../../src/db/clickhouse-activity-summary.ts";
+import { buildPostgresFitnessActivityRawTableStatement } from "../../../../src/db/clickhouse-raw-tables.ts";
 import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { routeMapPreview } from "../lib/map-preview.ts";
-import {
-  createClickHouseTestActivitySensorStore,
-  executeClickHouseTestCommand,
-} from "../routers/clickhouse-integration-test-helpers.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import { ActivityOverviewRepository } from "./activity-overview-repository.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
+
+async function createCalendarFixture(
+  context: TestContext,
+  activities: readonly (typeof activity.$inferSelect)[],
+  recordedLocation?: { activityId: string; latitude: number; longitude: number },
+) {
+  const client = createClickHouseClientFromEnv();
+  const database = `calendar_test_${randomUUID().replaceAll("-", "")}`;
+  const rewrite = (query: string) => query.replace(/\b(analytics|postgres_fitness)\b/g, database);
+  context.addCleanup(async () => {
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+    await client.close?.();
+  });
+  await client.command({ query: `CREATE DATABASE ${database}` });
+  for (const statement of [
+    buildPostgresFitnessActivityRawTableStatement(),
+    buildTestAnalyticsTableStatement("analytics.deduped_activities"),
+    buildTestAnalyticsTableStatement("analytics.activity_location_sample"),
+    buildActivitySummaryRowsTableSql(),
+    ...cyclingPowerSchemaStatements(),
+    buildActivitySummaryViewSql(),
+    "CREATE TABLE analytics.user_profile_current (id UUID,max_hr Nullable(Int32),resting_hr Nullable(Int32)) ENGINE=Memory",
+    "CREATE TABLE analytics.activity_location_member_change (user_id UUID,member_activity_id UUID,changed_at DateTime64(9,'UTC')) ENGINE=Memory",
+  ]) {
+    await client.command({ query: rewrite(statement) });
+  }
+  if (!client.insert) throw new Error("ClickHouse calendar fixtures require inserts");
+  const timestamp = (date: Date | null) =>
+    date?.toISOString().replace("T", " ").replace("Z", "") ?? null;
+  await client.insert({
+    table: `${database}.activity`,
+    format: "JSONEachRow",
+    values: activities.map((row) => ({
+      id: row.id,
+      group_id: row.groupId,
+      user_id: row.userId,
+      provider_id: row.providerId,
+      external_id: row.externalId,
+      name: row.name,
+      canonical_type: row.canonicalType,
+      provider_type: row.providerType,
+      modality: row.modality,
+      started_at: timestamp(row.startedAt),
+      ended_at: timestamp(row.endedAt),
+      provider_absent_at: timestamp(row.providerAbsentAt),
+    })),
+  });
+  await client.insert({
+    table: `${database}.deduped_activities`,
+    format: "JSONEachRow",
+    values: activities
+      .filter((row) => row.providerAbsentAt === null)
+      .map((row) => ({
+        activity_id: row.groupId,
+        user_id: row.userId,
+        provider_id: row.providerId,
+        canonical_type: row.canonicalType,
+        primary_canonical_type: row.canonicalType,
+        provider_type: row.providerType,
+        modality: row.modality,
+        name: row.name,
+        started_at: timestamp(row.startedAt),
+        ended_at: timestamp(row.endedAt),
+        local_time_source: "unknown",
+        primary_activity_id: row.id,
+        primary_provider_id: row.providerId,
+        member_activity_ids: [row.id],
+        source_external_ids: [
+          {
+            providerId: row.providerId,
+            externalId: row.externalId ?? "",
+            memberActivityId: row.id,
+          },
+        ],
+        refreshed_at: "2026-10-02 16:00:00",
+      })),
+  });
+  if (recordedLocation) {
+    const row = activities.find((candidate) => candidate.id === recordedLocation.activityId);
+    if (!row) throw new Error("Recorded location requires its fixture activity");
+    await client.insert({
+      table: `${database}.activity_summary_rows`,
+      format: "JSONEachRow",
+      values: [
+        {
+          activity_id: row.groupId,
+          user_id: row.userId,
+          canonical_type: row.canonicalType,
+          started_at: timestamp(row.startedAt),
+          ended_at: timestamp(row.endedAt),
+          centroid_lat: recordedLocation.latitude,
+          centroid_lng: recordedLocation.longitude,
+          refresh_version: 1,
+          is_deleted: 0,
+          refreshed_at: "2026-10-02 16:00:00",
+        },
+      ],
+    });
+  }
+  return new ClickHouseActivitySensorStore({
+    command: (options) => client.command({ ...options, query: rewrite(options.query) }),
+    query: (options) => client.query({ ...options, query: rewrite(options.query) }),
+  });
+}
 
 describe("Activities list source tree hydration", () => {
   let context: TestContext;
@@ -68,12 +173,15 @@ describe("Activities list source tree hydration", () => {
       await client.close?.();
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
-    for (const table of ["deduped_activities", "activity_summary", "activity_location_sample"]) {
+    for (const table of ["deduped_activities", "activity_location_sample"]) {
       await client.command({
         query: rewrite(buildTestAnalyticsTableStatement(`analytics.${table}`)),
       });
     }
     await client.command({ query: rewrite(buildActivitySummaryRowsTableSql()) });
+    for (const statement of cyclingPowerSchemaStatements())
+      await client.command({ query: rewrite(statement) });
+    await client.command({ query: rewrite(buildActivitySummaryViewSql()) });
     await client.command({
       query: `CREATE TABLE ${database}.activity
       (id UUID, group_id UUID, user_id UUID, provider_id String, external_id String,
@@ -92,7 +200,7 @@ describe("Activities list source tree hydration", () => {
     });
     await client.command({
       query: `CREATE TABLE ${database}.user_profile_current
-      (id UUID, max_hr Nullable(Int32), resting_hr Nullable(Int32), ftp Nullable(Float64)) ENGINE=Memory`,
+      (id UUID, max_hr Nullable(Int32), resting_hr Nullable(Int32)) ENGINE=Memory`,
     });
     await client.command({
       query: `CREATE TABLE ${database}.activity_location_member_change
@@ -281,13 +389,11 @@ describe("Activities list climbing source GPS", () => {
         },
       ],
     });
-    const sensorStore = await createClickHouseTestActivitySensorStore(context);
-    await executeClickHouseTestCommand(
-      context,
-      `ALTER TABLE analytics.activity_summary UPDATE centroid_lat=37.8,centroid_lng=-122.4
-       WHERE activity_id=toUUID('${recorded.groupId}') AND user_id=toUUID('${userId}')
-       SETTINGS mutations_sync=2`,
-    );
+    const sensorStore = await createCalendarFixture(context, rows, {
+      activityId: recorded.id,
+      latitude: 37.8,
+      longitude: -122.4,
+    });
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
   });
   afterAll(async () => {
@@ -412,23 +518,26 @@ describe("Activities list cycling modality", () => {
   beforeAll(async () => {
     context = await setupTestDatabase();
     await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
-    await context.db.insert(activity).values(
-      [false, true].flatMap((isProviderAbsent) =>
-        (["indoor", "virtual", "road", null] as const).map((modality, index) => ({
-          userId,
-          providerId: "wahoo",
-          externalId: `cycling-${modality}-${isProviderAbsent}`,
-          name: `cycling-${modality}-${isProviderAbsent}`,
-          canonicalType: "cycling" as const,
-          providerType: "cycling",
-          modality,
-          startedAt: new Date(`2026-10-02T${10 + index}:00:00Z`),
-          endedAt: new Date(`2026-10-02T${10 + index}:30:00Z`),
-          providerAbsentAt: isProviderAbsent ? new Date("2026-10-03T12:00:00Z") : null,
-        })),
-      ),
-    );
-    const sensorStore = await createClickHouseTestActivitySensorStore(context);
+    const rows = await context.db
+      .insert(activity)
+      .values(
+        [false, true].flatMap((isProviderAbsent) =>
+          (["indoor", "virtual", "road", null] as const).map((modality, index) => ({
+            userId,
+            providerId: "wahoo",
+            externalId: `cycling-${modality}-${isProviderAbsent}`,
+            name: `cycling-${modality}-${isProviderAbsent}`,
+            canonicalType: "cycling" as const,
+            providerType: "cycling",
+            modality,
+            startedAt: new Date(`2026-10-02T${10 + index}:00:00Z`),
+            endedAt: new Date(`2026-10-02T${10 + index}:30:00Z`),
+            providerAbsentAt: isProviderAbsent ? new Date("2026-10-03T12:00:00Z") : null,
+          })),
+        ),
+      )
+      .returning();
+    const sensorStore = await createCalendarFixture(context, rows);
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
   });
 

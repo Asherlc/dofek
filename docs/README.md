@@ -45,6 +45,7 @@ the exact section.
 | [climbing-log-model-cutover.md](climbing-log-model-cutover.md) | Tested preparation, bounded conversion, validation and finalization for populated upgrades. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [cycling-power-algorithms-research.md](cycling-power-algorithms-research.md) | Exploratory eFTP calibration, competing power algorithms, and the proposed unified calculation owner. |
+| [cycling-power-cutover.md](cycling-power-cutover.md) | Computed-only cycling power ownership, maintenance migration, bounded replay and verification. |
 | [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
 | [body-metrics-decision-context.md](body-metrics-decision-context.md) | Server-authored Trend Weight methodology, measurement provenance, and personalized variation context. |
 | [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |

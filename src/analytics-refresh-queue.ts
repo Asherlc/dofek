@@ -1,8 +1,10 @@
 import type { ConnectionOptions } from "bullmq";
-import { Queue, Worker } from "bullmq";
+import { Queue, type QueueEvents, Worker } from "bullmq";
 import {
   ANALYTICS_REFRESH_QUEUE,
   type AnalyticsRefreshJobData,
+  getAnalyticsRefreshQueue,
+  getAnalyticsRefreshQueueEvents,
   getRedisCommandConnection,
 } from "./jobs/queues.ts";
 
@@ -14,17 +16,39 @@ export function createAnalyticsRefreshQueue(
   });
 }
 
+const refreshJobOptions = {
+  deduplication: { id: ANALYTICS_REFRESH_QUEUE },
+  // Retain finished handles so waitUntilFinished can observe completion that
+  // raced ahead of waiter registration; use the existing bounded failure policy.
+  removeOnComplete: { age: 604_800, count: 1_000 },
+  removeOnFail: { age: 604_800, count: 1_000 },
+};
+
 export async function enqueueAnalyticsRefresh(
   queue: Pick<Queue<AnalyticsRefreshJobData>, "add">,
 ): Promise<void> {
-  await queue.add(
+  await queue.add(ANALYTICS_REFRESH_QUEUE, { type: "analytics-refresh" }, refreshJobOptions);
+}
+
+/** Await the queued refresh, including a deduplicated pending request. */
+export async function enqueueAnalyticsRefreshAndWait(
+  queue: Pick<Queue<AnalyticsRefreshJobData>, "add">,
+  events: QueueEvents,
+): Promise<void> {
+  await events.waitUntilReady();
+  const job = await queue.add(
     ANALYTICS_REFRESH_QUEUE,
     { type: "analytics-refresh" },
-    {
-      deduplication: { id: ANALYTICS_REFRESH_QUEUE },
-      removeOnComplete: true,
-      removeOnFail: { age: 604_800, count: 1_000 },
-    },
+    refreshJobOptions,
+  );
+  await job.waitUntilFinished(events);
+}
+
+/** The application's one serialized analytics writer owns deletion refreshes too. */
+export async function refreshAnalyticsAndWait(): Promise<void> {
+  await enqueueAnalyticsRefreshAndWait(
+    getAnalyticsRefreshQueue(),
+    getAnalyticsRefreshQueueEvents(),
   );
 }
 

@@ -55,7 +55,8 @@
     "qrcode": "1.5.4",
     "simple-statistics": "7.10.2",
     "supercluster": "9.1.0",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@dofek/cycling-power": "workspace:*"
   },
   "devDependencies": {
     "@types/compression": "1.8.1",

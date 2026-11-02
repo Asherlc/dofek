@@ -1,10 +1,9 @@
 import {
-  runActivityReadModelBuild,
-  runProviderDeleteReadModelBuild,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
   waitForPeerDbProviderDeletes,
 } from "../analytics/activity-read-model-build.ts";
+import { refreshAnalyticsAndWait } from "../analytics-refresh-queue.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
@@ -41,7 +40,7 @@ async function rebuildActivityAnalytics(
     return;
   }
   await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
-  await runActivityReadModelBuild();
+  await refreshAnalyticsAndWait();
   if (
     !(await accountErasureAllowsQueuedUserWork(
       database,
@@ -95,7 +94,7 @@ export async function processActivityDeleteAnalyticsJob(
         return;
       }
       await updateActivityAnalyticsProgress(job, 60, "Rebuilding provider analytics...");
-      await runProviderDeleteReadModelBuild();
+      await refreshAnalyticsAndWait();
       if (
         !(await accountErasureAllowsQueuedUserWork(
           database,

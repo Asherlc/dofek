@@ -27,6 +27,7 @@ const activitySummaryMetricsRowSchema = z.object({
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
   avg_power: z.coerce.number().nullable(),
+  power_tss: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
   centroid_lat: z.coerce.number().nullable(),
@@ -92,6 +93,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           NULL AS avg_hr,
           NULL AS max_hr,
           NULL AS avg_power,
+          NULL AS power_tss,
           NULL AS total_distance,
           NULL AS elevation_gain_m,
           NULL AS centroid_lat,
@@ -122,8 +124,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
         baselineRowSchema,
         `SELECT
             up.max_hr AS max_hr,
-            up.resting_hr AS resting_hr,
-            up.ftp AS ftp
+            up.resting_hr AS resting_hr
           FROM postgres_fitness.user_profile_current up
           WHERE up.id = {userId:UUID}`,
         { userId: this.userId },
@@ -140,6 +141,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
         avg_hr: summary.avg_hr,
         max_hr: summary.max_hr,
         avg_power: summary.avg_power,
+        power_tss: summary.power_tss,
         total_distance: summary.total_distance,
         elevation_gain_m: summary.elevation_gain_m,
         centroid_lat: summary.centroid_lat,
@@ -147,7 +149,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       };
     });
 
-    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null };
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
       this.userId,
@@ -198,7 +200,8 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
     return this.#sensorStore.query(
       activitySummaryMetricsRowSchema,
       `SELECT
-          toString(activity_id) AS id,
+          toString(summary.activity_id) AS id,
+          metrics.power_tss AS power_tss,
           avg_hr,
           max_hr,
           avg_power,
@@ -206,11 +209,13 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           elevation_gain_m,
           centroid_lat,
           centroid_lng
-        FROM analytics.activity_summary_rows FINAL
-        WHERE user_id = {userId:UUID}
-          AND activity_id IN {activityIds:Array(UUID)}
+        FROM analytics.activity_summary_rows AS summary FINAL
+        LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+          ON metrics.user_id = summary.user_id AND metrics.activity_id = summary.activity_id
+        WHERE summary.user_id = {userId:UUID}
+          AND summary.activity_id IN {activityIds:Array(UUID)}
         ORDER BY refresh_version DESC
-        LIMIT 1 BY activity_id`,
+        LIMIT 1 BY summary.activity_id`,
       { userId: this.userId, activityIds },
     );
   }

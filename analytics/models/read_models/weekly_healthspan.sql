@@ -68,7 +68,7 @@ daily_metrics_by_week AS (
         user_id,
         toMonday(date) AS week_start,
         avg(steps) AS avg_steps,
-        CAST(coalesce(sum(exercise_minutes), 0), 'Float64') AS weekly_exercise_min
+        CAST(sumOrNull(exercise_minutes), 'Nullable(Float64)') AS weekly_exercise_min
     FROM {{ source('analytics', 'v_daily_metrics') }}
     GROUP BY user_id, toMonday(date)
 ),
@@ -77,8 +77,10 @@ zone_minutes_by_week AS (
     SELECT
         user_id,
         toMonday(toDate(started_at)) AS week_start,
-        CAST(sum(aerobic_minutes), 'Float64') AS weekly_aerobic_min,
-        CAST(sum(high_intensity_minutes), 'Float64') AS weekly_high_intensity_min
+        if(countIf(aerobic_minutes IS null) > 0, CAST(null, 'Nullable(Float64)'),
+            sum(aerobic_minutes)) AS weekly_aerobic_min,
+        if(countIf(high_intensity_minutes IS null) > 0, CAST(null, 'Nullable(Float64)'),
+            sum(high_intensity_minutes)) AS weekly_high_intensity_min
     FROM {{ ref('healthspan_activity_zone_minutes') }} FINAL
     WHERE is_deleted = 0
         AND started_at IS NOT null
@@ -132,6 +134,13 @@ changed_body_weeks AS (
         toMonday(date) AS week_start
     FROM {{ ref('daily_body_measurement') }} FINAL
     WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+
+changed_zone_weeks AS (
+    SELECT DISTINCT user_id, toMonday(toDate(started_at)) AS week_start
+    FROM {{ ref('healthspan_activity_zone_minutes') }} FINAL
+    WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+        AND started_at IS NOT NULL
 ),
 {% endif %}
 
@@ -192,6 +201,9 @@ week_keys_to_materialize AS (
         changed_sleep_weeks.user_id AS user_id,
         changed_sleep_weeks.week_start AS week_start
     FROM changed_sleep_weeks
+    UNION DISTINCT
+    SELECT changed_zone_weeks.user_id AS user_id, changed_zone_weeks.week_start AS week_start
+    FROM changed_zone_weeks
     {% endif %}
 ),
 
@@ -210,13 +222,10 @@ SELECT
     daily_metrics_by_week.avg_steps AS avg_steps,
     vo2_by_week.latest_vo2max AS latest_vo2max,
     greatest(
-        coalesce(zone_minutes_by_week.weekly_aerobic_min, toFloat64(0)),
-        coalesce(daily_metrics_by_week.weekly_exercise_min, toFloat64(0))
+        zone_minutes_by_week.weekly_aerobic_min,
+        daily_metrics_by_week.weekly_exercise_min
     ) AS weekly_aerobic_min,
-    coalesce(
-        zone_minutes_by_week.weekly_high_intensity_min,
-        toFloat64(0)
-    ) AS weekly_high_intensity_min,
+    zone_minutes_by_week.weekly_high_intensity_min AS weekly_high_intensity_min,
     CAST(strength_by_week.strength_sessions, 'Nullable(Float64)') AS sessions_per_week,
     body_by_week.weight_kg AS weight_kg,
     body_by_week.body_fat_pct AS body_fat_pct,

@@ -12,6 +12,7 @@ interface PmcChartCalculatorOptions {
 }
 
 interface PmcChartInput {
+  currentEftp: number | null;
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
   queryDays: number;
@@ -26,6 +27,7 @@ interface PmcChartModel {
 }
 
 interface PmcChart {
+  unavailableReason: string | null;
   data: ReturnType<PmcEwmaCalculator["compute"]>;
   model: PmcChartModel;
 }
@@ -45,40 +47,53 @@ export class PmcChartCalculator {
   buildChart(input: PmcChartInput): PmcChart {
     const globalMaxHeartRate =
       input.activityRows.length > 0 ? Number(input.activityRows[0]?.global_max_hr) : null;
-    if (!globalMaxHeartRate) {
-      return {
-        data: [],
-        model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
-      };
-    }
-
     const restingHeartRate =
       input.activityRows.length > 0 ? Number(input.activityRows[0]?.resting_hr) : 60;
-    const normalizedPowerByActivity = new Map(
-      input.normalizedPowerRows.map((row) => [row.activity_id, Number(row.np)]),
+    const powerTssByActivity = new Map(
+      input.normalizedPowerRows.flatMap((row) =>
+        row.power_tss == null ? [] : [[row.activity_id, row.power_tss] as const],
+      ),
     );
-    const thresholdPower = this.#trainingLoadCalculator.estimateThresholdPower(input.activityRows);
+    const thresholdPower = input.currentEftp;
+    const unsupportedCount = input.activityRows.filter(
+      (activity) =>
+        !powerTssByActivity.has(activity.id) &&
+        !(
+          activity.avg_hr != null &&
+          activity.avg_hr > 0 &&
+          globalMaxHeartRate != null &&
+          globalMaxHeartRate > restingHeartRate
+        ),
+    ).length;
+    if (unsupportedCount > 0) {
+      return {
+        data: [],
+        unavailableReason: `Training load is unavailable for ${unsupportedCount} cycling ${unsupportedCount === 1 ? "activity" : "activities"}: computed power stress and usable heart-rate data are missing.`,
+        model: { type: "generic", pairedActivities: 0, r2: null, ftp: thresholdPower },
+      };
+    }
     const { trainingStressModel, pairedData } =
       this.#trainingLoadCalculator.buildTrainingStressModel(
         input.activityRows,
-        normalizedPowerByActivity,
-        thresholdPower,
+        powerTssByActivity,
         globalMaxHeartRate,
         restingHeartRate,
       );
     const dailyLoad = this.#trainingLoadCalculator.calculateDailyLoad({
       activities: input.activityRows,
-      normalizedPowerByActivity,
-      thresholdPower,
+      powerTssByActivity,
       trainingStressModel,
       globalMaxHeartRate,
       restingHeartRate,
     });
-    const data = this.#ewmaCalculator.compute({
-      dailyLoad,
-      queryDays: input.queryDays,
-      displayDays: input.displayDays,
-    });
+    const data =
+      dailyLoad.size === 0
+        ? []
+        : this.#ewmaCalculator.compute({
+            dailyLoad,
+            queryDays: input.queryDays,
+            displayDays: input.displayDays,
+          });
     const model: PmcChartModel =
       trainingStressModel != null
         ? {
@@ -94,6 +109,6 @@ export class PmcChartCalculator {
             ftp: thresholdPower,
           };
 
-    return { data, model };
+    return { data, model, unavailableReason: null };
   }
 }

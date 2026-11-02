@@ -80,6 +80,7 @@ export const pmcRouter = router({
           messages: {
             available: "Training load data is available from the training load read model.",
             insufficientData:
+              result.unavailableReason ??
               "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
           },
         }),

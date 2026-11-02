@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  buildActivitySummaryRowsTableSql,
+  buildActivitySummaryViewSql,
+} from "../../../../src/db/clickhouse-activity-summary.ts";
 import { createMigration } from "../../../../src/db/clickhouse-migrations/0086_activity_location_member_change.ts";
 import { buildPostgresFitnessActivityRawTableStatement } from "../../../../src/db/clickhouse-raw-tables.ts";
 import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -91,16 +96,13 @@ describe("activity map readiness", () => {
     if (!memberChangeTable) throw new Error("Expected current location-change schema");
     for (const query of [
       buildTestAnalyticsTableStatement("analytics.deduped_activities"),
-      buildTestAnalyticsTableStatement("analytics.activity_summary"),
       buildPostgresFitnessActivityRawTableStatement(),
       memberChangeTable,
       `CREATE TABLE analytics.user_profile_current
-       (id UUID,max_hr Nullable(Float64),resting_hr Nullable(Float64),ftp Nullable(Float64)) ENGINE=Memory`,
-      `CREATE TABLE analytics.activity_summary_rows
-       (activity_id UUID,user_id UUID,avg_hr Nullable(Float64),max_hr Nullable(Float64),
-        avg_power Nullable(Float64),total_distance Nullable(Float64),elevation_gain_m Nullable(Float64),
-        centroid_lat Nullable(Float64),centroid_lng Nullable(Float64),refresh_version UInt64)
-       ENGINE=ReplacingMergeTree(refresh_version) ORDER BY (user_id,activity_id)`,
+       (id UUID,max_hr Nullable(Float64),resting_hr Nullable(Float64)) ENGINE=Memory`,
+      buildActivitySummaryRowsTableSql(),
+      ...cyclingPowerSchemaStatements(),
+      buildActivitySummaryViewSql(),
       `CREATE TABLE analytics.activity_location_sample
        (activity_id UUID,user_id UUID,recorded_at DateTime64(9,'UTC'),source_metric_stream_id UUID,
         lat Nullable(Float64),lng Nullable(Float64),is_deleted UInt8,source_refreshed_at DateTime64(9,'UTC'),refresh_version UInt64)
@@ -148,7 +150,7 @@ describe("activity map readiness", () => {
       ],
     });
     await client.insert({
-      table: `${database}.activity_summary`,
+      table: `${database}.activity_summary_rows`,
       format: "JSONEachRow",
       values: [
         {

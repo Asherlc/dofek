@@ -19,6 +19,7 @@ import {
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-heart-rate.ts";
 import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
+import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 
 export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   postgresConnectionString: string,
@@ -45,6 +46,7 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
     ...buildIncrementalDedupedSensorStatements(),
     buildRestingHeartRateSleepWindowTableSql(),
     ...buildDedupedLocationReadModelStatements(),
+    ...cyclingPowerSchemaStatements(),
     ...buildIncrementalActivitySummaryStatements(),
     ...buildActivityTrendDailyCreateReadModelStatements(),
   ];

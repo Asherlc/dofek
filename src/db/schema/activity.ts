@@ -323,7 +323,6 @@ export const sportSettings = fitness.table(
       .notNull()
       .references(() => userProfile.id),
     sport: text("sport").notNull(),
-    ftp: smallint("ftp"),
     thresholdHr: smallint("threshold_hr"),
     thresholdPacePerKm: real("threshold_pace_per_km"),
     powerZonePcts: jsonb("power_zone_pcts"),

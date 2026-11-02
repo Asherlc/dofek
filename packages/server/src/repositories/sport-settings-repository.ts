@@ -11,7 +11,6 @@ const sportSettingsDbSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   sport: z.string(),
-  ftp: z.coerce.number().nullable(),
   threshold_hr: z.coerce.number().nullable(),
   threshold_pace_per_km: z.coerce.number().nullable(),
   power_zone_pcts: z.unknown().nullable(),
@@ -31,7 +30,6 @@ export interface SportSettingsRow {
   id: string;
   userId: string;
   sport: string;
-  ftp: number | null;
   thresholdHr: number | null;
   thresholdPacePerKm: number | null;
   powerZonePcts: unknown;
@@ -48,7 +46,6 @@ function toDomain(row: z.infer<typeof sportSettingsDbSchema>): SportSettingsRow 
     id: row.id,
     userId: row.user_id,
     sport: row.sport,
-    ftp: row.ftp,
     thresholdHr: row.threshold_hr,
     thresholdPacePerKm: row.threshold_pace_per_km,
     powerZonePcts: row.power_zone_pcts,
@@ -67,7 +64,6 @@ function toDomain(row: z.infer<typeof sportSettingsDbSchema>): SportSettingsRow 
 
 export interface UpsertSportSettings {
   sport: string;
-  ftp?: number | null;
   thresholdHr?: number | null;
   thresholdPacePerKm?: number | null;
   powerZonePcts?: number[] | null;
@@ -153,14 +149,13 @@ export class SportSettingsRepository {
       sportSettingsDbSchema,
       sql`
         INSERT INTO fitness.sport_settings (
-          user_id, sport, ftp, threshold_hr, threshold_pace_per_km,
+          user_id, sport, threshold_hr, threshold_pace_per_km,
           power_zone_pcts, hr_zone_pcts, pace_zone_pcts,
           effective_from, notes
         )
         VALUES (
           ${this.#userId},
           ${settings.sport},
-          ${settings.ftp ?? null},
           ${settings.thresholdHr ?? null},
           ${settings.thresholdPacePerKm ?? null},
           ${settings.powerZonePcts ? JSON.stringify(settings.powerZonePcts) : null}::jsonb,
@@ -171,7 +166,6 @@ export class SportSettingsRepository {
         )
         ON CONFLICT (user_id, sport, effective_from)
         DO UPDATE SET
-          ftp = EXCLUDED.ftp,
           threshold_hr = EXCLUDED.threshold_hr,
           threshold_pace_per_km = EXCLUDED.threshold_pace_per_km,
           power_zone_pcts = EXCLUDED.power_zone_pcts,

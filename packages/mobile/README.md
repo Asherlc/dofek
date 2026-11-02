@@ -705,8 +705,10 @@ unnamed activity. Supplied primary titles and types keep precedence in the
 remain validated.
 
 The [persisted query contract](lib/mobile-query-persistence.ts) invalidates older
-calendar and detail responses without source trees before restoring activity data, covered
-by the [upgrade regression](lib/mobile-query-persistence.test.tsx).
+calendar/detail responses and cycling power responses without computed threshold
+evidence before restoring activity data. Its account-specific version buster
+uses TanStack's [persisted-client invalidation](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#cache-busting),
+covered by the [upgrade regression](lib/mobile-query-persistence.test.tsx).
 
 The inline source button has its own 44-point touch target, independent of the
 card's navigation or selection action. Its expanded accessibility state follows

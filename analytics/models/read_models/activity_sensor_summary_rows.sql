@@ -506,13 +506,12 @@ rolling_power AS (
         ) AS rolling_30s_power
     FROM latest_sensor_samples
     WHERE channel = 'power'
-        AND scalar > 0
+        AND scalar >= 0
 ),
 
 power_variability_per_activity AS (
     SELECT
         activity_id,
-        CAST(pow(avg(pow(rolling_30s_power, 4)), 0.25), 'Nullable(Float64)') AS normalized_power,
         CAST(avg(rolling_30s_power), 'Nullable(Float64)') AS smoothed_avg_power
     FROM rolling_power
     GROUP BY activity_id
@@ -622,7 +621,6 @@ SELECT
     channel_aggs.first_sample_at AS first_sample_at,
     channel_aggs.last_sample_at AS last_sample_at,
     best_twenty_minute_power_per_activity.best_twenty_minute_power AS best_twenty_minute_power,
-    power_variability_per_activity.normalized_power AS normalized_power,
     power_variability_per_activity.smoothed_avg_power AS smoothed_avg_power,
     climbing_per_activity.climbing_elevation_gain_m AS climbing_elevation_gain_m,
     climbing_per_activity.climbing_seconds AS climbing_seconds,

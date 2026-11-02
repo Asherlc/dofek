@@ -8,7 +8,6 @@ vi.mock("@sentry/node", () => ({
 const mockWaitForPeerDbActivityDeletes = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbActivityRestores = vi.fn().mockResolvedValue(undefined);
 const mockRunActivityReadModelBuild = vi.fn().mockResolvedValue(undefined);
-const mockRunProviderDeleteReadModelBuild = vi.fn().mockResolvedValue(undefined);
 const mockWaitForMetricStreamDeleteAcknowledgement = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbProviderDeletes = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
@@ -27,12 +26,13 @@ vi.mock("../logger.ts", () => ({
 vi.mock("../analytics/activity-read-model-build.ts", () => ({
   waitForPeerDbActivityDeletes: (...args: unknown[]) => mockWaitForPeerDbActivityDeletes(...args),
   waitForPeerDbActivityRestores: (...args: unknown[]) => mockWaitForPeerDbActivityRestores(...args),
-  runActivityReadModelBuild: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
-  runProviderDeleteReadModelBuild: (...args: unknown[]) =>
-    mockRunProviderDeleteReadModelBuild(...args),
   waitForMetricStreamDeleteAcknowledgement: (...args: unknown[]) =>
     mockWaitForMetricStreamDeleteAcknowledgement(...args),
   waitForPeerDbProviderDeletes: (...args: unknown[]) => mockWaitForPeerDbProviderDeletes(...args),
+}));
+
+vi.mock("../analytics-refresh-queue.ts", () => ({
+  refreshAnalyticsAndWait: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
 }));
 
 vi.mock("../db/clickhouse.ts", () => ({
@@ -90,10 +90,31 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockWaitForPeerDbActivityRestores.mockResolvedValue(undefined);
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
     mockCaptureException.mockClear();
-    mockRunProviderDeleteReadModelBuild.mockClear();
     mockWaitForMetricStreamDeleteAcknowledgement.mockClear();
     mockWaitForPeerDbProviderDeletes.mockClear();
     mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
+  });
+
+  it("waits for serialized refresh completion before invalidating cache", async () => {
+    let finish = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let started = () => {};
+    const enqueued = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    mockRunActivityReadModelBuild.mockImplementationOnce(async () => {
+      started();
+      await pending;
+    });
+    const job = createActivityAnalyticsJob("activity-recompute-analytics-refresh");
+    const processing = processActivityDeleteAnalyticsJob(job, fakeDb);
+    await enqueued;
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    finish();
+    await processing;
+    expect(mockInvalidateByPrefix).toHaveBeenCalledOnce();
   });
 
   it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
@@ -105,8 +126,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
       "user-1",
       "strava",
     );
-    expect(mockRunProviderDeleteReadModelBuild).toHaveBeenCalledOnce();
-    expect(mockRunActivityReadModelBuild).not.toHaveBeenCalled();
+    expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
   });
 

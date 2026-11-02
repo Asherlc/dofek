@@ -9,7 +9,7 @@ import { thresholdHistoryOutputSchema } from "./tool-output.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
-/** Register effective-dated cycling threshold configuration. */
+/** Register canonical computed cycling threshold history. */
 export function registerThresholdHistoryTool(server: McpServer, context: DofekMcpContext): void {
   registerAuthorizedTool(
     server,
@@ -18,7 +18,7 @@ export function registerThresholdHistoryTool(server: McpServer, context: DofekMc
     {
       title: "Get Threshold History",
       description:
-        "Return effective-dated cycling FTP configuration and separately labeled legacy current FTP.",
+        "Return ongoing computed cycling eFTP history, including supported effort evidence and modeled decay events.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: z.object({
         start_date: dateSchema,
@@ -31,9 +31,11 @@ export function registerThresholdHistoryTool(server: McpServer, context: DofekMc
     async ({ start_date, end_date, cursor, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
       assertDateRange(start_date, end_date);
+      if (!context.sensorStore)
+        throw new Error("get_threshold_history requires the ClickHouse analytics store");
       return jsonToolResult(
         await new CyclingThresholdRepository(
-          context.db,
+          context.sensorStore,
           context.userId,
           context.timezone,
         ).listHistory({

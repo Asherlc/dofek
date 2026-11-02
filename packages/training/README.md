@@ -76,10 +76,10 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
 | `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
-| `pmc` | TRIMP, heart-rate/power stress, FTP estimate, learned stress model, and performance-management calculations |
+| `pmc` | TRIMP, heart-rate stress, learned stress models, and performance-management contracts |
 | `running-cadence` | [Cadence basis and supplied-coverage labels](src/running-cadence.ts) shared by web and mobile; values remain server-authored |
 | `running-response` | [Running response versions, wire validation, and faithful legacy projection](src/running-response.ts) for independently released API and clients |
-| `power-analysis` | Power curves, normalized power, critical-power fit, regression, and duration constants |
+| `power-analysis` | Standard curve-duration constants and chart labels |
 | `training` | Canonical activity types, provider normalization, and weekly-volume grouping |
 | `training-distribution` | [Karvonen](https://pubmed.ncbi.nlm.nih.gov/13470504/) and [Treff](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full) weekly intensity-distribution summaries |
 | `training-chart-availability` | [Shared chart availability schema](src/training-chart-availability.ts); counts and messages are computed by the server |
@@ -256,22 +256,28 @@ product heuristics.
 - `computeTrimp` applies the package's exponential heart-rate-load formula.
 - `computeHrTss` normalizes that load to the package's one-hour threshold
   reference.
-- Power stress uses duration, FTP, and normalized power.
 - Stress-model helpers fit a personal linear relationship from paired heart-rate
   and power observations.
-- FTP estimation uses 95% of the best 20-minute average power, matching the
-  [TrainingPeaks threshold procedure](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).
+- [`TrainingStressCalculator`](src/training-load.ts) delegates personalized HR
+  calculations and regression to the same [pure functions](src/pmc.ts).
+- Power stress and ongoing eFTP use [`@dofek/cycling-power`](../cycling-power/README.md).
+  The application analytics worker supplies the canonical activity-applicable
+  results, following the [analytics architecture](../../analytics/README.md).
 
 ### Power and curve analysis
 
-- Power curves use prefix sums to find the best average power across the
-  package's standard durations.
-- Normalized power uses 30-second rolling averages and fourth-power weighting,
-  following the
-  [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
-- Critical power fits the two-parameter relationship introduced by
-  [Monod and Scherrer (1965)](https://doi.org/10.1080/00140136508930810)
-  using efforts from 120 through 600 seconds.
+- Application power-duration curves read canonical elapsed-time observations
+  from the [`activity_power_curve` model](../../analytics/models/read_models/activity_power_curve.sql).
+- Normalized power is supplied by the independent
+  [`@dofek/cycling-power` implementation](../cycling-power/src/power.ts), using
+  the [TrainingPeaks 30-second rolling-average definition](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
+- [`@dofek/cycling-power/critical-power`](../cycling-power/src/critical-power.ts)
+  fits the two-parameter relationship introduced by
+  [Monod and Scherrer (1965)](https://doi.org/10.1080/00140136508930810).
+  Its caller supplies the duration interval; the application keeps its
+  [120–600-second fit policy](../../src/analytics/cycling-power-policy.ts) outside the numerical package.
+- The same package's [regression module](../cycling-power/src/regression.ts)
+  supplies the linear regression used by the heart-rate stress model.
 
 ### Cycling workout metrics
 
@@ -281,13 +287,15 @@ timestamp when the gap is at most the bounded continuity tolerance; measured zer
 missing elapsed seconds remain missing. The result reports native observation counts, covered,
 missing, and zero seconds, median sample interval, and largest gap independently for every stream.
 
-Average power and work use covered power seconds only. Normalized power uses the package's canonical
-30-second rolling/fourth-power calculation and is withheld when any elapsed power second is missing.
+Average power and work use covered power seconds only. The caller supplies normalized power,
+intensity factor, and power TSS from the canonical numerical engine through the
+[required power-metric inputs](src/cycling-workout-metrics.ts); this module assembles those
+results with stream coverage and interval evidence rather than calculating another estimate.
 Summary-only callers can use `computeCyclingPowerWork`, which shares the
 [bucket calculation](src/cycling-workout-metrics.ts) and returns work and power coverage while
 allocating only buckets touched by native observations, independent of missing elapsed time.
 Intensity factor is normalized power divided by the FTP effective for that activity. Power TSS uses
-`duration_hours × intensity_factor² × 100`, following the package's documented power-stress model;
+`duration_hours × intensity_factor² × 100`, following the [power-stress definition](https://www.trainingpeaks.com/learn/articles/estimating-training-stress-score-tss/);
 both values are unavailable rather than manufactured when FTP or normalized power is missing.
 
 Aerobic efficiency is mean synchronized power divided by mean synchronized heart rate. Cardiac drift

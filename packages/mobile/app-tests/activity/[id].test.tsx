@@ -295,6 +295,24 @@ const mockHeartRateContextQuery =
   >();
 const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
+const computedThresholdEvidence = {
+  value: 250,
+  unit: "watt" as const,
+  method: "computed_eftp" as const,
+  event_at: "2026-03-05T12:00:00Z",
+  evidence_activity_id: "00000000-0000-4000-8000-000000000101",
+  evidence_at: "2026-03-01T12:00:00Z",
+  evidence_duration_seconds: 1200,
+  evidence_power: 265,
+  model_version: "v1",
+  uncertainty: {
+    kind: "not_quantifiable" as const,
+    watts: null,
+    reason:
+      "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+  },
+  unavailable_reason: null,
+};
 const mockPowerZonesQuery = vi.fn();
 const mockPowerWorkQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
@@ -2000,10 +2018,29 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
 
+  it("shows the server reason when computed cycling threshold evidence is unavailable", async () => {
+    mockPowerZonesQuery.mockReturnValue({
+      data: {
+        ftp: null,
+        zones: [],
+        thresholdEvidence: {
+          ...computedThresholdEvidence,
+          value: null,
+          unavailable_reason: "No supported sustained power effort is available.",
+        },
+      },
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(screen.getByText("No supported sustained power effort is available.")).toBeTruthy();
+  });
+
   it("labels the power zone chart with zone names", async () => {
     mockPowerZonesQuery.mockReturnValue({
       data: {
         ftp: 250,
+        thresholdEvidence: computedThresholdEvidence,
         zones: [
           { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
           { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
@@ -2017,6 +2054,14 @@ describe("ActivityDetailScreen", () => {
 
     expect(screen.getByText("Zone 1")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(screen.getByText("Computed eFTP: 250 W")).toBeTruthy();
+    expect(screen.getByText(/Evidence:/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Estimate uncertainty"));
+    expect(
+      screen.getByText(
+        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Zone 2")).toBeTruthy();
     expect(screen.getByText("Endurance")).toBeTruthy();
   });
@@ -2793,6 +2838,7 @@ it.each([false, true])(
     });
     const zones = {
       ftp: 250,
+      thresholdEvidence: computedThresholdEvidence,
       zones: [{ zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 100 }],
     };
     mockPowerZonesQuery.mockImplementation((input: { powerSourceId?: string }) => ({

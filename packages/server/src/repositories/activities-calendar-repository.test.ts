@@ -28,7 +28,7 @@ describe("ActivitiesCalendarRepository", () => {
         modality,
         ...(isProviderAbsent ? { provider_absent_at: "2026-03-19T12:00:00.000Z" } : {}),
       });
-      const baseline = [{ max_hr: null, resting_hr: null, ftp: null }];
+      const baseline = [{ max_hr: null, resting_hr: null }];
       const sensorStore = makeSensorStore(
         isProviderAbsent ? [[], baseline, [row], [], baseline, []] : [[row], baseline],
       );
@@ -74,7 +74,7 @@ describe("ActivitiesCalendarRepository", () => {
     );
     const sensorStore = makeSensorStore([
       rows.map((row) => makeActivityRow({ ...row, canonical_type: "climbing" })),
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -117,7 +117,7 @@ describe("ActivitiesCalendarRepository", () => {
             centroid_lng: recorded ? -122.4 : null,
           }),
         ],
-        [{ max_hr: null, resting_hr: null, ftp: null }],
+        [{ max_hr: null, resting_hr: null }],
         [],
       ]);
       const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -169,7 +169,7 @@ describe("ActivitiesCalendarRepository", () => {
           last_processed_at: "2026-03-18T08:07:00.000Z",
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -223,13 +223,14 @@ describe("ActivitiesCalendarRepository", () => {
       [
         makeActivityRow({
           avg_power: 251,
+          power_tss: 100.8,
           timezone: "America/Los_Angeles",
           start_utc_offset_minutes: -480,
           end_utc_offset_minutes: -420,
           local_time_source: "provider_timezone",
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -275,7 +276,7 @@ describe("ActivitiesCalendarRepository", () => {
           centroid_lng: -122.4,
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -306,7 +307,7 @@ describe("ActivitiesCalendarRepository", () => {
           avg_power: null,
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -355,7 +356,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({ id: "activity-2", elevation_gain_m: 50 }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(
@@ -400,7 +401,7 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ id: "canonical-activity" })],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -415,7 +416,7 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ id: "canonical-activity" })],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -430,7 +431,7 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([[]]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ id: "activity-1" })],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(
@@ -475,7 +476,7 @@ describe("ActivitiesCalendarRepository", () => {
           centroid_lng: -122.4,
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(
@@ -519,7 +520,7 @@ describe("ActivitiesCalendarRepository", () => {
         makeActivityRow({ id: "newest", local_date: "2026-03-20" }),
         makeActivityRow({ id: "oldest", local_date: "2026-03-18" }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -531,7 +532,7 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("skips enrichment queries when no activities are in the requested window", async () => {
     const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([[], [{ max_hr: null, resting_hr: null, ftp: null }]]);
+    const sensorStore = makeSensorStore([[], [{ max_hr: null, resting_hr: null }]]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     await expect(repository.getWeekList({ weeks: 1, endDate: "2026-03-20" })).resolves.toEqual([]);
@@ -544,9 +545,9 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ id: "activity-1" })],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -580,7 +581,7 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-19",
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "shared-id",
@@ -624,7 +625,7 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -657,7 +658,7 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "hidden-older",
@@ -697,7 +698,7 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -715,7 +716,7 @@ describe("ActivitiesCalendarRepository", () => {
         status: "missing",
         label: "Training Stress Score",
         reason:
-          "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+          "Record cycling power with sufficient sustained-effort evidence for computed eFTP, or record average heart rate and set maximum heart rate.",
       },
     ]);
   });
@@ -724,7 +725,7 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "hidden-early",
@@ -764,7 +765,7 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -793,7 +794,7 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
         }),
       ],
-      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "hidden-late",
@@ -815,7 +816,7 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -851,7 +852,7 @@ describe("ActivitiesCalendarRepository", () => {
             member_activity_ids: status === undefined ? [] : ["pending-member"],
           }),
         ],
-        [{ max_hr: null, resting_hr: null, ftp: null }],
+        [{ max_hr: null, resting_hr: null }],
         ...(status === undefined ? [] : [[{ activity_id: "pending", status }]]),
       ]);
       const repository = new ActivitiesCalendarRepository(
@@ -903,7 +904,7 @@ describe("ActivitiesCalendarRepository", () => {
     );
     const sensorStore = makeSensorStore([
       rows,
-      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ max_hr: null, resting_hr: null }],
       [],
       ["no-centroid", "missing-latitude", "missing-longitude"].map((id) => ({
         activity_id: id,

@@ -40,9 +40,9 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.sport_settings (
-        user_id, sport, ftp, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
+        user_id, sport, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
       ) VALUES (
-        ${TEST_USER_ID}, 'cycling', 250, 175,
+        ${TEST_USER_ID}, 'cycling', 175,
         '[0.55,0.75,0.9,1.05,1.2,1.5]'::jsonb,
         '[0.6,0.7,0.8,0.9]'::jsonb,
         '2026-01-01'
@@ -50,6 +50,18 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     `);
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    await clickhouse.command({
+      query: `CREATE TABLE ${analyticsDatabase}.cycling_activity_power_metrics (
+      user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), normalized_power Nullable(Float64),
+      eftp Nullable(Float64), power_tss Nullable(Float64), intensity_factor Nullable(Float64),
+      evidence_activity_id Nullable(UUID), evidence_at Nullable(DateTime64(6, 'UTC')),
+      evidence_duration_seconds Nullable(UInt32), evidence_power Nullable(Float64), model_version String
+    ) ENGINE = Memory`,
+    });
+    await clickhouse.command({
+      query: `INSERT INTO ${analyticsDatabase}.cycling_activity_power_metrics VALUES
+      ('${TEST_USER_ID}','${activityId}','2026-06-15 15:00:00',150,250,6,0.6,'${activityId}','2026-06-15 15:00:00',600,150,'integration-model')`,
+    });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.activity_summary_rows (
       activity_id UUID, user_id UUID, total_distance Nullable(Float64),
@@ -389,5 +401,105 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
       },
     });
     expect(cyclingEffortMetricsSchema.safeParse(result?.metrics).success).toBe(true);
+  });
+
+  it("preserves native null power through the pivot query and both real interval adapters", async () => {
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.provider (id,name) VALUES ('wahoo','Wahoo') ON CONFLICT (id) DO NOTHING`,
+    );
+    await postgres.db.execute(sql`INSERT INTO fitness.activity (id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,ended_at)
+      VALUES (${activityId},${TEST_USER_ID},'wahoo',${activityId},'cycling','cycling','2026-06-15T15:00:00Z','2026-06-15T15:10:00Z')`);
+    await postgres.db.execute(sql`INSERT INTO fitness.activity_interval (activity_id,interval_index,interval_type,started_at,ended_at,source_kind,source_provider)
+      VALUES (${activityId},1,'work','2026-06-15T15:00:00Z','2026-06-15T15:10:00Z','provider_recorded','wahoo')`);
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_sensor_sample`,
+      format: "JSONEachRow",
+      values: [
+        {
+          activity_id: activityId,
+          user_id: TEST_USER_ID,
+          recorded_at: "2026-06-15 15:00:30.000000",
+          channel: "power",
+          scalar: null,
+          provider_id: "wahoo",
+          device_id: "elemnt-bolt",
+          measurement_kind: "direct",
+          refresh_version: 3,
+          is_deleted: 0,
+        },
+        {
+          activity_id: activityId,
+          user_id: TEST_USER_ID,
+          recorded_at: "2026-06-15 15:00:30.500000",
+          channel: "heart_rate",
+          scalar: 140,
+          provider_id: "strap",
+          device_id: "hr",
+          measurement_kind: "direct",
+          refresh_version: 3,
+          is_deleted: 0,
+        },
+      ],
+    });
+    await clickhouse.command({
+      query: `TRUNCATE TABLE ${analyticsDatabase}.cycling_activity_power_metrics`,
+    });
+    await clickhouse.command({
+      query: `INSERT INTO ${analyticsDatabase}.cycling_activity_power_metrics VALUES
+      ('${TEST_USER_ID}','${activityId}','2026-06-15 15:00:00',NULL,250,NULL,NULL,'${activityId}','2026-06-15 15:00:00',600,150,'integration-model')`,
+    });
+    const [effort] = await loadCyclingEffortMetrics(
+      postgres.db,
+      store,
+      TEST_USER_ID,
+      "UTC",
+      [
+        {
+          activity_id: activityId,
+          member_activity_ids: [activityId, duplicateMemberId],
+          started_at: "2026-06-15T15:00:00Z",
+          activityDate: "2026-06-15",
+          durationSeconds: 600,
+          sourceProviders: ["wahoo"],
+          movingDuration: {
+            seconds: null,
+            status: "not_available",
+            evidence: [],
+            evidence_count: 0,
+            evidence_truncated: false,
+          },
+        },
+      ],
+      [],
+    );
+    expect(effort?.metrics.workout.coverage.power).toMatchObject({
+      coveredSeconds: 599,
+      observedSamples: 599,
+      missingSeconds: 1,
+    });
+    expect(effort?.metrics.workout.power.normalizedWatts).toBeNull();
+    expect(effort?.metrics.intervals).toHaveLength(1);
+    expect(effort?.metrics.intervals[0]?.normalizedPowerWatts).toBeNull();
+    const result = await new CyclingTrainingMetricsRepository(
+      postgres.db,
+      store,
+      TEST_USER_ID,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+    expect(result.activities[0]?.metrics.coverage.power).toMatchObject({
+      covered_seconds: 599,
+      observed_samples: 599,
+      missing_seconds: 1,
+    });
+    expect(result.activities[0]?.metrics.power.normalized_watts).toBeNull();
+    expect(result.activities[0]?.metrics.intervals[0]?.normalized_power_watts).toBeNull();
   });
 });

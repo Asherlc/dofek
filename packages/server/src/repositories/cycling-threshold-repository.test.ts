@@ -1,143 +1,107 @@
-import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
-const configuredId = "00000000-0000-4000-8000-000000000101";
-
-const configuredRow = {
-  id: configuredId,
-  evidence_kind: "configured",
-  sport: "cycling",
-  threshold_type: "ftp",
-  value: 245,
-  unit: "watt",
+const userId = "00000000-0000-4000-8000-000000000001";
+const activityId = "00000000-0000-4000-8000-000000000101";
+const row = {
   event_at: "2026-06-01T07:00:00.000Z",
-  observed_at: "2026-05-28T16:00:00.000Z",
-  effective_at: "2026-06-01T07:00:00.000Z",
-  provider_id: null,
-  provider_record_id: null,
-  raw_available: false,
+  activity_id: activityId,
+  eftp: 245,
+  evidence_activity_id: activityId,
+  evidence_at: "2026-06-01T07:00:00.000Z",
+  evidence_duration_seconds: 1200,
+  evidence_power: 260,
+  model_version: "reference-v1",
 };
 
 describe("CyclingThresholdRepository", () => {
-  it("keeps configured and legacy values distinct", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValueOnce([configuredRow])
-      .mockResolvedValueOnce([{ ftp: 240 }]);
-
-    const result = await new CyclingThresholdRepository(
-      { execute },
-      "00000000-0000-4000-8000-000000000001",
-      "America/Los_Angeles",
-    ).listHistory({
-      startDate: "2026-05-01",
-      endDate: "2026-08-01",
-      cursor: null,
-      limit: 100,
-    });
-
-    expect(result.items).toEqual([
-      expect.objectContaining({
-        id: configuredId,
-        evidence_kind: "configured",
-        value_kind: "configured",
-        historical_validity: "effective_dated",
-        provider: null,
-        raw_evidence_available: false,
-        quality: { status: "high", reason: null },
-      }),
-    ]);
-    expect(result.legacy_current).toEqual({
-      value: 240,
-      unit: "watt",
-      source: "user_profile.ftp",
-      value_kind: "configured",
-      historical_validity: "unknown",
+  it("maps current computed evidence with its source effort", async () => {
+    const query = vi.fn().mockResolvedValue([row]);
+    const result = await new CyclingThresholdRepository({ query }, userId, "UTC").getCurrent();
+    expect(result.uncertainty).toEqual({
+      kind: "not_quantifiable",
+      watts: null,
       reason:
-        "Legacy current FTP has no effective date and is not applied to historical activities",
+        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+    });
+    expect(result).toMatchObject({
+      value: 245,
+      method: "computed_eftp",
+      evidence_activity_id: activityId,
+      evidence_duration_seconds: 1200,
+      model_version: "reference-v1",
+      unavailable_reason: null,
     });
   });
 
-  it("omits the legacy current value when no legacy FTP is configured", async () => {
-    const execute = vi.fn().mockResolvedValueOnce([configuredRow]).mockResolvedValueOnce([]);
-
-    const result = await new CyclingThresholdRepository(
-      { execute },
-      "00000000-0000-4000-8000-000000000001",
-      "UTC",
-    ).listHistory({
-      startDate: "2026-05-01",
-      endDate: "2026-08-01",
-      cursor: null,
-      limit: 100,
-    });
-
-    expect(result.legacy_current).toBeNull();
-  });
-
-  it("binds exact dates, timezone, providers, page size, and an opaque cursor", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValueOnce([
-        configuredRow,
-        { ...configuredRow, id: "00000000-0000-4000-8000-000000000103" },
-      ])
-      .mockResolvedValueOnce([{ ftp: 240 }]);
-    const repository = new CyclingThresholdRepository(
-      { execute },
-      "00000000-0000-4000-8000-000000000001",
-      "America/Los_Angeles",
+  it("reports insufficient power evidence explicitly", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const result = await new CyclingThresholdRepository({ query }, userId, "UTC").getAsOf(
+      "2026-06-01T12:00:00Z",
     );
+    expect(result.value).toBeNull();
+    expect(result.unavailable_reason).toContain("qualifying cycling power evidence");
+  });
 
+  it("maps canonical power metrics in one activity batch", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        ...row,
+        started_at: row.event_at,
+        normalized_power: 240,
+        intensity_factor: 240 / 245,
+        power_tss: 80,
+      },
+    ]);
+    const result = await new CyclingThresholdRepository({ query }, userId, "UTC").getForActivities([
+      activityId,
+    ]);
+    expect(result.get(activityId)).toMatchObject({
+      eftp: 245,
+      normalized_power: 240,
+      power_tss: 80,
+    });
+  });
+
+  it("returns decay events and activity evidence in chronological history pages", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValue([
+        row,
+        { ...row, event_at: "2026-05-31T00:00:00Z", activity_id: null, eftp: 244 },
+      ]);
+    const repository = new CyclingThresholdRepository({ query }, userId, "UTC");
     const first = await repository.listHistory({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
       cursor: null,
       limit: 1,
     });
-
-    expect(first.items).toHaveLength(1);
+    expect(first.items[0]).toMatchObject({
+      value: 245,
+      evidence_kind: "computed",
+      historical_validity: "effective_dated",
+    });
     expect(first.next_cursor).toEqual(expect.any(String));
-    expect(first.legacy_current).toMatchObject({ value: 240 });
-    const firstQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
-    expect(firstQuery.sql).toContain("LIMIT");
-    expect(firstQuery.params).toEqual(
-      expect.arrayContaining(["2026-05-01", "2026-08-01", "America/Los_Angeles", 2]),
-    );
-
-    execute.mockReset().mockResolvedValue([]);
+    query.mockResolvedValue([{ ...row, activity_id: null, eftp: 244 }]);
     const second = await repository.listHistory({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
       cursor: first.next_cursor,
       limit: 1,
     });
-    expect(second.items).toEqual([]);
-    const secondQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
-    expect(secondQuery.sql).toContain("history.event_at <");
+    expect(second.items[0]).toMatchObject({ activity_id: null, value: 244 });
   });
 
   it("rejects a cursor reused with changed filters before querying", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValueOnce([
-        configuredRow,
-        { ...configuredRow, id: "00000000-0000-4000-8000-000000000103" },
-      ])
-      .mockResolvedValueOnce([{ ftp: 240 }]);
-    const repository = new CyclingThresholdRepository(
-      { execute },
-      "00000000-0000-4000-8000-000000000001",
-      "UTC",
-    );
+    const query = vi.fn().mockResolvedValue([row, { ...row, activity_id: null }]);
+    const repository = new CyclingThresholdRepository({ query }, userId, "UTC");
     const first = await repository.listHistory({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
       cursor: null,
       limit: 1,
     });
-
     await expect(
       repository.listHistory({
         startDate: "2026-05-01",
@@ -146,6 +110,6 @@ describe("CyclingThresholdRepository", () => {
         limit: 1,
       }),
     ).rejects.toThrow("Cursor does not match this request");
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

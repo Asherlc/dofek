@@ -52,9 +52,9 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.sport_settings (
-        user_id, sport, ftp, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
+        user_id, sport, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
       ) VALUES (
-        ${userId}::uuid, 'cycling', 250, 175,
+        ${userId}::uuid, 'cycling', 175,
         '[0.55,0.75,0.9,1.05,1.2,1.5]'::jsonb,
         '[0.6,0.7,0.8,0.9]'::jsonb,
         '2026-01-01'
@@ -156,6 +156,15 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     `);
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    await clickhouse.command({
+      query: `CREATE TABLE ${analyticsDatabase}.cycling_activity_power_metrics
+      (user_id UUID, activity_id UUID, power_tss Nullable(Float64)) ENGINE=Memory`,
+    });
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.cycling_activity_power_metrics`,
+      values: [{ user_id: userId, activity_id: cyclingActivityId, power_tss: 100 }],
+      format: "JSONEachRow",
+    });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.cycling_activity (
         activity_id UUID,

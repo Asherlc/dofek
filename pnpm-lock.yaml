@@ -87,6 +87,9 @@ importers:
       '@clickhouse/client':
         specifier: 1.23.1
         version: 1.23.1
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:packages/cycling-power
       '@dofek/eight-sleep':
         specifier: workspace:*
         version: link:packages/eight-sleep
@@ -388,6 +391,8 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/cycling-power: {}
 
   packages/eight-sleep:
     dependencies:
@@ -800,6 +805,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:../cycling-power
       '@dofek/filter-columns':
         specifier: workspace:*
         version: link:../filter-columns
@@ -961,6 +969,9 @@ importers:
 
   packages/training:
     dependencies:
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:../cycling-power
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring

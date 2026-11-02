@@ -6,6 +6,7 @@ packages:
   - packages/scoring
   - packages/nutrition
   - packages/training
+  - packages/cycling-power
   - packages/stats
   - packages/telemetry
   - packages/recovery

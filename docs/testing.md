@@ -638,3 +638,15 @@ const aliasInsert = valuesCallArgs.find(
 );
 expect(aliasInsert).toBeUndefined();
 ```
+
+### Cycling signal coverage fixtures
+
+Cycling fixtures must distinguish an absent channel (`undefined`) from an explicit
+missing observation (`null`): null terminates observed coverage, while zero watts
+is measured recovery. Paired activity/full-span interval cases should produce the
+same NP, IF and power TSS through the shared resampler. Keep consumer-only
+ClickHouse fixtures on the current canonical schema; exercise legacy upgrades in
+the dedicated migration fixtures rather than rebuilding the legacy bridge for
+every repository case. See the [algorithm contract](../packages/cycling-power/README.md),
+[coverage regressions](../packages/cycling-power/src/resample-signal.test.ts) and
+[cutover checks](cycling-power-cutover.md).

@@ -102,11 +102,11 @@ export interface ActivityVariabilityRowData {
 /** A single activity with variability and intensity factor metrics. */
 export class ActivityVariabilityModel {
   readonly #row: ActivityVariabilityRowData;
-  readonly #ftp: number;
+  readonly #intensityFactor: number;
 
-  constructor(row: ActivityVariabilityRowData, ftp: number) {
+  constructor(row: ActivityVariabilityRowData, intensityFactor: number) {
     this.#row = row;
-    this.#ftp = ftp;
+    this.#intensityFactor = intensityFactor;
   }
 
   get date(): string {
@@ -134,7 +134,7 @@ export class ActivityVariabilityModel {
   }
 
   get intensityFactor(): number {
-    return Math.round((this.#row.normalizedPower / this.#ftp) * 1000) / 1000;
+    return Math.round(this.#intensityFactor * 1000) / 1000;
   }
 
   toDetail() {

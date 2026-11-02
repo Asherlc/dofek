@@ -257,6 +257,24 @@ describe("AnalyticsWorker", () => {
     });
   });
 
+  it("fails an interrupted refresh instead of acknowledging unfinished work", async () => {
+    const controller = new AbortController();
+    const worker = new AnalyticsWorker(
+      createWorkerOptions({
+        runAnalyticsBuild: async () => {
+          throw new Error("Projection unfinished");
+        },
+        sleep: async () => {
+          controller.abort();
+        },
+        runRefreshJobs: async (processRefresh) => processRefresh(),
+      }),
+    );
+    await expect(worker.run(controller.signal)).rejects.toThrow(
+      "Analytics refresh aborted before completion",
+    );
+  });
+
   it("consumes refresh requests and retries failures before completing the request", async () => {
     const controller = new AbortController();
     const runAnalyticsBuild = vi

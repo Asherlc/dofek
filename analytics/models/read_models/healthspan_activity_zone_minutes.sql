@@ -3,171 +3,170 @@
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
-    query_settings={
-        'max_threads': 1
-    }
+    query_settings={'max_threads': 1, 'join_use_nulls': 1}
 ) }}
 
 WITH activity_bounds AS (
     SELECT
-        activity_id,
-        user_id,
-        started_at,
-        ended_at,
-        dateDiff('second', started_at, ended_at) / 60.0 AS duration_minutes
+activity_id,
+user_id,
+started_at,
+ended_at
     FROM {{ ref('activity_summary_rows') }} FINAL
-    WHERE is_deleted = 0
-        AND ended_at IS NOT NULL
+    WHERE is_deleted = 0 AND ended_at IS NOT NULL
 ),
-
-{% if is_incremental() %}
-existing_activities AS (
-    SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ this }} FINAL
-    WHERE is_deleted = 0
-),
-{% endif %}
 
 activity_keys AS (
     SELECT
-        activity_id,
-        user_id
-    FROM activity_bounds
+activity_id,
+user_id,
+max(started_at) AS started_at,
+max(ended_at) AS ended_at
+    FROM (
+    SELECT
+activity_id,
+user_id,
+started_at,
+ended_at
+FROM activity_bounds
     {% if is_incremental() %}
     UNION DISTINCT
-    SELECT
-        activity_id,
-        user_id
-    FROM existing_activities
+    SELECT activity_id, user_id, started_at, ended_at FROM {{ this }} FINAL WHERE is_deleted = 0
     {% endif %}
+    )
+    GROUP BY activity_id, user_id
 ),
 
 resting_by_activity AS (
     SELECT
-        activity_bounds.activity_id AS activity_id,
+        bounds.activity_id AS activity_id,
         argMax(resting.resting_hr, toDate(resting.ended_at)) AS resting_hr
-    FROM activity_bounds
+    FROM activity_bounds AS bounds
     INNER JOIN {{ ref('resting_heart_rate_sleep_window') }} AS resting FINAL
-        ON resting.user_id = activity_bounds.user_id
-        AND toDate(resting.ended_at) <= toDate(activity_bounds.started_at)
-    WHERE resting.is_deleted = 0
-        AND resting.ended_at IS NOT NULL
-        AND resting.resting_hr IS NOT NULL
-    GROUP BY activity_bounds.activity_id
+        ON resting.user_id = bounds.user_id
+            AND toDate(resting.ended_at) <= toDate(bounds.started_at)
+    WHERE resting.is_deleted = 0 AND resting.resting_hr IS NOT NULL
+    GROUP BY bounds.activity_id
 ),
 
 activity_metadata AS (
     SELECT
-        activity_bounds.activity_id AS activity_id,
-        activity_bounds.user_id AS user_id,
-        activity_bounds.started_at AS started_at,
-        activity_bounds.ended_at AS ended_at,
-        activity_bounds.duration_minutes AS duration_minutes,
-        user_profile.max_hr AS max_hr,
-        user_profile.ftp AS ftp,
-        coalesce(resting_by_activity.resting_hr, user_profile.resting_hr) AS resting_hr
-    FROM activity_bounds
-    INNER JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS user_profile
-        ON user_profile.id = activity_bounds.user_id
-    LEFT JOIN resting_by_activity
-        ON resting_by_activity.activity_id = activity_bounds.activity_id
-    WHERE user_profile.max_hr IS NOT NULL OR user_profile.ftp IS NOT NULL
+        bounds.activity_id AS activity_id,
+        bounds.user_id AS user_id,
+        bounds.started_at AS started_at,
+        bounds.ended_at AS ended_at,
+        profile.max_hr AS max_hr,
+        coalesce(resting.resting_hr, profile.resting_hr) AS resting_hr,
+        power.eftp AS eftp
+    FROM activity_bounds AS bounds
+    LEFT JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS profile
+        ON profile.id = bounds.user_id
+    LEFT JOIN resting_by_activity AS resting ON resting.activity_id = bounds.activity_id
+    LEFT JOIN {{ source('analytics', 'cycling_activity_power_metrics') }} AS power
+        ON power.user_id = bounds.user_id AND power.activity_id = bounds.activity_id
 ),
 
-sensor_counts AS (
+sample_points AS (
     SELECT
-        activity_metadata.activity_id AS activity_id,
-        activity_metadata.user_id AS user_id,
-        any(activity_metadata.started_at) AS started_at,
-        any(activity_metadata.ended_at) AS ended_at,
-        any(activity_metadata.duration_minutes) AS duration_minutes,
-        any(activity_metadata.max_hr) AS max_hr,
-        any(activity_metadata.ftp) AS ftp,
-        any(activity_metadata.resting_hr) AS resting_hr,
-        countIf(sensor_samples.channel = 'heart_rate') AS heart_rate_sample_count,
-        countIf(sensor_samples.channel = 'power') AS power_sample_count,
-        countIf(
-            sensor_samples.channel = 'heart_rate'
-            AND activity_metadata.resting_hr IS NOT NULL
-            AND sensor_samples.scalar
-                < activity_metadata.resting_hr
-                + (activity_metadata.max_hr - activity_metadata.resting_hr) * 0.8
-        ) AS aerobic_sample_count,
-        countIf(
-            sensor_samples.channel = 'heart_rate'
-            AND activity_metadata.resting_hr IS NOT NULL
-            AND sensor_samples.scalar
-                >= activity_metadata.resting_hr
-                + (activity_metadata.max_hr - activity_metadata.resting_hr) * 0.8
-        ) AS heart_rate_high_intensity_sample_count,
-        countIf(
-            sensor_samples.channel = 'power'
-            AND activity_metadata.ftp IS NOT NULL
-            AND sensor_samples.scalar >= activity_metadata.ftp * 0.9
-        ) AS power_high_intensity_sample_count
-    FROM activity_metadata
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor_samples FINAL
-        ON sensor_samples.activity_id = activity_metadata.activity_id
-        AND sensor_samples.user_id = activity_metadata.user_id
-    WHERE sensor_samples.channel IN ('heart_rate', 'power')
-        AND sensor_samples.scalar IS NOT NULL
-        AND sensor_samples.is_deleted = 0
-    GROUP BY activity_metadata.activity_id, activity_metadata.user_id
+        samples.activity_id AS activity_id,
+        samples.user_id AS user_id,
+        samples.channel AS channel,
+        samples.recorded_at AS recorded_at,
+        samples.scalar AS scalar,
+        metadata.ended_at AS ended_at,
+        leadInFrame(toNullable(samples.recorded_at), 1, NULL) OVER (
+            PARTITION BY samples.user_id, samples.activity_id, samples.channel
+            ORDER BY samples.recorded_at
+            ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+        ) AS next_at
+    FROM {{ ref('activity_sensor_sample') }} AS samples FINAL
+    INNER JOIN activity_metadata AS metadata
+        ON metadata.activity_id = samples.activity_id AND metadata.user_id = samples.user_id
+    WHERE samples.is_deleted = 0 AND samples.channel IN ('heart_rate', 'power')
+        AND samples.recorded_at >= metadata.started_at AND samples.recorded_at < metadata.ended_at
+),
+
+sample_intervals AS (
+    SELECT
+*,
+dateDiff('microsecond', recorded_at, next_at) / 1000000.0 AS gap_seconds
+    FROM sample_points
+),
+
+sample_cadence AS (
+    SELECT
+        user_id,
+activity_id,
+channel,
+        least(10.0, greatest(1.0, medianExactIf(gap_seconds, gap_seconds > 0))) AS native_interval
+    FROM sample_intervals
+    GROUP BY user_id, activity_id, channel
+),
+
+covered_samples AS (
+    SELECT
+        points.user_id AS user_id,
+        points.activity_id AS activity_id,
+        points.channel AS channel,
+        points.scalar AS scalar,
+        if(points.scalar IS NULL OR points.scalar < 0, 0.0,
+            greatest(0.0, least(
+                dateDiff('microsecond', points.recorded_at, points.ended_at) / 1000000.0,
+                if(points.gap_seconds <= least(10.0, greatest(5.0, cadence.native_interval * 2)),
+                    points.gap_seconds, cadence.native_interval)
+            ))
+        ) AS covered_seconds
+    FROM sample_intervals AS points
+    INNER JOIN sample_cadence AS cadence
+        ON cadence.user_id = points.user_id AND cadence.activity_id = points.activity_id
+            AND cadence.channel = points.channel
+),
+
+observed_minutes AS (
+    SELECT
+        metadata.activity_id AS activity_id,
+        metadata.user_id AS user_id,
+        any(metadata.max_hr) AS max_hr,
+        any(metadata.resting_hr) AS resting_hr,
+        any(metadata.eftp) AS eftp,
+        sumIf(samples.covered_seconds, samples.channel = 'heart_rate' AND samples.scalar > 0) AS hr_seconds,
+        sumIf(samples.covered_seconds, samples.channel = 'power') AS power_seconds,
+        sumIf(samples.covered_seconds, samples.channel = 'heart_rate' AND samples.scalar > 0
+            AND samples.scalar < metadata.resting_hr + (metadata.max_hr - metadata.resting_hr) * 0.8) / 60.0 AS aerobic,
+        sumIf(samples.covered_seconds, samples.channel = 'heart_rate' AND samples.scalar > 0
+            AND samples.scalar >= metadata.resting_hr + (metadata.max_hr - metadata.resting_hr) * 0.8) / 60.0 AS hr_high,
+        sumIf(samples.covered_seconds, samples.channel = 'power'
+            AND samples.scalar >= metadata.eftp * 0.9) / 60.0 AS power_high
+    FROM activity_metadata AS metadata
+    LEFT JOIN covered_samples AS samples
+        ON samples.user_id = metadata.user_id AND samples.activity_id = metadata.activity_id
+    GROUP BY metadata.activity_id, metadata.user_id
 ),
 
 zone_minutes AS (
     SELECT
         activity_id,
-        user_id,
-        started_at,
-        ended_at,
-        if(
-            max_hr IS NOT NULL
-            AND resting_hr IS NOT NULL
-            AND heart_rate_sample_count > 0,
-            toFloat64(aerobic_sample_count) / toFloat64(heart_rate_sample_count) * duration_minutes,
-            0
-        ) AS aerobic_minutes,
-        greatest(
-            if(
-                max_hr IS NOT NULL
-                AND resting_hr IS NOT NULL
-                AND heart_rate_sample_count > 0,
-                toFloat64(heart_rate_high_intensity_sample_count)
-                    / toFloat64(heart_rate_sample_count) * duration_minutes,
-                0
-            ),
-            if(
-                ftp IS NOT NULL
-                AND power_sample_count > 0,
-                toFloat64(power_high_intensity_sample_count)
-                    / toFloat64(power_sample_count) * duration_minutes,
-                0
-            )
-        ) AS high_intensity_minutes
-    FROM sensor_counts
-),
-
-refresh_clock AS (
-    SELECT
-        toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-        now64(9) AS refreshed_at
+user_id,
+        max_hr IS NOT NULL AND resting_hr IS NOT NULL AND hr_seconds > 0 AS has_hr,
+        eftp IS NOT NULL AND power_seconds > 0 AS has_power,
+        if(has_hr, aerobic, CAST(NULL, 'Nullable(Float64)')) AS aerobic_minutes,
+        multiIf(has_hr AND has_power, greatest(hr_high, power_high), has_hr, hr_high,
+            has_power, power_high, CAST(NULL, 'Nullable(Float64)')) AS high_intensity_minutes
+    FROM observed_minutes
 )
 
 SELECT
-    activity_keys.activity_id AS activity_id,
-    activity_keys.user_id AS user_id,
-    zone_minutes.started_at AS started_at,
-    zone_minutes.ended_at AS ended_at,
-    coalesce(zone_minutes.aerobic_minutes, 0) AS aerobic_minutes,
-    coalesce(zone_minutes.high_intensity_minutes, 0) AS high_intensity_minutes,
-    if(zone_minutes.activity_id IS NULL, 1, 0) AS is_deleted,
-    refresh_clock.refresh_version AS refresh_version,
-    refresh_clock.refreshed_at AS refreshed_at
-FROM activity_keys
-LEFT JOIN zone_minutes
-    ON zone_minutes.activity_id = activity_keys.activity_id
-    AND zone_minutes.user_id = activity_keys.user_id
-CROSS JOIN refresh_clock
+    requested_activities.activity_id AS activity_id,
+    requested_activities.user_id AS user_id,
+    coalesce(metadata.started_at, requested_activities.started_at) AS started_at,
+    coalesce(metadata.ended_at, requested_activities.ended_at) AS ended_at,
+    zone_data.aerobic_minutes AS aerobic_minutes,
+    zone_data.high_intensity_minutes AS high_intensity_minutes,
+    if(metadata.activity_id IS NULL, 1, 0) AS is_deleted,
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+FROM activity_keys AS requested_activities
+LEFT JOIN activity_metadata AS metadata
+    ON metadata.user_id = requested_activities.user_id AND metadata.activity_id = requested_activities.activity_id
+LEFT JOIN zone_minutes AS zone_data
+    ON zone_data.user_id = requested_activities.user_id AND zone_data.activity_id = requested_activities.activity_id

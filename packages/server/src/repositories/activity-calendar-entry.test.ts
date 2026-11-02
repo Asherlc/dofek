@@ -9,6 +9,19 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
+  it("uses canonical per-activity power stress even without heart rate", () => {
+    const row = activityRowSchema.parse({
+      ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: 50 }),
+      power_tss: 83.25,
+    });
+    expect(
+      createActiveCalendarEntry(row, {
+        baseline: { max_hr: null, resting_hr: null },
+        calculator: new TrainingStressCalculator(),
+      }).tss,
+    ).toBe(83.3);
+  });
+
   it("keeps the primary source type separate from the representative classification", () => {
     const row = activityRowSchema.parse(
       makeActivityRow({
@@ -18,7 +31,7 @@ describe("activity calendar entries", () => {
       }),
     );
     const entry = createActiveCalendarEntry(row, {
-      baseline: { max_hr: null, resting_hr: null, ftp: null },
+      baseline: { max_hr: null, resting_hr: null },
       calculator: new TrainingStressCalculator(),
     });
 
@@ -37,7 +50,7 @@ describe("activity calendar entries", () => {
   ] as const)("projects active and absent map readiness %s", (mapReadiness, active, absent) => {
     const row = activityRowSchema.parse(makeActivityRow());
     const context = {
-      baseline: { max_hr: null, resting_hr: null, ftp: null },
+      baseline: { max_hr: null, resting_hr: null },
       calculator: new TrainingStressCalculator(),
       mapReadiness,
     };
@@ -75,7 +88,7 @@ describe("activity calendar entries", () => {
         local_time_source: "user_home_timezone",
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -116,7 +129,7 @@ describe("activity calendar entries", () => {
         local_date: "2026-03-19",
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -152,7 +165,7 @@ describe("activity calendar entries", () => {
         avg_power: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
     const routeRows = [
       {
         activity_id: "00000000-0000-0000-0000-000000000001",
@@ -205,7 +218,7 @@ describe("activity calendar entries", () => {
         centroid_lng: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -253,7 +266,7 @@ describe("activity calendar entries", () => {
         centroid_lng: -122.4194,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -282,7 +295,7 @@ describe("activity calendar entries", () => {
 
   it("explains every missing prerequisite when activities have no usable stress data", () => {
     const rows = [makeActivityRow({ avg_power: null, avg_hr: null })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -298,7 +311,7 @@ describe("activity calendar entries", () => {
             status: "missing",
             label: "Training Stress Score",
             reason:
-              "Record average power, or record average heart rate and set maximum heart rate.",
+              "Record cycling power with sufficient sustained-effort evidence for computed eFTP, or record average heart rate and set maximum heart rate.",
           },
         ],
       }),
@@ -307,7 +320,7 @@ describe("activity calendar entries", () => {
 
   it("does not compute stress for zero-duration activities", () => {
     const rows = [makeActivityRow({ duration_min: 0 })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -329,42 +342,14 @@ describe("activity calendar entries", () => {
     );
   });
 
-  it("does not compute power stress from zero power", () => {
-    const rows = [makeActivityRow({ avg_power: 0, avg_hr: null })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
+  it("retains canonical zero stress even when heart rate is available", () => {
+    const row = activityRowSchema.parse(makeActivityRow({ power_tss: 0, avg_hr: 150 }));
+    expect(
+      createActiveCalendarEntry(row, {
+        baseline: { max_hr: 190, resting_hr: 60 },
         calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]?.tss).toBeNull();
-  });
-
-  it("does not compute power stress from zero functional threshold power", () => {
-    const rows = [makeActivityRow({ avg_power: 250, avg_hr: null })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 0 };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason:
-              "Set functional threshold power, or record average heart rate and set maximum heart rate.",
-          },
-        ],
-      }),
-    );
+      }).tss,
+    ).toBe(0);
   });
 
   it("falls back to heart-rate stress when power stress cannot be computed", () => {
@@ -376,7 +361,7 @@ describe("activity calendar entries", () => {
         max_hr: 190,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -401,7 +386,7 @@ describe("activity calendar entries", () => {
         max_hr: 190,
       }),
     ];
-    const baseline = { max_hr: 200, resting_hr: 50, ftp: null };
+    const baseline = { max_hr: 200, resting_hr: 50 };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -420,7 +405,7 @@ describe("activity calendar entries", () => {
         max_hr: 190,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -439,7 +424,7 @@ describe("activity calendar entries", () => {
         max_hr: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -455,7 +440,7 @@ describe("activity calendar entries", () => {
             status: "missing",
             label: "Training Stress Score",
             reason:
-              "Record average power and set functional threshold power, or set maximum heart rate.",
+              "Record cycling power with sufficient sustained-effort evidence for computed eFTP, or set maximum heart rate.",
           },
         ],
       }),
@@ -470,7 +455,7 @@ describe("activity calendar entries", () => {
         max_hr: 60,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -486,7 +471,7 @@ describe("activity calendar entries", () => {
             status: "missing",
             label: "Training Stress Score",
             reason:
-              "Record average power and set functional threshold power, or set maximum heart rate above resting heart rate.",
+              "Record cycling power with sufficient sustained-effort evidence for computed eFTP, or set maximum heart rate above resting heart rate.",
           },
         ],
       }),
@@ -513,7 +498,7 @@ describe("activity calendar entries", () => {
         ],
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
@@ -533,6 +518,7 @@ describe("activity calendar entries", () => {
     const rows = [
       makeActivityRow({
         id: "hidden-power",
+        power_tss: 100,
         name: "Hidden Ride",
         canonical_type: "cycling",
         started_at: "2026-03-18T07:00:00.000Z",
@@ -551,7 +537,7 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -636,7 +622,7 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -681,7 +667,7 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const routeRows = routePoints.map((point) => ({
       activity_id: "hidden-outdoor-route",
@@ -739,7 +725,7 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -791,7 +777,7 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -830,7 +816,7 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
+    const baseline = { max_hr: null, resting_hr: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(

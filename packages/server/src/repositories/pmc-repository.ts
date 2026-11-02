@@ -30,8 +30,8 @@ const combinedActivityRowSchema = z.object({
   id: z.string(),
   date: z.string(),
   duration_min: z.coerce.number(),
-  avg_hr: z.coerce.number(),
-  max_hr: z.coerce.number(),
+  avg_hr: z.coerce.number().nullable(),
+  max_hr: z.coerce.number().nullable(),
   avg_power: z.coerce.number().nullable(),
   power_samples: z.coerce.number(),
   hr_samples: z.coerce.number(),
@@ -39,10 +39,12 @@ const combinedActivityRowSchema = z.object({
 
 const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
-  np: z.coerce.number(),
+  power_tss: z.coerce.number().nullable(),
+  eftp: z.coerce.number().nullable(),
 });
 
 type PmcRepositoryChartResult = PmcChartResult & {
+  unavailableReason: string | null;
   data: PmcDataPoint[];
   model: TssModelInfo;
 };
@@ -51,6 +53,7 @@ export async function buildPmcChartFromRows(input: {
   db: Pick<Database, "execute">;
   userId: string;
   range: ChartRange;
+  currentEftp: number | null;
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
   parameters?: PmcChartParameters;
@@ -62,10 +65,8 @@ export async function buildPmcChartFromRows(input: {
   const { genderFactor, exponent } = effective.trainingImpulseConstants;
   const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
   const trainingLoadCalculator = new PmcTrainingLoadCalculator({
-    estimateThresholdPower: TrainingStressCalculator.estimateFtp,
     computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
       trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
-    computePowerTrainingStressScore: TrainingStressCalculator.computePowerTss,
     computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
       trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
     buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
@@ -77,6 +78,7 @@ export async function buildPmcChartFromRows(input: {
   });
   const allTimeActivityDays = daysSinceEarliestActivity(input.activityRows);
   return chartCalculator.buildChart({
+    currentEftp: input.currentEftp,
     activityRows: input.activityRows,
     normalizedPowerRows: input.normalizedPowerRows,
     queryDays: queryRange.days ?? allTimeActivityDays,
@@ -133,6 +135,7 @@ export class PmcRepository extends BaseRepository {
     if ((await this.#loadRawActivityCount(queryRange)) === 0) {
       return {
         data: [],
+        unavailableReason: null,
         model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
       };
     }
@@ -177,8 +180,7 @@ export class PmcRepository extends BaseRepository {
       WHERE asum.user_id = {userId:UUID}
         ${activityRangeFilter}
         AND has({activityTypes:Array(String)}, asum.canonical_type)
-        AND asum.ended_at IS NOT NULL
-        AND coalesce(asum.hr_sample_count, 0) > 0`,
+        AND asum.ended_at IS NOT NULL`,
       {
         userId: this.userId,
         timezone: this.timezone,
@@ -196,17 +198,17 @@ export class PmcRepository extends BaseRepository {
       this.accessWindow,
     ).filterToVisibleActivities(activityRows);
 
-    // QUERY 2: Normalized Power per activity from activity_summary (pre-computed by dbt).
+    // Canonical per-activity stress retains the threshold applicable to each ride.
     const normalizedPowerRows = await this.#sensorStore.query(
       normalizedPowerRowSchema,
       `SELECT
         toString(activity_id) AS activity_id,
-        round(normalized_power, 1) AS np
-      FROM analytics.activity_summary
+        power_tss,
+        eftp
+      FROM analytics.cycling_activity_power_metrics
       WHERE user_id = {userId:UUID}
         ${queryRange.clickHouseTimestampAfter("started_at", "queryDays")}
-        AND has({activityTypes:Array(String)}, canonical_type)
-        AND normalized_power IS NOT NULL`,
+      ORDER BY started_at`,
       {
         userId: this.userId,
         ...queryRange.clickHouseParams("queryDays"),
@@ -214,10 +216,19 @@ export class PmcRepository extends BaseRepository {
       },
     );
 
+    const currentRows = await this.#sensorStore.query(
+      z.object({ eftp: z.coerce.number().nullable() }),
+      `SELECT eftp FROM analytics.cycling_threshold_history
+       WHERE user_id = {userId:UUID} AND event_at <= now64(3)
+       ORDER BY event_at DESC LIMIT 1`,
+      { userId: this.userId },
+    );
+
     return buildPmcChartFromRows({
       db: this.db,
       userId: this.userId,
       range,
+      currentEftp: currentRows[0]?.eftp ?? null,
       activityRows: visibleActivityRows,
       normalizedPowerRows,
       parameters,

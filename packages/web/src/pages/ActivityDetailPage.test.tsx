@@ -252,7 +252,11 @@ interface MockPowerZone {
 }
 
 interface MockPowerZonesResult {
-  ftp: number;
+  ftp: number | null;
+  thresholdEvidence: Omit<typeof computedThresholdEvidence, "value" | "unavailable_reason"> & {
+    value: number | null;
+    unavailable_reason: string | null;
+  };
   zones: MockPowerZone[];
 }
 
@@ -311,6 +315,24 @@ const mockRouteUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const computedThresholdEvidence = {
+  value: 250,
+  unit: "watt" as const,
+  method: "computed_eftp" as const,
+  event_at: "2026-03-05T12:00:00Z",
+  evidence_activity_id: "00000000-0000-4000-8000-000000000101",
+  evidence_at: "2026-03-01T12:00:00Z",
+  evidence_duration_seconds: 1200,
+  evidence_power: 265,
+  model_version: "v1",
+  uncertainty: {
+    kind: "not_quantifiable" as const,
+    watts: null,
+    reason:
+      "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+  },
+  unavailable_reason: null,
+};
 const mockPowerZonesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<MockPowerZonesResult> => ({
     data: undefined,
@@ -1537,6 +1559,36 @@ describe("ActivityDetailPage", () => {
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
   });
 
+  it("shows the server reason when computed cycling threshold evidence is unavailable", async () => {
+    const originalActivity = { ...mockActivity };
+    const originalStream = [...mockStreamPoints];
+    mockStreamPoints.splice(
+      0,
+      mockStreamPoints.length,
+      ...originalStream.map((point) => ({ ...point, power: 210 })),
+    );
+    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+    mockPowerZonesUseQuery.mockReturnValue({
+      data: {
+        ftp: null,
+        zones: [],
+        thresholdEvidence: {
+          ...computedThresholdEvidence,
+          value: null,
+          unavailable_reason: "No supported sustained power effort is available.",
+        },
+      },
+      isLoading: false,
+      error: null,
+      isError: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    expect(screen.getByText("No supported sustained power effort is available.")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+    mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+  });
+
   it("keeps cached power zones visible while reporting their refresh failure", async () => {
     const originalActivity = { ...mockActivity };
     const originalStream = [...mockStreamPoints];
@@ -1549,6 +1601,7 @@ describe("ActivityDetailPage", () => {
     mockPowerZonesUseQuery.mockReturnValue({
       data: {
         ftp: 250,
+        thresholdEvidence: computedThresholdEvidence,
         zones: [{ zone: 1, label: "Zone 1", minPct: 0, maxPct: 55, seconds: 300, percent: 100 }],
       },
       error: new Error("Power zones refresh failed."),
@@ -1561,6 +1614,14 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getByText("Power Zones")).toBeDefined();
     expect(screen.getByText("Power zones refresh failed.")).toBeDefined();
+    expect(screen.getByText("Computed eFTP: 250 W")).toBeDefined();
+    expect(screen.getByText(/Evidence:/)).toBeDefined();
+    fireEvent.click(screen.getByText("Estimate uncertainty"));
+    expect(
+      screen.getByText(
+        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+      ),
+    ).toBeTruthy();
     Object.assign(mockActivity, originalActivity);
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
   });
@@ -3236,6 +3297,7 @@ describe("ActivityDetailPage", () => {
       mockPowerZonesUseQuery.mockReturnValue({
         data: {
           ftp: 250,
+          thresholdEvidence: computedThresholdEvidence,
           zones: [
             { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
             { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
@@ -3329,6 +3391,7 @@ describe("ActivityDetailPage", () => {
       mockPowerZonesUseQuery.mockReturnValue({
         data: {
           ftp: 250,
+          thresholdEvidence: computedThresholdEvidence,
           zones: [
             { zone: 1, label: "Endurance", minPct: 56, maxPct: 75, seconds: 240, percent: 100 },
           ],

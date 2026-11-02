@@ -15,11 +15,12 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
-    expect(migrationIds.slice(-4)).toEqual([
+    expect(migrationIds.slice(-5)).toEqual([
       "0104_activity_origin",
       "0105_activity_absence_provider",
       "0106_activity_primary_type",
       "0107_running_step_cadence",
+      "0108_computed_cycling_power",
     ]);
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(
@@ -171,7 +172,7 @@ describe("clickHouseMigrations", () => {
       id: "0064_activity_summary_freshness",
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
-        expect.stringContaining("climbing_seconds,\n  refreshed_at"),
+        expect.stringContaining("summary.climbing_seconds,\n  summary.refreshed_at"),
       ],
     });
     expect(

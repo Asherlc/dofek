@@ -2,6 +2,7 @@ import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { cyclingThresholdEvidenceSchema } from "../contracts/cycling-threshold.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
@@ -55,6 +56,7 @@ const estimateEvidenceByPeriodSchema = z.object({
   vo2Max: estimateEvidenceSchema,
 });
 const pmcSchema = z.object({
+  unavailableReason: z.string().nullable(),
   data: z.array(
     z.object({
       date: z.string(),
@@ -88,6 +90,7 @@ const performanceOutputSchema = z.object({
       }),
     ),
     currentEftp: z.number().nullable(),
+    currentEvidence: cyclingThresholdEvidenceSchema,
     model: powerModelSchema.nullable(),
   }),
   availability: z.object({
@@ -195,7 +198,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
-    { keyVersion: "cycling-performance-v2" },
+    { keyVersion: "cycling-performance-computed-eftp-v3" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",
@@ -210,6 +213,6 @@ export const cyclingRouter = router({
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
     activitiesOutputSchema,
-    { keyVersion: "cycling-activity-primary-title-v2" },
+    { keyVersion: "cycling-activity-computed-eftp-v3" },
   ),
 });

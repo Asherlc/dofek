@@ -399,10 +399,18 @@ Per-activity MCP workout metrics intentionally do not add another stored source 
 server pages canonical rows from `cycling_activity`, resolves identity and timezone evidence from
 `deduped_activities`, and reads only power, heart-rate, and cadence channels for those selected
 activity IDs from `activity_sensor_sample FINAL`. It joins standard-duration evidence from
-`activity_power_curve FINAL` and effective-dated thresholds from Postgres at request time. This
+`activity_power_curve FINAL` and canonical computed eFTP projections at request time. This
 bounded fan-out keeps native samples out of the LLM payload while preserving missing-time and
 measurement-kind evidence. The duplicate test fixture inserts the same ride through two source
 members and verifies that canonical activity duration and work are calculated once.
+
+Cycling FTP, normalized power, intensity factor and power stress have one
+[pure TypeScript algorithm owner](../packages/cycling-power/README.md). The
+[application projector](../src/analytics/README.md) supplies versioned empirical
+reference data, source selection and ClickHouse persistence. No manual cycling
+FTP setting is used. NP observation freshness and complete-user history
+publication prevent mixed input revisions; affected healthspan models run after
+the projection stage. See the [implementation design](../docs/superpowers/specs/2026-11-01-computed-cycling-eftp-design.md).
 
 Because `activity_power_curve` is append-incremental, a formula or
 standard-duration change does not rewrite unchanged historical activities.

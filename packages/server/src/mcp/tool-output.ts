@@ -10,6 +10,10 @@ import {
 } from "../contracts/activity-location.ts";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
 import { climbingLogEntryDetailResponseSchema } from "../contracts/climbing-log-contracts.ts";
+import {
+  cyclingThresholdEvidenceSchema,
+  cyclingThresholdHistoryItemSchema,
+} from "../contracts/cycling-threshold.ts";
 import { activityOriginColumnsSchema } from "../models/activity-origin.ts";
 import {
   fingerLoadingExerciseSchema,
@@ -601,103 +605,16 @@ export const cyclingPowerCurveOutputSchema = z
   })
   .strict();
 
-const thresholdHistoryItemSchema = z
-  .object({
-    id: z.uuid(),
-    evidence_kind: z.literal("configured"),
-    sport: z.string(),
-    threshold_type: z.string(),
-    value: z.number().positive(),
-    unit: z.string(),
-    observed_at: nullableString,
-    effective_at: nullableString,
-    provider: nullableString,
-    provider_record_id: nullableString,
-    value_kind: z.literal("configured"),
-    historical_validity: z.literal("effective_dated"),
-    raw_evidence_available: z.boolean(),
-    quality: z
-      .object({
-        status: z.enum(["high", "moderate", "limited"]),
-        reason: nullableString,
-      })
-      .strict(),
-  })
-  .strict();
 export const thresholdHistoryOutputSchema = z
   .object({
     result: z
       .object({
         start_date: z.string(),
         end_date: z.string(),
-        items: z.array(thresholdHistoryItemSchema),
-        legacy_current: z
-          .object({
-            value: z.number().positive(),
-            unit: z.literal("watt"),
-            source: z.literal("user_profile.ftp"),
-            value_kind: z.literal("configured"),
-            historical_validity: z.literal("unknown"),
-            reason: z.string().min(1),
-          })
-          .strict()
-          .nullable(),
+        items: z.array(cyclingThresholdHistoryItemSchema),
         next_cursor: nullableString,
       })
       .strict(),
-  })
-  .strict();
-
-const cyclingThresholdMethodSchema = z.enum([
-  "best_supported",
-  "configured",
-  "twenty_minute_95_percent",
-  "sustained_40_to_70_minutes",
-  "critical_power_model",
-]);
-const cyclingThresholdResultMethodSchema = cyclingThresholdMethodSchema.exclude(["best_supported"]);
-const cyclingThresholdEstimateResultSchema = z
-  .object({
-    threshold_watts: z.number().positive(),
-    watts_per_kg: z.number().positive().nullable(),
-    watts_per_kg_reason: nullableString,
-    method: cyclingThresholdResultMethodSchema,
-    classification: z.enum(["configured", "estimated"]),
-    confidence: z.enum(["high", "moderate", "limited"]),
-    uncertainty: z
-      .object({
-        watts: z.number().nonnegative().nullable(),
-        kind: z.enum(["not_applicable", "not_quantifiable", "model_rmse"]),
-        reason: nullableString,
-      })
-      .strict(),
-    evidence: z
-      .object({
-        threshold_history: z.array(thresholdHistoryItemSchema),
-        efforts: z.array(cyclingPowerCurveEffortSchema),
-      })
-      .strict(),
-    relevant_activity_ids: z.array(z.uuid()),
-    assumptions: z.array(z.string().min(1)),
-    model: z
-      .object({
-        cp_watts: z.number().positive(),
-        w_prime_joules: z.number(),
-        r2: z.number(),
-        rmse_watts: z.number().nonnegative(),
-        residuals: z.array(
-          z
-            .object({
-              duration_seconds: z.number().int().positive(),
-              observed_watts: z.number().positive(),
-              predicted_watts: z.number(),
-              residual_watts: z.number(),
-            })
-            .strict(),
-        ),
-      })
-      .strict()
-      .nullable(),
   })
   .strict();
 export const cyclingThresholdEstimateOutputSchema = z
@@ -706,8 +623,22 @@ export const cyclingThresholdEstimateOutputSchema = z
       .object({
         start_date: z.string(),
         end_date: z.string(),
-        requested_method: cyclingThresholdMethodSchema,
-        result: cyclingThresholdEstimateResultSchema.nullable(),
+        result: z
+          .object({
+            threshold_watts: z.number().positive(),
+            watts_per_kg: nullableNumber,
+            watts_per_kg_reason: nullableString,
+            method: z.literal("computed_eftp"),
+            classification: z.literal("estimated"),
+            uncertainty: z
+              .object({ watts: z.null(), kind: z.literal("not_quantifiable"), reason: z.string() })
+              .strict(),
+            evidence: cyclingThresholdEvidenceSchema,
+            relevant_activity_ids: z.array(z.uuid()),
+            assumptions: z.array(z.string()),
+          })
+          .strict()
+          .nullable(),
         unavailable_reason: nullableString,
         weight: cyclingPowerCurveWeightSchema,
       })

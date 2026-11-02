@@ -1,4 +1,4 @@
-import type { CriticalPowerModel } from "@dofek/training/power-analysis";
+import type { CriticalPowerModel } from "@dofek/cycling-power/critical-power";
 
 export type { CriticalPowerModel };
 
@@ -19,15 +19,20 @@ export const powerRouter = router({
     const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
     return repo.getPowerCurve(range);
   }),
-  eftpTrend: selectedChartRangeQuery("power.eftpTrend", CacheTTL.LONG, async ({ ctx, range }) => {
-    if (!ctx.sensorStore) {
-      throw new TRPCError({
-        code: "PRECONDITION_FAILED",
-        message:
-          "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
-      });
-    }
-    const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
-    return repo.getEftpTrend(range);
-  }),
+  eftpTrend: selectedChartRangeQuery(
+    "power.eftpTrend",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
+      return repo.getEftpTrend(range);
+    },
+    { keyVersion: "computed-eftp-v1" },
+  ),
 });

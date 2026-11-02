@@ -236,6 +236,54 @@ accuracy, a numerical correction factor, or distributable production parameters.
 It specifically motivates testing long-duration calibration evidence in the
 next original-CC0 calibration round.
 
+## Selected original-source calibration
+
+The implementation uses a fresh deterministic 256-archive original-CC0 sample,
+excluding the 64 raw pilot identities. All selections were attempted: 252
+archives decoded, with two declared size-cap exclusions and two malformed
+upstream summaries. Transfer was 156,331,439 bytes, within the 192 MiB bound.
+The [frozen public manifest](cycling-power-source-manifest.json) has SHA256
+`2c4843dc2fb080b2d1c4ee992b989d6453b847de08a9ab801e0ea69ece4ca2bb`.
+
+Requiring every fitting duration from 180 through 3,600 seconds yielded 212
+athletes: 161 training and 51 held out. The predeclared hash split was not
+reselected. Nine pooled P10–P90 Morton reference curves used the same positive
+parameter fit and relative-error objective described above. The resulting
+[aggregate bank](../src/analytics/cycling-reference-bank.json) and
+[application policy](../src/analytics/cycling-power-policy.ts) remain outside
+[the reusable algorithms package](../packages/cycling-power/README.md).
+
+| Input → observed 60-minute best | Admitted held-out athletes | Median signed difference | Median absolute difference | P90 absolute difference |
+| --- | ---: | ---: | ---: | ---: |
+| 5 minutes | 42 | −4.26% | 5.26% | 15.32% |
+| 10 minutes | 41 | −3.31% | 5.96% | 15.26% |
+| 20 minutes | 39 | +1.23% | 3.74% | 8.15% |
+
+No neighboring curves crossed and no fit hit the parameter-search boundary.
+Outside-bank exclusions were 9, 10 and 12 athletes respectively; no extrapolated
+or clamped predictions enter these scores. Approximate anchor domains are
+236–439 W at five minutes and 192–351 W at twenty minutes; modeled hour powers
+at the bank endpoints are approximately 161–299 W. These are supported-model
+domains, not limits on human capacity.
+
+Limitations remain material. All held-out athletes were male; five eligible
+female athletes were in training. The original records contain suspect power
+extrema and were not repaired or screened using invented physiological ceilings.
+Percentile fitting limits direct influence of extrema but does not prove clean
+calibration. Lifetime MMP observations may span fitness states and are lower
+bounds on capacity, not independent physiological FTP labels. The processed
+broader exploratory dataset lacks UUID mapping, so disjointness from that study
+cannot be certified. These scores assess fixed-anchor prediction, not individual
+physiological uncertainty or the maximum-over-efforts rule in every training
+pattern. The application labels uncertainty unquantified and unsupported input
+unavailable. It does not claim Intervals.icu numerical parity.
+
+The selected decay policy is separately versioned application configuration:
+after 28 observed days, compare the two completed 14-day dose windows and apply
+at most 0.1% decline per day in proportion to the dose deficit. Two empty
+windows represent observed inactivity; missing power withholds decline. This is
+a conservative product heuristic, not a recovered Intervals formula or a
+validated universal detraining coefficient.
 ## Decay is a model choice, not a known physiological constant
 
 The published Intervals.icu explanation establishes qualitative behavior but
@@ -293,18 +341,18 @@ The following findings come from the linked repository sources.
 
 ## Recommended ownership and unification
 
-Use one dbt-owned numerical pipeline, producing canonical ClickHouse activity
-metrics and eFTP history. TypeScript repositories, web, mobile, MCP, calendar,
-PMC, and healthspan consume those outputs. This follows the current
-[analytics build architecture](../analytics/README.md), rather than adding another writer
-or running an equivalent raw-history computation on API requests.
+Use one pure TypeScript algorithms package, invoked by the serialized application
+projector to produce canonical ClickHouse activity metrics and eFTP history.
+dbt supplies canonical inputs and downstream projections; TypeScript repositories,
+web, mobile, MCP, calendar, PMC and healthspan consume those outputs. This follows
+the [analytics build architecture](../analytics/README.md); API requests do not
+recompute raw user history.
 
 The sequence is: canonical source selection and elapsed power coverage →
 canonical normalized power and dose → ongoing eFTP → activity-applicable
-intensity factor and power TSS → serving projections. A compact chronological
-recurrence can use ClickHouse's
-[`arrayFold`](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayfold)
-over activity/day summaries, never raw sensor arrays across a user's history.
+intensity factor and power TSS → serving projections. The package's chronological
+recurrence operates over compact activity summaries, never raw sensor arrays
+across a user's history; database orchestration remains outside the package.
 
 Keep Critical Power as a separately named performance-analysis result, not an
 alternate FTP source. A selected-period CP comparison may legitimately differ
@@ -327,41 +375,19 @@ summary histories; do not introduce checkpoint infrastructure before measured
 cardinality requires it. Reuse existing processing contracts and dbt result
 evidence so missing downstream metrics cannot be reported as processed.
 
-## Research status
+## Research and implementation status
 
-The source-data access and licensing gap is resolved for an independent model
-built from original CC0 observations. The consumer audit establishes one runtime
-owner and the complete removal scope. The exploratory experiments establish that
-fitting choices materially affect sustained-power predictions; they do not yet
-select production parameters. No product algorithms, manual configuration, or
-schema have changed.
+The user approved implementation and explicitly selected a pure TypeScript,
+database-independent algorithms package. The original-source bank and explicit
+application policy above are implemented; serving consumers share one numerical
+owner. Database orchestration, provenance and wire contracts remain in Dofek.
+Implementation verification includes pure numerical regressions, matching
+whole-activity/interval coverage, same-day completion admission, historical
+replay, revision publication, account-erasure races and fresh/upgrade schemas.
+No production deployment is implied by this research record.
 
-Complete one bounded calibration round before the product implementation plan:
-
-1. Freeze the original archive file-ID/checksum manifest and an athlete-level
-   development/validation/final-test split. Exclude every exploratory athlete
-   from the final test. Fix comparison metrics and release criteria before
-   inspecting final-test predictions.
-2. Use dated athlete-periods with actual 3,600-second observations. Report the
-   effects of temporal alignment, source coverage, and cohort representation.
-   Do not equate lifetime bests recorded in different fitness states or derive
-   distributable coefficients from the ambiguously licensed processed table.
-3. Compare the already explored three-parameter reference fitting rules on the
-   same eligible cases, with explicit reference-range admission counts. Evaluate
-   the actual per-ride maximum-candidate selection, not only isolated anchors;
-   taking a maximum over many predictions can amplify overestimation. Freeze
-   the choice on development data, then evaluate it once on untouched athletes.
-4. Evaluate chronological carry-forward and a separately specified decay policy
-   against dated maintenance, reduced-training, cessation, and missing-data
-   histories. Lifetime best curves cannot identify a decay coefficient. Report
-   what subsequent sustained performances support and what remains unobserved.
-5. Issue a numerical go/no-go decision. If evidence remains insufficient, state
-   the unresolved product decision explicitly. Do not expand research without
-   limit, silently replace the requested process with another estimator, or
-   ship indefinite carry-forward as though gradual decay had been implemented.
-
-The independent builder review reaches the same conclusion: the architecture
-can be specified now, but production reference coefficients, numerical
-uncertainty, qualifying duration, and decay are not established by these
-experiments. The next implementation plan must carry those decisions rather
-than leaving them for individual API or UI implementers.
+Future calibration work should retain frozen manifests, athlete-level splits,
+actual long-duration evidence, explicit admission counts, and subgroup/error-tail
+reporting. Do not infer sex, fabricate physiological confidence intervals, copy
+parameters from ambiguously licensed derivatives, or replace the canonical model
+with another formula inside an individual API or client.

@@ -54,8 +54,11 @@ High-volume sensor samples ──────┴─> Redpanda ──────
 - PeerDB mirrors lower-volume `fitness.*` tables into `postgres_fitness.*` in
   ClickHouse.
 - Incremental dbt models under `analytics/models/` produce expensive derived
-  analytics outside request paths. Derived sensor analytics are never written
-  back to Postgres.
+  analytics outside request paths. The serialized analytics worker also calls
+  the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
+  through its [bounded projector](src/analytics/README.md); dbt inputs precede
+  projection and dependent healthspan models follow it. Derived sensor analytics
+  are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.
 

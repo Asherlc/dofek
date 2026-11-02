@@ -8,17 +8,9 @@ import {
 
 function makeTrainingLoadCalculator(): PmcTrainingLoadCalculator {
   return new PmcTrainingLoadCalculator({
-    estimateThresholdPower: (activities) =>
-      activities.some((activity) => activity.avg_power != null && activity.power_samples > 0)
-        ? 190
-        : null,
     computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) => {
       if (maxHr <= restingHr || avgHr <= restingHr) return 0;
       return durationMin * ((avgHr - restingHr) / (maxHr - restingHr));
-    },
-    computePowerTrainingStressScore: (normalizedPower, thresholdPower, durationMin) => {
-      if (thresholdPower <= 0) return 0;
-      return (normalizedPower / thresholdPower) * durationMin;
     },
     computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) => {
       if (maxHr <= restingHr || avgHr <= restingHr) return 0;
@@ -60,7 +52,6 @@ function makeLearnedModelInput(): {
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
 } {
-  const thresholdPower = 190;
   const globalMaxHeartRate = 190;
   const restingHeartRate = 60;
   const genderFactor = 1.92;
@@ -75,7 +66,6 @@ function makeLearnedModelInput(): {
     const trimp =
       60 * deltaHeartRateRatio * genderFactor * Math.exp(exponent * deltaHeartRateRatio);
     const powerTss = trimp * 1.25 + 4;
-    const normalizedPower = thresholdPower * Math.sqrt(powerTss / 100);
     const date = new Date();
     date.setDate(date.getDate() - 20 + index);
     const activityId = `learned-model-${index}`;
@@ -88,17 +78,33 @@ function makeLearnedModelInput(): {
         avg_power: 200,
       }),
     );
-    normalizedPowerRows.push({ activity_id: activityId, np: normalizedPower });
+    normalizedPowerRows.push({ activity_id: activityId, power_tss: powerTss, eftp: 190 });
   }
 
   return { activityRows, normalizedPowerRows };
 }
 
 describe("PmcChartCalculator", () => {
+  it("withholds a chart when any activity has unknown load", () => {
+    const result = makeCalculator().buildChart({
+      currentEftp: 190,
+      activityRows: [
+        makeActivityRow({ id: "known" }),
+        makeActivityRow({ id: "unknown", avg_hr: null }),
+      ],
+      normalizedPowerRows: [{ activity_id: "known", power_tss: 100, eftp: 190 }],
+      queryDays: 407,
+      displayDays: 90,
+    });
+    expect(result.data).toEqual([]);
+    expect(result.unavailableReason).toContain("1 cycling activity");
+  });
+
   it("returns the generic empty model when there is no global max heart rate", () => {
     const calculator = makeCalculator();
 
     const result = calculator.buildChart({
+      currentEftp: 190,
       activityRows: [makeActivityRow({ global_max_hr: null })],
       normalizedPowerRows: [],
       queryDays: 407,
@@ -107,16 +113,26 @@ describe("PmcChartCalculator", () => {
 
     expect(result).toEqual({
       data: [],
-      model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+      unavailableReason:
+        "Training load is unavailable for 1 cycling activity: computed power stress and usable heart-rate data are missing.",
+      model: { type: "generic", pairedActivities: 0, r2: null, ftp: 190 },
     });
   });
 
-  it("builds chart data and threshold power from activity rows", () => {
+  it("builds a power-only chart from canonical per-activity stress", () => {
     const calculator = makeCalculator();
 
     const result = calculator.buildChart({
-      activityRows: [makeActivityRow({ id: "power-activity", avg_power: 200 })],
-      normalizedPowerRows: [{ activity_id: "power-activity", np: 220 }],
+      currentEftp: 190,
+      activityRows: [
+        makeActivityRow({
+          id: "power-activity",
+          avg_power: 200,
+          avg_hr: null,
+          global_max_hr: null,
+        }),
+      ],
+      normalizedPowerRows: [{ activity_id: "power-activity", power_tss: 125, eftp: 190 }],
       queryDays: 407,
       displayDays: 90,
     });
@@ -130,6 +146,7 @@ describe("PmcChartCalculator", () => {
     const { activityRows, normalizedPowerRows } = makeLearnedModelInput();
 
     const result = calculator.buildChart({
+      currentEftp: 190,
       activityRows,
       normalizedPowerRows,
       queryDays: 407,
@@ -149,12 +166,14 @@ describe("PmcChartCalculator", () => {
     const highRestingCalculator = makeCalculator();
 
     const lowRestingResult = lowRestingCalculator.buildChart({
+      currentEftp: null,
       activityRows: [makeActivityRow({ avg_power: null, power_samples: 0, resting_hr: 40 })],
       normalizedPowerRows: [],
       queryDays: 407,
       displayDays: 90,
     });
     const highRestingResult = highRestingCalculator.buildChart({
+      currentEftp: null,
       activityRows: [makeActivityRow({ avg_power: null, power_samples: 0, resting_hr: 80 })],
       normalizedPowerRows: [],
       queryDays: 407,

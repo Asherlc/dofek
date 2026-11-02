@@ -137,6 +137,7 @@ export class AnalyticsWorker {
           if (await this.runCycle()) return;
           await this.#options.sleep(this.#options.retryDelayMilliseconds, signal);
         }
+        throw new Error("Analytics refresh aborted before completion");
       },
       this.#options.intervalMilliseconds,
       signal,

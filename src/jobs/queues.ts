@@ -461,7 +461,23 @@ let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedDataExportQueue: Queue<ExportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
+let cachedAnalyticsRefreshQueue: Queue<AnalyticsRefreshJobData> | null = null;
+let cachedAnalyticsRefreshQueueEvents: QueueEvents | null = null;
 let cachedFlowProducer: FlowProducer | null = null;
+
+export function getAnalyticsRefreshQueue(): Queue<AnalyticsRefreshJobData> {
+  cachedAnalyticsRefreshQueue ??= new Queue(ANALYTICS_REFRESH_QUEUE, {
+    connection: getRedisCommandConnection(),
+  });
+  return cachedAnalyticsRefreshQueue;
+}
+
+export function getAnalyticsRefreshQueueEvents(): QueueEvents {
+  cachedAnalyticsRefreshQueueEvents ??= new QueueEvents(ANALYTICS_REFRESH_QUEUE, {
+    connection: getRedisConnection(),
+  });
+  return cachedAnalyticsRefreshQueueEvents;
+}
 
 export function getImportQueue(): Queue<ImportJobData> {
   if (!cachedImportQueue) {
@@ -769,6 +785,9 @@ export async function closeAllQueueResources(): Promise<void> {
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
+  if (cachedAnalyticsRefreshQueue) closePromises.push(cachedAnalyticsRefreshQueue.close());
+  if (cachedAnalyticsRefreshQueueEvents)
+    closePromises.push(cachedAnalyticsRefreshQueueEvents.close());
 
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
@@ -779,6 +798,8 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
+  cachedAnalyticsRefreshQueue = null;
+  cachedAnalyticsRefreshQueueEvents = null;
 
   await Promise.allSettled(closePromises);
 

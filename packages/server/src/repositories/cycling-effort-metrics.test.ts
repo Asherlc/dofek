@@ -1,13 +1,19 @@
+import { normalizedPower } from "@dofek/cycling-power/power";
+import { cyclingPowerCoveragePolicy } from "@dofek/training/cycling-power-policy";
 import type { Database } from "dofek/db";
 import type { SQL } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output.ts";
 import {
-  calculateCyclingEffortMetrics,
+  calculateCyclingEffortMetrics as assembleCyclingEffortMetrics,
+  type CyclingEffortContext,
+  type CyclingEffortSample,
   effectiveSettings,
+  evaluateCyclingEffortMetrics,
   loadCyclingEffortData,
   loadCyclingEffortMetrics,
+  prepareCyclingEffortMetrics,
   recordedIntervalsForActivity,
 } from "./cycling-effort-metrics.ts";
 import type { SportSettingsRow } from "./sport-settings-repository.ts";
@@ -16,7 +22,6 @@ const settings: SportSettingsRow = {
   id: "threshold",
   userId: "user",
   sport: "cycling",
-  ftp: 250,
   thresholdHr: 175,
   thresholdPacePerKm: null,
   powerZonePcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
@@ -40,6 +45,19 @@ const context = {
   durationSeconds: 1800,
   activityDate: "2026-06-15",
   settingsHistory: [settings],
+  activityPowerMetrics: {
+    activity_id: "00000000-0000-4000-8000-000000000001",
+    started_at: "2026-06-15T00:00:00Z",
+    normalized_power: 210,
+    model_version: "test-cycling-model",
+    eftp: 250,
+    power_tss: 35.28,
+    intensity_factor: 0.84,
+    evidence_activity_id: "00000000-0000-4000-8000-000000000002",
+    evidence_at: "2026-06-14T00:00:00Z",
+    evidence_duration_seconds: 600,
+    evidence_power: 300,
+  },
   intervals: [],
   weightObservations: [
     {
@@ -56,6 +74,25 @@ const context = {
   sourceProviders: ["sensor"],
   sourceDevices: ["meter"],
 };
+
+function calculateCyclingEffortMetrics(
+  samples: CyclingEffortSample[],
+  context: CyclingEffortContext,
+) {
+  const prepared = prepareCyclingEffortMetrics(samples, context);
+  return assembleCyclingEffortMetrics(prepared, {
+    activity: {
+      normalizedPowerWatts: context.activityPowerMetrics?.normalized_power ?? null,
+      intensityFactor: context.activityPowerMetrics?.intensity_factor ?? null,
+      trainingStressScore: context.activityPowerMetrics?.power_tss ?? null,
+    },
+    intervals: prepared.powerWindows.map(() => ({
+      normalizedPowerWatts: null,
+      intensityFactor: null,
+      trainingStressScore: null,
+    })),
+  });
+}
 
 const activityA = "00000000-0000-4000-8000-000000000001";
 const activityB = "00000000-0000-4000-8000-000000000002";
@@ -95,6 +132,161 @@ function emptyDatabase() {
 }
 
 describe("calculateCyclingEffortMetrics", () => {
+  it.each([1, 5, 0.5])(
+    "retains a native null through cleaning and real interval evaluation at %s second cadence",
+    async (cadence) => {
+      const native = Array.from({ length: 60 / cadence }, (_, i) => ({
+        elapsedSeconds: i * cadence,
+        powerWatts: i * cadence === 30 ? null : 240,
+      }));
+      const canonicalNormalizedPower = normalizedPower(
+        native.map((sample) => ({
+          elapsedSeconds: sample.elapsedSeconds,
+          watts: sample.powerWatts,
+        })),
+        60,
+        cyclingPowerCoveragePolicy,
+      );
+      const prepared = prepareCyclingEffortMetrics(native, {
+        ...context,
+        durationSeconds: 60,
+        activityPowerMetrics: {
+          ...context.activityPowerMetrics,
+          normalized_power: canonicalNormalizedPower,
+          intensity_factor: null,
+          power_tss: null,
+        },
+        intervals: [{ index: 1, type: "work", startOffsetSeconds: 0, endOffsetSeconds: 60 }],
+      });
+      const [result] = await evaluateCyclingEffortMetrics([prepared]);
+      expect(result?.workout.coverage.power.coveredSeconds).toBeLessThan(60);
+      expect(result?.workout.coverage.power.observedSamples).toBe(native.length - 1);
+      expect(result?.workout.power.normalizedWatts).toBeNull();
+      expect(result?.intervals[0]?.normalizedPowerWatts).toBeNull();
+    },
+  );
+
+  it.each([Number.NaN, -1, 100])(
+    "retains invalid or conflicting native power %s as an interval barrier",
+    async (value) => {
+      const native: CyclingEffortSample[] = Array.from({ length: 60 }, (_, elapsedSeconds) => ({
+        elapsedSeconds,
+        powerWatts: 240,
+      }));
+      native.push({ elapsedSeconds: 30, powerWatts: value });
+      const prepared = prepareCyclingEffortMetrics(native, {
+        ...context,
+        durationSeconds: 60,
+        activityPowerMetrics: {
+          ...context.activityPowerMetrics,
+          normalized_power: null,
+          intensity_factor: null,
+          power_tss: null,
+        },
+        intervals: [{ index: 1, type: "work", startOffsetSeconds: 0, endOffsetSeconds: 60 }],
+      });
+      const [result] = await evaluateCyclingEffortMetrics([prepared]);
+      expect(result?.workout.coverage.power.coveredSeconds).toBe(59);
+      expect(result?.workout.coverage.power.observedSamples).toBe(59);
+      expect(result?.intervals[0]?.normalizedPowerWatts).toBeNull();
+    },
+  );
+
+  it("ignores undefined other-channel fields during real interval evaluation", async () => {
+    const native: CyclingEffortSample[] = Array.from({ length: 60 }, (_, elapsedSeconds) => ({
+      elapsedSeconds,
+      powerWatts: 240,
+    }));
+    native.push({ elapsedSeconds: 30.5, heartRateBpm: 130 });
+    const prepared = prepareCyclingEffortMetrics(native, {
+      ...context,
+      durationSeconds: 60,
+      activityPowerMetrics: { ...context.activityPowerMetrics, normalized_power: 240 },
+      intervals: [{ index: 1, type: "work", startOffsetSeconds: 0, endOffsetSeconds: 60 }],
+    });
+    const [result] = await evaluateCyclingEffortMetrics([prepared]);
+    expect(result?.workout.coverage.power.coveredSeconds).toBe(60);
+    expect(result?.workout.power.normalizedWatts).toBe(240);
+    expect(result?.intervals[0]?.normalizedPowerWatts).toBe(240);
+  });
+  it("uses canonical activity power metrics and separately evaluated interval metrics", () => {
+    const prepared = prepareCyclingEffortMetrics(samples, {
+      ...context,
+      activityPowerMetrics: {
+        activity_id: activityA,
+        started_at: "2026-06-15T00:00:00Z",
+        normalized_power: 257,
+        model_version: "test-cycling-model",
+        eftp: 300,
+        power_tss: 36.694,
+        intensity_factor: 0.856667,
+        evidence_activity_id: activityB,
+        evidence_at: "2026-06-14T00:00:00Z",
+        evidence_duration_seconds: 600,
+        evidence_power: 350,
+      },
+      intervals: [{ index: 4, type: "work", startOffsetSeconds: 10, endOffsetSeconds: 60 }],
+    });
+    const result = assembleCyclingEffortMetrics(prepared, {
+      activity: {
+        normalizedPowerWatts: 257,
+        intensityFactor: 0.856667,
+        trainingStressScore: 36.694,
+      },
+      intervals: [
+        { normalizedPowerWatts: 281, intensityFactor: 0.936667, trainingStressScore: 1.21855 },
+      ],
+    });
+    expect(result.workout.power).toMatchObject({
+      normalizedWatts: 257,
+      intensityFactor: 0.856667,
+      trainingStressScore: 36.694,
+    });
+    expect(result.intervals[0]?.normalizedPowerWatts).toBe(281);
+    expect(result.thresholds.ftp).toMatchObject({
+      value: 300,
+      kind: "computed",
+      evidenceActivityId: activityB,
+      modelVersion: "test-cycling-model",
+      uncertainty: { kind: "not_quantifiable", watts: null, reason: expect.any(String) },
+    });
+  });
+
+  it("retains raw effort observations when the canonical activity projection is not available", () => {
+    const prepared = prepareCyclingEffortMetrics(samples, {
+      ...context,
+      activityPowerMetrics: null,
+    });
+    const result = assembleCyclingEffortMetrics(prepared, {
+      activity: { normalizedPowerWatts: null, intensityFactor: null, trainingStressScore: null },
+      intervals: [],
+    });
+    expect(result.workout.power.averageWatts).toBe(210);
+    expect(result.thresholds.ftp).toBeNull();
+    expect(result.unavailableReasons).toContainEqual({
+      metric: "normalized_power",
+      reason:
+        "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+    });
+    expect(result.workout.unavailableReasons).toContainEqual({
+      metric: "normalized_power",
+      reason:
+        "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+    });
+  });
+
+  it("measures computed threshold evidence age against the activity timestamp", () => {
+    const result = calculateCyclingEffortMetrics(samples, {
+      ...context,
+      activityPowerMetrics: {
+        ...context.activityPowerMetrics,
+        started_at: "2026-06-15T16:00:00Z",
+        evidence_at: "2026-06-15T14:00:00Z",
+      },
+    });
+    expect(result.thresholds.ageDays).toBe(0);
+  });
+
   it("treats sequential 2Hz samples as observations and integrates their native durations", () => {
     const result = calculateCyclingEffortMetrics(
       Array.from({ length: 120 }, (_, index) => ({
@@ -103,7 +295,11 @@ describe("calculateCyclingEffortMetrics", () => {
         speedMetersPerSecond: index % 2 === 0 ? 10 : 20,
         heartRateBpm: index % 2 === 0 ? 120 : 180,
       })),
-      { ...context, durationSeconds: 60 },
+      {
+        ...context,
+        durationSeconds: 60,
+        activityPowerMetrics: { ...context.activityPowerMetrics, normalized_power: 200 },
+      },
     );
     expect(result.streamQuality.power).toMatchObject({
       conflictingSamples: 0,
@@ -198,7 +394,16 @@ describe("calculateCyclingEffortMetrics", () => {
             temperatureC: 10,
           },
         ],
-        { ...context, durationSeconds: 60 },
+        {
+          ...context,
+          durationSeconds: 60,
+          activityPowerMetrics: {
+            ...context.activityPowerMetrics,
+            normalized_power: null,
+            intensity_factor: null,
+            power_tss: null,
+          },
+        },
       );
       for (const stream of ["power", "speed", "altitude", "temperature"] as const) {
         expect(result.streamQuality[stream]).toMatchObject({
@@ -294,7 +499,7 @@ describe("calculateCyclingEffortMetrics", () => {
   );
 
   it("explains locally unavailable power, movement, elevation and weight-normalized metrics", () => {
-    const result = calculateCyclingEffortMetrics([], context);
+    const result = calculateCyclingEffortMetrics([], { ...context, activityPowerMetrics: null });
     for (const metric of [
       "average_power",
       "work",
@@ -330,31 +535,6 @@ describe("calculateCyclingEffortMetrics", () => {
     });
     expect(result.averageWattsPerKg).toBe(3);
     expect(result.quality.status).toBe("high");
-  });
-
-  it("never applies future FTP and exposes the age and unverified freshness of old settings", () => {
-    const historical = calculateCyclingEffortMetrics(samples, {
-      ...context,
-      activityDate: "2026-05-01",
-    });
-    expect(historical.thresholds.ftp).toBeNull();
-    expect(historical.workout.power.intensityFactor).toBeNull();
-    expect(historical.unavailableReasons).toContainEqual({
-      metric: "intensity_factor",
-      reason: "no contemporaneous FTP",
-    });
-    const old = calculateCyclingEffortMetrics(samples, { ...context, activityDate: "2027-06-01" });
-    expect(old.thresholds).toMatchObject({
-      ftp: { value: 250 },
-      ageDays: 365,
-      freshness: "unverified",
-    });
-    expect(old.thresholds.freshnessReason).toContain("stale");
-    const newer = { ...settings, ftp: 300, effectiveFrom: "2026-06-10" };
-    expect(
-      calculateCyclingEffortMetrics(samples, { ...context, settingsHistory: [settings, newer] })
-        .thresholds.ftp?.value,
-    ).toBe(300);
   });
 
   it("calculates movement, paired speed/HR and ascent-window vertical speed with evidence", () => {
@@ -754,24 +934,6 @@ describe("calculateCyclingEffortMetrics", () => {
       speed: { conflictingSamples: 1 },
       temperature: { suspiciousSamples: 1 },
       power: { suspiciousSamples: 0, conflictingSamples: 0 },
-    });
-  });
-
-  it.each([0, -1, Number.NaN])("rejects non-positive or non-finite FTP %s", (ftp) => {
-    const result = calculateCyclingEffortMetrics(samples.slice(0, 30), {
-      ...context,
-      durationSeconds: 30,
-      settingsHistory: [{ ...settings, ftp }],
-    });
-    expect(result.thresholds).toMatchObject({
-      ftp: null,
-      freshness: "unavailable",
-      freshnessReason: "no contemporaneous FTP",
-    });
-    expect(result.workout.powerZones).toBeNull();
-    expect(result.unavailableReasons).toContainEqual({
-      metric: "power_zones",
-      reason: "no contemporaneous FTP",
     });
   });
 
@@ -1195,6 +1357,8 @@ describe("cycling effort metric loading", () => {
               external_id: "weight-a",
             },
           ];
+        } else if (statement.includes("analytics.cycling_activity_power_metrics")) {
+          rows = [];
         } else {
           throw new Error(`Unexpected query: ${statement}`);
         }
@@ -1205,7 +1369,6 @@ describe("cycling effort metric loading", () => {
       id: "setting",
       user_id: "user",
       sport: "cycling",
-      ftp: 250,
       threshold_hr: 175,
       threshold_pace_per_km: null,
       power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],

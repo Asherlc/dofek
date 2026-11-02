@@ -23,6 +23,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
 import { cyclingRouter } from "./cycling.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
@@ -44,7 +45,7 @@ describe("cyclingRouter", () => {
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,
-      keyVersion: "cycling-performance-v2",
+      keyVersion: "cycling-performance-computed-eftp-v3",
     });
   });
 
@@ -84,10 +85,28 @@ describe("cyclingRouter", () => {
           },
         },
         pmc: {
+          unavailableReason: "No computed cycling training stress is available.",
           data: [],
           model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
         },
-        eftpTrend: { trend: [], currentEftp: null, model: null },
+        eftpTrend: {
+          trend: [],
+          currentEftp: null,
+          currentEvidence: {
+            value: null,
+            unit: "watt",
+            method: "computed_eftp",
+            event_at: null,
+            evidence_activity_id: null,
+            evidence_at: null,
+            evidence_duration_seconds: null,
+            evidence_power: null,
+            model_version: null,
+            unavailable_reason: "No qualifying power effort is available.",
+            uncertainty: cyclingThresholdUncertainty,
+          },
+          model: null,
+        },
         availability: {
           powerCurve: {
             status: "insufficient_data",
@@ -149,10 +168,10 @@ describe("cyclingRouter", () => {
             },
           },
           eftp: {
-            method: "Normalized power × 0.95 for each cycling workout",
+            method: "Maintained reference-curve estimate",
             confidence: "not_available",
             confidenceLabel: "Not available",
-            confidenceDetail: "No normalized-power workouts.",
+            confidenceDetail: "No qualifying power effort is available.",
             sourceWorkouts: [],
             pacingGuidance: "Do not use this estimate for pacing.",
           },

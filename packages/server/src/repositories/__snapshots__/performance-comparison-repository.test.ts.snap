@@ -262,22 +262,22 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "no contemporaneous FTP",
+            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "power coverage is below 90%",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "heart_rate",
@@ -297,7 +297,7 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             },
             {
               "metric": "power_zones",
-              "reason": "no contemporaneous FTP",
+              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
             },
             {
               "metric": "heart_rate_zones",
@@ -433,15 +433,15 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "power coverage is below 90%",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "heart_rate",
@@ -811,22 +811,22 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "no contemporaneous FTP",
+            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "power coverage is below 90%",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "heart_rate",
@@ -846,7 +846,7 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             },
             {
               "metric": "power_zones",
-              "reason": "no contemporaneous FTP",
+              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
             },
             {
               "metric": "heart_rate_zones",
@@ -982,15 +982,15 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "power coverage is below 90%",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "heart_rate",
@@ -2149,22 +2149,22 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "no contemporaneous FTP",
+            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "power coverage is below 90%",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "heart_rate",
@@ -2184,7 +2184,7 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
             },
             {
               "metric": "power_zones",
-              "reason": "no contemporaneous FTP",
+              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
             },
             {
               "metric": "heart_rate_zones",
@@ -2320,15 +2320,15 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "power coverage is below 90%",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "heart_rate",
@@ -2710,22 +2710,22 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "no contemporaneous FTP",
+            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "power coverage is below 90%",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "heart_rate",
@@ -2745,7 +2745,7 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
             },
             {
               "metric": "power_zones",
-              "reason": "no contemporaneous FTP",
+              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
             },
             {
               "metric": "heart_rate_zones",
@@ -2881,15 +2881,15 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "power coverage is below 90%",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "heart_rate",
@@ -3271,22 +3271,22 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "no contemporaneous FTP",
+            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "power coverage is below 90%",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "no contemporaneous FTP",
+              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
             },
             {
               "metric": "heart_rate",
@@ -3306,7 +3306,7 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
             },
             {
               "metric": "power_zones",
-              "reason": "no contemporaneous FTP",
+              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
             },
             {
               "metric": "heart_rate_zones",
@@ -3442,15 +3442,15 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "power coverage is below 90%",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "no valid FTP was effective for this activity",
+                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
               },
               {
                 "metric": "heart_rate",

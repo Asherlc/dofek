@@ -1,0 +1,41 @@
+{
+  "name": "@dofek/cycling-power",
+  "version": "0.1.0",
+  "description": "Pure elapsed-signal, cycling-power and reference-curve estimation algorithms",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/cycling-power"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/cycling-power#readme",
+  "bugs": { "url": "https://github.com/Asherlc/dofek/issues" },
+  "keywords": ["cycling", "power", "training", "normalized-power", "critical-power"],
+  "engines": { "node": ">=22.14.0" },
+  "sideEffects": false,
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    "./power": "./src/power.ts",
+    "./threshold": "./src/threshold.ts",
+    "./critical-power": "./src/critical-power.ts",
+    "./regression": "./src/regression.ts",
+    "./resample-signal": "./src/resample-signal.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./power": { "types": "./dist/power.d.ts", "import": "./dist/power.js" },
+      "./threshold": { "types": "./dist/threshold.d.ts", "import": "./dist/threshold.js" },
+      "./critical-power": { "types": "./dist/critical-power.d.ts", "import": "./dist/critical-power.js" },
+      "./regression": { "types": "./dist/regression.d.ts", "import": "./dist/regression.js" },
+      "./resample-signal": { "types": "./dist/resample-signal.d.ts", "import": "./dist/resample-signal.js" }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit"
+  }
+}

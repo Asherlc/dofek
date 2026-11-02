@@ -109,12 +109,12 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     expect(model.variabilityIndex).toBeCloseTo(1.1, 3);
   });
 
-  it("computes intensity factor as NP / FTP", () => {
+  it("renders canonical intensity factor", () => {
     const model = new ActivityVariabilityModel(
       {
         activityId: "ride-1",
@@ -123,7 +123,7 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     expect(model.intensityFactor).toBeCloseTo(0.88, 2);
   });
@@ -137,7 +137,7 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     const detail = model.toDetail();
     expect(detail.activityId).toBe("ride-1");
@@ -158,7 +158,7 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     expect(model.activityId).toBe("ride-1");
     expect(model.date).toBe("2024-03-15");
@@ -455,233 +455,50 @@ describe("CyclingAdvancedRepository", () => {
     });
   });
 
-  describe("getEstimatedFtp", () => {
-    it("returns null when no power data", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getEstimatedFtp(90);
-      expect(result).toBeNull();
-    });
-
-    it("returns FTP value when data exists", async () => {
-      const { repo } = makeRepository([{ ftp: 250 }]);
-      const result = await repo.getEstimatedFtp(90);
-      expect(result).toBe(250);
-    });
-
-    it("queries estimated FTP as ninety-five percent of precomputed best twenty-minute power", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getEstimatedFtp(60);
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("max(asum.best_twenty_minute_power) * 0.95");
-      expect(query).toContain("asum.best_twenty_minute_power IS NOT NULL");
-      expect(params).toMatchObject({
-        userId: "user-1",
-        days: 60,
-      });
-      expectCyclingOnlyActivityTypes(params.activityTypes);
-    });
-
-    it("omits selected-range lower-bound filters when days is null", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-
-      await repo.getEstimatedFtp(null);
-
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).not.toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
-      expect(params).not.toHaveProperty("days");
-    });
-  });
-
   describe("getActivityVariability", () => {
-    it("does not estimate FTP or scan sensors when no raw activities exist", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(0);
-      expect(result.emptyReason).toBe("no_cycling_activities");
-    });
-
-    it("returns empty result when raw activities exist but no FTP", async () => {
-      const { repo } = makeRepository([], 1);
-      const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(0);
-      expect(result.emptyReason).toBe("no_ftp_estimate");
-    });
-
-    it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getActivityVariability(90, 20, 0);
-
-      expect(sensorStore.query).not.toHaveBeenCalled();
-    });
-
-    it("returns ActivityVariabilityModel instances when data exists", async () => {
-      // First sensorStore.query call -> FTP estimate; second -> variability rows.
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [
-            {
-              activity_id: "ride-2",
-              date: "2024-03-15",
-              name: "Morning Ride",
-              np: 220,
-              avg_power: 200,
-              total_count: 1,
-            },
-          ].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
+    it("renders activity-applicable canonical intensity factors", async () => {
+      const { repo } = makeRepository(
+        [
+          {
+            activity_id: "ride-1",
+            date: "2024-03-15",
+            name: "Ride",
+            np: 220,
+            avg_power: 200,
+            intensity_factor: 0.73,
+            total_count: 1,
+          },
+        ],
+        1,
       );
       const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models).toHaveLength(1);
-      expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
-      expect(result.totalCount).toBe(1);
-      expect(result.emptyReason).toBeNull();
-      expect(sensorStore.query).toHaveBeenCalledTimes(2);
-      const [, query, params] = sensorStore.query.mock.calls[1];
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("round(asum.normalized_power, 1)");
-      expect(query).toContain("round(asum.smoothed_avg_power, 1)");
-      expect(query).toContain("asum.normalized_power IS NOT NULL");
-      expect(query).toContain("LIMIT {limit:Int32}");
-      expect(query).toContain("OFFSET {offset:Int32}");
-      expect(params).toMatchObject({
-        userId: "user-1",
-        timezone: "UTC",
-        days: 90,
-        limit: 20,
-        offset: 0,
+      expect(result.models[0]?.intensityFactor).toBe(0.73);
+    });
+    it("reports insufficient threshold evidence when normalized power exists", async () => {
+      const { repo, sensorStore } = makeRepository([], 1);
+      sensorStore.query = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0, power_total: 1 }]);
+      expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe("no_ftp_estimate");
+    });
+    it("keeps pagination totals beyond the last page", async () => {
+      const { repo, sensorStore } = makeRepository([], 1);
+      sensorStore.query = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 4, power_total: 5 }]);
+      expect(await repo.getActivityVariability(90, 20, 10)).toMatchObject({
+        models: [],
+        totalCount: 4,
+        emptyReason: null,
       });
-      expectCyclingOnlyActivityTypes(params.activityTypes);
     });
-
-    it("applies finite selected-range lower-bound filters", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [
-            {
-              activity_id: "ride-2",
-              date: "2024-03-15",
-              name: "Morning Ride",
-              np: 220,
-              avg_power: 200,
-              total_count: 1,
-            },
-          ].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
+    it("returns an empty state without activities", async () => {
+      const { repo } = makeRepository([]);
+      expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe(
+        "no_cycling_activities",
       );
-
-      await repo.getActivityVariability(30, 20, 0);
-
-      const [, ftpQuery, ftpParams] = sensorStore.query.mock.calls[0];
-      const [, variabilityQuery, variabilityParams] = sensorStore.query.mock.calls[1];
-      expectClickHouseFiniteDaysFilter(ftpQuery, ftpParams);
-      expectClickHouseFiniteDaysFilter(variabilityQuery, variabilityParams);
-    });
-
-    it("omits selected-range lower-bound filters when days is null", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [
-            {
-              activity_id: "ride-2",
-              date: "2024-03-15",
-              name: "Morning Ride",
-              np: 220,
-              avg_power: 200,
-              total_count: 1,
-            },
-          ].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
-      );
-
-      await repo.getActivityVariability(null, 20, 0);
-
-      const [, ftpQuery, ftpParams] = sensorStore.query.mock.calls[0];
-      const [, variabilityQuery, variabilityParams] = sensorStore.query.mock.calls[1];
-      expectClickHouseUnboundedDaysFilter(ftpQuery, ftpParams);
-      expectClickHouseUnboundedDaysFilter(variabilityQuery, variabilityParams);
-    });
-
-    it("reports missing normalized power when FTP exists but variability rows are empty", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async () => [])
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ total: 0 }].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
-      );
-
-      const result = await repo.getActivityVariability(90, 20, 0);
-
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(0);
-      expect(result.emptyReason).toBe("no_normalized_power");
-    });
-
-    it("does not report no_normalized_power when offset is past the data", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async () => [])
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ total: 5 }].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
-      );
-
-      const result = await repo.getActivityVariability(90, 20, 40);
-
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(5);
-      expect(result.emptyReason).toBeNull();
     });
   });
 

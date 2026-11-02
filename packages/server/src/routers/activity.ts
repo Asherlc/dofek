@@ -18,11 +18,8 @@ import {
   activityMetricSourcesSchema,
   activityPowerWorkSchema,
 } from "../contracts/activity-metric-sources.ts";
-import {
-  ChartRange,
-  selectedChartCustomRangeQuery,
-  selectedChartRangeSchema,
-} from "../lib/chart-range.ts";
+import type { CyclingThresholdEvidence } from "../contracts/cycling-threshold.ts";
+import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
@@ -36,8 +33,11 @@ import {
 } from "../repositories/activity-metric-sources-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
+import {
+  CyclingThresholdRepository,
+  cyclingThresholdEvidenceFromMetrics,
+} from "../repositories/cycling-threshold-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
@@ -114,7 +114,8 @@ export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export interface ActivityPowerZonesResult {
   zones: import("@dofek/zones/zones").ActivityPowerZone[];
-  ftp: number;
+  ftp: number | null;
+  thresholdEvidence: CyclingThresholdEvidence;
 }
 
 export const activityRouter = router({
@@ -348,7 +349,7 @@ export const activityRouter = router({
       return repo.getHrZones(input.id, input.heartRateSourceId);
     }),
 
-  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "computed-eftp-v1" })
     .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
@@ -372,12 +373,13 @@ export const activityRouter = router({
         });
       }
 
-      const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
-      if (currentEftp == null) return null;
-
-      const zones = await activityRepo.getPowerZones(activity.id, currentEftp, input.powerSourceId);
-      return { zones, ftp: currentEftp };
+      const thresholds = new CyclingThresholdRepository(ctx.sensorStore, ctx.userId, ctx.timezone);
+      const metrics = (await thresholds.getForActivities([activity.id])).get(activity.id) ?? null;
+      const thresholdEvidence = cyclingThresholdEvidenceFromMetrics(metrics);
+      const ftp = thresholdEvidence.value;
+      const zones =
+        ftp === null ? [] : await activityRepo.getPowerZones(activity.id, ftp, input.powerSourceId);
+      return { zones, ftp, thresholdEvidence };
     }),
 
   powerWork: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })

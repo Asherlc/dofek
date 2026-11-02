@@ -7,11 +7,14 @@ import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
-  calculateCyclingEffortMetrics,
+  type calculateCyclingEffortMetrics,
   effectiveSettings,
+  evaluateCyclingEffortMetrics,
   loadCyclingEffortData,
+  prepareCyclingEffortMetrics,
   recordedIntervalsForActivity,
 } from "./cycling-effort-metrics.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import type { SportSettingsRow } from "./sport-settings-repository.ts";
 
 const activityRowSchema = z.object({
@@ -28,7 +31,6 @@ const activityRowSchema = z.object({
   activity_timezone: z.string().nullable(),
   local_time_source: z.string(),
   aggregate_average_power: z.coerce.number().nullable(),
-  aggregate_normalized_power: z.coerce.number().nullable(),
   aggregate_average_heart_rate: z.coerce.number().nullable(),
   aggregate_max_heart_rate: z.coerce.number().nullable(),
 });
@@ -208,21 +210,29 @@ function snakeMetrics(
   };
 }
 
-function thresholdEvidence(settings: SportSettingsRow | null) {
-  if (!settings) return { ftp: null, threshold_heart_rate: null };
+function thresholdEvidence(
+  ftp: ReturnType<typeof calculateCyclingEffortMetrics>["thresholds"]["ftp"],
+  settings: SportSettingsRow | null,
+) {
   return {
     ftp:
-      settings.ftp != null && settings.ftp > 0
+      ftp != null
         ? {
-            value: settings.ftp,
+            value: ftp.value,
             unit: "W",
-            effective_from: settings.effectiveFrom,
-            source_record_id: settings.id,
-            kind: "configured" as const,
+            effective_from: ftp.effectiveFrom,
+            kind: "computed" as const,
+            method: "computed_eftp" as const,
+            model_version: ftp.modelVersion,
+            uncertainty: ftp.uncertainty,
+            evidence_activity_id: ftp.evidenceActivityId,
+            evidence_at: ftp.evidenceAt,
+            evidence_duration_seconds: ftp.evidenceDurationSeconds,
+            evidence_power_watts: ftp.evidencePowerWatts,
           }
         : null,
     threshold_heart_rate:
-      settings.thresholdHr != null && settings.thresholdHr > 0
+      settings?.thresholdHr != null && settings.thresholdHr > 0
         ? {
             value: settings.thresholdHr,
             unit: "bpm",
@@ -257,7 +267,8 @@ function definitions() {
     normalized_power:
       "Fourth root of the mean fourth power of complete 30-second rolling average power.",
     variability_index: "Normalized power divided by average power.",
-    intensity_factor: "Normalized power divided by FTP effective on the activity date.",
+    intensity_factor:
+      "Canonical normalized power divided by computed eFTP effective for the activity.",
     training_stress_score: "Elapsed hours multiplied by intensity factor squared and 100.",
     work_kilojoules: "Sum of covered one-second power values divided by 1,000.",
     aerobic_efficiency: "Mean synchronized power divided by mean synchronized heart rate.",
@@ -327,7 +338,6 @@ export class CyclingTrainingMetricsRepository {
         activity.timezone AS activity_timezone,
         activity.local_time_source AS local_time_source,
         cycling.average_power AS aggregate_average_power,
-        cycling.normalized_power AS aggregate_normalized_power,
         cycling.average_heart_rate AS aggregate_average_heart_rate,
         cycling.max_heart_rate AS aggregate_max_heart_rate
       FROM analytics.cycling_activity AS cycling FINAL
@@ -348,39 +358,57 @@ export class CyclingTrainingMetricsRepository {
     );
     const pageRows = activityRows.slice(0, input.limit);
     const hasMore = activityRows.length > input.limit;
-    const { sampleRows, bestPowerRows, settingsHistory, intervalRows } =
-      await loadCyclingEffortData(
-        this.#db,
-        this.#store,
-        this.#userId,
-        pageRows,
-        input.durationsSeconds,
-      );
+    const [{ sampleRows, bestPowerRows, settingsHistory, intervalRows }, canonicalPower] =
+      await Promise.all([
+        loadCyclingEffortData(
+          this.#db,
+          this.#store,
+          this.#userId,
+          pageRows,
+          input.durationsSeconds,
+        ),
+        new CyclingThresholdRepository(this.#store, this.#userId, this.#timezone).getForActivities(
+          pageRows.map((activity) => activity.activity_id),
+        ),
+      ]);
 
-    const activities = pageRows.map((activity) => {
+    const preparedActivities = pageRows.map((activity) => {
       const activitySamples = sampleRows.filter((row) => row.activity_id === activity.activity_id);
       const samples: CyclingWorkoutSample[] = activitySamples.map((row) => ({
         elapsedSeconds: row.elapsed_seconds,
-        powerWatts: row.power,
-        heartRateBpm: row.heart_rate,
-        cadenceRpm: row.cadence,
+        powerWatts: row.stream_evidence.some(([channel]) => channel === "power")
+          ? row.power
+          : undefined,
+        heartRateBpm: row.stream_evidence.some(([channel]) => channel === "heart_rate")
+          ? row.heart_rate
+          : undefined,
+        cadenceRpm: row.stream_evidence.some(([channel]) => channel === "cadence")
+          ? row.cadence
+          : undefined,
       }));
       const settings = effectiveSettings(settingsHistory, activity.activity_date);
       const recordedIntervals = recordedIntervalsForActivity(activity, intervalRows);
-      const { workout: metrics, intervals: normalizedIntervals } = calculateCyclingEffortMetrics(
-        samples,
-        {
-          durationSeconds: activity.elapsed_seconds,
-          activityDate: activity.activity_date,
-          settingsHistory,
-          intervals: recordedIntervals.map((interval) => interval.input),
-          intervalEvidence: recordedIntervals,
-          weightObservations: [],
-          powerMeasurementKinds: activitySamples.flatMap((row) => row.power_measurement_kinds),
-          sourceProviders: activity.source_providers,
-          sourceDevices: activitySamples.flatMap((row) => row.source_devices),
-        },
-      );
+      const prepared = prepareCyclingEffortMetrics(samples, {
+        durationSeconds: activity.elapsed_seconds,
+        activityDate: activity.activity_date,
+        settingsHistory,
+        activityPowerMetrics: canonicalPower.get(activity.activity_id) ?? null,
+        intervals: recordedIntervals.map((interval) => interval.input),
+        intervalEvidence: recordedIntervals,
+        weightObservations: [],
+        powerMeasurementKinds: activitySamples.flatMap((row) => row.power_measurement_kinds),
+        sourceProviders: activity.source_providers,
+        sourceDevices: activitySamples.flatMap((row) => row.source_devices),
+      });
+      return { activity, activitySamples, settings, prepared };
+    });
+    const calculated = await evaluateCyclingEffortMetrics(
+      preparedActivities.map(({ prepared }) => prepared),
+    );
+    const activities = preparedActivities.map(({ activity, activitySamples, settings }, index) => {
+      const effort = calculated[index];
+      if (!effort) throw new Error("Every cycling activity requires assembled effort metrics");
+      const { workout: metrics, intervals: normalizedIntervals } = effort;
       const sourceDevices = [
         ...new Set(activitySamples.flatMap((row) => row.source_devices)),
       ].sort();
@@ -416,7 +444,7 @@ export class CyclingTrainingMetricsRepository {
         source_providers: activity.source_providers,
         source_devices: sourceDevices,
         member_activity_ids: activity.member_activity_ids,
-        thresholds: thresholdEvidence(settings),
+        thresholds: thresholdEvidence(effort.thresholds.ftp, settings),
         metrics: snakeMetrics(metrics, normalizedIntervals),
         best_powers: bestPowerRows
           .filter((row) => row.activity_id === activity.activity_id)
@@ -429,7 +457,7 @@ export class CyclingTrainingMetricsRepository {
           })),
         provider_aggregates: {
           average_power_watts: activity.aggregate_average_power,
-          normalized_power_watts: activity.aggregate_normalized_power,
+          normalized_power_watts: metrics.power.normalizedWatts,
           average_heart_rate_bpm: activity.aggregate_average_heart_rate,
           maximum_heart_rate_bpm: activity.aggregate_max_heart_rate,
           kind: "calculated_read_model" as const,

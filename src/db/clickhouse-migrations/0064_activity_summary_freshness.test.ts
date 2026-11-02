@@ -8,7 +8,7 @@ describe("0064_activity_summary_freshness", () => {
     expect(migration.id).toBe("0064_activity_summary_freshness");
     expect(migration.statements).toEqual([
       "DROP VIEW IF EXISTS analytics.activity_summary",
-      expect.stringContaining("climbing_seconds,\n  refreshed_at"),
+      expect.stringContaining("summary.climbing_seconds,\n  summary.refreshed_at"),
     ]);
   });
 });

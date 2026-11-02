@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { Queue } from "bullmq";
+import { Queue, QueueEvents, Worker } from "bullmq";
 import { describe, expect, it } from "vitest";
-import { enqueueAnalyticsRefresh, runAnalyticsRefreshJobs } from "./analytics-refresh-queue.ts";
+import {
+  enqueueAnalyticsRefresh,
+  enqueueAnalyticsRefreshAndWait,
+  runAnalyticsRefreshJobs,
+} from "./analytics-refresh-queue.ts";
 import { type AnalyticsRefreshJobData, getRedisConnection } from "./jobs/queues.ts";
 
 function deferred() {
@@ -74,6 +78,105 @@ describe("analytics refresh queue (Redis integration)", () => {
       finishFirst.resolve();
       finishSecond.resolve();
       await Promise.all(consumers);
+      await queue.obliterate();
+      await queue.close();
+    }
+  }, 15_000);
+});
+
+describe("awaited analytics refresh", () => {
+  it("joins queued requests, schedules after an active build, and waits for actual completion", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-wait-${randomUUID()}`, {
+      connection,
+    });
+    const events = new QueueEvents(queue.name, { connection });
+    const controller = new AbortController();
+    const started = deferred();
+    const finish = deferred();
+    const nextStarted = deferred();
+    const finishNext = deferred();
+    let builds = 0;
+    await events.waitUntilReady();
+    await queue.pause();
+    await enqueueAnalyticsRefresh(queue);
+    let settled = false;
+    const waiting = enqueueAnalyticsRefreshAndWait(queue, events).then(() => {
+      settled = true;
+    });
+    const consumer = runAnalyticsRefreshJobs({
+      queue,
+      connection,
+      intervalMilliseconds: 900_000,
+      signal: controller.signal,
+      reportFailure: () => {},
+      processRefresh: async () => {
+        builds += 1;
+        if (builds === 1) {
+          started.resolve();
+          await finish.promise;
+        } else {
+          nextStarted.resolve();
+          await finishNext.promise;
+        }
+      },
+    });
+    try {
+      await queue.resume();
+      await started.promise;
+      expect(settled).toBe(false);
+      const followup = enqueueAnalyticsRefreshAndWait(queue, events);
+      finish.resolve();
+      await waiting;
+      await nextStarted.promise;
+      expect(builds).toBe(2);
+      finishNext.resolve();
+      await followup;
+    } finally {
+      controller.abort();
+      finish.resolve();
+      finishNext.resolve();
+      await consumer;
+      await events.close();
+      await queue.obliterate();
+      await queue.close();
+    }
+  }, 15_000);
+
+  it("observes an already completed handle and propagates the worker failure", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-completed-${randomUUID()}`, {
+      connection,
+    });
+    const events = new QueueEvents(queue.name, { connection });
+    await events.waitUntilReady();
+    let fail = false;
+    const worker = new Worker(
+      queue.name,
+      async () => {
+        if (fail) throw new Error("Projection failed");
+        return "done";
+      },
+      { connection },
+    );
+    try {
+      await enqueueAnalyticsRefreshAndWait(
+        {
+          add: async (...args) => {
+            const job = await queue.add(...args);
+            await job.waitUntilFinished(events);
+            return job;
+          },
+        },
+        events,
+      );
+      fail = true;
+      await expect(enqueueAnalyticsRefreshAndWait(queue, events)).rejects.toThrow(
+        "Projection failed",
+      );
+    } finally {
+      await worker.close();
+      await events.close();
       await queue.obliterate();
       await queue.close();
     }

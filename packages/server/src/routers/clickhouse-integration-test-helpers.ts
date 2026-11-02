@@ -301,7 +301,6 @@ const rawTableSyncs: RawTableSync[] = [
       "birth_date",
       "max_hr",
       "resting_hr",
-      "ftp",
       "is_admin",
       "created_at",
       "updated_at",
@@ -353,6 +352,13 @@ function rewriteClickHouseTestCommand(
     if (!viewName || !selectSql) {
       throw new Error("Could not parse ClickHouse test view statement");
     }
+    if (viewName.endsWith(".activity_summary")) {
+      precomputedAnalyticsSelectByName.set(
+        `${databases.analytics}.activity_summary_rows`,
+        buildTestActivitySummarySelectSql(databases),
+      );
+      return [rewrittenQuery];
+    }
     const trimmedSelectSql = selectSql.trim();
     precomputedAnalyticsSelectByName.set(
       viewName,
@@ -378,14 +384,19 @@ function rewriteClickHouseTestCommand(
 
   const rebuildAnalyticsPrefix = `REBUILD TEST ANALYTICS TABLE ${databases.analytics}.`;
   if (rewrittenQuery.startsWith(rebuildAnalyticsPrefix)) {
-    const viewName = rewrittenQuery.slice("REBUILD TEST ANALYTICS TABLE ".length);
+    const requestedViewName = rewrittenQuery.slice("REBUILD TEST ANALYTICS TABLE ".length);
+    const viewName = requestedViewName.endsWith(".activity_summary")
+      ? `${databases.analytics}.activity_summary_rows`
+      : requestedViewName;
     const selectSql = precomputedAnalyticsSelectByName.get(viewName);
     if (!selectSql) {
       throw new Error(`Missing ClickHouse test analytics SELECT for ${viewName}`);
     }
     const columns = viewName.endsWith(".deduped_activities")
       ? "(activity_id,provider_id,user_id,primary_activity_id,canonical_type,provider_type,modality,started_at,ended_at,source_name,name,notes,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source,raw,source_synced_at,source_providers,source_external_ids,absent_source_external_ids,member_activity_ids,representative_activity_id,primary_provider_id,primary_source_name,origin_candidate_member_ids,origin_evidence,refresh_version,is_deleted,refreshed_at,primary_canonical_type)"
-      : "";
+      : viewName.endsWith(".activity_summary_rows")
+        ? "(activity_id,user_id,canonical_type,provider_type,modality,name,started_at,ended_at,avg_hr,max_hr,min_hr,avg_power,max_power,avg_speed,max_speed,avg_cadence,elevation_gain_legacy,total_distance,centroid_lat,centroid_lng,avg_left_balance,avg_left_torque_eff,avg_right_torque_eff,avg_left_pedal_smooth,avg_right_pedal_smooth,elevation_gain_m,elevation_loss_m,avg_stance_time,avg_vertical_osc,avg_ground_contact_time,avg_stride_length,sample_count,hr_sample_count,power_sample_count,first_sample_at,last_sample_at,best_twenty_minute_power,smoothed_avg_power,climbing_elevation_gain_m,climbing_seconds,refreshed_at)"
+        : "";
     return [`TRUNCATE TABLE ${viewName}`, `INSERT INTO ${viewName}${columns}\n${selectSql}`];
   }
 

@@ -1,12 +1,9 @@
+import { type CriticalPowerModel, fitCriticalPower } from "@dofek/cycling-power/critical-power";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
-import {
-  type CriticalPowerModel,
-  DURATION_LABELS,
-  fitCriticalPower,
-  STANDARD_DURATIONS,
-} from "@dofek/training/power-analysis";
+import { DURATION_LABELS, STANDARD_DURATIONS } from "@dofek/training/power-analysis";
 import { formatActivityTypeLabel } from "@dofek/training/training";
+import { cyclingCriticalPowerPolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -17,6 +14,7 @@ import { activityMeasurementState } from "../services/activity-data-state.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { ActivityVariabilityModel, VerticalAscentModel } from "./cycling-advanced-models.ts";
 import { buildPmcChartFromRows, loadPmcChartParameters } from "./pmc-repository.ts";
+import { PowerRepository } from "./power-repository.ts";
 
 const powerComparisonRowSchema = z.object({
   duration_seconds: z.coerce.number(),
@@ -34,14 +32,16 @@ const performanceActivityRowSchema = z.object({
   id: z.string(),
   date: dateStringSchema,
   duration_min: z.coerce.number(),
-  avg_hr: z.coerce.number(),
-  max_hr: z.coerce.number(),
+  avg_hr: z.coerce.number().nullable(),
+  max_hr: z.coerce.number().nullable(),
   global_max_hr: z.coerce.number().nullable(),
   resting_hr: z.coerce.number(),
   avg_power: z.coerce.number().nullable(),
   power_samples: z.coerce.number(),
   hr_samples: z.coerce.number(),
   normalized_power: z.coerce.number().nullable(),
+  power_tss: z.coerce.number().nullable(),
+  eftp: z.coerce.number().nullable(),
   activity_name: z.string().nullable(),
   latest_weight_kg: z.coerce.number().nullable(),
 });
@@ -63,7 +63,7 @@ const cyclingActivityRowSchema = z.object({
   date: dateStringSchema,
   normalized_power: z.coerce.number().nullable(),
   average_power: z.coerce.number().nullable(),
-  estimated_ftp: z.coerce.number().nullable(),
+  intensity_factor: z.coerce.number().nullable(),
   elevation_gain_meters: z.coerce.number().nullable(),
   elapsed_seconds: z.coerce.number(),
   max_hr: z.coerce.number().nullable(),
@@ -215,16 +215,6 @@ function buildVo2MaxEvidence(curve: PowerCurve, weightKg: number | null): Estima
   };
 }
 
-function sourceWorkoutsForTrend(
-  rows: z.infer<typeof performanceActivityRowSchema>[],
-): SourceWorkout[] {
-  return rows.slice(-5).map((row) => ({
-    id: row.id,
-    name: row.activity_name,
-    date: row.date,
-  }));
-}
-
 function buildPowerCurve(
   rows: z.infer<typeof powerComparisonRowSchema>[],
   period: "recent" | "season",
@@ -251,7 +241,7 @@ function buildPowerCurve(
       },
     ];
   });
-  return { points, model: fitCriticalPower(points) };
+  return { points, model: fitCriticalPower(points, cyclingCriticalPowerPolicy) };
 }
 
 function powerSummaryPeriod(curve: PowerCurve, weightKg: number | null) {
@@ -396,15 +386,21 @@ export class CyclingAnalyticsRepository {
         activity.6 AS avg_power,
         activity.7 AS power_samples,
         activity.8 AS hr_samples,
-        activity.9 AS normalized_power,
-        activity.10 AS activity_name,
+        metrics.normalized_power AS normalized_power,
+        metrics.power_tss AS power_tss,
+        metrics.eftp AS eftp,
+        activity.9 AS activity_name,
         latest_weight.weight_kg AS latest_weight_kg
-      FROM analytics.daily_cycling AS daily FINAL
+      FROM (
+        SELECT user_id, date, arrayJoin(activities) AS activity
+        FROM analytics.daily_cycling FINAL
+        WHERE user_id = {userId:UUID} AND is_deleted = 0
+      ) AS daily
       CROSS JOIN latest_weight
       CROSS JOIN user_baseline
-      ARRAY JOIN daily.activities AS activity
+      LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+        ON metrics.user_id = daily.user_id AND metrics.activity_id = activity.1
       WHERE daily.user_id = {userId:UUID}
-        AND daily.is_deleted = 0
         ${historyRange.clickHouseDateAfterToday("daily.date")}
         ${this.#accessWindowPredicate("activity.2")}
       ORDER BY activity.2`,
@@ -420,10 +416,19 @@ export class CyclingAnalyticsRepository {
     const recent = buildPowerCurve(comparisonRows, "recent");
     const season = buildPowerCurve(comparisonRows, "season");
     const weightKg = activityRows[0]?.latest_weight_kg ?? null;
-    const normalizedPowerRows = activityRows.flatMap((row) =>
-      row.normalized_power == null ? [] : [{ activity_id: row.id, np: row.normalized_power }],
-    );
+    const normalizedPowerRows = activityRows.map((row) => ({
+      activity_id: row.id,
+      power_tss: row.power_tss ?? null,
+      eftp: row.eftp ?? null,
+    }));
+    const eftpTrend = await new PowerRepository(
+      this.#userId,
+      this.#timezone,
+      this.#sensorStore,
+    ).getEftpTrend(range);
+    const { trend, currentEftp, currentEvidence } = eftpTrend;
     const pmc = await buildPmcChartFromRows({
+      currentEftp,
       db: this.#db,
       userId: this.#userId,
       range,
@@ -431,17 +436,6 @@ export class CyclingAnalyticsRepository {
       normalizedPowerRows,
       parameters: pmcParameters,
     });
-    const trendWindowStart = range.windowStartString(new Date().toISOString().slice(0, 10));
-    const trendRows = activityRows
-      .filter((row) => row.normalized_power != null)
-      .filter((row) => trendWindowStart === undefined || row.date > trendWindowStart);
-    const trend = trendRows.map((row) => ({
-      date: row.date,
-      eftp: Math.round((row.normalized_power ?? 0) * 0.95),
-      activityName: row.activity_name,
-    }));
-    const currentEftp =
-      recent.model?.cp ?? (trend.length > 0 ? Math.max(...trend.map((row) => row.eftp)) : null);
     const recentThresholdEvidence = buildThresholdEvidence(recent);
     const seasonThresholdEvidence = buildThresholdEvidence(season);
 
@@ -453,7 +447,7 @@ export class CyclingAnalyticsRepository {
         season: powerSummaryPeriod(season, weightKg),
       },
       pmc,
-      eftpTrend: { trend, currentEftp, model: recent.model },
+      eftpTrend,
       availability: {
         powerCurve: cyclingAvailability(
           "cycling power-curve data",
@@ -461,12 +455,17 @@ export class CyclingAnalyticsRepository {
           "power data",
           recent.points.length,
         ),
-        pmc: cyclingAvailability(
-          "training-load data",
-          "Cycling training-load model",
-          "training-load data",
-          pmc.data.length,
-        ),
+        pmc: {
+          ...cyclingAvailability(
+            "training-load data",
+            "Cycling training-load model",
+            "training-load data",
+            pmc.data.length,
+          ),
+          ...(pmc.unavailableReason
+            ? { status: "insufficient_data" as const, message: pmc.unavailableReason }
+            : {}),
+        },
         eftpTrend: cyclingAvailability(
           "threshold power data",
           "Cycling activity power summaries",
@@ -484,30 +483,24 @@ export class CyclingAnalyticsRepository {
           vo2Max: buildVo2MaxEvidence(season, weightKg),
         },
         eftp: {
-          method: recent.model
-            ? "Critical Power model for the current value; trend points use normalized power × 0.95"
-            : "Normalized power × 0.95 for each cycling workout",
-          confidence:
-            currentEftp == null
-              ? "not_available"
-              : recent.model
-                ? recentThresholdEvidence.confidence
-                : "limited",
-          confidenceLabel:
-            currentEftp == null
-              ? "Not available"
-              : recent.model
-                ? recentThresholdEvidence.confidenceLabel
-                : "Training estimate",
+          method: "Canonical ongoing reference-curve eFTP with modeled decay",
+          confidence: currentEftp == null ? ("not_available" as const) : ("limited" as const),
+          confidenceLabel: currentEftp == null ? "Not available" : "Training estimate",
           confidenceDetail:
-            currentEftp == null
-              ? "A cycling workout with normalized power is required."
-              : recent.model
-                ? "The current value uses the threshold model; the trend shows per-workout estimates."
-                : `Based on ${trendRows.length} source cycling workout${trendRows.length === 1 ? "" : "s"}.`,
-          sourceWorkouts: sourceWorkoutsForTrend(trendRows),
+            currentEvidence.unavailable_reason ??
+            "The ongoing estimate carries supported effort evidence forward and applies modeled decay independently of the displayed range.",
+          sourceWorkouts:
+            currentEvidence.evidence_activity_id && currentEvidence.evidence_at
+              ? [
+                  {
+                    id: currentEvidence.evidence_activity_id,
+                    name: null,
+                    date: currentEvidence.evidence_at.slice(0, 10),
+                  },
+                ]
+              : [],
           pacingGuidance:
-            "Do not use this estimate to set pacing when the source ride is not representative of the effort you want to pace.",
+            "This is a training estimate with unquantified physiological uncertainty; use representative sustained efforts when assessing pacing.",
         },
       },
     };
@@ -517,33 +510,35 @@ export class CyclingAnalyticsRepository {
     const rows = await this.#sensorStore.query(
       cyclingActivityRowSchema,
       `SELECT
-        toString(activity_id) AS id,
-        started_at AS started_at,
-        ended_at AS ended_at,
-        canonical_type AS canonical_type,
-        primary_canonical_type AS primary_canonical_type,
-        modality AS modality,
-        activity_name AS activity_name,
-        provider_id AS provider_id,
-        source_providers AS source_providers,
-        distance_meters AS distance_meters,
-        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-        normalized_power AS normalized_power,
-        average_power AS average_power,
-        round(max(best_twenty_minute_power) OVER () * 0.95, 1) AS estimated_ftp,
-        elevation_gain_meters AS elevation_gain_meters,
-        elapsed_seconds AS elapsed_seconds,
-        efficiency_max_heart_rate AS max_hr,
-        average_power_zone_two AS avg_power_z2,
-        average_heart_rate_zone_two AS avg_hr_z2,
-        efficiency_factor AS efficiency_factor,
-        zone_two_samples AS z2_samples
-      FROM analytics.cycling_activity FINAL
-      WHERE user_id = {userId:UUID}
-        AND is_deleted = 0
-        ${range.clickHouseTimestampAfter("started_at")}
-        ${this.#accessWindowPredicate("started_at")}
-      ORDER BY started_at DESC`,
+        toString(cycling.activity_id) AS id,
+        cycling.started_at AS started_at,
+        cycling.ended_at AS ended_at,
+        cycling.canonical_type AS canonical_type,
+        cycling.primary_canonical_type AS primary_canonical_type,
+        cycling.modality AS modality,
+        cycling.activity_name AS activity_name,
+        cycling.provider_id AS provider_id,
+        cycling.source_providers AS source_providers,
+        cycling.distance_meters AS distance_meters,
+        toString(toDate(toTimeZone(cycling.started_at, {timezone:String}))) AS date,
+        metrics.normalized_power AS normalized_power,
+        cycling.average_power AS average_power,
+        metrics.intensity_factor AS intensity_factor,
+        cycling.elevation_gain_meters AS elevation_gain_meters,
+        cycling.elapsed_seconds AS elapsed_seconds,
+        cycling.efficiency_max_heart_rate AS max_hr,
+        cycling.average_power_zone_two AS avg_power_z2,
+        cycling.average_heart_rate_zone_two AS avg_hr_z2,
+        cycling.efficiency_factor AS efficiency_factor,
+        cycling.zone_two_samples AS z2_samples
+      FROM analytics.cycling_activity AS cycling FINAL
+      LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+        ON metrics.user_id = cycling.user_id AND metrics.activity_id = cycling.activity_id
+      WHERE cycling.user_id = {userId:UUID}
+        AND cycling.is_deleted = 0
+        ${range.clickHouseTimestampAfter("cycling.started_at")}
+        ${this.#accessWindowPredicate("cycling.started_at")}
+      ORDER BY cycling.started_at DESC`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
@@ -562,8 +557,8 @@ export class CyclingAnalyticsRepository {
       } => row.normalized_power != null && row.average_power != null && row.average_power > 0,
     );
     const variabilityCandidates = powerCandidates.filter(
-      (row): row is typeof row & { estimated_ftp: number } =>
-        row.estimated_ftp != null && row.estimated_ftp > 0,
+      (row): row is typeof row & { intensity_factor: number } =>
+        row.intensity_factor != null && row.intensity_factor >= 0,
     );
     const variabilityRows = variabilityCandidates
       .slice(
@@ -581,7 +576,7 @@ export class CyclingAnalyticsRepository {
             normalizedPower: row.normalized_power,
             averagePower: row.average_power,
           },
-          row.estimated_ftp,
+          row.intensity_factor,
         ).toDetail(),
       );
     const verticalAscent = rows

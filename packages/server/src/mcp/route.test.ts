@@ -608,13 +608,11 @@ describe("createMcpRouter", () => {
       start_date: "2026-08-01",
       end_date: "2026-09-01",
       items: [],
-      legacy_current: null,
       next_cursor: null,
     });
     toolTestMocks.cyclingThresholdEstimate.mockResolvedValue({
       start_date: "2026-08-01",
       end_date: "2026-09-01",
-      requested_method: "best_supported",
       result: null,
       unavailable_reason: "No supported recorded or power-duration threshold evidence is available",
       weight: { value_kg: null, reason: "No weight" },
@@ -1214,18 +1212,6 @@ describe("createMcpRouter", () => {
       properties: {
         start_date: { format: "date", type: "string" },
         end_date: { format: "date", type: "string" },
-        method: {
-          enum: [
-            "best_supported",
-            "configured",
-            "twenty_minute_95_percent",
-            "sustained_40_to_70_minutes",
-            "critical_power_model",
-          ],
-          type: "string",
-        },
-        modalities: { type: "array" },
-        providers: { type: "array" },
       },
       required: ["start_date", "end_date"],
       type: "object",
@@ -1458,11 +1444,11 @@ describe("createMcpRouter", () => {
       },
       {
         name: "get_threshold_history",
-        path: ["result", "items", "[]", "quality", "status"],
+        path: ["result", "items", "[]", "evidence_duration_seconds"],
       },
       {
         name: "estimate_cycling_threshold",
-        path: ["result", "result", "model", "residuals", "[]", "residual_watts"],
+        path: ["result", "result", "evidence", "model_version"],
       },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
@@ -2590,37 +2576,38 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("returns configured threshold history through MCP transport", async () => {
+  it("returns computed threshold history through MCP transport", async () => {
     authorizeMcpToken(["activity:read"]);
     toolTestMocks.cyclingThresholdListHistory.mockResolvedValue({
       start_date: "2026-05-01",
       end_date: "2026-08-01",
       items: [
         {
-          id: "00000000-0000-4000-8000-000000000102",
-          evidence_kind: "configured",
-          sport: "cycling",
-          threshold_type: "ftp",
+          activity_id: null,
           value: 250,
           unit: "watt",
-          observed_at: "2026-07-01T12:00:00.000Z",
-          effective_at: "2026-07-01T12:00:00.000Z",
-          provider: null,
-          provider_record_id: null,
-          value_kind: "configured",
-          historical_validity: "effective_dated",
-          raw_evidence_available: false,
-          quality: {
-            status: "high",
-            reason: null,
+          method: "computed_eftp",
+          event_at: "2026-07-01T12:00:00Z",
+          evidence_activity_id: "00000000-0000-4000-8000-000000000102",
+          evidence_at: "2026-06-01T12:00:00Z",
+          evidence_duration_seconds: 1200,
+          evidence_power: 260,
+          model_version: "v1",
+          uncertainty: {
+            kind: "not_quantifiable" as const,
+            watts: null,
+            reason:
+              "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
           },
+          unavailable_reason: null,
+          evidence_kind: "computed",
+          historical_validity: "effective_dated",
         },
       ],
-      legacy_current: null,
       next_cursor: null,
     });
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_threshold_history", {
         start_date: "2026-05-01",
@@ -2632,7 +2619,7 @@ describe("createMcpRouter", () => {
 
     expect(structured.result.items[0]).toMatchObject({
       value: 250,
-      value_kind: "configured",
+      method: "computed_eftp",
     });
     expect(toolTestMocks.cyclingThresholdListHistory).toHaveBeenCalledWith({
       startDate: "2026-05-01",
@@ -2647,23 +2634,37 @@ describe("createMcpRouter", () => {
     toolTestMocks.cyclingThresholdEstimate.mockResolvedValue({
       start_date: "2026-05-01",
       end_date: "2026-08-01",
-      requested_method: "twenty_minute_95_percent",
       result: {
         threshold_watts: 285,
         watts_per_kg: null,
         watts_per_kg_reason: "No weight",
-        method: "twenty_minute_95_percent",
+        method: "computed_eftp",
         classification: "estimated",
-        confidence: "moderate",
         uncertainty: {
           watts: null,
           kind: "not_quantifiable",
           reason: "A single heuristic has no statistical interval",
         },
-        evidence: { threshold_history: [], efforts: [] },
+        evidence: {
+          value: 285,
+          unit: "watt",
+          method: "computed_eftp",
+          event_at: "2026-08-01T00:00:00Z",
+          evidence_activity_id: null,
+          evidence_at: null,
+          evidence_duration_seconds: null,
+          evidence_power: null,
+          model_version: "v1",
+          uncertainty: {
+            kind: "not_quantifiable" as const,
+            watts: null,
+            reason:
+              "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+          },
+          unavailable_reason: null,
+        },
         relevant_activity_ids: [],
         assumptions: ["This is not measured FTP"],
-        model: null,
       },
       unavailable_reason: null,
       weight: { value_kg: null, reason: "No weight" },
@@ -2674,7 +2675,6 @@ describe("createMcpRouter", () => {
       body: createToolCallRequest("estimate_cycling_threshold", {
         start_date: "2026-05-01",
         end_date: "2026-08-01",
-        method: "twenty_minute_95_percent",
       }),
     });
     const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
@@ -2690,9 +2690,6 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.cyclingThresholdEstimate).toHaveBeenCalledWith({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
-      method: "twenty_minute_95_percent",
-      providers: [],
-      modalities: [],
     });
   });
 

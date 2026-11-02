@@ -50,18 +50,20 @@ const monotonyRowSchema = z.object({
   daily_load_standard_deviation: z.coerce.number(),
 });
 
-const ftpSchema = z.object({ ftp: z.coerce.number() });
-
 const variabilityRowSchema = z.object({
   activity_id: z.string(),
   date: dateStringSchema,
   name: z.string(),
   np: z.coerce.number(),
   avg_power: z.coerce.number(),
+  intensity_factor: z.coerce.number(),
   total_count: z.coerce.number(),
 });
 
-const variabilityCountSchema = z.object({ total: z.coerce.number() });
+const variabilityCountSchema = z.object({
+  total: z.coerce.number(),
+  power_total: z.coerce.number(),
+});
 
 const vamRowSchema = z.object({
   date: dateStringSchema,
@@ -336,27 +338,6 @@ export class CyclingAdvancedRepository {
     );
   }
 
-  /** Estimate FTP as 95% of best 20-minute average power. */
-  async getEstimatedFtp(days: RangeDays): Promise<number | null> {
-    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
-    const ftpResult = await this.#sensorStore.query(
-      ftpSchema,
-      `SELECT
-        round(max(asum.best_twenty_minute_power) * 0.95, 1) AS ftp
-      FROM analytics.activity_summary asum
-      WHERE asum.user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, asum.canonical_type)
-        ${rangeFilter}
-        AND asum.best_twenty_minute_power IS NOT NULL`,
-      {
-        userId: this.#userId,
-        ...rangeDaysParams(days),
-        activityTypes: CYCLING_TYPES,
-      },
-    );
-    return ftpResult[0]?.ftp ?? null;
-  }
-
   /** Activity variability: NP, VI, IF per activity. */
   async getActivityVariability(
     days: RangeDays,
@@ -371,9 +352,6 @@ export class CyclingAdvancedRepository {
       return { models: [], totalCount: 0, emptyReason: "no_cycling_activities" };
     }
 
-    const ftp = await this.getEstimatedFtp(days);
-    if (!ftp) return { models: [], totalCount: 0, emptyReason: "no_ftp_estimate" };
-
     const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
     const rows = await this.#sensorStore.query(
       variabilityRowSchema,
@@ -381,14 +359,18 @@ export class CyclingAdvancedRepository {
         toString(asum.activity_id) AS activity_id,
         toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
         asum.name AS name,
-        round(asum.normalized_power, 1) AS np,
+        round(metrics.normalized_power, 1) AS np,
+        metrics.intensity_factor AS intensity_factor,
         round(asum.smoothed_avg_power, 1) AS avg_power,
         toInt32(count() OVER ()) AS total_count
       FROM analytics.activity_summary asum
+      INNER JOIN analytics.cycling_activity_power_metrics metrics
+        ON metrics.user_id = asum.user_id AND metrics.activity_id = asum.activity_id
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.canonical_type)
         ${rangeFilter}
-        AND asum.normalized_power IS NOT NULL
+        AND metrics.normalized_power IS NOT NULL
+        AND metrics.intensity_factor IS NOT NULL
       ORDER BY asum.started_at DESC
       LIMIT {limit:Int32}
       OFFSET {offset:Int32}`,
@@ -412,12 +394,14 @@ export class CyclingAdvancedRepository {
       // right empty state instead of a misleading "no_normalized_power".
       const countRows = await this.#sensorStore.query(
         variabilityCountSchema,
-        `SELECT count() AS total
+        `SELECT countIf(metrics.intensity_factor IS NOT NULL) AS total, count() AS power_total
         FROM analytics.activity_summary asum
+        INNER JOIN analytics.cycling_activity_power_metrics metrics
+          ON metrics.user_id = asum.user_id AND metrics.activity_id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${rangeFilter}
-          AND asum.normalized_power IS NOT NULL`,
+          AND metrics.normalized_power IS NOT NULL`,
         {
           userId: this.#userId,
           ...rangeDaysParams(days),
@@ -425,7 +409,12 @@ export class CyclingAdvancedRepository {
         },
       );
       totalCount = countRows[0]?.total ?? 0;
-      emptyReason = totalCount === 0 ? "no_normalized_power" : null;
+      emptyReason =
+        totalCount === 0
+          ? (countRows[0]?.power_total ?? 0) > 0
+            ? "no_ftp_estimate"
+            : "no_normalized_power"
+          : null;
     }
 
     return {
@@ -439,7 +428,7 @@ export class CyclingAdvancedRepository {
               normalizedPower: row.np,
               averagePower: row.avg_power,
             },
-            ftp,
+            row.intensity_factor,
           ),
       ),
       totalCount,

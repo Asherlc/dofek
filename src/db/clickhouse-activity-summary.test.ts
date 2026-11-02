@@ -20,9 +20,9 @@ describe("ClickHouse activity summary read model", () => {
     const sql = buildActivitySummaryViewSql();
 
     expect(sql).toContain("CREATE OR REPLACE VIEW analytics.activity_summary\nAS");
-    expect(sql).toContain("FROM analytics.activity_summary_rows FINAL");
-    expect(sql).toContain("WHERE is_deleted = 0");
-    expect(sql).toContain("climbing_seconds,\n  refreshed_at");
+    expect(sql).toContain("FROM analytics.activity_summary_rows AS summary FINAL");
+    expect(sql).toContain("WHERE summary.is_deleted = 0");
+    expect(sql).toContain("summary.climbing_seconds,\n  summary.refreshed_at");
     expect(sql).not.toContain("JOIN analytics.deduped_sensor");
     expect(sql).not.toContain("FROM ingest.metric_stream");
   });

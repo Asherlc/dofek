@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type ActivityRow, TrainingStressCalculator } from "./training-load.ts";
+import { TrainingStressCalculator } from "./training-load.ts";
 
 const calc = new TrainingStressCalculator();
 
@@ -45,24 +45,6 @@ describe("TrainingStressCalculator", () => {
       expect(calc.computeHrTss(0, 150, 190, 50)).toBe(0);
       expect(calc.computeHrTss(60, 50, 190, 50)).toBe(0);
       expect(calc.computeHrTss(60, 150, 50, 50)).toBe(0);
-    });
-  });
-
-  describe("computePowerTss", () => {
-    it("computes TSS from NP, FTP, and duration", () => {
-      const tss = TrainingStressCalculator.computePowerTss(200, 250, 60);
-      expect(tss).toBeCloseTo(64, 0);
-    });
-
-    it("scales with IF squared and duration", () => {
-      expect(TrainingStressCalculator.computePowerTss(250, 250, 60)).toBeCloseTo(100, 0);
-      expect(TrainingStressCalculator.computePowerTss(250, 250, 120)).toBeCloseTo(200, 0);
-    });
-
-    it("returns 0 for invalid inputs", () => {
-      expect(TrainingStressCalculator.computePowerTss(0, 250, 60)).toBe(0);
-      expect(TrainingStressCalculator.computePowerTss(200, 0, 60)).toBe(0);
-      expect(TrainingStressCalculator.computePowerTss(200, 250, 0)).toBe(0);
     });
   });
 
@@ -113,88 +95,6 @@ describe("TrainingStressCalculator", () => {
         powerTss: 100,
       }));
       expect(TrainingStressCalculator.buildTssModel(paired)).toBeNull();
-    });
-  });
-
-  describe("estimateFtp", () => {
-    it("returns 95% of best avg_power from qualifying activities", () => {
-      const activities: ActivityRow[] = [
-        {
-          id: "1",
-          date: "2024-01-01",
-          duration_min: 30,
-          avg_hr: 150,
-          max_hr: 180,
-          avg_power: 250,
-          power_samples: 1800,
-          hr_samples: 1800,
-        },
-        {
-          id: "2",
-          date: "2024-01-02",
-          duration_min: 25,
-          avg_hr: 155,
-          max_hr: 185,
-          avg_power: 280,
-          power_samples: 1500,
-          hr_samples: 1500,
-        },
-        {
-          id: "3",
-          date: "2024-01-03",
-          duration_min: 45,
-          avg_hr: 140,
-          max_hr: 175,
-          avg_power: 230,
-          power_samples: 2700,
-          hr_samples: 2700,
-        },
-      ];
-      expect(TrainingStressCalculator.estimateFtp(activities)).toBe(266);
-    });
-
-    it("excludes activities shorter than 20 minutes", () => {
-      const activities: ActivityRow[] = [
-        {
-          id: "1",
-          date: "2024-01-01",
-          duration_min: 15,
-          avg_hr: 170,
-          max_hr: 190,
-          avg_power: 400,
-          power_samples: 900,
-          hr_samples: 900,
-        },
-        {
-          id: "2",
-          date: "2024-01-02",
-          duration_min: 30,
-          avg_hr: 150,
-          max_hr: 180,
-          avg_power: 200,
-          power_samples: 1800,
-          hr_samples: 1800,
-        },
-      ];
-      expect(TrainingStressCalculator.estimateFtp(activities)).toBe(190);
-    });
-
-    it("returns null when no qualifying activities", () => {
-      expect(TrainingStressCalculator.estimateFtp([])).toBeNull();
-      expect(
-        TrainingStressCalculator.estimateFtp([
-          {
-            id: "1",
-            date: "2024-01-01",
-            duration_min: 30,
-            avg_hr: 150,
-            max_hr: 180,
-            avg_power: null,
-            power_samples: 0,
-            hr_samples: 1800,
-          },
-        ]),
-      ).toBeNull();
     });
   });
 });

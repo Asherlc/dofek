@@ -59,12 +59,15 @@ vi.mock("bullmq", () => ({
 }));
 
 import {
+  ANALYTICS_REFRESH_QUEUE,
   closeAllQueueResources,
   createProviderDataDeletionQueue,
   EXPORT_QUEUE,
   enqueueDataExport,
   enqueueProviderDataDeletion,
   enqueueProviderDataDeletionContinuation,
+  getAnalyticsRefreshQueue,
+  getAnalyticsRefreshQueueEvents,
   getDataExportQueue,
   getProviderDataDeletionQueue,
   PROVIDER_DATA_DELETION_QUEUE,
@@ -1125,5 +1128,25 @@ describe("queues", () => {
       expect(mockQueueEventsClose).not.toHaveBeenCalled();
       expect(mockFlowProducerClose).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("analytics refresh resource lifecycle", () => {
+  it("reuses dispatch resources and releases both connections during shutdown", async () => {
+    await closeAllQueueResources();
+    vi.clearAllMocks();
+    expect(getAnalyticsRefreshQueue()).toBe(getAnalyticsRefreshQueue());
+    expect(getAnalyticsRefreshQueueEvents()).toBe(getAnalyticsRefreshQueueEvents());
+    expect(MockQueue).toHaveBeenCalledOnce();
+    expect(MockQueueEvents).toHaveBeenCalledOnce();
+    expect(MockQueue).toHaveBeenCalledWith(ANALYTICS_REFRESH_QUEUE, expect.any(Object));
+    await closeAllQueueResources();
+    expect(mockQueueClose).toHaveBeenCalledOnce();
+    expect(mockQueueEventsClose).toHaveBeenCalledOnce();
+    getAnalyticsRefreshQueue();
+    getAnalyticsRefreshQueueEvents();
+    expect(MockQueue).toHaveBeenCalledTimes(2);
+    expect(MockQueueEvents).toHaveBeenCalledTimes(2);
+    await closeAllQueueResources();
   });
 });

@@ -1,5 +1,5 @@
-import { computePowerTss } from "./pmc.ts";
-import { computeNormalizedPower } from "./power-analysis.ts";
+import { resampleSignal } from "@dofek/cycling-power/resample-signal";
+import { cyclingPowerCoveragePolicy } from "./cycling-power-policy.ts";
 
 export interface CyclingWorkoutSample {
   elapsedSeconds: number;
@@ -9,7 +9,6 @@ export interface CyclingWorkoutSample {
 }
 
 export interface CyclingWorkoutSettings {
-  ftpWatts?: number | null;
   thresholdHeartRateBpm?: number | null;
   powerZoneUpperPcts?: number[] | null;
   heartRateZoneUpperPcts?: number[] | null;
@@ -42,10 +41,36 @@ interface ZoneDistribution {
 
 export interface CyclingWorkoutMetricsInput {
   durationSeconds: number;
+  thresholdWatts: number | null;
   samples: CyclingWorkoutSample[];
   settings: CyclingWorkoutSettings | null;
   intervals: CyclingWorkoutIntervalInput[];
   streamBarriers?: { power?: number[]; heartRate?: number[]; cadence?: number[] };
+}
+
+export interface CyclingWorkoutPowerMetrics {
+  normalizedPowerWatts: number | null;
+  intensityFactor: number | null;
+  trainingStressScore: number | null;
+}
+
+export interface CyclingWorkoutPowerWindow {
+  samples: Array<{ elapsedSeconds: number; watts: number | null }>;
+  durationSeconds: number;
+  thresholdWatts: number | null;
+}
+
+export interface PreparedCyclingWorkoutMetrics {
+  durationSeconds: number;
+  thresholdWatts: number | null;
+  settings: CyclingWorkoutSettings | null;
+  power: ResampledStream;
+  heartRate: ResampledStream;
+  cadence: ResampledStream;
+  intervalInputs: CyclingWorkoutIntervalInput[];
+  intervalSource: CyclingWorkoutMetrics["intervalSource"];
+  intervalDetection: CyclingWorkoutMetrics["intervalDetection"];
+  powerWindows: CyclingWorkoutPowerWindow[];
 }
 
 export interface CyclingWorkoutMetrics {
@@ -108,12 +133,6 @@ interface ResampledStream {
   coverage: StreamCoverage;
 }
 
-interface CyclingStreamBucket {
-  value: number;
-  maximumValue: number;
-  coveredDuration: number;
-}
-
 function round(value: number, decimals = 1): number {
   const multiplier = 10 ** decimals;
   return Math.round(value * multiplier) / multiplier;
@@ -130,16 +149,6 @@ function average(values: Array<number | null>): number | null {
   return count === 0 ? null : total / count;
 }
 
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  const lower = sorted[middle - 1];
-  const upper = sorted[middle];
-  if (upper == null) return null;
-  return sorted.length % 2 === 0 && lower != null ? (lower + upper) / 2 : upper;
-}
-
 function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
   samples: T[],
   durationSeconds: number,
@@ -147,80 +156,40 @@ function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
   minimumValue = 0,
   barriers: number[] = [],
 ) {
-  const byOffset = new Map<number, number | null>();
-  for (const sample of samples) {
+  const observations = samples.flatMap((sample) => {
     const value = select(sample);
-    if (value == null || !Number.isFinite(value) || value < minimumValue) continue;
-    const offset = sample.elapsedSeconds;
-    if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, value);
+    if (
+      value === undefined ||
+      !Number.isFinite(sample.elapsedSeconds) ||
+      sample.elapsedSeconds < 0 ||
+      sample.elapsedSeconds >= durationSeconds
+    )
+      return [];
+    return [
+      {
+        elapsedSeconds: sample.elapsedSeconds,
+        value: value === null || !Number.isFinite(value) || value < minimumValue ? null : value,
+      },
+    ];
+  });
+  observations.push(
+    ...barriers
+      .filter((offset) => Number.isFinite(offset) && offset >= 0 && offset < durationSeconds)
+      .map((elapsedSeconds) => ({ elapsedSeconds, value: null })),
+  );
+  const valuesByOffset = new Map<number, number>();
+  const conflicts = new Set<number>();
+  for (const point of observations) {
+    if (point.value === null) continue;
+    const previous = valuesByOffset.get(point.elapsedSeconds);
+    if (previous !== undefined && previous !== point.value) conflicts.add(point.elapsedSeconds);
+    valuesByOffset.set(point.elapsedSeconds, point.value);
   }
-  for (const offset of barriers) {
-    if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, null);
-  }
-  const points = [...byOffset.entries()]
-    .map(([offset, value]) => ({ offset, value }))
-    .sort((left, right) => left.offset - right.offset);
-  const gaps = points.slice(1).map((point, index) => point.offset - (points[index]?.offset ?? 0));
-  const medianInterval = median(gaps);
-  const nativeInterval = Math.min(10, medianInterval ?? 1);
-  const continuityTolerance = Math.min(10, Math.max(5, nativeInterval * 2));
-  // Each native observation covers at most ten seconds; missing time needs no buckets.
-  const buckets = new Map<number, CyclingStreamBucket>();
-
-  for (let index = 0; index < points.length; index++) {
-    const point = points[index];
-    if (!point || point.value == null) continue;
-    const next = points[index + 1];
-    const intervalEnd = next
-      ? next.offset - point.offset <= continuityTolerance
-        ? next.offset
-        : point.offset + nativeInterval
-      : point.offset + nativeInterval;
-    for (
-      let second = Math.floor(point.offset);
-      second < Math.min(durationSeconds, intervalEnd);
-      second++
-    ) {
-      const covered = Math.min(second + 1, intervalEnd) - Math.max(second, point.offset);
-      const bucket = buckets.get(second) ?? {
-        value: 0,
-        maximumValue: point.value,
-        coveredDuration: 0,
-      };
-      bucket.value += point.value * covered;
-      bucket.maximumValue = Math.max(bucket.maximumValue, point.value);
-      bucket.coveredDuration += covered;
-      buckets.set(second, bucket);
-    }
-  }
-  // A partly invalid/missing bucket is unavailable, including sub-second conflicts.
-  let maximumValue: number | null = null;
-  let zeroSeconds = 0;
-  for (const [second, bucket] of buckets) {
-    if (bucket.coveredDuration < 1 - 1e-9) {
-      buckets.delete(second);
-      continue;
-    }
-    if (bucket.value === 0) zeroSeconds++;
-    // Preserve native peaks only in buckets that satisfy the same coverage mask.
-    maximumValue = Math.max(maximumValue ?? bucket.maximumValue, bucket.maximumValue);
-  }
-  const coveredSeconds = buckets.size;
+  observations.push(...[...conflicts].map((elapsedSeconds) => ({ elapsedSeconds, value: null })));
+  const stream = resampleSignal(observations, durationSeconds, cyclingPowerCoveragePolicy);
   return {
-    buckets,
-    maximumValue,
-    coverage: {
-      observedSamples: points.filter((point) => point.value != null).length,
-      coveredSeconds,
-      missingSeconds: durationSeconds - coveredSeconds,
-      zeroSeconds,
-      coveragePct: durationSeconds > 0 ? round((coveredSeconds / durationSeconds) * 100) : 0,
-      medianSampleIntervalSeconds: medianInterval,
-      largestGapSeconds: gaps.reduce<number | null>(
-        (largest, gap) => Math.max(largest ?? gap, gap),
-        null,
-      ),
-    },
+    ...stream,
+    coverage: { ...stream.coverage, coveragePct: round(stream.coverage.coveragePct) },
   };
 }
 
@@ -261,21 +230,6 @@ export function computeCyclingPowerWork(
     workKilojoules: stream.coverage.coveredSeconds > 0 ? round(totalJoules / 1_000) : null,
     coverage: stream.coverage,
   };
-}
-
-function computeNormalizedWatts(values: Array<number | null>): number | null {
-  if (values.length < 30 || values.some((value) => value == null)) return null;
-  const result = computeNormalizedPower(
-    values.map((power, index) => ({
-      activity_id: "activity",
-      activity_date: "1970-01-01",
-      activity_name: null,
-      power: power ?? 0,
-      interval_s: 1,
-      index,
-    })),
-  );
-  return result[0]?.normalizedPower ?? null;
 }
 
 function zoneDistribution(
@@ -332,12 +286,12 @@ function intervalMetrics(
   power: Array<number | null>,
   heartRate: Array<number | null>,
   cadence: Array<number | null>,
+  computedPower: CyclingWorkoutPowerMetrics,
 ) {
   const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
   const end = Math.min(power.length, Math.ceil(interval.endOffsetSeconds));
   const powerSlice = power.slice(start, end);
   const averagePower = average(powerSlice);
-  const normalizedPower = computeNormalizedWatts(powerSlice);
   const targetPower = interval.targetPowerWatts ?? null;
   return {
     index: interval.index,
@@ -348,7 +302,7 @@ function intervalMetrics(
     endOffsetSeconds: end,
     durationSeconds: Math.max(0, end - start),
     averagePowerWatts: averagePower == null ? null : round(averagePower),
-    normalizedPowerWatts: normalizedPower,
+    normalizedPowerWatts: computedPower.normalizedPowerWatts,
     averageHeartRateBpm: (() => {
       const value = average(heartRate.slice(start, end));
       return value == null ? null : round(value);
@@ -367,10 +321,10 @@ function intervalMetrics(
 
 function detectIntervals(
   power: Array<number | null>,
-  ftpWatts: number | null,
+  threshold: number | null,
 ): { intervals: CyclingWorkoutIntervalInput[]; thresholdWatts: number } | null {
-  if (ftpWatts == null || ftpWatts <= 0 || power.length < 30) return null;
-  const thresholdWatts = ftpWatts * 1.05;
+  if (threshold == null || threshold <= 0 || power.length < 30) return null;
+  const thresholdWatts = threshold * 1.05;
   const candidates: Array<{ start: number; end: number }> = [];
   let start: number | null = null;
 
@@ -440,9 +394,9 @@ function detectIntervals(
  * Compute per-activity cycling metrics from native samples without extrapolating
  * through dropouts. Every coverage field is expressed against elapsed duration.
  */
-export function computeCyclingWorkoutMetrics(
+export function prepareCyclingWorkoutMetrics(
   input: CyclingWorkoutMetricsInput,
-): CyclingWorkoutMetrics {
+): PreparedCyclingWorkoutMetrics {
   const durationSeconds = Math.max(0, Math.floor(input.durationSeconds));
   const power = resampleCyclingStream(
     input.samples,
@@ -465,13 +419,71 @@ export function computeCyclingWorkoutMetrics(
     0,
     input.streamBarriers?.cadence,
   );
+  const thresholdWatts =
+    input.thresholdWatts != null &&
+    Number.isFinite(input.thresholdWatts) &&
+    input.thresholdWatts > 0
+      ? input.thresholdWatts
+      : null;
+  const detected =
+    input.intervals.length === 0 ? detectIntervals(power.values, thresholdWatts) : null;
+  const intervalInputs = input.intervals.length > 0 ? input.intervals : (detected?.intervals ?? []);
+  const intervalSource =
+    input.intervals.length > 0
+      ? "recorded"
+      : detected && detected.intervals.length > 0
+        ? "inferred"
+        : "none";
+  return {
+    durationSeconds,
+    thresholdWatts,
+    settings: input.settings,
+    power,
+    heartRate,
+    cadence,
+    intervalInputs,
+    intervalSource,
+    intervalDetection:
+      detected == null
+        ? null
+        : {
+            method: "30_second_average_above_105_percent_ftp",
+            thresholdWatts: detected.thresholdWatts,
+            minimumWorkSeconds: 30,
+          },
+    powerWindows: intervalInputs.map((interval) => {
+      const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
+      const end = Math.min(durationSeconds, Math.ceil(interval.endOffsetSeconds));
+      return {
+        samples: power.values
+          .slice(start, end)
+          .map((watts, elapsedSeconds) => ({ elapsedSeconds, watts })),
+        durationSeconds: Math.max(0, end - start),
+        thresholdWatts,
+      };
+    }),
+  };
+}
+
+/** Assemble workout metrics using required externally evaluated power calculations. */
+export function computeCyclingWorkoutMetrics(
+  input: PreparedCyclingWorkoutMetrics,
+  computed: {
+    activity: CyclingWorkoutPowerMetrics;
+    intervals: readonly CyclingWorkoutPowerMetrics[];
+  },
+): CyclingWorkoutMetrics {
+  if (computed.intervals.length !== input.intervalInputs.length) {
+    throw new Error("Every prepared interval requires computed power metrics");
+  }
+  const { durationSeconds, power, heartRate, cadence, intervalInputs, intervalSource } = input;
   const unavailableReasons: CyclingWorkoutMetrics["unavailableReasons"] = [];
   const addUnavailable = (metric: string, reason: string) => {
     unavailableReasons.push({ metric, reason });
   };
 
   const averagePower = average(power.values);
-  const normalizedPower = computeNormalizedWatts(power.values);
+  const normalizedPower = computed.activity.normalizedPowerWatts;
   if (normalizedPower == null) {
     addUnavailable(
       "normalized_power",
@@ -479,14 +491,15 @@ export function computeCyclingWorkoutMetrics(
         ? "power coverage is below 90%"
         : power.coverage.missingSeconds > 0
           ? "power samples contain missing elapsed seconds"
-          : "fewer than 30 seconds of power are available",
+          : durationSeconds < 30
+            ? "fewer than 30 seconds of power are available"
+            : "computed normalized power is unavailable",
     );
   }
-  const ftpWatts = input.settings?.ftpWatts;
-  const validFtp = ftpWatts != null && Number.isFinite(ftpWatts) && ftpWatts > 0 ? ftpWatts : null;
+  const validFtp = input.thresholdWatts;
   if (validFtp == null) {
-    addUnavailable("intensity_factor", "no valid FTP was effective for this activity");
-    addUnavailable("training_stress_score", "no valid FTP was effective for this activity");
+    addUnavailable("intensity_factor", "no computed threshold is available for this activity");
+    addUnavailable("training_stress_score", "no computed threshold is available for this activity");
   } else if (normalizedPower == null) {
     addUnavailable("intensity_factor", "normalized power is unavailable");
     addUnavailable("training_stress_score", "normalized power is unavailable");
@@ -524,17 +537,6 @@ export function computeCyclingWorkoutMetrics(
     );
   }
 
-  const detected = input.intervals.length === 0 ? detectIntervals(power.values, validFtp) : null;
-  const intervalInputs = input.intervals.length > 0 ? input.intervals : (detected?.intervals ?? []);
-  const intervalSource =
-    input.intervals.length > 0
-      ? "recorded"
-      : detected && detected.intervals.length > 0
-        ? "inferred"
-        : "none";
-
-  const intensityFactor =
-    validFtp != null && normalizedPower != null ? normalizedPower / validFtp : null;
   return {
     durationSeconds,
     power: {
@@ -548,11 +550,8 @@ export function computeCyclingWorkoutMetrics(
         averagePower == null
           ? null
           : round(power.values.reduce<number>((total, watts) => total + (watts ?? 0), 0) / 1_000),
-      intensityFactor: intensityFactor == null ? null : round(intensityFactor, 3),
-      trainingStressScore:
-        validFtp != null && normalizedPower != null
-          ? round(computePowerTss(normalizedPower, validFtp, durationSeconds / 60))
-          : null,
+      intensityFactor: computed.activity.intensityFactor,
+      trainingStressScore: computed.activity.trainingStressScore,
     },
     heartRate: {
       averageBpm: averageHeartRate == null ? null : round(averageHeartRate),
@@ -587,23 +586,20 @@ export function computeCyclingWorkoutMetrics(
       cadence: cadence.coverage,
     },
     intervalSource,
-    intervalDetection:
-      detected == null
-        ? null
-        : {
-            method: "30_second_average_above_105_percent_ftp",
-            thresholdWatts: detected.thresholdWatts,
-            minimumWorkSeconds: 30,
-          },
-    intervals: intervalInputs.map((interval) =>
-      intervalMetrics(
+    intervalDetection: input.intervalDetection,
+    intervals: intervalInputs.map((interval, ordinal) => {
+      const intervalPower = computed.intervals[ordinal];
+      if (!intervalPower)
+        throw new Error("Every prepared interval requires computed power metrics");
+      return intervalMetrics(
         interval,
         intervalSource === "recorded" ? "recorded" : "inferred",
         power.values,
         heartRate.values,
         cadence.values,
-      ),
-    ),
+        intervalPower,
+      );
+    }),
     unavailableReasons,
   };
 }

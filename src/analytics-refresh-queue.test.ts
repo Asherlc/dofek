@@ -44,7 +44,7 @@ describe("analytics refresh requests", () => {
       { type: "analytics-refresh" },
       {
         deduplication: { id: "analytics-refresh" },
-        removeOnComplete: true,
+        removeOnComplete: { age: 604_800, count: 1_000 },
         removeOnFail: { age: 604_800, count: 1_000 },
       },
     );

@@ -1085,12 +1085,14 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("FROM {{ this }} FINAL");
-    expect(sql).toContain("if(zone_minutes.activity_id IS NULL, 1, 0) AS is_deleted");
-    expect(sql).toContain("sensor_samples.scalar >= activity_metadata.ftp * 0.9");
+    expect(sql).toContain("if(metadata.activity_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).toContain("source('analytics', 'cycling_activity_power_metrics')");
+    expect(sql).toContain("power.eftp AS eftp");
+    expect(sql).toContain("samples.scalar >= metadata.eftp * 0.9");
     expect(sql).not.toContain("ref('deduped_sensor')");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
-    expect(normalizedSql).toContain("sensor_samples.activity_id = activity_metadata.activity_id");
-    expect(normalizedSql).toContain("sensor_samples.user_id = activity_metadata.user_id");
+    expect(normalizedSql).toContain("metadata.activity_id = samples.activity_id");
+    expect(normalizedSql).toContain("metadata.user_id = samples.user_id");
   });
 
   it("materializes weekly healthspan from compact inputs", () => {

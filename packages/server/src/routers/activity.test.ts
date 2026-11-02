@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
-import { PowerRepository } from "../repositories/power-repository.ts";
+import {
+  CyclingThresholdRepository,
+  cyclingThresholdEvidenceFromMetrics,
+} from "../repositories/cycling-threshold-repository.ts";
 import { ExerciseWithSets, StrengthRepository } from "../repositories/strength-repository.ts";
 import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
 
@@ -1839,7 +1842,7 @@ describe("activityRouter", () => {
         .mockResolvedValue(
           makeActivityRow({ canonical_type: "running", avg_power: null, max_power: null }),
         );
-      const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
+      const getEftpTrendSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
       const caller = makeCallerWithoutSensorStore();
@@ -1858,7 +1861,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(makeActivityRow({ avg_power: null, max_power: null }));
-      const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
+      const getEftpTrendSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
       const caller = makeCallerWithoutSensorStore();
@@ -1900,13 +1903,22 @@ describe("activityRouter", () => {
           .mockResolvedValue(
             makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
           );
+        const metrics = {
+          activity_id: "00000000-0000-0000-0000-000000000001",
+          started_at: "2026-01-01T12:00:00.000000Z",
+          normalized_power: 240,
+          eftp: 265,
+          intensity_factor: 240 / 265,
+          power_tss: 82,
+          evidence_activity_id: "00000000-0000-0000-0000-000000000002",
+          evidence_at: "2025-12-01T12:00:00.000000Z",
+          evidence_duration_seconds: 1200,
+          evidence_power: 280,
+          model_version: "reference-v1",
+        };
         const getEftpTrendSpy = vi
-          .spyOn(PowerRepository.prototype, "getEftpTrend")
-          .mockResolvedValue({
-            trend: [],
-            currentEftp: 265,
-            model: null,
-          });
+          .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+          .mockResolvedValue(new Map([[metrics.activity_id, metrics]]));
         const getPowerZonesSpy = vi
           .spyOn(ActivityRepository.prototype, "getPowerZones")
           .mockResolvedValue(zones);
@@ -1920,20 +1932,47 @@ describe("activityRouter", () => {
           powerSourceId,
         });
 
-        const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
-        expect(range?.days).toBe(90);
+        expect(getEftpTrendSpy).toHaveBeenCalledWith([metrics.activity_id]);
         expect(getPowerZonesSpy).toHaveBeenCalledWith(
           "00000000-0000-0000-0000-000000000001",
           265,
           powerSourceId,
         );
-        expect(result).toEqual({ zones, ftp: 265 });
+        expect(result).toEqual({
+          zones,
+          ftp: 265,
+          thresholdEvidence: cyclingThresholdEvidenceFromMetrics(metrics),
+        });
 
         findByIdSpy.mockRestore();
         getEftpTrendSpy.mockRestore();
         getPowerZonesSpy.mockRestore();
       },
     );
+
+    it("returns a specific unavailable threshold while retaining the activity response", async () => {
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
+        );
+      const metricsSpy = vi
+        .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+        .mockResolvedValue(new Map());
+      const caller = makeCaller([], {
+        getPowerCurveSamples: vi.fn(),
+        getNormalizedPowerSamples: vi.fn(),
+      });
+      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+      expect(result).toEqual({
+        zones: [],
+        ftp: null,
+        thresholdEvidence: cyclingThresholdEvidenceFromMetrics(null),
+      });
+      expect(result?.thresholdEvidence.unavailable_reason).toBeTruthy();
+      findByIdSpy.mockRestore();
+      metricsSpy.mockRestore();
+    });
 
     it("throws NOT_FOUND when activity does not exist", async () => {
       const findByIdSpy = vi

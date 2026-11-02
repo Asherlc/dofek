@@ -1,8 +1,7 @@
 # Computed cycling eFTP only
 
-Status: draft; computed-only behavior and an independent implementation of the
-Intervals.icu process approved. Further empirical research and a unified
-numerical implementation are required before selecting production parameters.
+Status: implemented in the working branch; final verification and review in progress.
+The user explicitly required a pure TypeScript algorithms package with no database dependency.
 
 ## Confirmed product direction
 
@@ -142,70 +141,59 @@ operator execution, not a deploy-time replay.
 
 ## Research-backed numerical implementation
 
-The source review established the behavior but has not located a redistributable
-copy of Intervals.icu's reference-curve parameters or its exact decay equation.
-Do not fabricate those numbers or silently substitute the existing recent-curve
-fit. The user has approved an independently calibrated implementation, with
-further research required before selecting its parameters. Exact numerical
-equivalence to Intervals.icu is not a requirement or an established property.
+The reusable, dependency-free [cycling power package](../../../packages/cycling-power/README.md)
+owns normalized power, intensity factor, power TSS, reference-curve interpolation,
+chronological carry-forward/decay, Critical Power fitting and regression. It
+contains no database clients, SQL, providers, Dofek contracts, calibration data
+or application policy. Callers supply reference curves, duration bounds, coverage
+policy and decay parameters. CP remains a distinct analysis, never a second FTP.
 
-[GoldenCheetah OpenData](https://github.com/GoldenCheetah/OpenData) is now a
-verified accessible independent source. Its
-[OSF project metadata](https://api.osf.io/v2/nodes/6hfpz/) identifies a
-[CC0 license](https://api.osf.io/v2/licenses/563c1cf88c5e4a3877f9e96c/), and bounded
-HTTP downloads verified summary power-duration arrays. The
-[research report](../../cycling-power-algorithms-research.md) records the source
-audit, numerical limitations, and complete consumer audit. Calibration,
-held-out evaluation, cohort coverage, and an explicit independent decay policy
-remain prerequisites for production coefficients.
+The application [policy](../../../src/analytics/cycling-power-policy.ts) uses nine
+pooled reference curves from a fresh original GoldenCheetah CC0 calibration:
+256 selected archives, 252 decoded, 212 eligible athletes, 161 training and 51
+held out. Reference fitting uses observed 3–60-minute powers; qualifying runtime
+efforts are 3–30 minutes, predicting modeled 60-minute power. Outside-bank inputs
+remain unsupported. The [research report](../../cycling-power-algorithms-research.md)
+and [frozen manifest](../../cycling-power-source-manifest.json) record provenance
+and limitations. Observed long-effort agreement is not physiological FTP validation.
 
-The exploratory comparisons now cover 64 original archives and a processed
-6,031-athlete numerical table. They show material fitting-range sensitivity;
-including observed long-duration calibration evidence reduces discrepancies
-against recorded long efforts. These are not physiological FTP labels or
-untouched final-test results. The research report records common-cohort counts,
-errors, source limitations, and one bounded next calibration round. No
-experimental coefficients have been selected for production.
+After 28 observed days, compare completed 14-day dose windows using NP² × seconds.
+Maintained/increased load holds the estimate. Reduced load applies at most 0.1%
+daily decline, proportional to the load deficit; two empty windows represent
+observed inactivity. Unknown power in either window withholds decline. This
+is a versioned Dofek heuristic, not an Intervals.icu coefficient or universal
+physiological rate. Easier candidates cannot directly lower the maintained value.
 
-Use the existing dbt/ClickHouse ownership model for the runtime numerical
-pipeline. Offline TypeScript calibration produces versioned reference data, not
-another runtime estimator. APIs, SQL analytics, and both clients consume the
-same canonical outputs; obsolete TypeScript NP/TSS/FTP alternatives are removed
-after their consumers migrate. Keep distinct HR stress/regression math once
-where still needed, and preserve CP exploration separately from ongoing eFTP.
+Dofek owns the serialized [projector](../../../src/analytics/cycling-power-projector.ts).
+It computes at most 100 changed native activity inputs per pass, then replays
+compact histories for at most 32 ready users. It alone writes ClickHouse NP and
+eFTP projections. dbt supplies canonical inputs before this stage and builds
+dependent healthspan models afterward. Processing success and cache warming wait
+for all required projection work. No equivalent SQL numerical estimator remains.
 
-The proposed decay input is the threshold-independent intermediate
-`NP² × elapsed_seconds`. Its two-window ratio equals a ratio of power-TSS totals
-only when both windows are normalized with the same reference threshold.
-Unknown power coverage must remain unknown, rather than triggering decay as
-zero training. Exact coefficients and model evaluation remain research work.
+Canonical history publication is fenced against incomplete input revisions.
+Historical corrections/deletions replay later estimates; date changes advance
+inactive users. Source filters never select an alternate FTP. Bounded interval
+calculations call the same pure package. Account-erasure fences apply atomically
+to projection inserts. Deletion/recompute jobs await the one serialized writer.
 
 ## Builder review checkpoint
 
-The independent builder review found the removal scope and consumer migration
-clear, but confirmed that product implementation must wait for the numerical
-research. The user subsequently approved the independent-model direction;
-source accessibility and declared license have now been verified. Specify initialization and
-calculation order explicitly: if training load controls decay and training load
-depends on eFTP, the replay must define which prior threshold calculates that
-load, how the first estimate is established, and when the ride's candidate is
-applied. Do not let the same ride circularly determine its threshold and the
-load used to decay that threshold.
+Initial review identified missing reference provenance, numerical policy and
+calculation order. Those decisions are now explicit above. Qualifying effort
+evidence is applied chronologically; power dose is threshold-independent, so
+load-related decay has no circular FTP dependency. IDs break equal-timestamp
+ordering deterministically. Real-engine regressions cover replay, publication,
+deletion, version changes, date advancement and erased-user write races.
 
-The audit also established that a corrected or deleted historical effort must
-invalidate the affected user's later estimate history, not only the changed
-activity. Replay follows canonical timestamps with a deterministic tie rule,
-uses available preceding comparison-window context, and advances inactive
-users through the present date. Provider/modality/chart filters cannot change
-the canonical ongoing estimate; canonical source-priority and membership changes
-do invalidate its inputs. Use bounded dirty-user work over compact summaries,
-not global raw-history scans or a second projection writer.
+The user superseded the earlier SQL-kernel proposal by requesting pure TypeScript
+with no database dependency. Application orchestration and storage remain outside
+the algorithms package. Final whole-branch review checks this boundary explicitly.
 
 ## Verification and completion
 
-Before product code changes, turn this design into an executable plan after the
-numerical research gate is resolved. Use test-first development for active
-behavior. Meaningful fixtures cover: a supported qualifying effort; an easier
+The implementation plan records test-first work and review checkpoints.
+Meaningful fixtures cover: a supported qualifying effort; an easier
 ride retaining the maintained estimate; a genuine increase; maintained versus
 reduced training; old evidence crossing a display-window boundary; initial
 insufficient data; historical imports; corrected/deleted peak evidence; duplicate
