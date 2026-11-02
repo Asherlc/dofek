@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../src/db/clickhouse.ts";
+import { cyclingPowerSchemaStatements } from "../../../src/db/cycling-power-schema.ts";
+import { buildTestActivitySensorSampleSelectSql } from "../../../packages/server/src/routers/clickhouse-integration-test-read-models-a.ts";
 import { readModelSql, renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 describe("healthspan uses applicable computed cycling power",()=>{
@@ -147,5 +149,47 @@ describe("healthspan uses applicable computed cycling power",()=>{
     const rows=(await result.json<Record<string,unknown>>()).filter(row=>row.user_id===measuredUser);
     expect(rows).toHaveLength(4);
     for(const row of rows) expect(row).toMatchObject({weekly_aerobic_min:5,weekly_high_intensity_min:5});
+  });
+  it("joins canonical threshold evidence to member-attributed power samples",async()=>{
+    const isolated=`${database}_identity`;
+    const member=randomUUID();const group=randomUUID();const identityUser=randomUUID();
+    await client.command({query:`CREATE DATABASE ${isolated}`});
+    try {
+      for(const table of ["activity_summary_rows","user_profile_current","resting_heart_rate_sleep_window","activity_sensor_sample","healthspan_activity_zone_minutes","daily_sleep","v_daily_metrics","activity_vo2max_estimate","daily_body_measurement"]) {
+        await client.command({query:`CREATE TABLE ${isolated}.${table} AS ${database}.${table}`});
+      }
+      await client.command({query:`CREATE TABLE ${isolated}.deduped_activities (activity_id UUID,user_id UUID,started_at DateTime64(6),ended_at Nullable(DateTime64(6)),member_activity_ids Array(UUID),canonical_type String,is_deleted UInt8) ENGINE=ReplacingMergeTree ORDER BY (user_id,activity_id)`});
+      await client.command({query:`CREATE TABLE ${isolated}.deduped_sensor (user_id UUID,source_activity_id Nullable(UUID),recorded_at DateTime64(6),recorded_date Date,channel String,scalar Nullable(Float64),provider_id Nullable(String),member_activity_id Nullable(UUID),device_id Nullable(String),source_external_id Nullable(String),source_type String,source_metric_stream_id UUID,measurement_kind String,is_deleted UInt8) ENGINE=ReplacingMergeTree ORDER BY (user_id,channel,recorded_at)`});
+      for(const statement of cyclingPowerSchemaStatements()) await client.command({query:statement.replaceAll("analytics.",`${isolated}.`)});
+      await client.command({query:`INSERT INTO ${isolated}.deduped_activities VALUES ('${group}','${identityUser}','2026-01-04 13:00:00','2026-01-04 13:10:00',['${member}'],'cycling',0)`});
+      await client.command({query:`INSERT INTO ${isolated}.activity_summary_rows (activity_id,user_id,canonical_type,started_at,ended_at,is_deleted) SELECT activity_id,user_id,canonical_type,started_at,ended_at,is_deleted FROM ${isolated}.deduped_activities`});
+      await client.command({query:`INSERT INTO ${isolated}.user_profile_current (id,max_hr,resting_hr) VALUES ('${identityUser}',190,50)`});
+      await client.command({query:`INSERT INTO ${isolated}.deduped_sensor (user_id,source_activity_id,recorded_at,recorded_date,channel,scalar) SELECT toUUID('${identityUser}'),toUUID('${member}'),toDateTime64('2026-01-04 13:00:00',6)+toIntervalSecond(number*5),toDate('2026-01-04'),'power',230 FROM numbers(120)`});
+      const samples=buildTestActivitySensorSampleSelectSql({analytics:isolated,postgresFitness:isolated,ingest:isolated});
+      await client.command({query:`INSERT INTO ${isolated}.activity_sensor_sample SELECT user_id,activity_id,recorded_at,channel,scalar,is_deleted FROM (${samples})`});
+      const seed=async(id:string,version:number)=>{
+        await client.command({query:`INSERT INTO ${isolated}.cycling_power_observation_rows VALUES ('${identityUser}','${id}',230,1,'test',0,${version},now64(6))`});
+        await client.command({query:`INSERT INTO ${isolated}.cycling_power_history_rows VALUES ('${identityUser}',1,today(),'test',[(toFloat64(toUnixTimestamp(toDateTime('2026-01-04 13:00:00'))),'${id}',250.0,0.92,14.1,NULL,0,0,0)],${version+1},now64(6))`});
+      };
+      const queryModel=(name:string)=>renderDbtModelSql(readModelSql(name),{isIncremental:false})
+        .replace(/{{ ref\('([^']+)'\) }}/g,`${isolated}.$1`)
+        .replace(/{{ source\('[^']+', '([^']+)'\) }}/g,`${isolated}.$1`);
+      const minutes=async()=>{
+        const result=await client.query({query:queryModel("healthspan_activity_zone_minutes.sql")+"\nSETTINGS join_use_nulls=1",format:"JSONEachRow"});
+        return result.json<Record<string,unknown>>();
+      };
+      await seed(member,2);
+      expect(await minutes()).toEqual([expect.objectContaining({activity_id:group,high_intensity_minutes:null})]);
+      const resolved=await client.query({query:`SELECT toString(activity_id) AS activity_id FROM ${isolated}.deduped_activities FINAL WHERE user_id=toUUID('${identityUser}') AND has(member_activity_ids,toUUID('${member}')) AND is_deleted=0`,format:"JSONEachRow"});
+      const identities=await resolved.json<{activity_id:string}>();
+      expect(identities).toEqual([{activity_id:group}]);
+      await seed(identities[0]!.activity_id,4);
+      expect(await minutes()).toEqual([expect.objectContaining({activity_id:group,high_intensity_minutes:10})]);
+      await client.command({query:`INSERT INTO ${isolated}.healthspan_activity_zone_minutes ${queryModel("healthspan_activity_zone_minutes.sql")} SETTINGS join_use_nulls=1`});
+      const weekly=await client.query({query:queryModel("weekly_healthspan.sql")+"\nSETTINGS join_use_nulls=1",format:"JSONEachRow"});
+      expect(await weekly.json()).toEqual([expect.objectContaining({weekly_high_intensity_min:10})]);
+    } finally {
+      await client.command({query:`DROP DATABASE IF EXISTS ${isolated} SYNC`});
+    }
   });
 });

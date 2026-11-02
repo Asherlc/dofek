@@ -1,6 +1,7 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
@@ -9,6 +10,7 @@ import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
   executeClickHouseTestCommand,
+  getClickHouseTestClient,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -327,21 +329,34 @@ describe("healthspan zone time with variable-interval HR data", () => {
     }
     await syncClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, powerMetricStreamSeedRows);
+    const identitiesResult = await getClickHouseTestClient(testCtx).query({
+      query: `SELECT toString(activity_id) AS activity_id
+        FROM analytics.deduped_activities FINAL
+        WHERE user_id=toUUID('${TEST_USER_ID}')
+          AND has(member_activity_ids,toUUID('${actId}')) AND is_deleted=0`,
+      format: "JSONEachRow",
+    });
+    const identities = z
+      .array(z.object({ activity_id: z.uuid() }))
+      .parse(await identitiesResult.json());
+    expect(identities).toHaveLength(1);
+    const canonicalActivityId = identities[0]?.activity_id;
+    if (!canonicalActivityId) throw new Error("Power fixture has no canonical serving activity");
     await executeClickHouseTestCommand(
       testCtx,
       `INSERT INTO analytics.cycling_power_observation_rows
       (user_id,activity_id,normalized_power,source_refresh_version,model_version,is_deleted,refresh_version,refreshed_at)
-      SELECT toUUID('${TEST_USER_ID}'),toUUID('${actId}'),230,
+      SELECT toUUID('${TEST_USER_ID}'),toUUID('${canonicalActivityId}'),230,
         greatest(toUInt64(1),max(refresh_version)),'test-observed-power',0,
         toUInt64(toUnixTimestamp64Nano(now64(9))),now64(9)
-      FROM analytics.activity_summary_rows WHERE activity_id=toUUID('${actId}')`,
+      FROM analytics.activity_summary_rows WHERE activity_id=toUUID('${canonicalActivityId}')`,
     );
     await executeClickHouseTestCommand(
       testCtx,
       `INSERT INTO analytics.cycling_power_history_rows
       SELECT toUUID('${TEST_USER_ID}'),max(source_refresh_version),today(),'test-reference',
         [(toFloat64(toUnixTimestamp64Micro(parseDateTime64BestEffort('${powerActivityStartedAt.toISOString()}',6)))/1000000,
-          '${actId}',250.0,0.92,14.106666666666667,'${actId}',
+          '${canonicalActivityId}',250.0,0.92,14.106666666666667,'${canonicalActivityId}',
           toFloat64(toUnixTimestamp64Micro(parseDateTime64BestEffort('${powerActivityStartedAt.toISOString()}',6)))/1000000,
           1200.0,300.0)],toUInt64(toUnixTimestamp64Nano(now64(9))),now64(9)
       FROM analytics.cycling_power_observation_rows FINAL WHERE user_id=toUUID('${TEST_USER_ID}')`,
