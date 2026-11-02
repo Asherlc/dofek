@@ -14,6 +14,7 @@ final class WhoopBleModuleConnectionManagerDelegateTests: XCTestCase {
 
     func testReadinessSnapshotFailureDoesNotPublishOrRestartWatchdog() async throws {
         let (context, module) = try makeModule()
+        // OnCreate prepares asynchronously; fault injection needs the completed schema.
         try await Task.detached { _ = try WhoopBleUploadRuntime.shared() }.value
         let directory = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
@@ -21,11 +22,20 @@ final class WhoopBleModuleConnectionManagerDelegateTests: XCTestCase {
         )
         let path = directory.appendingPathComponent("WhoopBleUploads/samples.sqlite").path
         var database: OpaquePointer?
-        XCTAssertEqual(sqlite3_open(path, &database), SQLITE_OK)
+        XCTAssertEqual(
+            sqlite3_open(path, &database), SQLITE_OK,
+            String(cString: sqlite3_errmsg(database))
+        )
         defer { sqlite3_close(database) }
-        XCTAssertEqual(sqlite3_exec(database, "ALTER TABLE stats RENAME TO unavailable_stats", nil, nil, nil), SQLITE_OK)
+        XCTAssertEqual(
+            sqlite3_exec(database, "ALTER TABLE stats RENAME TO unavailable_stats", nil, nil, nil), SQLITE_OK,
+            String(cString: sqlite3_errmsg(database))
+        )
         defer {
-            XCTAssertEqual(sqlite3_exec(database, "ALTER TABLE unavailable_stats RENAME TO stats", nil, nil, nil), SQLITE_OK)
+            XCTAssertEqual(
+                sqlite3_exec(database, "ALTER TABLE unavailable_stats RENAME TO stats", nil, nil, nil), SQLITE_OK,
+                String(cString: sqlite3_errmsg(database))
+            )
         }
 
         try await assertReadinessDoesNotActivate(module, context: context)

@@ -795,6 +795,7 @@ export default function ActivityDetailScreen() {
           {((climbingEntries.data?.length ?? 0) > 0 ||
             (entrySuggestions.data?.length ?? 0) > 0) && (
             <ActivityClimbingPanel
+              selectedEntryId={highlightedClimbId}
               onSelectEntry={setHighlightedClimbId}
               points={routePoints}
               hoveredPosition={hoveredPosition}
