@@ -59,9 +59,9 @@ shared training catalogue contracts, affected imports, manifests, lockfile,
 ### Task 3: Publish and verify
 
 - [x] Confirm package name/version and inspect packed contents.
-- [ ] Publish only `@dofek/climbing-catalogue` with authorized npm credentials.
-- [ ] Verify registry metadata and install/import the published artifact.
-- [ ] Report publication or the exact external blocker; include a short retrospective.
+- [x] Publish only `@dofek/climbing-catalogue` with authorized npm credentials.
+- [x] Verify registry metadata and install/import the published artifact.
+- [x] Report publication or the exact external blocker; include a short retrospective.
 
 ## Working notes
 
@@ -79,7 +79,13 @@ shared training catalogue contracts, affected imports, manifests, lockfile,
   aliases were added. Review otherwise confirmed preserved matching behavior.
 - The latest stable compiler for the new package is TypeScript 7.0.2; package
   build passes with it. Other workspace compiler versions remain unchanged.
-- npm owner sign-in is pending; the CLI web login was sent to the user.
+- Publication completed on 2026-11-02 after the user completed owner web login.
+  npm accepted `@dofek/climbing-catalogue@0.1.0`; registry metadata matched the
+  verified tarball checksum. A fresh registry installation loaded all nine
+  exports and exercised matching/search without Dofek runtime dependencies.
+  Configured and verified `Asherlc/dofek` / `release-npm.yml` as the npm trusted
+  publisher. Interactive publication required preserving a PTY through the
+  command proxy; the publishing runbook now records this operator procedure.
 - Final checks: 579 focused consumer/library tests pass; configured spelling
   checks all 3,153 files successfully; changed-file Biome and diff checks pass.
 - Retrospective: existing regression coverage made this extraction verifiable.

@@ -34794,3 +34794,32 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
 - The partial rerun then failed in Coverage at `pnpm tsx scripts/update-integration-test-timings.ts merge ...`, with `Timing provenance mismatch: GITHUB_RUN_ATTEMPT`. The [timing merger](../scripts/update-integration-test-timings.ts) requires matching attempt provenance; retained integration artifacts came from attempt 1 while aggregation ran in attempt 2. All integration shards and native builds themselves passed.
 - Operator action: use a fresh complete CI run so all timing artifacts and aggregation belong to one attempt. Preserve the provenance guard, test deadlines and retry settings. Validation of that fresh run is pending. No runtime or workflow behavior changed.
 - Retrospective: inspect unresolved review threads before declaring merge readiness, and use the address-pr-comments skill for coverage feedback. Proposed CI runbook note: when the timing merger enforces attempt identity, rerun the complete workflow rather than only failed jobs; do not weaken provenance checks. Investigate the reporter child startup separately if it repeats.
+
+## 2026-11-02 — Climbing catalogue npm bootstrap authentication
+
+- Impact: workstation publication of `@dofek/climbing-catalogue@0.1.0` was blocked;
+  no deployed application or stored data was affected.
+- Evidence: `npm whoami` failed with `E401` / `401 Unauthorized`. After successful
+  owner web login, `rtk proxy npm publish <verified-tarball> --access public`
+  failed with `EOTP` / `This operation requires a one-time password.`
+- Root cause: invalid local registry authentication first, then missing terminal
+  semantics in the proxied npm process. npm's
+  [authentication implementation](https://github.com/npm/cli/blob/latest/lib/utils/auth.js)
+  skips its interactive OTP flow unless both stdin and stdout are terminals.
+- Direct fix: complete `npm login --auth-type=web`, verify `npm whoami`, and run
+  the same verified tarball through macOS `script -q /dev/null` to preserve a PTY.
+  npm accepted the upload with `+ @dofek/climbing-catalogue@0.1.0`; the
+  `Asherlc/dofek` / `release-npm.yml` trusted publisher was created and confirmed
+  by `npm trust list`. No auth bypasses, runtime retries, or resilience knobs
+  were introduced; the [publishing runbook](package-publishing.md) records the procedure.
+- Validation: after asynchronous registry processing, `npm view` returned 0.1.0
+  with the verified tarball's SHA-1 checksum
+  `ceffd828ff0dd459761a900d9c1bf1e39846c55e`. A fresh registry installation
+  loaded all nine public exports, ran matching/search, and confirmed only
+  Zod, Cheerio, and Fuse.js runtime dependencies. No publication blocker remains;
+  automatic releases still depend on merging the checked-in release wiring.
+- Retrospective: checking identity separately isolated the login failure;
+  inspecting npm's terminal guard identified the second cause. Reuse the package
+  publishing runbook and verification-before-completion for future bootstrap
+  releases. Proposed checklist addition: verify the real child process has a PTY
+  when interactive npm authentication fails under a command proxy.

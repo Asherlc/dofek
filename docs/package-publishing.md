@@ -92,6 +92,21 @@ one-time bootstrap, configure `Asherlc/dofek` and `release-npm.yml` as the
 package's GitHub Actions trusted publisher. Subsequent releases require no
 registry credential or maintainer action.
 
+On macOS, if an authenticated bootstrap publish reports `EOTP` immediately
+instead of offering interactive authentication through a command proxy, preserve
+a terminal for npm itself:
+
+```sh
+rtk proxy script -q /dev/null npm publish /path/to/package.tgz --access public
+```
+
+First confirm `npm whoami` succeeds; use `npm login --auth-type=web` if it returns
+401. npm's [interactive authentication implementation](https://github.com/npm/cli/blob/latest/lib/utils/auth.js)
+requires both stdin and stdout to be terminals before starting its OTP flow.
+Use an already verified pnpm tarball so compiled export overrides are retained.
+After upload, wait for registry processing and verify with `npm view` and a fresh
+installation before declaring the package available; see [npm view](https://docs.npmjs.com/cli/v11/commands/npm-view).
+
 ### Climbing catalogue extraction
 
 [`@dofek/climbing-catalogue`](../packages/climbing-catalogue/README.md) starts
@@ -103,6 +118,10 @@ than letting the automatic patch workflow version it; the existing pending-versi
 guard leaves unpublished manifest versions for the release workflow. See the
 [version workflow](../.github/workflows/version-npm.yml) and
 [SemVer's initial-development rule](https://semver.org/spec/v2.0.0.html#spec-item-4).
+
+The [0.1.0 registry release](https://www.npmjs.com/package/@dofek/climbing-catalogue/v/0.1.0)
+was bootstrapped on 2026-11-02, verified through a clean registry installation,
+and configured to trust `Asherlc/dofek` / `release-npm.yml` for subsequent releases.
 
 ## SwiftPM architecture
 
