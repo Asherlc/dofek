@@ -593,6 +593,7 @@ export class CyclingAnalyticsRepository {
       )
       .map((row) =>
         new VerticalAscentModel({
+          activityId: row.id,
           date: row.date,
           activityName:
             row.activity_name ??

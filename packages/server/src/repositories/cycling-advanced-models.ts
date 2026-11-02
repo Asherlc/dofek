@@ -151,6 +151,7 @@ export class ActivityVariabilityModel {
 }
 
 export interface VerticalAscentRowData {
+  activityId: string;
   date: string;
   activityName: string;
   activityType: string;
@@ -203,6 +204,7 @@ export class VerticalAscentModel {
       activityName: this.activityName,
       activityType: this.activityType,
       modality: this.modality,
+      activityId: this.#row.activityId,
       verticalAscentRate: this.verticalAscentRate,
       elevationGainMeters: this.elevationGainMeters,
       elapsedMinutes: this.elapsedMinutes,
