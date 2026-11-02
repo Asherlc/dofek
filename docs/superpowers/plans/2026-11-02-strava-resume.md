@@ -28,9 +28,9 @@
 
 ### Task 1: Checkpoint and verify Strava window sync
 
-**Files:** Modify `src/providers/strava/provider.ts`, colocate its existing unit suite at `src/providers/strava/provider.test.ts`, extend `src/providers/strava-sync.integration.test.ts`, and update `src/providers/README.md` and `docs/production-incident-baseline.md` with cited behavior/evidence.
+**Files:** Modify `src/providers/strava/provider.ts`, add `src/providers/strava/sync-checkpoint.ts`, its colocated `sync-checkpoint.test.ts`, and shared `test-helpers.ts`; colocate its existing unit suite at `src/providers/strava/provider.test.ts`, extend `src/providers/strava-sync.integration.test.ts`, and update `src/providers/README.md` and `docs/production-incident-baseline.md` with cited behavior/evidence.
 
-**Interfaces:** Consume `SyncRun.options.checkpoint.load/save/clear` without changing the shared contract. Keep checkpoint parsing private to the provider. The provider's public `sync(run)` result and existing worker queue are the production consumers.
+**Interfaces:** Consume `SyncRun.options.checkpoint.load/save/clear` without changing the shared contract. Keep checkpoint parsing inside the Strava provider directory, exposed only through its provider-owned checkpoint module. The provider's public `sync(run)` result and existing worker queue are the production consumers.
 
 - [x] Write unit regressions for mid-page retry, fresh-inventory resume, pre-stream failure, checkpoint validation, and completion cleanup. Assert actual requests/public results and existing presence reconciliation behavior.
 - [x] Run the focused unit suite; confirm the new resume regressions fail for missing behavior.
