@@ -34998,3 +34998,35 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   exposed the failure directly. Proposed analytics checklist addition: verify
   duration thresholds using both one-second and sparse provider observations.
   Reuse systematic-debugging and integration-tests-ready for the correction.
+- Correction prepared: integrate paired intervals split at either sensor's
+  timestamps, require 300 elapsed seconds, and preserve the actual heart-rate
+  observation count. Cap power holds and heart-rate gaps at ten seconds;
+  explicit zero/null power ends coverage. Averages use time weights. The
+  [model](../analytics/models/read_models/activity_aerobic_efficiency.sql) and
+  [live repository query](../packages/server/src/repositories/efficiency-repository.ts)
+  use [ClickHouse window frames](https://clickhouse.com/docs/reference/functions/window-functions/leadInFrame)
+  before zone filtering, so gaps and time outside Zone 2 are not bridged.
+  The cycling reader accepts duration-qualified rows with fewer than 300 samples.
+  Both web and mobile consume these shared server results; no API/schema change.
+- Validation: observed the five-second and oversampling regressions fail before
+  implementation; independent-cadence tests also reproduced and then verified
+  a review finding about power updates between heart-rate observations. Twenty
+  real ClickHouse cases exercise both model and live SQL, and 86 focused unit
+  tests pass. Server and fixture TypeScript checks pass. A read-only production
+  preview bounded to November 1, 2025 through November 3, 2026 recovered 21
+  qualifying points in November–February (2, 7, 7, 5 by month), with the earliest
+  at November 15, 2025 20:56:52 UTC. No production data has been rewritten yet.
+- Rollout: deploy the corrected analytics model and server reader together.
+  The existing model recomputes all activity bounds on every build, and its
+  refreshed rows dirty the downstream cycling model, so the first successful
+  normal build applies the historical correction without a separate full refresh
+  or backfill. Verify the monthly eligibility counts after that build and cache
+  expiry; until deployment, the original exclusion remains active. No resilience
+  knobs were added; the ten-second bound limits credited sensor coverage.
+- Local validation prerequisite: `pnpm compose -- up -d --wait clickhouse` first
+  failed with `all predefined address pools have been fully subnetted`.
+  `docker network prune -f` removed unused networks; the same Compose command
+  then succeeded. No running containers or database volumes were removed.
+- Proposed guideline refinement: duration-based analytics fixtures should include
+  one-second, five-second, subsecond, and independently timed channels. Continue
+  using systematic-debugging, integration-tests-ready, and independent code review.

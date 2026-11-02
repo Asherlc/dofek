@@ -4,7 +4,8 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
@@ -78,7 +79,7 @@ activity_meta AS (
     WHERE user_profile.max_hr IS NOT NULL
 ),
 
-z2_heart_rate_samples AS (
+heart_rate_samples AS (
     SELECT
         am.activity_id AS activity_id,
         am.user_id AS user_id,
@@ -89,6 +90,11 @@ z2_heart_rate_samples AS (
         am.max_hr AS max_hr,
         am.resting_hr AS resting_hr,
         hr.recorded_at AS recorded_at,
+        leadInFrame(hr.recorded_at, 1, hr.recorded_at) OVER (
+            PARTITION BY am.user_id, am.activity_id
+            ORDER BY hr.recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS next_recorded_at,
         hr.scalar AS heart_rate
     FROM activity_meta AS am
     INNER JOIN {{ ref('activity_sensor_sample') }} AS hr FINAL
@@ -96,14 +102,17 @@ z2_heart_rate_samples AS (
         AND hr.user_id = am.user_id
         AND hr.channel = 'heart_rate'
         AND hr.is_deleted = 0
-    WHERE hr.scalar >= am.resting_hr
-            + (am.max_hr - am.resting_hr) * 0.6
-        AND hr.scalar < am.resting_hr
-            + (am.max_hr - am.resting_hr) * 0.7
+),
+
+z2_heart_rate_samples AS (
+    SELECT *
+    FROM heart_rate_samples
+    WHERE heart_rate >= resting_hr + (max_hr - resting_hr) * 0.6
+        AND heart_rate < resting_hr + (max_hr - resting_hr) * 0.7
     ORDER BY
-        am.user_id,
-        am.activity_id,
-        hr.recorded_at
+        user_id,
+        activity_id,
+        recorded_at
 ),
 
 z2_power_samples AS (
@@ -111,43 +120,106 @@ z2_power_samples AS (
         activity_id,
         user_id,
         recorded_at,
+        leadInFrame(recorded_at, 1, recorded_at + INTERVAL 10 SECOND) OVER (
+            PARTITION BY user_id, activity_id
+            ORDER BY recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS next_recorded_at,
         scalar
     FROM {{ ref('activity_sensor_sample') }} FINAL
     WHERE channel = 'power'
-        AND scalar > 0
         AND is_deleted = 0
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM activity_meta
+        )
     ORDER BY
         user_id,
         activity_id,
         recorded_at
 ),
 
-z2_samples AS (
+-- Split at either channel's updates so independently sampled streams retain all paired time.
+sample_events AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        leadInFrame(recorded_at, 1, recorded_at) OVER (
+            PARTITION BY user_id, activity_id
+            ORDER BY recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS next_recorded_at
+    FROM (
+        SELECT
+            activity_id,
+            user_id,
+            recorded_at
+        FROM heart_rate_samples
+        UNION DISTINCT
+        SELECT
+            activity_id,
+            user_id,
+            recorded_at
+        FROM z2_power_samples
+    )
+),
+
+paired_intervals AS (
+    -- Match the cycling signal policy's ten-second maximum hold; never bridge HR outages.
     SELECT
         hr.activity_id AS activity_id,
         hr.user_id AS user_id,
-        any(hr.canonical_type) AS canonical_type,
-        any(hr.name) AS name,
-        any(hr.started_at) AS started_at,
-        any(hr.ended_at) AS ended_at,
-        any(hr.max_hr) AS max_hr,
-        any(hr.resting_hr) AS resting_hr,
-        round(avg(pwr.scalar), 1) AS avg_power_z2,
-        round(avg(hr.heart_rate), 1) AS avg_hr_z2,
-        CASE
-            WHEN avg(hr.heart_rate) > 0
-                THEN round(avg(pwr.scalar) / avg(hr.heart_rate), 3)
-        END AS efficiency_factor,
-        toInt32(count()) AS z2_samples
-    FROM z2_heart_rate_samples AS hr
+        hr.canonical_type AS canonical_type,
+        hr.name AS name,
+        hr.started_at AS started_at,
+        hr.ended_at AS ended_at,
+        hr.max_hr AS max_hr,
+        hr.resting_hr AS resting_hr,
+        hr.recorded_at AS heart_rate_recorded_at,
+        hr.heart_rate AS heart_rate,
+        pwr.scalar AS power,
+        greatest(0, dateDiff(
+            'microsecond',
+            events.recorded_at,
+            least(events.next_recorded_at, hr.next_recorded_at, hr.ended_at, pwr.next_recorded_at,
+                pwr.recorded_at + INTERVAL 10 SECOND)
+        ) / 1000000.0) AS paired_seconds
+    FROM sample_events AS events
+    ASOF JOIN z2_heart_rate_samples AS hr
+        ON events.user_id = hr.user_id
+        AND events.activity_id = hr.activity_id
+        AND events.recorded_at >= hr.recorded_at
     ASOF JOIN z2_power_samples AS pwr
-        ON hr.user_id = pwr.user_id
-        AND hr.activity_id = pwr.activity_id
-        AND hr.recorded_at >= pwr.recorded_at
+        ON events.user_id = pwr.user_id
+        AND events.activity_id = pwr.activity_id
+        AND events.recorded_at >= pwr.recorded_at
+    WHERE pwr.scalar > 0
+        AND dateDiff('microsecond', hr.recorded_at, hr.next_recorded_at) <= 10000000
+),
+
+z2_samples AS (
+    SELECT
+        activity_id,
+        user_id,
+        any(canonical_type) AS canonical_type,
+        any(name) AS name,
+        any(started_at) AS started_at,
+        any(ended_at) AS ended_at,
+        any(max_hr) AS max_hr,
+        any(resting_hr) AS resting_hr,
+        round(sum(power * paired_seconds) / sum(paired_seconds), 1) AS avg_power_z2,
+        round(sum(heart_rate * paired_seconds) / sum(paired_seconds), 1) AS avg_hr_z2,
+        round(sum(power * paired_seconds) / sum(heart_rate * paired_seconds), 3) AS efficiency_factor,
+        toInt32(uniqExact(heart_rate_recorded_at)) AS z2_samples
+    FROM paired_intervals
+    WHERE paired_seconds > 0
     GROUP BY
-        hr.activity_id,
-        hr.user_id
-    HAVING count() >= 300
+        activity_id,
+        user_id
+    HAVING sum(paired_seconds) >= 300
 ),
 
 refresh_clock AS (

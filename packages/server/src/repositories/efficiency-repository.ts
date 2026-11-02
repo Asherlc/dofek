@@ -178,7 +178,7 @@ export class EfficiencyRepository extends BaseRepository {
   /**
    * Aerobic Efficiency (Efficiency Factor) per activity.
    * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% HRR (Karvonen).
-   * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
+   * Only includes activities with at least 5 minutes of paired Z2 data.
    * Reads from the pre-computed activity_aerobic_efficiency read model when available.
    */
   async getAerobicEfficiency(range: ChartRange): Promise<AerobicEfficiencyResult> {
@@ -268,17 +268,8 @@ export class EfficiencyRepository extends BaseRepository {
           AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${activitySummaryLowerBoundPredicate}
           AND up.max_hr IS NOT NULL
-      )
-      SELECT
-        any(hr.max_hr) AS max_hr,
-        any(hr.date) AS date,
-        any(hr.canonical_type) AS canonical_type,
-        any(hr.name) AS name,
-        round(avg(pwr.scalar), 1) AS avg_power_z2,
-        round(avg(hr.heart_rate), 1) AS avg_hr_z2,
-        round(avg(pwr.scalar) / nullIf(avg(hr.heart_rate), 0), 3) AS efficiency_factor,
-        toInt32(count()) AS z2_samples
-      FROM (
+      ),
+      heart_rate_samples AS (
         SELECT
           am.id AS id,
           am.user_id AS user_id,
@@ -288,7 +279,12 @@ export class EfficiencyRepository extends BaseRepository {
           am.canonical_type AS canonical_type,
           am.name AS name,
           am.max_hr AS max_hr,
+          am.resting_hr AS resting_hr,
           hr.recorded_at AS recorded_at,
+          leadInFrame(hr.recorded_at, 1, hr.recorded_at) OVER (
+            PARTITION BY am.user_id, am.id ORDER BY hr.recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+          ) AS next_recorded_at,
           hr.scalar AS heart_rate
         FROM activity_meta am
         INNER JOIN analytics.deduped_sensor hr
@@ -297,18 +293,22 @@ export class EfficiencyRepository extends BaseRepository {
          AND hr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
          AND hr.channel = 'heart_rate'
          AND hr.is_deleted = 0
-        WHERE hr.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
-          AND hr.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
-        ORDER BY
-          am.user_id,
-          am.id,
-          hr.recorded_at
-      ) hr
-      ASOF JOIN (
+      ),
+      z2_heart_rate_samples AS (
+        SELECT * FROM heart_rate_samples
+        WHERE heart_rate >= resting_hr + (max_hr - resting_hr) * {b1:Float64}
+          AND heart_rate < resting_hr + (max_hr - resting_hr) * {b2:Float64}
+        ORDER BY user_id, id, recorded_at
+      ),
+      power_samples AS (
         SELECT
           am.id AS id,
           am.user_id AS user_id,
           power.recorded_at AS recorded_at,
+          leadInFrame(power.recorded_at, 1, power.recorded_at + INTERVAL 10 SECOND) OVER (
+            PARTITION BY am.user_id, am.id ORDER BY power.recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+          ) AS next_recorded_at,
           power.scalar AS scalar
         FROM activity_meta am
         INNER JOIN analytics.deduped_sensor power
@@ -316,7 +316,6 @@ export class EfficiencyRepository extends BaseRepository {
          AND power.recorded_at >= am.started_at
          AND power.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
          AND power.channel = 'power'
-         AND power.scalar > 0
          AND power.is_deleted = 0
         WHERE 1 = 1
           ${powerSampleLowerBoundPredicate}
@@ -324,13 +323,54 @@ export class EfficiencyRepository extends BaseRepository {
           user_id,
           id,
           recorded_at
-      ) pwr
-        ON hr.user_id = pwr.user_id
-       AND hr.id = pwr.id
-       AND hr.recorded_at >= pwr.recorded_at
-      GROUP BY hr.id
-      HAVING count() >= 300
-      ORDER BY any(hr.started_at)`,
+      ),
+      sample_events AS (
+        SELECT id, user_id, recorded_at,
+          leadInFrame(recorded_at, 1, recorded_at) OVER (
+            PARTITION BY user_id, id ORDER BY recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+          ) AS next_recorded_at
+        FROM (
+          SELECT id, user_id, recorded_at FROM heart_rate_samples
+          UNION DISTINCT
+          SELECT id, user_id, recorded_at FROM power_samples
+        )
+      ),
+      paired_intervals AS (
+        SELECT hr.id AS id, hr.max_hr AS max_hr, hr.date AS date,
+          hr.canonical_type AS canonical_type, hr.name AS name, hr.started_at AS started_at,
+          hr.recorded_at AS heart_rate_recorded_at, hr.heart_rate AS heart_rate,
+          pwr.scalar AS power,
+          greatest(0, dateDiff('microsecond', events.recorded_at,
+            least(events.next_recorded_at, hr.next_recorded_at, coalesce(hr.ended_at, hr.next_recorded_at),
+              pwr.next_recorded_at, pwr.recorded_at + INTERVAL 10 SECOND)
+          ) / 1000000.0) AS paired_seconds
+        FROM sample_events events
+        ASOF JOIN z2_heart_rate_samples hr
+          ON events.user_id = hr.user_id
+         AND events.id = hr.id
+         AND events.recorded_at >= hr.recorded_at
+        ASOF JOIN power_samples pwr
+          ON events.user_id = pwr.user_id
+         AND events.id = pwr.id
+         AND events.recorded_at >= pwr.recorded_at
+        WHERE pwr.scalar > 0
+          AND dateDiff('microsecond', hr.recorded_at, hr.next_recorded_at) <= 10000000
+      )
+      SELECT
+        any(max_hr) AS max_hr,
+        any(date) AS date,
+        any(canonical_type) AS canonical_type,
+        any(name) AS name,
+        round(sum(power * paired_seconds) / sum(paired_seconds), 1) AS avg_power_z2,
+        round(sum(heart_rate * paired_seconds) / sum(paired_seconds), 1) AS avg_hr_z2,
+        round(sum(power * paired_seconds) / nullIf(sum(heart_rate * paired_seconds), 0), 3) AS efficiency_factor,
+        toInt32(uniqExact(heart_rate_recorded_at)) AS z2_samples
+      FROM paired_intervals
+      WHERE paired_seconds > 0
+      GROUP BY id
+      HAVING sum(paired_seconds) >= 300
+      ORDER BY any(started_at)`,
       {
         userId: this.userId,
         timezone: this.timezone,

@@ -893,14 +893,14 @@ describe("CyclingAnalyticsRepository", () => {
     },
   );
 
-  it("requires positive efficiency values and at least 300 zone 2 samples", async () => {
+  it("serves duration-qualified sparse samples and requires positive efficiency values", async () => {
     const sensorStore = makeMockSensorStore([
       cyclingActivityRow({
-        activity_name: "Minimum Valid Ride",
+        activity_name: "Five Minutes at Five-Second Cadence",
         avg_power_z2: 180,
         avg_hr_z2: 135,
         efficiency_factor: 1.333,
-        z2_samples: 300,
+        z2_samples: 60,
       }),
       cyclingActivityRow({
         id: "22222222-2222-4222-8222-222222222222",
@@ -936,11 +936,11 @@ describe("CyclingAnalyticsRepository", () => {
       }),
       cyclingActivityRow({
         id: "66666666-6666-4666-8666-666666666666",
-        activity_name: "Insufficient Samples Ride",
+        activity_name: "No Samples Ride",
         avg_power_z2: 180,
         avg_hr_z2: 135,
         efficiency_factor: 1.333,
-        z2_samples: 299,
+        z2_samples: 0,
       }),
     ]);
     const repository = new CyclingAnalyticsRepository(
@@ -958,7 +958,7 @@ describe("CyclingAnalyticsRepository", () => {
     });
 
     expect(result.aerobicEfficiency.activities.map((activity) => activity.name)).toEqual([
-      "Minimum Valid Ride",
+      "Five Minutes at Five-Second Cadence",
     ]);
   });
 
