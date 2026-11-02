@@ -923,9 +923,9 @@ scopes; a maximum-size scope must use that private-project transport. See the
 
 Dofek treats Kaya sync (`kaya`) and file-import (`kaya-export`) sessions as
 initiating activity sources in the [origin selector](macros/activity_origin.sql).
-A single Kaya session can establish the primary identity alongside independent
-wearable recordings and their copies. Multiple initiating records remain
-unresolved under the existing policy; this does not invent transfer edges or
+A single Kaya session can establish the primary identity alongside non-initiating
+wearables such as WHOOP and their copies. Multiple initiating records, including
+Apple Watch recordings, remain unresolved under the existing policy; this does not invent transfer edges or
 change sensor selection. The [shared real-engine fixtures](../src/test-fixtures/activity-origin.json)
 cover the policy in PostgreSQL and ClickHouse.
 
