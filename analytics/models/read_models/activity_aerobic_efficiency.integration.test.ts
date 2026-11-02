@@ -291,7 +291,7 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
     ]);
   });
 
-  it("credits a final heart-rate reading only while power continues within its hold limit", async () => {
+  it("credits a final heart-rate reading when power continues through its ten-second hold", async () => {
     const rows = await compute(
       Array.from({ length: 291 }, (_, i) => i),
       {
