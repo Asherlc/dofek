@@ -34951,8 +34951,8 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   operational telemetry; test the full status class and preserve Sentry for
   unexpected application failures." Reuse test-driven development and the
   provider reporting tests when changing this policy.
-- Review follow-up: retain body-free token-validation errors for Ultrahuman,
-  Cycling Analytics and Wger while preserving typed upstream status and retry
+- Review follow-up: retain body-free token-validation errors for Ultrahuman
+  and Cycling Analytics, and token-refresh errors for Wger, preserving typed upstream status and retry
   metadata through [transport-error redaction](../src/lib/provider-transport-error.ts).
   Restored HTTP 500 fixtures first reproduced the message exposure. WHOOP
   bootstrap HTTP 500/503/525 now has explicit typed-error tests, consistent
