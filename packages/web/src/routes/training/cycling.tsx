@@ -80,7 +80,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
       await Promise.all([
         trpcUtils.cycling.activities.invalidate(),
         trpcUtils.cycling.performance.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
       ]);
     },

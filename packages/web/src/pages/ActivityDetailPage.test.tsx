@@ -463,7 +463,7 @@ vi.mock("../lib/trpc.ts", () => ({
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
       climbing: {
@@ -858,10 +858,10 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Lineage" }));
     expect(screen.getAllByText("Removed from provider")).toHaveLength(2);
     expect(screen.getByText("Strava").closest("a")).toBeNull();
-    expect(screen.queryByRole("link", { name: "View activity for Garmin Edge 530" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Garmin Edge 530" })).toBeNull();
     expect(screen.getByRole("link", { name: "WHOOP" })).toHaveAttribute(
       "href",
       "https://app.whoop.com/activities/123",
@@ -962,7 +962,7 @@ describe("ActivityDetailPage", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Running" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: /Sources/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Lineage/ })).toBeNull();
     expect(screen.getByText("10.0 km")).toBeVisible();
   });
 
@@ -1978,7 +1978,7 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("source tree", () => {
-    it("opens the queried device facts from the activity's Sources control", async () => {
+    it("opens the queried lineage with its reported recording", async () => {
       mockActivityByIdUseQuery.mockReturnValue({
         data: { ...mockActivity, sourceTree: detailSourceTree },
         error: null,
@@ -1993,10 +1993,11 @@ describe("ActivityDetailPage", () => {
       });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      expect(screen.queryByText("12345678")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Sources" }));
-      expect(screen.getByText("12345678")).toBeVisible();
-      expect(screen.getByText("Whoop")).toBeVisible();
+      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("link", { name: "Garmin Edge 530" })).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Original" })).toBeVisible();
     });
 
     it("expands the server source tree inside the real detail header with distinct transfer branches", async () => {
@@ -2009,7 +2010,7 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Sources" });
+      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
       expect(trigger).toHaveAttribute("aria-expanded", "false");
       expect(screen.queryByText("Strava")).toBeNull();
       expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
@@ -2023,16 +2024,17 @@ describe("ActivityDetailPage", () => {
       expect(trigger).toHaveAttribute("aria-expanded", "true");
       const details = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
       expect(details).toBeVisible();
-      expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(1);
-      expect(
-        screen.getByRole("link", { name: "View activity for Garmin Edge 530" }),
-      ).toHaveAttribute("href", "https://connect.garmin.com/modern/activity/123");
+      expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(2);
+      expect(screen.getByRole("link", { name: "Garmin Edge 530" })).toHaveAttribute(
+        "href",
+        "https://connect.garmin.com/modern/activity/123",
+      );
       const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
       if (!strava) throw new Error("Missing Strava branch");
       expect(within(strava).getByText("Apple Health")).toBeVisible();
       expect(screen.getAllByText("Apple Health")).toHaveLength(2);
       expect(
-        within(screen.getByRole("region", { name: "Additional sources" })).getByText("WHOOP"),
+        within(screen.getByRole("region", { name: "Other" })).getByText("WHOOP"),
       ).toBeVisible();
       expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
       expect(screen.getByText("10.0 km")).toBeVisible();
@@ -2052,8 +2054,8 @@ describe("ActivityDetailPage", () => {
         />,
       );
 
-      fireEvent.click(screen.getByRole("button", { name: "Strong Sources" }));
-      expect(screen.getAllByText("Strong")).toHaveLength(1);
+      fireEvent.click(screen.getByRole("button", { name: "Strong Lineage" }));
+      expect(screen.getAllByText("Strong")).toHaveLength(2);
       expect(screen.getByText("Recording app reported by Apple Health")).toBeVisible();
       expect(screen.getByText("Apple Health")).toBeVisible();
       expect(screen.getByText("Recorded by Strong")).toBeVisible();
@@ -2071,11 +2073,11 @@ describe("ActivityDetailPage", () => {
         />,
       );
 
-      const trigger = screen.getByRole("button", { name: "Sources" });
+      const trigger = screen.getByRole("button", { name: "Lineage" });
       expect(trigger).toHaveAttribute("aria-expanded", "false");
       fireEvent.click(trigger);
       expect(
-        within(screen.getByRole("region", { name: "Additional sources" })).getByText("WHOOP"),
+        within(screen.getByRole("region", { name: "Available recordings" })).getByText("WHOOP"),
       ).toBeVisible();
       expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
     });

@@ -116,7 +116,7 @@ function createStoryData(
             otherSources: [],
           };
 
-  const weekList: AppRouterOutputs["calendar"]["weekList"] = [
+  const weekListV2: AppRouterOutputs["calendar"]["weekListV2"]["days"] = [
     {
       date: today,
       activities: [
@@ -228,7 +228,7 @@ function createStoryData(
   ];
 
   if (climbingActivity) {
-    weekList[0].activities = [
+    weekListV2[0].activities = [
       {
         id: "a1220000-0000-4000-8000-000000000001",
         name: "Boulder Canyon climbing",
@@ -340,7 +340,12 @@ function createStoryData(
   return {
     today,
     queryInput,
-    weekList,
+    weekListV2: {
+      days: weekListV2,
+      totalCount: weekListV2.reduce((count, day) => count + day.activities.length, 0),
+      page: 0,
+      pageSize: 20,
+    },
     activityOverview,
     calendarData,
     processingStatus,
@@ -360,8 +365,8 @@ function createMockObservable(
 ): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
-      if (path === "calendar.weekList") {
-        observer.next?.({ result: { data: storyData.weekList } });
+      if (path === "calendar.weekListV2") {
+        observer.next?.({ result: { data: storyData.weekListV2 } });
       } else if (path === "calendar.activityOverview") {
         observer.next?.({ result: { data: storyData.activityOverview } });
       } else if (path === "calendar.calendarData") {
@@ -414,8 +419,11 @@ function MockProviders({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
     });
     client.setQueryData(
-      [["calendar", "weekList"], { input: storyData.queryInput, type: "query" }],
-      storyData.weekList,
+      [
+        ["calendar", "weekListV2"],
+        { input: { ...storyData.queryInput, page: 0, pageSize: 20 }, type: "query" },
+      ],
+      storyData.weekListV2,
     );
     client.setQueryData(
       [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
@@ -498,12 +506,12 @@ export const SelectionMode: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Select activities" }));
-    await userEvent.click(await canvas.findByRole("button", { name: "Sources: WHOOP (Cloud)" }));
-    await expect(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" })).toHaveAttribute(
+    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
+    await expect(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
     await expect(canvas.getByText("0 activities selected")).toBeVisible();
   },
 };
@@ -532,7 +540,7 @@ export const HangTenViaAppleHealth: Story = {
   parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Sources: Hang Ten" }),
+      await within(canvasElement).findByRole("button", { name: "Lineage: Hang Ten" }),
     );
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Apple Health")).toBeVisible();
@@ -546,10 +554,10 @@ export const BranchingSourcesExpanded: Story = {
   parameters: { branchingSources: true },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    const trigger = await canvas.findByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = await canvas.findByRole("button", { name: "Lineage: Hang Ten" });
     await userEvent.click(trigger);
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(1);
+    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(2);
     await expect(canvas.getAllByText("Strava")).toHaveLength(2);
     await expect(canvas.getByText("WHOOP")).toBeVisible();
   },

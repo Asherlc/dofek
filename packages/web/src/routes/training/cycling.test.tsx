@@ -136,8 +136,8 @@ vi.mock("../../lib/trpc.ts", () => ({
         },
       },
       calendar: {
-        weekList: {
-          invalidate: async () => state.invalidatedQueries.push("calendar.weekList"),
+        weekListV2: {
+          invalidate: async () => state.invalidatedQueries.push("calendar.weekListV2"),
         },
         activityOverview: {
           invalidate: async () => state.invalidatedQueries.push("calendar.activityOverview"),
@@ -464,7 +464,7 @@ describe("CyclingTab", () => {
     expect(state.invalidatedQueries).toEqual([
       "cycling.activities",
       "cycling.performance",
-      "calendar.weekList",
+      "calendar.weekListV2",
       "calendar.activityOverview",
     ]);
   });

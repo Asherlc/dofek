@@ -145,6 +145,13 @@ export interface WeekListInput {
   includeProviderAbsent?: boolean;
 }
 
+export interface ActivityListPage {
+  days: CalendarDayActivities[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
 interface CalendarEntryContext {
   baseline: z.infer<typeof baselineRowSchema>;
   calculator: TrainingStressCalculator;

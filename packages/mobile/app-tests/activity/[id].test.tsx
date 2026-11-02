@@ -460,7 +460,7 @@ vi.mock("../../lib/trpc", () => ({
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
         calendarData: { invalidate: mockCalendarDataInvalidate },
       },
@@ -711,7 +711,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("91 bpm")).toBeDefined();
     expect(screen.getByText("92 bpm")).toBeDefined();
   });
-  it("opens device facts with Sources in the real activity header", async () => {
+  it("opens lineage with actionable refresh errors in the real activity header", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, sourceTree: garminActivitySourceTree },
       isLoading: false,
@@ -730,7 +730,7 @@ describe("ActivityDetailScreen", () => {
             model: "Edge 530",
             manufacturer: "Garmin",
             evidence: "Reported recording device.",
-            details: [{ label: "Serial number", value: "EDGE-123" }],
+            details: [],
           },
         ],
         power: [],
@@ -741,12 +741,10 @@ describe("ActivityDetailScreen", () => {
     });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(<ActivityDetailScreen />);
-    expect(screen.queryByText("Serial number: EDGE-123")).toBeNull();
     expect(screen.getByText("Reconnect Garmin and retry device metadata.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mockHardwareRefetch).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Garmin Edge 530" }));
-    expect(screen.getByText("Serial number: EDGE-123")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Garmin Edge 530" }));
     expect(screen.getByText("220 W")).toBeTruthy();
   });
 
@@ -760,12 +758,12 @@ describe("ActivityDetailScreen", () => {
     render(<ActivityDetailScreen />);
 
     expect(screen.getByText("Morning Ride")).toBeTruthy();
-    const trigger = screen.getByRole("button", { name: "Sources: Garmin Edge 530" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Garmin Edge 530" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getAllByText("Apple Health")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "View source for Strava" }));
+    fireEvent.click(screen.getByRole("button", { name: "View activity for Strava" }));
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
     expect(screen.getByText("Morning Ride")).toBeTruthy();
     expect(screen.getByText("220 W")).toBeTruthy();
@@ -2532,7 +2530,7 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Strong" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Strong" }));
     expect(screen.getByText("Apple Health")).toBeTruthy();
     expect(screen.getByText("Recorded by Strong")).toBeTruthy();
   });

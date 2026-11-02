@@ -49,6 +49,10 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
+    return this.getDayGroups(await this.getRows(input));
+  }
+
+  async getRows(input: WeekListInput) {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = input.activityType
@@ -113,6 +117,12 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       queryParams,
     );
 
+    return activityRows;
+  }
+
+  async getDayGroups(
+    activityRows: z.infer<typeof providerAbsentActivityRowSchema>[],
+  ): Promise<CalendarDayActivities[]> {
     if (activityRows.length === 0) {
       return [];
     }

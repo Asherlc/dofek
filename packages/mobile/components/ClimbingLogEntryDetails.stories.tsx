@@ -109,3 +109,29 @@ export const GroupedSourceTags: Story = {
     },
   },
 };
+
+export const UnorderedKayaAttempts: Story = {
+  args: {
+    entry: {
+      ...entry,
+      providerId: "kaya",
+      sourceName: "Kaya",
+      notes: null,
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        climbingAttemptFixture(entry.id, {
+          ropeMethod: "top_rope",
+          outcome: "completed",
+          rockResultLabels: ["sent"],
+          usedAid: false,
+          fellOrHung: false,
+        }),
+        climbingAttemptFixture(entry.id, {
+          id: "20000000-0000-4000-8000-000000000006",
+          ropeMethod: "top_rope",
+          outcome: "failed",
+        }),
+      ],
+    },
+  },
+};

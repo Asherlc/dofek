@@ -379,6 +379,7 @@ export const mobileTrainingTabV2OutputSchema = z.object({
   progressiveOverload: z.array(progressiveOverloadRowSchema),
   verticalAscent: z.array(
     z.object({
+      activityId: z.string(),
       date: dateSchema,
       activityName: z.string(),
       activityType: z.string(),

@@ -1,18 +1,24 @@
 /** @vitest-environment jsdom */
 
 import type { ActivityImage } from "@dofek/training/activity-images";
+import { QueryClient, QueryClientProvider, useQuery as useLiveQuery } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
-  data: unknown[] | undefined;
+  data: Array<{ date: string; activities: ReturnType<typeof activity>[] }> | undefined;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
 }
 
 let mockQuery: MockQuery;
+const queryFixtureClient = new QueryClient();
+let liveQueryClient: QueryClient | undefined;
+let livePageFetch:
+  | ((input: { page?: number; pageSize?: number; weeks?: number }) => Promise<unknown>)
+  | undefined;
 let mockOverviewQuery: {
   data:
     | {
@@ -48,7 +54,7 @@ let weekListInput: unknown;
 interface WeekListOptions {
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: {
-    state: { data?: Array<{ activities: Array<{ location: { kind: string } | null }> }> };
+    state: { data?: { days: Array<{ activities: Array<{ location: { kind: string } | null }> }> } };
   }) => number | false;
 }
 let weekListOptions: WeekListOptions | undefined;
@@ -106,11 +112,44 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     calendar: {
-      weekList: {
-        useQuery: (input: unknown, options: WeekListOptions | undefined) => {
+      weekListV2: {
+        useQuery: (
+          input: { page?: number; pageSize?: number },
+          options: WeekListOptions | undefined,
+        ) => {
           weekListInput = input;
           weekListOptions = options;
-          return mockQuery;
+          const liveQuery = useLiveQuery(
+            {
+              queryKey: ["activities", input],
+              queryFn: () => livePageFetch?.(input),
+              placeholderData: options?.placeholderData,
+              retry: false,
+              enabled: Boolean(livePageFetch),
+            },
+            liveQueryClient ?? queryFixtureClient,
+          );
+          if (livePageFetch) return liveQuery;
+          const page = input.page ?? 0;
+          const pageSize = input.pageSize ?? 20;
+          let offset = 0;
+          const days = mockQuery.data
+            ?.map((day) => {
+              const start = offset;
+              offset += day.activities.length;
+              return {
+                ...day,
+                activities: day.activities.filter(
+                  (_activity, index) =>
+                    start + index >= page * pageSize && start + index < (page + 1) * pageSize,
+                ),
+              };
+            })
+            .filter((day) => day.activities.length > 0);
+          return {
+            ...mockQuery,
+            data: days ? { days, totalCount: offset, page, pageSize } : undefined,
+          };
         },
       },
       activityOverview: {
@@ -172,7 +211,10 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     useUtils: () => ({
       calendar: {
-        weekList: { invalidate: invalidateWeekList },
+        weekListV2: {
+          invalidate: invalidateWeekList,
+          getData: (input: unknown) => liveQueryClient?.getQueryData(["activities", input]),
+        },
         activityOverview: { invalidate: invalidateActivityOverview },
         calendarData: { invalidate: invalidateCalendarData },
       },
@@ -202,6 +244,10 @@ import { ActivitiesPage } from "./ActivitiesPage.tsx";
 vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
 
 beforeEach(() => {
+  queryFixtureClient.clear();
+  liveQueryClient?.clear();
+  liveQueryClient = undefined;
+  livePageFetch = undefined;
   resetMaps();
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
@@ -340,8 +386,6 @@ describe("ActivitiesPage", () => {
       data: [
         {
           date: "2026-03-18",
-          totalTss: 100,
-          totalDurationMin: 120,
           activities: [activity(), activity({ id: "mapped-2", location: { kind: "processing" } })],
         },
       ],
@@ -389,7 +433,7 @@ describe("ActivitiesPage", () => {
       error: null,
     });
     mockQuery = {
-      data: [{ date: "2026-03-18", totalTss: 100, totalDurationMin: 60, activities: [activity()] }],
+      data: [{ date: "2026-03-18", activities: [activity()] }],
       isLoading: false,
       isError: false,
       error: null,
@@ -473,12 +517,18 @@ describe("ActivitiesPage", () => {
     const interval = weekListOptions?.refetchInterval;
     expect(interval).toBeTypeOf("function");
     expect(
-      interval?.({ state: { data: [{ activities: [{ location: { kind: "processing" } }] }] } }),
+      interval?.({
+        state: { data: { days: [{ activities: [{ location: { kind: "processing" } }] }] } },
+      }),
     ).toBe(3000);
     expect(
-      interval?.({ state: { data: [{ activities: [{ location: { kind: "recorded_gps" } }] }] } }),
+      interval?.({
+        state: { data: { days: [{ activities: [{ location: { kind: "recorded_gps" } }] }] } },
+      }),
     ).toBe(false);
-    expect(interval?.({ state: { data: [{ activities: [{ location: null }] }] } })).toBe(false);
+    expect(interval?.({ state: { data: { days: [{ activities: [{ location: null }] }] } } })).toBe(
+      false,
+    );
     expect(interval?.({ state: {} })).toBe(false);
   });
 
@@ -687,6 +737,8 @@ describe("ActivitiesPage", () => {
       weeks: 8,
       endDate: expect.any(String),
       activityType: "running",
+      page: 0,
+      pageSize: 20,
     });
     expect(overviewInput).toEqual({
       weeks: 8,
@@ -707,6 +759,8 @@ describe("ActivitiesPage", () => {
       weeks: 4,
       endDate: expect.any(String),
       includeProviderAbsent: true,
+      page: 0,
+      pageSize: 20,
     });
   });
 
@@ -845,7 +899,7 @@ describe("ActivitiesPage", () => {
       };
       render(<ActivitiesPage />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-      const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
+      const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
       expect(trigger.closest("a")).toBeNull();
       expect(trigger.parentElement?.closest("button")).toBeNull();
       fireEvent.click(trigger);
@@ -1077,6 +1131,90 @@ describe("ActivitiesPage", () => {
     expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
+  it("keeps cached cards and navigation after an uncached server page fails", async () => {
+    liveQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let failPage = true;
+    livePageFetch = async (input) => {
+      if (input.page === 1 && failPage)
+        throw new Error("Page two is unavailable. Retry the request.");
+      return {
+        days: [
+          {
+            date: "2026-03-18",
+            activities: [activity({ name: input.page === 1 ? "Next Ride" : "Cached Ride" })],
+          },
+        ],
+        totalCount: 21,
+        page: input.page ?? 0,
+        pageSize: 20,
+      };
+    };
+    render(
+      <QueryClientProvider client={liveQueryClient}>
+        <ActivitiesPage />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Cached Ride");
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+    await screen.findByText("Page two is unavailable. Retry the request.");
+    expect(screen.getByText("Cached Ride")).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "activities pagination" })).toBeDefined();
+    failPage = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Next Ride");
+    expect(screen.queryByText("Page two is unavailable. Retry the request.")).toBeNull();
+  });
+
+  it("does not label another range's cached cards as the failed selected range", async () => {
+    liveQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    livePageFetch = async (input) => {
+      if (input.weeks === 8) throw new Error("Selected range is unavailable.");
+      return {
+        days: [{ date: "2026-03-18", activities: [activity({ name: "Previous Range Ride" })] }],
+        totalCount: 1,
+        page: 0,
+        pageSize: 20,
+      };
+    };
+    render(
+      <QueryClientProvider client={liveQueryClient}>
+        <ActivitiesPage />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Previous Range Ride");
+    fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "8" } });
+    await screen.findByText("Selected range is unavailable.");
+    expect(screen.queryByText("Previous Range Ride")).toBeNull();
+  });
+
+  it("keeps selected activity types across server pages when checking merge eligibility", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: Array.from({ length: 21 }, (_, index) =>
+            activity({
+              id: `ride-${index}`,
+              name: `Ride ${index}`,
+              activityType: index === 20 ? "running" : "cycling",
+            }),
+          ),
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Ride 0"));
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+    fireEvent.click(screen.getByText("Ride 20"));
+    expect(screen.getByRole("button", { name: "Merge" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Select activities of one type to merge.")).toBeDefined();
+    expect(overviewInput).toEqual({ weeks: 4, endDate: expect.any(String) });
+  });
+
   it("paginates the activity card history", () => {
     mockQuery = {
       data: [
@@ -1102,6 +1240,7 @@ describe("ActivitiesPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
 
+    expect(weekListInput).toMatchObject({ page: 1, pageSize: 20 });
     expect(screen.queryByText("Ride 1")).toBeNull();
     expect(screen.getByText("Ride 21")).toBeDefined();
   });

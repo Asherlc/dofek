@@ -51,23 +51,43 @@ export function ActivitiesPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
-  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const [selectedActivities, setSelectedActivities] = useState<
+    Map<
+      string,
+      {
+        activityType: string;
+        isProviderAbsent?: boolean;
+      }
+    >
+  >(new Map());
+  const selectedActivityIds = new Set(selectedActivities.keys());
   const [deletedActivityIds, setDeletedActivityIds] = useState<Set<string>>(new Set());
   const [activityPage, setActivityPage] = useState(0);
   const endDate = useMemo(() => formatDateYmd(), []);
   const units = useUnitConverter();
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
-  const queryInput = {
-    weeks,
-    endDate,
-    ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
-    ...(showHidden ? { includeProviderAbsent: true } : {}),
-  };
+  const queryInput = useMemo(
+    () => ({
+      weeks,
+      endDate,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+      ...(showHidden ? { includeProviderAbsent: true } : {}),
+    }),
+    [weeks, endDate, selectedActivityType, showHidden],
+  );
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput, {
+  const pageInput = useMemo(
+    () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
+    [queryInput, activityPage],
+  );
+  const rangeKey = JSON.stringify(queryInput);
+  const lastSuccessfulInput = useRef<{ rangeKey: string; input: typeof pageInput } | undefined>(
+    undefined,
+  );
+  const query = trpc.calendar.weekListV2.useQuery(pageInput, {
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
-      query.state.data?.some((day) =>
+      query.state.data?.days.some((day) =>
         day.activities.some((activity) => activity.location?.kind === "processing"),
       )
         ? processingPollInterval("active")
@@ -76,15 +96,26 @@ export function ActivitiesPage() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData && !query.isError) {
+      lastSuccessfulInput.current = { rangeKey, input: pageInput };
+    }
+  }, [query.data, query.isPlaceholderData, query.isError, rangeKey, pageInput]);
+  const previousInput = lastSuccessfulInput.current;
+  const pageData =
+    query.data ??
+    (previousInput?.rangeKey === rangeKey
+      ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
+      : undefined);
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
       setConfirmDelete(false);
     },
@@ -101,12 +132,12 @@ export function ActivitiesPage() {
   const mergeActivities = trpc.activity.merge.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
       setConfirmMerge(false);
     },
@@ -114,93 +145,66 @@ export function ActivitiesPage() {
   const restoreProviderAbsent = trpc.activity.restoreProviderAbsent.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
       setConfirmRestore(false);
     },
   });
 
   const dayGroups = useMemo(() => {
-    if (!query.data) return undefined;
-    return query.data
+    if (!pageData) return undefined;
+    return pageData.days
       .map((day) => ({
         ...day,
         activities: day.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
       }))
       .filter((day) => day.activities.length > 0);
-  }, [query.data, deletedActivityIds]);
-  const hiddenActivityIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const day of dayGroups ?? []) {
-      for (const activity of day.activities) {
-        if (activity.isProviderAbsent) {
-          ids.add(activity.id);
-        }
-      }
-    }
-    return ids;
-  }, [dayGroups]);
+  }, [pageData, deletedActivityIds]);
+  const hiddenActivityIds = new Set(
+    [...selectedActivities].filter(([, activity]) => activity.isProviderAbsent).map(([id]) => id),
+  );
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
-  const activityCount = dayGroups?.reduce((total, day) => total + day.activities.length, 0) ?? 0;
-  const totalActivityPages = Math.ceil(activityCount / ACTIVITY_PAGE_SIZE);
-  const currentActivityPage = Math.min(activityPage, Math.max(totalActivityPages - 1, 0));
-  const visibleDayGroups = useMemo(() => {
-    if (!dayGroups) return undefined;
-    const visibleActivities = dayGroups
-      .flatMap((day) =>
-        day.activities.map((activity) => ({
-          date: day.date,
-          activity,
-        })),
-      )
-      .slice(
-        currentActivityPage * ACTIVITY_PAGE_SIZE,
-        (currentActivityPage + 1) * ACTIVITY_PAGE_SIZE,
-      );
-    const grouped = new Map<string, typeof visibleActivities>();
-    for (const entry of visibleActivities) {
-      const existing = grouped.get(entry.date) ?? [];
-      existing.push(entry);
-      grouped.set(entry.date, existing);
-    }
-    return [...grouped.entries()].map(([date, entries]) => ({
-      date,
-      activities: entries.map((entry) => entry.activity),
-    }));
-  }, [currentActivityPage, dayGroups]);
+  const activityCount = pageData?.totalCount ?? 0;
+  const currentActivityPage = pageData?.page ?? activityPage;
+  const visibleDayGroups = dayGroups;
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData) setActivityPage(query.data.page);
+  }, [query.data, query.isPlaceholderData]);
   const selectedCount = selectedActivityIds.size;
   const selectedHiddenCount = [...selectedActivityIds].filter((id) =>
     hiddenActivityIds.has(id),
   ).length;
   const selectedVisibleCount = selectedCount - selectedHiddenCount;
   const selectedTypes = new Set(
-    (dayGroups ?? [])
-      .flatMap((day) => day.activities)
-      .filter((activity) => selectedActivityIds.has(activity.id) && !activity.isProviderAbsent)
+    [...selectedActivities.values()]
+      .filter((activity) => !activity.isProviderAbsent)
       .map((activity) => activity.activityType),
   );
   const mergeEligible =
     selectedVisibleCount >= 2 && selectedTypes.size === 1 && selectedCount === selectedVisibleCount;
 
   const cancelSelection = () => {
-    setSelectedActivityIds(new Set());
+    setSelectedActivities(new Map());
     setSelectMode(false);
     setConfirmDelete(false);
     setConfirmMerge(false);
     setConfirmRestore(false);
   };
 
-  const toggleSelectedActivity = (activityId: string) => {
-    setSelectedActivityIds((current) => {
-      const next = new Set(current);
-      if (next.has(activityId)) {
-        next.delete(activityId);
+  const toggleSelectedActivity = (activity: ActivityCardData) => {
+    setSelectedActivities((current) => {
+      const next = new Map(current);
+      if (next.has(activity.id)) {
+        next.delete(activity.id);
       } else {
-        next.add(activityId);
+        next.set(activity.id, {
+          activityType: activity.activityType,
+          isProviderAbsent: activity.isProviderAbsent,
+        });
       }
       return next;
     });
@@ -296,10 +300,15 @@ export function ActivitiesPage() {
           </>
         )}
       </div>
-      {query.isLoading && !query.data ? (
+      {query.isLoading && !pageData ? (
         <QueryStatePanel variant="loading" height={400} />
-      ) : query.isError && !query.data ? (
-        <QueryStatePanel error={query.error} height={200} />
+      ) : query.isError && !pageData ? (
+        <QueryStatePanel
+          error={query.error}
+          height={200}
+          onRetry={() => void query.refetch()}
+          retrying={query.isFetching}
+        />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel
           variant="empty"
@@ -312,7 +321,14 @@ export function ActivitiesPage() {
         />
       ) : (
         <div className="space-y-7">
-          {query.isError ? <QueryStatePanel error={query.error} height={72} /> : null}
+          {query.isError ? (
+            <QueryStatePanel
+              error={query.error}
+              height={72}
+              onRetry={() => void query.refetch()}
+              retrying={query.isFetching}
+            />
+          ) : null}
           {visibleDayGroups?.map((day) => (
             <section key={day.date}>
               <div className="mb-2 flex items-center gap-3">
@@ -329,7 +345,7 @@ export function ActivitiesPage() {
                     units={units}
                     selectMode={selectMode}
                     selected={selectedActivityIds.has(activity.id)}
-                    onToggleSelected={() => toggleSelectedActivity(activity.id)}
+                    onToggleSelected={() => toggleSelectedActivity(activity)}
                   />
                 ))}
               </div>

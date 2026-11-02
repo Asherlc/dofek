@@ -66,6 +66,7 @@ const variabilityCountSchema = z.object({
 });
 
 const vamRowSchema = z.object({
+  activity_id: z.string(),
   date: dateStringSchema,
   name: z.string(),
   canonical_type: z.string(),
@@ -446,6 +447,7 @@ export class CyclingAdvancedRepository {
     const rows = await this.#sensorStore.query(
       vamRowSchema,
       `SELECT
+        toString(asum.activity_id) AS activity_id,
         toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
         coalesce(nullIf(asum.name, ''), asum.canonical_type) AS name,
         asum.canonical_type AS canonical_type,
@@ -471,6 +473,7 @@ export class CyclingAdvancedRepository {
       .map(
         (row) =>
           new VerticalAscentModel({
+            activityId: row.activity_id,
             date: row.date,
             activityName: row.name,
             activityType: row.canonical_type,

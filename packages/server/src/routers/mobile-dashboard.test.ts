@@ -1279,8 +1279,8 @@ describe.each(["training", "trainingV2"] as const)("mobileDashboard.%s", (proced
       maxAge: 600_000,
       keyVersion:
         procedure === "training"
-          ? "training-hangboarding-heart-rate-v7"
-          : "training-combined-climbing-progression-v1",
+          ? "training-vertical-ascent-links-v8"
+          : "training-combined-climbing-ascent-links-v2",
     });
     const timingCall = vi
       .mocked(logger.info)

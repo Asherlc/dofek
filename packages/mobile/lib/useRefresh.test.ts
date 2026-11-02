@@ -25,7 +25,7 @@ vi.mock("./trpc", () => ({
         trainingV2: { invalidate: mockTrainingInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
       activity: { list: { invalidate: mockActivityListInvalidate } },

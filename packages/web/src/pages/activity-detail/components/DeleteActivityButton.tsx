@@ -10,7 +10,7 @@ export function DeleteActivityButton({ activityId }: { activityId: string }) {
     onSuccess: async () => {
       await Promise.all([
         trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
       ]);
       navigate({ to: "/dashboard" });

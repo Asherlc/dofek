@@ -1,5 +1,7 @@
+import { activitySourceTreeSchema } from "@dofek/providers/activity-source-tree";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
+import lineageExamples from "../../../../src/test-fixtures/activity-lineage.json";
 import {
   branchingSourceTree,
   longSourceTree,
@@ -35,19 +37,16 @@ export const RecognizedWatchModels: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(
-      canvas.getByRole("button", { name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Sources" }),
+      canvas.getByRole("button", { name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Lineage" }),
     );
     await expect(canvas.getByText("Garmin Forerunner 955")).toBeVisible();
-    await expect(canvas.getByText("Asher’s Apple Watch")).toBeVisible();
   },
 };
-export const WithDeviceFacts: Story = {
+export const WithRecordingDevice: Story = {
   args: { hardware: sourceHardware },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
-    await expect(canvas.getByText("12345678")).toBeVisible();
-    await expect(canvas.getByText("Whoop")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Edge 530 Lineage" }));
   },
 };
 export const LoadingDevices: Story = { args: { hardwareLoading: true } };
@@ -67,13 +66,13 @@ export const CachedDeviceError: Story = {
 export const EmptyTree: Story = {
   args: { tree: { primary: null, otherSources: [] } },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).queryByRole("button", { name: "Sources" })).toBeNull();
+    await expect(within(canvasElement).queryByRole("button", { name: "Lineage" })).toBeNull();
   },
 };
 export const Expanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
     await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
   },
 };
@@ -81,12 +80,12 @@ export const StrongViaAppleHealth: Story = { args: { tree: strongSourceTree } };
 export const UnresolvedSources: Story = {
   args: { tree: { primary: null, otherSources: branchingSourceTree.otherSources } },
   play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sources" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Lineage" }));
   },
 };
 export const KeyboardDisclosure: Story = {
   play: async ({ canvasElement, userEvent }) => {
-    const trigger = within(canvasElement).getByRole("button", { name: "Garmin Connect Sources" });
+    const trigger = within(canvasElement).getByRole("button", { name: "Garmin Connect Lineage" });
     trigger.focus();
     await userEvent.keyboard("{Enter}");
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -106,7 +105,7 @@ export const LongSourceLabels: Story = {
     if (!disclosure) throw new Error("Missing source disclosure");
     const bounds = disclosure.getBoundingClientRect();
     const textElements = canvas.getAllByText(/WithAnUnbrokenLong|WithoutWordBreaks/);
-    await expect(textElements).toHaveLength(6);
+    await expect(textElements).toHaveLength(7);
     for (const element of textElements) {
       const textBounds = element.getBoundingClientRect();
       await expect(textBounds.right).toBeLessThanOrEqual(bounds.right);
@@ -151,8 +150,101 @@ export const CloudRecording: Story = {
   },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "WHOOP (Cloud) Sources" }));
-    await expect(canvas.getByText("WHOOP")).toBeVisible();
-    await expect(canvas.getByTitle("Cloud")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "WHOOP (Cloud) Lineage" }));
+    await expect(canvas.getAllByText("WHOOP")[0]).toBeVisible();
+    await expect(canvas.getAllByTitle("Cloud")[0]).toBeVisible();
+  },
+};
+
+export const SingleRecording: Story = {
+  args: {
+    tree: activitySourceTreeSchema.parse(lineageExamples.single),
+    heading: <h1>Evening ride</h1>,
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /Lineage/ }));
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+        ).toBeVisible(),
+    );
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getByText("Original")).toBeVisible();
+    await expect(dialog.getByText("Garmin Edge 530")).toBeVisible();
+  },
+};
+
+export const SharingChain: Story = {
+  args: {
+    tree: activitySourceTreeSchema.parse(lineageExamples.chain),
+    heading: <h1>Evening ride</h1>,
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /Lineage/ }));
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+        ).toBeVisible(),
+    );
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getAllByText("Shared to")).toHaveLength(2);
+    await expect(dialog.getByText("Peloton Bike+")).toBeVisible();
+    await expect(dialog.getByText("Strava")).toBeVisible();
+    await expect(dialog.getByText("Apple Health")).toBeVisible();
+  },
+};
+
+export const MultipleRecordings: Story = {
+  args: {
+    tree: activitySourceTreeSchema.parse(lineageExamples.multiple),
+    heading: <h1>Evening ride</h1>,
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /Lineage/ }));
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+        ).toBeVisible(),
+    );
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getAllByText("Other")).toHaveLength(1);
+    await expect(dialog.getAllByText("Shared to")).toHaveLength(2);
+    await expect(dialog.getByText("WHOOP")).toBeVisible();
+    await expect(dialog.getByText("Garmin Forerunner 955")).toBeVisible();
+  },
+};
+
+export const UnknownOrigin: Story = {
+  args: {
+    tree: activitySourceTreeSchema.parse(lineageExamples.unknown),
+    heading: <h1>Evening ride</h1>,
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /Lineage/ }));
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+        ).toBeVisible(),
+    );
+    const dialog = within(
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
+    );
+    await expect(dialog.getByText("Original unknown")).toBeVisible();
+    await expect(dialog.getByText("Strava")).toBeVisible();
+    await expect(dialog.getByText("WHOOP")).toBeVisible();
   },
 };

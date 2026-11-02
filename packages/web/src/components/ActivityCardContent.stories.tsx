@@ -558,7 +558,7 @@ export const NavigableCard: Story = {
   render: () => <InteractiveCard selectMode={false} />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
     await expect(canvas.getByRole("link", { name: "Morning Run" })).toBeVisible();
   },
 };
@@ -567,7 +567,7 @@ export const SelectableCard: Story = {
   render: () => <InteractiveCard selectMode={true} />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
     await expect(canvas.getByRole("checkbox", { name: "Select Morning Run" })).not.toBeChecked();
     await expect(canvas.getByRole("button", { name: "Morning Run" })).toHaveAttribute(
       "aria-pressed",
@@ -586,7 +586,7 @@ export const SourceTreeExpanded: Story = {
   decorators: NonMapActivity.decorators,
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(
-      within(canvasElement).getByRole("button", { name: "Garmin Connect Sources" }),
+      within(canvasElement).getByRole("button", { name: "Garmin Connect Lineage" }),
     );
   },
 };

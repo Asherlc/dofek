@@ -5,6 +5,7 @@ import {
   getVerticalAscentActivityTypeGroup,
   type VerticalAscentActivityTypeGroup,
 } from "@dofek/training/training";
+import { useNavigate } from "@tanstack/react-router";
 import type { TrainingChartAvailability, VerticalAscentRow } from "dofek-server/types";
 import {
   chartColors,
@@ -37,6 +38,7 @@ function colorForActivityTypeGroup(activityTypeGroup: VerticalAscentActivityType
 
 export function VerticalAscentChart({ data, loading, availability }: VerticalAscentChartProps) {
   const units = useUnitConverter();
+  const navigate = useNavigate();
 
   if (loading) {
     return <DofekChart option={{}} loading={true} height={300} />;
@@ -64,6 +66,7 @@ export function VerticalAscentChart({ data, loading, availability }: VerticalAsc
 
   const eLabel = units.elevationLabel;
   const scatterData = data.map((d) => ({
+    activityId: d.activityId,
     value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
     activityType: d.activityType,
@@ -119,6 +122,7 @@ export function VerticalAscentChart({ data, loading, availability }: VerticalAsc
       data: scatterData
         .filter((point) => point.activityTypeGroup === activityTypeGroup)
         .map((d) => ({
+          activityId: d.activityId,
           value: d.value,
           name: d.name,
           activityType: d.activityType,
@@ -147,7 +151,51 @@ export function VerticalAscentChart({ data, loading, availability }: VerticalAsc
 
   return (
     <div>
-      <DofekChart option={option} height={300} />
+      <DofekChart
+        option={option}
+        height={300}
+        onEvents={{
+          click: (params) => {
+            const point = params.data;
+            if (
+              point &&
+              typeof point === "object" &&
+              "activityId" in point &&
+              typeof point.activityId === "string"
+            ) {
+              navigate({ to: "/activity/$id", params: { id: point.activityId } });
+            }
+          },
+        }}
+        dataDisclosure={
+          <details className="mt-2 text-xs text-dim">
+            <summary className="cursor-pointer font-medium text-foreground">
+              View chart data
+            </summary>
+            <ul className="mt-2 max-h-72 space-y-2 overflow-auto">
+              {data.map((point) => (
+                <li key={point.activityId}>
+                  <a
+                    className="text-accent underline"
+                    href={`/activity/${encodeURIComponent(point.activityId)}`}
+                  >
+                    {point.activityName}
+                  </a>
+                  {" · "}
+                  {formatDateShort(point.date)}
+                  {" · "}
+                  {formatNumber(units.convertElevation(point.verticalAscentRate), 0)} {eLabel}/h
+                  {" · "}
+                  {formatNumber(units.convertElevation(point.elevationGainMeters), 0)} {eLabel}{" "}
+                  elevation gain
+                  {" · "}
+                  {formatNumber(point.elapsedMinutes, 0)} minutes
+                </li>
+              ))}
+            </ul>
+          </details>
+        }
+      />
       <p className="text-xs text-dim mt-1">Bubble size: elevation gain</p>
     </div>
   );

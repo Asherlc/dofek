@@ -159,15 +159,14 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards lead with the shared rounded-outline activity icon. A source row
-below the content and map expands inside the same card to show propagation
-branches. The row shows the recording source once and serves as the root when
-expanded. Separate copies from the same provider remain distinct, while
+Activity cards lead with the shared rounded-outline activity icon. A Lineage control
+below the content and map expands inside the same card to show explicitly
+labeled Original and Shared to branches. Separate copies from the same provider remain distinct, while
 unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) places Sources
+The [activity detail header](src/pages/ActivityDetailPage.tsx) places Lineage
 beside the title and opens its tree in an anchored flyout. It reuses
 [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
 for positioning, outside-click dismissal, Escape, and focus restoration. Its required `sourceTree` comes from
@@ -214,9 +213,11 @@ the cadence-based gap rule used by both clients. This follows the distinction
 between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
 The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.
 
-Activity details use one Sources disclosure for the device/provider inheritance
-tree and reported hardware facts. Device facts attach to their device node by
-activity ID; reported hardware appears beneath the provider that reports it.
-Metadata without a matching source record retains a provider branch. The [source disclosure](src/components/ActivitySourceDisclosure.tsx)
-keeps query errors and retry actions visible while collapsed and follows the
+Activity details use one [Lineage disclosure](src/components/ActivitySourceDisclosure.tsx)
+with an explicit Original heading, labeled Shared to branches, and, when an Original is known, one divider
+and Other heading for additional recordings. Unresolved origins show Original
+unknown above the available recordings. The [shared projection](../providers-meta/src/activity-source-hardware.ts)
+uses reported recording hardware to name entries without turning device inventory
+into sharing steps. Metadata rows are omitted. Errors and retry actions remain
+visible while collapsed, following the
 [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).

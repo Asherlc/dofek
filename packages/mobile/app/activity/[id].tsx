@@ -313,7 +313,7 @@ export default function ActivityDetailScreen() {
       }
       await Promise.all([
         trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
       ]);
@@ -337,7 +337,7 @@ export default function ActivityDetailScreen() {
           trpcUtils.activity.strengthExercises.invalidate({ id }),
           trpcUtils.activity.hangboardDetails.invalidate({ id }),
           trpcUtils.activity.list.invalidate(),
-          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.weekListV2.invalidate(),
           trpcUtils.calendar.activityOverview.invalidate(),
         ]);
       } finally {

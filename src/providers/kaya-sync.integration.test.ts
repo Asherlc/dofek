@@ -85,6 +85,63 @@ describe("KayaSyncProvider canonical persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
 
+  it("preserves and combines a failed session occurrence when a count-free send replaces it", async () => {
+    const route = kayaClimbFixture({ lead: false, climb_type: { id: "2", name: "Routes" } });
+    const failed = { ...route, id: "1000_2001", attempts: 1, sent: false };
+    sessions = [kayaSessionFixture({ attempted_climbs: [failed] })];
+    ascents = [];
+    expect(await run()).toMatchObject({ errors: [] });
+    const failure = (await logs())[0];
+    if (!failure) throw new Error("Expected failed log");
+    const [failedAttempt] = await context.db.select().from(climbingAttempt);
+    // Recover the same state as an installation that already retired the failure.
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, failure.id));
+    sessions = [kayaSessionFixture({ attempted_climbs: [] })];
+    ascents = [
+      kayaAscentFixture({
+        climb: route,
+        attempts: null,
+        ascent_type: { id: "3", name: "Redpoint" },
+      }),
+    ];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await logs()).find((log) => log.id === failure.id)?.providerAbsentAt).toBeNull();
+    const sent = (await logs()).find((log) => log.externalId === "kaya:ascent:3001");
+    if (!sent) throw new Error("Expected send");
+    const projected = await executeWithSchema(
+      context.db,
+      z.object({
+        id: z.string(),
+        outcome: z.string().nullable(),
+        attemptIndex: z.number().nullable(),
+      }),
+      sql`SELECT id, outcome, attempt_index AS "attemptIndex" FROM fitness.v_climbing_attempt WHERE climbing_log_entry_id = ANY(${sql.param([failure.id, sent.id])}::uuid[])`,
+    );
+    expect(projected.map((attempt) => attempt.outcome).sort()).toEqual(["completed", "failed"]);
+    expect(projected.every((attempt) => attempt.attemptIndex === null)).toBe(true);
+    expect(projected.find((attempt) => attempt.outcome === "failed")?.id).toBe(failedAttempt?.id);
+    expect(await run()).toMatchObject({ errors: [] });
+    expect(await context.db.select().from(climbingAttempt)).toHaveLength(2);
+    // A later explicit count replaces the inferred combined count, rather than adding to it.
+    ascents = [
+      kayaAscentFixture({ climb: route, attempts: 3, ascent_type: { id: "3", name: "Redpoint" } }),
+    ];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await logs()).find((log) => log.id === failure.id)?.providerAbsentAt).not.toBeNull();
+    expect(
+      await context.db
+        .select()
+        .from(climbingAttempt)
+        .where(eq(climbingAttempt.climbingLogEntryId, sent.id)),
+    ).toHaveLength(3);
+    ascents = [];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await logs()).every((log) => log.providerAbsentAt !== null)).toBe(true);
+  });
+
   it.each(["Onsight", "Redpoint", "Unfamiliar"])(
     "refreshes counted %s methods while preserving identities and attachments",
     async (result) => {
