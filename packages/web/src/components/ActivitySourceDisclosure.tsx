@@ -203,6 +203,9 @@ function SourceTreeNodes({
                 className="min-w-0 font-medium text-accent [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <SourceLabel node={node} />
+                <span aria-hidden="true" className="ml-1">
+                  ↗
+                </span>
               </a>
             ) : (
               <span className="min-w-0 font-medium [overflow-wrap:anywhere]">

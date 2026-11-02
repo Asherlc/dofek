@@ -295,6 +295,10 @@ describe("ActivitySourceDisclosure", () => {
       "href",
       "https://www.strava.com/activities/123",
     );
+    expect(within(screen.getByRole("link", { name: "Strava" })).getByText("↗")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
     for (const label of screen.getAllByText("Apple Health")) {
       expect(label.parentElement?.querySelectorAll("img")).toHaveLength(1);
     }

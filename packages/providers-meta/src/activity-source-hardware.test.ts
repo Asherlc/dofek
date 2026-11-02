@@ -174,25 +174,34 @@ describe("activitySourceTreeWithHardware", () => {
       { ...node("unmatched", "garmin"), label: "Edge 840", sourceName: "Edge 840" },
     ]);
   });
-  it("preserves a specific recording identity instead of replacing it with another hardware label", () => {
-    const original = {
-      ...node("garmin", "garmin"),
-      label: "Garmin Edge 530",
-      sourceName: "edge530",
-    };
-    const result = activitySourceTreeWithHardware(
-      { primary: original, otherSources: [] },
-      {
-        items: [
-          item({ activityId: "garmin", providerId: "garmin", role: "recorder", label: "Edge 840" }),
-        ],
-        power: [],
-      },
-    );
-    expect(result.primary).toEqual(original);
-  });
+  it.each(["edge530", null])(
+    "preserves a specific recording identity with source %s instead of replacing its hardware label",
+    (sourceName) => {
+      const original = {
+        ...node("garmin", "garmin"),
+        label: "Garmin Edge 530",
+        sourceName,
+      };
+      const result = activitySourceTreeWithHardware(
+        { primary: original, otherSources: [] },
+        {
+          items: [
+            item({
+              activityId: "garmin",
+              providerId: "garmin",
+              role: "recorder",
+              label: "Edge 840",
+            }),
+          ],
+          power: [],
+        },
+      );
+      expect(result.primary).toEqual(original);
+    },
+  );
   it.each([
     { label: "Garmin Connect", sourceName: null },
+    { label: "Garmin Connect", sourceName: "recorded-source" },
     { label: "garmin", sourceName: "recorded-source" },
     { label: "Garmin", sourceName: "recorded-source" },
   ])(
@@ -245,7 +254,7 @@ describe("activitySourceTreeWithHardware", () => {
   ])(
     "preserves the reporting root for $providerId $role $label metadata",
     ({ providerId, role, label }) => {
-      const original = node("original", providerId);
+      const original = { ...node("original", providerId), sourceName: "reported-source" };
       const result = activitySourceTreeWithHardware(
         { primary: original, otherSources: [] },
         {

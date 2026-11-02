@@ -235,6 +235,7 @@ export const UnknownOrigin: Story = {
       within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Lineage" }),
     );
     await expect(dialog.getByText("Original unknown")).toBeVisible();
+    await expect(dialog.getByRole("group", { name: "Available recordings" })).toBeVisible();
     await expect(dialog.getByText("Strava")).toBeVisible();
     await expect(dialog.getByText("WHOOP")).toBeVisible();
   },

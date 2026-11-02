@@ -1,6 +1,7 @@
 import type { ActivityHardware } from "./activity-hardware.ts";
 import type { ActivitySourceTree, ActivitySourceTreeNode } from "./activity-source-tree.ts";
 import { deviceDisplayName } from "./device-names.ts";
+import { providerFamily } from "./provider-catalog.ts";
 import { providerLabel } from "./providers.ts";
 
 /** Hardware can name a recording; only source-tree evidence establishes sharing. */
@@ -41,9 +42,11 @@ export function activitySourceTreeWithHardware(
       roots.add(node.id);
       result.otherSources.push(node);
     }
-    const genericLabel =
-      node.sourceName === null ||
-      [item.providerId, providerLabel(item.providerId)].includes(node.label);
+    const genericLabel = [
+      item.providerId,
+      providerLabel(item.providerId),
+      providerFamily(item.providerId)?.methodLabel,
+    ].includes(node.label);
     const recordingLabel =
       (item.providerId === "garmin" && item.role === "recorder") ||
       (item.providerId === "peloton" &&

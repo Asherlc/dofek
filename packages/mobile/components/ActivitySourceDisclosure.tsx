@@ -124,7 +124,11 @@ export function ActivitySourceDisclosure({
         </Text>
       )}
       {otherSources.length > 0 ? (
-        <View style={[styles.otherSources, primary ? styles.divided : undefined]}>
+        <View
+          style={[styles.otherSources, primary ? styles.divided : undefined]}
+          role="group"
+          accessibilityLabel={primary ? "Other" : "Available recordings"}
+        >
           {primary ? (
             <Text style={styles.sectionTitle} accessibilityRole="header">
               Other

@@ -109,6 +109,7 @@ describe("ActivitySourceDisclosure", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
     expect(screen.getByText("Original unknown")).toBeVisible();
+    expect(screen.getByRole("group", { name: "Available recordings" })).toBeVisible();
     expect(screen.getByText("WHOOP")).toBeDefined();
   });
 
@@ -135,7 +136,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(within(link).queryByText("Provider recording notice")).toBeNull();
   });
 
-  it("opens header sources in a dismissible overlay", () => {
+  it("opens header sources in a dismissible overlay and restores focus", async () => {
     render(
       <ActivitySourceDisclosure
         tree={branchingActivitySourceTree}
@@ -143,11 +144,13 @@ describe("ActivitySourceDisclosure", () => {
       />,
     );
     const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
+    act(() => trigger.focus());
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Lineage" });
     expect(within(dialog).getByText("Apple Health")).toBeDefined();
     fireEvent.click(within(dialog).getByRole("button", { name: "Close lineage" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(trigger).toHaveFocus());
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText("Morning Ride")).toBeDefined();
   });
