@@ -37,7 +37,8 @@
     "./kaya-tags": "./src/kaya-tags.ts",
     "./mountain-project": "./src/mountain-project.ts",
     "./openbeta": "./src/openbeta.ts",
-    "./thecrag": "./src/thecrag.ts"
+    "./thecrag": "./src/thecrag.ts",
+    "./vertical-life": "./src/vertical-life.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -77,6 +78,10 @@
       "./thecrag": {
         "types": "./dist/thecrag.d.ts",
         "import": "./dist/thecrag.js"
+      },
+      "./vertical-life": {
+        "types": "./dist/vertical-life.d.ts",
+        "import": "./dist/vertical-life.js"
       }
     }
   },

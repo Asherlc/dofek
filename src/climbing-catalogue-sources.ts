@@ -3,6 +3,7 @@ import { KayaCatalogueAdapter } from "@dofek/climbing-catalogue/kaya";
 import { MountainProjectCatalogueAdapter } from "@dofek/climbing-catalogue/mountain-project";
 import { OpenBetaCatalogueAdapter } from "@dofek/climbing-catalogue/openbeta";
 import { TheCragCatalogueAdapter } from "@dofek/climbing-catalogue/thecrag";
+import { VerticalLifeCatalogueAdapter } from "@dofek/climbing-catalogue/vertical-life";
 import type { Database } from "./db/index.ts";
 import { loadTokens } from "./db/tokens.ts";
 import { createProviderRateLimitFetch } from "./lib/provider-rate-limit-fetch.ts";
@@ -25,6 +26,9 @@ export function createClimbingCatalogueAdapters(
     ),
     new OpenBetaCatalogueAdapter(
       createProviderRateLimitFetch("openbeta", globalThis.fetch, { userId }),
+    ),
+    new VerticalLifeCatalogueAdapter(
+      createProviderRateLimitFetch("eight-a", globalThis.fetch, { userId }),
     ),
   ];
 }

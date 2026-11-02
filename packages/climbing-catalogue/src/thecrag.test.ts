@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { CatalogueSeed } from "./contracts.ts";
 import { TheCragCatalogueAdapter } from "./thecrag.ts";
@@ -27,11 +28,14 @@ function detail(
   return `<link rel="canonical" href="${origin}${canonical}"><title>${title}</title><h1><span itemprop="name">Cragmont Crack</span><span class="grade">5.6</span></h1><a class="crumb__a" href="/en/climbing/area/456" data-nid="456"><span class="crumb__long">Cragmont Park</span></a>${extra}`;
 }
 function client(pages: string[]) {
-  return vi
-    .fn<typeof fetch>()
-    .mockImplementation(
-      async () => new Response(pages.shift(), { headers: { "content-type": "text/html" } }),
-    );
+  return vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    const isArea = new URL(String(input)).pathname.includes("/area/");
+    const html =
+      isArea && !pages[0]?.match(/rel="canonical" href="[^"\n]*\/area\/\d+\/?"/)
+        ? parentArea("", "")
+        : pages.shift();
+    return new Response(html, { headers: { "content-type": "text/html" } });
+  });
 }
 function lookup(html: string) {
   return new TheCragCatalogueAdapter(client([html])).search({
@@ -47,7 +51,8 @@ function parentArea(latitude = "37.5", longitude = "-122.5", canonical = "/en/cl
   return `<link rel="canonical" href="${canonical}"><meta property="place:location:latitude" content="${latitude}"><meta property="place:location:longitude" content="${longitude}">`;
 }
 async function lookupWithParent(routeHtml: string, parentHtml = parentArea()) {
-  const fetchFn = client([routeHtml, parentHtml]);
+  const pages = [routeHtml, parentHtml];
+  const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => new Response(pages.shift()));
   const result = await new TheCragCatalogueAdapter(fetchFn).search({
     ...seed,
     providerId: "thecrag",
@@ -83,6 +88,7 @@ describe("TheCragCatalogueAdapter", () => {
     async (overlap) => {
       const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
         const url = new URL(String(input));
+        if (url.pathname.includes("/area/")) return new Response(parentArea("", ""));
         if (url.pathname.includes("/route/"))
           return new Response(
             detail().replace('itemprop="name">Cragmont Crack', 'itemprop="name">Up'),
@@ -97,7 +103,7 @@ describe("TheCragCatalogueAdapter", () => {
       expect(result.complete).toBe(true);
       expect(
         fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("S")),
-      ).toEqual(["Cragmont Crack", "Up", null]);
+      ).toEqual(["Cragmont Crack", "Up", null, null]);
     },
   );
   it("shares three pages across aliases before paginating and reports uncovered names", async () => {
@@ -161,6 +167,7 @@ describe("TheCragCatalogueAdapter", () => {
   it("matches verified results using the same normalized name sent to discovery", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = new URL(String(input));
+      if (url.pathname.includes("/area/")) return new Response(parentArea("", ""));
       if (url.pathname.includes("/route/"))
         return new Response(detail().replace("Cragmont Crack</span>", "The Great Roof</span>"));
       return new Response(
@@ -173,7 +180,7 @@ describe("TheCragCatalogueAdapter", () => {
     });
     expect(result.candidates.map((candidate) => candidate.name)).toEqual(["The Great Roof"]);
     expect(result.complete).toBe(true);
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
   });
   it("retains only literal route AKA labels from the verified headline scope", async () => {
     const html = detail(
@@ -218,7 +225,7 @@ describe("TheCragCatalogueAdapter", () => {
     const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(60);
-    expect(fetchFn).toHaveBeenCalledTimes(61);
+    expect(fetchFn).toHaveBeenCalledTimes(62);
   });
   it("does not count an alias's overlapping route against a full unique-route budget", async () => {
     const paths = Array.from({ length: 60 }, (_, i) => `/en/climbing/world/route/${i + 1}`);
@@ -232,7 +239,7 @@ describe("TheCragCatalogueAdapter", () => {
     expect(result.candidates.map((candidate) => candidate.externalId)).toEqual(
       Array.from({ length: 60 }, (_, i) => String(i + 1)),
     );
-    expect(fetchFn).toHaveBeenCalledTimes(62);
+    expect(fetchFn).toHaveBeenCalledTimes(63);
   });
   it.each([
     "Lat/Lon: 37.25, -122.5",
@@ -254,31 +261,14 @@ describe("TheCragCatalogueAdapter", () => {
       `${origin}/en/climbing/area/456`,
     ]);
   });
-  it.each([
-    [],
-    ["Latitude: 37, -122"],
-    ["Approach Lat/Lon: 37, -122"],
-    ["Lat/Lon: 37, -122 Approach"],
-    ["Lat/Lon: 37"],
-    ["Lat/Lon: +37, -122"],
-    ["Lat/Lon: 37, +122"],
-    ["Lat/Lon: .5, -122"],
-    ["Lat/Lon: 37, 122."],
-    ["Lat/Lon: 1e1, -122"],
-    ["Lat/Lon: 37, 1e1"],
-    ["Lat/Lon: 90.001, 122"],
-    ["Lat/Lon: -90.001, 122"],
-    ["Lat/Lon: 37, 180.001"],
-    ["Lat/Lon: 37, -180.001"],
-    ["Lat/Lon: 37, -122", "Lat/Lon: 37, -122"],
-  ])(
-    "does not fetch a parent for an unavailable or ambiguous route display %j",
-    async (...rows) => {
-      const { result, fetchFn } = await lookupWithParent(detail(locationInfo(...rows)));
-      expect(result.candidates[0]?.locations[0]?.coordinates).toBeNull();
-      expect(fetchFn).toHaveBeenCalledTimes(1);
-    },
-  );
+  it("hydrates area coordinates without requiring a route-displayed point", async () => {
+    const { result, fetchFn } = await lookupWithParent(detail());
+    expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+      latitude: 37.5,
+      longitude: -122.5,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
   it.each([
     ["37", "122"],
     ["0", "0"],
@@ -503,7 +493,7 @@ describe("TheCragCatalogueAdapter", () => {
     async (name) => {
       const fetchFn = client([search(row(name)), detail()]);
       expect((await new TheCragCatalogueAdapter(fetchFn).search(seed)).candidates).toHaveLength(1);
-      expect(fetchFn).toHaveBeenCalledTimes(2);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
     },
   );
 
@@ -516,7 +506,7 @@ describe("TheCragCatalogueAdapter", () => {
       candidates: [],
       complete: true,
     });
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
   it.each([
@@ -757,7 +747,13 @@ describe("TheCragCatalogueAdapter", () => {
       const response = new Response(detail());
       Object.defineProperty(response, "url", { value: responseUrl });
       const adapter = new TheCragCatalogueAdapter(
-        vi.fn<typeof fetch>().mockResolvedValue(response),
+        vi
+          .fn<typeof fetch>()
+          .mockImplementation(async (input) =>
+            new URL(String(input)).pathname.includes("/area/")
+              ? new Response(parentArea("", ""))
+              : response,
+          ),
       );
       const operation = adapter.search({ ...seed, providerId: "thecrag", externalId: "123" });
       if (new URL(responseUrl).origin === origin)
@@ -830,7 +826,7 @@ describe("TheCragCatalogueAdapter", () => {
     const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
     expect(result.complete).toBe(false);
     expect(result.candidates).toHaveLength(1);
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
   });
 
   it("marks capped searches incomplete", async () => {
@@ -866,7 +862,7 @@ describe("TheCragCatalogueAdapter", () => {
     });
     expect(result.candidates[0]?.kind).toBe("boulder");
     expect(result.complete).toBe(false);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
   it("resolves a recorded numeric route ID without a stored URL or a matching old name", async () => {
     const html = detail().replace(
@@ -882,7 +878,7 @@ describe("TheCragCatalogueAdapter", () => {
     });
     expect(result.candidates[0]).toMatchObject({ externalId: "123", name: "Renamed Crack" });
     expect(String(fetchFn.mock.calls[0]?.[0])).toBe(`${origin}/en/climbing/world/route/123`);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -984,4 +980,378 @@ it("preserves multiple route gear styles and ignores other route and ascent styl
       inheritedFrom: null,
     },
   ]);
+});
+
+describe("theCrag source-owned area context", () => {
+  it("hydrates all proven ancestors once and keeps inherited parent facts off routes", async () => {
+    const area = readFileSync(new URL("./fixtures/thecrag-area.html", import.meta.url), "utf8");
+    const routeHtml = detail(
+      '<a class="crumb__a" href="/en/climbing/world/area/789" data-nid="789"><span class="crumb__long">Sector</span></a>',
+    );
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("/search"))
+        return new Response(search(row() + row("Cragmont Crack", "/en/climbing/world/route/124")));
+      if (url.pathname.includes("/route/"))
+        return new Response(
+          routeHtml.replace(`/route/123`, `/route/${url.pathname.split("/").at(-1)}`),
+        );
+      return new Response(
+        area.replaceAll("16450483", url.pathname.endsWith("789") ? "789" : "456"),
+      );
+    });
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(fetchFn).toHaveBeenCalledTimes(5);
+    const locations = result.candidates[0]?.locations;
+    expect(locations?.map((location) => location.externalId)).toEqual(["456", "789"]);
+    const context = locations?.[0]?.context;
+    expect(context).toMatchObject({
+      url: `${origin}/en/climbing/united-states/california/san-francisco/east-bay-area/area/456`,
+      type: "cliff",
+      statistics: [{ sourceKey: "routes", label: "Routes", value: 13 }],
+    });
+    expect(context?.sections).toContainEqual({
+      sourceKey: "access-issues",
+      label: "Access issues",
+      text: "For any/all access issues at crags in this region, please contact the Bay Area Climbers Coalition.",
+      inheritedFrom: "San Francisco Bay Area",
+    });
+    expect(context?.tags).toContainEqual({
+      sourceKey: "Allowed",
+      label: "Allowed",
+      kind: "other",
+      category: null,
+      scope: "inherited",
+      inheritedFrom: "San Francisco Bay Area",
+      count: null,
+    });
+    expect(context?.tags).toContainEqual({
+      sourceKey: "Ramp",
+      label: "Slab",
+      kind: "steepness",
+      category: "slab",
+      scope: "direct",
+      inheritedFrom: null,
+      count: null,
+    });
+    expect(context?.sections.find((section) => section.sourceKey === "description")?.text).toBe(
+      "Another popular little Berkeley cliff tucked away in suburbia. Is popular with guides and can be overrun on the weekends.",
+    );
+    expect(context?.tags.map((tag) => tag.sourceKey)).not.toContain("ChildOnly");
+    expect(result.candidates[0]?.tags.map((tag) => tag.sourceKey)).toEqual(["title"]);
+    expect(result.candidates[0]?.angle).toBeNull();
+  });
+});
+
+it("preserves explicit tag inheritance over section inheritance and excludes nested owners", async () => {
+  const area =
+    parentArea() +
+    `<div class="regions__read"><div class="regions__inner"><div class="node-info access-issues"><h2>Access issues <small class="from">inherited from <a class="inherit-from" href="/en/climbing/parent">Parent</a></small></h2><div class="content"><a rel="tag" href="/en/article/tagging#Allowed" title="inherited from Grandparent">Allowed</a><a rel="tag" href="/en/article/tagging#Mystery">Mystery</a><div class="markdown"><p>Check <b>access</b>.</p><script>unsafe()</script></div><div class="node-info"><a rel="tag" href="/en/article/tagging#Nested">Nested</a></div></div></div></div></div>`;
+  const { result } = await lookupWithParent(detail(), area);
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections).toEqual([
+    {
+      sourceKey: "access-issues",
+      label: "Access issues",
+      text: "Check access.",
+      inheritedFrom: "Parent",
+    },
+  ]);
+  expect(
+    context?.tags.map((tag) => [tag.sourceKey, tag.inheritedFrom, tag.scope, tag.count]),
+  ).toEqual([
+    ["Allowed", "Grandparent", "inherited", null],
+    ["Mystery", "Parent", "inherited", null],
+  ]);
+});
+
+it("resolves native IDs from source-declared named hierarchy links", async () => {
+  const html = detail().replace(
+    'href="/en/climbing/area/456"',
+    'href="/en/climbing/cragmont-park"',
+  );
+  const { result, fetchFn } = await lookupWithParent(html);
+  expect(String(fetchFn.mock.calls[1]?.[0])).toBe(`${origin}/en/climbing/world/area/456`);
+  expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+    latitude: 37.5,
+    longitude: -122.5,
+  });
+});
+
+it.each([
+  [
+    "terminal",
+    "396575046",
+    "crag",
+    104,
+    "unique-features-and-strengths",
+    "Summary",
+    "Beautiful, south facing wall",
+    'Primarily developed by Andrea "Dinda" Bisio',
+  ],
+  [
+    "sector",
+    "9480758808",
+    "sector",
+    10,
+    "description",
+    "Description",
+    "Kleiner, aber feiner Sektor",
+    "Capricorner wurde 2009 eingerichtet.",
+  ],
+])(
+  "reads verified %s area sections and source counts",
+  async (fixture, id, type, count, sourceKey, label, start, history) => {
+    const html = readFileSync(
+      new URL(`./fixtures/thecrag-${fixture}.html`, import.meta.url),
+      "utf8",
+    );
+    const routeHtml = detail().replace(
+      'href="/en/climbing/area/456" data-nid="456"',
+      `href="/en/climbing/world/area/${id}" data-nid="${id}"`,
+    );
+    const { result } = await lookupWithParent(routeHtml, html);
+    const context = result.candidates[0]?.locations[0]?.context;
+    expect(context?.type).toBe(type);
+    expect(context?.statistics).toEqual([{ sourceKey: "routes", label: "Routes", value: count }]);
+    expect(context?.sections).toContainEqual(
+      expect.objectContaining({ sourceKey, label, text: expect.stringContaining(start) }),
+    );
+    expect(context?.sections).toContainEqual(
+      expect.objectContaining({
+        sourceKey: "history",
+        label: "History",
+        text: expect.stringContaining(history),
+      }),
+    );
+    if (fixture === "sector") {
+      expect(context?.tags).toContainEqual(
+        expect.objectContaining({
+          sourceKey: "Allowed",
+          scope: "inherited",
+          inheritedFrom: "Hohe Wand",
+        }),
+      );
+      expect(context?.sections).toContainEqual(
+        expect.objectContaining({
+          sourceKey: "access-issues",
+          text: "Dogs allowed with leash.",
+          inheritedFrom: "Hohe Wand",
+        }),
+      );
+    }
+  },
+);
+
+function ownerSection(content: string, header = "", kind = "description") {
+  return `<div class="regions__read"><div class="regions__inner"><div class="node-info ${kind}"><h2>Description ${header}</h2><div class="content">${content}</div></div></div></div>`;
+}
+function areaHeadline(content: string) {
+  return `<div class="regions__title"><h1><span class="heading__byline"><span class="info">${content}</span></span></h1></div>`;
+}
+
+it("normalizes padded source tag keys and skips incomplete hexadecimal escapes", async () => {
+  const result = await lookup(
+    detail(
+      `<a rel="tag" href="/en/article/tagging#%20Ramp%20">Slab</a><a rel="tag" href="/en/article/tagging#%0G">Invalid encoded tag</a>`,
+    ),
+  );
+  expect(result.candidates[0]?.tags).toContainEqual({
+    sourceKey: "Ramp",
+    label: "Slab",
+    kind: "steepness",
+    category: "slab",
+    scope: "direct",
+    inheritedFrom: null,
+  });
+  expect(result.candidates[0]?.tags.map((tag) => tag.sourceKey)).toEqual(["Ramp", "title"]);
+});
+
+it.each([
+  "http://[",
+  "https://elsewhere.example/en/climbing/parent",
+  "https://user@www.thecrag.com/en/climbing/parent",
+  "https://:password@www.thecrag.com/en/climbing/parent",
+  "/en/climbing/parent?filter=1",
+  "/en/climbing/parent#access",
+  "/en/article/tagging",
+])(
+  "keeps source-owned prose and tags direct when the section inheritance URL is invalid: %s",
+  async (href) => {
+    const header = `<small class="from">inherited from <a class="inherit-from" href="${href}">Unverified ancestor</a></small>`;
+    const { result } = await lookupWithParent(
+      detail(),
+      parentArea() +
+        ownerSection(
+          '<div class="markdown">Source description</div><a rel="tag" href="/en/article/tagging#Ramp">Slab</a>',
+          header,
+        ),
+    );
+    expect(result.candidates[0]?.locations[0]?.context?.sections).toEqual([
+      {
+        sourceKey: "description",
+        label: "Description",
+        text: "Source description",
+        inheritedFrom: null,
+      },
+    ]);
+    expect(result.candidates[0]?.locations[0]?.context?.tags).toEqual([
+      {
+        sourceKey: "Ramp",
+        label: "Slab",
+        kind: "steepness",
+        category: "slab",
+        count: null,
+        scope: "direct",
+        inheritedFrom: null,
+      },
+    ]);
+  },
+);
+
+it("does not assign one of two conflicting section ancestors to prose or direct tags", async () => {
+  const header =
+    '<small class="from">inherited from <a class="inherit-from" href="/en/climbing/first">First</a> <a class="inherit-from" href="/en/climbing/second">Second</a></small>';
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      ownerSection(
+        '<div class="markdown">Source description</div><a rel="tag" href="/en/article/tagging#Ramp">Slab</a>',
+        header,
+      ),
+  );
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections[0]?.inheritedFrom).toBeNull();
+  expect(context?.tags[0]).toMatchObject({ scope: "direct", inheritedFrom: null });
+});
+
+it("keeps literal tags in an unclassified section without inventing a prose section", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      ownerSection(
+        '<div class="markdown">Unclassified source text</div><a rel="tag" href="/en/article/tagging#Local">Local character</a>',
+        "",
+        "",
+      ),
+  );
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections).toEqual([]);
+  expect(context?.tags).toEqual([
+    {
+      sourceKey: "Local",
+      label: "Local character",
+      kind: "other",
+      category: null,
+      count: null,
+      scope: "direct",
+      inheritedFrom: null,
+    },
+  ]);
+});
+
+it("omits empty prose while retaining a standalone literal area type", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline('<a href="/en/article/areatypes"> cliff </a>') +
+      ownerSection('<div class="markdown"><p> </p><script>hidden()</script></div>'),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: "cliff",
+    sections: [],
+    tags: [],
+    statistics: [],
+  });
+});
+
+it("retains standalone area prose with missing type, tags and statistics", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline('<a href="/en/article/areatypes"> </a>') +
+      ownerSection('<div class="markdown"><p>Only a description.</p></div>'),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: null,
+    sections: [
+      {
+        sourceKey: "description",
+        label: "Description",
+        text: "Only a description.",
+        inheritedFrom: null,
+      },
+    ],
+    tags: [],
+    statistics: [],
+  });
+});
+
+it.each([
+  "http://[",
+  "https://elsewhere.example/en/climbing/area/456/routes",
+  "https://user@www.thecrag.com/en/climbing/area/456/routes",
+  "https://:password@www.thecrag.com/en/climbing/area/456/routes",
+  "/en/climbing/area/456/routes?filter=1",
+  "/en/climbing/area/456/routes#stats",
+  "/en/climbing/area/456/photos",
+  "/en/climbing/area/789/routes",
+])("ignores route statistics outside the canonical area's routes URL: %s", async (href) => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline(`<a href="/en/article/areatypes">cliff</a><a href="${href}">13 routes</a>`),
+  );
+  expect(result.candidates[0]?.locations[0]?.context?.statistics).toEqual([]);
+});
+
+it.each(["About 13 routes", "13 routes nearby", "No routes", "", "  "])(
+  "does not reinterpret source route totals without a literal count: %j",
+  async (label) => {
+    const { result } = await lookupWithParent(
+      detail(),
+      parentArea() +
+        areaHeadline(
+          `<a href="/en/article/areatypes">cliff</a><a href="/en/climbing/area/456/routes">${label}</a>`,
+        ),
+    );
+    expect(result.candidates[0]?.locations[0]?.context?.statistics).toEqual([]);
+  },
+);
+
+it.each([
+  ["1 route", 1],
+  ["1,234 routes", 1234],
+  ["0 routes", 0],
+])("retains standalone literal area route totals: %s", async (label, value) => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() + areaHeadline(`<a href="/en/climbing/area/456/routes">${label}</a>`),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: null,
+    sections: [],
+    tags: [],
+    statistics: [{ sourceKey: "routes", label: "Routes", value }],
+  });
+});
+
+it.each([
+  "https://user@www.thecrag.com/en/climbing/cragmont-park",
+  "https://:password@www.thecrag.com/en/climbing/cragmont-park",
+  "/en/climbing/cragmont-park?filter=1",
+  "/en/climbing/cragmont-park#access",
+])("does not synthesize a numeric area fetch from an unsafe named breadcrumb: %s", async (href) => {
+  const html = detail().replace('href="/en/climbing/area/456"', `href="${href}"`);
+  const { result, fetchFn } = await lookupWithParent(html);
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+  expect(result.candidates[0]?.locations[0]).toEqual({
+    externalId: "456",
+    name: "Cragmont Park",
+    scope: "area",
+    coordinates: null,
+  });
 });

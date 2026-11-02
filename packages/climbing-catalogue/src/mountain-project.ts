@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { cataloguePlainText } from "./area-context.ts";
 import {
   type CatalogueCandidate,
+  type CatalogueLocation,
   type CatalogueSearchResult,
   type CatalogueSeed,
   type ClimbingCatalogueAdapter,
@@ -48,6 +50,48 @@ const detailSchema = z.object({
   difficulty: z.string().nullish(),
   types: z.array(z.string()),
 });
+const areaSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string().min(1),
+  breadcrumbs: z.string().optional(),
+  parent: z.object({ id: z.number().int().positive(), name: z.string() }).nullish(),
+  coordinates: coordinates.nullish(),
+  sections: z.array(z.object({ title: z.string().min(1), html: z.string() })),
+  access_notes: z.array(z.object({ title: z.string().min(1), html: z.string() })),
+  route_type_counts: z.record(z.string(), z.number().int().nonnegative()),
+});
+function areaLocation(area: z.infer<typeof areaSchema>): CatalogueLocation {
+  const sections: NonNullable<CatalogueLocation["context"]>["sections"] = [];
+  for (const key of ["sections", "access_notes"] as const) {
+    area[key].forEach((section, index) => {
+      const text = cataloguePlainText(section.html);
+      if (text)
+        sections.push({
+          sourceKey: `${key}.${index}`,
+          label: section.title,
+          text,
+          inheritedFrom: null,
+        });
+    });
+  }
+  return {
+    externalId: String(area.id),
+    name: area.title,
+    scope: "area",
+    coordinates: position(area.coordinates),
+    context: {
+      url: `${origin}/area/${area.id}`,
+      type: null,
+      sections,
+      tags: [],
+      statistics: Object.entries(area.route_type_counts).map(([key, value]) => ({
+        sourceKey: `route_type_counts.${key}`,
+        label: key === "total" ? "Total" : key,
+        value,
+      })),
+    },
+  };
+}
 function tags(types: string[]): CatalogueCandidate["tags"] {
   return types.map((label) => ({
     kind: "climb_type",
@@ -107,6 +151,15 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
     });
   }
 
+  async #area(id: string): Promise<z.infer<typeof areaSchema>> {
+    const area = areaSchema.safeParse(await this.#request(`${origin}/api/v2/areas/${id}`));
+    if (!area.success || String(area.data.id) !== id)
+      throw new Error(
+        "Mountain Project catalogue area details are invalid or identify another area; retry later.",
+      );
+    return area.data;
+  }
+
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
     const reference = seed.references?.find(
       (reference) => reference.providerId === this.providerId,
@@ -159,6 +212,23 @@ export class MountainProjectCatalogueAdapter implements ClimbingCatalogueAdapter
             },
           ],
         });
+        const local = await this.#area(String(route.parent.id));
+        const locations = [areaLocation(local)];
+        if (local.parent && local.parent.id !== local.id)
+          locations.unshift(areaLocation(await this.#area(String(local.parent.id))));
+        const names = (local.breadcrumbs ?? "").split(" > ").filter(Boolean);
+        const prefix = local.parent ? names.slice(0, -1) : names;
+        candidate.locations = [
+          ...prefix.map(
+            (name): CatalogueLocation => ({
+              externalId: null,
+              name,
+              scope: "area",
+              coordinates: null,
+            }),
+          ),
+          ...locations,
+        ];
         return { candidates: [candidate], complete: true };
       }
     }

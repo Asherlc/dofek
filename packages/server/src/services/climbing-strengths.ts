@@ -9,6 +9,7 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import { ALL_CLIMBING_GRADES } from "@dofek/training/climbing-strengths";
 import type { ClimbingTag } from "@dofek/training/climbing-tags";
+import type { ClimbingCatalogueTrait } from "./climbing-catalogue-traits.ts";
 import { buildClimbingStrengthProfile } from "./climbing-strength-profile.ts";
 export interface ClimbingStrengthsObservation {
   identity: string | null;
@@ -22,6 +23,7 @@ export interface ClimbingStrengthsObservation {
   wallAngle: ClimbingWallAngle | null;
   holdTypes: string[] | null;
   tags?: ClimbingTag[];
+  catalogueTraits?: ClimbingCatalogueTrait[];
   outcome: "sent" | "not_sent" | null;
   example: ClimbingStrengthsExample;
 }
@@ -38,10 +40,13 @@ function trait(
   dimension: ClimbingStrengthsPanel["dimension"],
 ): string[] {
   if (dimension === "setting") return [entry.setting ?? "unknown"];
-  if (dimension === "hold_type") return entry.holdTypes ?? [];
+  const catalogue =
+    entry.catalogueTraits?.filter((t) => t.dimension === dimension).map((t) => t.value) ?? [];
+  if (dimension === "style") return catalogue;
+  if (dimension === "hold_type") return entry.holdTypes?.length ? entry.holdTypes : catalogue;
   const angle = entry.wallAngle;
   if (angle && "category" in angle) return [angle.category];
-  return angle?.unit === "degrees" ? [`${angle.value}°`] : [];
+  return angle?.unit === "degrees" ? [`${angle.value}°`] : catalogue;
 }
 const sampleStatus = (climbs: number): "no_data" | "limited" | "available" =>
   climbs === 0 ? "no_data" : climbs < 5 ? "limited" : "available";
@@ -69,7 +74,16 @@ function monthlyWindows(window: { startDate: string; endDate: string }) {
 export function buildClimbingStrengths(
   observations: ClimbingStrengthsObservation[],
   window: { startDate?: string; endDate: string },
+  options: { includeAreaMetadata?: boolean } = {},
 ): ClimbingStrengths {
+  const hasCatalogueStyle = observations.some((e) =>
+    e.catalogueTraits?.some((t) => t.dimension === "style"),
+  );
+  if (options.includeAreaMetadata === false)
+    observations = observations.map((entry) => ({
+      ...entry,
+      catalogueTraits: entry.catalogueTraits?.filter((t) => t.source.scope !== "area"),
+    }));
   const coverage = { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 };
   const groups = new Map<string, ClimbingStrengthsObservation[]>();
   // A missing system can inherit context only from one evidenced system for
@@ -107,6 +121,7 @@ export function buildClimbingStrengths(
     ClimbingStrengthsObservation & {
       observations: ClimbingStrengthsObservation[];
       tagKeysByCategory: Map<string, string[]>;
+      catalogueTraits: ClimbingCatalogueTrait[];
     }
   > = [];
   const tagCategories = new Map<
@@ -185,6 +200,15 @@ export function buildClimbingStrengths(
       summary.latest = latestRecordedTag(summary.latest, recorded);
       tagCategories.set(category, summary);
     }
+    const catalogueTraits = (["wall_angle", "hold_type", "style"] as const).flatMap((dimension) => {
+      if (dimension === "hold_type" && holds.length > 0) return [];
+      if (dimension === "wall_angle" && angles.length > 0) return [];
+      const all = group
+        .flatMap((e) => e.catalogueTraits ?? [])
+        .filter((t) => t.dimension === dimension);
+      const direct = all.filter((t) => t.source.scope === "route");
+      return direct.length ? direct : all;
+    });
     entries.push({
       ...preferred,
       observations: group,
@@ -194,6 +218,7 @@ export function buildClimbingStrengths(
       holdTypes: holds.length === 1 ? (holds[0] ?? null) : null,
       wallAngle: angles.length === 1 ? (angles[0] ?? null) : null,
       tagKeysByCategory,
+      catalogueTraits,
       example: {
         ...preferred.example,
         grade: grade.grade ?? "",
@@ -236,7 +261,14 @@ export function buildClimbingStrengths(
         | { dimension: ClimbingStrengthsPanel["dimension"] }
         | { dimension: "tag"; category: ClimbingStrengthsTagPanel["category"] }
       )
-    > = (["wall_angle", "hold_type", "setting"] as const).map((dimension) => ({
+    > = (
+      [
+        "wall_angle",
+        "hold_type",
+        "setting",
+        ...(hasCatalogueStyle ? ["style" as const] : []),
+      ] as const
+    ).map((dimension) => ({
       dimension,
       values: (entry) => trait(entry, dimension),
       label: (key) =>
@@ -319,7 +351,14 @@ export function buildClimbingStrengths(
                     ? null
                     : successRate - g.successRate,
                 sampleStatus: sampleStatus(matching.length),
-                examples: matching.slice(0, 3).map((e) => e.example),
+                examples: matching.slice(0, 3).map((e) => {
+                  // Recorded dimensions already removed their catalogue evidence during consolidation.
+                  const sources = e.catalogueTraits
+                    .filter((t) => t.dimension === dimension && t.value === key)
+                    .map((t) => ({ ...t.source, trait: label(key) }));
+                  const unique = [...new Map(sources.map((s) => [JSON.stringify(s), s])).values()];
+                  return unique.length ? { ...e.example, traitSources: unique } : e.example;
+                }),
               };
             }),
           })),

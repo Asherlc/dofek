@@ -14,26 +14,30 @@ export async function processClimbingCatalogueJob(
   cache: CacheStore = queryCache,
 ): Promise<void> {
   const { userId, logEntryId, seed: queuedSeed } = climbingCatalogueJobDataSchema.parse(input);
-  const failures = new ClimbingCatalogueService(cache, []);
-  let seed: CatalogueSeed | null;
-  let adapters: ReturnType<typeof createClimbingCatalogueAdapters>;
   try {
-    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "climbing catalogue lookup")))
-      return;
-    seed = await loadCatalogueSeed(db, userId, logEntryId);
-    if (!seed) return;
-    adapters = createClimbingCatalogueAdapters(userId, db);
-  } catch (error) {
-    await failures.markFailed(queuedSeed, error);
-    throw error;
-  }
-  const service = new ClimbingCatalogueService(cache, adapters);
-  await service.refresh(seed);
-  try {
-    const current = await loadCatalogueSeed(db, userId, logEntryId);
-    if (JSON.stringify(current) !== JSON.stringify(seed)) await service.invalidate(seed);
-  } catch (error) {
-    await service.markFailed(seed, error);
-    throw error;
+    const failures = new ClimbingCatalogueService(cache, []);
+    let seed: CatalogueSeed | null;
+    let adapters: ReturnType<typeof createClimbingCatalogueAdapters>;
+    try {
+      if (!(await accountErasureAllowsQueuedUserWork(db, userId, "climbing catalogue lookup")))
+        return;
+      seed = await loadCatalogueSeed(db, userId, logEntryId);
+      if (!seed) return;
+      adapters = createClimbingCatalogueAdapters(userId, db);
+    } catch (error) {
+      await failures.markFailed(queuedSeed, error);
+      throw error;
+    }
+    const service = new ClimbingCatalogueService(cache, adapters);
+    await service.refresh(seed);
+    try {
+      const current = await loadCatalogueSeed(db, userId, logEntryId);
+      if (JSON.stringify(current) !== JSON.stringify(seed)) await service.invalidate(seed);
+    } catch (error) {
+      await service.markFailed(seed, error);
+      throw error;
+    }
+  } finally {
+    await cache.invalidateByPrefix(`${userId}:climbing.strengths:`);
   }
 }

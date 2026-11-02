@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { cataloguePlainText } from "./area-context.ts";
+import type { CatalogueAreaContext, CatalogueLocation } from "./contracts.ts";
 import {
   type CatalogueCandidate,
   type CatalogueSearchResult,
@@ -19,7 +21,52 @@ const coordinate = z.union([
     .regex(/^-?\d+(?:\.\d+)?$/)
     .transform(Number),
 ]);
+const locationTextFields = [
+  ["description", "Description"],
+  ["description_bouldering", "Bouldering description"],
+  ["description_routes", "Routes description"],
+  ["description_short_bouldering", "Bouldering summary"],
+  ["description_short_routes", "Routes summary"],
+  ["access_description_bouldering", "Bouldering access"],
+  ["access_description_routes", "Routes access"],
+  ["access_issues_description_bouldering", "Bouldering access issues"],
+  ["access_issues_description_routes", "Routes access issues"],
+  ["closed_date", "Closed date"],
+  ["address", "Address"],
+  ["city", "City"],
+  ["postal_code", "Postal code"],
+  ["region", "Region"],
+  ["country", "Country"],
+  ["website", "Website"],
+] as const;
+const locationFlagFields = [
+  ["is_closed", "Closed"],
+  ["is_access_sensitive", "Access sensitive"],
+  ["is_official", "Official"],
+] as const;
 const location = named.extend({
+  slug: z.string().min(1).nullish(),
+  location_type: named.nullish(),
+  parent_location: named.extend({ slug: z.string().min(1).nullish() }).nullish(),
+  description: z.string().nullish(),
+  description_bouldering: z.string().nullish(),
+  description_routes: z.string().nullish(),
+  description_short_bouldering: z.string().nullish(),
+  description_short_routes: z.string().nullish(),
+  access_description_bouldering: z.string().nullish(),
+  access_description_routes: z.string().nullish(),
+  access_issues_description_bouldering: z.string().nullish(),
+  access_issues_description_routes: z.string().nullish(),
+  closed_date: z.string().nullish(),
+  address: z.string().nullish(),
+  city: z.string().nullish(),
+  postal_code: z.string().nullish(),
+  region: z.string().nullish(),
+  country: z.string().nullish(),
+  website: z.string().nullish(),
+  is_closed: z.boolean().nullish(),
+  is_access_sensitive: z.boolean().nullish(),
+  is_official: z.boolean().nullish(),
   latitude: coordinate.pipe(z.number().min(-90).max(90)).nullish(),
   longitude: coordinate.pipe(z.number().min(-180).max(180)).nullish(),
 });
@@ -44,8 +91,12 @@ const searchSchema = z.object({
   data: z.object({ webSearchForClimb: z.array(climbSchema) }),
   errors: z.array(z.unknown()).optional(),
 });
-const climbFields = `id slug name climb_type { name } grade { name } gym { id name } board { id name } destination { id name latitude longitude } area { id name latitude longitude } subarea { id name latitude longitude } angle`;
-const query = `query CatalogueClimbs($name:String!,$offset:Int!,$count:Int!) { webSearchForClimb(name:$name,offset:$offset,count:$count) { ${climbFields} } }`;
+// Native Location rejects the public WebLocation short-description fields.
+const nativeLocationFields = `id slug name latitude longitude description description_bouldering description_routes access_description_bouldering access_description_routes access_issues_description_bouldering access_issues_description_routes location_type { id name } parent_location { id slug name } is_access_sensitive is_closed closed_date`;
+const nativeClimbFields = `id slug name climb_type { name } grade { name } gym { id slug name latitude longitude address city postal_code region country website is_official } board { id name } destination { ${nativeLocationFields} } area { ${nativeLocationFields} } subarea { ${nativeLocationFields} } angle`;
+const publicLocationFields = `id slug name latitude longitude description description_bouldering description_routes description_short_bouldering description_short_routes access_description_bouldering access_description_routes access_issues_description_bouldering access_issues_description_routes location_type { id name } parent_location { id slug name } is_access_sensitive is_closed closed_date`;
+const publicClimbFields = `id slug name climb_type { name } grade { name } gym { id slug name latitude longitude address city postal_code region country website is_official } board { id name } destination { ${publicLocationFields} } area { ${publicLocationFields} } subarea { ${publicLocationFields} } angle`;
+const query = `query CatalogueClimbs($name:String!,$offset:Int!,$count:Int!) { webSearchForClimb(name:$name,offset:$offset,count:$count) { ${publicClimbFields} } }`;
 const nativeSchema = z.object({
   data: z.object({
     climb: climbSchema.extend({
@@ -98,6 +149,58 @@ function climbTypeTags(climb: ClassifiedClimb): CatalogueCandidate["tags"] {
   return tags;
 }
 
+function catalogueLocation(place: z.infer<typeof location>, gym: boolean): CatalogueLocation {
+  const sections: CatalogueAreaContext["sections"] = [];
+  for (const [sourceKey, label] of locationTextFields) {
+    const text = cataloguePlainText(place[sourceKey]);
+    if (text) sections.push({ sourceKey, label, text, inheritedFrom: null });
+  }
+  for (const [sourceKey, label] of locationFlagFields) {
+    const flag = place[sourceKey];
+    if (flag != null) sections.push({ sourceKey, label, text: String(flag), inheritedFrom: null });
+  }
+  return {
+    externalId: place.id,
+    name: place.name,
+    scope: "area",
+    coordinates:
+      place.latitude != null && place.longitude != null
+        ? { latitude: place.latitude, longitude: place.longitude }
+        : null,
+    ...(place.slug
+      ? {
+          context: {
+            url: `${origin}/${gym ? "gym" : "location"}/${encodeURIComponent(place.slug)}`,
+            type: gym ? "Gym" : (place.location_type?.name ?? null),
+            sections,
+            tags: [],
+            statistics: [],
+          },
+        }
+      : {}),
+  };
+}
+
+function climbLocations(climb: ClassifiedClimb): CatalogueLocation[] {
+  const places = [climb.gym, climb.board, climb.destination, climb.area, climb.subarea];
+  const explicitIds = new Set(places.flatMap((place) => (place ? [place.id] : [])));
+  const result: CatalogueLocation[] = [];
+  const seen = new Set<string>();
+  for (const place of places) {
+    if (!place) continue;
+    const parent = place.parent_location;
+    if (parent && !explicitIds.has(parent.id) && !seen.has(parent.id)) {
+      result.push(catalogueLocation(parent, false));
+      seen.add(parent.id);
+    }
+    if (!seen.has(place.id)) {
+      result.push(catalogueLocation(place, place === climb.gym));
+      seen.add(place.id);
+    }
+  }
+  return result;
+}
+
 function candidate(climb: ClassifiedClimb): CatalogueCandidate {
   const setting = climb.gym || climb.board ? "indoor" : climb.destination ? "outdoor" : null;
   const category =
@@ -146,22 +249,7 @@ function candidate(climb: ClassifiedClimb): CatalogueCandidate {
           ]
         : []),
     ],
-    locations: [climb.gym, climb.board, climb.destination, climb.area, climb.subarea].flatMap(
-      (place) =>
-        place
-          ? [
-              {
-                externalId: place.id,
-                name: place.name,
-                scope: "area",
-                coordinates:
-                  "latitude" in place && place.latitude != null && place.longitude != null
-                    ? { latitude: place.latitude, longitude: place.longitude }
-                    : null,
-              },
-            ]
-          : [],
-    ),
+    locations: climbLocations(climb),
   });
 }
 
@@ -204,10 +292,14 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
     });
   }
 
-  async #native(id: string, token: string): Promise<CatalogueCandidate> {
+  async #native(
+    id: string,
+    token: string,
+    publicClimb?: ClassifiedClimb,
+  ): Promise<CatalogueCandidate> {
     const result = nativeSchema.safeParse(
       await this.#request(
-        `query CatalogueClimb { climb(id:"${id}") { ${climbFields} lead is_trad tags { id name tag_type_id } } }`,
+        `query CatalogueClimb { climb(id:"${id}") { ${nativeClimbFields} lead is_trad tags { id name tag_type_id } } }`,
         {},
         token,
       ),
@@ -220,7 +312,16 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
       throw new Error(
         "Kaya authenticated catalogue lookup returned a different climb ID; retry later.",
       );
-    return candidate(result.data.data.climb);
+    const nativeClimb = result.data.data.climb;
+    if (publicClimb) {
+      for (const key of ["gym", "board", "destination", "area", "subarea"] as const) {
+        const nativePlace = nativeClimb[key];
+        const publicPlace = publicClimb[key];
+        if (nativePlace && publicPlace?.id === nativePlace.id)
+          nativeClimb[key] = { ...publicPlace, ...nativePlace };
+      }
+    }
+    return candidate(nativeClimb);
   }
 
   async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
@@ -279,7 +380,7 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
           ) ||
           (seed.providerId === this.providerId && seed.externalId === climb.id)
         )
-          candidates.push(token ? await this.#native(climb.id, token) : candidate(climb));
+          candidates.push(token ? await this.#native(climb.id, token, climb) : candidate(climb));
       }
       current.offset += 20;
       if (repeated) partial = true;

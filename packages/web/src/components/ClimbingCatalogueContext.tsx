@@ -17,6 +17,72 @@ type Props = {
   error?: string | null;
 };
 
+type CatalogueLocation =
+  Context["sources"][number]["matches"][number]["candidate"]["locations"][number];
+
+function CatalogueArea({ location }: { location: CatalogueLocation }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  const area = location.context;
+  if (!area || !(area.type || area.sections.length || area.tags.length || area.statistics.length))
+    return <span className="text-subtle">{location.name}</span>;
+  return (
+    <div className="max-w-full">
+      <button
+        type="button"
+        aria-label={`Area information: ${location.name ?? "Unnamed area"}`}
+        aria-expanded={open}
+        aria-controls={contentId}
+        className="min-h-11 text-accent"
+        onClick={() => setOpen(!open)}
+      >
+        {location.name ?? "Unnamed area"}
+        <span aria-hidden="true"> {open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div id={contentId} className="space-y-2 border-l border-border pl-3 pb-2">
+          <a
+            className="text-accent underline"
+            href={area.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View area on source
+          </a>
+          {area.type && <p>Area type: {area.type}</p>}
+          {area.sections.map((section) => (
+            <div key={section.sourceKey}>
+              <h6 className="font-medium">{section.label}</h6>
+              <p className="whitespace-pre-line">{section.text}</p>
+              {section.inheritedFrom && (
+                <p className="text-subtle">↳ Inherited from {section.inheritedFrom}</p>
+              )}
+            </div>
+          ))}
+          {area.tags.map((tag) => (
+            <div key={`${tag.sourceKey}:${tag.label}:${tag.scope}:${tag.inheritedFrom}`}>
+              <p>
+                {tag.label}
+                {tag.count !== null ? ` (${tag.count})` : ""}
+              </p>
+              {tag.scope === "inherited" && (
+                <p className="text-subtle">
+                  ↳ Inherited{tag.inheritedFrom ? ` from ${tag.inheritedFrom}` : ""}
+                </p>
+              )}
+            </div>
+          ))}
+          {area.statistics.map((statistic) => (
+            <p key={statistic.sourceKey}>
+              {statistic.label}: {statistic.value}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ClimbingCatalogueContextView({
   context,
   open,
@@ -74,9 +140,21 @@ export function ClimbingCatalogueContextView({
                     {candidate.name ?? "View climb"}
                   </a>
                   {candidate.locations.length > 0 && (
-                    <p className="text-subtle">
-                      {candidate.locations.map((location) => location.name).join(" › ")}
-                    </p>
+                    <div className="flex flex-wrap items-baseline gap-x-1">
+                      {candidate.locations.map((location, index) => (
+                        <div
+                          key={`${location.externalId}:${location.name}:${location.context?.url ?? ""}`}
+                          className="flex max-w-full items-baseline gap-x-1"
+                        >
+                          {index > 0 && (
+                            <span aria-hidden="true" className="text-subtle">
+                              ›
+                            </span>
+                          )}
+                          <CatalogueArea location={location} />
+                        </div>
+                      ))}
+                    </div>
                   )}
                   {candidate.grade && <p>Catalogue grade: {candidate.grade}</p>}
                   {candidate.tags.map((tag) => (

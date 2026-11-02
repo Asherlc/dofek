@@ -348,3 +348,83 @@ export const IncompleteLocalSearch: Story = {
     },
   },
 };
+
+export const ParentAreaContext: Story = {
+  args: {
+    context: {
+      ...ready,
+      sources: ready.sources.map((source) => ({
+        ...source,
+        matches: source.matches.map((match) => ({
+          ...match,
+          candidate: {
+            ...match.candidate,
+            locations: [
+              { externalId: "country", name: "United States", scope: "area", coordinates: null },
+              {
+                externalId: "valley",
+                name: "The Valley",
+                scope: "area",
+                coordinates: null,
+                context: {
+                  url: "https://kaya-app.kayaclimb.com/location/valley",
+                  type: "Crag",
+                  sections: [
+                    {
+                      sourceKey: "description",
+                      label: "Description",
+                      text: "Shaded granite walls above the river.",
+                      inheritedFrom: null,
+                    },
+                    {
+                      sourceKey: "access",
+                      label: "Access",
+                      text: "Check seasonal restrictions before visiting.",
+                      inheritedFrom: "National Park",
+                    },
+                    {
+                      sourceKey: "approach",
+                      label: "Approach",
+                      text: "Follow the marked trail from the parking area.",
+                      inheritedFrom: null,
+                    },
+                  ],
+                  tags: [
+                    {
+                      sourceKey: "slab",
+                      label: "Slab",
+                      kind: "steepness",
+                      category: "slab",
+                      count: 4,
+                      scope: "direct",
+                      inheritedFrom: null,
+                    },
+                    {
+                      sourceKey: "shady",
+                      label: "Shady",
+                      kind: "other",
+                      category: null,
+                      count: 0,
+                      scope: "inherited",
+                      inheritedFrom: "Upper Valley",
+                    },
+                    {
+                      sourceKey: "granite",
+                      label: "Granite",
+                      kind: "other",
+                      category: null,
+                      count: null,
+                      scope: "direct",
+                      inheritedFrom: null,
+                    },
+                  ],
+                  statistics: [{ sourceKey: "routes", label: "Routes", value: 13 }],
+                },
+              },
+            ],
+          },
+        })),
+      })),
+    },
+  },
+};

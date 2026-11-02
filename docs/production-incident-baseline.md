@@ -34971,6 +34971,25 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   source-copy, and runtime-link lists before shipping an extraction; reuse
   gh-fix-ci to trace startup failures to the first fatal container log.
 
+## 2026-11-02 — Vertical-Life enrichment PR checks
+
+- Symptoms and impact: PR #3201 was blocked by Spell Check and CodeQL; no
+  production impact. The [spell job](https://github.com/Asherlc/dofek/actions/runs/41510008251/job/125499674949)
+  failed at `pnpm exec cspell --no-progress` with `Unknown word` errors for
+  literal upstream fixture vocabulary. The
+  [CodeQL annotation](https://github.com/Asherlc/dofek/runs/125500276046)
+  reported `This replaces only the first occurrence of "camp-4"` in the
+  deliberately invalid URL fixture.
+- Root cause and direct fix: register the genuine vendor words in the existing
+  test-file dictionary override and write the malicious URL fixture literally,
+  rather than constructing it with a replacement. No production escaping path
+  or security check was disabled.
+- Validation: focused spell, lint and adapter regression checks pass locally;
+  hosted validation remains pending on the corrective commit. Remaining risk:
+  the PR is not ready until its hosted checks pass. No retries or waits added.
+- Retrospective: include the existing spelling command in adapter fixture
+  verification, and prefer literal malformed URL fixtures. Reuse gh-fix-ci for
+  first-failure evidence before changing checks.
 ## 2026-11-02 — Earlier Peloton aerobic-efficiency points excluded
 
 - Symptoms / impact: the cycling aerobic-efficiency chart displays no points
@@ -35237,3 +35256,55 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   and integration error assertions when changing shared HTTP classification.
   Reuse gh-fix-ci and integration-tests-ready to distinguish assertion drift
   from database or transport failures.
+
+
+## 2026-11-02 — Local Redpanda AIO exhaustion blocked integration startup
+
+- **Symptoms / impact:** `pnpm test:integration src/db/climbing-catalogue-seed.integration.test.ts`
+  failed during dependency startup with `container strong-donkey-redpanda-1 is unhealthy`.
+  This affected local verification only; no production impact was observed.
+- **Evidence / cause:** Redpanda logged `required nr_events 1 exceeds ... aio-max-nr 65536`.
+  The local Linux host exhausted its asynchronous I/O request capacity. The
+  [Linux kernel AIO documentation](https://cdn.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)
+  describes this host-wide limit; Redpanda's
+  [readiness checklist](https://docs.redpanda.com/streaming/current/deploy/redpanda/manual/production/production-readiness/)
+  includes available AIO capacity among its checks.
+- **Validation / status:** The focused real-PostgreSQL seed suite ran with the
+  generated test environment and passed all 9 tests without Redpanda. This
+  verifies the database behavior, not recovery of the full integration wrapper.
+  Local Redpanda capacity remains unresolved. No repository configuration,
+  runtime workaround, retry or timeout change was made.
+- **Retrospective / proposal:** Container logs separated a host prerequisite
+  failure from application database behavior. Add a local AIO-capacity check to
+  the testing runbook after the operator confirms the host remedy; reuse
+  integration-tests-ready and systematic-debugging for a repeated startup failure.
+
+## 2026-11-02: Climbing enrichment mutation coverage gaps
+
+- **Symptoms / impact:** PR #3201's CI mutation shards 1, 2, 7 and 8 failed;
+  release readiness was blocked, with no production impact. The first fatal
+  line in [shard 7](https://github.com/Asherlc/dofek/actions/runs/41529398889/job/125568677130)
+  was `Final mutation score 69.09 under breaking threshold 75`, from
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+- **Cause:** missing boundary cases in inherited area metadata and trait
+  consolidation tests, plus schema tests retaining an initializer created before
+  the active runtime mutant. The latter required fresh schema imports, consistent
+  with [Stryker's static-mutation explanation](https://stryker-mutator.io/docs/mutation-testing-elements/static-mutants/).
+- **Direct fix:** add executable contract/provenance/identity/dimension cases,
+  reload schemas per test, and keep consolidation as the single authority for
+  route precedence by removing its redundant downstream provenance gate.
+- **Validation:** exact local CI mutation ranges pass for contracts (100%),
+  trait extraction (98.47%), theCrag (98.40%) and aggregation (94.44%); the combined
+  revision and the new CI run are being verified. Remaining survivors in those completed ranges
+  are equivalent guards/defaults with no distinguishable valid input. No
+  mutation threshold, exclusion, timeout or retry change was made.
+- **Follow-up / remaining risk:** keep CI status authoritative for the final
+  combined revision and retain native/public and pending-job cache regression
+  coverage. The new CI run remains pending at this entry's initial recording.
+
+## 2026-11-02 — GitHub OIDC 503 blocked the mobile bundle prerequisite
+
+- **Symptoms / impact:** PR #3201 CI run 41533616052 stopped the Metro bundle job before compilation, with no observed production impact. The [failed job](https://github.com/Asherlc/dofek/actions/runs/41533616052/job/125581746203) logged `curl: (22) The requested URL returned error: 503` at 22:06:30 UTC.
+- **Evidence / cause:** the failing command was the GitHub OIDC token request in `.github/actions/load-infisical-secrets/action.yml`. It is the only curl in that step, and runs before Infisical login. GitHub returned HTTP 503; the underlying service-side cause is unknown. [GitHub status](https://www.githubstatus.com/) reported all systems operational when checked afterward.
+- **Mitigation / status:** an operator job rerun was attempted, but GitHub rejected it with HTTP 403 because the containing workflow was still running. Recovery remains unverified at this recording. No application, retry, timeout, secret or workflow configuration was changed. GitHub documents the [job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
+- **Follow-up / retrospective:** rerun the failed prerequisite after the workflow completes and verify that Metro executes. Keep the token-minting failure distinct from Infisical authentication and bundling failures; reuse gh-fix-ci for log-based classification.

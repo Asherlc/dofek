@@ -579,3 +579,120 @@ it("keeps unnamed source climbs accessible through their catalogue link", () => 
   expect(openURL).toHaveBeenCalledWith(candidate.url);
   openURL.mockRestore();
 });
+
+it("discloses source-owned area information with literal counts and inheritance", () => {
+  const context = structuredClone(ready);
+  const candidate = context.sources[0]?.matches[0]?.candidate;
+  if (!candidate) throw new Error("Expected catalogue candidate");
+  candidate.locations = [
+    { externalId: "country", name: "Country", scope: "area", coordinates: null },
+    {
+      externalId: "area",
+      name: "The Valley",
+      scope: "area",
+      coordinates: null,
+      context: {
+        url: "https://kaya-app.kayaclimb.com/location/area",
+        type: "Crag",
+        sections: [
+          {
+            sourceKey: "description",
+            label: "Description",
+            text: "Shaded granite walls.",
+            inheritedFrom: null,
+          },
+          {
+            sourceKey: "access",
+            label: "Access",
+            text: "Check seasonal restrictions.",
+            inheritedFrom: "National Park",
+          },
+        ],
+        tags: [
+          {
+            sourceKey: "slab",
+            label: "Slab",
+            kind: "steepness",
+            category: "slab",
+            count: 0,
+            scope: "inherited",
+            inheritedFrom: "Upper Valley",
+          },
+          {
+            sourceKey: "unknown",
+            label: "Local character",
+            kind: "other",
+            category: null,
+            count: null,
+            scope: "direct",
+            inheritedFrom: null,
+          },
+        ],
+        statistics: [{ sourceKey: "routes", label: "Routes", value: 13 }],
+      },
+    },
+  ];
+  useQuery.mockReturnValue({ isFetchedAfterMount: true, refetch, data: context, error: null });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  const disclosure = screen.getByRole("button", { name: "Area information: The Valley" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Shaded granite walls.")).toBeNull();
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Area type: Crag")).toBeTruthy();
+  expect(screen.getByText("Shaded granite walls.")).toBeTruthy();
+  const contentId = disclosure.getAttribute("aria-controls");
+  expect(contentId && document.getElementById(contentId)?.textContent).toContain(
+    "Shaded granite walls.",
+  );
+  expect(screen.getByText("Check seasonal restrictions.")).toBeTruthy();
+  expect(screen.getByText("Slab (0)")).toBeTruthy();
+  expect(screen.getByText("Local character")).toBeTruthy();
+  expect(screen.getByText("↳ Inherited from National Park")).toBeTruthy();
+  expect(screen.getByText("↳ Inherited from Upper Valley")).toBeTruthy();
+  expect(screen.getByText("Routes: 13")).toBeTruthy();
+  expect(screen.getAllByText("The Valley")).toHaveLength(1);
+  const source = screen.getByRole("link", { name: "View area on source" });
+  const openURL = vi.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+  fireEvent.click(source);
+  expect(openURL).toHaveBeenCalledWith("https://kaya-app.kayaclimb.com/location/area");
+  openURL.mockRestore();
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Shaded granite walls.")).toBeNull();
+});
+
+it("surfaces area source-link failures through the existing error message", async () => {
+  const context = structuredClone(ready);
+  const candidate = context.sources[0]?.matches[0]?.candidate;
+  if (!candidate) throw new Error("Expected catalogue candidate");
+  candidate.locations = [
+    {
+      externalId: "area",
+      name: "The Valley",
+      scope: "area",
+      coordinates: null,
+      context: {
+        url: "https://kaya-app.kayaclimb.com/location/area",
+        type: "Crag",
+        sections: [],
+        tags: [],
+        statistics: [],
+      },
+    },
+  ];
+  useQuery.mockReturnValue({ isFetchedAfterMount: true, refetch, data: context, error: null });
+  const openURL = vi
+    .spyOn(Linking, "openURL")
+    .mockRejectedValue(new Error("The area source could not be opened."));
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  fireEvent.click(screen.getByRole("button", { name: "Area information: The Valley" }));
+  fireEvent.click(screen.getByRole("link", { name: "View area on source" }));
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "The area source could not be opened.",
+  );
+  openURL.mockRestore();
+});
