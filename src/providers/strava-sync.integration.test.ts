@@ -1,13 +1,15 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { StravaActivity, StravaDetailedActivity, StravaStreamSet } from "./strava/provider.ts";
-import { StravaProvider } from "./strava/provider.ts";
+import { parseStravaActivity, StravaProvider } from "./strava/provider.ts";
+import { createMemoryCheckpointStore } from "./strava/test-helpers.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
@@ -158,6 +160,113 @@ describe("StravaProvider.sync() (integration)", () => {
     server.deactivate();
     if (ctx) await ctx.cleanup();
   });
+
+  it.each(["unchanged", "deleted", "inserted"])(
+    "reconciles fresh inventory after an interrupted sync: %s",
+    async (mutation) => {
+      const isolated = await setupTestDatabase();
+      try {
+        await ensureProvider(isolated.db, "strava", "Strava", "https://www.strava.com/api/v3");
+        await saveTokens(isolated.db, "strava", {
+          accessToken: "valid-token",
+          refreshToken: "valid-refresh",
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+          scopes: "read,activity:read_all",
+        });
+        const activities = Array.from({ length: 31 }, (_, index) =>
+          fakeActivity({
+            id: 7000 + index,
+            start_date: "2026-05-01T10:00:00Z",
+          }),
+        );
+        const lastActivity = activities.at(-1);
+        if (!lastActivity) throw new Error("Missing last fixture activity");
+        await upsertProviderActivity(
+          isolated.db,
+          { ...parseStravaActivity(lastActivity), providerId: "strava", raw: lastActivity },
+          { name: lastActivity.name },
+        );
+        let inventory = activities;
+        const pages: number[] = [];
+        let interrupted = false;
+        server.use(
+          ...stravaHandlers([
+            ...activities,
+            fakeActivity({ id: 6999, start_date: "2026-05-01T09:59:00Z" }),
+          ]),
+        );
+        server.use(
+          http.get("https://www.strava.com/api/v3/athlete/activities", ({ request }) => {
+            const page = Number(new URL(request.url).searchParams.get("page"));
+            pages.push(page);
+            if (page === 2 && !interrupted) {
+              interrupted = true;
+              return new HttpResponse("Rate Limit Exceeded", { status: 429 });
+            }
+            return HttpResponse.json(inventory.slice((page - 1) * 30, page * 30));
+          }),
+        );
+        const checkpoint = createMemoryCheckpointStore();
+        const window = SyncWindow.fromIsoRange({
+          sinceIso: "2026-05-01T00:00:00.000Z",
+          untilIso: "2026-05-02T00:00:00.000Z",
+        });
+        const first = await new StravaProvider(globalThis.fetch).sync(
+          new SyncRun({
+            db: isolated.db,
+            window,
+            checkpoint,
+            metricStreamPublisher: metricStreamCapture.publisher,
+          }),
+        );
+        expect(first.errors).toHaveLength(1);
+        const publishedBeforeResume = metricStreamCapture.publishedMetricStreamRows.length;
+        if (mutation === "deleted") inventory = activities.slice(1);
+        if (mutation === "inserted") {
+          const inserted = fakeActivity({ id: 6999, start_date: "2026-05-01T09:59:00Z" });
+          inventory = [inserted, ...activities];
+          await upsertProviderActivity(
+            isolated.db,
+            { ...parseStravaActivity(inserted), providerId: "strava", raw: inserted },
+            { name: inserted.name },
+          );
+        }
+        const resumed = await new StravaProvider(globalThis.fetch).sync(
+          new SyncRun({
+            db: isolated.db,
+            window,
+            checkpoint,
+            metricStreamPublisher: metricStreamCapture.publisher,
+          }),
+        );
+        expect(resumed.errors).toHaveLength(0);
+        expect(resumed.recordsSynced).toBe(mutation === "inserted" ? 2 : 1);
+        const ids = new Set([...activities, ...inventory].map((entry) => String(entry.id)));
+        const rows = (
+          await isolated.db.select().from(activity).where(eq(activity.providerId, "strava"))
+        ).filter((row) => ids.has(row.externalId));
+        expect(rows).toHaveLength(mutation === "inserted" ? 32 : 31);
+        const present = new Set(inventory.map((entry) => String(entry.id)));
+        for (const row of rows)
+          expect(row.providerAbsentAt === null).toBe(present.has(row.externalId));
+        const last = rows.find((row) => row.externalId === "7030");
+        if (!last) throw new Error("Missing resumed Strava activity");
+        const newSamples =
+          metricStreamCapture.publishedMetricStreamRows.slice(publishedBeforeResume);
+        expect(newSamples.length).toBeGreaterThan(0);
+        const remaining = rows.filter(
+          (row) => row.externalId === "7030" || row.externalId === "6999",
+        );
+        expect(new Set(newSamples.map((sample) => sample.activityId))).toEqual(
+          new Set(remaining.map((row) => row.id)),
+        );
+        expect(pages).toEqual([1, 2, 1, 2]);
+        expect(await checkpoint.load()).toBeNull();
+      } finally {
+        await isolated.cleanup();
+      }
+    },
+  );
 
   it("syncs activities with streams into activity and Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "strava", {

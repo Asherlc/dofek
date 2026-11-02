@@ -56,6 +56,9 @@ import type {
   WebhookProvider,
 } from "../types.ts";
 import { isStreamKey } from "./streams.ts";
+import { StravaSyncCheckpoint } from "./sync-checkpoint.ts";
+
+const STRAVA_MAX_ACTIVITY_PAGES = 100;
 
 // ============================================================
 // Strava API types
@@ -370,7 +373,6 @@ export class StravaNotFoundError extends Error {
 // ============================================================
 
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
-const STRAVA_MAX_ACTIVITY_PAGES = 100;
 
 export function stravaOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
@@ -741,6 +743,9 @@ export class StravaProvider implements WebhookProvider {
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
+    const checkpoint = await StravaSyncCheckpoint.load(window, options.checkpoint);
+    const completedActivityExternalIds = checkpoint.completedActivityExternalIds;
+
     let client: StravaClient;
     try {
       client = await this.#createClient(db);
@@ -803,6 +808,8 @@ export class StravaProvider implements WebhookProvider {
 
       for (const act of parsed.activities) {
         presentActivityExternalIds.add(act.externalId);
+        if (completedActivityExternalIds.has(act.externalId)) continue;
+        const previousErrorCount = errors.length;
         try {
           // Fetch detailed activity to get device_name for source tracking
           let sourceName: string | undefined = act.sourceName;
@@ -866,16 +873,24 @@ export class StravaProvider implements WebhookProvider {
 
           if (row?.id && userId && detailedActivity?.photos) {
             try {
+              const discovery = await client.getActivityImages(
+                Number(act.externalId),
+                detailedActivity.photos.count ?? null,
+                detailedActivity.photos.primary,
+              );
               await recordActivityImageDiscovery(db, {
                 userId,
                 activityId: row.id,
                 providerId: this.id,
-                discovery: await client.getActivityImages(
-                  Number(act.externalId),
-                  detailedActivity?.photos?.count ?? null,
-                  detailedActivity?.photos?.primary,
-                ),
+                discovery,
               });
+              if (discovery.retryable) {
+                errors.push({
+                  message: "Photos could not be fully discovered; retry this activity.",
+                  externalId: act.externalId,
+                  cause: new Error(discovery.reason ?? "Strava photo discovery incomplete"),
+                });
+              }
             } catch (error) {
               errors.push({
                 message: "Strava image discovery persistence failed",
@@ -888,7 +903,7 @@ export class StravaProvider implements WebhookProvider {
           // no-mutate: Progress reporting is UX-only and can't fail in a testable way
           if (onProgress) {
             // no-mutate
-            onProgress(0, `${recordsSynced} activities synced`);
+            onProgress(0, `${completedActivityExternalIds.size + 1} activities synced`);
           }
 
           // Fetch streams for sensor data
@@ -951,6 +966,9 @@ export class StravaProvider implements WebhookProvider {
             cause: err,
           });
         }
+        if (errors.length === previousErrorCount) {
+          await checkpoint.completeActivity(act.externalId);
+        }
       }
 
       hasMore = parsed.hasMore && !shouldStop;
@@ -968,7 +986,7 @@ export class StravaProvider implements WebhookProvider {
       page++;
     }
 
-    if (!shouldStop) {
+    if (!shouldStop && errors.length === 0) {
       await finishProviderActivityListSync(db, {
         providerId: this.id,
         userId: options.userId,
@@ -976,6 +994,7 @@ export class StravaProvider implements WebhookProvider {
         windowEnd: syncWindowEnd,
         presentExternalIds: presentActivityExternalIds,
       });
+      await checkpoint.clear();
     }
 
     return {

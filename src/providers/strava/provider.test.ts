@@ -1,9 +1,9 @@
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
-  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("../test-helpers.ts");
   return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
 });
 
@@ -21,18 +21,18 @@ const { publishedMetricStreamBatches, publishedMetricStreamReplacements } = vi.h
   publishedMetricStreamReplacements: [],
 }));
 
-vi.mock("../db/token-user-context.ts", () => ({
+vi.mock("../../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
-vi.mock("../db/provider-activity-sync.ts", () => ({
+vi.mock("../../db/provider-activity-sync.ts", () => ({
   markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
   finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
   upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
 }));
 
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
       publishedMetricStreamBatches.push([...rows]);
@@ -64,7 +64,10 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 }));
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import type { SyncDatabase } from "../db/index.ts";
+import type { SyncDatabase } from "../../db/index.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   mapStravaActivityType,
   parseStravaActivity,
@@ -80,10 +83,8 @@ import {
   StravaUnauthorizedError,
   stravaOAuthConfig,
   stravaStreamsToMetricStream,
-} from "./strava/provider.ts";
-import { SyncRun } from "./sync-run.ts";
-import { SyncWindow } from "./sync-window.ts";
-import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+} from "./provider.ts";
+import { createMemoryCheckpointStore } from "./test-helpers.ts";
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
@@ -2183,6 +2184,227 @@ describe("StravaProvider.sync — additional coverage", () => {
     process.env.STRAVA_CLIENT_SECRET = "test-client-secret";
   }
 
+  it("resumes within a page after rate limiting without republishing completed streams", async () => {
+    setupEnv();
+    const checkpoint = createMemoryCheckpointStore();
+    const window = SyncWindow.fromIsoRange({
+      sinceIso: "2026-01-01T00:00:00.000Z",
+      untilIso: "2026-04-01T00:00:00.000Z",
+    });
+    const activities = [1, 2, 3].map((id) => ({ ...MOCK_ACTIVITY, id }));
+    let rateLimited = false;
+    const detailIds: number[] = [];
+    const mockFetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/athlete/activities")) return Response.json(activities);
+      const id = Number(url.pathname.split("/")[4]);
+      if (url.pathname.endsWith("/streams")) {
+        if (id === 2 && !rateLimited) {
+          rateLimited = true;
+          return new Response("Rate limited", { status: 429 });
+        }
+        return Response.json(MOCK_STREAMS);
+      }
+      detailIds.push(id);
+      return Response.json({ ...MOCK_ACTIVITY, id });
+    });
+    const db = createMockDb();
+    const first = await new StravaProvider(mockFetch).sync(new SyncRun({ db, window, checkpoint }));
+    expect(first.errors.some((error) => error.cause instanceof StravaRateLimitError)).toBe(true);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    expect(publishedMetricStreamBatches).toHaveLength(1);
+
+    const resumed = await new StravaProvider(mockFetch).sync(
+      new SyncRun({ db, window, checkpoint }),
+    );
+    expect(resumed.errors).toHaveLength(0);
+    expect(detailIds).toEqual([1, 2, 2, 3]);
+    expect(publishedMetricStreamBatches).toHaveLength(3);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenLastCalledWith(
+      db,
+      expect.objectContaining({ presentExternalIds: new Set(["1", "2", "3"]) }),
+    );
+    expect(await checkpoint.load()).toBeNull();
+  });
+
+  it("re-lists inventory while skipping completed detail and stream downloads", async () => {
+    setupEnv();
+    const checkpoint = createMemoryCheckpointStore();
+    const window = SyncWindow.fromIsoRange({
+      sinceIso: "2026-01-01T00:00:00.000Z",
+      untilIso: "2026-04-01T00:00:00.000Z",
+    });
+    const pages: number[] = [];
+    const details: number[] = [];
+    let interrupted = false;
+    const mockFetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/athlete/activities")) {
+        const page = Number(url.searchParams.get("page"));
+        pages.push(page);
+        if (page === 2 && !interrupted) {
+          interrupted = true;
+          return new Response("Rate limited", { status: 429 });
+        }
+        return Response.json(
+          page === 1
+            ? Array.from({ length: 30 }, (_, index) => ({ ...MOCK_ACTIVITY, id: index + 1 }))
+            : [{ ...MOCK_ACTIVITY, id: 31 }],
+        );
+      }
+      const id = Number(url.pathname.split("/")[4]);
+      if (url.pathname.endsWith("/streams")) return Response.json([]);
+      details.push(id);
+      return Response.json({ ...MOCK_ACTIVITY, id });
+    });
+    const db = createMockDb();
+    await new StravaProvider(mockFetch).sync(new SyncRun({ db, window, checkpoint }));
+    const resumed = await new StravaProvider(mockFetch).sync(
+      new SyncRun({ db, window, checkpoint }),
+    );
+    expect(resumed.errors).toHaveLength(0);
+    expect(pages).toEqual([1, 2, 1, 2]);
+    expect(details).toEqual(Array.from({ length: 31 }, (_, index) => index + 1));
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenLastCalledWith(
+      db,
+      expect.objectContaining({ presentExternalIds: new Set(details.map(String)) }),
+    );
+    expect(await checkpoint.load()).toBeNull();
+  });
+
+  it("retries a failed stream while retaining successfully published work later in the page", async () => {
+    setupEnv();
+    const checkpoint = createMemoryCheckpointStore();
+    const window = SyncWindow.fromIsoRange({
+      sinceIso: "2026-01-01T00:00:00.000Z",
+      untilIso: "2026-04-01T00:00:00.000Z",
+    });
+    let failed = false;
+    const details: number[] = [];
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/athlete/activities"))
+        return Response.json([1, 2, 3].map((id) => ({ ...MOCK_ACTIVITY, id })));
+      const id = Number(url.pathname.split("/")[4]);
+      if (url.pathname.endsWith("/streams")) {
+        if (id === 2 && !failed) {
+          failed = true;
+          return new Response("Server error", { status: 500 });
+        }
+        return Response.json(MOCK_STREAMS);
+      }
+      details.push(id);
+      return Response.json({ ...MOCK_ACTIVITY, id });
+    });
+    const db = createMockDb();
+    const first = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
+    expect(first.errors).toHaveLength(1);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    const resumed = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
+    expect(resumed.errors).toHaveLength(0);
+    expect(details).toEqual([1, 2, 3, 2]);
+    expect(publishedMetricStreamBatches).toHaveLength(3);
+    expect(await checkpoint.load()).toBeNull();
+  });
+
+  it("fails immediately when progress cannot be persisted, before starting another activity", async () => {
+    setupEnv();
+    const checkpoint = {
+      ...createMemoryCheckpointStore(),
+      save: async () => {
+        throw new Error("Checkpoint write failed");
+      },
+    };
+    const details: number[] = [];
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/athlete/activities"))
+        return Response.json([1, 2].map((id) => ({ ...MOCK_ACTIVITY, id })));
+      if (url.pathname.endsWith("/streams")) return Response.json(MOCK_STREAMS);
+      const id = Number(url.pathname.split("/")[4]);
+      details.push(id);
+      return Response.json({ ...MOCK_ACTIVITY, id });
+    });
+    await expect(
+      new StravaProvider(fetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          checkpoint,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      ),
+    ).rejects.toThrow("Checkpoint write failed");
+    expect(details).toEqual([1]);
+  });
+
+  it("rejects a checkpoint for a different sync window before making provider requests", async () => {
+    setupEnv();
+    const checkpoint = createMemoryCheckpointStore({
+      version: 1,
+      sinceIso: "2025-01-01T00:00:00.000Z",
+      untilIso: "2025-04-01T00:00:00.000Z",
+      page: 2,
+      completedActivityExternalIds: ["1"],
+    });
+    const fetch = vi.fn();
+    await expect(
+      new StravaProvider(fetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          checkpoint,
+          window: SyncWindow.fromIsoRange({
+            sinceIso: "2026-01-01T00:00:00.000Z",
+            untilIso: "2026-04-01T00:00:00.000Z",
+          }),
+        }),
+      ),
+    ).rejects.toThrow("checkpoint");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("retries retryable photo discovery instead of checkpointing an incomplete gallery", async () => {
+    setupEnv();
+    const checkpoint = createMemoryCheckpointStore();
+    const window = SyncWindow.fromIsoRange({
+      sinceIso: "2026-01-01T00:00:00.000Z",
+      untilIso: "2026-04-01T00:00:00.000Z",
+    });
+    let photoReads = 0;
+    let interrupted = false;
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/athlete/activities"))
+        return Response.json([1, 2].map((id) => ({ ...MOCK_ACTIVITY, id })));
+      const id = Number(url.pathname.split("/")[4]);
+      if (url.pathname.endsWith("/photos")) {
+        photoReads++;
+        if (photoReads === 1) return new Response("Unavailable", { status: 500 });
+        return Response.json([
+          { unique_id: "photo", urls: { 600: "https://cdn.example.test/photo.jpg" } },
+        ]);
+      }
+      if (url.pathname.endsWith("/streams")) return Response.json(MOCK_STREAMS);
+      if (id === 2 && !interrupted) {
+        interrupted = true;
+        return new Response("Rate limited", { status: 429 });
+      }
+      return Response.json({ ...MOCK_ACTIVITY, id, photos: { count: id === 1 ? 1 : 0 } });
+    });
+    const db = createMockDb();
+    const userId = "00000000-0000-0000-0000-000000000001";
+    const first = await new StravaProvider(fetch).sync(
+      new SyncRun({ db, window, checkpoint, userId }),
+    );
+    expect(first.errors.some((error) => error.message.includes("Photos"))).toBe(true);
+    expect(publishedMetricStreamBatches).toHaveLength(1);
+    const resumed = await new StravaProvider(fetch).sync(
+      new SyncRun({ db, window, checkpoint, userId }),
+    );
+    expect(resumed.errors).toHaveLength(0);
+    expect(photoReads).toBe(2);
+    expect(await checkpoint.load()).toBeNull();
+  });
+
   it("happy path: fetches activities, inserts into DB, returns recordsSynced >= 1", async () => {
     setupEnv();
 
@@ -2724,7 +2946,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       });
 
       vi.resetModules();
-      const { StravaProvider: ReloadedStravaProvider } = await import("./strava/provider.ts");
+      const { StravaProvider: ReloadedStravaProvider } = await import("./provider.ts");
       const provider = new ReloadedStravaProvider(mockFetch);
       const result = await provider.sync(
         new SyncRun({
