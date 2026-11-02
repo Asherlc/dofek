@@ -58,18 +58,18 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     startedAt.setMinutes(0, 0, 0);
     const endedAt = new Date(startedAt.getTime() + 10 * 60 * 1000);
 
-    const offsetGradeClimbId = await createActivity("Offset Grade Climb", startedAt, endedAt);
-    const lowGradeDriftId = await createActivity(
+    const offsetGradeClimb = await createActivity("Offset Grade Climb", startedAt, endedAt);
+    const lowGradeDrift = await createActivity(
       "Low Grade Drift",
       new Date(startedAt.getTime() + 20 * 60 * 1000),
       new Date(endedAt.getTime() + 20 * 60 * 1000),
     );
-    const altitudeOnlyClimbId = await createActivity(
+    const altitudeOnlyClimb = await createActivity(
       "Altitude Only Climb",
       new Date(startedAt.getTime() + 40 * 60 * 1000),
       new Date(endedAt.getTime() + 40 * 60 * 1000),
     );
-    const walkingClimbId = await createActivity(
+    const walkingClimb = await createActivity(
       "Walking Climb",
       new Date(startedAt.getTime() + 60 * 60 * 1000),
       new Date(endedAt.getTime() + 60 * 60 * 1000),
@@ -103,7 +103,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           providerId: "test_provider",
           sourceType: "api",
           channel: "altitude",
-          activityId: offsetGradeClimbId,
+          activityId: offsetGradeClimb.id,
           scalar: altitude,
         },
         {
@@ -112,7 +112,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           providerId: "test_provider",
           sourceType: "api",
           channel: "grade",
-          activityId: offsetGradeClimbId,
+          activityId: offsetGradeClimb.id,
           scalar: 6,
         },
         {
@@ -121,7 +121,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           providerId: "test_provider",
           sourceType: "api",
           channel: "altitude",
-          activityId: lowGradeDriftId,
+          activityId: lowGradeDrift.id,
           scalar: altitude,
         },
         {
@@ -130,7 +130,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           providerId: "test_provider",
           sourceType: "api",
           channel: "grade",
-          activityId: lowGradeDriftId,
+          activityId: lowGradeDrift.id,
           scalar: 0.5,
         },
         {
@@ -139,7 +139,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           providerId: "test_provider",
           sourceType: "api",
           channel: "altitude",
-          activityId: altitudeOnlyClimbId,
+          activityId: altitudeOnlyClimb.id,
           scalar: altitude,
         },
         {
@@ -148,7 +148,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
           providerId: "test_provider",
           sourceType: "api",
           channel: "altitude",
-          activityId: walkingClimbId,
+          activityId: walkingClimb.id,
           scalar: altitude,
         },
       );
@@ -175,16 +175,16 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     const lowGradeRow = result.find((row) => row.activityName === "Low Grade Drift");
     const walkingRow = result.find((row) => row.activityName === "Walking Climb");
 
-    expect(offsetRow?.activityId).toBe(offsetGradeClimbId);
+    expect(offsetRow?.activityId).toBe(offsetGradeClimb.groupId);
     expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(offsetRow?.elapsedMinutes).toBeGreaterThan(5);
     expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
 
-    expect(altitudeOnlyRow?.activityId).toBe(altitudeOnlyClimbId);
+    expect(altitudeOnlyRow?.activityId).toBe(altitudeOnlyClimb.groupId);
     expect(altitudeOnlyRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(altitudeOnlyRow?.verticalAscentRate).toBeGreaterThan(0);
 
-    expect(lowGradeRow?.activityId).toBe(lowGradeDriftId);
+    expect(lowGradeRow?.activityId).toBe(lowGradeDrift.groupId);
     expect(lowGradeRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(lowGradeRow?.verticalAscentRate).toBeGreaterThan(0);
     expect(walkingRow).toBeUndefined();
@@ -195,8 +195,8 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     startedAt: Date,
     endedAt: Date,
     activityType = "cycling",
-  ): Promise<string> {
-    const activityRows = await testCtx.db.execute<{ id: string }>(
+  ): Promise<{ id: string; groupId: string }> {
+    const activityRows = await testCtx.db.execute<{ id: string; group_id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
@@ -204,15 +204,15 @@ describe("cyclingAdvanced vertical ascent integration", () => {
             ${startedAt.toISOString()},
             ${endedAt.toISOString()}, ${name}
           )
-          RETURNING id`,
+          RETURNING id, group_id`,
     );
-    const activityId = activityRows[0]?.id;
+    const activity = activityRows[0];
 
-    if (!activityId) {
+    if (!activity) {
       throw new Error(`Failed to create ${name} activity`);
     }
 
-    return activityId;
+    return { id: activity.id, groupId: activity.group_id };
   }
 
   async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
