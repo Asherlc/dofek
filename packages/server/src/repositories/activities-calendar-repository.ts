@@ -82,15 +82,13 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const totalCount = ordered.length;
     const page = Math.min(input.page, Math.max(0, Math.ceil(totalCount / input.pageSize) - 1));
     const selected = ordered.slice(page * input.pageSize, (page + 1) * input.pageSize);
-    const activeIds = new Set(
-      selected.filter((entry) => !entry.hidden).map((entry) => entry.row.id),
-    );
+    const selectedIds = new Set(selected.map((entry) => entry.row.id));
     const hiddenIds = new Set(
       selected.filter((entry) => entry.hidden).map((entry) => entry.row.id),
     );
     const [activeDays, hiddenDays] = await Promise.all([
       this.#getActiveDayGroups(
-        rows.filter((row) => activeIds.has(row.id)),
+        rows.filter((row) => selectedIds.has(row.id)),
         baselineRows,
       ),
       hiddenRepository.getDayGroups(hiddenRows.filter((row) => hiddenIds.has(row.id))),

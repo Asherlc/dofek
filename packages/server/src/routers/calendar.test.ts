@@ -120,15 +120,18 @@ describe("calendarRouter", () => {
     expect(cachedQueryOptions).toHaveBeenCalledTimes(4);
   });
 
-  it("surfaces missing ClickHouse analytics store as a precondition error", async () => {
-    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+  it.each(["weekList", "weekListV2"] as const)(
+    "surfaces missing ClickHouse analytics store for %s as a precondition error",
+    async (procedure) => {
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
-    await expect(caller.weekListV2({ weeks: 4, endDate: "2026-03-20" })).rejects.toMatchObject({
-      code: "PRECONDITION_FAILED",
-      message:
-        "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
-    });
-  });
+      await expect(caller[procedure]({ weeks: 4, endDate: "2026-03-20" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+      });
+    },
+  );
 
   it("validates weekList output at the API boundary", async () => {
     repositoryResultMock.mockResolvedValueOnce([{ date: "2026-03-18", activities: [{ id: 123 }] }]);

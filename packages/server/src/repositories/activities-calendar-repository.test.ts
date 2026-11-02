@@ -12,11 +12,130 @@ import {
 } from "./activity-calendar-test-helpers.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import { climbingClimbFixture, climbingLogEntryFixture } from "./climbing-test-helpers.ts";
+import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
 const dialect = new PgDialect();
 
 describe("ActivitiesCalendarRepository", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("orders page boundaries by local date, start time, then stable activity identity", async () => {
+    const rows = [
+      { id: "z", local_date: "2026-03-19", started_at: "2026-03-20T01:00:00.000Z" },
+      { id: "c", local_date: "2026-03-20", started_at: "2026-03-20T02:00:00.000Z" },
+      { id: "a", local_date: "2026-03-20", started_at: "2026-03-19T23:00:00.000Z" },
+      { id: "b", local_date: "2026-03-20", started_at: "2026-03-20T02:00:00.000Z" },
+    ].map((row) => makeActivityRow(row));
+    for (const [page, pageSize, expected] of [
+      [0, 4, ["b", "c", "a", "z"]],
+      [0, 1, ["b"]],
+      [1, 2, ["a", "z"]],
+    ] as const) {
+      const repository = new ActivitiesCalendarRepository(
+        makeDatabase(),
+        "user-1",
+        "UTC",
+        makeSensorStore([rows, []]),
+      );
+      const result = await repository.getPage({ weeks: 1, endDate: "2026-03-20", page, pageSize });
+      expect(result.days.flatMap((day) => day.activities.map((entry) => entry.id))).toEqual(
+        expected,
+      );
+    }
+  });
+
+  it.each([
+    { count: 0, page: 0, ids: [] },
+    { count: 4, page: 1, ids: ["activity-2", "activity-3"] },
+    { count: 5, page: 2, ids: ["activity-4"] },
+  ])(
+    "clamps a requested page to the last available page for $count activities",
+    async ({ count, page, ids }) => {
+      const rows = Array.from({ length: count }, (_, index) =>
+        makeActivityRow({ id: `activity-${index}`, local_date: "2026-03-20" }),
+      );
+      const repository = new ActivitiesCalendarRepository(
+        makeDatabase(),
+        "user-1",
+        "UTC",
+        makeSensorStore([rows, []]),
+      );
+      const result = await repository.getPage({
+        weeks: 1,
+        endDate: "2026-03-20",
+        page: 9,
+        pageSize: 2,
+      });
+      expect(result).toMatchObject({ page, pageSize: 2, totalCount: count });
+      expect(result.days.flatMap((day) => day.activities.map((entry) => entry.id))).toEqual(ids);
+    },
+  );
+
+  it("interleaves hidden records before paging and enriches only the selected unique records", async () => {
+    const active = [
+      makeActivityRow({
+        id: "active-a",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T10:00:00.000Z",
+      }),
+      makeActivityRow({
+        id: "shared",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T14:00:00.000Z",
+      }),
+      makeActivityRow({
+        id: "active-z",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T08:00:00.000Z",
+      }),
+    ];
+    const hidden = [
+      makeActivityRow({
+        id: "hidden-z",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T09:00:00.000Z",
+        provider_absent_at: "2026-03-20T18:00:00.000Z",
+      }),
+      makeActivityRow({
+        id: "shared",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T15:00:00.000Z",
+        provider_absent_at: "2026-03-20T18:00:00.000Z",
+      }),
+      makeActivityRow({
+        id: "hidden-a",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T13:00:00.000Z",
+        provider_absent_at: "2026-03-20T18:00:00.000Z",
+      }),
+    ];
+    const hydration = vi.spyOn(
+      ProviderAbsentActivitiesCalendarRepository.prototype,
+      "getDayGroups",
+    );
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([active, [], hidden, [], [], []]),
+    );
+    const result = await repository.getPage({
+      weeks: 1,
+      endDate: "2026-03-20",
+      page: 0,
+      pageSize: 2,
+      includeProviderAbsent: true,
+    });
+    expect(result).toMatchObject({ totalCount: 5, page: 0, pageSize: 2 });
+    const entries = result.days.flatMap((day) => day.activities);
+    expect(entries.map((entry) => entry.id)).toEqual(["shared", "hidden-a"]);
+    expect(entries[0]?.isProviderAbsent).not.toBe(true);
+    expect(entries[0]?.startedAt).toBe("2026-03-20T14:00:00.000Z");
+    expect(entries[1]?.isProviderAbsent).toBe(true);
+    expect(hydration).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ id: "hidden-a" }),
+    ]);
+  });
 
   it("enriches only the requested visible page and returns the full count", async () => {
     const rows = Array.from({ length: 5 }, (_, index) =>
