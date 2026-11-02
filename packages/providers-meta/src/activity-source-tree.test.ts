@@ -58,21 +58,24 @@ describe("activityMetricSourceInheritance", () => {
       },
     });
   });
-  it("uses a proven branch when the activity's overall origin is unresolved", () => {
-    expect(
-      activityMetricSourceInheritance(
-        {
-          primary: null,
-          otherSources: [
-            node("unrelated", "kaya"),
-            node("origin", "whoop", [node("copy", "peloton")]),
-          ],
-        },
-        ["copy"],
-        "peloton",
-      )?.label,
-    ).toBe("WHOOP via Peloton");
-  });
+  it.each(["unresolved", "kaya"])(
+    "uses the proven WHOOP branch with a %s activity origin",
+    (origin) => {
+      expect(
+        activityMetricSourceInheritance(
+          {
+            primary: origin === "kaya" ? node("unrelated", "kaya") : null,
+            otherSources: [
+              ...(origin === "kaya" ? [] : [node("unrelated", "kaya")]),
+              node("origin", "whoop", [node("copy", "peloton")]),
+            ],
+          },
+          ["copy"],
+          "peloton",
+        )?.label,
+      ).toBe("WHOOP via Peloton");
+    },
+  );
   it("retains a model-specific recording label supplied by the canonical tree", () => {
     const watch = {
       ...node("watch-origin", "apple-watch", [node("health-copy", "apple_health")]),

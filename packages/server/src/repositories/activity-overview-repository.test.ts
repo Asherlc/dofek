@@ -53,7 +53,9 @@ describe("ActivityOverviewRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("activity.canonical_type = {activityType:String}"),
+      expect.stringContaining(
+        "coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}",
+      ),
       expect.objectContaining({
         activityIds: ["running-activity", "cycling-activity"],
         activityType: "running",

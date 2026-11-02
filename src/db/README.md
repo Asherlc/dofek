@@ -118,6 +118,12 @@ describes that boundary.
 
 ## Activity recording origin
 
+The [Kaya origin migration](../../drizzle/0174_kaya_activity_origin.sql) treats
+Kaya sync and file-import sessions as initiating sources, matching the
+[dbt selector](../../analytics/macros/activity_origin.sql). Primary identity stays
+separate from the sensor-bearing representative, and competing initiating
+records retain unresolved attribution.
+
 The [origin function](../../drizzle/_views/00_activity_origin.sql) chooses the
 closest available recording from provenance within a group. The
 [activity view](../../drizzle/_views/01_v_activity.sql) exposes nullable primary

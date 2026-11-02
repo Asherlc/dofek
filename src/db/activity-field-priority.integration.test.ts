@@ -244,27 +244,33 @@ describe("merged activity field priorities", () => {
     ]);
   });
 
-  it("skips a null preferred name and falls back to generic priority", async () => {
-    const nullNameGroupId = "10000000-0000-4000-8000-000000000120";
-    await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
+  it.each([
+    { providerId: "whoop", expectedName: "Peloton fallback" },
+    { providerId: "kaya", expectedName: null },
+  ])(
+    "uses $expectedName for an unnamed $providerId source",
+    async ({ providerId, expectedName }) => {
+      const nullNameGroupId = randomUUID();
+      await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
       VALUES (${nullNameGroupId}, ${TEST_USER_ID}) ON CONFLICT DO NOTHING`);
-    await context.db.execute(sql`INSERT INTO fitness.activity (
+      await context.db.execute(sql`INSERT INTO fitness.activity (
       group_id, provider_id, user_id, external_id, canonical_type, provider_type,
       started_at, ended_at, name
     ) VALUES
-      (${nullNameGroupId}, 'kaya', ${TEST_USER_ID}, 'kaya-unnamed', 'climbing',
+      (${nullNameGroupId}, ${providerId}, ${TEST_USER_ID}, ${randomUUID()}, 'climbing',
        'rock_climbing', '2026-09-03T18:00:00Z', '2026-09-03T19:00:00Z', NULL),
-      (${nullNameGroupId}, 'peloton', ${TEST_USER_ID}, 'peloton-named', 'cardio',
+      (${nullNameGroupId}, 'peloton', ${TEST_USER_ID}, ${randomUUID()}, 'cardio',
        'Cardio', '2026-09-03T18:00:00Z', '2026-09-03T19:00:00Z', 'Peloton fallback')
       ON CONFLICT DO NOTHING`);
 
-    const rows = await executeWithSchema(
-      context.db,
-      z.object({ name: z.string().nullable(), canonical_type: z.string() }),
-      sql`SELECT name, canonical_type FROM fitness.v_activity WHERE id = ${nullNameGroupId}`,
-    );
-    expect(rows).toEqual([{ name: "Peloton fallback", canonical_type: "climbing" }]);
-  });
+      const rows = await executeWithSchema(
+        context.db,
+        z.object({ name: z.string().nullable(), canonical_type: z.string() }),
+        sql`SELECT name, canonical_type FROM fitness.v_activity WHERE id = ${nullNameGroupId}`,
+      );
+      expect(rows).toEqual([{ name: expectedName, canonical_type: "climbing" }]);
+    },
+  );
 
   it("uses generic device priority when no field rule exists", async () => {
     const deviceGroupId = "10000000-0000-4000-8000-000000000130";
