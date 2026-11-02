@@ -278,7 +278,7 @@ describe("UltrahumanClient", () => {
 
     const client = new UltrahumanClient("token", "user@example.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman API error (500)",
+      "ultrahuman API service unavailable (500)",
     );
   });
 

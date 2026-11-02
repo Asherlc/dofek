@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -274,6 +275,7 @@ describe("DecathlonProvider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Decathlon API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "decathlon", statusCode: 500 });
   });
 });

@@ -354,8 +354,8 @@ export class WhoopClient {
     }
     const expiresInSeconds = getExpiresInSeconds(authResult);
 
-    // Best-effort: try to get userId from bootstrap. Returns null if it fails —
-    // caller should fall back to the stored userId from the original auth.
+    // Fall back to the stored userId when bootstrap has no extractable identity.
+    // Typed upstream failures propagate to the caller's operational error handling.
     const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
 
     return {

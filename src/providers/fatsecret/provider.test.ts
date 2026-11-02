@@ -174,7 +174,7 @@ describe("FatSecretProvider.sync() — error handling", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toMatch(/^Date \d{4}-\d{2}-\d{2}:/);
-    expect(result.errors[0]?.message).toContain("FatSecret API error (500)");
+    expect(result.errors[0]?.message).toContain("fatsecret API service unavailable (500)");
     expect(spies.insert).not.toHaveBeenCalled();
   });
 

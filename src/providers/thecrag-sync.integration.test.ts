@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { and, eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -311,7 +312,11 @@ describe("theCrag official logbook persistence (PostgreSQL)", () => {
           }),
         );
       });
-      expect((await run()).errors).toHaveLength(1);
+      if (failure === "http") {
+        await expect(run()).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
+      } else {
+        expect((await run()).errors).toHaveLength(1);
+      }
       expect(await entries()).toEqual(before);
       expect(await progress()).toEqual(cursor);
     },

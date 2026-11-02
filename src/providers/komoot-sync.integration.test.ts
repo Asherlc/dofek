@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -259,7 +260,8 @@ describe("KomootProvider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Komoot API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "komoot", statusCode: 500 });
     expect(result.recordsSynced).toBe(1);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
@@ -545,6 +547,7 @@ describe("KomootProvider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Komoot API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "komoot", statusCode: 500 });
   });
 });

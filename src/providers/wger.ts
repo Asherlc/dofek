@@ -14,6 +14,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { redactProviderServiceUnavailableError } from "../lib/provider-transport-error.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderTokenRejectedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -133,6 +134,8 @@ async function exchangeWgerRefreshToken(
       Accept: "application/json",
     },
     body: new URLSearchParams({ refresh: refreshToken }).toString(),
+  }).catch((error: unknown) => {
+    throw redactProviderServiceUnavailableError(error, "Wger token refresh failed");
   });
   if (response.status === 400 || response.status === 401 || response.status === 403) {
     throw new ProviderTokenRejectedError(
