@@ -34897,3 +34897,34 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   inclusion. Proposed package checklist addition: inspect manifest-copy,
   source-copy, and runtime-link lists before shipping an extraction; reuse
   gh-fix-ci to trace startup failures to the first fatal container log.
+
+## 2026-11-02 — OpenBeta API unavailable during tick sync (unresolved)
+
+- Impact: OpenBeta tick discovery failed for one recorded production sync;
+  successful ingestion and subsequent recovery have not been verified.
+- Evidence: [DOFEK-SERVER-7A](https://east-bay-software.sentry.io/issues/7825242117/)
+  records one handled exception at 17:00:32 UTC, release
+  `bf02212dc9ef5b0bbc7139d4b1c05de0716ae836`, phase `tick_export`:
+  `Error: OpenBeta API request failed (525).` The failing operation was the
+  provider's GraphQL POST for paginated `userTicks`. A read-only probe,
+  `curl -sS --max-time 20 -D - -H 'Content-Type: application/json' --data
+  '{"query":"{ __typename }"}' https://api.openbeta.io`, returned HTTP 502
+  with `server: cloudflare` at 17:38:05 UTC, Ray `a544e90e5a2c2386-SJC`.
+- Diagnosis: the recorded 525 indicates a TLS handshake failure between
+  Cloudflare and OpenBeta's origin, per [Cloudflare's error 525 documentation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-525/).
+  The precise origin-side cause is unknown without OpenBeta operator evidence;
+  the later 502 confirms continued API failure from the probe location but
+  does not prove the same TLS cause.
+- Action: recorded the upstream failure; no runtime change or production
+  remediation was performed. The [provider](../src/providers/openbeta.ts)
+  reports failed discovery before tick writes or absence reconciliation.
+  No added retry, timeout, fallback, or other resilience knob needs justification.
+- Validation / remaining work: the public API probe still fails; keep this
+  incident unresolved until an API check and a subsequent Dofek tick sync
+  succeed. No tests were needed for this documentation-only update.
+- Retrospective: Sentry's provider/phase tags and source frames made the failing
+  boundary clear; the external probe distinguished ongoing upstream failure
+  from a historical alert. Proposed runbook addition for approval: include a
+  credential-free GraphQL health probe and Cloudflare Ray/timestamp capture in
+  the provider incident checklist. Reuse the Sentry and systematic-debugging
+  skills; origin TLS diagnosis requires the upstream operator.
