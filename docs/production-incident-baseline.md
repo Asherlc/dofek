@@ -35046,6 +35046,21 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   that merge conflicts prevent `pull_request` workflows. Merged current
   `main` into the existing branch and retained both incident-note additions;
   no branch switch, rebase, or workflow-policy change was needed.
+- CI fixture follow-up: [integration shard 3](https://github.com/Asherlc/dofek/actions/runs/41512763818/job/125510954149)
+  failed `pnpm exec vitest run --project integration --coverage --shard=3/4`.
+  Its only failing case was `activity_aerobic_efficiency resolves corrections
+  and tombstones before aggregation`; the first assertion diff was
+  `z2_samples: expected 301, received 300`. The unmerged-parts fixture has
+  readings at seconds 0–300, which bound 300 contributing elapsed intervals;
+  its final reading contributes no duration under the corrected calculation.
+  Updated that one expected count to 300 with an explanatory comment, retaining
+  all correction/tombstone assertions and production behavior. The same case
+  reproduced locally before the edit; after it, both relevant real-ClickHouse
+  suites pass all 26 tests, and targeted Biome plus diff checks pass. No waits,
+  retries, skips, or runtime knobs were changed. Hosted rerun remains required.
+  Proposed validation refinement: include existing cross-model
+  consumer fixtures alongside model-specific regression tests; reuse gh-fix-ci
+  and integration-tests-ready when CI exposes stale aggregate expectations.
 
 ## 2026-11-02 — OpenBeta API unavailable during tick sync (unresolved)
 

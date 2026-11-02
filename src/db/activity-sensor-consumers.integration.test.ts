@@ -121,7 +121,9 @@ describe("activity sensor consumers before background merges", () => {
           avg_power_z2: 200,
           avg_hr_z2: 150,
           efficiency_factor: 1.333,
-          z2_samples: 301,
+          // Readings at seconds 0–300 bound 300 contributing intervals;
+          // the endpoint reading has no elapsed duration to contribute.
+          z2_samples: 300,
           is_deleted: 0,
         },
         {
