@@ -229,7 +229,7 @@ describe("WahooClient", () => {
   });
 
   it("does not classify empty non-401 Wahoo failures as authentication failures", async () => {
-    const fetchFn = async () => new Response("", { status: 500 });
+    const fetchFn = async () => new Response("", { status: 400 });
     const client = new WahooClient("token", fetchFn);
 
     const error = await expectRejectedError(client.getWorkouts());
@@ -242,13 +242,13 @@ describe("WahooClient", () => {
   });
 
   it("throws a typed API error for non-auth Wahoo failures", async () => {
-    const fetchFn = async () => new Response("server error", { status: 500 });
+    const fetchFn = async () => new Response("server error", { status: 400 });
     const client = new WahooClient("token", fetchFn);
 
     const error = await expectRejectedError(client.getWorkouts());
 
     expect(error).toMatchObject({
-      statusCode: 500,
+      statusCode: 400,
       path: "/v1/workouts",
       responseBodyExcerpt: "server error",
     });
@@ -257,7 +257,7 @@ describe("WahooClient", () => {
 
   it("does not truncate Wahoo API error bodies at the excerpt limit", async () => {
     const responseBody = "a".repeat(200);
-    const fetchFn = async () => new Response(responseBody, { status: 500 });
+    const fetchFn = async () => new Response(responseBody, { status: 400 });
     const client = new WahooClient("token", fetchFn);
 
     const error = await expectRejectedError(client.getWorkouts());
@@ -270,7 +270,7 @@ describe("WahooClient", () => {
 
   it("truncates Wahoo API error bodies over the excerpt limit", async () => {
     const responseBody = `${"a".repeat(200)}b`;
-    const fetchFn = async () => new Response(responseBody, { status: 500 });
+    const fetchFn = async () => new Response(responseBody, { status: 400 });
     const client = new WahooClient("token", fetchFn);
 
     const error = await expectRejectedError(client.getWorkouts());

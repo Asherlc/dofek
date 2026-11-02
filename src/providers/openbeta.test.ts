@@ -445,7 +445,7 @@ describe("OpenBetaProvider", () => {
     });
   });
   it.each([
-    [() => new Response("", { status: 500 }), "OpenBeta API request failed (500)."],
+    [() => new Response("", { status: 500 }), "openbeta API service unavailable (500): "],
     [
       () => jsonResponse({ data: null, errors: [{ message: "profile lookup denied" }] }),
       "OpenBeta API returned an error: profile lookup denied",
@@ -541,20 +541,23 @@ describe("OpenBetaProvider", () => {
       errors: [expect.objectContaining({ message: expect.stringContaining("not found") })],
     });
   });
-  it.each([502, 503, 504])("delegates HTTP %s tick failures to queue retries", async (status) => {
-    const provider = new OpenBetaProvider(
-      vi.fn().mockResolvedValue(new Response("upstream timeout", { status })),
-    );
-    const { db } = makeDb();
+  it.each([500, 502, 503, 504, 525, 599])(
+    "delegates HTTP %s tick failures to queue retries",
+    async (status) => {
+      const provider = new OpenBetaProvider(
+        vi.fn().mockResolvedValue(new Response("upstream timeout", { status })),
+      );
+      const { db } = makeDb();
 
-    await expect(provider.sync(makeRun(db))).rejects.toBeInstanceOf(
-      ProviderServiceUnavailableError,
-    );
+      await expect(provider.sync(makeRun(db))).rejects.toBeInstanceOf(
+        ProviderServiceUnavailableError,
+      );
 
-    expect(mocks.captureException).not.toHaveBeenCalled();
-    expect(db.insert).not.toHaveBeenCalled();
-    expect(db.execute).not.toHaveBeenCalled();
-  });
+      expect(mocks.captureException).not.toHaveBeenCalled();
+      expect(db.insert).not.toHaveBeenCalled();
+      expect(db.execute).not.toHaveBeenCalled();
+    },
+  );
   it("delegates request timeouts to queue retries", async () => {
     const error = new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120_000 });
     const provider = new OpenBetaProvider(vi.fn().mockRejectedValue(error));
@@ -569,7 +572,7 @@ describe("OpenBetaProvider", () => {
   });
   it("captures tick export failures and returns their actionable message", async () => {
     const provider = new OpenBetaProvider(
-      vi.fn().mockResolvedValue(new Response("", { status: 500 })),
+      vi.fn().mockResolvedValue(new Response("invalid JSON", { status: 200 })),
     );
     const { db } = makeDb();
 
@@ -578,12 +581,11 @@ describe("OpenBetaProvider", () => {
     expect(result).toMatchObject({
       provider: "openbeta",
       recordsSynced: 0,
-      errors: [expect.objectContaining({ message: "OpenBeta API request failed (500)." })],
+      errors: [expect.objectContaining({ cause: expect.any(SyntaxError) })],
     });
-    expect(mocks.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "OpenBeta API request failed (500)." }),
-      { tags: { provider: "openbeta", phase: "tick_export" } },
-    );
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      tags: { provider: "openbeta", phase: "tick_export" },
+    });
   });
   it("captures climbing-log write failures", async () => {
     mocks.withSyncLog.mockRejectedValueOnce(new Error("climbing entry write failed"));

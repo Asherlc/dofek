@@ -256,7 +256,7 @@ describe("UltrahumanProvider", () => {
 
   it("reports a safe error when personal token validation fails unexpectedly", async () => {
     const setup = new UltrahumanProvider(
-      async () => new Response("sensitive provider error", { status: 500 }),
+      async () => new Response("sensitive provider error", { status: 422 }),
     ).authSetup();
     if (!setup.manualToken) throw new Error("expected manual token authentication");
 
@@ -265,7 +265,7 @@ describe("UltrahumanProvider", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
-      message: "Ultrahuman token validation failed (500). Try again.",
+      message: "Ultrahuman token validation failed (422). Try again.",
     });
     expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider error");
   });
@@ -389,7 +389,7 @@ describe("UltrahumanProvider", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe(
-      "2026-03-01: Ultrahuman API error (500): provider validation failed",
+      "2026-03-01: ultrahuman API service unavailable (500): provider validation failed",
     );
     expect(authFailureReasonFromError(result.errors[0]?.cause)).toBeUndefined();
     expect(spies.values).toHaveBeenCalledWith(

@@ -34928,3 +34928,25 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   credential-free GraphQL health probe and Cloudflare Ray/timestamp capture in
   the provider incident checklist. Reuse the Sentry and systematic-debugging
   skills; origin TLS diagnosis requires the upstream operator.
+- Application reporting follow-up: the shared [HTTP classifier](../packages/provider-http/src/rate-limit.ts)
+  recognized only 502/503/504 by default. Consequently OpenBeta converted 525
+  into a generic exception and sent it to Sentry. It now classifies all
+  500–599 responses as typed upstream failures, matching the
+  [HTTP server-error class](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.6).
+  Existing transport-error handling retains diagnostics, failed-sync state and
+  terminal error metrics while suppressing exception reporting. Existing retry
+  policies are reused; no attempt count, delay or deadline was increased.
+  Tests first reproduced 500/525/599 misclassification, then verified all 100
+  server status codes, non-5xx boundaries, OpenBeta Sentry suppression and
+  terminal sync metrics. The full unit/mobile run passed 24,094 tests and
+  exposed 50 expectations tied to the former generic HTTP 500 behavior.
+  After updating those expectations and preserving generic response-formatting
+  coverage with 4xx fixtures, all 983 tests in the 25 changed test files pass.
+  The provider HTTP package typecheck and root typecheck pass. Deployment and
+  upstream recovery remain unverified.
+- Follow-up retrospective: the HTTP allowlist explained the unexpected alert;
+  a single shared classifier change covered both clients' sync backend.
+  Proposed provider-runbook wording: "Keep upstream HTTP 5xx failures in typed
+  operational telemetry; test the full status class and preserve Sentry for
+  unexpected application failures." Reuse test-driven development and the
+  provider reporting tests when changing this policy.

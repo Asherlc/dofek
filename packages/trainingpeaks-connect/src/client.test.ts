@@ -16,6 +16,7 @@ function mockFetch(response: { status: number; ok: boolean; body: unknown }): Ty
   return vi.fn().mockResolvedValue({
     ok: response.ok,
     status: response.status,
+    headers: new Headers(),
     json: () => Promise.resolve(response.body),
     text: () =>
       Promise.resolve(
@@ -244,7 +245,7 @@ describe("TrainingPeaksConnectClient.getWorkouts", () => {
     const client = new TrainingPeaksConnectClient("test-token", fetchFn);
 
     await expect(client.getWorkouts(456, "2024-01-01", "2024-01-31")).rejects.toThrow(
-      "TrainingPeaks API error (500)",
+      "trainingpeaks API service unavailable (500)",
     );
   });
 });

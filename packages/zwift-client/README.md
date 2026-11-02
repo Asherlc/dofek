@@ -140,8 +140,8 @@ Actual package behavior:
 - HTTP `429` throws `ProviderRateLimitError` from
   `@dofek/provider-http/rate-limit`. Its `retryAfterSeconds` property is parsed
   from `Retry-After` when present.
-- HTTP `502`, `503`, and `504` throw `ProviderServiceUnavailableError` from the
-  same module.
+- All HTTP `500`–`599` responses throw `ProviderServiceUnavailableError` from
+  the [shared HTTP layer](../provider-http/src/rate-limit.ts).
 - Other unsuccessful authentication and API responses throw `Error` containing
   the HTTP status; most methods also include the response body.
 - The client does not automatically sleep, refresh a token, or retry.

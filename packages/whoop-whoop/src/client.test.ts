@@ -181,7 +181,7 @@ describe("WhoopClient.signIn", () => {
         );
       }
       // Bootstrap fails
-      return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
+      return Promise.resolve(createMockResponse({ ok: false, status: 400, body: {} }));
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
@@ -207,13 +207,13 @@ describe("WhoopClient.signIn", () => {
   it("throws on non-JSON error response", async () => {
     const fetchFn = createMockFetch({
       ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
+      status: 400,
+      statusText: "Bad Request",
       body: "not json",
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
-      "WHOOP auth failed (500)",
+      "WHOOP auth failed (400)",
     );
   });
 
@@ -479,7 +479,7 @@ describe("WhoopClient.refreshAccessToken", () => {
         );
       }
       // Bootstrap fails
-      return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
+      return Promise.resolve(createMockResponse({ ok: false, status: 400, body: {} }));
     });
 
     const result = await WhoopClient.refreshAccessToken("refresh-token", fetchFn);
@@ -602,7 +602,7 @@ describe("WhoopClient._fetchUserId", () => {
   });
 
   it("returns null when response is not ok", async () => {
-    const fetchFn = createMockFetch({ status: 500, ok: false, body: {} });
+    const fetchFn = createMockFetch({ status: 400, ok: false, body: {} });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBeNull();
   });
@@ -1383,7 +1383,7 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await expect(client.getWeightliftingWorkout("abc-123")).rejects.toThrow(
-      "WHOOP weightlifting API error (500)",
+      "WHOOP API service unavailable (500)",
     );
   });
 });
@@ -1414,7 +1414,7 @@ describe("WhoopClient API error handling", () => {
 
     await expect(
       client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
-    ).rejects.toThrow("WHOOP API error (500): Request failed.");
+    ).rejects.toThrow("WHOOP API service unavailable (500): Request failed.");
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
@@ -1678,13 +1678,13 @@ describe("cognitoCall error handling", () => {
   it("includes empty body text when response body is empty", async () => {
     const fetchFn = createMockFetch({
       ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
+      status: 400,
+      statusText: "Bad Request",
       body: "",
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
-      "WHOOP auth failed (500): Internal Server Error",
+      "WHOOP auth failed (400): Bad Request",
     );
   });
 });

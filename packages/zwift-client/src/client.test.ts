@@ -219,7 +219,7 @@ describe("ZwiftClient.getActivities", () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
     const client = new ZwiftClient("test-token", "100", fetchFn);
 
-    await expect(client.getActivities()).rejects.toThrow("Zwift API error (500)");
+    await expect(client.getActivities()).rejects.toThrow("zwift API service unavailable (500)");
   });
 
   it("throws a zwift-scoped ProviderRateLimitError on 429", async () => {
@@ -339,7 +339,7 @@ describe("ZwiftClient.getPowerCurve", () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
     const client = new ZwiftClient("test-token", "100", fetchFn);
 
-    await expect(client.getPowerCurve()).rejects.toThrow("Zwift API error (500)");
+    await expect(client.getPowerCurve()).rejects.toThrow("zwift API service unavailable (500)");
   });
 });
 

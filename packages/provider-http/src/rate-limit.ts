@@ -110,12 +110,7 @@ export function isServiceUnavailableStatus(
   statusCode: number,
   additionalStatusCodes: readonly number[] = [],
 ): boolean {
-  return (
-    statusCode === 502 ||
-    statusCode === 503 ||
-    statusCode === 504 ||
-    additionalStatusCodes.includes(statusCode)
-  );
+  return (statusCode >= 500 && statusCode <= 599) || additionalStatusCodes.includes(statusCode);
 }
 
 export async function fetchWithRateLimitHandling(

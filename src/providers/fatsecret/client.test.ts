@@ -40,7 +40,7 @@ describe("fatsecretApi", () => {
     const mockFetch: typeof globalThis.fetch = async () =>
       new Response("server boom", { status: 500 });
     await expect(fatsecretApi("food.get", {}, creds, mockFetch)).rejects.toThrow(
-      "FatSecret API error (500): server boom",
+      "fatsecret API service unavailable (500): server boom",
     );
   });
 

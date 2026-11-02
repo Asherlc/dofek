@@ -513,7 +513,7 @@ describe("sync-provider-failure", () => {
     expect(mockLogSync).not.toHaveBeenCalled();
   });
 
-  it.each([502, 503, 504, "timeout"])(
+  it.each([500, 502, 503, 504, 525, 599, "timeout"])(
     "retries OpenBeta %s without per-attempt Sentry alerts",
     async (status) => {
       const error =
@@ -544,45 +544,61 @@ describe("sync-provider-failure", () => {
     },
   );
 
-  it("records OpenBeta retry exhaustion as a terminal sync failure", async () => {
-    const error = new ProviderServiceUnavailableError({
-      providerId: "openbeta",
-      statusCode: 504,
-      message: "upstream unavailable",
-      responseBody: "unavailable",
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([
-      createMockProvider({
-        id: "openbeta",
-        name: "OpenBeta",
-        sync: vi.fn().mockRejectedValue(error),
-      }),
-    ]);
-    const job = createMockJob({ providerId: "openbeta" });
-    job.attemptsMade = 287;
+  it.each([500, 525, 599])(
+    "records OpenBeta HTTP %s retry exhaustion with telemetry",
+    async (statusCode) => {
+      const error = new ProviderServiceUnavailableError({
+        providerId: "openbeta",
+        statusCode,
+        message: "upstream unavailable",
+        responseBody: "unavailable",
+      });
+      mockGetEnabledSyncProviders.mockReturnValue([
+        createMockProvider({
+          id: "openbeta",
+          name: "OpenBeta",
+          sync: vi.fn().mockRejectedValue(error),
+        }),
+      ]);
+      const job = createMockJob({ providerId: "openbeta" });
+      job.attemptsMade = 287;
 
-    await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
-    expect(job.updateProgress).toHaveBeenLastCalledWith({
-      providers: {
-        openbeta: {
-          status: "error",
-          message:
-            "OpenBeta is unavailable and automatic retries were exhausted. Try syncing again later.",
+      await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
+      expect(job.updateProgress).toHaveBeenLastCalledWith({
+        providers: {
+          openbeta: {
+            status: "error",
+            message:
+              "OpenBeta is unavailable and automatic retries were exhausted. Try syncing again later.",
+          },
         },
-      },
-      percentage: 100,
-    });
-    expect(mockLogSync).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({ providerId: "openbeta", status: "error" }),
-    );
-    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({ stage: "ingest", status: "failed" }),
-    );
-    expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
-  });
+        percentage: 100,
+      });
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ providerId: "openbeta", status: "error" }),
+      );
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ stage: "ingest", status: "failed" }),
+      );
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+      expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+        provider: "openbeta",
+        data_type: "sync",
+      });
+      expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+        provider: "openbeta",
+        data_type: "sync",
+        status: "error",
+      });
+      expect(mockSyncDuration.record).toHaveBeenCalledWith(expect.any(Number), {
+        provider: "openbeta",
+        data_type: "sync",
+      });
+    },
+  );
 
   it.each([0, 286])(
     "retries Zepp HTTP500 when attemptsMade=%s without Sentry capture",

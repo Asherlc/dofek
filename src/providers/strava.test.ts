@@ -694,13 +694,13 @@ describe("StravaClient — error handling", () => {
     vi.useRealTimers();
   });
 
-  it("throws generic error on non-OK, non-429 response", async () => {
+  it("throws generic error on a non-authentication client error response", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Server Error", { status: 500 });
+      return new Response("Bad Request", { status: 400 });
     };
 
     const client = new StravaClient(async () => "token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
+    await expect(client.getActivities(0)).rejects.toThrow("Strava API error (400): Bad Request");
   });
 
   it("throws StravaNotFoundError for HTML 404 responses", async () => {
@@ -759,40 +759,40 @@ describe("StravaClient — error handling", () => {
   it("formats JSON error payloads in generic API errors", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response(JSON.stringify({ message: "bad request" }), {
-        status: 500,
+        status: 400,
         headers: { "content-type": "application/json" },
       });
     };
 
     const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
-      'Strava API error (500): {"message":"bad request"}',
+      'Strava API error (400): {"message":"bad request"}',
     );
   });
 
   it("redacts HTML error payloads in generic API errors", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("<html><body>Oops</body></html>", {
-        status: 500,
+        status: 400,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     };
 
     const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
-      "Strava API error (500): (HTML error page)",
+      "Strava API error (400): (HTML error page)",
     );
   });
 
   it("truncates long plain-text error responses", async () => {
     const longText = "x".repeat(300);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response(longText, { status: 500 });
+      return new Response(longText, { status: 400 });
     };
 
     const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
-      `Strava API error (500): ${"x".repeat(200)}…`,
+      `Strava API error (400): ${"x".repeat(200)}…`,
     );
   });
 });
@@ -1423,7 +1423,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     };
     const provider = new StravaProvider(mockFetch);
     await expect(provider.unregisterWebhook("42")).rejects.toThrow(
-      "Strava webhook removal failed (500): Server Error",
+      "strava API service unavailable (500): Server Error",
     );
   });
 });

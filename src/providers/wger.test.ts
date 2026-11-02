@@ -247,7 +247,7 @@ describe("WgerProvider", () => {
 
   it("reports a safe error when Wger token refresh fails unexpectedly", async () => {
     const setup = new WgerProvider(
-      async () => new Response("sensitive provider error", { status: 500 }),
+      async () => new Response("sensitive provider error", { status: 422 }),
     ).authSetup();
     if (!setup.manualToken) throw new Error("expected manual token authentication");
 
@@ -256,7 +256,7 @@ describe("WgerProvider", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
-      message: "Wger token refresh failed (500). Try again.",
+      message: "Wger token refresh failed (422). Try again.",
     });
     expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider error");
   });
@@ -491,7 +491,7 @@ describe("WgerProvider", () => {
   it("reports a non-authentication Wger data error", async () => {
     const mockFetch: typeof globalThis.fetch = async (input) => {
       if (String(input).includes("/workoutsession/")) {
-        return new Response("validation failed", { status: 500 });
+        return new Response("validation failed", { status: 400 });
       }
       return Response.json({ count: 0, next: null, previous: null, results: [] });
     };
@@ -509,7 +509,7 @@ describe("WgerProvider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toBe("activity: Wger API error (500): validation failed");
+    expect(result.errors[0]?.message).toBe("activity: Wger API error (400): validation failed");
     expect(authFailureReasonFromError(result.errors[0]?.cause)).toBeUndefined();
   });
 

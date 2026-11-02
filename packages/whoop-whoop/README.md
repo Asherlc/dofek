@@ -171,8 +171,9 @@ Actual package behavior:
   automatically delay requests.
 - `listDeveloperWorkouts` retries service-unavailable failures up to three
   times after the first attempt. Those retries are immediate and apply to
-  `502`, `503`, `504`, and the observed developer-workout `500`; they do not
-  apply to `429`.
+  all HTTP `500`–`599` responses; they do not apply to `429`. See the
+  [client implementation](./src/client.ts) and the
+  [shared HTTP classifier](../provider-http/src/rate-limit.ts).
 - Other internal data methods do not automatically retry.
 - Unsupported heart-rate or steps metric responses (`400` or `404`) become
   `WhoopMetricUnavailableError`.

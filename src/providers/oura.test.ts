@@ -1044,7 +1044,7 @@ describe("OuraClient", () => {
   it("includes error bodies up to 200 characters without truncation", async () => {
     const body = "a".repeat(200);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response(body, { status: 500 });
+      return new Response(body, { status: 400 });
     };
 
     const client = new OuraClient("bad-token", mockFetch);
@@ -1055,7 +1055,7 @@ describe("OuraClient", () => {
   it("truncates error bodies longer than 200 characters", async () => {
     const body = "x".repeat(250);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response(body, { status: 500 });
+      return new Response(body, { status: 400 });
     };
 
     const client = new OuraClient("bad-token", mockFetch);
@@ -1110,7 +1110,7 @@ describe("OuraClient", () => {
   it("truncates long error response bodies at 200 characters", async () => {
     const longBody = "x".repeat(201);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response(longBody, { status: 500 });
+      return new Response(longBody, { status: 400 });
     };
 
     const client = new OuraClient("token", mockFetch);
@@ -1122,7 +1122,7 @@ describe("OuraClient", () => {
   it("does not truncate error responses exactly at 200 characters", async () => {
     const body200 = "x".repeat(200);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response(body200, { status: 500 });
+      return new Response(body200, { status: 400 });
     };
 
     const client = new OuraClient("token", mockFetch);

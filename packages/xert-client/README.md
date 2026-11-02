@@ -112,10 +112,10 @@ Rejected authentication and refresh requests throw
 `XertApiError`. Both expose `statusCode` and `responseBody`.
 
 The shared HTTP wrapper throws `ProviderRateLimitError` for `429` and
-`ProviderServiceUnavailableError` for `502`, `503`, and `504`, retaining a
+`ProviderServiceUnavailableError` for all HTTP `500`–`599` responses, retaining a
 parsed
 [`Retry-After`](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)
-value when supplied.
+value when supplied; see the [shared HTTP classifier](../provider-http/src/rate-limit.ts).
 
 If your application handles these classes directly, declare
 `@dofek/provider-http` as a direct dependency:
