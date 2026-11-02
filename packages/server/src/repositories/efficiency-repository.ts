@@ -8,7 +8,11 @@ import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { AccessWindow } from "../billing/entitlement.ts";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import type { ChartRange } from "../lib/chart-range.ts";
 import { logger } from "../logger.ts";
@@ -187,6 +191,7 @@ export class EfficiencyRepository extends BaseRepository {
     const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
     const powerSampleLowerBoundPredicate = range.clickHouseTimestampAfter("power.recorded_at");
     const rangeParams = range.clickHouseParams();
+    const accessParams = clickHouseAccessParams(this.accessWindow, this.timezone);
 
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
     const readModelRows = await this.#sensorStore.query(
@@ -204,12 +209,14 @@ export class EfficiencyRepository extends BaseRepository {
       WHERE user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, canonical_type)
         ${lowerBoundPredicate}
+        ${clickHouseAccessPredicate(this.accessWindow, "started_at")}
         AND is_deleted = 0
       ORDER BY started_at`,
       {
         userId: this.userId,
         timezone: this.timezone,
         ...rangeParams,
+        ...accessParams,
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -267,6 +274,7 @@ export class EfficiencyRepository extends BaseRepository {
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.canonical_type)
           ${activitySummaryLowerBoundPredicate}
+          ${clickHouseAccessPredicate(this.accessWindow, "asum.started_at")}
           AND up.max_hr IS NOT NULL
       ),
       heart_rate_samples AS (
@@ -281,7 +289,7 @@ export class EfficiencyRepository extends BaseRepository {
           am.max_hr AS max_hr,
           am.resting_hr AS resting_hr,
           hr.recorded_at AS recorded_at,
-          leadInFrame(hr.recorded_at, 1, hr.recorded_at) OVER (
+          leadInFrame(hr.recorded_at, 1, hr.recorded_at + INTERVAL 10 SECOND) OVER (
             PARTITION BY am.user_id, am.id ORDER BY hr.recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
           ) AS next_recorded_at,
@@ -293,6 +301,9 @@ export class EfficiencyRepository extends BaseRepository {
          AND hr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
          AND hr.channel = 'heart_rate'
          AND hr.is_deleted = 0
+        WHERE (am.user_id, am.id) IN (
+          SELECT user_id, id FROM power_observations WHERE scalar > 0
+        )
       ),
       z2_heart_rate_samples AS (
         SELECT * FROM heart_rate_samples
@@ -300,15 +311,11 @@ export class EfficiencyRepository extends BaseRepository {
           AND heart_rate < resting_hr + (max_hr - resting_hr) * {b2:Float64}
         ORDER BY user_id, id, recorded_at
       ),
-      power_samples AS (
+      power_observations AS (
         SELECT
           am.id AS id,
           am.user_id AS user_id,
           power.recorded_at AS recorded_at,
-          leadInFrame(power.recorded_at, 1, power.recorded_at + INTERVAL 10 SECOND) OVER (
-            PARTITION BY am.user_id, am.id ORDER BY power.recorded_at
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) AS next_recorded_at,
           power.scalar AS scalar
         FROM activity_meta am
         INNER JOIN analytics.deduped_sensor power
@@ -319,6 +326,14 @@ export class EfficiencyRepository extends BaseRepository {
          AND power.is_deleted = 0
         WHERE 1 = 1
           ${powerSampleLowerBoundPredicate}
+      ),
+      power_samples AS (
+        SELECT id, user_id, recorded_at, scalar,
+          leadInFrame(recorded_at, 1, recorded_at + INTERVAL 10 SECOND) OVER (
+            PARTITION BY user_id, id ORDER BY recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+          ) AS next_recorded_at
+        FROM power_observations
         ORDER BY
           user_id,
           id,
@@ -377,6 +392,7 @@ export class EfficiencyRepository extends BaseRepository {
         ...rangeParams,
         activityTypes: CYCLING_TYPES,
         b1: aerobicEfficiencyZone.minPctHrr,
+        ...accessParams,
         b2: aerobicEfficiencyZone.maxPctHrr,
         ...restingHeartRateRangeParams(today, range),
       },

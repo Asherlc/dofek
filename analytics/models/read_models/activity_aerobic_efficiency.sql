@@ -90,7 +90,7 @@ heart_rate_samples AS (
         am.max_hr AS max_hr,
         am.resting_hr AS resting_hr,
         hr.recorded_at AS recorded_at,
-        leadInFrame(hr.recorded_at, 1, hr.recorded_at) OVER (
+        leadInFrame(hr.recorded_at, 1, hr.recorded_at + INTERVAL 10 SECOND) OVER (
             PARTITION BY am.user_id, am.activity_id
             ORDER BY hr.recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
@@ -106,7 +106,8 @@ heart_rate_samples AS (
         SELECT
             user_id,
             activity_id
-        FROM z2_power_samples
+        FROM power_observations
+        WHERE scalar > 0
     )
 ),
 
@@ -121,16 +122,11 @@ z2_heart_rate_samples AS (
         recorded_at
 ),
 
-z2_power_samples AS (
+power_observations AS (
     SELECT
         activity_id,
         user_id,
         recorded_at,
-        leadInFrame(recorded_at, 1, recorded_at + INTERVAL 10 SECOND) OVER (
-            PARTITION BY user_id, activity_id
-            ORDER BY recorded_at
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-        ) AS next_recorded_at,
         scalar
     FROM {{ ref('activity_sensor_sample') }} FINAL
     WHERE channel = 'power'
@@ -141,6 +137,20 @@ z2_power_samples AS (
                 activity_id
             FROM activity_meta
         )
+),
+
+z2_power_samples AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        scalar,
+        leadInFrame(recorded_at, 1, recorded_at + INTERVAL 10 SECOND) OVER (
+            PARTITION BY user_id, activity_id
+            ORDER BY recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS next_recorded_at
+    FROM power_observations
     ORDER BY
         user_id,
         activity_id,
@@ -217,7 +227,7 @@ z2_samples AS (
         any(resting_hr) AS resting_hr,
         round(sum(power * paired_seconds) / sum(paired_seconds), 1) AS avg_power_z2,
         round(sum(heart_rate * paired_seconds) / sum(paired_seconds), 1) AS avg_hr_z2,
-        round(sum(power * paired_seconds) / sum(heart_rate * paired_seconds), 3) AS efficiency_factor,
+        round(sum(power * paired_seconds) / nullIf(sum(heart_rate * paired_seconds), 0), 3) AS efficiency_factor,
         toInt32(uniqExact(heart_rate_recorded_at)) AS z2_samples
     FROM paired_intervals
     WHERE paired_seconds > 0

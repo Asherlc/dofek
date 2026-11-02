@@ -35076,6 +35076,28 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   Both incident-log entries were preserved when resolving a second conflict
   from an intervening `main` update; the incoming orchestrator's 15 tests pass.
 
+
+- Final review follow-up: merge was blocked by five unresolved conversations,
+  consistent with GitHub's [conversation-resolution protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-conversation-resolution-before-merging).
+  Added real-engine boundary cases before changing behavior: seven failed,
+  identifying the missing final bounded heart-rate hold, zero-denominator model
+  output, and missing access-window predicates on both repository paths.
+  Restored the ten-second trailing hold and denominator guard; reused the
+  existing entitlement predicates for the model and fallback. Added a 299-second
+  exclusion fixture alongside the 300-second inclusion fixture to enforce the
+  upper hold bound. All 36 model/consumer database cases pass without retries.
+- Review performance refinement: use raw positive-power activity keys for the
+  heart-rate membership lookup, keeping window calculations in the pairing
+  path; apply the same restriction to the live fallback. Ordinary ClickHouse
+  [CTEs are substituted at each reference](https://clickhouse.com/docs/reference/statements/select/with),
+  so the key lookup should not reference the windowed power relation.
+  Read-only production comparison completed in 24.712 seconds before and
+  23.989 seconds after, at 325.63/325.66 MiB respectively, with unchanged
+  operator-only 1 GiB/60-second bounds. No runtime limits were increased.
+  Proposed runbook refinement: check required review conversations alongside
+  CI status before merging; retain elapsed-time and access-boundary fixtures
+  when revising shared analytics readers.
+
 ## 2026-11-02 — Cycling power backlog prevents threshold history publication
 
 - Status: unresolved in production at investigation time; correction validated

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type ClickHouseClient, createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import type { AccessWindow } from "../../../packages/server/src/billing/entitlement.ts";
 import { ChartRange } from "../../../packages/server/src/lib/chart-range.ts";
 import { ClickHouseActivitySensorStore } from "../../../packages/server/src/repositories/clickhouse-activity-sensor-store.ts";
 import { EfficiencyRepository } from "../../../packages/server/src/repositories/efficiency-repository.ts";
@@ -47,11 +48,6 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
           ENGINE = ReplacingMergeTree ORDER BY ${key}`,
       });
     }
-    await client.insert({
-      table: `${database}.user_profile_current`,
-      format: "JSONEachRow",
-      values: [{ id: userId, max_hr: 200, resting_hr: 50 }],
-    });
     for (const [view, select] of [
       ["activity_summary", `SELECT * FROM ${database}.activity_summary_rows`],
       ["v_activity", `SELECT activity_id AS id, user_id FROM ${database}.activity_summary_rows`],
@@ -80,10 +76,20 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
       power?: (offset: number) => number | null;
       powerPresent?: (offset: number) => boolean;
       powerOffsets?: number[];
+      maxHr?: number;
+      restingHr?: number;
+      accessWindow?: AccessWindow;
     } = {},
   ) {
     await client.command({ query: `TRUNCATE TABLE ${database}.activity_summary_rows` });
     await client.command({ query: `TRUNCATE TABLE ${database}.activity_sensor_sample` });
+    await client.command({ query: `TRUNCATE TABLE ${database}.activity_aerobic_efficiency` });
+    await client.command({ query: `TRUNCATE TABLE ${database}.user_profile_current` });
+    await client.insert({
+      table: `${database}.user_profile_current`,
+      format: "JSONEachRow",
+      values: [{ id: userId, max_hr: options.maxHr ?? 200, resting_hr: options.restingHr ?? 50 }],
+    });
     const activityId = randomUUID();
     const start = new Date("2026-02-10T00:00:00Z").getTime();
     const timestamp = (offset: number) =>
@@ -98,7 +104,7 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
           canonical_type: "cycling",
           name: "Ride",
           started_at: timestamp(0),
-          ended_at: timestamp(offsets.at(-1) ?? 0),
+          ended_at: timestamp(Math.max(offsets.at(-1) ?? 0, options.powerOffsets?.at(-1) ?? 0)),
           is_deleted: 0,
         },
       ],
@@ -131,7 +137,24 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
         ),
       ],
     });
-    if (path === "live") {
+    const sql = renderDbtModelSql(readModelSql("activity_aerobic_efficiency.sql"), {
+      isIncremental: false,
+    })
+      .replace(/\{\{\s*ref\('([^']+)'\)\s*\}\}/g, `${database}.$1`)
+      .replace(
+        "{{ source('postgres_fitness', 'user_profile_current') }}",
+        `${database}.user_profile_current`,
+      );
+    if (path === "model" && options.accessWindow) {
+      const columns =
+        "user_id, max_hr, started_at, canonical_type, name, avg_power_z2, avg_hr_z2, efficiency_factor, z2_samples, is_deleted";
+      await client.command({
+        query: `INSERT INTO ${database}.activity_aerobic_efficiency (${columns})
+          SELECT ${columns} FROM (${sql}) WHERE is_deleted=0
+          SETTINGS join_use_nulls=1, max_threads=1`,
+      });
+    }
+    if (path === "live" || options.accessWindow) {
       const store = new ClickHouseActivitySensorStore({
         command: (params) => client.command(params),
         query: (params) =>
@@ -143,27 +166,26 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
             clickhouse_settings: { join_use_nulls: 1, max_threads: 1 },
           }),
       });
-      const repo = new EfficiencyRepository({ execute: async () => [] }, userId, "UTC", store);
+      const repo = new EfficiencyRepository(
+        { execute: async () => [] },
+        userId,
+        "UTC",
+        store,
+        options.accessWindow,
+      );
       const result = await repo.getAerobicEfficiency(ChartRange.fromDays(null));
       return result.activities.length
         ? result.activities.map((row) => ({
             avg_power_z2: row.avgPowerZ2,
             avg_hr_z2: row.avgHrZ2,
+            efficiency_factor: row.efficiencyFactor,
             z2_samples: row.z2Samples,
             is_deleted: 0,
           }))
-        : [{ avg_power_z2: 0, avg_hr_z2: 0, z2_samples: 0, is_deleted: 1 }];
+        : [{ avg_power_z2: 0, avg_hr_z2: 0, efficiency_factor: 0, z2_samples: 0, is_deleted: 1 }];
     }
-    const sql = renderDbtModelSql(readModelSql("activity_aerobic_efficiency.sql"), {
-      isIncremental: false,
-    })
-      .replace(/\{\{\s*ref\('([^']+)'\)\s*\}\}/g, `${database}.$1`)
-      .replace(
-        "{{ source('postgres_fitness', 'user_profile_current') }}",
-        `${database}.user_profile_current`,
-      );
     const result = await client.query({
-      query: `SELECT avg_power_z2, avg_hr_z2, z2_samples, is_deleted FROM (${sql})
+      query: `SELECT avg_power_z2, avg_hr_z2, efficiency_factor, z2_samples, is_deleted FROM (${sql})
         WHERE activity_id = {activityId:UUID} SETTINGS join_use_nulls=1, max_threads=1`,
       query_params: { activityId },
       format: "JSONEachRow",
@@ -173,6 +195,7 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
         z.object({
           avg_power_z2: z.number(),
           avg_hr_z2: z.number(),
+          efficiency_factor: z.number(),
           z2_samples: z.number(),
           is_deleted: z.number(),
         }),
@@ -182,7 +205,7 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
 
   it.each([1, 5])("includes exactly five minutes sampled every %i seconds", async (interval) => {
     const rows = await compute(Array.from({ length: 300 / interval + 1 }, (_, i) => i * interval));
-    expect(rows).toEqual([
+    expect(rows).toMatchObject([
       { avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 300 / interval, is_deleted: 0 },
     ]);
   });
@@ -233,7 +256,13 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
     const rows = await compute([...Array.from({ length: 291 }, (_, i) => i), 600], {
       powerOffsets: Array.from({ length: 601 }, (_, i) => i),
     });
-    expect(rows).toEqual([{ avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 291, is_deleted: 0 }]);
+    expect(rows).toMatchObject([
+      { avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 291, is_deleted: 0 },
+    ]);
+    const belowThreshold = await compute([...Array.from({ length: 290 }, (_, i) => i), 600], {
+      powerOffsets: Array.from({ length: 601 }, (_, i) => i),
+    });
+    expect(belowThreshold[0]?.is_deleted).toBe(1);
   });
 
   it("weights power and heart rate by elapsed time when cadence changes", async () => {
@@ -245,7 +274,9 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
       power: (offset) => (offset < 150 ? 100 : 300),
       heartRate: (offset) => (offset < 150 ? 140 : 150),
     });
-    expect(rows).toEqual([{ avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 180, is_deleted: 0 }]);
+    expect(rows).toMatchObject([
+      { avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 180, is_deleted: 0 },
+    ]);
   });
   it.each([
     { powerOffsets: Array.from({ length: 301 }, (_, i) => i) },
@@ -255,6 +286,55 @@ describe.each(["model", "live"])("aerobic efficiency elapsed-time eligibility (%
       Array.from({ length: 61 }, (_, i) => i * 5),
       { powerOffsets },
     );
-    expect(rows).toEqual([{ avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 60, is_deleted: 0 }]);
+    expect(rows).toMatchObject([
+      { avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 60, is_deleted: 0 },
+    ]);
   });
+
+  it("credits a final heart-rate reading only while power continues within its hold limit", async () => {
+    const rows = await compute(
+      Array.from({ length: 291 }, (_, i) => i),
+      {
+        powerOffsets: Array.from({ length: 301 }, (_, i) => i),
+      },
+    );
+    expect(rows).toMatchObject([
+      { avg_power_z2: 200, avg_hr_z2: 145, z2_samples: 291, is_deleted: 0 },
+    ]);
+  });
+
+  it("keeps a zero heart-rate denominator finite", async () => {
+    const rows = await compute(
+      Array.from({ length: 301 }, (_, i) => i),
+      {
+        maxHr: 100,
+        restingHr: -150,
+        heartRate: () => 0,
+      },
+    );
+    expect(rows).toMatchObject([{ avg_hr_z2: 0, efficiency_factor: 0 }]);
+  });
+
+  it.each([
+    { startDate: "2026-02-10", endDateExclusive: "2026-02-11", isDeleted: 0 },
+    { startDate: "2026-02-11", endDateExclusive: "2026-02-12", isDeleted: 1 },
+    { startDate: "2026-02-09", endDateExclusive: "2026-02-10", isDeleted: 1 },
+  ])(
+    "enforces access bounds $startDate to $endDateExclusive",
+    async ({ startDate, endDateExclusive, isDeleted }) => {
+      const rows = await compute(
+        Array.from({ length: 61 }, (_, i) => i * 5),
+        {
+          accessWindow: {
+            kind: "limited",
+            paid: false,
+            reason: "free_recent_week",
+            startDate,
+            endDateExclusive,
+          },
+        },
+      );
+      expect(rows[0]?.is_deleted).toBe(isDeleted);
+    },
+  );
 });
