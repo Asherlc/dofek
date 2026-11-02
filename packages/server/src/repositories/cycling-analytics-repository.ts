@@ -683,6 +683,6 @@ export class CyclingAnalyticsRepository {
   }
 
   #accessWindowParams(): Record<string, string> {
-    return clickHouseAccessParams(this.#accessWindow);
+    return clickHouseAccessParams(this.#accessWindow, this.#timezone);
   }
 }

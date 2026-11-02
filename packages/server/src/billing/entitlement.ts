@@ -84,14 +84,21 @@ export function clickHouseAccessPredicate(
   column: string,
 ): string {
   return window?.kind === "limited"
-    ? `AND ${column} >= parseDateTime64BestEffort({accessStartDate:String}, 6, 'UTC')
-       AND ${column} < parseDateTime64BestEffort({accessEndDateExclusive:String}, 6, 'UTC')`
+    ? `AND ${column} >= parseDateTime64BestEffort({accessStartDate:String}, 6, {accessTimezone:String})
+       AND ${column} < parseDateTime64BestEffort({accessEndDateExclusive:String}, 6, {accessTimezone:String})`
     : "";
 }
 
-export function clickHouseAccessParams(window: AccessWindow | undefined): Record<string, string> {
+export function clickHouseAccessParams(
+  window: AccessWindow | undefined,
+  timezone: string,
+): Record<string, string> {
   return window?.kind === "limited"
-    ? { accessStartDate: window.startDate, accessEndDateExclusive: window.endDateExclusive }
+    ? {
+        accessStartDate: window.startDate,
+        accessEndDateExclusive: window.endDateExclusive,
+        accessTimezone: timezone,
+      }
     : {};
 }
 

@@ -144,6 +144,7 @@ describe("reference-curve threshold algorithms", () => {
     const long = { durationSeconds: 1200, watts: modelPower(curves[1], 1200) };
     const shortCandidate = estimateThreshold([short], curves, thresholdPolicy);
     const longCandidate = estimateThreshold([long], curves, thresholdPolicy);
+    expect(shortCandidate?.watts).toBeCloseTo(modelPower(curves[1], 3600), 10);
     expect(shortCandidate?.watts).toBe(longCandidate?.watts);
     for (const efforts of [
       [weaker, short, long],

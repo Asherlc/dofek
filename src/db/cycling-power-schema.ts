@@ -6,7 +6,15 @@ function bootstrapCyclingPowerView(
   const query = readFileSync(
     new URL(`../../analytics/models/read_models/${name}.sql`, import.meta.url),
     "utf8",
-  );
+  )
+    .replaceAll(
+      "{{ source('analytics', 'cycling_power_history_rows') }}",
+      "analytics.cycling_power_history_rows",
+    )
+    .replaceAll(
+      "{{ source('analytics', 'cycling_power_observation_rows') }}",
+      "analytics.cycling_power_observation_rows",
+    );
   return `CREATE OR REPLACE VIEW analytics.${name} AS\n${query}`;
 }
 

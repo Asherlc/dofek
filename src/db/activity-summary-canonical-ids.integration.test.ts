@@ -114,6 +114,37 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     ]);
   }, 180_000);
 
+  it("advances activity freshness when a late sensor summary changes", async () => {
+    const activeClient = requireClient(client);
+    await seedDuplicateActivitySummaryFixture(activeClient, targetSchema);
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
+    });
+    const before = await activeClient.query({
+      query: `SELECT toString(refreshed_at) AS refreshed_at FROM ${targetSchema}.activity_summary_rows FINAL WHERE activity_id=toUUID('${canonicalActivityId}')`,
+      format: "JSONEachRow",
+    });
+    const previous = await before.json<{ refreshed_at: string }>();
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows SELECT * REPLACE(toNullable(toFloat64(175)) AS avg_hr,toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,now64(9) AS refreshed_at) FROM ${targetSchema}.activity_sensor_summary_rows FINAL WHERE activity_id=toUUID('${canonicalActivityId}')`,
+    });
+    const after = await activeClient.query({
+      query: renderActivitySummaryRowsSelectSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    const changed = await after.json<{
+      activity_id: string;
+      avg_hr: number;
+      refreshed_at: string;
+    }>();
+    expect(changed.find((row) => row.activity_id === canonicalActivityId)).toMatchObject({
+      avg_hr: 175,
+    });
+    expect(changed.find((row) => row.activity_id === canonicalActivityId)?.refreshed_at).not.toBe(
+      previous[0]?.refreshed_at,
+    );
+  });
+
   it("refreshes the canonical summary when only the dedupe mapping changed", async () => {
     const activeClient = requireClient(client);
     await seedDedupeMappingRefreshFixture(activeClient, targetSchema);

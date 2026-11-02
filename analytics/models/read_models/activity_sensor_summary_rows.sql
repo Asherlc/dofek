@@ -442,7 +442,7 @@ channel_aggs AS (
         CAST(avgIf(scalar, channel = 'stride_length'), 'Nullable(Float64)') AS avg_stride_length,
         count() AS sample_count,
         countIf(channel = 'heart_rate') AS hr_sample_count,
-        countIf(channel = 'power' AND scalar > 0) AS power_sample_count,
+        countIf(channel = 'power' AND scalar >= 0) AS power_sample_count,
         min(recorded_at) AS first_sample_at,
         max(recorded_at) AS last_sample_at
     FROM deduped_samples

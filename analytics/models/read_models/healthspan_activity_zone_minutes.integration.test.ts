@@ -88,13 +88,14 @@ describe("healthspan uses applicable computed cycling power",()=>{
     const before=await client.query({query:render("healthspan_activity_zone_minutes.sql",true)+"\nSETTINGS join_use_nulls=1",format:"JSONEachRow"});
     const unchanged=await before.json<Record<string,unknown>>();
     expect(unchanged.some(row=>row.activity_id===supported||row.activity_id===unavailable)).toBe(false);
-    await client.command({query:`ALTER TABLE ${database}.activity_summary_rows UPDATE refreshed_at=now64(9)+toIntervalSecond(1) WHERE activity_id=toUUID('${supported}') SETTINGS mutations_sync=1`});
+    await client.command({query:`ALTER TABLE ${database}.activity_summary_rows UPDATE refreshed_at=now64(9) WHERE activity_id=toUUID('${supported}') SETTINGS mutations_sync=1`});
     const after=await client.query({query:render("healthspan_activity_zone_minutes.sql",true)+"\nSETTINGS join_use_nulls=1",format:"JSONEachRow"});
     const changed=await after.json<Record<string,unknown>>();
     expect(changed.find(row=>row.activity_id===supported)?.high_intensity_minutes).toBe(5);
     expect(changed.some(row=>row.activity_id===unavailable)).toBe(false);
   });
   it("invalidates only the affected user's windows when threshold, profile, or resting evidence changes",async()=>{
+    await client.command({query:`INSERT INTO ${database}.healthspan_activity_zone_minutes ${render("healthspan_activity_zone_minutes.sql",true)} SETTINGS join_use_nulls=1`});
     const changedUser=randomUUID();const changedActivity=randomUUID();
     await client.command({query:`INSERT INTO ${database}.activity_summary_rows (activity_id,user_id,canonical_type,started_at,ended_at,is_deleted) VALUES ('${changedActivity}','${changedUser}','cycling','2026-01-02 12:00:00','2026-01-02 12:10:00',0)`});
     await client.command({query:`INSERT INTO ${database}.user_profile_current (id,max_hr,resting_hr) VALUES ('${changedUser}',180,50)`});
@@ -103,7 +104,7 @@ describe("healthspan uses applicable computed cycling power",()=>{
     const save=()=>client.command({query:`INSERT INTO ${database}.healthspan_activity_zone_minutes SELECT * FROM (${render("healthspan_activity_zone_minutes.sql",true)}) WHERE user_id=toUUID('${changedUser}') SETTINGS join_use_nulls=1`});
     const changed=async()=>{
       const result=await client.query({query:render("healthspan_activity_zone_minutes.sql",true)+"\nSETTINGS join_use_nulls=1",format:"JSONEachRow"});
-      return (await result.json<Record<string,unknown>>()).filter(row=>row.user_id===changedUser);
+      return result.json<Record<string,unknown>>();
     };
     await save();
     expect(await changed()).toEqual([]);
@@ -132,5 +133,19 @@ describe("healthspan uses applicable computed cycling power",()=>{
     expect(rows.find(row=>row.activity_id===highHr)).toMatchObject({aerobic_minutes:0,high_intensity_minutes:301/60});
     expect(rows.find(row=>row.activity_id===zeroPower)).toMatchObject({aerobic_minutes:null,high_intensity_minutes:0});
     expect(rows.find(row=>row.activity_id===noSamples)).toMatchObject({aerobic_minutes:null,high_intensity_minutes:null});
+  });
+  it("preserves five-minute intervals across four fully observed weeks",async()=>{
+    const measuredUser=randomUUID();
+    await client.command({query:`INSERT INTO ${database}.user_profile_current (id,max_hr,resting_hr) VALUES ('${measuredUser}',190,50)`});
+    for(const day of [4,11,18,25]) {
+      const id=randomUUID();const started=`2026-01-${String(day).padStart(2,'0')} 12:00:00`;
+      await client.command({query:`INSERT INTO ${database}.activity_summary_rows (activity_id,user_id,canonical_type,started_at,ended_at,is_deleted) VALUES ('${id}','${measuredUser}','cycling','${started}',toDateTime64('${started}',6)+toIntervalMinute(10),0)`});
+      await client.command({query:`INSERT INTO ${database}.activity_sensor_sample SELECT toUUID('${measuredUser}'),toUUID('${id}'),toDateTime64('${started}',6)+toIntervalSecond(number*5),'heart_rate',if(number<60,140.0,175.0),0 FROM numbers(120)`});
+    }
+    await client.command({query:`INSERT INTO ${database}.healthspan_activity_zone_minutes SELECT * FROM (${render("healthspan_activity_zone_minutes.sql",false)}) WHERE user_id=toUUID('${measuredUser}') SETTINGS join_use_nulls=1`});
+    const result=await client.query({query:render("weekly_healthspan.sql",false)+"\nSETTINGS join_use_nulls=1",format:"JSONEachRow"});
+    const rows=(await result.json<Record<string,unknown>>()).filter(row=>row.user_id===measuredUser);
+    expect(rows).toHaveLength(4);
+    for(const row of rows) expect(row).toMatchObject({weekly_aerobic_min:5,weekly_high_intensity_min:5});
   });
 });

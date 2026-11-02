@@ -1,21 +1,28 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { runProcess } from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 
 describe("cycling power projection publication", () => {
   const client = createClickHouseClientFromEnv();
   const database = `cycling_publication_${randomUUID().replaceAll("-", "")}`;
+  const targetDatabase = `${database}_target`;
   const userId = randomUUID();
   const activityId = randomUUID();
   beforeAll(async () => {
     await client.command({ query: `CREATE DATABASE ${database}` });
+    await client.command({ query: `CREATE DATABASE ${targetDatabase}` });
     for (const query of cyclingPowerSchemaStatements())
       await client.command({ query: query.replaceAll("analytics.", `${database}.`) });
   });
   afterAll(async () => {
-    await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
+    await client.command({ query: `DROP DATABASE IF EXISTS ${targetDatabase} SYNC` });
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close?.();
   });
   const count = async (view: string) => {
@@ -116,5 +123,68 @@ describe("cycling power projection publication", () => {
         evidence_power: null,
       },
     ]);
+  });
+  it("builds both dbt views from an overridden analytics source schema", async () => {
+    const scopedUser = randomUUID();
+    const scopedActivity = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${database}.cycling_power_observation_rows VALUES ('${scopedUser}','${scopedActivity}',220,1,'np-v1',0,10,now64(6))`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.cycling_power_history_rows VALUES ('${scopedUser}',1,today(),'scoped-v1',[(1000.0,'${scopedActivity}',237.0,0.9,85.0,NULL,0.0,0.0,0.0)],20,now64(6))`,
+    });
+    const artifacts = await mkdtemp(join(tmpdir(), "cycling-source-override-"));
+    const connection = process.env.CLICKHOUSE_URL;
+    if (!connection) throw new Error("CLICKHOUSE_URL is required");
+    const url = new URL(connection);
+    try {
+      const result = await runProcess(
+        "uv",
+        [
+          "run",
+          "--project",
+          "analytics",
+          "dbt",
+          "build",
+          "--project-dir",
+          "analytics",
+          "--profiles-dir",
+          "analytics",
+          "--target",
+          "dev",
+          "--select",
+          "cycling_threshold_history",
+          "cycling_activity_power_metrics",
+          "--threads",
+          "1",
+          "--target-path",
+          join(artifacts, "target"),
+          "--log-path",
+          join(artifacts, "logs"),
+        ],
+        {
+          ...process.env,
+          DBT_TARGET: "dev",
+          DBT_CLICKHOUSE_SCHEMA: targetDatabase,
+          DBT_ANALYTICS_SOURCE_SCHEMA: database,
+          DBT_CLICKHOUSE_HOST: url.hostname,
+          DBT_CLICKHOUSE_PORT: url.port,
+          DBT_CLICKHOUSE_USER: decodeURIComponent(url.username) || "default",
+          DBT_CLICKHOUSE_PASSWORD: decodeURIComponent(url.password),
+          UV_PROJECT_ENVIRONMENT: "../.venv-analytics",
+        },
+      );
+      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      for (const view of ["cycling_threshold_history", "cycling_activity_power_metrics"]) {
+        const rows = await client.query({
+          query: `SELECT eftp FROM ${targetDatabase}.${view} WHERE user_id={userId:UUID}`,
+          query_params: { userId: scopedUser },
+          format: "JSONEachRow",
+        });
+        expect(await rows.json()).toEqual([{ eftp: 237 }]);
+      }
+    } finally {
+      await rm(artifacts, { recursive: true, force: true });
+    }
   });
 });

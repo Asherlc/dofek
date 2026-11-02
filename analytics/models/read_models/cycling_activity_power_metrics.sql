@@ -8,19 +8,19 @@ WITH expanded_history AS (
         refresh_version,
         refreshed_at,
         arrayJoin(events) AS event
-    FROM analytics.cycling_power_history_rows FINAL
+    FROM {{ source('analytics', 'cycling_power_history_rows') }} FINAL
 ),
 
 observation_state AS (
     SELECT
         user_id,
         max(refresh_version) AS observation_version
-    FROM analytics.cycling_power_observation_rows FINAL
+    FROM {{ source('analytics', 'cycling_power_observation_rows') }} FINAL
     GROUP BY user_id
 ),
 
 current_observations AS (
-    SELECT * FROM analytics.cycling_power_observation_rows FINAL
+    SELECT * FROM {{ source('analytics', 'cycling_power_observation_rows') }} FINAL
     WHERE is_deleted = 0
 )
 

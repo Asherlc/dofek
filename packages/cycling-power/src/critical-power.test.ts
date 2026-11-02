@@ -235,6 +235,34 @@ describe("fitCriticalPower", () => {
     expect(model?.points[0]?.residualPower).toBe(-0.1);
   });
 
+  it("returns null when finite work-space regression overflows power-space residuals", () => {
+    expect(
+      fitCriticalPowerWithDiagnostics(
+        [
+          { durationSeconds: 1e-100, bestPower: 4e200 },
+          { durationSeconds: 2e-100, bestPower: 3e200 },
+          { durationSeconds: 3e-100, bestPower: 2.8e200 },
+          { durationSeconds: 4e-100, bestPower: 2.7e200 },
+        ],
+        { minimumDurationSeconds: 1e-100, maximumDurationSeconds: 4e-100 },
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when display rounding exceeds the finite diagnostic range", () => {
+    expect(
+      fitCriticalPowerWithDiagnostics(
+        [
+          { durationSeconds: 1e-308, bestPower: 1e308 },
+          { durationSeconds: 1, bestPower: 2 },
+          { durationSeconds: 2, bestPower: 1.5 },
+          { durationSeconds: 3, bestPower: 4 / 3 },
+        ],
+        { minimumDurationSeconds: 1e-308, maximumDurationSeconds: 3 },
+      ),
+    ).toBeNull();
+  });
+
   it("returns null for empty input", () => {
     expect(fitCriticalPower([], policy)).toBeNull();
   });

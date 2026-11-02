@@ -121,4 +121,81 @@ describe("computed cycling threshold serving semantics", () => {
     });
     expect(page.items.map((item) => item.value)).toEqual([238, 239]);
   });
+  it.each([
+    { timezone: "America/Los_Angeles", values: [239] },
+    { timezone: "Asia/Tokyo", values: [239, 240] },
+  ])("uses local access dates in $timezone", async ({ timezone, values }) => {
+    const repository = new CyclingThresholdRepository(store, userId, timezone, {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-06-01",
+      endDateExclusive: "2026-06-02",
+    });
+    const page = await repository.listHistory({
+      startDate: "2026-05-01",
+      endDate: "2026-07-01",
+      cursor: null,
+      limit: 100,
+    });
+    expect(page.items.map((item) => item.value)).toEqual(values);
+    expect((await repository.getCurrent()).value).toBe(239);
+    expect((await repository.getForActivities([activityId])).size).toBe(1);
+  });
+  it.each([
+    {
+      timezone: "America/Los_Angeles",
+      startDate: "2026-03-08",
+      endDate: "2026-03-09",
+      instants: [
+        "2026-03-08 07:59:59.999999",
+        "2026-03-08 08:00:00",
+        "2026-03-09 06:59:59.999999",
+        "2026-03-09 07:00:00",
+      ],
+    },
+    {
+      timezone: "Asia/Tokyo",
+      startDate: "2026-06-01",
+      endDate: "2026-06-02",
+      instants: [
+        "2026-05-31 14:59:59.999999",
+        "2026-05-31 15:00:00",
+        "2026-06-01 14:59:59.999999",
+        "2026-06-01 15:00:00",
+      ],
+    },
+  ])("enforces both access boundaries across $timezone calendar days", async (scenario) => {
+    const boundaryUser = randomUUID();
+    await client.insert({
+      table: `${database}.cycling_threshold_history`,
+      format: "JSONEachRow",
+      values: scenario.instants.map((eventAt, index) => ({
+        user_id: boundaryUser,
+        event_at: eventAt,
+        activity_id: null,
+        eftp: 200 + index,
+        evidence_activity_id: activityId,
+        evidence_at: "2026-01-01 12:00:00",
+        evidence_duration_seconds: 1200,
+        evidence_power: 260,
+        model_version: "v1",
+      })),
+    });
+    const repository = new CyclingThresholdRepository(store, boundaryUser, scenario.timezone, {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: scenario.startDate,
+      endDateExclusive: scenario.endDate,
+    });
+    expect((await repository.getCurrent()).value).toBe(202);
+    const page = await repository.listHistory({
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      cursor: null,
+      limit: 100,
+    });
+    expect(page.items.map((item) => item.value)).toEqual([202, 201]);
+  });
 });

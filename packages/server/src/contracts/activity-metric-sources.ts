@@ -17,6 +17,12 @@ export const activityPowerZonesSchema = z
     ftp: z.number().positive().nullable(),
     thresholdEvidence: cyclingThresholdEvidenceSchema,
   })
+  .refine(
+    (value) =>
+      value.ftp === value.thresholdEvidence.value &&
+      (value.ftp !== null || value.zones.length === 0),
+    { message: "Power zones require matching computed threshold evidence" },
+  )
   .nullable();
 
 export const activityMetricSchema = z.enum(["heartRate", "power", "speed", "cadence", "altitude"]);

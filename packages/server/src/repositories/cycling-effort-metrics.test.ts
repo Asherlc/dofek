@@ -239,7 +239,7 @@ describe("calculateCyclingEffortMetrics", () => {
       metric: "training_stress_score",
       reason: "computed training stress score is unavailable",
     });
-    const unsupported = calculateCyclingEffortMetrics(samples, {
+    const missingThreshold = calculateCyclingEffortMetrics(samples, {
       ...context,
       activityPowerMetrics: {
         ...context.activityPowerMetrics,
@@ -248,10 +248,21 @@ describe("calculateCyclingEffortMetrics", () => {
         power_tss: null,
       },
     });
-    expect(unsupported.workout.unavailableReasons).toContainEqual({
+    expect(missingThreshold.workout.unavailableReasons).toContainEqual({
       metric: "intensity_factor",
       reason: "No qualifying computed cycling threshold evidence is available for this activity.",
     });
+    const unsupported = calculateCyclingEffortMetrics(samples, {
+      ...context,
+      activityPowerMetrics: null,
+    });
+    for (const metric of ["intensity_factor", "training_stress_score"]) {
+      expect(unsupported.workout.unavailableReasons).toContainEqual({
+        metric,
+        reason:
+          "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+      });
+    }
   });
   it.each([1, 5, 0.5])(
     "retains a native null through cleaning and real interval evaluation at %s second cadence",

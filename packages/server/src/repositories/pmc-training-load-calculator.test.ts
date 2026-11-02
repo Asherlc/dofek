@@ -105,19 +105,24 @@ describe("PmcTrainingLoadCalculator", () => {
     expect(result.pairedData).toEqual([{ trimp: 150, powerTss: 91 }]);
   });
   it("excludes absent, zero or negative stress and zero or negative training impulse from learned-model pairs", () => {
-    const result = makeCalculator().buildTrainingStressModel(
+    const result = makeCalculator({
+      computeTrainingImpulse: (durationMin) =>
+        durationMin === 30 ? -10 : durationMin === 20 ? 0 : 150,
+    }).buildTrainingStressModel(
       [
         makeActivityRow(),
         makeActivityRow({ id: "missing" }),
         makeActivityRow({ id: "zero" }),
         makeActivityRow({ id: "negative" }),
-        makeActivityRow({ id: "resting", avg_hr: 60 }),
+        makeActivityRow({ id: "zero-impulse", duration_min: 20 }),
+        makeActivityRow({ id: "negative-impulse", duration_min: 30 }),
       ],
       new Map([
         ["activity-1", 91],
         ["zero", 0],
         ["negative", -1],
-        ["resting", 80],
+        ["zero-impulse", 80],
+        ["negative-impulse", 80],
       ]),
       190,
       60,

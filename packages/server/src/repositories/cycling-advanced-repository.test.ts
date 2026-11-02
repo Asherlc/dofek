@@ -499,6 +499,18 @@ describe("CyclingAdvancedRepository", () => {
         emptyReason: null,
       });
     });
+    it.each([
+      { label: "zero normalized-power activities", rows: [{ total: 0, power_total: 0 }] },
+      { label: "no aggregate row", rows: [] },
+    ])("reports missing normalized power with $label", async ({ rows }) => {
+      const { repo, sensorStore } = makeRepository([], 1);
+      sensorStore.query = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(rows);
+      expect(await repo.getActivityVariability(90, 20, 0)).toMatchObject({
+        models: [],
+        totalCount: 0,
+        emptyReason: "no_normalized_power",
+      });
+    });
     it("returns an empty state without activities", async () => {
       const { repo } = makeRepository([]);
       expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe(

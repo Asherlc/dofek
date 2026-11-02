@@ -92,6 +92,13 @@ export function fitCriticalPowerWithDiagnostics(
     };
   });
   const rmse = Math.sqrt(squaredResidualTotal / fittedPoints.length);
+  if (
+    !Number.isFinite(rmse) ||
+    fittedPoints.some(
+      (point) => !Number.isFinite(point.predictedPower) || !Number.isFinite(point.residualPower),
+    )
+  )
+    return null;
 
   return {
     cp: Math.round(cp),

@@ -267,6 +267,54 @@ describe("AnalyticalTrainingLoadRepository", () => {
     });
   });
 
+  it.each([
+    {
+      loads: [null, null],
+      value: null,
+      status: "unavailable",
+      reason: "Computed eFTP or normalized power is unavailable for 2 cycling activities.",
+      supportedRecords: 0,
+    },
+    {
+      loads: [80, null, null],
+      value: 80,
+      status: "partial",
+      reason: "2 cycling activities lacked computed eFTP or normalized power.",
+      supportedRecords: 1,
+    },
+  ])("reports cycling coverage for $status load", async (scenario) => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn(async (_schema, text: string) =>
+      text.includes("analytical-load:cycling")
+        ? scenario.loads.map((powerTss, index) => ({
+            activity_id: `00000000-0000-4000-9000-${String(index + 1).padStart(12, "0")}`,
+            date: "2026-06-15",
+            power_tss: powerTss,
+            elapsed_seconds: 3600,
+            source_providers: ["wahoo"],
+            first_observed_date: "2026-06-15",
+            date_was_authoritative: true,
+          }))
+        : [],
+    );
+    const result = await new AnalyticalTrainingLoadRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange("2026-06-15", "2026-06-15");
+
+    expect(result.rows[0]?.channels.cycling_power_tss).toMatchObject({
+      daily_value: scenario.value,
+      status: scenario.status,
+      reason: scenario.reason,
+      coverage: {
+        contributing_records: scenario.loads.length,
+        supported_records: scenario.supportedRecords,
+      },
+    });
+  });
+
   it("uses settings effective on the activity date and rejects HR zones that do not increase", async () => {
     const execute = vi
       .fn()

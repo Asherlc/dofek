@@ -153,13 +153,40 @@ describe("processActivityDeleteAnalyticsJob", () => {
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
   });
 
-  it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
-    await processActivityDeleteAnalyticsJob(
-      createProviderDeleteAnalyticsJob(),
-      fakeDb,
-      workLockPool,
-    );
+  it.each(["activity-delete-analytics-refresh", "activity-restore-analytics-refresh"] as const)(
+    "skips %s rebuilding when erasure starts during the CDC wait",
+    async (type) => {
+      const wait =
+        type === "activity-delete-analytics-refresh"
+          ? mockWaitForPeerDbActivityDeletes
+          : mockWaitForPeerDbActivityRestores;
+      wait.mockImplementationOnce(async () => {
+        mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(false);
+      });
+      const job = createActivityAnalyticsJob(type);
+      await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
+      expect(wait).toHaveBeenCalledOnce();
+      expect(mockRunActivityReadModelBuild).not.toHaveBeenCalled();
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+      expect(job.updateProgress.mock.calls.map(([progress]) => progress.percentage)).toEqual([
+        0, 20,
+      ]);
+      expect(mockClose).toHaveBeenCalledOnce();
+    },
+  );
 
+  it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
+    const job = createProviderDeleteAnalyticsJob();
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Invalidating provider analytics cache...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Provider analytics refresh complete.",
+    });
     expect(mockWaitForMetricStreamDeleteAcknowledgement).not.toHaveBeenCalled();
     expect(mockWaitForPeerDbProviderDeletes).toHaveBeenCalledWith(
       expect.anything(),

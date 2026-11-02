@@ -17,6 +17,7 @@ import {
 import { createMigration as createActivityLocationMemberChangeMigration } from "../../../../src/db/clickhouse-migrations/0086_activity_location_member_change.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
+import { rebuildTestActivityPowerCurve } from "./activity-power-curve-test-helpers.ts";
 import {
   analyticsBuildOrder,
   buildTestAnalyticsTableStatement,
@@ -949,6 +950,14 @@ export async function executeClickHouseTestCommand(
   }
 
   await handle.setupClient.command({ query });
+}
+
+export async function rebuildClickHouseTestActivityPowerCurve(
+  testContext: ClickHouseSyncTestContext,
+): Promise<void> {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) throw new Error("ClickHouse test activity sensor store has not been created");
+  await rebuildTestActivityPowerCurve(handle.setupClient);
 }
 
 export async function seedClickHouseMetricStreamRows(

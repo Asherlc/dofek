@@ -147,7 +147,7 @@ export class PowerRepository {
           userId: this.#userId,
           timezone: this.#timezone,
           ...range.clickHouseParams(),
-          ...clickHouseAccessParams(accessWindow),
+          ...clickHouseAccessParams(accessWindow, this.#timezone),
         },
       ),
       new CyclingThresholdRepository(

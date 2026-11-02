@@ -122,7 +122,7 @@ export class CyclingThresholdRepository {
       WHERE history.user_id = {userId:UUID} AND history.event_at <= now64(6)
       ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
       ORDER BY history.event_at DESC, ifNull(toString(history.activity_id), '') DESC LIMIT 1`,
-      { userId: this.#userId, ...clickHouseAccessParams(this.#accessWindow) },
+      { userId: this.#userId, ...clickHouseAccessParams(this.#accessWindow, this.#timezone) },
     );
     return evidence(rows[0]);
   }
@@ -143,7 +143,7 @@ export class CyclingThresholdRepository {
         userId: this.#userId,
         asOf: timestamp,
         timezone: this.#timezone,
-        ...clickHouseAccessParams(this.#accessWindow),
+        ...clickHouseAccessParams(this.#accessWindow, this.#timezone),
       },
     );
     return evidence(rows[0]);
@@ -159,7 +159,11 @@ export class CyclingThresholdRepository {
       FROM analytics.cycling_activity_power_metrics AS metrics
       WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
       ${clickHouseAccessPredicate(this.#accessWindow, "metrics.started_at")}`,
-      { userId: this.#userId, activityIds, ...clickHouseAccessParams(this.#accessWindow) },
+      {
+        userId: this.#userId,
+        activityIds,
+        ...clickHouseAccessParams(this.#accessWindow, this.#timezone),
+      },
     );
     return new Map(rows.map((row) => [row.activity_id, row]));
   }
@@ -196,7 +200,7 @@ export class CyclingThresholdRepository {
         startDate: input.startDate,
         endDate: input.endDate,
         pageLimit: input.limit + 1,
-        ...clickHouseAccessParams(this.#accessWindow),
+        ...clickHouseAccessParams(this.#accessWindow, this.#timezone),
         ...(cursor ? { cursorAt: cursor.eventAt, cursorActivityId: cursor.activityId } : {}),
       },
     );

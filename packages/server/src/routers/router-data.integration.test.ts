@@ -8,6 +8,7 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  rebuildClickHouseTestActivityPowerCurve,
   seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -458,6 +459,7 @@ describe("Router data coverage", () => {
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    await rebuildClickHouseTestActivityPowerCurve(testCtx);
     if (!polarizationActivity) {
       throw new Error("Polarization activity fixture was not created");
     }
