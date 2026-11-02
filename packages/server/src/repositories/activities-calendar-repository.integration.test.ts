@@ -29,6 +29,7 @@ describe("Activities list source tree hydration", () => {
   const climbingMemberId = randomUUID();
   const ids = Array.from({ length: 5 }, () => randomUUID());
   const absentId = randomUUID();
+  const staleGroupId = randomUUID();
   beforeAll(async () => {
     context = await setupTestDatabase();
     const providers = ["wahoo", "strava", "strava", "apple_health", "garmin"];
@@ -138,11 +139,61 @@ describe("Activities list source tree hydration", () => {
           [map('providerId','kaya','externalId','primary-type-climbing','memberActivityId','${climbingMemberId}')],
           '2026-10-02 14:35:00')`,
     });
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_activities
+        (activity_id,user_id,provider_id,canonical_type,provider_type,started_at,ended_at,local_time_source)
+        VALUES ('${staleGroupId}','${userId}','wahoo','cycling','cycling',
+          '2026-10-02 15:00:00','2026-10-02 15:30:00','unknown')`,
+    });
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
     overviewRepository = new ActivityOverviewRepository(context.db, userId, "UTC", sensorStore);
   });
   afterAll(async () => {
     await context.cleanup();
+  });
+  it("paginates visible active and hidden records before enrichment with stable boundaries", async () => {
+    const input = { weeks: 1, endDate: "2026-10-02", includeProviderAbsent: true, pageSize: 1 };
+    const pages = await Promise.all(
+      [0, 1, 2].map((page) => repository.getPage({ ...input, page })),
+    );
+    expect(
+      pages.map((page) => ({
+        totalCount: page.totalCount,
+        page: page.page,
+        pageSize: page.pageSize,
+      })),
+    ).toEqual([0, 1, 2].map((page) => ({ totalCount: 3, page, pageSize: 1 })));
+    const entries = pages.flatMap((page) => page.days.flatMap((day) => day.activities));
+    expect(entries.map((entry) => entry.id)).toEqual([
+      climbingGroupId,
+      ...[groupId, absentId].sort(),
+    ]);
+    expect(entries.find((entry) => entry.id === absentId)?.isProviderAbsent).toBe(true);
+    expect(await repository.getPage({ ...input, page: 9 })).toEqual(pages[2]);
+    const active = await repository.getPage({
+      ...input,
+      page: 0,
+      pageSize: 20,
+      includeProviderAbsent: false,
+    });
+    expect(active.totalCount).toBe(2);
+    expect(active.days.flatMap((day) => day.activities.map((entry) => entry.id))).toEqual([
+      climbingGroupId,
+      groupId,
+    ]);
+    const filtered = await repository.getPage({ ...input, activityType: "climbing", page: 0 });
+    expect(filtered.totalCount).toBe(1);
+    expect(filtered.days[0]?.activities[0]?.id).toBe(climbingGroupId);
+    expect(await repository.getPage({ ...input, activityType: "running", page: 5 })).toEqual({
+      days: [],
+      totalCount: 0,
+      page: 0,
+      pageSize: 1,
+    });
+    expect(await overviewRepository.getActivityOverview(input)).toMatchObject({
+      activityCount: 2,
+      totalMinutes: 60,
+    });
   });
   it("filters cards and overview by primary type with representative fallback", async () => {
     const input = { weeks: 1, endDate: "2026-10-02", activityType: "climbing" };

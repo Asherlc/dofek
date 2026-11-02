@@ -105,9 +105,9 @@ export async function getActivityRoutePreviews(
           lng,
           row_number() OVER (PARTITION BY activity_id ORDER BY recorded_at) AS point_index,
           count() OVER (PARTITION BY activity_id) AS point_count
-        FROM analytics.activity_location_sample
+        FROM analytics.activity_location_sample AS location
         WHERE user_id = {userId:UUID}
-          AND activity_id IN (
+          AND location.activity_id IN (
             SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))
           )
           AND is_deleted = 0

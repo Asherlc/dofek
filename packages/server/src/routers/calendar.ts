@@ -158,6 +158,42 @@ export const calendarRouter = router({
         });
       }
       await ensureProvidersRegistered();
+      return new ActivitiesCalendarRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+        ctx.accessWindow,
+      ).getWeekList(input);
+    }),
+
+  weekListV2: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-calendar-page-v1",
+  })
+    .input(
+      activityListInputSchema.extend({
+        page: z.number().int().nonnegative().default(0),
+        pageSize: z.number().int().min(1).max(100).default(20),
+      }),
+    )
+    .output(
+      z.object({
+        days: z.array(calendarDayActivitiesSchema),
+        totalCount: z.number().int().nonnegative(),
+        page: z.number().int().nonnegative(),
+        pageSize: z.number().int().positive(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      await ensureProvidersRegistered();
       const repo = new ActivitiesCalendarRepository(
         ctx.db,
         ctx.userId,
@@ -165,7 +201,7 @@ export const calendarRouter = router({
         ctx.sensorStore,
         ctx.accessWindow,
       );
-      return repo.getWeekList(input);
+      return repo.getPage(input);
     }),
 
   activityOverview: cachedProtectedQuery({

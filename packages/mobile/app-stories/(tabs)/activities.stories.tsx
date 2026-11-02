@@ -116,7 +116,7 @@ function createStoryData(
             otherSources: [],
           };
 
-  const weekList: AppRouterOutputs["calendar"]["weekList"] = [
+  const weekListV2: AppRouterOutputs["calendar"]["weekListV2"]["days"] = [
     {
       date: today,
       activities: [
@@ -228,7 +228,7 @@ function createStoryData(
   ];
 
   if (climbingActivity) {
-    weekList[0].activities = [
+    weekListV2[0].activities = [
       {
         id: "a1220000-0000-4000-8000-000000000001",
         name: "Boulder Canyon climbing",
@@ -340,7 +340,12 @@ function createStoryData(
   return {
     today,
     queryInput,
-    weekList,
+    weekListV2: {
+      days: weekListV2,
+      totalCount: weekListV2.reduce((count, day) => count + day.activities.length, 0),
+      page: 0,
+      pageSize: 20,
+    },
     activityOverview,
     calendarData,
     processingStatus,
@@ -360,8 +365,8 @@ function createMockObservable(
 ): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
-      if (path === "calendar.weekList") {
-        observer.next?.({ result: { data: storyData.weekList } });
+      if (path === "calendar.weekListV2") {
+        observer.next?.({ result: { data: storyData.weekListV2 } });
       } else if (path === "calendar.activityOverview") {
         observer.next?.({ result: { data: storyData.activityOverview } });
       } else if (path === "calendar.calendarData") {
@@ -414,8 +419,11 @@ function MockProviders({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
     });
     client.setQueryData(
-      [["calendar", "weekList"], { input: storyData.queryInput, type: "query" }],
-      storyData.weekList,
+      [
+        ["calendar", "weekListV2"],
+        { input: { ...storyData.queryInput, page: 0, pageSize: 20 }, type: "query" },
+      ],
+      storyData.weekListV2,
     );
     client.setQueryData(
       [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
