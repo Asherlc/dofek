@@ -8,7 +8,7 @@ const { persist } = vi.hoisted(() => ({ persist: vi.fn() }));
 vi.mock("./climbing-log-sync.ts", () => ({ persistClimbingLogEntries: persist }));
 
 describe("climbing snapshot parameter binding", () => {
-  it("retains and restores supported source identities within the same user and provider", async () => {
+  it("binds retained identities and scope to retirement and restoration commands", async () => {
     const input: ClimbingLogSyncInput = {
       userId: "00000000-0000-4000-8000-000000000001",
       providerId: "kaya",

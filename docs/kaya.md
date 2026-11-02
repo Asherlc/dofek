@@ -48,7 +48,7 @@ The [web](../packages/web/src/components/ClimbingLogEntryDetails.tsx) and
 [mobile](../packages/mobile/components/ClimbingLogEntryDetails.tsx) viewers show
 the recorded count and label unknown attempt order explicitly. This recovery
 requires previously ingested failed-attempt evidence; a missing upstream count
-alone cannot reconstruct unobserved tries. Existing retired records recover on
+alone cannot reconstruct unobserved tries. Eligible retired records recover on
 the next successful sync after deployment. Source payloads and attempt IDs
 remain in their original canonical rows.
 
