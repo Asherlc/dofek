@@ -268,6 +268,43 @@ describe("runAnalyticsBuild", () => {
     ]);
   });
 
+  it("keeps one projection instant when batches cross UTC midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-02T23:59:59Z"));
+    const instants: Array<string | null> = [];
+    try {
+      await runAnalyticsBuild({
+        selectedModels: ["cycling_activity"],
+        artifactDirectory: "/tmp/cycling-projection-midnight",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt: async () => 0,
+        readArtifact: createArtifactReader("midnight", [
+          {
+            uniqueId: "model.dofek.cycling_activity",
+            name: "cycling_activity",
+            status: "success",
+            executionTime: 1,
+            message: null,
+          },
+        ]),
+        projectCyclingPower: async (asOf: Date) => {
+          instants.push(asOf?.toISOString() ?? null);
+          vi.setSystemTime(new Date("2026-11-03T00:00:01Z"));
+          return {
+            pendingActivities: 0,
+            pendingUsers: instants.length === 1 ? 1 : 0,
+            projectedUsers: 32,
+          };
+        },
+        recordRun: async () => ({ datasets: 1, failed: 0 }),
+      });
+      expect(instants).toEqual(["2026-11-02T23:59:59.000Z", "2026-11-02T23:59:59.000Z"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("withholds processing success when cycling projection stops making progress", async () => {
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
     const runDbt = vi.fn(async () => 0);

@@ -34990,9 +34990,12 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - Direct fix: drain successive bounded projection batches before
   dependent models and processing success, failing explicitly if pending work
   stops decreasing. No sleeps, increased timeouts, or suppressed errors.
-- Validation and remaining risk: all 14 orchestrator tests pass, including a
+- Validation and remaining risk: all 15 orchestrator tests pass, including a
   regression first observed failing on the initial pending batch and a stalled
-  backlog failure case. Production recovery remains unverified. Separately
+  backlog failure case. Review added a fixed projection instant across batches
+  and a regression crossing UTC midnight, preventing completed users from
+  becoming dirty solely because the projection day changes during a build.
+  Production recovery remains unverified. Separately
   determine whether unsupported rides have sufficient source sensor coverage.
 - Retrospective: worker logs and persisted row counts exposed the orchestration
   boundary quickly. Proposed runbook addition: check projection backlog and
