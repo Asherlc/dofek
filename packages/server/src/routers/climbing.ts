@@ -149,6 +149,7 @@ export const climbingRouter = router({
         days: z.number().int().min(1).max(365).nullable().default(90),
         endDate: z.iso.date().optional(),
         includeAreaMetadata: z.boolean().default(true),
+        responseVersion: z.union([z.literal(1), z.literal(2)]).default(1),
       }),
     )
     .output(climbingStrengthsSchema)
@@ -163,7 +164,7 @@ export const climbingRouter = router({
           preference,
         );
         const endDate = input.endDate ?? formatDateYmdInTimeZone(new Date(), ctx.timezone);
-        const { includeAreaMetadata, ...filters } = input;
+        const { includeAreaMetadata, responseVersion, ...filters } = input;
         const observations = await repository.getObservations(input.days, filters, endDate);
         const enrichment = await new ClimbingStrengthsEnrichmentRepository(
           ctx.db,
@@ -178,17 +179,22 @@ export const climbingRouter = router({
             ? { ...entry, catalogueTraits: catalogueStrengthTraits(seed, context) }
             : entry;
         });
+        const result = buildClimbingStrengths(
+          enriched,
+          {
+            ...(input.days === null
+              ? {}
+              : { startDate: dateWindowStartString(endDate, input.days - 1) }),
+            endDate,
+          },
+          { includeAreaMetadata },
+        );
         return {
-          ...buildClimbingStrengths(
-            enriched,
-            {
-              ...(input.days === null
-                ? {}
-                : { startDate: dateWindowStartString(endDate, input.days - 1) }),
-              endDate,
-            },
-            { includeAreaMetadata },
-          ),
+          ...result,
+          panels:
+            responseVersion === 2
+              ? result.panels
+              : result.panels.filter((panel) => panel.dimension !== "style"),
           enrichmentPending: enrichment.pending,
           enrichmentErrors: enrichment.errors,
         };

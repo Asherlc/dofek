@@ -117,13 +117,13 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     const { rerender } = render(<ClimbingTab />);
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true },
+      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true, responseVersion: 2 },
       expect.any(Object),
     );
     queryDate.value = "2026-10-27";
     rerender(<ClimbingTab />);
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-27", includeAreaMetadata: true },
+      { days: 90, endDate: "2026-10-27", includeAreaMetadata: true, responseVersion: 2 },
       expect.any(Object),
     );
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith({ days: 90 }, expect.any(Object));
@@ -149,7 +149,13 @@ describe("ClimbingTab", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true, types: ["lead"] },
+      {
+        days: 90,
+        endDate: "2026-10-26",
+        includeAreaMetadata: true,
+        responseVersion: 2,
+        types: ["lead"],
+      },
       expect.any(Object),
     );
   });
@@ -365,7 +371,7 @@ describe("ClimbingTab", () => {
 
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(strengthsQuery).toHaveBeenCalledWith(
-      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true },
+      { days: 90, endDate: "2026-10-26", includeAreaMetadata: true, responseVersion: 2 },
       expect.objectContaining({ placeholderData: expect.any(Function) }),
     );
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
@@ -396,7 +402,7 @@ describe("ClimbingTab", () => {
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(locationMapQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(strengthsQuery).toHaveBeenCalledWith(
-      { days: null, endDate: "2026-10-26", includeAreaMetadata: true },
+      { days: null, endDate: "2026-10-26", includeAreaMetadata: true, responseVersion: 2 },
       expect.any(Object),
     );
   });

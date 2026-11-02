@@ -398,6 +398,13 @@ proposals, or [submit a pull request](https://github.com/Asherlc/dofek/pulls).
 
 ### Climbing strengths view migration
 
+The [strengths query](../server/src/routers/climbing.ts) negotiates
+`responseVersion: 1 | 2`, defaulting to `1`. Version 1 preserves the historical
+panel-dimension vocabulary; version 2 includes the unified `style` dimension.
+Both repository clients explicitly request version 2. This follows the existing
+[climbing response negotiation](src/climbing-log-response.ts) pattern and keeps
+older installed clients able to parse their responses.
+
 The `climbing-strengths-views` subpath now exports
 [`CLIMBING_STRENGTHS_TABS` and `ClimbingStrengthsTab`](src/climbing-strengths-views.ts)
 for fixed Styles (`radar`) and Progress (`progress`) views.

@@ -348,6 +348,34 @@ describe("climbingRouter", () => {
     });
     expect(lookup).toHaveBeenCalledWith(null, { days: null, endDate: "2025-02-05" }, "2025-02-05");
   });
+  it.each([undefined, 1, 2] as const)(
+    "negotiates the strengths panel vocabulary for response version %s",
+    async (responseVersion) => {
+      vi.spyOn(ClimbingStrengthsRepository.prototype, "getObservations").mockResolvedValue([
+        observation({
+          catalogueTraits: [
+            {
+              dimension: "style",
+              value: "technical",
+              source: {
+                providerId: "openbeta",
+                scope: "route",
+                name: "Problem",
+                url: "https://openbeta.io/climb/route",
+              },
+            },
+          ],
+        }),
+      ]);
+      const result = await makeCaller().caller.strengths({
+        days: 30,
+        ...(responseVersion === undefined ? {} : { responseVersion }),
+      });
+      expect(result.panels.filter((p) => p.dimension === "style")).toHaveLength(
+        responseVersion === 2 ? 1 : 0,
+      );
+    },
+  );
   it.each([true, false])(
     "calculates training with includeAreaMetadata=%s and reports pending source reads",
     async (includeAreaMetadata) => {

@@ -77,6 +77,8 @@ disposable source of enrichment; no new persisted analytics facts.
 - [ ] TDD route precedence, include/exclude area calculations and example provenance.
 - [ ] Implement paired controls, beside-chart responsive layout and source trees;
   verify interactions and both clients' query inputs.
+- [x] Negotiate strengths response version 2 for the expanded panel vocabulary;
+  preserve historical panel dimensions for clients requesting version 1 or omitting it.
 - [ ] Run executable PostgreSQL tests for bulk seed selection/ownership/visibility.
 
 - [ ] Update current library/provider documentation with primary-source citations.

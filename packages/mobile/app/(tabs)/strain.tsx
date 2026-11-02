@@ -104,7 +104,13 @@ export default function StrainScreen() {
   );
   useReportQueryError(runningQuery);
   const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
-    { days: strengthsAllTime ? null : days, endDate, ...climbingFilters, includeAreaMetadata },
+    {
+      days: strengthsAllTime ? null : days,
+      endDate,
+      responseVersion: 2,
+      ...climbingFilters,
+      includeAreaMetadata,
+    },
     {
       enabled: isHydrated,
       refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),

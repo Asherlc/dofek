@@ -96,7 +96,7 @@ export function ClimbingTab() {
   );
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
   const strengths = trpc.climbing.strengths.useQuery(
-    { ...rangeInput, days, endDate, includeAreaMetadata },
+    { ...rangeInput, days, endDate, responseVersion: 2, includeAreaMetadata },
     {
       ...climbingQueryOptions,
       refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),
