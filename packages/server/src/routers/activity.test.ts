@@ -217,6 +217,92 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("metric source response versions", () => {
+    it.each([undefined, 1, 2] as const)(
+      "serves the supported attribution contract for version %s",
+      async (responseVersion) => {
+        const id = "00000000-0000-4000-8000-000000000001";
+        const whoopId = "00000000-0000-4000-8000-000000000002";
+        const pelotonId = "00000000-0000-4000-8000-000000000003";
+        const row = {
+          id,
+          user_id: "user-1",
+          started_at: "2026-04-01T10:00:00Z",
+          ended_at: "2026-04-01T11:00:00Z",
+          member_activity_ids: [whoopId, pelotonId],
+          primary_activity_id: whoopId,
+          primary_provider_id: "whoop",
+          primary_source_name: null,
+          origin_candidate_member_ids: [],
+          absent_source_external_ids: [],
+          source_external_ids: [
+            {
+              memberActivityId: whoopId,
+              providerId: "whoop",
+              externalId: "original",
+              subsource: null,
+            },
+            {
+              memberActivityId: pelotonId,
+              providerId: "peloton",
+              externalId: "copy",
+              subsource: null,
+            },
+          ],
+          origin_evidence: [
+            {
+              upstreamMemberActivityId: whoopId,
+              downstreamMemberActivityId: pelotonId,
+              field: "external_id",
+              value: "original",
+            },
+          ],
+        };
+        const sensorStore = makeSensorStoreStub({
+          query: vi.fn().mockResolvedValue([
+            {
+              channel: "heart_rate",
+              provider_id: "peloton",
+              device_id: null,
+              source_id: "peloton",
+              activity_ids: [pelotonId],
+              sample_count: 500,
+            },
+          ]),
+        });
+        const { caller } = makeTestCaller(
+          createCaller,
+          [
+            [{ requested_id: id, resolved_group_id: id, resolution_kind: "group" }],
+            [row],
+            [],
+            [row],
+          ],
+          (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
+        );
+        const result = await caller.metricSources({
+          id,
+          ...(responseVersion === undefined ? {} : { responseVersion }),
+        });
+        expect(result[0]?.sources[0]).toMatchObject(
+          responseVersion === 2
+            ? {
+                id: "peloton",
+                label: "WHOOP via Peloton",
+                presentation: {
+                  providerId: "whoop",
+                  attribution: { kind: "provider", providerId: "peloton" },
+                },
+              }
+            : {
+                id: "peloton",
+                label: "Peloton",
+                presentation: { providerId: "peloton", attribution: null },
+              },
+        );
+      },
+    );
+  });
   describe("powerWork", () => {
     it("returns work for the selected source after resolving a provider member to its canonical ride", async () => {
       const id = "00000000-0000-4000-8000-000000000010";

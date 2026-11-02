@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { activitySourceNodePresentation } from "./activity-source-tree.ts";
+import {
+  type ActivitySourceTree,
+  type ActivitySourceTreeNode,
+  activityMetricSourceInheritance,
+  activitySourceNodePresentation,
+} from "./activity-source-tree.ts";
+import { providerLabel } from "./providers.ts";
 
 describe("activitySourceNodePresentation", () => {
   it.each([
@@ -19,5 +25,162 @@ describe("activitySourceNodePresentation", () => {
     });
     expect(presentation.displayName).toBe(displayName);
     expect(presentation.attribution?.kind ?? null).toBe(kind);
+  });
+});
+
+describe("activityMetricSourceInheritance", () => {
+  const node = (
+    id: string,
+    providerId: string,
+    children: ActivitySourceTreeNode[] = [],
+  ): ActivitySourceTreeNode => ({
+    id,
+    providerId,
+    sourceName: null,
+    label: providerLabel(providerId),
+    description: null,
+    url: null,
+    children,
+  });
+  const tree: ActivitySourceTree = {
+    primary: node("origin", "whoop", [
+      node("copy", "peloton", [node("health-copy", "apple_health")]),
+    ]),
+    otherSources: [node("unrelated", "garmin")],
+  };
+  it("retains every delivery step in a multi-hop accessible label", () => {
+    expect(activityMetricSourceInheritance(tree, ["health-copy"], "apple_health")).toEqual({
+      label: "WHOOP via Peloton → Apple Health",
+      presentation: {
+        displayName: "WHOOP",
+        providerId: "whoop",
+        sourceName: null,
+        attribution: { kind: "apple_health", label: "Apple Health" },
+      },
+    });
+  });
+  it("retains device model labels in intermediate import steps", () => {
+    const garmin = {
+      ...node("garmin-copy", "garmin", [node("health-copy", "apple_health")]),
+      sourceName: "Edge 1050",
+      label: "Edge 1050",
+    };
+    const result = activityMetricSourceInheritance(
+      { primary: node("origin", "whoop", [garmin]), otherSources: [] },
+      ["health-copy"],
+      "apple_health",
+    );
+    expect(result?.label).toBe("WHOOP via Edge 1050 → Apple Health");
+  });
+  it("keeps the delivery badge provider-based when copies have different device labels", () => {
+    const copies = ["Edge 530", "Edge 1050"].map((model) => ({
+      ...node(model, "garmin"),
+      sourceName: model,
+      label: model,
+    }));
+    const result = activityMetricSourceInheritance(
+      { primary: node("origin", "whoop", copies), otherSources: [] },
+      ["Edge 530", "Edge 1050"],
+      "garmin",
+    );
+    expect(result?.label).toBe("WHOOP via Garmin");
+  });
+  it.each(["unresolved", "kaya"])(
+    "uses the proven WHOOP branch with a %s activity origin",
+    (origin) => {
+      expect(
+        activityMetricSourceInheritance(
+          {
+            primary: origin === "kaya" ? node("unrelated", "kaya") : null,
+            otherSources: [
+              ...(origin === "kaya" ? [] : [node("unrelated", "kaya")]),
+              node("origin", "whoop", [node("copy", "peloton")]),
+            ],
+          },
+          ["copy"],
+          "peloton",
+        )?.label,
+      ).toBe("WHOOP via Peloton");
+    },
+  );
+  it("retains a model-specific recording label supplied by the canonical tree", () => {
+    const watch = {
+      ...node("watch-origin", "apple-watch", [node("health-copy", "apple_health")]),
+      label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+    };
+    const result = activityMetricSourceInheritance(
+      { primary: watch, otherSources: [] },
+      ["health-copy"],
+      "apple_health",
+    );
+    expect(result?.label).toBe("Apple Watch Series 7 (GPS + Cellular, 45mm) via Apple Health");
+    expect(result?.presentation.displayName).toBe("Apple Watch Series 7 (GPS + Cellular, 45mm)");
+  });
+  it.each([
+    ["origin"],
+    ["missing"],
+    ["copy", "unrelated"],
+    ["copy", "missing"],
+    ["copy", "health-copy"],
+    [],
+  ])("leaves unresolved or mixed paths to the existing presentation: %j", (...ids) => {
+    expect(activityMetricSourceInheritance(tree, ids, "peloton")).toBeNull();
+  });
+  it.each([
+    ["whoop", "whoop"],
+    ["apple_health", "apple-health"],
+    ["apple-health", "apple_health"],
+  ])("does not invent inheritance between %s and %s copies", (origin, delivery) => {
+    expect(
+      activityMetricSourceInheritance(
+        { primary: node("one", origin, [node("two", delivery)]), otherSources: [] },
+        ["two"],
+        delivery,
+      ),
+    ).toBeNull();
+  });
+  it("retains intermediate providers when a proven path returns to its origin provider", () => {
+    const roundTrip = {
+      primary: node("origin", "whoop", [node("import", "peloton", [node("copy", "whoop")])]),
+      otherSources: [],
+    };
+    expect(activityMetricSourceInheritance(roundTrip, ["copy"], "whoop")?.label).toBe(
+      "WHOOP via Peloton → WHOOP (Cloud)",
+    );
+  });
+  it("projects shared ancestry for distinct copies delivered by the same provider", () => {
+    const copies = {
+      primary: node("origin", "whoop", [node("one", "peloton"), node("two", "peloton")]),
+      otherSources: [],
+    };
+    expect(activityMetricSourceInheritance(copies, ["one", "two"], "peloton")?.label).toBe(
+      "WHOOP via Peloton",
+    );
+    expect(activityMetricSourceInheritance(copies, ["one", ""], "peloton")).toBeNull();
+  });
+  it("keeps different recording origins separate even when delivery providers match", () => {
+    const distinct = {
+      primary: node("whoop-origin", "whoop", [node("one", "peloton")]),
+      otherSources: [node("garmin-origin", "garmin", [node("two", "peloton")])],
+    };
+    expect(activityMetricSourceInheritance(distinct, ["one", "two"], "peloton")).toBeNull();
+  });
+  it("does not assign another provider's delivery badge to a recording", () => {
+    expect(activityMetricSourceInheritance(tree, ["copy"], "strava")).toBeNull();
+  });
+  it.each([
+    ["apple_health", "apple-health"],
+    ["apple-health", "apple_health"],
+  ])("treats %s and %s as the same delivery identity", (originProvider, deliveryProvider) => {
+    expect(
+      activityMetricSourceInheritance(
+        {
+          primary: node("origin", originProvider, [node("copy", deliveryProvider)]),
+          otherSources: [],
+        },
+        ["copy"],
+        deliveryProvider,
+      ),
+    ).toBeNull();
   });
 });

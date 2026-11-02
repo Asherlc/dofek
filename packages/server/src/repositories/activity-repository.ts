@@ -16,6 +16,9 @@ import { routeMapPreview } from "../lib/map-preview.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
+import { activityOriginFromColumns } from "../models/activity-origin.ts";
+import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
+import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { listActivityHardware } from "./activity-hardware-repository.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
@@ -773,11 +776,37 @@ export class ActivityRepository extends BaseRepository {
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
-  async getMetricSources(activityId: string) {
+  async getMetricSources(activityId: string, responseVersion: 1 | 2 = 1) {
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
     const hardware = await listActivityHardware(this.db, window);
-    return getActivityMetricSources(this.#requireSensorStore("metric sources"), window, hardware);
+    const store = this.#requireSensorStore("metric sources");
+    if (responseVersion === 1) return getActivityMetricSources(store, window, hardware);
+    const [ancestry] = await this.query(
+      activityDetailRowSchema.pick({
+        primary_activity_id: true,
+        primary_provider_id: true,
+        primary_source_name: true,
+        origin_candidate_member_ids: true,
+        origin_evidence: true,
+        source_external_ids: true,
+        absent_source_external_ids: true,
+      }),
+      sql`SELECT primary_activity_id::text, primary_provider_id, primary_source_name,
+        origin_candidate_member_ids::text[], origin_evidence,
+        source_external_ids, absent_source_external_ids
+      FROM fitness.v_activity WHERE id = ${window.activityId}::uuid AND user_id = ${this.userId}::uuid`,
+    );
+    if (!ancestry) throw activityNotFoundError();
+    const sourceTree = buildActivitySourceTree(
+      activityOriginFromColumns(ancestry),
+      ActivitySourceAttribution.fromEntries(
+        ancestry.source_external_ids,
+        ancestry.absent_source_external_ids,
+      ).toSourceLinks(() => undefined),
+      ancestry.origin_evidence,
+    );
+    return getActivityMetricSources(store, window, hardware, sourceTree);
   }
 
   async getHardware(activityId: string) {

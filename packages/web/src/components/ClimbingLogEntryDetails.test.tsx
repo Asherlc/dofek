@@ -200,3 +200,24 @@ it("groups source tags once and keeps custom and unknown grip labels visible", (
   expect(screen.getByText("custom-source · Uncategorized tags")).toBeTruthy();
   expect(screen.getByText("Mystery label")).toBeTruthy();
 });
+
+it("shows two unordered attempts with one successful send", () => {
+  const entry = climbingLogEntryFixture({ providerId: "kaya", recordedClimbAttemptCount: 2 });
+  entry.attempts = [
+    climbingAttemptFixture(entry.id, {
+      outcome: "completed",
+      rockResultLabels: ["sent"],
+      ropeMethod: "top_rope",
+    }),
+    climbingAttemptFixture(entry.id, {
+      id: "20000000-0000-4000-8000-000000000006",
+      outcome: "failed",
+      ropeMethod: "top_rope",
+    }),
+  ];
+  render(<ClimbingLogEntryDetails entry={entry} />);
+  expect(screen.getByText("Attempts: 2")).toBeTruthy();
+  expect(screen.getAllByText("Attempt (order unknown)")).toHaveLength(2);
+  expect(screen.getByText("sent")).toBeTruthy();
+  expect(screen.getByText("Failed")).toBeTruthy();
+});

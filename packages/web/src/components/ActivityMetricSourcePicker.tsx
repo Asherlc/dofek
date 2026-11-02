@@ -27,8 +27,11 @@ export function AttributionIcon({
       title={attribution.label}
       aria-hidden="true"
     >
-      {attribution.kind === "apple_health" ? (
-        <ProviderLogo provider="apple_health" size={14} />
+      {attribution.kind === "apple_health" || attribution.kind === "provider" ? (
+        <ProviderLogo
+          provider={attribution.kind === "provider" ? attribution.providerId : "apple_health"}
+          size={14}
+        />
       ) : (
         <svg
           width="14"

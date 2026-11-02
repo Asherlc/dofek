@@ -1553,6 +1553,13 @@ describe("ActivityRepository", () => {
       started_at: "2024-01-15T10:00:00.000Z",
       ended_at: "2024-01-15T11:00:00.000Z",
       member_activity_ids: ["member-id"],
+      primary_activity_id: null,
+      primary_provider_id: null,
+      primary_source_name: null,
+      origin_candidate_member_ids: [],
+      origin_evidence: [],
+      source_external_ids: [],
+      absent_source_external_ids: [],
     };
     const window = {
       activityId: row.id,
@@ -1618,6 +1625,81 @@ describe("ActivityRepository", () => {
       );
       const windowQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
       expect(windowQuery.params).toEqual(expect.arrayContaining(["canonical-id", "user-1"]));
+    });
+
+    it.each(["resolved", "unresolved", "removed-original"])(
+      "uses canonical ancestry for %s metric sources",
+      async (state) => {
+        const whoopId = "11111111-1111-4111-8111-111111111111";
+        const pelotonId = "22222222-2222-4222-8222-222222222222";
+        const sources = [
+          {
+            memberActivityId: whoopId,
+            providerId: "whoop",
+            externalId: "original",
+            subsource: null,
+          },
+          {
+            memberActivityId: pelotonId,
+            providerId: "peloton",
+            externalId: "copy",
+            subsource: null,
+          },
+        ];
+        const { repo, sensorStore } = makeRepositoryWithSensorStore([
+          {
+            ...row,
+            member_activity_ids: [whoopId, pelotonId],
+            primary_activity_id: state === "unresolved" ? null : whoopId,
+            primary_provider_id: state === "unresolved" ? null : "whoop",
+            origin_candidate_member_ids: state === "unresolved" ? [whoopId, pelotonId] : [],
+            source_external_ids: sources.filter(
+              (source) => state !== "removed-original" || source.providerId !== "whoop",
+            ),
+            absent_source_external_ids:
+              state === "removed-original"
+                ? [{ ...sources[0], providerAbsentAt: "2026-10-21T00:00:00Z" }]
+                : [],
+            origin_evidence: [
+              {
+                upstreamMemberActivityId: whoopId,
+                downstreamMemberActivityId: pelotonId,
+                field: "external_id",
+                value: "original",
+              },
+            ],
+          },
+        ]);
+        sensorStore.query.mockResolvedValueOnce([
+          {
+            channel: "heart_rate",
+            provider_id: "peloton",
+            device_id: null,
+            source_id: "peloton",
+            activity_ids: [pelotonId],
+            sample_count: 500,
+          },
+        ]);
+        const result = await repo.getMetricSources("member-id", 2);
+        expect(result[0]?.sources[0]).toMatchObject({
+          id: "peloton",
+          label: "WHOOP via Peloton",
+          presentation: {
+            providerId: "whoop",
+            attribution: { kind: "provider", providerId: "peloton" },
+          },
+        });
+      },
+    );
+
+    it("returns NOT_FOUND if ancestry disappears after resolving the activity window", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([row]);
+      vi.spyOn(repo, "findSensorWindow").mockResolvedValue(window);
+      execute.mockResolvedValue([]);
+      await expect(repo.getMetricSources("member-id", 2)).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
     });
 
     it("rejects missing activities before querying metric sources", async () => {

@@ -8,10 +8,13 @@ export const activityMetricSourcePresentationSchema = z.object({
   providerId: z.string(),
   sourceName: z.string().nullable(),
   attribution: z
-    .object({
-      kind: z.enum(["apple_health", "cloud", "bluetooth"]),
-      label: z.string(),
-    })
+    .union([
+      z.object({
+        kind: z.enum(["apple_health", "cloud", "bluetooth"]),
+        label: z.string(),
+      }),
+      z.object({ kind: z.literal("provider"), providerId: z.string(), label: z.string() }),
+    ])
     .nullable(),
 });
 export type ActivityMetricSourcePresentation = z.infer<
