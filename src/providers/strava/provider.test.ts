@@ -2370,6 +2370,10 @@ describe("StravaProvider.sync — additional coverage", () => {
     const first = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
     expect(first.errors).toHaveLength(1);
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ presentExternalIds: new Set(["1", "2", "3"]) }),
+    );
     const resumed = await new StravaProvider(fetch).sync(new SyncRun({ db, window, checkpoint }));
     expect(resumed.errors).toHaveLength(0);
     expect(details).toEqual([1, 2, 3, 2]);

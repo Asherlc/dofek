@@ -12,7 +12,7 @@ type ActivityFields = Pick<
   "externalId" | "activityType" | "startedAt" | "endedAt" | "name"
 >;
 
-/** Fresh list metadata must preserve detail-only provenance on checkpoint resumes. */
+/** Refresh ride metadata while retaining the last raw snapshot without a new detail download. */
 export function upsertStravaActivity(
   db: SyncDatabase,
   fields: ActivityFields,
@@ -29,7 +29,7 @@ export function upsertStravaActivity(
       endedAt: fields.endedAt,
       name: fields.name,
       sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-      raw: detail ?? sql`${activity.raw} || ${JSON.stringify(summary ?? {})}::jsonb`,
+      raw: detail ?? sql`coalesce(${activity.raw}, excluded.raw)`,
     },
   );
 }

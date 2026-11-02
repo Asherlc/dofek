@@ -104,7 +104,10 @@ function stravaHandlers(
         return new HttpResponse("Not Found", { status: 404 });
       }
       const detail: StravaDetailedActivity = { ...act, device_name: "Garmin Edge 530" };
-      return HttpResponse.json(detail);
+      return HttpResponse.json({
+        ...detail,
+        map: { summary_polyline: "original-summary", polyline: "full-detail-polyline" },
+      });
     }),
 
     // Streams endpoint
@@ -220,12 +223,21 @@ describe("StravaProvider.sync() (integration)", () => {
           }),
         );
         expect(first.errors).toHaveLength(1);
+        const [beforeResume] = await isolated.db
+          .select({ raw: activity.raw })
+          .from(activity)
+          .where(eq(activity.externalId, "7000"));
         const publishedBeforeResume = metricStreamCapture.publishedMetricStreamRows.length;
         if (mutation === "deleted") inventory = activities.slice(1);
         if (mutation === "renamed") {
           inventory = activities.map((entry, index) =>
             index === 0
-              ? { ...entry, name: "Renamed mountain ride", sport_type: "MountainBikeRide" }
+              ? {
+                  ...entry,
+                  name: "Renamed mountain ride",
+                  sport_type: "MountainBikeRide",
+                  map: { summary_polyline: "updated-summary" },
+                }
               : entry,
           );
         }
@@ -263,8 +275,13 @@ describe("StravaProvider.sync() (integration)", () => {
             canonicalType: "cycling",
             modality: "mountain",
             sourceName: "Garmin Edge 530",
-            raw: { name: "Renamed mountain ride", device_name: "Garmin Edge 530" },
+            raw: {
+              name: "Morning Ride",
+              device_name: "Garmin Edge 530",
+              map: { polyline: "full-detail-polyline" },
+            },
           });
+          expect(renamed?.raw).toEqual(beforeResume?.raw);
         }
         const last = rows.find((row) => row.externalId === "7030");
         if (!last) throw new Error("Missing resumed Strava activity");
@@ -284,6 +301,54 @@ describe("StravaProvider.sync() (integration)", () => {
       }
     },
   );
+
+  it("fills a missing raw payload from inventory when detail is unavailable", async () => {
+    const isolated = await setupTestDatabase();
+    try {
+      const db = isolated.db;
+      await ensureProvider(db, "strava", "Strava", "https://www.strava.com/api/v3");
+      await saveTokens(db, "strava", {
+        accessToken: "valid-token",
+        refreshToken: "valid-refresh",
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+        scopes: "read,activity:read_all",
+      });
+      const summary = fakeActivity({ id: 8000, start_date: "2026-06-01T10:00:00Z" });
+      await upsertProviderActivity(
+        db,
+        {
+          ...parseStravaActivity(summary),
+          providerId: "strava",
+          sourceName: "Previously recorded device",
+          raw: null,
+        },
+        { name: summary.name },
+      );
+      server.use(...stravaHandlers([summary]));
+      server.use(
+        http.get(
+          "https://www.strava.com/api/v3/activities/:activityId",
+          () => new HttpResponse("Not found", { status: 404 }),
+        ),
+      );
+      const result = await new StravaProvider(globalThis.fetch).sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromIsoRange({
+            sinceIso: "2026-06-01T00:00:00.000Z",
+            untilIso: "2026-06-02T00:00:00.000Z",
+          }),
+          metricStreamPublisher: metricStreamCapture.publisher,
+        }),
+      );
+      expect(result.errors).toEqual([]);
+      const [stored] = await db.select().from(activity).where(eq(activity.externalId, "8000"));
+      expect(stored?.raw).toEqual(summary);
+      expect(stored?.sourceName).toBe("Previously recorded device");
+    } finally {
+      await isolated.cleanup();
+    }
+  });
 
   it("syncs activities with streams into activity and Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "strava", {
