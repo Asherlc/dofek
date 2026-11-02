@@ -271,6 +271,7 @@ describe("loadMobileTrainingTabV2", () => {
       [{ week: "2026-03-24", canonical_type: "running", count: 2, hours: 3.5 }],
       [
         new VerticalAscentModel({
+          activityId: "00000000-0000-4000-8000-000000000001",
           date: "2026-03-28",
           activityName: "Hill Climb",
           activityType: "cycling",
@@ -431,6 +432,7 @@ describe("loadMobileTrainingTabV2", () => {
       [],
       [
         new VerticalAscentModel({
+          activityId: "00000000-0000-4000-8000-000000000002",
           date: "2026-03-28",
           activityName: "Hill Climb",
           activityType: "road_cycling",

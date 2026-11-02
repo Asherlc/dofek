@@ -161,6 +161,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     const result = await query<
       {
         date: string;
+        activityId: string;
         activityName: string;
         activityType: string;
         verticalAscentRate: number;
@@ -174,16 +175,16 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     const lowGradeRow = result.find((row) => row.activityName === "Low Grade Drift");
     const walkingRow = result.find((row) => row.activityName === "Walking Climb");
 
-    expect(offsetRow).toBeDefined();
+    expect(offsetRow?.activityId).toBe(offsetGradeClimbId);
     expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(offsetRow?.elapsedMinutes).toBeGreaterThan(5);
     expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
 
-    expect(altitudeOnlyRow).toBeDefined();
+    expect(altitudeOnlyRow?.activityId).toBe(altitudeOnlyClimbId);
     expect(altitudeOnlyRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(altitudeOnlyRow?.verticalAscentRate).toBeGreaterThan(0);
 
-    expect(lowGradeRow).toBeDefined();
+    expect(lowGradeRow?.activityId).toBe(lowGradeDriftId);
     expect(lowGradeRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(lowGradeRow?.verticalAscentRate).toBeGreaterThan(0);
     expect(walkingRow).toBeUndefined();

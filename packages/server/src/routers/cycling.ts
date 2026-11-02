@@ -137,6 +137,7 @@ const activitiesOutputSchema = z.object({
   }),
   verticalAscent: z.array(
     z.object({
+      activityId: z.string(),
       date: z.string(),
       activityName: z.string(),
       activityType: z.string(),
@@ -210,6 +211,6 @@ export const cyclingRouter = router({
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
     activitiesOutputSchema,
-    { keyVersion: "cycling-activity-primary-title-v2" },
+    { keyVersion: "cycling-activity-ascent-links-v3" },
   ),
 });

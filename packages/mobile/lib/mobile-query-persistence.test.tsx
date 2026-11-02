@@ -41,7 +41,7 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("restores the combined v23 running contract", async () => {
+  it("restores the combined v24 running contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "combined-running-owner";
     const queryKey = [
@@ -55,7 +55,7 @@ describe("mobile query persistence", () => {
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v23`,
+        buster: `${userId}:v24`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -69,7 +69,7 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toEqual(data);
   });
 
-  it.each([21, 22])(
+  it.each([21, 22, 23])(
     "discards an independently produced v%s cache before restoring the combined contract",
     async (version) => {
       const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;

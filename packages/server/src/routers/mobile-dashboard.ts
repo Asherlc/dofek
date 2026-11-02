@@ -26,8 +26,8 @@ import {
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-hangboarding-heart-rate-v7";
-const MOBILE_TRAINING_V2_CACHE_KEY_VERSION = "training-combined-climbing-progression-v1";
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-vertical-ascent-links-v8";
+const MOBILE_TRAINING_V2_CACHE_KEY_VERSION = "training-combined-climbing-ascent-links-v2";
 const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
 const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 

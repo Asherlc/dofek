@@ -3,17 +3,24 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 
+const mockNavigate = vi.hoisted(() => vi.fn());
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mockNavigate }));
+let capturedEvents: Record<string, (params: Record<string, unknown>) => void> = {};
+
 let capturedOption: Record<string, unknown> | null = null;
 
 vi.mock("echarts-for-react", () => ({
   default: ({
     option,
     style,
+    onEvents,
   }: {
+    onEvents?: typeof capturedEvents;
     option: Record<string, unknown>;
     style: Record<string, unknown>;
   }) => {
     capturedOption = option;
+    capturedEvents = onEvents ?? {};
     return (
       <div
         data-testid="echarts-mock"
@@ -33,6 +40,45 @@ vi.mock("./LoadingSkeleton.tsx", () => ({
 const { VerticalAscentChart } = await import("./VerticalAscentChart.tsx");
 
 describe("VerticalAscentChart", () => {
+  it("opens the selected activity and exposes a keyboard-accessible detail link", () => {
+    render(
+      <VerticalAscentChart
+        data={[
+          {
+            activityId: "gravel-id",
+            date: "2026-04-03",
+            activityName: "Gravel Ride",
+            activityType: "cycling",
+            modality: "gravel",
+            verticalAscentRate: 700,
+            elevationGainMeters: 350,
+            elapsedMinutes: 30,
+          },
+          {
+            activityId: "road-id",
+            date: "2026-04-03",
+            activityName: "Gravel Ride",
+            activityType: "cycling",
+            modality: "road",
+            verticalAscentRate: 600,
+            elevationGainMeters: 300,
+            elapsedMinutes: 30,
+          },
+        ]}
+      />,
+    );
+    const series = capturedOption?.series;
+    if (!Array.isArray(series) || !Array.isArray(series[1]?.data))
+      throw new Error("Expected chart points");
+    capturedEvents.click?.({ data: series[1].data[0] });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: "/activity/$id", params: { id: "road-id" } });
+    expect(
+      screen
+        .getAllByRole("link", { name: "Gravel Ride", hidden: true })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/activity/gravel-id", "/activity/road-id"]);
+  });
+
   it.each(["metric", "imperial"] as const)(
     "scales bubble sizes by elevation gain across cycling groups in %s units",
     (unitSystem) => {
@@ -41,6 +87,7 @@ describe("VerticalAscentChart", () => {
           <VerticalAscentChart
             data={[
               {
+                activityId: "00000000-0000-4000-8000-000000000001",
                 date: "2026-04-01",
                 activityName: "Flat Ride",
                 activityType: "cycling",
@@ -50,6 +97,7 @@ describe("VerticalAscentChart", () => {
                 elapsedMinutes: 60,
               },
               {
+                activityId: "00000000-0000-4000-8000-000000000002",
                 date: "2026-04-02",
                 activityName: "Rolling Ride",
                 activityType: "cycling",
@@ -59,6 +107,7 @@ describe("VerticalAscentChart", () => {
                 elapsedMinutes: 30,
               },
               {
+                activityId: "00000000-0000-4000-8000-000000000003",
                 date: "2026-04-03",
                 activityName: "Hill Ride",
                 activityType: "cycling",
@@ -68,6 +117,7 @@ describe("VerticalAscentChart", () => {
                 elapsedMinutes: 120,
               },
               {
+                activityId: "00000000-0000-4000-8000-000000000004",
                 date: "2026-04-04",
                 activityName: "Gravel Ride",
                 activityType: "cycling",
@@ -103,6 +153,7 @@ describe("VerticalAscentChart", () => {
       <VerticalAscentChart
         data={[
           {
+            activityId: "00000000-0000-4000-8000-000000000005",
             date: "2026-04-03",
             activityName: "Gravel Ride",
             activityType: "cycling",
@@ -112,6 +163,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 30,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000006",
             date: "2026-04-01",
             activityName: "Road Ride",
             activityType: "cycling",
@@ -121,6 +173,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 30,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000007",
             date: "2026-04-02",
             activityName: "Trail Ride",
             activityType: "cycling",
@@ -130,6 +183,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 30,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000008",
             date: "2026-04-04",
             activityName: "Trainer Ride",
             activityType: "cycling",
@@ -139,6 +193,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 30,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000009",
             date: "2026-04-05",
             activityName: "Virtual Ride",
             activityType: "cycling",
@@ -179,6 +234,7 @@ describe("VerticalAscentChart", () => {
       <VerticalAscentChart
         data={[
           {
+            activityId: "00000000-0000-4000-8000-000000000010",
             date: "2026-04-03",
             activityName: maliciousName,
             activityType: maliciousType,

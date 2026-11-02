@@ -1098,6 +1098,7 @@ describe("mobileTrainingV2FixtureSchema", () => {
       "vertical ascent",
       (fixture: z.input<typeof mobileTrainingV2FixtureSchema>) => {
         fixture.data.verticalAscent.push({
+          activityId: "00000000-0000-4000-8000-000000000001",
           date: "2026-06-27",
           activityName: "Hill repeats",
           activityType: "running",

@@ -171,6 +171,7 @@ describe("ActivityVariabilityModel", () => {
 describe("VerticalAscentModel", () => {
   it("computes VAM in meters/hour", () => {
     const model = new VerticalAscentModel({
+      activityId: "00000000-0000-4000-8000-000000000001",
       date: "2024-03-15",
       activityName: "Hill Climb",
       activityType: "cycling",
@@ -184,6 +185,7 @@ describe("VerticalAscentModel", () => {
 
   it("computes climbing minutes", () => {
     const model = new VerticalAscentModel({
+      activityId: "00000000-0000-4000-8000-000000000002",
       date: "2024-03-15",
       activityName: "Hill Climb",
       activityType: "cycling",
@@ -196,6 +198,7 @@ describe("VerticalAscentModel", () => {
 
   it("returns 0 VAM when no elapsed seconds", () => {
     const model = new VerticalAscentModel({
+      activityId: "00000000-0000-4000-8000-000000000003",
       date: "2024-03-15",
       activityName: "Flat Ride",
       activityType: "cycling",
@@ -208,6 +211,7 @@ describe("VerticalAscentModel", () => {
 
   it("serializes to API shape", () => {
     const model = new VerticalAscentModel({
+      activityId: "ascent-activity",
       date: "2024-03-15",
       activityName: "Hill Climb",
       activityType: "cycling",
@@ -216,6 +220,7 @@ describe("VerticalAscentModel", () => {
       elapsedSeconds: 1800,
     });
     const detail = model.toDetail();
+    expect(detail.activityId).toBe("ascent-activity");
     expect(detail.date).toBe("2024-03-15");
     expect(detail.activityName).toBe("Hill Climb");
     expect(detail.activityType).toBe("cycling");
@@ -702,6 +707,7 @@ describe("CyclingAdvancedRepository", () => {
     it("returns VerticalAscentModel instances", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "ascent-activity",
           date: "2024-03-15",
           name: "Hill Climb",
           canonical_type: "cycling",
@@ -713,12 +719,14 @@ describe("CyclingAdvancedRepository", () => {
       const result = await repo.getVerticalAscentRates(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(VerticalAscentModel);
+      expect(result[0]?.toDetail().activityId).toBe("ascent-activity");
       expect(result[0]?.toDetail().verticalAscentRate).toBe(1000);
     });
 
     it("excludes indoor and virtual cycling workouts", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "00000000-0000-4000-8000-000000000004",
           date: "2024-03-15",
           name: "Spin Class",
           canonical_type: "cycling",
@@ -727,6 +735,7 @@ describe("CyclingAdvancedRepository", () => {
           elapsed_seconds: 1800,
         },
         {
+          activity_id: "00000000-0000-4000-8000-000000000005",
           date: "2024-03-16",
           name: "Virtual Climb",
           canonical_type: "cycling",
@@ -735,6 +744,7 @@ describe("CyclingAdvancedRepository", () => {
           elapsed_seconds: 3600,
         },
         {
+          activity_id: "00000000-0000-4000-8000-000000000006",
           date: "2024-03-17",
           name: "Outdoor Climb",
           canonical_type: "cycling",
@@ -756,6 +766,7 @@ describe("CyclingAdvancedRepository", () => {
       const { repo, sensorStore } = makeRepository(
         [
           {
+            activity_id: "00000000-0000-4000-8000-000000000007",
             date: "2024-04-01",
             name: "Garmin Ride",
             canonical_type: "cycling",
@@ -797,6 +808,7 @@ describe("CyclingAdvancedRepository", () => {
     it("includes rides with elevation gain when climb seconds are short", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "00000000-0000-4000-8000-000000000008",
           date: "2026-04-20",
           name: "Rolling Gravel",
           canonical_type: "cycling",

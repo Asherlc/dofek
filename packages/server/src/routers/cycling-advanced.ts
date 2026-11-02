@@ -78,6 +78,7 @@ export interface ActivityVariabilityResult {
 }
 
 export interface VerticalAscentRow {
+  activityId: string;
   date: string;
   activityName: string;
   activityType: string;
@@ -155,6 +156,7 @@ export const cyclingAdvancedRouter = router({
       const models = await repo.getVerticalAscentRates(range.days);
       return models.map((model) => model.toDetail());
     },
+    { keyVersion: "vertical-ascent-activity-links-v1" },
   ),
 
   pedalDynamics: selectedChartRangeQuery(

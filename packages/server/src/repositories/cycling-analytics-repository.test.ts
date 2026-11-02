@@ -702,6 +702,7 @@ describe("CyclingAnalyticsRepository", () => {
     });
     expect(result.verticalAscent).toEqual([
       {
+        activityId: "11111111-1111-4111-8111-111111111111",
         date: "2026-07-10",
         activityName: "Intervals",
         activityType: "cycling",
@@ -822,11 +823,16 @@ describe("CyclingAnalyticsRepository", () => {
       ]);
       expect(result.verticalAscent).toEqual([
         expect.objectContaining({
+          activityId: "11111111-1111-4111-8111-111111111111",
           activityName: expectedTitle,
           activityType: "cycling",
           verticalAscentRate: 120,
         }),
-        expect.objectContaining({ activityName: "Hill Repeats", verticalAscentRate: 1000 }),
+        expect.objectContaining({
+          activityId: "22222222-2222-4222-8222-222222222222",
+          activityName: "Hill Repeats",
+          verticalAscentRate: 1000,
+        }),
       ]);
       expect(result.aerobicEfficiency).toEqual({
         maxHr: 190,

@@ -166,6 +166,7 @@ describe("cyclingAdvancedRouter", () => {
       const caller = makeCaller([
         [
           {
+            activity_id: "00000000-0000-4000-8000-000000000001",
             date: "2024-01-15",
             name: "Mountain Ride",
             canonical_type: "cycling",
