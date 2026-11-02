@@ -35257,7 +35257,6 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   Reuse gh-fix-ci and integration-tests-ready to distinguish assertion drift
   from database or transport failures.
 
-<<<<<<< HEAD
 ## 2026-11-02 — Historical Ride with GPS ascent mixes recordings (repaired)
 
 - **Symptoms / impact:** [Lunch Mountain Bike Ride](https://dofek.fit/activity/c2ae2bed-844d-48de-b013-23300d514883), recorded November 5, 2023, serves 5,107.7 m ascent and 5,092.8 m descent over 5,638 seconds. Web and mobile consume the same summary. The altitude range is only 191.2 m.
@@ -35336,7 +35335,7 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Safety / current state:** Public health returned `status: ok`, web replicas were 2/2 using about 234/237 MiB of their 500 MiB limits, replacement worker memory was about 200 MiB under 512 MiB, and disk headroom was 19 GiB. The controller stopped on the failed-job state, not its website/disk guard. No job retry, stalled-limit increase, service restart, storage deletion, merge, or deployment was performed in this check. A read-only diagnostic first failed because the production image has no tsx package; rerunning it with the image's native Node TypeScript support read the queue successfully without modifying the image.
 - **Disposition / next action:** Mark ingestion blocked and leave recomputation/final MTB verification incomplete. Retain the stopped controller, failed job, and temporary scripts as evidence. Remove heartbeat `d2eec35c` after recording this blocker, as the monitoring instruction requires when recovery needs operator input. First resolve the pending branch-integration approval and validate the durable fix through normal merged coverage/CI; agree on rollout and full-history recovery before restarting admission.
 - **Retrospective / proposed runbook wording:** Queue state plus timestamped worker logs distinguished a genuine terminal job failure from healthy website status. Proposed addition for approval: “Before a long history sync, verify durable completed-work checkpoints and coordinate worker rollouts; treat exhausted stalled recovery as a blocker, not a reason to raise retry limits.” Reuse check-logs and systematic-debugging. The operational objective remains unresolved.
-=======
+
 
 ## 2026-11-02 — Local Redpanda AIO exhaustion blocked integration startup
 
@@ -35388,4 +35387,5 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Evidence / cause:** the failing command was the GitHub OIDC token request in `.github/actions/load-infisical-secrets/action.yml`. It is the only curl in that step, and runs before Infisical login. GitHub returned HTTP 503; the underlying service-side cause is unknown. [GitHub status](https://www.githubstatus.com/) reported all systems operational when checked afterward.
 - **Mitigation / status:** an operator job rerun was attempted, but GitHub rejected it with HTTP 403 because the containing workflow was still running. Recovery remains unverified at this recording. No application, retry, timeout, secret or workflow configuration was changed. GitHub documents the [job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
 - **Follow-up / retrospective:** rerun the failed prerequisite after the workflow completes and verify that Metro executes. Keep the token-minting failure distinct from Infisical authentication and bundling failures; reuse gh-fix-ci for log-based classification.
->>>>>>> origin/main
+
+- **Branch-integration approval / resolution:** The operator approved merging origin/main into the existing dull-baboon branch while preserving both incident histories. The merge had one conflict, in this file; both complete parent histories were retained and verified line-for-line as ordered subsequences. An initial verification command exceeded its output buffer and the shell continued into a merge commit with markers; the follow-up removes those markers and verifies both parent histories before considering resolution complete. No branch switch, rebase, production rollout, job retry, or resync restart was performed. Normal CI remains required; production history resync remains stopped at the recorded 501-activity failure.
