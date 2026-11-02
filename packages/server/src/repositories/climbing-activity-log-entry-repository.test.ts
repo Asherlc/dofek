@@ -38,7 +38,272 @@ function repository(logs: ClimbingLogEntryDetail[]) {
     "UTC",
   );
 }
+
+function kayaHistory() {
+  const send = named("kaya", "20000000-0000-4000-8000-000000000001", true);
+  if (!send.climb) throw new Error("Expected climb");
+  send.climb.externalId = "2001";
+  send.externalId = "kaya:ascent:3001";
+  send.activityId = "20000000-0000-4000-8000-000000000099";
+  send.raw = {
+    session_id: "1000",
+    attempts: null,
+    ascent_type: { name: " rEdPoInT " },
+    date: "2026-10-01T17:15:00Z",
+  };
+  const failed = named("kaya", "20000000-0000-4000-8000-000000000011");
+  failed.climb = send.climb;
+  failed.activityId = send.activityId;
+  failed.externalId = "kaya:session:1000:attempted:1000_2001";
+  failed.raw = { attempts: 1, sent: false };
+  failed.attempts = [
+    climbingAttemptFixture(failed.id, {
+      id: "20000000-0000-4000-8000-000000000006",
+      outcome: "failed",
+      ropeMethod: "lead",
+    }),
+  ];
+  return { send, failed };
+}
+
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("combines a count-free Kaya send with known failed attempts and preserves identities", async () => {
+    const { send, failed } = kayaHistory();
+    const logs = await repository([send, failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.toDetail()).toMatchObject({
+      id: send.id,
+      chartAnnotations: [expect.objectContaining({ startedAt: "2026-10-01T17:15:00.000Z" })],
+      recordedClimbAttemptCount: 2,
+      recordedClimbOutcome: "completed",
+      attempts: [
+        { id: send.attempts[0]?.id, outcome: "completed", attemptIndex: null },
+        { id: failed.attempts[0]?.id, outcome: "failed", attemptIndex: null },
+      ],
+    });
+  });
+  it("keeps an unknown failed-attempt count separate from an uncounted send", async () => {
+    const { send, failed } = kayaHistory();
+    failed.raw = { attempts: null, sent: false };
+    const logs = await repository([send, failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(2);
+    expect(logs.map((log) => log.toDetail().attempts)).toEqual(
+      expect.arrayContaining([
+        [expect.objectContaining({ id: failed.attempts[0]?.id })],
+        [expect.objectContaining({ id: send.attempts[0]?.id })],
+      ]),
+    );
+  });
+  it("keeps a locally retained result without a source ID as one occurrence", async () => {
+    const { failed } = kayaHistory();
+    failed.externalId = null;
+    const logs = await repository([failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.toDetail().recordedClimbAttemptCount).toBe(1);
+  });
+  it("keeps another provider's occurrence independent of Kaya history", async () => {
+    const { send, failed } = kayaHistory();
+    failed.providerId = "openbeta";
+    if (send.climb) send.climb.name = null;
+    const logs = await repository([send, failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(2);
+  });
+  it("keeps mixed failed and completed history independent", async () => {
+    const { send, failed } = kayaHistory();
+    failed.attempts.push(
+      climbingAttemptFixture(failed.id, {
+        id: "20000000-0000-4000-8000-000000000007",
+        outcome: "completed",
+      }),
+    );
+    const logs = await repository([send, failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(2);
+  });
+  it("counts whole-climb attempts separately from pitches in combined history", async () => {
+    const { send, failed } = kayaHistory();
+    send.attempts.push(
+      climbingAttemptFixture(send.id, {
+        id: "20000000-0000-4000-8000-000000000007",
+        scope: "pitch",
+        outcome: "completed",
+      }),
+    );
+    const logs = await repository([send, failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.toDetail()).toMatchObject({
+      recordedClimbAttemptCount: 2,
+      recordedPitchAttemptCount: 1,
+    });
+  });
+  it("combines the same history for provider detail without changing the selected source", async () => {
+    const { send, failed } = kayaHistory();
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([climbingLogDatabaseFixture(send)])
+      .mockResolvedValueOnce([climbingLogDatabaseFixture(failed)]);
+    const repo = new ClimbingActivityLogEntryRepository({ execute }, send.userId, "UTC");
+    expect(await repo.getProviderLogEntry("kaya", send.id)).toMatchObject({
+      id: send.id,
+      raw: send.raw,
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        expect.objectContaining({ id: send.attempts[0]?.id }),
+        expect.objectContaining({ id: failed.attempts[0]?.id }),
+      ],
+    });
+  });
+  it.each([
+    {
+      name: "another provider",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.providerId = "openbeta";
+      },
+    },
+    {
+      name: "an absent ascent",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.providerAbsentAt = "2026-10-02T00:00:00Z";
+      },
+    },
+    {
+      name: "a session record",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.externalId = "kaya:session:1000:attempted:1000_2001";
+      },
+    },
+    {
+      name: "a missing source identity",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.externalId = null;
+      },
+    },
+    {
+      name: "missing raw evidence",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.raw = null;
+      },
+    },
+    {
+      name: "an explicit count",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.raw = { session_id: "1000", attempts: 2, ascent_type: { name: "Redpoint" } };
+      },
+    },
+    {
+      name: "an unknown result",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.raw = { session_id: "1000", attempts: null, ascent_type: { name: "Unfamiliar" } };
+      },
+    },
+    {
+      name: "an unidentified climb",
+      change: (log: ClimbingLogEntryDetail) => {
+        if (log.climb) log.climb.externalId = null;
+      },
+    },
+    {
+      name: "a missing climb",
+      change: (log: ClimbingLogEntryDetail) => {
+        log.climb = null;
+      },
+    },
+  ])(
+    "retains the selected provider record without a historical lookup for $name",
+    async ({ change }) => {
+      const { send } = kayaHistory();
+      change(send);
+      const execute = vi.fn().mockResolvedValueOnce([climbingLogDatabaseFixture(send)]);
+      const repo = new ClimbingActivityLogEntryRepository({ execute }, send.userId, "UTC");
+      expect(await repo.getProviderLogEntry(send.providerId, send.id)).toMatchObject({
+        id: send.id,
+        attempts: [expect.objectContaining({ id: send.attempts[0]?.id })],
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([
+    {
+      name: "different climb",
+      change: (failed: ClimbingLogEntryDetail) => {
+        failed.climbId = "20000000-0000-4000-8000-000000000088";
+      },
+    },
+    {
+      name: "different activity",
+      change: (failed: ClimbingLogEntryDetail) => {
+        failed.activityId = "20000000-0000-4000-8000-000000000088";
+      },
+    },
+    {
+      name: "missing attempts",
+      change: (failed: ClimbingLogEntryDetail) => {
+        failed.attempts = [];
+      },
+    },
+    {
+      name: "unknown outcome",
+      change: (failed: ClimbingLogEntryDetail) => {
+        if (failed.attempts[0]) failed.attempts[0].outcome = null;
+      },
+    },
+    {
+      name: "pitch attempt",
+      change: (failed: ClimbingLogEntryDetail) => {
+        if (failed.attempts[0]) failed.attempts[0].scope = "pitch";
+      },
+    },
+    {
+      name: "different session",
+      change: (failed: ClimbingLogEntryDetail) => {
+        failed.externalId = "kaya:session:999:attempted:999_2001";
+      },
+    },
+  ])("keeps $name history as independent source occurrences", async ({ change }) => {
+    const { send, failed } = kayaHistory();
+    change(failed);
+    const logs = await repository([send, failed]).getActivityLogEntries("activity");
+    expect(logs).toHaveLength(2);
+    expect(logs.map((log) => log.toDetail().id).sort()).toEqual([send.id, failed.id].sort());
+  });
+  it("preserves separate send notes and photo sources when failure attribution is ambiguous", async () => {
+    const { send, failed } = kayaHistory();
+    const repeat = {
+      ...send,
+      id: "20000000-0000-4000-8000-000000000022",
+      externalId: "kaya:ascent:3002",
+      notes: "Another send",
+    };
+    repeat.attempts = [
+      climbingAttemptFixture(repeat.id, {
+        id: "20000000-0000-4000-8000-000000000027",
+        outcome: "completed",
+        ropeMethod: "lead",
+        usedAid: false,
+        fellOrHung: false,
+      }),
+    ];
+    const logs = (await repository([send, failed, repeat]).getActivityLogEntries("activity")).map(
+      (log) => log.toDetail(),
+    );
+    expect(logs).toHaveLength(3);
+    expect(logs.find((log) => log.id === repeat.id)).toMatchObject({
+      notes: "Another send",
+      photoLogEntryId: repeat.id,
+      recordedClimbAttemptCount: 1,
+    });
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([climbingLogDatabaseFixture(send)])
+      .mockResolvedValueOnce([
+        climbingLogDatabaseFixture(failed),
+        climbingLogDatabaseFixture(repeat),
+      ]);
+    const repo = new ClimbingActivityLogEntryRepository({ execute }, send.userId, "UTC");
+    expect(await repo.getProviderLogEntry("kaya", send.id)).toMatchObject({
+      recordedClimbAttemptCount: 1,
+    });
+  });
+
   it.each([1, 2, 3] as const)(
     "keeps attempt-free project counts unknown in response V%s",
     async (version) => {

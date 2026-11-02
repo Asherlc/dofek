@@ -50,6 +50,117 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it.each([
+    { sends: 1, nextDay: false },
+    { sends: 2, nextDay: false },
+    { sends: 1, nextDay: true },
+  ])(
+    "combines $sends count-free Kaya sends with failed session attempts (next day: $nextDay)",
+    async ({ sends, nextDay }) => {
+      await ensureProvider(context.db, "kaya", "Kaya", undefined, userId);
+      const [session] = await context.db
+        .insert(activity)
+        .values({
+          userId,
+          providerId: "kaya",
+          externalId: "1000",
+          providerType: "climbing",
+          canonicalType: "climbing",
+          startedAt: new Date("2026-10-02T12:00:00Z"),
+        })
+        .returning();
+      if (!session) throw new Error("Expected session");
+      const written = await persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: "kaya",
+        entries: [
+          {
+            externalId: "kaya:session:1000:attempted:1000_2001",
+            activityId: session.id,
+            climbedOn: "2026-10-02",
+            discipline: "rock_climbing",
+            climb: { ...route, externalId: "2001" },
+            raw: { id: "1000_2001", sent: false, attempts: 1 },
+            attempts: [{ scope: "climb", sourceResult: "Attempt", ropeMethod: "top_rope" }],
+          },
+          {
+            externalId: "kaya:ascent:3001",
+            activityId: session.id,
+            climbedOn: nextDay ? "2026-10-03" : "2026-10-02",
+            discipline: "rock_climbing",
+            climb: { ...route, externalId: "2001" },
+            raw: { session_id: "1000", attempts: null, ascent_type: { name: "Redpoint" } },
+            attempts: [
+              {
+                scope: "climb",
+                sourceResult: "Redpoint",
+                qualifier: "free-send",
+                ropeMethod: "top_rope",
+              },
+            ],
+          },
+        ],
+      });
+      if (sends === 2) {
+        const repeated = await persistClimbingLogEntries(context.db, {
+          userId,
+          providerId: "kaya",
+          entries: [
+            {
+              externalId: "kaya:ascent:3002",
+              notes: "Second send comment",
+              activityId: session.id,
+              climbedOn: "2026-10-02",
+              discipline: "rock_climbing",
+              climb: { ...route, externalId: "2001" },
+              raw: { session_id: "1000", attempts: null, ascent_type: { name: "Repeat" } },
+              attempts: [
+                {
+                  scope: "climb",
+                  sourceResult: "Repeat",
+                  qualifier: "free-send",
+                  ropeMethod: "top_rope",
+                },
+              ],
+            },
+          ],
+        });
+        const repeatedId = repeated.logEntryIds[0];
+        if (!repeatedId) throw new Error("Expected repeat");
+        expect(await repo().getProviderLogEntry("kaya", repeatedId)).toMatchObject({
+          recordedClimbAttemptCount: 1,
+          notes: "Second send comment",
+          photoLogEntryId: repeatedId,
+        });
+      }
+      const sentId = written.logEntryIds[1];
+      if (!sentId) throw new Error("Expected send");
+      const detail = await repo().getProviderLogEntry("kaya", sentId);
+      expect(detail).toMatchObject({
+        id: sentId,
+        recordedClimbAttemptCount: sends === 1 ? 2 : 1,
+        recordedClimbOutcome: "completed",
+      });
+      expect(detail?.attempts.filter((attempt) => attempt.outcome === "completed")).toHaveLength(1);
+      expect(detail?.attempts.filter((attempt) => attempt.outcome === "failed")).toHaveLength(
+        sends === 1 ? 1 : 0,
+      );
+      expect(detail?.attempts.every((attempt) => attempt.attemptIndex === null)).toBe(true);
+      const logs = await repo().getActivityLogEntries(session.groupId);
+      expect(logs).toHaveLength(sends === 1 ? 1 : 3);
+      if (sends === 1) expect(logs[0]?.toDetail().recordedClimbAttemptCount).toBe(2);
+      else
+        expect(logs.map((log) => log.toDetail())).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              notes: "Second send comment",
+              photoLogEntryId: expect.any(String),
+            }),
+          ]),
+        );
+    },
+  );
+
   it.each([false, true])(
     "projects historical retained KAYA tags without rewriting raw source records (ascent: %s)",
     async (ascent) => {

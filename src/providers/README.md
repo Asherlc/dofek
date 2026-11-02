@@ -40,6 +40,12 @@ absent records; the provider record browser retains them. See the
 [active-log projection](../../packages/server/src/repositories/climbing-rock-observations.ts)
 and [provider records](../../packages/server/src/repositories/provider-detail-repository.ts).
 Failed, malformed, or incomplete discovery never retires records.
+Kaya preserves an observed failed session occurrence when its session is
+currently returned and an exact same-session, same-climb Redpoint/Send/Repeat
+ascent remains present without its own count;
+see the [verified transition and recovery rules](../../docs/kaya.md#attempt-occurrences)
+and [adapter](kaya-sync.ts). This avoids interpreting that feed transition as
+removal of the earlier effort.
 
 theCrag uses additive imports because official incremental responses are not
 complete logbook snapshots and the API does not document deletion events; see
