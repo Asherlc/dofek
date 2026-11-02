@@ -34950,3 +34950,23 @@ Reviewed repair scope, with ascent in meters (rounded here to one decimal):
   operational telemetry; test the full status class and preserve Sentry for
   unexpected application failures." Reuse test-driven development and the
   provider reporting tests when changing this policy.
+
+## 2026-11-02 — Local PR validation blocked by Docker network exhaustion
+
+- Impact: local ClickHouse startup for provider-error PR validation is blocked;
+  no production impact or application runtime change.
+- Evidence: `pnpm compose -- up -d --wait clickhouse` failed while creating
+  `ragged-liger_default`, with the first fatal daemon response
+  `all predefined address pools have been fully subnetted`. A read-only network
+  inventory showed numerous existing workspace bridge networks.
+- Cause: Docker cannot allocate another network from its configured address
+  pools. Compose did not reach ClickHouse startup. Docker documents bridge
+  allocation through [daemon address pools](https://docs.docker.com/reference/cli/dockerd/#default-network-options).
+- Action / status: unresolved locally; no networks, containers or database
+  volumes were deleted. Database-backed SQL lint requires a functioning local
+  ClickHouse; preserve this validation limitation and inspect hosted CI.
+- Retrospective: the explicit startup command identified the prerequisite
+  failure before any SQL diagnosis. Proposed testing-runbook addition for
+  approval: document how to inspect workspace network ownership and unused
+  address allocations before cleanup. Reuse systematic debugging for this
+  infrastructure failure; do not alter application retry or timeout settings.
