@@ -300,7 +300,8 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({
           id: "run",
-          canonical_type: "running",
+          canonical_type: "cardio",
+          primary_canonical_type: "running",
           local_date: "2026-03-19",
           avg_power: null,
         }),
@@ -319,13 +320,21 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result).toEqual([
       {
         date: "2026-03-19",
-        activities: [expect.objectContaining({ id: "run", activityType: "running" })],
+        activities: [
+          expect.objectContaining({
+            id: "run",
+            activityType: "cardio",
+            primaryActivityType: "running",
+          }),
+        ],
       },
     ]);
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("activity.canonical_type = {activityType:String}"),
+      expect.stringContaining(
+        "coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}",
+      ),
       expect.objectContaining({ activityType: "running" }),
     );
     const sqlObject = database.execute.mock.calls[0]?.[0];

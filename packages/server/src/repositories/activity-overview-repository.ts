@@ -87,7 +87,7 @@ export class ActivityOverviewRepository extends BaseRepository {
     );
 
     const activityTypeFilter = input.activityType
-      ? "AND activity.canonical_type = {activityType:String}"
+      ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
     const queryParams = {
       userId: this.userId,
@@ -191,7 +191,7 @@ export class ActivityOverviewRepository extends BaseRepository {
         activityTypeRowSchema,
         `WITH ${activityDate} AS activity_date
           SELECT DISTINCT
-            activity.canonical_type AS canonical_type
+            coalesce(activity.primary_canonical_type, activity.canonical_type) AS canonical_type
           FROM analytics.deduped_activities AS activity FINAL
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
