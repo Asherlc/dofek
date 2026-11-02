@@ -1,6 +1,8 @@
 # Computed cycling eFTP only
 
-Status: draft; product direction confirmed, numerical model inputs unresolved.
+Status: draft; computed-only behavior and an independent implementation of the
+Intervals.icu process approved. Further empirical research and a unified
+numerical implementation are required before selecting production parameters.
 
 ## Confirmed product direction
 
@@ -16,7 +18,10 @@ a fixed window as an immediate reduction in capacity.
 
 ## Approaches and selection
 
-The user selected an ongoing computed estimate inspired by Intervals.icu. A
+The user selected an ongoing computed estimate inspired by Intervals.icu and
+approved an independently documented numerical implementation on 2026-11-01.
+They specifically require one unified set of power/FTP algorithms without
+disparate sources. A
 longer fixed window was discussed but not selected. Configured FTP with a
 computed fallback was explicitly rejected. Independent, documented numerical
 choices must not be described as reproducing Intervals.icu's exact outputs.
@@ -40,6 +45,9 @@ two weeks, but does not specify the full decay equation or coefficients:
 
 - One server-owned eFTP calculation supplies activity zones, power-based stress
   and load, threshold-dependent cycling analyses, and the ongoing eFTP trend.
+- One analytics implementation also supplies normalized power, intensity factor,
+  and power TSS. Consumers read those results; they do not retain their own
+  whole-ride, selected-period, or heuristic substitutes for the same metrics.
 - Reconstruct the estimate chronologically from canonical, deduplicated cycling
   observations and their activity dates. Upload order must not affect results.
 - A completed activity may contribute evidence to its own estimate, but later
@@ -86,6 +94,9 @@ Migrate every current reader in the same change:
   evidence and separate estimation formulas with computed evidence.
 - Calendar activity load and provider-absent calendar paths: remove the profile
   FTP baseline and resolve the estimate applicable to each cycling activity.
+- PMC: remove whole-activity-average FTP estimation and the single threshold
+  applied to the entire queried history. Consume each activity's applicable
+  eFTP and canonical power TSS, including cycling evidence with no heart rate.
 - Healthspan power-intensity analytics: replace the profile threshold dependency
   with computed evidence; retain unknown power-intensity coverage as unknown
   rather than manufacturing zero minutes.
@@ -129,33 +140,66 @@ The [incident investigation](../../production-incident-baseline.md#follow-up--ex
 records the reproduction. Historical refreshes require separately bounded
 operator execution, not a deploy-time replay.
 
-## Numerical research gate
+## Research-backed numerical implementation
 
 The source review established the behavior but has not located a redistributable
 copy of Intervals.icu's reference-curve parameters or its exact decay equation.
 Do not fabricate those numbers or silently substitute the existing recent-curve
-fit. A production implementation requires one of:
+fit. The user has approved an independently calibrated implementation, with
+further research required before selecting its parameters. Exact numerical
+equivalence to Intervals.icu is not a requirement or an established property.
 
-1. Verified source data and parameters for the intended reference-curve process,
-   with usable terms and reproducible calibration; or
-2. Explicit alignment on a documented independent numerical approximation,
-   including its reference data, fitting procedure, decay rule, and limitations.
+[GoldenCheetah OpenData](https://github.com/GoldenCheetah/OpenData) is now a
+verified accessible independent source. Its
+[OSF project metadata](https://api.osf.io/v2/nodes/6hfpz/) identifies a
+[CC0 license](https://api.osf.io/v2/licenses/563c1cf88c5e4a3877f9e96c/), and bounded
+HTTP downloads verified summary power-duration arrays. The
+[research report](../../cycling-power-algorithms-research.md) records the source
+audit, numerical limitations, and complete consumer audit. Calibration,
+held-out evaluation, cohort coverage, and an explicit independent decay policy
+remain prerequisites for production coefficients.
 
-[GoldenCheetah OpenData](https://github.com/GoldenCheetah/OpenData) is a possible
-research lead, not an approved substitute. Its repository points to the actual
-data on OSF and states its old public S3 endpoint is closed. Dataset accessibility,
-terms, suitability, and calibration would need verification before selecting it.
+The exploratory comparisons now cover 64 original archives and a processed
+6,031-athlete numerical table. They show material fitting-range sensitivity;
+including observed long-duration calibration evidence reduces discrepancies
+against recorded long efforts. These are not physiological FTP labels or
+untouched final-test results. The research report records common-cohort counts,
+errors, source limitations, and one bounded next calibration round. No
+experimental coefficients have been selected for production.
+
+Use the existing dbt/ClickHouse ownership model for the runtime numerical
+pipeline. Offline TypeScript calibration produces versioned reference data, not
+another runtime estimator. APIs, SQL analytics, and both clients consume the
+same canonical outputs; obsolete TypeScript NP/TSS/FTP alternatives are removed
+after their consumers migrate. Keep distinct HR stress/regression math once
+where still needed, and preserve CP exploration separately from ongoing eFTP.
+
+The proposed decay input is the threshold-independent intermediate
+`NP² × elapsed_seconds`. Its two-window ratio equals a ratio of power-TSS totals
+only when both windows are normalized with the same reference threshold.
+Unknown power coverage must remain unknown, rather than triggering decay as
+zero training. Exact coefficients and model evaluation remain research work.
 
 ## Builder review checkpoint
 
 The independent builder review found the removal scope and consumer migration
 clear, but confirmed that product implementation must wait for the numerical
-research gate. Once the model source is selected, specify initialization and
+research. The user subsequently approved the independent-model direction;
+source accessibility and declared license have now been verified. Specify initialization and
 calculation order explicitly: if training load controls decay and training load
 depends on eFTP, the replay must define which prior threshold calculates that
 load, how the first estimate is established, and when the ride's candidate is
 applied. Do not let the same ride circularly determine its threshold and the
 load used to decay that threshold.
+
+The audit also established that a corrected or deleted historical effort must
+invalidate the affected user's later estimate history, not only the changed
+activity. Replay follows canonical timestamps with a deterministic tie rule,
+uses available preceding comparison-window context, and advances inactive
+users through the present date. Provider/modality/chart filters cannot change
+the canonical ongoing estimate; canonical source-priority and membership changes
+do invalidate its inputs. Use bounded dirty-user work over compact summaries,
+not global raw-history scans or a second projection writer.
 
 ## Verification and completion
 
