@@ -322,6 +322,7 @@ describe("loadMobileTrainingTabV2", () => {
       slopeKgPerWeek: 100,
       period: { observationCount: 2, elapsedWeekCount: 3 },
     });
+    expect(result.verticalAscent[0]?.activityId).toBe("00000000-0000-4000-8000-000000000001");
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(1000);
     expect(result.verticalAscent[0]?.activityType).toBe("cycling");
     expect(result.verticalAscent[0]?.modality).toBe("road");

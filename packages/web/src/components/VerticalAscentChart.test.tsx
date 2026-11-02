@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 
@@ -72,10 +72,9 @@ describe("VerticalAscentChart", () => {
       throw new Error("Expected chart points");
     capturedEvents.click?.({ data: series[1].data[0] });
     expect(mockNavigate).toHaveBeenCalledWith({ to: "/activity/$id", params: { id: "road-id" } });
+    fireEvent.click(screen.getByText("View chart data"));
     expect(
-      screen
-        .getAllByRole("link", { name: "Gravel Ride", hidden: true })
-        .map((link) => link.getAttribute("href")),
+      screen.getAllByRole("link", { name: "Gravel Ride" }).map((link) => link.getAttribute("href")),
     ).toEqual(["/activity/gravel-id", "/activity/road-id"]);
   });
 

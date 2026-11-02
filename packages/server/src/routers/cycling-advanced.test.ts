@@ -178,6 +178,7 @@ describe("cyclingAdvancedRouter", () => {
       ]);
       const result = await caller.verticalAscentRate({ days: 90 });
       expect(result).toHaveLength(1);
+      expect(result[0]?.activityId).toBe("00000000-0000-4000-8000-000000000001");
       // 500m in 3600s = 500m/h.
       expect(result[0]?.verticalAscentRate).toBe(500);
       expect(result[0]?.elevationGainMeters).toBe(500);
