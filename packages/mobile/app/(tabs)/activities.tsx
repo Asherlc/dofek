@@ -103,7 +103,7 @@ function formatActivityAccessibilityLabel(
     activity.primaryActivityType ?? activity.activityType,
   );
   const labelParts = [
-    activity.name ?? formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType),
+    activity.name ?? activityTypeLabel,
     displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
     formatDurationMinutes(activity.durationMin),
   ];
