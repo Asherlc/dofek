@@ -62,21 +62,18 @@ const mockData = {
       ...personalizedStressThresholds,
       sampleCount: 60,
     },
-    trainingImpulseConstants: { sampleCount: 50, r2: 0.9 },
   },
   effective: {
     exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
     readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.1 },
     sleepTarget: { minutes: 480 },
     stressThresholds: personalizedStressThresholds,
-    trainingImpulseConstants: { genderFactor: 1, exponent: 1.9 },
   },
   defaults: {
     exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
     readinessWeights: { hrv: 0.3, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.2 },
     sleepTarget: { minutes: 480 },
     stressThresholds: defaultStressThresholds,
-    trainingImpulseConstants: { genderFactor: 1, exponent: 1.9 },
   },
   modelCards: [
     {
@@ -131,19 +128,6 @@ const mockData = {
       uncertainty: "No calibrated uncertainty interval is available.",
       excludedData: ["Days without nonzero rolling variability"],
     },
-    {
-      key: "trainingImpulseConstants",
-      title: "Heart Rate Effort Model",
-      description: "How heart rate intensity translates to training load",
-      status: "personalized",
-      lastSuccessfulFitAt: null,
-      lastFitSummary: "Successful fit time unavailable until this model is refit",
-      dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-      dataSufficiency: "50 qualifying activities used; minimum 20 activities",
-      fitEvidence: "R²: 0.900",
-      uncertainty: "No calibrated uncertainty interval is available.",
-      excludedData: ["Activities without heart-rate samples or normalized power"],
-    },
   ],
 };
 
@@ -173,7 +157,7 @@ describe("PersonalizationPanel", () => {
 
   it("reports incomplete model evidence and renders an actionable panel error", () => {
     statusUseQuery.mockReturnValue({
-      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 4) },
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 3) },
       isLoading: false,
     });
 
@@ -186,7 +170,7 @@ describe("PersonalizationPanel", () => {
     ).toBeTruthy();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       context: "personalization-model-cards",
-      missingModelCard: "trainingImpulseConstants",
+      missingModelCard: "stressThresholds",
     });
   });
 

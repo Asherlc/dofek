@@ -149,8 +149,6 @@ describe("Router SQL validity", () => {
 
   // ── Cycling Advanced ──
   describe("cyclingAdvanced", () => {
-    it("rampRate", () => expectValidSql("cyclingAdvanced.rampRate", { days: 90 }));
-    it("trainingMonotony", () => expectValidSql("cyclingAdvanced.trainingMonotony", { days: 90 }));
     it("activityVariability", () =>
       expectValidSql("cyclingAdvanced.activityVariability", { days: 90 }));
     it("verticalAscentRate", () =>

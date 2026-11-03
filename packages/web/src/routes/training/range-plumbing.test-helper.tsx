@@ -86,13 +86,9 @@ vi.mock("../../components/ProgressiveOverloadCards.tsx", () => ({
 vi.mock("../../components/QueryStatePanel.tsx", () => ({
   QueryStatePanel: ({ error }: { error?: Error }) => <div>{error?.message}</div>,
 }));
-vi.mock("../../components/RampRateChart.tsx", () => ({ RampRateChart: () => <div /> }));
 vi.mock("../../components/ReadinessScoreCard.tsx", () => ({ ReadinessScoreCard: () => <div /> }));
 vi.mock("../../components/SleepAnalyticsChart.tsx", () => ({ SleepAnalyticsChart: () => <div /> }));
 vi.mock("../../components/StrengthVolumeChart.tsx", () => ({ StrengthVolumeChart: () => <div /> }));
-vi.mock("../../components/TrainingMonotonyChart.tsx", () => ({
-  TrainingMonotonyChart: () => <div />,
-}));
 vi.mock("../../components/WorkloadRatioChart.tsx", () => ({ WorkloadRatioChart: () => <div /> }));
 vi.mock("../../components/DofekChart.tsx", () => ({ DofekChart: () => <div /> }));
 vi.mock("../../components/HeartRateZonesChart.tsx", () => ({
@@ -105,10 +101,7 @@ vi.mock("../../lib/trainingDaysContext.ts", () => ({
 
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
-    cyclingAdvanced: {
-      rampRate: { useQuery: recordQuery("cyclingAdvanced.rampRate") },
-      trainingMonotony: { useQuery: recordQuery("cyclingAdvanced.trainingMonotony") },
-    },
+    cyclingAdvanced: {},
     dailyMetrics: {
       hrvBaseline: { useQuery: recordQuery("dailyMetrics.hrvBaseline") },
     },

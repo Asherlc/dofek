@@ -104,12 +104,6 @@ export function PersonalizationPanel() {
         defaultValue={`Heart Rate Variability (SD): ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
       />
 
-      <ParamCard
-        modelCard={modelCards.trainingImpulseConstants}
-        value={`Factor: ${data.effective.trainingImpulseConstants.genderFactor}, Exp: ${data.effective.trainingImpulseConstants.exponent}`}
-        defaultValue={`Factor: ${data.defaults.trainingImpulseConstants.genderFactor}, Exp: ${data.defaults.trainingImpulseConstants.exponent}`}
-      />
-
       {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity
@@ -199,10 +193,6 @@ function resolveModelCards(
   if (!sleepTarget) return { missingKey: "sleepTarget" };
   const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
   if (!stressThresholds) return { missingKey: "stressThresholds" };
-  const trainingImpulseConstants = modelCards.find(
-    (card) => card.key === "trainingImpulseConstants",
-  );
-  if (!trainingImpulseConstants) return { missingKey: "trainingImpulseConstants" };
 
   return {
     cards: {
@@ -210,7 +200,6 @@ function resolveModelCards(
       readinessWeights,
       sleepTarget,
       stressThresholds,
-      trainingImpulseConstants,
     },
   };
 }

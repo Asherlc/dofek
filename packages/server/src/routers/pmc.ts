@@ -29,9 +29,6 @@ const pmcChartOutputSchema = z.object({
     }),
   ),
   model: z.object({
-    type: z.enum(["learned", "generic"]),
-    pairedActivities: z.number(),
-    r2: z.number().nullable(),
     ftp: z.number().nullable(),
   }),
   availability: trainingChartAvailabilitySchema,
@@ -54,8 +51,7 @@ export const pmcRouter = router({
   /**
    * Performance Management Chart data.
    * Reads activities + Normalized Power from ClickHouse analytics tables.
-   * Computes daily TSS using a learned regression model (power+HR paired activities)
-   * when available, falling back to generic Bannister TRIMP normalization.
+   * Uses canonical per-activity power TSS; incomplete power history is unavailable.
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
    */
   chart: selectedChartRangeQuery(
@@ -81,13 +77,13 @@ export const pmcRouter = router({
             available: "Training load data is available from the training load read model.",
             insufficientData:
               result.unavailableReason ??
-              "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
+              "No training load data is available from the training load read model. Record cycling power with a usable threshold to show this chart.",
           },
         }),
       };
     },
     {
-      keyVersion: "pmc-chart-availability-v1",
+      keyVersion: "pmc-chart-power-v2",
       outputSchema: pmcChartOutputSchema,
     },
   ),

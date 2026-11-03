@@ -2,7 +2,6 @@ import { statusColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
 import { chartColors } from "../lib/chartTheme.ts";
 import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
-import { buildRampRateOption } from "./RampRateChart.tsx";
 import { buildSleepAnalyticsOption } from "./SleepAnalyticsChart.tsx";
 
 function makePolarizationWeek(input: {
@@ -324,34 +323,6 @@ describe("PolarizationTrendChart option builder", () => {
     ]);
     expect(html).toContain("Insufficient data");
     expect(html).toContain("Zone 2 (threshold, 80-90% max HR): 0m");
-  });
-});
-
-describe("RampRateChart option builder", () => {
-  const sampleWeeks = [
-    { week: "2024-01-01", rampRate: 3.5 },
-    { week: "2024-01-08", rampRate: 6.2 },
-  ];
-
-  it("marks series with empty data as tooltip-hidden", () => {
-    const option = buildRampRateOption(sampleWeeks);
-    const series = getSeriesArray(option);
-    const seriesWithEmptyData = series.filter((s) => Array.isArray(s.data) && s.data.length === 0);
-    for (const s of seriesWithEmptyData) {
-      expect(s.tooltip).toEqual(expect.objectContaining({ show: false }));
-    }
-  });
-
-  it("tooltip formatter returns empty string for empty params", () => {
-    const option = buildRampRateOption(sampleWeeks);
-    const formatter = getTooltipFormatter(option);
-    expect(formatter([])).toBe("");
-  });
-
-  it("tooltip formatter handles params with missing data", () => {
-    const option = buildRampRateOption(sampleWeeks);
-    const formatter = getTooltipFormatter(option);
-    expect(formatter([{ dataIndex: -1, value: ["", 0], marker: "" }])).toBeDefined();
   });
 });
 
