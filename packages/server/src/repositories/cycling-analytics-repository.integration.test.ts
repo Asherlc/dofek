@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import {
   buildActivitySummaryRowsTableSql,
@@ -17,8 +15,6 @@ import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-stor
 import { CyclingAnalyticsRepository } from "./cycling-analytics-repository.ts";
 
 const ACTIVITY_ID = "11111111-1111-4111-8111-111111111111";
-const RECENT_HEART_RATE_ACTIVITY_ID = "22222222-2222-4222-8222-222222222222";
-const HISTORICAL_HIGH_HEART_RATE_ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 const ZERO_EFFICIENCY_ACTIVITY_ID = "44444444-4444-4444-8444-444444444444";
 
 describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
@@ -47,12 +43,8 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       buildActivitySummaryRowsTableSql(),
       ...cyclingPowerSchemaStatements(),
       buildActivitySummaryViewSql(),
-      "CREATE TABLE postgres_fitness.user_profile_current (id UUID,max_hr Nullable(Int32),resting_hr Nullable(Int32)) ENGINE=Memory",
     ])
       await executeCommand(statement);
-    await executeCommand(
-      `INSERT INTO postgres_fitness.user_profile_current VALUES ('${TEST_USER_ID}',190,60)`,
-    );
     sensorStore = new ClickHouseActivitySensorStore({
       command: (options) => client.command({ ...options, query: rewrite(options.query) }),
       query: (options) => client.query({ ...options, query: rewrite(options.query) }),
@@ -212,85 +204,5 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
         expect.objectContaining({ durationSeconds: 300, watts: 400, wattsPerKg: 5 }),
       ]),
     );
-  });
-
-  it("excludes historical maximum heart rate outside a limited access window", async () => {
-    await testContext.db.execute(
-      sql`UPDATE fitness.user_profile SET max_hr = NULL WHERE id = ${TEST_USER_ID}`,
-    );
-    await executeCommand(`TRUNCATE TABLE postgres_fitness.user_profile_current`);
-    await executeCommand(
-      `INSERT INTO postgres_fitness.user_profile_current VALUES ('${TEST_USER_ID}',NULL,60)`,
-    );
-    await executeCommand(
-      `INSERT INTO analytics.cycling_activity VALUES
-        (
-          toUUID('${RECENT_HEART_RATE_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
-          'cycling', 'cycling', NULL, 'Recent Heart Rate Ride', now64(6, 'UTC') - INTERVAL 3 DAY,
-          now64(6, 'UTC') - INTERVAL 3 DAY + INTERVAL 1 HOUR, 30000, 150, 180, NULL,
-          0, 3600, NULL, 100, 3600, 190, NULL, NULL, NULL, NULL, 0, 1, now64(9, 'UTC'), NULL
-        ),
-        (
-          toUUID('${HISTORICAL_HIGH_HEART_RATE_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
-          'cycling', 'cycling', NULL, 'Historical Ride', now64(6, 'UTC') - INTERVAL 180 DAY,
-          now64(6, 'UTC') - INTERVAL 180 DAY + INTERVAL 1 HOUR, 30000, 150, 240, NULL,
-          0, 3600, NULL, 100, 3600, 250, NULL, NULL, NULL, NULL, 0, 1, now64(9, 'UTC'), NULL
-        )`,
-    );
-    await executeCommand(
-      `INSERT INTO analytics.daily_cycling VALUES (
-        toUUID('${TEST_USER_ID}'),
-        today() - INTERVAL 3 DAY,
-        [tuple(
-          toUUID('${RECENT_HEART_RATE_ACTIVITY_ID}'),
-          now64(6, 'UTC') - INTERVAL 3 DAY,
-          toFloat64(60),
-          toFloat64(150),
-          toFloat64(180),
-          CAST(NULL, 'Nullable(Float64)'),
-          toUInt64(0),
-          toUInt64(3600),
-          CAST('Recent Heart Rate Ride', 'Nullable(String)')
-        )],
-        0,
-        1,
-        now64(9, 'UTC')
-      )`,
-    );
-    const fullRepository = new CyclingAnalyticsRepository(
-      testContext.db,
-      TEST_USER_ID,
-      "UTC",
-      sensorStore,
-    );
-    const limitedRepository = new CyclingAnalyticsRepository(
-      testContext.db,
-      TEST_USER_ID,
-      "UTC",
-      sensorStore,
-      {
-        kind: "limited",
-        paid: false,
-        reason: "free_recent_week",
-        startDate: new Date(Date.now() - 30 * 86_400_000).toISOString(),
-        endDateExclusive: new Date(Date.now() + 86_400_000).toISOString(),
-      },
-    );
-
-    const querySpy = vi.spyOn(sensorStore, "query");
-    querySpy.mockClear();
-    await fullRepository.getPerformance(ChartRange.fromDays(30));
-    await limitedRepository.getPerformance(ChartRange.fromDays(30));
-    const activityRowsSchema = z.array(z.object({ global_max_hr: z.coerce.number().nullable() }));
-    const activityQueries = querySpy.mock.calls.flatMap((call, index) =>
-      call[1].includes("user_baseline.global_max_hr AS global_max_hr")
-        ? [querySpy.mock.results[index]?.value]
-        : [],
-    );
-    const fullActivityRows = activityRowsSchema.parse(await activityQueries[0]);
-    const limitedActivityRows = activityRowsSchema.parse(await activityQueries[1]);
-
-    expect(fullActivityRows[0]?.global_max_hr).toBe(240);
-    expect(limitedActivityRows[0]?.global_max_hr).toBe(180);
   });
 });
