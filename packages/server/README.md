@@ -286,6 +286,11 @@ or cycling power/eFTP prerequisite. Web and mobile
 render this contract without deriving metric availability. The numeric activity `tss` field remains
 nullable for consumers that need the score rather than its compact-card presentation.
 
+The retirement advances the [activity-list](src/routers/calendar.ts) and
+[personalization-status](src/routers/personalization.ts) server cache versions,
+plus the [mobile persisted-query contract](../mobile/lib/mobile-query-persistence.ts),
+so pre-retirement responses cannot restore HR-derived scores or calibration cards.
+
 ### Exercise-volume trend evidence contract
 
 `strength.progressiveOverload` is the canonical web and mobile response for exercise-volume
