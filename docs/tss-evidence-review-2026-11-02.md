@@ -13,7 +13,7 @@ review or meta-analysis. Searches covered power TSS, TrainingPeaks hrTSS,
 TRIMP, performance, fatigue, recovery and validation, including citation trails.
 Original methods and results were prioritized over vendor claims and later
 papers' descriptions. Failure to find direct validation is not proof that none
-exists. No product algorithms were changed for this review.
+exists. No product algorithms were changed for the research itself. This PR subsequently removes HR-derived TSS and its learned conversion; power-based cycling TSS remains.
 
 ## Keep the methods separate
 
@@ -21,7 +21,7 @@ exists. No product algorithms were changed for this review.
 | --- | --- |
 | Power TSS | Duration in hours × (normalized power / FTP)² × 100. A published definition does not validate an estimated FTP or a recovery prediction. [TrainingPeaks definition](https://www.trainingpeaks.com/learn/articles/normalized-power-intensity-factor-training-stress/). |
 | Current vendor-described hrTSS | Time in heart-rate zones relative to lactate-threshold HR. TrainingPeaks distinguishes this from average-HR TRIMPS TSS. Its public estimation table does not specify numerical boundaries for every low/high zone subdivision. [Vendor documentation](https://help.trainingpeaks.com/hc/en-us/articles/204071944-Training-Stress-Scores-TSS-Explained), [estimation table](https://www.trainingpeaks.com/learn/articles/estimating-training-stress-score-tss/). |
-| Dofek's existing HR fallback | Average-HR Banister-style TRIMP normalized to an assumed threshold at 85% HR reserve. This is a custom normalization, not demonstrated replication of current vendor hrTSS. [Implementation](../packages/training/src/pmc.ts), [code audit](algorithm-evidence-audit-2026-11-02.md). |
+| Dofek's removed HR fallback | Before this PR, average-HR Banister-style TRIMP was normalized to an assumed threshold at 85% HR reserve. This custom normalization did not reproduce current vendor hrTSS. [Removed implementation](https://github.com/Asherlc/dofek/blob/27d358a641c417bbfdcda4ec45a81e669c5fde66/packages/training/src/pmc.ts), [code audit](algorithm-evidence-audit-2026-11-02.md). |
 | Individualized TRIMP | Uses each athlete's measured HR–lactate relationship. Validation of this laboratory-calibrated method cannot be transferred to generic HR coefficients. [Manzi et al., 2009](https://pubmed.ncbi.nlm.nih.gov/19812506/). |
 
 ## Original studies
@@ -59,7 +59,7 @@ errors. This conclusion should be revised if such evidence is located.
 ## Consequences for Dofek
 
 The following are recommendations from this evidence assessment, not
-implemented product decisions:
+implemented product decisions at the time of the review. The subsequent product decision is to remove HR TSS entirely:
 
 1. Power TSS is defensible as an estimated cycling load index with visible
    method and threshold provenance. Calling its formula established must not

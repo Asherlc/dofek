@@ -30,6 +30,8 @@ describe("activity calendar entries", () => {
       name: null,
       activityType: "walking",
       primaryActivityType: "running",
+      tss: null,
+      stats: [],
     });
   });
 

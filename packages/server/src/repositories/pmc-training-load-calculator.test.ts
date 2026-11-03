@@ -25,9 +25,9 @@ describe("PmcTrainingLoadCalculator", () => {
     });
     expect(result.get("2026-05-20")).toBe(105);
   });
-  it("keeps missing power and missing heart rate unavailable", () => {
+  it("keeps missing power stress unavailable", () => {
     const result = makeCalculator().calculateDailyLoad({
-      activities: [makeActivityRow({ avg_hr: null })],
+      activities: [makeActivityRow()],
       powerTssByActivity: new Map(),
     });
     expect(result.size).toBe(0);

@@ -300,7 +300,7 @@ product heuristics.
 
 ### Training stress and performance
 
-- `computeTrimp` applies the [Banister-style TRIMP formula](https://pubmed.ncbi.nlm.nih.gov/19812506/), separately from TSS.
+- `computeTrimp` applies the [Banister-style TRIMP formula](https://cris.maastrichtuniversity.nl/ws/files/62102783/Hesselink_2017_Methods_of_Monitoring_Training_Load_and_Their_Relationships.pdf), separately from TSS.
 - Power stress and ongoing eFTP use [`@dofek/cycling-power`](../cycling-power/README.md).
   The application analytics worker supplies the canonical activity-applicable
   results, following the [analytics architecture](../../analytics/README.md).
