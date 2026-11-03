@@ -35509,3 +35509,22 @@ SQLFluff; its SQL behavior is unchanged. No production impact or resilience
 settings were involved. The local analytics SQL lint command does not lint
 new Postgres migrations, so future pre-push checks should include both that
 migration lint command and Knip.
+
+### PR #3209 mutation baseline: map worker import escaped the test boundary
+
+[`Test / Stryker (4)`](https://github.com/Asherlc/dofek/actions/runs/41656263680/job/125990235267)
+failed at `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`
+for the changed `packages/web/src/lib/trpc.ts` lines. Its unmutated initial test
+run failed in `ClimbingLocationMap`: the rendered error was `Map unavailable:
+Denied ID .../maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url`, so the expected
+cluster button never appeared. The exact command reproduced locally.
+The map component suites mocked the MapLibre SDK but left its separately loaded
+worker URL asset real; the Stryker sandbox denied that dependency transform.
+Completed the existing SDK test boundary by mocking the worker URL in the three
+map component suites. Production loading, sandbox policies, interaction
+assertions, and mutation collection remain unchanged. All 44 map component tests
+pass with the completed mocks. The exact Stryker command then passed its 182
+initial tests and achieved 100% mutation score (6 killed, 0 survived, 0 timeouts,
+0 errors; 2 string-literal mutants excluded by the existing configuration).
+Future worker-backed SDK test guidance should name both SDK and asset
+imports as dependencies of the mock boundary.

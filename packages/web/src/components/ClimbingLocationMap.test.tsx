@@ -15,6 +15,9 @@ vi.mock("../lib/telemetry.ts", () => ({ captureException }));
 beforeEach(() => captureException.mockClear());
 
 vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+vi.mock("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url", () => ({
+  default: "/maplibre-worker.js",
+}));
 
 import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 
