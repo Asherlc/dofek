@@ -1,9 +1,10 @@
 # Single-server Pulsar qualification — 2026-11-03
 
 **Decision: blocked before application migration or production deployment.**
-The isolated topology works on ARM64, but the bundled offloader did not pass
-actual Cloudflare R2 uploads, and the proposed whole-host memory budget does not
-fit the current service ceilings. This is evidence for Task 1 of the
+The isolated topology works on ARM64. A narrow source correction to the bundled
+offloader now passes actual Cloudflare R2 upload and readback; stock drivers
+still fail. The proposed whole-host memory budget does not fit the current
+service ceilings. This is evidence for Task 1 of the
 [approved plan](superpowers/plans/2026-11-03-single-server-pulsar.md), not a
 production certification or a completed resync. No production producer, sink,
 retention, filesystem feature, or resource limit was changed.
@@ -22,7 +23,9 @@ retention, filesystem feature, or resource limit was changed.
 | Production filesystem enablement | NOT QUALIFIED | Production ext4 has neither quota nor project features; maintenance, recoverable backups and enablement procedure remain prerequisites. |
 | Bookie memory | 512 MiB FAIL; 768 MiB fixture PASS | 512 MiB hit a cgroup OOM during 10,000 × 8 KiB publishing. At 768 MiB the same workload passed, cgroup peak 688,697,344 bytes. |
 | Whole production host resource fit | FAIL at current ceilings | Proposed capped steady services total about 23.992 GiB on a 23.413 GiB host, before uncapped services and host reserve. |
-| Native offload to actual R2 | FAIL in tested stock drivers | Generic S3/V4 cannot rewind the multipart stream; aws-s3 streaming signing receives R2 HTTP 501. |
+| Native offload to actual R2 | Source correction PASS, bounded fixture; stock FAIL | Corrected offloader uploaded ledger 25; native GC removed its BookKeeper metadata, broker replacement then read 10,000 messages continuously from R2 with matching digest. Stock drivers retain the failures below. |
+| Broker memory | 768 MiB / one CPU fixture PASS | Continuous R2 readback peak 778,567,680 bytes, cgroup max/oom/oom_kill all zero. Unlimited-CPU lab broker previously exceeded this memory cap. |
+| CDC consolidation assessment | Capture fixture PASS; retirement NOT QUALIFIED | Debezium Server snapshot, live changes and same-slot crash recovery passed within 512 MiB. Consumer semantics and complete host fit remain unresolved; see [assessment](pulsar-cdc-assessment.md). |
 | R2 outage/interrupted-upload and full BookKeeper disk-exhaustion soak | NOT QUALIFIED | No claim from the smaller restart, quota or failed-authentication tests substitutes for these exercises. |
 | Combined ClickHouse peak / web workload soak | NOT QUALIFIED | No production resource allocation passed; local transport fixtures are insufficient. |
 
@@ -90,7 +93,7 @@ survival, an online backup procedure or reconstruction from R2 objects alone.
 [Pulsar's offload mechanism](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/)
 still depends on ledger metadata and does not offload the current open segment.
 
-## Actual R2 failure and diagnosis
+## Actual R2 stock failures and correction
 
 Terraform created private bucket `dofek-pulsar-qualification` through the existing
 Cloudflare state: **2 resources added, 0 changed, 0 destroyed**, including its
@@ -191,12 +194,12 @@ The three owned queue pauses and history-sink hold remain intentional. Live Appl
 Motion intake continues independently; the read-only sample exposed event
 metadata only. No bulk work may resume on the strength of local qualification.
 
-The current Pulsar strategy is not abandoned, but Task 1 cannot pass. Further
-application migration requires a reviewed stock or upstream-supported R2 upload
-solution, a measured whole-host allocation with reserve and overlap capacity,
-and a safe production physical-budget enablement/backup procedure. A custom
-offloader or different storage backend would change the approved approach and
-requires a separate decision. Tasks 2–7 have not started.
+The current Pulsar strategy is not abandoned, but Task 1 cannot pass. The user
+authorized fixing the demonstrated offloader failure; the source correction
+below retains the existing Apache driver and native storage format. Further
+application migration still requires a measured whole-host allocation with
+reserve and overlap capacity, remaining failure exercises, and a safe production
+physical-budget enablement/backup procedure. Tasks 2–7 have not started.
 
 Conversion of **all existing R2 JSONL archives remains mandatory**. It must replay
 original event bytes through Pulsar, preserve event IDs/versions, reconcile every
@@ -219,3 +222,82 @@ for four oversized SQL files; no limits were changed. No application source or
 schema changed, so application test suites were not rerun for this configuration
 and evidence checkpoint. The runtime fixture results above are the behavioral
 qualification evidence; they do not convert the failed or untested gates to PASS.
+
+## Corrected native offloader evidence
+
+The regression test consumes the same multipart block and index payload twice
+before delegating the upload. Stock source failed with `expected [2621442] but
+found [0]`. The [source patch](../deploy/pulsar/repeatable-offload-payload.patch)
+makes those sealed-ledger payloads repeatable byte arrays. It preserves block
+and index layout; each data block is bounded by the configured 5 MiB size. The
+separate streaming-offload path is unchanged. The original implementation and
+signer are linked in the diagnosis above.
+
+The full offloader test class passed **22 tests, zero failures/skips**, followed
+by NAR packaging and main/test Java style checks on checksum-verified Temurin
+25.0.5. The host run completed successfully in 2m 56s; its NAR SHA-256 is
+`6a072864f5ac451a8f461af83af61f679d5f4f0535d522ebb85c3aefa436e2ee`.
+The earlier Linux-built artifact used in the first actual-R2 proof had SHA-256
+`fb2725a553d5003caa8e8e15ad90065b12c94b6e2e78dd998b9852d00ba394f8`.
+These are separate builds of the same patch, not a reproducible-binary claim.
+Packaging the host-tested artifact into the pinned broker base passed using
+Docker's supported [named build-context stage override](https://docs.docker.com/reference/cli/docker/buildx/build/).
+A cold full Docker source build remains unverified locally.
+
+The resulting image was then started without a NAR bind mount or native-memory
+tracking. An independent subscription read **10,000/10,000** previously offloaded
+R2 records in **33,709 ms**, matching the same digest. Its broker cgroup peak
+was **645,484,544 bytes**, with max/oom/oom_kill zero. Image configuration ID:
+`sha256:109069c5909c6df8b264982f0d8f5c1879b96ce370d18ba58c2d047bd6e3b0e0`.
+This verifies the packaged artifact's remote read path separately from the
+earlier Linux artifact's upload/GC proof.
+
+Actual R2 fixture `r2-fixed-stress-qualification` published the same 10,000 ×
+8,192-byte deterministic payload in 25,446 ms. Native offload reported SUCCESS
+for sealed ledger 25. BookKeeper's ledger list excluded 25, its metadata lookup
+reported `BKNoSuchLedgerExistsOnMetadataServerException`, and a replacement
+broker logged opening ledger 25 from the offload driver. No operator deleted
+ledger metadata or data files.
+
+A fresh independent subscription then read and acknowledged **10,000/10,000**
+messages continuously in **26,866 ms**, matching the digest above. An earlier
+attempt hit the fixture's existing 10-second receive deadline after 7,493
+verified/acknowledged messages; its saved cursor resumed with the remaining
+2,507 and matched the digest. No deadline was increased. The independent full
+read is the stronger proof and does not erase the prior interruption.
+
+The broker originally saw ten Docker VM CPUs, opened 232 threads and hit a real
+768 MiB cgroup OOM during remote readback. A native one-CPU container limit
+reduced its idle thread count to 101 with the same 256 MiB heap / 192 MiB direct
+memory settings. The successful continuous R2 read used 104 threads and peaked
+at 778,567,680 bytes, with cgroup `max=0`, `oom=0`, `oom_kill=0`. This included
+temporary native-memory tracking, which is absent from the checked-in runtime
+configuration. The [qualification overlay](../docker-compose.pulsar.yml) now
+selects the patched broker build, one CPU and V4 signing. No production budget
+was changed and this one fixture does not establish a long-duration peak bound.
+
+## Qualification execution incidents
+
+An additional diagnostic CLI JVM inside the tightly capped bookie was followed
+by an OOM-marked test-container exit. Later diagnostics used its HTTP API or a
+separate bounded attach process, preserving the actual service memory budget.
+
+An unbounded Docker build overlapping runtime qualification exhausted the shared
+Docker VM and interrupted local containers, including other workspaces'
+ClickHouse tasks. Kernel evidence classified those events as global OOM; this
+was local test infrastructure, not a production crash. The build was canceled
+and this worktree's qualification runtime stopped. A dedicated 4 GiB builder
+also encountered global pressure below its own cap (peak 3,493,724,160 bytes,
+cgroup max/oom zero), so compilation moved to the 64 GiB macOS host. No other
+workspace was deliberately stopped or removed. Future runs must reserve
+aggregate VM headroom and separate source compilation from runtime stress.
+
+## CDC and remaining gate
+
+The user approved assessing retirement of PeerDB's service group through CDC
+consolidation. [The assessment](pulsar-cdc-assessment.md) records a successful
+stock Debezium capture/restart fixture, the 16-source/18-destination contract,
+consumer limitations and the incomplete whole-host budget. It does not approve
+or qualify production retirement. Existing-server fit, physical admission,
+failure soaks, erasure/restore guarantees and all-archive conversion remain
+required; the four production holds remain owned and unchanged.

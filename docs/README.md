@@ -139,8 +139,11 @@ Cross-provider reverse-engineering references:
 ## Historical Records
 
 - [pulsar-qualification.md](pulsar-qualification.md): November 3, 2026 isolated
-  Pulsar qualification, actual R2 failure, memory/storage gates and retained
+  Pulsar qualification, actual R2 correction, memory/storage gates and retained
   production safety holds; not production deployment instructions.
+- [pulsar-cdc-assessment.md](pulsar-cdc-assessment.md): November 3, 2026 isolated
+  Debezium-to-Pulsar assessment, PeerDB replacement contracts and unresolved
+  whole-host capacity; not approval to retire production CDC.
 
 These files explain why the current system exists but are not current
 instructions:

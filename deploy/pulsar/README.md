@@ -6,10 +6,36 @@ configuration. It is not wired into the production Swarm stack. The approved
 and [implementation plan](../../docs/superpowers/plans/2026-11-03-single-server-pulsar.md)
 define production acceptance gates.
 
-The [qualification evidence](../../docs/pulsar-qualification.md) records failed
-actual-R2 upload and whole-host resource gates. The local S3 stand-in passing
-does not qualify Cloudflare R2, and these services must not be copied into the
-production stack until those gates pass.
+The [qualification evidence](../../docs/pulsar-qualification.md) records stock
+R2 upload failures, a tested offloader correction, and the still-unqualified
+whole-host resource gate. These services must not be copied into the production
+stack until every required gate passes. The separate
+[CDC assessment](../../docs/pulsar-cdc-assessment.md) does not authorize retiring
+PeerDB.
+
+The broker builds the existing Apache jclouds offloader from checksum-pinned
+Pulsar 5.0.1 source with [a narrow payload-repeatability patch](repeatable-offload-payload.patch).
+Its sealed-ledger multipart blocks and index use repeatable byte-array payloads
+for V4 signing; the native object layout is unchanged. Blocks are bounded by the
+configured 5 MiB offload block size. This is a maintained source patch, not a
+stock-image R2 compatibility claim; the separate streaming-offload path is not
+changed. See [the original offloader](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java).
+
+Build before starting the broker:
+
+```bash
+pnpm compose -- -f docker-compose.yml -f docker-compose.pulsar.yml --profile pulsar build pulsar-broker
+```
+
+Use an isolated builder with an explicit memory/CPU budget and enough aggregate
+Docker VM headroom; do not overlap compilation with a constrained qualification
+runtime. The Dockerfile runs the offloader test class and Java style checks with
+retries disabled before packaging its NAR. In this workstation's saturated shared
+VM, the complete source build ran successfully on the macOS host instead; image
+packaging passed using that tested artifact through Docker's supported named
+build-context stage override. A cold full Docker source build remains unverified
+locally. Docker documents [build contexts](https://docs.docker.com/build/concepts/context/)
+and [builder resource options](https://docs.docker.com/build/builders/drivers/docker-container/).
 
 Oxia uses one data server and one Raft coordinator, with separate `pulsar` and
 `bookkeeper` namespaces. Both processes have persistent state. Replication factor

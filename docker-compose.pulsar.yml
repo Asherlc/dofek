@@ -97,9 +97,12 @@ services:
         condition: service_completed_successfully
 
   pulsar-broker:
-    image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
+    image: dofek-pulsar-qualification:5.0.1-r2
+    build:
+      context: ./deploy/pulsar
     profiles: ["pulsar"]
     mem_limit: 768m
+    cpus: 1
     environment:
       PULSAR_MEM: -Xms64m -Xmx256m -XX:MaxDirectMemorySize=192m
       PULSAR_GC: -XX:+UseG1GC
@@ -113,6 +116,7 @@ services:
       managedLedgerDefaultAckQuorum: "1"
       managedLedgerCacheSizeMB: "32"
       managedLedgerOffloadDriver: S3
+      jclouds.s3.signer-version: "4"
       PULSAR_PREFIX_managedLedgerOffloadBucket: pulsar-qualification
       PULSAR_PREFIX_managedLedgerOffloadServiceEndpoint: http://metric-stream-minio:9000
       PULSAR_PREFIX_managedLedgerOffloadRegion: us-east-1
