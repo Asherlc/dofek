@@ -47,7 +47,7 @@ current_samples AS (
             recorded_at
         FROM changed_keys
     )
-    ORDER BY _peerdb_version DESC
+    ORDER BY id ASC, _peerdb_version DESC
     LIMIT 1 BY id
 ),
 

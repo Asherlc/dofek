@@ -36,7 +36,7 @@ WITH
 batch_samples AS (
     SELECT *
     FROM {{ ref('deduped_sensor') }}
-    ORDER BY refresh_version DESC
+    ORDER BY user_id ASC, channel ASC, recorded_date ASC, recorded_at ASC, refresh_version DESC
     LIMIT 1 BY user_id, channel, recorded_date, recorded_at
 ),
 
@@ -135,7 +135,13 @@ existing_activity_samples AS (
             batch_samples.recorded_at
         FROM batch_samples
     )
-    ORDER BY existing_samples.refresh_version DESC
+    ORDER BY
+        existing_samples.user_id ASC,
+        existing_samples.activity_id ASC,
+        existing_samples.recorded_date ASC,
+        existing_samples.channel ASC,
+        existing_samples.recorded_at ASC,
+        existing_samples.refresh_version DESC
     LIMIT 1 BY
         existing_samples.user_id,
         existing_samples.activity_id,

@@ -42,6 +42,53 @@ describe("activity_sensor_sample read model", () => {
     }
   });
 
+  it("projects latest wide samples within a bounded query memory budget", async () => {
+    const activeClient = requireClient(client);
+    const sampleCount = 200_000;
+    await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_sensor` });
+    await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_activities` });
+    await activeClient.command({ query: `SYSTEM STOP MERGES ${targetSchema}.deduped_sensor` });
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.deduped_activities VALUES (
+        '${crossMidnightActivityId}', '${testUserId}',
+        '2026-05-01 00:00:00', '2026-05-01 12:00:00',
+        '2026-05-01 13:00:00', ['${crossMidnightActivityId}'], 0,
+        '2026-05-01 13:00:00')`,
+    });
+    for (const version of [1, 2]) {
+      for (let offset = 0; offset < sampleCount; offset += 20_000) {
+        await activeClient.command({
+          query: `INSERT INTO ${targetSchema}.deduped_sensor
+            SELECT toUUID('${testUserId}'),
+              toDateTime64('2026-05-01', 9) + toIntervalMillisecond(number),
+              toDate('2026-05-01'), 'heart_rate', ${version * 111}, 'fixture',
+              NULL, repeat('d', 32), toString(number), repeat('t', 16),
+              toUUID('10000000-0000-0000-0000-000000000001'), 'direct', NULL, toUInt64(${version}),
+              toUInt8(${version} = 2 AND number % 10 = 0),
+              toDateTime64('2026-05-01 14:00:00', 9)
+            FROM numbers(${offset}, 20000)
+            SETTINGS max_threads = 1, max_memory_usage = 140000000`,
+        });
+      }
+    }
+    const query = renderActivitySensorSampleSql(targetSchema);
+    try {
+      const result = await activeClient.query({
+        query: `SELECT count() AS count, min(scalar) AS minimum, max(scalar) AS maximum,
+        sum(cityHash64(tuple(* EXCEPT(refresh_version)))) AS checksum
+        FROM (${query.replace(/\nSETTINGS max_threads = 1$/, "")})
+        SETTINGS max_threads = 1, max_memory_usage = 140000000`,
+        format: "JSONEachRow",
+      });
+      expect(await result.json()).toEqual([
+        expect.objectContaining({ count: sampleCount * 0.9, minimum: 222, maximum: 222 }),
+      ]);
+    } finally {
+      await activeClient.command({ query: `SYSTEM START MERGES ${targetSchema}.deduped_sensor` });
+      await seedFixture(activeClient, targetSchema);
+    }
+  }, 120_000);
+
   it("joins samples to activity-day windows without cross-day amplification", async () => {
     const activeClient = requireClient(client);
     const queryId = `activity-sensor-sample-${randomUUID()}`;
@@ -375,7 +422,7 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       refreshed_at DateTime64(9, 'UTC')
     )
     ENGINE = ReplacingMergeTree(refresh_version)
-    ORDER BY (user_id, recorded_date, channel, recorded_at)`,
+    ORDER BY (user_id, channel, recorded_date, recorded_at)`,
   });
 
   const activityRows = Array.from({ length: activityCount }, (_, index) => {

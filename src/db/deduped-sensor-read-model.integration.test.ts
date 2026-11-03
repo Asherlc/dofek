@@ -72,6 +72,38 @@ describe("deduped_sensor read model", () => {
       "2026-09-15 00:04:00.000000000",
     );
   });
+
+  it("selects latest sample versions within a bounded query memory budget", async () => {
+    const activeClient = requireClient(client);
+    await activeClient.command({ query: `TRUNCATE TABLE ${database}.sensor_scalar_sample` });
+    await activeClient.command({ query: `SYSTEM STOP MERGES ${database}.sensor_scalar_sample` });
+    for (const version of [1, 2]) {
+      for (let offset = 0; offset < 400_000; offset += 50_000) {
+        await activeClient.command({
+          query: `INSERT INTO ${database}.sensor_scalar_sample
+            SELECT toUUID(concat('10000000-0000-0000-0000-', leftPad(toString(number), 12, '0'))),
+              NULL, NULL, toUUID('${userId}'),
+              toDateTime64('2026-09-14', 9) + toIntervalMillisecond(number % 1000),
+              toDate('2026-09-14'), 'heart_rate', 'fixture', toString(number),
+              repeat('d', 32), repeat('t', 16), 'direct', ${version * 111}, 10,
+              toDateTime64('2026-09-15 00:01:00', 9), 0, ${version}
+            FROM numbers(${offset}, 50000)
+            SETTINGS max_threads = 1, max_memory_usage = 220000000`,
+        });
+      }
+    }
+    const query = renderDedupedSensorSql(database).replace(/\nSETTINGS max_threads = 1$/, "");
+    const result = await activeClient.query({
+      query: `SELECT count() AS count, min(scalar) AS minimum, max(scalar) AS maximum,
+          sum(cityHash64(tuple(* EXCEPT(refresh_version)))) AS checksum
+        FROM (${query})
+        SETTINGS max_threads = 1, max_memory_usage = 220000000`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      expect.objectContaining({ count: 1000, minimum: 222, maximum: 222 }),
+    ]);
+  }, 120_000);
 });
 
 function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
@@ -107,7 +139,8 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       _peerdb_synced_at DateTime64(9, 'UTC'),
       _peerdb_is_deleted UInt8,
       _peerdb_version Int64 DEFAULT 1
-    ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY (user_id, channel, recorded_at, id)`,
+    ) ENGINE = ReplacingMergeTree(_peerdb_version)
+    ORDER BY (user_id, channel, recorded_date, recorded_at, provider_id, id)`,
   });
   await client.insert({
     table: `${database}.sensor_scalar_sample`,

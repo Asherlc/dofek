@@ -116,12 +116,20 @@ Reported heart rate wins a same-provider, same-priority timestamp tie over an
 estimate. Invalid or deleted intervals emit tombstones. Sensor deduplication
 uses the ingestion-time microbatch to identify changed timestamp keys, then
 selects the latest version of every candidate at those keys with
-`ORDER BY _peerdb_version DESC LIMIT 1 BY id`. This preserves reported BPM even
+`ORDER BY id ASC, _peerdb_version DESC LIMIT 1 BY id`. This preserves reported BPM even
 when a matching interval arrives in a later ingestion batch. The model uses
 the referenced [Relation's `render()` method](https://github.com/dbt-labs/dbt-adapters/blob/main/dbt-adapters/src/dbt/adapters/base/relation.py)
 for that bounded current-state read; the normal `ref()` remains filtered for
 changed-key discovery. Replacement follows the source version semantics of
 [ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+Latest-version selection puts every `LIMIT BY` key before the descending version
+in `ORDER BY`. Each key still chooses its newest row, while ClickHouse can use
+its sorted-stream limit rather than retaining a hash entry for every previously
+seen key. `activity_sensor_sample` applies the same ordering to both incoming
+timestamp keys and existing activity-sample keys. Real-engine memory regressions
+cover these paths; joins, changed-key sets and sorting still need their own
+resource budget. See [LIMIT BY semantics](https://clickhouse.com/docs/reference/statements/select/limit-by)
+and [query-plan inspection](https://clickhouse.com/docs/sql-reference/statements/explain#explain-pipeline).
 `activity_sensor_sample` is a bounded microbatch intermediary over source
 refresh time. It uses the adapter's `inserts_only=true` path so each daily batch
 appends replacements and explicit tombstones to `ReplacingMergeTree(refresh_version)`
@@ -298,7 +306,7 @@ ClickHouse recommends reducing the volume entering a join:
 Incremental stale-row reconciliation reads only target rows whose
 `(user_id, channel, recorded_at)` keys appear in the current microbatch, then
 selects the current `ReplacingMergeTree` version with
-`ORDER BY refresh_version DESC LIMIT 1 BY ...` instead of applying query-wide
+key-first `ORDER BY ... ASC, refresh_version DESC LIMIT 1 BY ...` instead of applying query-wide
 `SETTINGS final=1`. The microbatch `deduped_sensor` input uses the same
 `LIMIT 1 BY` pattern because dbt wraps that `ref()` in a filtered subquery where
 table-level `FINAL` is unsupported. That keeps logical current-state correctness
@@ -893,7 +901,7 @@ handle row lifecycle explicitly. A model that can lose a previously emitted row
 at its `ORDER BY` grain must emit a newer tombstone row with `is_deleted = 1`,
 and serving queries must read `FINAL` plus `is_deleted = 0`. Downstream dbt models
 that read another append table must first choose the latest row for the upstream
-grain with `ORDER BY refresh_version DESC LIMIT 1 BY ...`, then filter
+grain with key-first `ORDER BY ... ASC, refresh_version DESC LIMIT 1 BY ...`, then filter
 `is_deleted = 0`; filtering before selecting the latest row can preserve stale
 active rows until ClickHouse background merges finish. This follows ClickHouse's
 documented `ReplacingMergeTree` behavior, where replacement occurs during merges

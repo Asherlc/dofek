@@ -283,7 +283,7 @@ direct memory 64 MiB. This small control is not a load-tested lower memory
 allocation and does not certify combined production peaks or exactly-once
 delivery.
 
-### Timestamp failure on the production-version engine
+### Timestamp failure on the earlier local qualification engine
 
 Changing the target to `Nullable(DateTime64(6, 'UTC'))` and the source field to
 `timestamp_tz` failed the actual sink flush with ClickHouse code **41**:
@@ -369,6 +369,11 @@ change the failed whole-host budget or qualify all mirror/erasure contracts.
 
 ### Whole-server result
 
+The following ceiling calculation remains a failed gate. The subsequent
+[analytics investigation](#analytics-memory-investigation) changes query ordering,
+not production service ceilings; small-fixture savings must not be subtracted
+from the complete host budget as though a combined workload had passed.
+
 At the tested candidate limits, the previously recorded 24,568 MiB capped
 Pulsar proposal becomes:
 
@@ -421,3 +426,106 @@ that connector feature lists did not reveal. Keep executable target-engine
 assertions, non-happy-path subscription checks and explicit type fixtures in
 future qualification notes; use systematic debugging and real-database tests
 before modifying any connector behavior or production allocation.
+
+## Analytics memory investigation
+
+The user approved investigating and fixing the ClickHouse peaks before further
+existing-server qualification. At 22:52 UTC, production reported **26.6.1.1193**,
+healthy public health/web 2/2/worker 1/1, history sink 0/0, and
+10,333,745,152 data bytes free. The earlier timestamp comparison used local
+26.9.19.9 and 26.10.2.103 engines; it was not evidence that production had been
+upgraded to either version.
+
+### Attribution and direct change
+
+Query-log source-table membership alone had obscured which model was writing.
+Inspecting both the dbt `node_id` comment and INSERT target establishes:
+
+- `93d734b6-4734-41e8-abb5-8e3aa86c55ed` wrote
+  `activity_sensor_sample`: 9,467,386,212 peak bytes, 208,183,789 rows read and
+  90,990 ms. The source included `deduped_sensor`; that does not make this a
+  `deduped_sensor` build. The 00:35 memory-limit failure was also the activity
+  projection.
+- `10bdfbec-61de-454c-9683-8c824f0b1c6d` wrote `deduped_sensor`: code 159 at
+  240,014 ms, 8,782,195,586 peak bytes and 381 external aggregation parts.
+
+Existing `system.trace_log` samples named `LimitByTransform` hash-table growth
+in both paths. One deduplication stack accounted for 2,932,214,552 cumulative
+positive allocation bytes; this is allocation traffic, not an independent live
+peak. The largest activity peak stack was also inside `LimitByTransform`.
+The activity query built 6,475,430 join rows, so join state remains another
+budget item. See [query-log fields](https://clickhouse.com/docs/operations/system-tables/query_log)
+and [allocation trace semantics](https://clickhouse.com/docs/reference/system-tables/trace_log).
+
+The direct fix sorts by each complete `LIMIT BY` key first, followed by descending
+version. `deduped_sensor` uses `id ASC, _peerdb_version DESC`; the activity model
+uses its timestamp or activity-sample key followed by `refresh_version DESC`.
+The newest version within each key remains first, including tombstones. This
+does not narrow changed-key candidates, substitute `FINAL`, change provider
+priorities, or skip prior reported samples. The engine can select
+`LimitBySortedStreamTransform` instead of remembering all prior keys in a hash
+table. A read-only production `EXPLAIN PIPELINE` confirmed that transform for
+all three activity selections on the deployed engine. This follows
+[LIMIT BY ordering semantics](https://clickhouse.com/docs/reference/statements/select/limit-by);
+the investigation used [EXPLAIN PIPELINE](https://clickhouse.com/docs/sql-reference/statements/explain#explain-pipeline)
+rather than a forced optimizer flag.
+
+### Executable regressions
+
+- Activity projection: 200,000 timestamp keys, two unmerged versions each,
+  nullable/wide provenance and latest-version tombstones. The old query exceeded
+  a 140,000,000-byte query budget. The new query completed at 114,978,261 bytes,
+  returning the expected 180,000 active rows with the newer scalar.
+- Sensor deduplication: 400,000 sample IDs, two unmerged versions each and 1,000
+  output timestamps. The old query exceeded a 220,000,000-byte budget; the new
+  query completed at 209,322,736 bytes and selected the newer values at all
+  1,000 timestamps. An independent unconstrained-by-that-test-limit control
+  measured 236,655,336 versus 207,684,291 bytes with an identical count/digest.
+
+These fixtures exercise native queries, not SQL string assertions. Existing
+tests additionally cover activity-day windows, stale rows, real dbt microbatch
+reconciliation, source attribution, and retention of earlier reported heart
+rate across later interval updates/deletes. Query memory limits in the tests
+are regression budgets, not new production configuration. The whole-server
+ceiling and simultaneous workload gates remain unqualified.
+
+### Bounded reads against production data
+
+No build, insert, mutation, release or hold restoration was performed. Diagnostics
+returned only a count and digest, with one query thread, a 3 GiB query-memory
+ceiling and a 512 MiB temporary-disk ceiling. Public health remained ok at each
+observation. The first activity read hit its deliberately shorter 60-second
+operator deadline at 2,062,257,548 peak bytes; it was not accepted as completion.
+A single completion run used the existing 240-second production deadline:
+
+| Read | Result | Peak bytes | Rows read | Duration |
+| --- | --- | ---: | ---: | ---: |
+| Key-ordered activity projection | Pass: 7,627,650 output rows, digest `705520720935092991` | 2,067,733,404 | 212,327,839 | 92,865 ms |
+| ID-ordered sensor deduplication | Code 241 at the 3 GiB cap | 3,216,955,821 | 54,999,779 | 19,352 ms |
+| Deduplication, redundant DISTINCT removed, 128 MiB native sort/group spill thresholds | Code 241; zero external sort/group parts | 3,220,684,739 | 55,032,547 | 16,832 ms |
+| Same probe with smaller 8,192-row blocks | Code 241; zero external sort/group parts | 3,220,696,899 | 55,032,547 | 15,918 ms |
+
+The completed activity **read** is not equivalent to the earlier insert/build:
+it does not include target writes, projections, replacement parts, merging or
+the entire analytics graph. No production service memory ceiling can yet be
+lowered from this result. Diagnostic deadlines never exceeded the existing
+240-second limit and no production settings were changed.
+
+The ineffective spilling now has a source-level explanation. The deployed
+26.6.1.1193 engine's [SortingStep](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Processors/QueryPlan/SortingStep.cpp#L106-L145)
+derives the ratio threshold from available system memory, not this diagnostic's
+3 GiB query budget. Its [MergeSortingTransform](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Processors/Transforms/MergeSortingTransform.cpp#L200-L208)
+requires the absolute block threshold **and** the query-memory ratio threshold
+before spilling. The observed ratio was 0.5; the host-relative gate therefore
+prevented the 128 MiB threshold from providing the expected early spill. This
+explains why smaller blocks did not cure the failure. The reported
+[upstream issue](https://github.com/ClickHouse/ClickHouse/issues/88998) describes
+related ratio/spill behavior; it is corroborating research, not proof that our
+complete query has the same upstream defect or that another engine fixes it.
+
+No spill setting, smaller block size, DISTINCT removal or forced optimizer
+setting from these failed probes was retained in steady-state code. The next
+qualification decision is whether to use native **absolute per-query spill
+budgets** that operate below the query-memory cap. Their temporary-disk bound,
+result equivalence, full insert/build behavior and simultaneous host workload
+would still need real tests. The current entire-host gate remains failed.
