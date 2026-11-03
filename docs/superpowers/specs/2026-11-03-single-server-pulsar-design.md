@@ -171,6 +171,35 @@ server-owned processing state, with parity tests if visible states change.
 
 ## Migration and rollback boundaries
 
+### Existing R2 archive conversion (explicit user requirement)
+
+Convert the existing gzip JSONL archive through the normal Pulsar producer API,
+not by manufacturing offload objects. Inventory every existing archive object,
+stream and validate its events, publish without changing event identity/version,
+then verify both subscription readback and native offloaded readback before
+considering any source retirement. Keep the original bucket and its current
+erasure support during conversion. Conversion is resumable and bounded; remote
+object writes and full conversion require the implementation's reviewed gates.
+
+The current archive configuration stores Kafka offset ranges in object names,
+but does not include individual offsets inside each event. Grouping by record
+timestamp can create interleaved/overlapping ranges. Object line numbers must
+not be presented as recovered Kafka offsets. Use source object identity and line
+ordinal as conversion provenance, preserve within-object order, and test
+cross-object/version/delete semantics. Recover exact offsets from retained Kafka
+where required and available; if correctness needs missing ordering information,
+record that source range as blocked rather than inventing it. The current
+`src/metric-stream/r2-replay.ts` provides a key parser, not a complete converter.
+These are observations of the checked-in
+[archive configuration](../../../deploy/redpanda/metric-stream-r2-archive.connect.yml)
+and [parser](../../../src/metric-stream/r2-replay.ts).
+
+Completion accounts for every inventoried object: converted and verified, or
+explicitly reconciled as erased/changed under the account-erasure fence. Any
+unexplained missing object, malformed event, overlap ambiguity or count mismatch
+blocks completion. No bulk deletion or in-place rewrite of source archives is
+part of conversion.
+
 1. Preserve the four owned production holds and existing jobs/checkpoints. Record
    fresh health, capacity, archive coverage and exact source ranges before any
    migration. No fresh Strava full-history request is permitted.
