@@ -269,7 +269,6 @@
     "@dofek/peloton": "workspace:*",
     "@dofek/provider-http": "workspace:*",
     "@dofek/providers": "workspace:*",
-    "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
     "@dofek/telemetry": "workspace:*",
     "@dofek/trainerroad": "workspace:*",

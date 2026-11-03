@@ -3,7 +3,8 @@ UPDATE fitness.user_settings
 SET
   value = CASE
     WHEN jsonb_typeof(value -> 'successfulFitAt') = 'object'
-      THEN (value - 'readinessWeights' - 'sleepTarget')
+      THEN
+        (value - 'readinessWeights' - 'sleepTarget')
         #- '{successfulFitAt,readinessWeights}'
         #- '{successfulFitAt,sleepTarget}'
     ELSE value - 'readinessWeights' - 'sleepTarget'

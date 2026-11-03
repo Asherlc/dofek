@@ -8,8 +8,7 @@
     "./types": "./src/types.ts",
     "./activity-location": "./src/contracts/activity-location.ts",
     "./baseline-relative-metrics": "./src/contracts/baseline-relative-metrics.ts",
-    "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts",
-    "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts"
+    "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts"
   },
   "scripts": {
     "dev": "tsx ../../scripts/with-env.ts -- tsx src/index.ts",

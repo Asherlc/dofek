@@ -87,13 +87,12 @@ importers:
       '@clickhouse/client':
         specifier: 1.23.1
         version: 1.23.1
-      '@dofek/cycling-power':
-        specifier: workspace:*
-        version: link:packages/cycling-power
-
       '@dofek/climbing-catalogue':
         specifier: workspace:*
         version: link:packages/climbing-catalogue
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:packages/cycling-power
       '@dofek/eight-sleep':
         specifier: workspace:*
         version: link:packages/eight-sleep
@@ -118,9 +117,6 @@ importers:
       '@dofek/providers':
         specifier: workspace:*
         version: link:packages/providers-meta
-      '@dofek/scoring':
-        specifier: workspace:*
-        version: link:packages/scoring
       '@dofek/stats':
         specifier: workspace:*
         version: link:packages/stats
@@ -393,8 +389,6 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  packages/cycling-power: {}
-
   packages/climbing-catalogue:
     dependencies:
       cheerio:
@@ -410,6 +404,8 @@ importers:
       vitest:
         specifier: 5.0.5
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.2)(msw@3.0.3)(vite@8.1.6)
+
+  packages/cycling-power: {}
 
   packages/eight-sleep:
     dependencies:
@@ -822,13 +818,12 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
-      '@dofek/cycling-power':
-        specifier: workspace:*
-        version: link:../cycling-power
-
       '@dofek/climbing-catalogue':
         specifier: workspace:*
         version: link:../climbing-catalogue
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:../cycling-power
       '@dofek/filter-columns':
         specifier: workspace:*
         version: link:../filter-columns
@@ -990,13 +985,12 @@ importers:
 
   packages/training:
     dependencies:
-      '@dofek/cycling-power':
-        specifier: workspace:*
-        version: link:../cycling-power
-
       '@dofek/climbing-catalogue':
         specifier: workspace:*
         version: link:../climbing-catalogue
+      '@dofek/cycling-power':
+        specifier: workspace:*
+        version: link:../cycling-power
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring

@@ -35492,3 +35492,20 @@ was changed to suppress this failure. The cleanup migrations were separately
 executed against populated Postgres and ClickHouse fixtures and passed
 preservation/idempotence checks. Remaining follow-up is to run the router suites
 in an environment with sufficient memory.
+
+### PR #3209 first CI pass: retirement cleanup omissions
+
+The first CI pass for the retirement reported two direct cleanup failures:
+[`Test / Knip`](https://github.com/Asherlc/dofek/actions/runs/41655590212/job/125985481697)
+failed at `pnpm knip` with `Unused dependencies (1)` (`@dofek/scoring` in the
+root package) and `Unused exports (1)` (`dateDaysBefore` in router test helpers).
+Deleting the last score consumers made these entries unused; the server's
+`sleep-need-contract` package export also pointed to a deleted file. Removed
+the unused dependency/helper and obsolete export.
+[`Test / SQLFluff`](https://github.com/Asherlc/dofek/actions/runs/41655590212/job/125985482169)
+failed at `uv tool run sqlfluff lint` for migration 0177 with `LT02 | Expected
+line break and indent of 8 spaces before '('`. Formatted the CASE branch with
+SQLFluff; its SQL behavior is unchanged. No production impact or resilience
+settings were involved. The local analytics SQL lint command does not lint
+new Postgres migrations, so future pre-push checks should include both that
+migration lint command and Knip.
