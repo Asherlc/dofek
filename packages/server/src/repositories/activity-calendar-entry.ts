@@ -9,7 +9,6 @@ import {
 } from "@dofek/format/record-local-time";
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import type { TrainingStressCalculator } from "@dofek/training/training-load";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import type { ActivityLocation } from "../contracts/activity-location.ts";
@@ -110,11 +109,6 @@ export const activityRowSchema = z.object({
   source_external_ids: z.array(z.record(z.string(), z.string().nullable())).optional().default([]),
 });
 
-export const baselineRowSchema = z.object({
-  max_hr: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
-});
-
 function authoritativeLocalTimeContext(
   row: Pick<
     z.infer<typeof activityRowSchema>,
@@ -153,8 +147,6 @@ export interface ActivityListPage {
 }
 
 interface CalendarEntryContext {
-  baseline: z.infer<typeof baselineRowSchema>;
-  calculator: TrainingStressCalculator;
   routePreview?: ReturnType<typeof routeMapPreview>;
   mapReadiness?: "processing" | "awaiting_summary" | "unavailable";
 }
@@ -241,16 +233,10 @@ function projectCalendarEntry(
   source: ActivityListSourceDetail,
   sourceLocation: ActivityLocation | null,
 ): CalendarActivityEntry {
-  const { baseline, calculator } = context;
   const trainingStress = computeActivityTrainingStress({
     activityType: row.canonical_type,
     durationMin: row.duration_min,
-    avgHr: row.avg_hr,
-    maxHr: row.max_hr,
-    baselineMaxHr: baseline.max_hr,
-    baselineRestingHr: baseline.resting_hr,
     powerTss: row.power_tss,
-    calculator,
   });
   const tss = trainingStress.status === "available" ? trainingStress.score : null;
 
@@ -289,15 +275,11 @@ function projectCalendarEntry(
 interface TssInput {
   activityType: string;
   durationMin: number;
-  avgHr: number | null;
-  maxHr: number | null;
-  baselineMaxHr: number | null;
-  baselineRestingHr: number | null;
   powerTss: number | null;
-  calculator: TrainingStressCalculator;
 }
 
 type ActivityTrainingStress =
+  | { status: "not_applicable" }
   | {
       status: "available";
       score: number;
@@ -308,6 +290,9 @@ type ActivityTrainingStress =
     };
 
 function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
+  if (input.activityType !== "cycling") {
+    return { status: "not_applicable" };
+  }
   if (input.durationMin <= 0) {
     return {
       status: "missing",
@@ -320,63 +305,14 @@ function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress 
       score: input.powerTss,
     };
   }
-  const effectiveMaxHr = input.baselineMaxHr ?? input.maxHr;
-  const effectiveRestingHr = input.baselineRestingHr ?? 60;
-  if (
-    input.avgHr != null &&
-    input.avgHr > 0 &&
-    effectiveMaxHr != null &&
-    effectiveMaxHr > effectiveRestingHr
-  ) {
-    return {
-      status: "available",
-      score: input.calculator.computeHrTss(
-        input.durationMin,
-        input.avgHr,
-        effectiveMaxHr,
-        effectiveRestingHr,
-      ),
-    };
-  }
   return {
     status: "missing",
-    reason: formatTrainingStressUnavailableReason(input, effectiveMaxHr, effectiveRestingHr),
+    reason: "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
   };
 }
 
-function formatTrainingStressUnavailableReason(
-  input: TssInput,
-  effectiveMaxHr: number | null,
-  effectiveRestingHr: number,
-): string {
-  const heartRateActions: string[] = [];
-  if (input.avgHr == null || input.avgHr <= 0) {
-    heartRateActions.push("record average heart rate");
-  }
-  if (effectiveMaxHr == null || effectiveMaxHr <= 0) {
-    heartRateActions.push("set maximum heart rate");
-  } else if (effectiveMaxHr <= effectiveRestingHr) {
-    heartRateActions.push("set maximum heart rate above resting heart rate");
-  }
-
-  const powerAction =
-    "record cycling power with sufficient sustained-effort evidence for computed eFTP";
-  const heartRateAction = joinActions(heartRateActions);
-  if (input.activityType !== "cycling") {
-    return `${capitalize(heartRateAction)}.`;
-  }
-  return `${capitalize(powerAction)}, or ${heartRateAction}.`;
-}
-
-function joinActions(actions: string[]): string {
-  return actions.join(" and ");
-}
-
-function capitalize(value: string): string {
-  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
-}
-
 function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
+  if (trainingStress.status === "not_applicable") return [];
   if (trainingStress.status === "missing") {
     return [
       {

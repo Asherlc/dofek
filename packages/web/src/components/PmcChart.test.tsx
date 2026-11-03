@@ -58,7 +58,7 @@ describe("PmcChart", () => {
     expect(screen.getByText("No training load data")).toBeTruthy();
   });
 
-  it("renders training load, both model badges, and a safe tooltip", () => {
+  it("renders training load, power stress metadata, and a safe tooltip", () => {
     capturedOptions.length = 0;
     const { rerender } = render(
       <PmcChart
@@ -66,12 +66,12 @@ describe("PmcChart", () => {
           { date: "2026-01-01", load: 0, ctl: 42, atl: 50, tsb: -8 },
           { date: "2026-01-02", load: 75, ctl: 44, atl: 55, tsb: -11 },
         ]}
-        model={{ type: "learned", r2: 0.91, pairedActivities: 20, ftp: 250 }}
+        model={{ ftp: 250 }}
       />,
     );
 
     expect(screen.getByTestId("training-chart")).toBeTruthy();
-    expect(screen.getByText(/Learned model/)).toBeTruthy();
+    expect(screen.getByText(/Power training stress/)).toBeTruthy();
     expect(screen.getByText("Transition")).toBeTruthy();
     expect(screen.getByText("High Risk")).toBeTruthy();
 
@@ -91,11 +91,10 @@ describe("PmcChart", () => {
     rerender(
       <PmcChart
         data={[{ date: "2026-01-03", load: 50, ctl: 45, atl: 48, tsb: -3 }]}
-        model={{ type: "generic", r2: null, pairedActivities: 4, ftp: 220 }}
+        model={{ ftp: 220 }}
       />,
     );
 
-    expect(screen.getByText(/Generic heart rate model/)).toBeTruthy();
-    expect(screen.getByText(/need 10/)).toBeTruthy();
+    expect(screen.getByText(/threshold 220W/)).toBeTruthy();
   });
 });

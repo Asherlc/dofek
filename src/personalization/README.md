@@ -7,7 +7,6 @@ This directory contains the core algorithms and fitting logic used to personaliz
 - **Training Load Modeling**: Fits EWMA windows (Chronic/Acute Training Load) to individual physiological response using `fitExponentialMovingAverage`.
 - **Recovery Scoring**: Learns optimal readiness weights for HRV, RHR, and sleep to predict next-day HRV z-scores via `fitReadinessWeights`.
 - **Targeting**: Determines personalized sleep duration targets and stress z-score thresholds.
-- **TRIMP Calibration**: Calibrates Training Impulse (TRIMP) constants by benchmarking against power-based TSS data.
 - **Refitting Engine**: Orchestrates the full re-fitting of all parameters using a user's historical data from the database (`refit.ts`).
 - **Model Cards**: Builds the same evidence for web and mobile, including the source window, minimum data requirements, fit statistic, excluded-data rules, default state, and last successful fit time ([model-card.ts](./model-card.ts)).
 
@@ -25,7 +24,6 @@ This directory contains the core algorithms and fitting logic used to personaliz
 - `refit.ts`: High-level entry point for refitting user parameters.
 - `fit-ewma.ts`: Training load (CTL/ATL) modeling.
 - `fit-readiness-weights.ts`: Recovery/Readiness weight fitting.
-- `fit-trimp.ts`: TRIMP constant calibration.
 - `fit-sleep-target.ts`: Personalized sleep goal calculation.
 - `model-card.ts`: Server-owned model evidence and transparency text.
 - `params.ts`: Type definitions for personalized parameters.

@@ -44,14 +44,11 @@ import {
   buildTestBodyMeasurementSelectSql,
   buildTestDailyActivityLoadSelectSql,
   buildTestDailyBodyMeasurementSelectSql,
-  buildTestDailyEnduranceLoadSelectSql,
   buildTestDailySleepSelectSql,
   buildTestHealthspanActivityZoneMinutesSelectSql,
   buildTestHealthspanReadModelSelectSql,
   buildTestRecoveryReadModelSelectSql,
   buildTestStrainReadModelSelectSql,
-  buildTestWeeklyEnduranceRampRateSelectSql,
-  buildTestWeeklyTrainingMonotonySelectSql,
 } from "./clickhouse-integration-test-read-models-b.ts";
 
 interface ClickHouseSyncTestContext {
@@ -692,21 +689,6 @@ ${buildTestDailySleepSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery
 AS
 ${buildTestRecoveryReadModelSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.daily_endurance_load
-AS
-${buildTestDailyEnduranceLoadSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_endurance_ramp_rate
-AS
-${buildTestWeeklyEnduranceRampRateSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_training_monotony
-AS
-${buildTestWeeklyTrainingMonotonySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_activity_load

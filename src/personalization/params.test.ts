@@ -15,7 +15,6 @@ function baseParams(overrides: Partial<Record<string, unknown>> = {}): Record<st
     readinessWeights: null,
     sleepTarget: null,
     stressThresholds: null,
-    trainingImpulseConstants: null,
     ...overrides,
   };
 }
@@ -48,12 +47,6 @@ describe("personalizedParamsSchema", () => {
         rhrThresholds: [1.2, 0.8, 0.3],
         sampleCount: 80,
       },
-      trainingImpulseConstants: {
-        genderFactor: 0.7,
-        exponent: 1.8,
-        sampleCount: 25,
-        r2: 0.45,
-      },
     };
 
     const result = personalizedParamsSchema.parse(input);
@@ -68,7 +61,6 @@ describe("personalizedParamsSchema", () => {
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("keeps legacy params without per-model successful-fit timestamps valid", () => {
@@ -83,7 +75,6 @@ describe("personalizedParamsSchema", () => {
       readinessWeights: null,
       sleepTarget: "2026-03-17T11:00:00.000Z",
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = personalizedParamsSchema.parse(baseParams({ version: 2, successfulFitAt }));
@@ -101,7 +92,6 @@ describe("personalizedParamsSchema", () => {
             readinessWeights: null,
             sleepTarget: null,
             stressThresholds: null,
-            trainingImpulseConstants: null,
           },
         }),
       ),
@@ -139,7 +129,6 @@ describe("personalizedParamsSchema", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     expect(() => personalizedParamsSchema.parse(input)).toThrow();
   });
@@ -831,168 +820,6 @@ describe("personalizedParamsSchema", () => {
       ).toThrow();
     });
   });
-
-  describe("trainingImpulseConstants sub-schema", () => {
-    it("rejects genderFactor below minimum 0.3", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            trainingImpulseConstants: {
-              genderFactor: 0.29,
-              exponent: 1.92,
-              sampleCount: 25,
-              r2: 0.45,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts genderFactor at minimum 0.3", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          trainingImpulseConstants: {
-            genderFactor: 0.3,
-            exponent: 1.92,
-            sampleCount: 25,
-            r2: 0.45,
-          },
-        }),
-      );
-      expect(result.trainingImpulseConstants?.genderFactor).toBe(0.3);
-    });
-
-    it("accepts genderFactor at maximum 1.0", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          trainingImpulseConstants: {
-            genderFactor: 1.0,
-            exponent: 1.92,
-            sampleCount: 25,
-            r2: 0.45,
-          },
-        }),
-      );
-      expect(result.trainingImpulseConstants?.genderFactor).toBe(1.0);
-    });
-
-    it("rejects genderFactor above maximum 1.0", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            trainingImpulseConstants: {
-              genderFactor: 1.01,
-              exponent: 1.92,
-              sampleCount: 25,
-              r2: 0.45,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects exponent below minimum 1.0", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            trainingImpulseConstants: {
-              genderFactor: 0.64,
-              exponent: 0.99,
-              sampleCount: 25,
-              r2: 0.45,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts exponent at minimum 1.0", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          trainingImpulseConstants: {
-            genderFactor: 0.64,
-            exponent: 1.0,
-            sampleCount: 25,
-            r2: 0.45,
-          },
-        }),
-      );
-      expect(result.trainingImpulseConstants?.exponent).toBe(1.0);
-    });
-
-    it("accepts exponent at maximum 3.0", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          trainingImpulseConstants: {
-            genderFactor: 0.64,
-            exponent: 3.0,
-            sampleCount: 25,
-            r2: 0.45,
-          },
-        }),
-      );
-      expect(result.trainingImpulseConstants?.exponent).toBe(3.0);
-    });
-
-    it("rejects exponent above maximum 3.0", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            trainingImpulseConstants: {
-              genderFactor: 0.64,
-              exponent: 3.01,
-              sampleCount: 25,
-              r2: 0.45,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects negative sampleCount", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            trainingImpulseConstants: {
-              genderFactor: 0.64,
-              exponent: 1.92,
-              sampleCount: -1,
-              r2: 0.45,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects non-integer sampleCount", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            trainingImpulseConstants: {
-              genderFactor: 0.64,
-              exponent: 1.92,
-              sampleCount: 25.5,
-              r2: 0.45,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts sampleCount of 0", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          trainingImpulseConstants: {
-            genderFactor: 0.64,
-            exponent: 1.92,
-            sampleCount: 0,
-            r2: 0.45,
-          },
-        }),
-      );
-      expect(result.trainingImpulseConstants?.sampleCount).toBe(0);
-    });
-  });
 });
 
 describe("DEFAULT_PARAMS", () => {
@@ -1006,8 +833,6 @@ describe("DEFAULT_PARAMS", () => {
     expect(DEFAULT_PARAMS.sleepTarget.minutes).toBe(480);
     expect(DEFAULT_PARAMS.stressThresholds.hrvThresholds).toEqual([-1.5, -1.0, -0.5]);
     expect(DEFAULT_PARAMS.stressThresholds.rhrThresholds).toEqual([1.5, 1.0, 0.5]);
-    expect(DEFAULT_PARAMS.trainingImpulseConstants.genderFactor).toBe(0.64);
-    expect(DEFAULT_PARAMS.trainingImpulseConstants.exponent).toBe(1.92);
   });
 
   it("readiness weights sum to 1", () => {
@@ -1042,7 +867,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1062,7 +886,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1071,7 +894,6 @@ describe("getEffectiveParams", () => {
     expect(result.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
     expect(result.sleepTarget).toEqual(DEFAULT_PARAMS.sleepTarget);
     expect(result.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
-    expect(result.trainingImpulseConstants).toEqual(DEFAULT_PARAMS.trainingImpulseConstants);
   });
 
   it("uses personalized readiness weights with all four fields", () => {
@@ -1089,7 +911,6 @@ describe("getEffectiveParams", () => {
       },
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1107,7 +928,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: { minutes: 450, sampleCount: 30 },
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1126,33 +946,11 @@ describe("getEffectiveParams", () => {
         rhrThresholds: [2.0, 1.3, 0.7],
         sampleCount: 100,
       },
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
     expect(result.stressThresholds.hrvThresholds).toEqual([-2.0, -1.3, -0.7]);
     expect(result.stressThresholds.rhrThresholds).toEqual([2.0, 1.3, 0.7]);
-  });
-
-  it("uses personalized training impulse constants when available", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
-      stressThresholds: null,
-      trainingImpulseConstants: {
-        genderFactor: 0.75,
-        exponent: 2.1,
-        sampleCount: 40,
-        r2: 0.55,
-      },
-    };
-
-    const result = getEffectiveParams(stored);
-    expect(result.trainingImpulseConstants.genderFactor).toBe(0.75);
-    expect(result.trainingImpulseConstants.exponent).toBe(2.1);
   });
 
   it("merges multiple personalized params with defaults for the rest", () => {
@@ -1172,7 +970,6 @@ describe("getEffectiveParams", () => {
         rhrThresholds: [1.8, 1.2, 0.6],
         sampleCount: 100,
       },
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1182,7 +979,6 @@ describe("getEffectiveParams", () => {
     expect(result.sleepTarget.minutes).toBe(420);
     expect(result.stressThresholds.hrvThresholds).toEqual([-1.8, -1.2, -0.6]);
     expect(result.stressThresholds.rhrThresholds).toEqual([1.8, 1.2, 0.6]);
-    expect(result.trainingImpulseConstants).toEqual(DEFAULT_PARAMS.trainingImpulseConstants);
   });
 
   it("strips sampleCount and correlation from effective exponentialMovingAverage params", () => {
@@ -1198,7 +994,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1224,7 +1019,6 @@ describe("getEffectiveParams", () => {
       },
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1244,7 +1038,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: { minutes: 450, sampleCount: 30 },
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1263,14 +1056,13 @@ describe("getEffectiveParams", () => {
         rhrThresholds: [1.5, 1.0, 0.5],
         sampleCount: 100,
       },
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
     expect(Object.keys(result.stressThresholds).sort()).toEqual(["hrvThresholds", "rhrThresholds"]);
   });
 
-  it("strips sampleCount and r2 from effective trainingImpulseConstants", () => {
+  it("returns all four defaults when stored is a full-null object", () => {
     const stored: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
@@ -1278,30 +1070,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: {
-        genderFactor: 0.7,
-        exponent: 1.8,
-        sampleCount: 25,
-        r2: 0.45,
-      },
-    };
-
-    const result = getEffectiveParams(stored);
-    expect(Object.keys(result.trainingImpulseConstants).sort()).toEqual([
-      "exponent",
-      "genderFactor",
-    ]);
-  });
-
-  it("returns all five defaults when stored is a full-null object", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
-      stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     const result = getEffectiveParams(stored);
@@ -1309,7 +1077,6 @@ describe("getEffectiveParams", () => {
     expect(result.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
     expect(result.sleepTarget).toEqual(DEFAULT_PARAMS.sleepTarget);
     expect(result.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
-    expect(result.trainingImpulseConstants).toEqual(DEFAULT_PARAMS.trainingImpulseConstants);
   });
 
   it("picks stored chronicTrainingLoadDays not acuteTrainingLoadDays for exponentialMovingAverage.chronicTrainingLoadDays", () => {
@@ -1325,7 +1092,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     const result = getEffectiveParams(stored);
     // Must be chronicTrainingLoadDays, not acuteTrainingLoadDays
@@ -1346,7 +1112,6 @@ describe("getEffectiveParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     const result = getEffectiveParams(stored);
     expect(result.exponentialMovingAverage.acuteTrainingLoadDays).toBe(11);
@@ -1368,30 +1133,12 @@ describe("getEffectiveParams", () => {
       },
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     const result = getEffectiveParams(stored);
     expect(result.readinessWeights.hrv).toBe(0.5);
     expect(result.readinessWeights.restingHr).toBe(0.15);
     expect(result.readinessWeights.sleep).toBe(0.2);
     expect(result.readinessWeights.respiratoryRate).toBe(0.15);
-  });
-
-  it("picks stored genderFactor not exponent for trainingImpulseConstants", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
-      stressThresholds: null,
-      trainingImpulseConstants: { genderFactor: 0.5, exponent: 2.5, sampleCount: 30, r2: 0.6 },
-    };
-    const result = getEffectiveParams(stored);
-    expect(result.trainingImpulseConstants.genderFactor).toBe(0.5);
-    expect(result.trainingImpulseConstants.genderFactor).not.toBe(2.5);
-    expect(result.trainingImpulseConstants.exponent).toBe(2.5);
-    expect(result.trainingImpulseConstants.exponent).not.toBe(0.5);
   });
 
   it("picks stored hrvThresholds not rhrThresholds", () => {
@@ -1406,7 +1153,6 @@ describe("getEffectiveParams", () => {
         rhrThresholds: [2.0, 1.3, 0.7],
         sampleCount: 100,
       },
-      trainingImpulseConstants: null,
     };
     const result = getEffectiveParams(stored);
     expect(result.stressThresholds.hrvThresholds).toEqual([-2.0, -1.3, -0.7]);

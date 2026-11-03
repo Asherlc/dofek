@@ -35309,6 +35309,13 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Mitigation / status:** an operator job rerun was attempted, but GitHub rejected it with HTTP 403 because the containing workflow was still running. Recovery remains unverified at this recording. No application, retry, timeout, secret or workflow configuration was changed. GitHub documents the [job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
 - **Follow-up / retrospective:** rerun the failed prerequisite after the workflow completes and verify that Metro executes. Keep the token-minting failure distinct from Infisical authentication and bundling failures; reuse gh-fix-ci for log-based classification.
 
+## 2026-11-02 — Local integration dependency blocked by asynchronous-I/O capacity
+
+- **Symptoms / impact:** the HR-TSS removal's integration-tier dependency startup failed; no production impact. `pnpm test:integration --help` starts Compose before forwarding Vitest arguments, and failed before tests executed.
+- **Evidence / cause:** Compose reported `container glowing-moose-redpanda-1 is unhealthy`. Redpanda's fatal log was `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536`. Several existing workspace Redpanda containers were also restarting. This is Docker Linux host asynchronous-I/O capacity exhaustion; this check did not identify which processes held the allocations.
+- **Status / remaining risk:** unresolved locally. No host limits, running services from other workspaces, retries or test gates were changed. Unit/mobile checks and typechecks remain available; the database-backed PMC check must run after dependency health is restored. Docker documents [container health inspection](https://docs.docker.com/reference/cli/docker/container/inspect/).
+- **Follow-up:** investigate host allocation consumers before changing limits. For this repository, inspect `scripts/run-tests.ts` before using a conventional `--help` flag; it provisions dependencies first. Reuse the integration prerequisite workflow and the [testing guide](testing.md#integration-dependencies).
+
 ## 2026-11-02 — Activity heart-rate samples present but summary pending
 
 - **Symptoms / impact:** a recent walking activity displayed missing heart-rate stress prerequisites despite its heart-rate stream being available. Authenticated activity details returned null average/maximum heart rate and sample count; the stream endpoint returned readings across the activity.

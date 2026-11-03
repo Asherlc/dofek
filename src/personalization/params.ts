@@ -48,19 +48,11 @@ const stressThresholdsSchema = z
     { message: "RHR thresholds must be in descending order (most positive first)" },
   );
 
-const trainingImpulseConstantsSchema = z.object({
-  genderFactor: z.number().min(0.3).max(1.0),
-  exponent: z.number().min(1.0).max(3.0),
-  sampleCount: z.number().int().nonnegative(),
-  r2: z.number(),
-});
-
 export const personalizationModelKeys = [
   "exponentialMovingAverage",
   "readinessWeights",
   "sleepTarget",
   "stressThresholds",
-  "trainingImpulseConstants",
 ] as const;
 
 export type PersonalizationModelKey = (typeof personalizationModelKeys)[number];
@@ -70,7 +62,6 @@ const successfulFitAtSchema = z.object({
   readinessWeights: z.iso.datetime().nullable(),
   sleepTarget: z.iso.datetime().nullable(),
   stressThresholds: z.iso.datetime().nullable(),
-  trainingImpulseConstants: z.iso.datetime().nullable(),
 });
 
 export type SuccessfulFitAt = z.infer<typeof successfulFitAtSchema>;
@@ -83,7 +74,6 @@ export const personalizedParamsSchema = z.object({
   readinessWeights: readinessWeightsSchema.nullable(),
   sleepTarget: sleepTargetSchema.nullable(),
   stressThresholds: stressThresholdsSchema.nullable(),
-  trainingImpulseConstants: trainingImpulseConstantsSchema.nullable(),
 });
 
 export type PersonalizedParams = z.infer<typeof personalizedParamsSchema>;
@@ -96,7 +86,6 @@ export interface EffectiveParams {
     hrvThresholds: [number, number, number];
     rhrThresholds: [number, number, number];
   };
-  trainingImpulseConstants: { genderFactor: number; exponent: number };
 }
 
 export const DEFAULT_PARAMS: EffectiveParams = {
@@ -107,7 +96,6 @@ export const DEFAULT_PARAMS: EffectiveParams = {
     hrvThresholds: [-1.5, -1.0, -0.5],
     rhrThresholds: [1.5, 1.0, 0.5],
   },
-  trainingImpulseConstants: { genderFactor: 0.64, exponent: 1.92 },
 };
 
 /**
@@ -142,11 +130,5 @@ export function getEffectiveParams(stored: PersonalizedParams | null): Effective
           rhrThresholds: stored.stressThresholds.rhrThresholds,
         }
       : DEFAULT_PARAMS.stressThresholds,
-    trainingImpulseConstants: stored.trainingImpulseConstants
-      ? {
-          genderFactor: stored.trainingImpulseConstants.genderFactor,
-          exponent: stored.trainingImpulseConstants.exponent,
-        }
-      : DEFAULT_PARAMS.trainingImpulseConstants,
   };
 }

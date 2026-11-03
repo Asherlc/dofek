@@ -23,7 +23,6 @@ import {
   parseReadinessRows,
   parseSleepRows,
   parseStressRows,
-  parseTrainingImpulseRows,
   refitAllParams,
 } from "./refit.ts";
 
@@ -69,14 +68,12 @@ describe("refitAllParams", () => {
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
     expect(result.fittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(result.successfulFitAt).toEqual({
       exponentialMovingAverage: null,
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     });
   });
 
@@ -94,7 +91,7 @@ describe("refitAllParams", () => {
 
     await refitAllParams(db, "user-1", sensorStore);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(6);
+    expect(sensorStore.query).toHaveBeenCalledTimes(5);
     expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("analytics.activity_summary asum"),
@@ -105,12 +102,6 @@ describe("refitAllParams", () => {
       expect.stringContaining("FROM analytics.activity_summary asum"),
       expect.objectContaining({ userId: "user-1" }),
     );
-    const trainingImpulseQuery = sensorStore.query.mock.calls
-      .map(([, query]) => query)
-      .find((query) => query.includes("ftp_estimate AS"));
-    expect(trainingImpulseQuery).toContain("asum.normalized_power");
-    expect(trainingImpulseQuery).not.toContain("analytics.deduped_sensor");
-    expect(trainingImpulseQuery).not.toContain("rolling_power");
 
     const sleepQueries = sensorStore.query.mock.calls
       .map(([, query]) => query)
@@ -204,7 +195,6 @@ describe("refitAllParams", () => {
         readinessWeights: null,
         sleepTarget: "2025-12-20T00:00:00.000Z",
         stressThresholds: null,
-        trainingImpulseConstants: null,
       },
       exponentialMovingAverage: {
         chronicTrainingLoadDays: 35,
@@ -215,7 +205,6 @@ describe("refitAllParams", () => {
       readinessWeights: null,
       sleepTarget: { minutes: 500, sampleCount: 20 },
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
 
@@ -236,7 +225,6 @@ describe("refitAllParams", () => {
       readinessWeights: "2025-12-16T00:00:00.000Z",
       sleepTarget: "2025-12-17T00:00:00.000Z",
       stressThresholds: "2025-12-18T00:00:00.000Z",
-      trainingImpulseConstants: "2025-12-19T00:00:00.000Z",
     };
     const existingParams = {
       version: 2,
@@ -246,7 +234,6 @@ describe("refitAllParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
 
@@ -261,7 +248,6 @@ describe("refitAllParams", () => {
       readinessWeights: "2025-12-16T00:00:00.000Z",
       sleepTarget: "2025-12-17T00:00:00.000Z",
       stressThresholds: "2025-12-18T00:00:00.000Z",
-      trainingImpulseConstants: "2025-12-19T00:00:00.000Z",
     };
     const existingParams = {
       version: 2,
@@ -271,7 +257,6 @@ describe("refitAllParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     let dbCallCount = 0;
     const db = {
@@ -299,7 +284,6 @@ describe("refitAllParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
 
@@ -310,7 +294,6 @@ describe("refitAllParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     });
   });
 
@@ -351,12 +334,6 @@ describe("refitAllParams", () => {
         rhrThresholds: [1.8, 1.1, 0.4] satisfies [number, number, number],
         sampleCount: 90,
       },
-      trainingImpulseConstants: {
-        genderFactor: 0.64,
-        exponent: 1.92,
-        sampleCount: 30,
-        r2: 0.9,
-      },
     };
     vi.doMock("./fit-ewma.ts", () => ({
       fitExponentialMovingAverage: vi.fn(() => accepted.exponentialMovingAverage),
@@ -369,9 +346,6 @@ describe("refitAllParams", () => {
     }));
     vi.doMock("./fit-stress-thresholds.ts", () => ({
       fitStressThresholds: vi.fn(() => accepted.stressThresholds),
-    }));
-    vi.doMock("./fit-trimp.ts", () => ({
-      fitTrainingImpulseConstants: vi.fn(() => accepted.trainingImpulseConstants),
     }));
 
     try {
@@ -390,7 +364,6 @@ describe("refitAllParams", () => {
         readinessWeights: result.fittedAt,
         sleepTarget: result.fittedAt,
         stressThresholds: result.fittedAt,
-        trainingImpulseConstants: result.fittedAt,
       };
       expect(result.successfulFitAt).toEqual(successfulFitAt);
       expect(personalizedParamsSchema.parse(result).successfulFitAt).toEqual(successfulFitAt);
@@ -399,7 +372,6 @@ describe("refitAllParams", () => {
       vi.doUnmock("./fit-readiness-weights.ts");
       vi.doUnmock("./fit-sleep-target.ts");
       vi.doUnmock("./fit-stress-thresholds.ts");
-      vi.doUnmock("./fit-trimp.ts");
       vi.resetModules();
     }
   });
@@ -416,7 +388,6 @@ describe("refitAllParams", () => {
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("sets rejected fitters to null", async () => {
@@ -436,7 +407,6 @@ describe("refitAllParams", () => {
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("writes the current personalization schema version", async () => {
@@ -814,106 +784,5 @@ describe("parseStressRows", () => {
     const rows = [{ hrv_z: -0.7, rhr_z: 1.1 }];
     const result = parseStressRows(rows);
     expect(result[0]).toEqual({ hrvZScore: -0.7, rhrZScore: 1.1 });
-  });
-});
-
-// --- parseTrainingImpulseRows ---
-
-describe("parseTrainingImpulseRows", () => {
-  function validTrimpRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      duration_min: 60,
-      avg_hr: 155,
-      max_hr: 190,
-      resting_hr: 55,
-      power_tss: 80,
-      ...overrides,
-    };
-  }
-
-  it("returns empty array for empty input", () => {
-    expect(parseTrainingImpulseRows([])).toEqual([]);
-  });
-
-  it("parses valid rows", () => {
-    const result = parseTrainingImpulseRows([validTrimpRow()]);
-    expect(result).toEqual([
-      { durationMin: 60, avgHr: 155, maxHr: 190, restingHr: 55, powerTss: 80 },
-    ]);
-  });
-
-  it("filters rows where duration_min is 0", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: 0 })])).toHaveLength(0);
-  });
-
-  it("filters rows where duration_min is negative", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: -10 })])).toHaveLength(0);
-  });
-
-  it("includes rows where duration_min is positive", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: 0.1 })])).toHaveLength(1);
-  });
-
-  it("filters rows where max_hr equals resting_hr", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 60, resting_hr: 60 })])).toHaveLength(
-      0,
-    );
-  });
-
-  it("filters rows where max_hr is less than resting_hr", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 50, resting_hr: 60 })])).toHaveLength(
-      0,
-    );
-  });
-
-  it("includes rows where max_hr is greater than resting_hr", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 61, resting_hr: 60 })])).toHaveLength(
-      1,
-    );
-  });
-
-  it("filters rows where power_tss is 0", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: 0 })])).toHaveLength(0);
-  });
-
-  it("filters rows where power_tss is negative", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: -5 })])).toHaveLength(0);
-  });
-
-  it("includes rows where power_tss is positive", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: 0.1 })])).toHaveLength(1);
-  });
-
-  it("coerces string numbers to numbers", () => {
-    const row = validTrimpRow({
-      duration_min: "60",
-      avg_hr: "155",
-      max_hr: "190",
-      resting_hr: "55",
-      power_tss: "80",
-    });
-    const result = parseTrainingImpulseRows([row]);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.durationMin).toBe(60);
-  });
-
-  it("skips rows with invalid schema (missing fields)", () => {
-    const rows = [
-      { duration_min: 60, avg_hr: 155 }, // missing max_hr, resting_hr, power_tss
-      validTrimpRow(), // valid
-    ];
-    const result = parseTrainingImpulseRows(rows);
-    expect(result).toHaveLength(1);
-  });
-
-  it("maps snake_case fields to camelCase", () => {
-    const result = parseTrainingImpulseRows([validTrimpRow()]);
-    expect(result[0]).toEqual({
-      durationMin: 60,
-      avgHr: 155,
-      maxHr: 190,
-      restingHr: 55,
-      powerTss: 80,
-    });
   });
 });

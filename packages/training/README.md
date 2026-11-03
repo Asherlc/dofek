@@ -17,7 +17,6 @@ There is no root export; import the module subpath you need.
 
 ```ts
 import {
-  computeHrTss,
   computeTrimp,
 } from "@dofek/training/pmc";
 
@@ -28,12 +27,6 @@ const restingHeartRate = 55;
 
 console.log({
   trimp: computeTrimp(
-    durationMinutes,
-    averageHeartRate,
-    maximumHeartRate,
-    restingHeartRate,
-  ),
-  hrTss: computeHrTss(
     durationMinutes,
     averageHeartRate,
     maximumHeartRate,
@@ -75,14 +68,13 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
 | `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
-| `pmc` | TRIMP, heart-rate stress, learned stress models, and performance-management contracts |
+| `pmc` | TRIMP and power-based performance-management contracts |
 | `running-cadence` | [Cadence basis and supplied-coverage labels](src/running-cadence.ts) shared by web and mobile; values remain server-authored |
 | `running-response` | [Running response versions, wire validation, and faithful legacy projection](src/running-response.ts) for independently released API and clients |
 | `power-analysis` | Standard curve-duration constants and chart labels |
 | `training` | Canonical activity types, provider normalization, and weekly-volume grouping |
 | `training-distribution` | [Karvonen](https://pubmed.ncbi.nlm.nih.gov/13470504/) and [Treff](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full) weekly intensity-distribution summaries |
 | `training-chart-availability` | [Shared chart availability schema](src/training-chart-availability.ts); counts and messages are computed by the server |
-| `training-load` | `TrainingStressCalculator` stateful facade |
 | `workout-recommendation` | Workout recommendation types and calculation |
 
 ## Model details
@@ -308,13 +300,7 @@ product heuristics.
 
 ### Training stress and performance
 
-- `computeTrimp` applies the package's exponential heart-rate-load formula.
-- `computeHrTss` normalizes that load to the package's one-hour threshold
-  reference.
-- Stress-model helpers fit a personal linear relationship from paired heart-rate
-  and power observations.
-- [`TrainingStressCalculator`](src/training-load.ts) delegates personalized HR
-  calculations and regression to the same [pure functions](src/pmc.ts).
+- `computeTrimp` applies the [Banister-style TRIMP formula](https://pubmed.ncbi.nlm.nih.gov/19812506/), separately from TSS.
 - Power stress and ongoing eFTP use [`@dofek/cycling-power`](../cycling-power/README.md).
   The application analytics worker supplies the canonical activity-applicable
   results, following the [analytics architecture](../../analytics/README.md).
@@ -331,8 +317,6 @@ product heuristics.
   [Monod and Scherrer (1965)](https://doi.org/10.1080/00140136508930810).
   Its caller supplies the duration interval; the application keeps its
   [120–600-second fit policy](../../src/analytics/cycling-power-policy.ts) outside the numerical package.
-- The same package's [regression module](../cycling-power/src/regression.ts)
-  supplies the linear regression used by the heart-rate stress model.
 
 ### Cycling workout metrics
 

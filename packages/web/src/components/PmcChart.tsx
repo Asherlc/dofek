@@ -1,9 +1,4 @@
-import {
-  formatDateLong,
-  formatDateShort,
-  formatNumber,
-  formatTrainingLoad,
-} from "@dofek/format/format";
+import { formatDateLong, formatDateShort, formatTrainingLoad } from "@dofek/format/format";
 import {
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
@@ -35,24 +30,9 @@ const COLOR_FITNESS = chartColors.blue; // blue
 const COLOR_FATIGUE = chartColors.purple; // purple (intervals.icu uses purple, not pink)
 
 function ModelBadge({ model }: { model: TssModelInfo }) {
-  if (model.type === "learned") {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-accent border border-accent/30">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent" />
-        Learned model (fit={model.r2 != null ? formatNumber(model.r2, 2) : "?"},{" "}
-        {model.pairedActivities} paired activities
-        {model.ftp != null && `, threshold ${model.ftp}W`})
-      </span>
-    );
-  }
-
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-muted border border-border-strong/50">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-subtle" />
-      Generic heart rate model
-      {model.pairedActivities > 0 &&
-        ` (${model.pairedActivities} paired activities \u2014 need 10+)`}
-      {model.ftp != null && ` \u00b7 threshold ${model.ftp}W`}
+    <span className="text-xs text-muted">
+      Power training stress{model.ftp != null && ` · threshold ${model.ftp}W`}
     </span>
   );
 }

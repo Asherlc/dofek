@@ -8,7 +8,6 @@ vi.mock("../lib/open-external-url", () => ({
   openExternalUrl: vi.fn(async () => true),
 }));
 
-import { openExternalUrl } from "../lib/open-external-url";
 import { TrainingDistributionCards } from "./TrainingDistributionCards";
 
 describe("TrainingDistributionCards", () => {
@@ -28,7 +27,6 @@ describe("TrainingDistributionCards", () => {
           explanation: "Server-provided descriptive Karvonen explanation.",
         }}
         polarization={null}
-        monotony={null}
       />,
     );
 
@@ -87,7 +85,6 @@ describe("TrainingDistributionCards", () => {
             },
           ],
         }}
-        monotony={null}
       />,
     );
 
@@ -146,7 +143,6 @@ describe("TrainingDistributionCards", () => {
             },
           ],
         }}
-        monotony={null}
       />,
     );
 
@@ -162,51 +158,5 @@ describe("TrainingDistributionCards", () => {
       [{ text: "Close" }],
     );
     alertSpy.mockRestore();
-  });
-
-  it("renders server-computed monotony inputs, descriptive method, and source", () => {
-    const method = {
-      formula:
-        "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
-      calendar: "Monday–Sunday calendar weeks include zero-load days.",
-      activityScope: "Cycling activities with computed endurance training load.",
-      interpretation: "Daily training-load variability within each calendar week.",
-      source: {
-        title: "Foster (1998), Monitoring training in athletes",
-        url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
-      },
-    };
-
-    render(
-      <TrainingDistributionCards
-        intensityDistribution={null}
-        polarization={null}
-        monotony={[
-          {
-            week: "2026-07-20",
-            monotony: 2.18,
-            strain: 2460,
-            weeklyLoad: 1128,
-            dailyMeanLoad: 161.14,
-            dailyLoadStandardDeviation: 73.92,
-            method,
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("Training variety and total load")).toBeTruthy();
-    expect(screen.getByText("Training variety 2.18")).toBeTruthy();
-    expect(screen.getByText("Weekly load strain 2460.0")).toBeTruthy();
-    expect(screen.getByText("Average daily load 161.14 · daily variation 73.92")).toBeTruthy();
-    expect(screen.queryByText(method.formula)).toBeNull();
-    expect(
-      screen.getByRole("button", {
-        name: "About How this is calculated for Training variety and total load",
-      }),
-    ).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("link", { name: method.source.title }));
-    expect(openExternalUrl).toHaveBeenCalledWith(method.source.url, "training-monotony-source");
   });
 });

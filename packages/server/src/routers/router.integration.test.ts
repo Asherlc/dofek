@@ -23,7 +23,6 @@ import {
  * - anomalyDetection (check + history)
  * - power (eFTP fallback path)
  * - efficiency (aerobicDecoupling edge case)
- * - cyclingAdvanced (trainingMonotony)
  */
 describe("Router coverage", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -1040,34 +1039,6 @@ describe("Router coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — training monotony
-  // ══════════════════════════════════════════════════════════════
-  describe("cyclingAdvanced", () => {
-    it("trainingMonotony returns weekly monotony and strain values", async () => {
-      const result = await query<
-        {
-          week: string;
-          monotony: number;
-          strain: number;
-          weeklyLoad: number;
-        }[]
-      >("cyclingAdvanced.trainingMonotony", { days: 90 });
-
-      expect(Array.isArray(result)).toBe(true);
-
-      for (const week of result) {
-        expect(week.week).toBeTruthy();
-        expect(typeof week.monotony).toBe("number");
-        expect(week.monotony).toBeGreaterThan(0);
-        expect(typeof week.strain).toBe("number");
-        expect(week.strain).toBeGreaterThan(0);
-        expect(typeof week.weeklyLoad).toBe("number");
-        expect(week.weeklyLoad).toBeGreaterThan(0);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
   // Nutrition Analytics — adaptive TDEE
   // ══════════════════════════════════════════════════════════════
   describe("nutritionAnalytics", () => {
@@ -1356,29 +1327,6 @@ describe("Router coverage", () => {
     it("syncStatus returns null for unknown job", async () => {
       const result = await query<null>("sync.syncStatus", { jobId: "nonexistent-job-id" });
       expect(result).toBeNull();
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // PMC — chart with enough data for model estimation
-  // ══════════════════════════════════════════════════════════════
-  describe("pmc", () => {
-    it("chart returns heart-rate load and regression metadata", async () => {
-      const result = await query<{
-        data: { date: string; load: number; ctl: number; atl: number; tsb: number }[];
-        model: {
-          type: "learned" | "generic";
-          pairedActivities: number;
-          r2: number | null;
-        };
-      }>("pmc.chart", { days: 90 });
-
-      expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model.type).toBe("generic");
-      expect(result.model.pairedActivities).toBeGreaterThanOrEqual(0);
-
-      const loadDays = result.data.filter((d) => d.load > 0);
-      expect(loadDays.length).toBeGreaterThan(0);
     });
   });
 

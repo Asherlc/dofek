@@ -73,7 +73,6 @@ const STRAIN_COMPANION_RESPONSES = {
       },
     },
   },
-  "cyclingAdvanced.trainingMonotony": [],
 } satisfies Parameters<typeof createProcessingStatusStoryLink>[1];
 
 function createTrainingFailureStoryLink(): TRPCLink<AppRouter> {

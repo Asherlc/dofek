@@ -30,6 +30,14 @@ with incomplete power coverage withheld from weekly totals.
 
 ## Architecture
 
+Activity cards and the performance-management chart use canonical cycling
+power TSS from the [cycling power analytics](../../src/analytics/README.md).
+Heart-rate-derived TSS and its learned conversion are removed. Noncycling
+cards omit TSS; incomplete power stress withholds the PMC chart with an
+explanation. HR-derived ramp-rate and monotony views are retired. See the
+[evidence review](../../docs/tss-evidence-review-2026-11-02.md) for the distinction
+between a load index and validated recovery prediction.
+
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.
 - **Express Server**: Hosts the tRPC middleware and supplementary REST routes for webhooks, file uploads, and authentication.
 - **Maintenance Webhooks**: Includes internal REST endpoints that run background maintenance asynchronously.

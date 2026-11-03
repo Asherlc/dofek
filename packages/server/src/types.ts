@@ -37,9 +37,6 @@ export type {
   ActivityVariabilityResult,
   ActivityVariabilityRow,
   PedalDynamicsRow,
-  RampRateResult,
-  RampRateWeek,
-  TrainingMonotonyWeek,
   VerticalAscentRow,
 } from "./routers/cycling-advanced.ts";
 // Daily metrics router types

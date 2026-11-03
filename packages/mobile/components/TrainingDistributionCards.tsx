@@ -5,11 +5,7 @@ import {
   formatNumber,
 } from "@dofek/format/format";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
-import type {
-  PolarizationTrendResult,
-  TrainingHrZonesResult,
-  TrainingMonotonyWeek,
-} from "dofek-server/types";
+import type { PolarizationTrendResult, TrainingHrZonesResult } from "dofek-server/types";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 import { TrainingMethodDetails } from "./TrainingMethodDetails";
@@ -17,16 +13,13 @@ import { TrainingMethodDetails } from "./TrainingMethodDetails";
 interface TrainingDistributionCardsProps {
   intensityDistribution: TrainingHrZonesResult["intensityDistribution"] | null;
   polarization: PolarizationTrendResult | null;
-  monotony: TrainingMonotonyWeek[] | null;
 }
 
 export function TrainingDistributionCards({
   intensityDistribution,
   polarization,
-  monotony,
 }: TrainingDistributionCardsProps) {
   const latestPolarizationWeek = polarization?.weeks.at(-1) ?? null;
-  const latestMonotonyWeek = monotony?.at(-1) ?? null;
 
   return (
     <>
@@ -96,46 +89,6 @@ export function TrainingDistributionCards({
           />
         </View>
       ) : null}
-
-      {monotony ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{TRAINING_TERMINOLOGY.monotony.plainLabel}</Text>
-          {latestMonotonyWeek ? (
-            <>
-              <View style={styles.metricRow}>
-                <Text style={styles.index}>
-                  {TRAINING_TERMINOLOGY.monotony.valueLabel}{" "}
-                  {formatNumber(latestMonotonyWeek.monotony, 2)}
-                </Text>
-                <Text style={styles.index}>
-                  {TRAINING_TERMINOLOGY.monotony.strainLabel}{" "}
-                  {formatNumber(latestMonotonyWeek.strain)}
-                </Text>
-              </View>
-              <Text style={styles.zoneSummary}>
-                Average daily load {formatNumber(latestMonotonyWeek.dailyMeanLoad, 2)} · daily
-                variation {formatNumber(latestMonotonyWeek.dailyLoadStandardDeviation, 2)}
-              </Text>
-              <TrainingMethodDetails
-                title={TRAINING_TERMINOLOGY.monotony.plainLabel}
-                technicalName={TRAINING_TERMINOLOGY.monotony.technicalName}
-                lines={[
-                  TRAINING_TERMINOLOGY.monotony.details,
-                  latestMonotonyWeek.method.formula,
-                  latestMonotonyWeek.method.calendar,
-                  latestMonotonyWeek.method.activityScope,
-                ]}
-                source={latestMonotonyWeek.method.source}
-                sourceActionId="training-monotony-source"
-              />
-            </>
-          ) : (
-            <Text style={styles.emptyText}>
-              No {TRAINING_TERMINOLOGY.monotony.plainLabel.toLowerCase()} data in this period
-            </Text>
-          )}
-        </View>
-      ) : null}
     </>
   );
 }
@@ -181,10 +134,6 @@ const styles = StyleSheet.create({
   },
   polarizationHeader: {
     alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  metricRow: {
     flexDirection: "row",
     justifyContent: "space-between",
   },

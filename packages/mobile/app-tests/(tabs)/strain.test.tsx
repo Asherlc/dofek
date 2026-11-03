@@ -28,7 +28,6 @@ const mockTrainingInvalidate = vi.fn();
 const mockLocationMapInvalidate = vi.fn();
 const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
-const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRunningInvalidate = vi.fn();
 const mockRouteComparisonInvalidate = vi.fn();
@@ -43,7 +42,7 @@ type MockRangeQueryOptions = {
   placeholderData?: (previousData: unknown) => unknown;
 };
 let mockRangeQueryCalls: Record<
-  "running" | "training" | "hrZones" | "polarization" | "monotony" | "locationMap" | "strengths",
+  "running" | "training" | "hrZones" | "polarization" | "locationMap" | "strengths",
   Array<{ input: { days: number | null; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -93,14 +92,6 @@ const mockPolarizationState: MockTrainingState = {
   error: null,
 };
 
-const mockMonotonyState: MockTrainingState = {
-  data: undefined,
-  isLoading: false,
-  isFetching: false,
-  isError: false,
-  error: null,
-};
-
 function resetMockTrainingState() {
   mockTodayQueryDate = "2026-03-28";
   Object.assign(mockStrengthsState, {
@@ -116,7 +107,7 @@ function resetMockTrainingState() {
   mockTrainingState.isFetching = false;
   mockTrainingState.isError = false;
   mockTrainingState.error = null;
-  for (const state of [mockHrZonesState, mockPolarizationState, mockMonotonyState]) {
+  for (const state of [mockHrZonesState, mockPolarizationState]) {
     state.data = undefined;
     state.isLoading = false;
     state.isFetching = false;
@@ -223,14 +214,6 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
     },
-    cyclingAdvanced: {
-      trainingMonotony: {
-        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
-          mockRangeQueryCalls.monotony.push({ input, options });
-          return { ...mockMonotonyState };
-        },
-      },
-    },
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
@@ -258,9 +241,7 @@ vi.mock("../../lib/trpc", () => ({
       efficiency: {
         polarizationTrend: { invalidate: mockPolarizationInvalidate },
       },
-      cyclingAdvanced: {
-        trainingMonotony: { invalidate: mockMonotonyInvalidate },
-      },
+      cyclingAdvanced: {},
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
       },
@@ -410,13 +391,11 @@ describe("StrainScreen recent activity navigation", () => {
     });
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
-    mockMonotonyInvalidate.mockReset();
     mockTrainingInvalidate.mockResolvedValue(undefined);
     mockLocationMapInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockHrZonesInvalidate.mockResolvedValue(undefined);
     mockPolarizationInvalidate.mockResolvedValue(undefined);
-    mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
     mockTrainingDataDays = 90;
     mockRangeQueryCalls = {
@@ -426,7 +405,6 @@ describe("StrainScreen recent activity navigation", () => {
       strengths: [],
       hrZones: [],
       polarization: [],
-      monotony: [],
     };
     mockTimeRangePreference = {
       days: 90,
@@ -589,7 +567,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 
-  it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
+  it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
@@ -600,7 +578,6 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
-    expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
     expect(mockRouteComparisonInvalidate).toHaveBeenCalledOnce();
     expect(mockRunningInvalidate).toHaveBeenCalledOnce();
@@ -667,26 +644,6 @@ describe("StrainScreen recent activity navigation", () => {
         },
       ],
     };
-    mockMonotonyState.data = [
-      {
-        week: "2026-07-20",
-        monotony: 1.5,
-        strain: 300,
-        weeklyLoad: 200,
-        dailyMeanLoad: 28.57,
-        dailyLoadStandardDeviation: 19.05,
-        method: {
-          formula: "Mobile Foster formula.",
-          calendar: "Mobile calendar choice.",
-          activityScope: "Mobile activity scope.",
-          interpretation: "Mobile descriptive monotony interpretation.",
-          source: {
-            title: "Foster source",
-            url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
-          },
-        },
-      },
-    ];
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
@@ -694,8 +651,6 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(screen.getByText("Training variety and total load")).toBeTruthy();
-    expect(screen.queryByText("Mobile Foster formula.")).toBeNull();
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -710,25 +665,20 @@ describe("StrainScreen recent activity navigation", () => {
     alertSpy.mockRestore();
   });
 
-  it("renders intensity, polarization, and monotony query failures separately", async () => {
+  it("renders intensity and polarization query failures separately", async () => {
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity distribution failed");
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Cycling polarization failed");
-    mockMonotonyState.isError = true;
-    mockMonotonyState.error = new Error("Training monotony failed");
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
     expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
-    expect(screen.getByText("Training monotony failed")).toBeTruthy();
     expect(screen.getByText("Could not load easy-to-hard training balance")).toBeTruthy();
-    expect(screen.getByText("Could not load training variety and total load")).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
     expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
-    expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
   });
 
   it("does not report transient or cancelled training query errors", async () => {
@@ -736,8 +686,6 @@ describe("StrainScreen recent activity navigation", () => {
     mockHrZonesState.error = new Error("User canceled");
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("User cancelled");
-    mockMonotonyState.isError = true;
-    mockMonotonyState.error = new Error("Network request failed");
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);

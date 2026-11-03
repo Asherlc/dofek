@@ -51,10 +51,6 @@ vi.mock("dofek/personalization/params", () => ({
       chronicTrainingLoadDays: 42,
       acuteTrainingLoadDays: 7,
     },
-    trainingImpulseConstants: {
-      genderFactor: 1.92,
-      exponent: 1.67,
-    },
   }),
 }));
 
@@ -110,7 +106,7 @@ function makeSensorStore(rows: unknown[] = []): SensorStore {
 }
 
 function isPmcActivityChartQuery(queryText: string): boolean {
-  return queryText.includes("CROSS JOIN user_baseline ub");
+  return queryText.includes("FROM analytics.activity_summary asum");
 }
 
 function isPmcNormalizedPowerQuery(queryText: string): boolean {
@@ -289,11 +285,11 @@ describe("pmcRouter", () => {
     it("versions the availability response cache contract", () => {
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "pmc-chart-availability-v1",
+        keyVersion: "pmc-chart-power-v2",
       });
     });
 
-    it("returns empty when no globalMaxHr", async () => {
+    it("returns empty when no cycling activities exist", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -303,14 +299,14 @@ describe("pmcRouter", () => {
       const result = await caller.chart({ days: 180 });
 
       expect(result.data).toEqual([]);
-      expect(result.model.type).toBe("generic");
+      expect(result.model.ftp).toBeNull();
       expect(result.availability).toMatchObject({
         status: "insufficient_data",
         sourceLabel: "Training load read model",
         observedCount: 0,
         minimumCount: 1,
         message:
-          "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
+          "No training load data is available from the training load read model. Record cycling power with a usable threshold to show this chart.",
       });
     });
 
@@ -337,7 +333,7 @@ describe("pmcRouter", () => {
         ),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makePmcSensorStore(rows),
+        sensorStore: makePmcSensorStore(rows, [{ activity_id: "a1", power_tss: 75 }]),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -354,7 +350,6 @@ describe("pmcRouter", () => {
 
     it("uses power TSS when power data available", async () => {
       const today = new Date();
-      // Need 10+ paired activities for learned model
       const rows = [];
       for (let i = 0; i < 12; i++) {
         const date = new Date(today);
@@ -388,7 +383,7 @@ describe("pmcRouter", () => {
       });
       const result = await caller.chart({ days: 180 });
 
-      expect(result.model).toMatchObject({ ftp: 275, pairedActivities: rows.length });
+      expect(result.model).toMatchObject({ ftp: 275 });
       expect(result.data.length).toBeGreaterThan(0);
     });
   });
@@ -410,7 +405,7 @@ describe("pmcRouter", () => {
       });
       const result = await caller.chart({ days: 180 });
       expect(result.data).toEqual([]);
-      expect(result.model.type).toBe("generic");
+      expect(result.model.ftp).toBeNull();
     });
   });
 });

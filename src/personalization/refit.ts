@@ -30,8 +30,6 @@ import type { SleepTargetInput } from "./fit-sleep-target.ts";
 import { fitSleepTarget } from "./fit-sleep-target.ts";
 import type { StressThresholdsInput } from "./fit-stress-thresholds.ts";
 import { fitStressThresholds } from "./fit-stress-thresholds.ts";
-import type { TrainingImpulseInput } from "./fit-trimp.ts";
-import { fitTrainingImpulseConstants } from "./fit-trimp.ts";
 import type { PersonalizedParams } from "./params.ts";
 import { loadPersonalizedParams, savePersonalizedParams } from "./storage.ts";
 
@@ -48,14 +46,12 @@ export async function refitAllParams(
   userId: string,
   sensorStore: RefitSensorStore,
 ): Promise<PersonalizedParams> {
-  const [ewmaResult, readinessResult, sleepResult, stressResult, trimpResult] =
-    await Promise.allSettled([
-      fitEwmaFromDb(sensorStore, userId),
-      fitReadinessFromDb(db, sensorStore, userId),
-      fitSleepFromDb(db, sensorStore, userId),
-      fitStressFromDb(db, sensorStore, userId),
-      fitTrimpFromDb(sensorStore, userId),
-    ]);
+  const [ewmaResult, readinessResult, sleepResult, stressResult] = await Promise.allSettled([
+    fitEwmaFromDb(sensorStore, userId),
+    fitReadinessFromDb(db, sensorStore, userId),
+    fitSleepFromDb(db, sensorStore, userId),
+    fitStressFromDb(db, sensorStore, userId),
+  ]);
 
   let existingParams: PersonalizedParams | null = null;
   try {
@@ -85,10 +81,6 @@ export async function refitAllParams(
         stressResult.status === "fulfilled" && stressResult.value != null
           ? fittedAt
           : (existingParams?.successfulFitAt?.stressThresholds ?? null),
-      trainingImpulseConstants:
-        trimpResult.status === "fulfilled" && trimpResult.value != null
-          ? fittedAt
-          : (existingParams?.successfulFitAt?.trainingImpulseConstants ?? null),
     },
     exponentialMovingAverage:
       ewmaResult.status === "fulfilled" && ewmaResult.value != null
@@ -106,10 +98,6 @@ export async function refitAllParams(
       stressResult.status === "fulfilled" && stressResult.value != null
         ? stressResult.value
         : (existingParams?.stressThresholds ?? null),
-    trainingImpulseConstants:
-      trimpResult.status === "fulfilled" && trimpResult.value != null
-        ? trimpResult.value
-        : (existingParams?.trainingImpulseConstants ?? null),
   };
 
   try {
@@ -509,69 +497,4 @@ async function fitStressFromDb(db: Database, sensorStore: RefitSensorStore, user
 
 function currentUtcDateString(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-export const trainingImpulseActivityRowSchema = z.object({
-  duration_min: z.coerce.number(),
-  avg_hr: z.coerce.number(),
-  max_hr: z.coerce.number(),
-  resting_hr: z.coerce.number(),
-  power_tss: z.coerce.number(),
-});
-
-/** Parse raw TRIMP query rows into fitter input, filtering invalid rows. */
-export function parseTrainingImpulseRows(rows: Record<string, unknown>[]): TrainingImpulseInput[] {
-  const data: TrainingImpulseInput[] = [];
-  for (const row of rows) {
-    const parsed = trainingImpulseActivityRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    const parsedRow = parsed.data;
-    if (
-      parsedRow.duration_min <= 0 ||
-      parsedRow.max_hr <= parsedRow.resting_hr ||
-      parsedRow.power_tss <= 0
-    )
-      continue;
-    data.push({
-      durationMin: parsedRow.duration_min,
-      avgHr: parsedRow.avg_hr,
-      maxHr: parsedRow.max_hr,
-      restingHr: parsedRow.resting_hr,
-      powerTss: parsedRow.power_tss,
-    });
-  }
-  return data;
-}
-
-async function fitTrimpFromDb(sensorStore: RefitSensorStore, userId: string) {
-  // Reads precomputed normalized power and TRIMP inputs from the activity
-  // summary read model, joining user_profile for max_hr / resting_hr.
-  const rows = await sensorStore.query(
-    trainingImpulseActivityRowSchema,
-    `WITH ftp_estimate AS (
-      SELECT max(normalized_power) * 0.95 AS ftp
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL 365 DAY
-        AND dateDiff('second', started_at, ended_at) / 60 >= 20
-        AND normalized_power IS NOT NULL
-    )
-    SELECT
-      dateDiff('second', asum.started_at, asum.ended_at) / 60 AS duration_min,
-      asum.avg_hr AS avg_hr,
-      greatest(asum.max_hr, up.max_hr) AS max_hr,
-      coalesce(up.resting_hr, 60) AS resting_hr,
-      pow(asum.normalized_power / nullIf((SELECT ftp FROM ftp_estimate), 0), 2)
-        * (dateDiff('second', asum.started_at, asum.ended_at) / 3600.0)
-        * 100 AS power_tss
-    FROM analytics.activity_summary asum
-    INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-    WHERE asum.user_id = {userId:UUID}
-      AND asum.hr_sample_count > 0
-      AND asum.avg_hr > 0
-      AND asum.normalized_power IS NOT NULL`,
-    { userId },
-  );
-
-  return fitTrainingImpulseConstants(parseTrainingImpulseRows(rows));
 }

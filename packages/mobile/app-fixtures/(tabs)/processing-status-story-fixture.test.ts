@@ -88,7 +88,6 @@ describe("seedReadyProcessingStatus", () => {
         createProcessingStatusStoryLink(snapshot, {
           "training.hrZones": hrZones,
           "efficiency.polarizationTrend": polarizationTrend,
-          "cyclingAdvanced.trainingMonotony": [],
         }),
       ],
     });
@@ -97,7 +96,6 @@ describe("seedReadyProcessingStatus", () => {
     await expect(client.efficiency.polarizationTrend.query({ days: 30 })).resolves.toEqual(
       polarizationTrend,
     );
-    await expect(client.cyclingAdvanced.trainingMonotony.query({ days: 30 })).resolves.toEqual([]);
     await expect(
       client.mobileDashboard.recovery.query({ days: 30, endDate: "2026-07-28" }),
     ).rejects.toThrow("Unhandled processing-status story tRPC operation: mobileDashboard.recovery");

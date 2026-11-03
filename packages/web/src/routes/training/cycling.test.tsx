@@ -191,7 +191,7 @@ vi.mock("../../lib/trpc.ts", () => ({
                   },
                   pmc: {
                     data: [],
-                    model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+                    model: { ftp: null },
                   },
                   eftpTrend: {
                     trend: [],

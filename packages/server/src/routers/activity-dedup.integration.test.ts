@@ -311,31 +311,8 @@ describe("Activity summary deduplication", () => {
 
     const previousLoadDate = dateDaysAgo(14);
     const recentLoadDate = dateDaysAgo(3);
-    const previousLoadWeek = dateDaysAgo(14);
-    const recentLoadWeek = dateDaysAgo(3);
 
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
-      if (
-        queryText.includes("analytics.weekly_endurance_ramp_rate") ||
-        queryText.includes("analytics.daily_endurance_load")
-      ) {
-        return [
-          {
-            week: previousLoadWeek,
-            ctl_start: 50,
-            ctl_end: 50,
-            ramp_rate: 0,
-            is_deleted: 0,
-          },
-          {
-            week: recentLoadWeek,
-            ctl_start: 50,
-            ctl_end: 52,
-            ramp_rate: 2,
-            is_deleted: 0,
-          },
-        ];
-      }
       if (queryText.includes("SELECT date, resting_hr")) {
         return [{ date: previousLoadDate, resting_hr: 50 }];
       }
@@ -760,22 +737,6 @@ describe("Activity summary deduplication", () => {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
       );
-    }
-  });
-
-  it("ramp rate does not double-count overlapping activities", async () => {
-    await queryCache.invalidateAll();
-    const { status, result } = await query("cyclingAdvanced.rampRate", {
-      days: 30,
-    });
-    expect(status).toBe(200);
-
-    const data = result.result.data;
-    // With two 30-min activities at ~155 bpm across 2 ISO weeks, the ramp rate
-    // should be modest. If double-counted, the load would be 2x and spike.
-    expect(data.weeks.length).toBeGreaterThan(0);
-    for (const week of data.weeks) {
-      expect(Math.abs(week.rampRate)).toBeLessThan(10);
     }
   });
 

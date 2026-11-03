@@ -117,7 +117,7 @@ describe("ActivitiesCalendarRepository", () => {
       makeDatabase(),
       "user-1",
       "UTC",
-      makeSensorStore([active, [], hidden, [], [], []]),
+      makeSensorStore([active, hidden, [], []]),
     );
     const result = await repository.getPage({
       weeks: 1,
@@ -218,10 +218,7 @@ describe("ActivitiesCalendarRepository", () => {
         modality,
         ...(isProviderAbsent ? { provider_absent_at: "2026-03-19T12:00:00.000Z" } : {}),
       });
-      const baseline = [{ max_hr: null, resting_hr: null }];
-      const sensorStore = makeSensorStore(
-        isProviderAbsent ? [[], baseline, [row], [], baseline, []] : [[row], baseline],
-      );
+      const sensorStore = makeSensorStore(isProviderAbsent ? [[], [row], [], []] : [[row]]);
       const repository = new ActivitiesCalendarRepository(
         makeDatabase([]),
         "user-1",
@@ -264,7 +261,6 @@ describe("ActivitiesCalendarRepository", () => {
     );
     const sensorStore = makeSensorStore([
       rows.map((row) => makeActivityRow({ ...row, canonical_type: "climbing" })),
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -307,7 +303,6 @@ describe("ActivitiesCalendarRepository", () => {
             centroid_lng: recorded ? -122.4 : null,
           }),
         ],
-        [{ max_hr: null, resting_hr: null }],
         [],
       ]);
       const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -359,7 +354,6 @@ describe("ActivitiesCalendarRepository", () => {
           last_processed_at: "2026-03-18T08:07:00.000Z",
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -420,7 +414,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_time_source: "provider_timezone",
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -466,7 +459,6 @@ describe("ActivitiesCalendarRepository", () => {
           centroid_lng: -122.4,
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -477,7 +469,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({ id: "latitude-only", location: null }),
       expect.objectContaining({ id: "longitude-only", location: null }),
     ]);
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
   it("filters activities by activity type before grouping days", async () => {
@@ -497,7 +489,6 @@ describe("ActivitiesCalendarRepository", () => {
           avg_power: null,
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -546,7 +537,6 @@ describe("ActivitiesCalendarRepository", () => {
         }),
         makeActivityRow({ id: "activity-2", elevation_gain_m: 50 }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(
@@ -571,12 +561,6 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      expect.stringContaining("FROM postgres_fitness.user_profile_current"),
-      { userId: "00000000-0000-0000-0000-000000000001" },
-    );
-    expect(sensorStore.query).toHaveBeenNthCalledWith(
-      3,
-      expect.anything(),
       expect.stringContaining("FROM analytics.activity_location_sample"),
       {
         activityIds: ["activity-1"],
@@ -584,16 +568,12 @@ describe("ActivitiesCalendarRepository", () => {
         userId: "00000000-0000-0000-0000-000000000001",
       },
     );
-    expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("lists only canonical deduped activity summary rows", async () => {
     const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([
-      [makeActivityRow({ id: "canonical-activity" })],
-      [{ max_hr: null, resting_hr: null }],
-      [],
-    ]);
+    const sensorStore = makeSensorStore([[makeActivityRow({ id: "canonical-activity" })], []]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
@@ -604,11 +584,7 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("uses deduped activities as the activity page identity source", async () => {
     const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([
-      [makeActivityRow({ id: "canonical-activity" })],
-      [{ max_hr: null, resting_hr: null }],
-      [],
-    ]);
+    const sensorStore = makeSensorStore([[makeActivityRow({ id: "canonical-activity" })], []]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
@@ -619,11 +595,7 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("excludes activities hidden in Postgres even when ClickHouse is stale", async () => {
     const database = makeDatabase([[]]);
-    const sensorStore = makeSensorStore([
-      [makeActivityRow({ id: "activity-1" })],
-      [{ max_hr: null, resting_hr: null }],
-      [],
-    ]);
+    const sensorStore = makeSensorStore([[makeActivityRow({ id: "activity-1" })], []]);
     const repository = new ActivitiesCalendarRepository(
       database,
       "00000000-0000-0000-0000-000000000001",
@@ -638,7 +610,7 @@ describe("ActivitiesCalendarRepository", () => {
     const sqlObject = database.execute.mock.calls[0]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
     expect(normalizeSql(compiledQuery.sql)).toContain("FROM fitness.v_activity");
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {
@@ -666,7 +638,6 @@ describe("ActivitiesCalendarRepository", () => {
           centroid_lng: -122.4,
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(
@@ -694,7 +665,7 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLng: -122.4,
       mapPreview: routeMapPreview([{ lat: 37.8, lng: -122.4 }]),
     });
-    expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
     expect(sensorStore.query).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("FROM analytics.deduped_location"),
@@ -710,7 +681,6 @@ describe("ActivitiesCalendarRepository", () => {
         makeActivityRow({ id: "newest", local_date: "2026-03-20" }),
         makeActivityRow({ id: "oldest", local_date: "2026-03-18" }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -722,23 +692,18 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("skips enrichment queries when no activities are in the requested window", async () => {
     const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([[], [{ max_hr: null, resting_hr: null }]]);
+    const sensorStore = makeSensorStore([[]]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     await expect(repository.getWeekList({ weeks: 1, endDate: "2026-03-20" })).resolves.toEqual([]);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
     expect(database.execute).not.toHaveBeenCalled();
   });
 
   it("returns only active days when includeProviderAbsent is requested but no hidden activities match", async () => {
     const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([
-      [makeActivityRow({ id: "activity-1" })],
-      [{ max_hr: null, resting_hr: null }],
-      [],
-      [{ max_hr: null, resting_hr: null }],
-    ]);
+    const sensorStore = makeSensorStore([[makeActivityRow({ id: "activity-1" })], []]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     const result = await repository.getWeekList({
@@ -753,7 +718,7 @@ describe("ActivitiesCalendarRepository", () => {
         activities: [expect.objectContaining({ id: "activity-1", name: "Trainer Ride" })],
       },
     ]);
-    expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("merges active and hidden activities by date while preferring active entries for duplicate ids", async () => {
@@ -771,7 +736,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-19",
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "shared-id",
@@ -815,7 +779,6 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -848,7 +811,6 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [],
-      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "hidden-older",
@@ -888,7 +850,6 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -900,21 +861,12 @@ describe("ActivitiesCalendarRepository", () => {
     });
 
     expect(result.map((day) => day.date)).toEqual(["2026-03-18", "2026-03-17"]);
-    expect(result[0]?.activities[0]?.tss).toBeNull();
-    expect(result[0]?.activities[0]?.stats).toEqual([
-      {
-        status: "missing",
-        label: "Training Stress Score",
-        reason: "Record average heart rate and set maximum heart rate.",
-      },
-    ]);
   });
 
   it("sorts merged hidden activities on the same day by startedAt descending", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [],
-      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "hidden-early",
@@ -954,7 +906,6 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -983,7 +934,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
         }),
       ],
-      [{ max_hr: null, resting_hr: null }],
       [
         {
           id: "hidden-late",
@@ -1005,7 +955,6 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null }],
       [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -1041,7 +990,6 @@ describe("ActivitiesCalendarRepository", () => {
             member_activity_ids: status === undefined ? [] : ["pending-member"],
           }),
         ],
-        [{ max_hr: null, resting_hr: null }],
         ...(status === undefined ? [] : [[{ activity_id: "pending", status }]]),
       ]);
       const repository = new ActivitiesCalendarRepository(
@@ -1055,7 +1003,7 @@ describe("ActivitiesCalendarRepository", () => {
 
       expect(result[0]?.activities[0]?.location).toEqual(location);
       if (status === undefined) {
-        expect(sensorStore.query).toHaveBeenCalledTimes(2);
+        expect(sensorStore.query).toHaveBeenCalledTimes(1);
       } else {
         expect(vi.mocked(sensorStore.query).mock.lastCall?.[2]).toEqual({
           userId: "user-1",
@@ -1093,7 +1041,6 @@ describe("ActivitiesCalendarRepository", () => {
     );
     const sensorStore = makeSensorStore([
       rows,
-      [{ max_hr: null, resting_hr: null }],
       [],
       ["no-centroid", "missing-latitude", "missing-longitude"].map((id) => ({
         activity_id: id,

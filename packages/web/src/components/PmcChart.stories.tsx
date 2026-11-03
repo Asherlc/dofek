@@ -16,10 +16,7 @@ const data: PmcDataPoint[] = Array.from({ length: 35 }, (_, index) => {
   };
 });
 
-const learnedModel: TssModelInfo = {
-  type: "learned",
-  pairedActivities: 24,
-  r2: 0.84,
+const powerModel: TssModelInfo = {
   ftp: 268,
 };
 
@@ -27,7 +24,7 @@ const meta = {
   title: "Training/PmcChart",
   component: PmcChart,
   tags: ["autodocs"],
-  args: { data, model: learnedModel },
+  args: { data, model: powerModel },
   decorators: [
     (Story) => (
       <div className="w-[880px] p-4">
@@ -43,8 +40,8 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Loading: Story = { args: { data: [], model: null, loading: true } };
 export const Empty: Story = { args: { data: [], model: null } };
-export const GenericHeartRateModel: Story = {
+export const PowerThreshold: Story = {
   args: {
-    model: { type: "generic", pairedActivities: 6, r2: null, ftp: 252 },
+    model: { ftp: 252 },
   },
 };

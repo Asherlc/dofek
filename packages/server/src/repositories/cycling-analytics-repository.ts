@@ -39,8 +39,6 @@ const performanceActivityRowSchema = z.object({
   duration_min: z.coerce.number(),
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
-  global_max_hr: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number(),
   avg_power: z.coerce.number().nullable(),
   power_samples: z.coerce.number(),
   hr_samples: z.coerce.number(),
@@ -362,22 +360,6 @@ export class CyclingAnalyticsRepository {
         WHERE user_id = {userId:UUID}
           AND is_deleted = 0
           ${this.#accessWindowPredicate("recorded_at")}
-      ),
-      user_baseline AS (
-        SELECT
-          coalesce(
-            nullIf(max_hr, 0),
-            (
-              SELECT max(max_heart_rate)
-              FROM analytics.cycling_activity FINAL
-              WHERE user_id = {userId:UUID}
-                AND is_deleted = 0
-                ${this.#accessWindowPredicate("started_at")}
-            )
-          ) AS global_max_hr,
-          coalesce(nullIf(resting_hr, 0), 60) AS resting_hr
-        FROM postgres_fitness.user_profile_current
-        WHERE id = {userId:UUID}
       )
       SELECT
         toString(activity.1) AS id,
@@ -385,8 +367,6 @@ export class CyclingAnalyticsRepository {
         activity.3 AS duration_min,
         activity.4 AS avg_hr,
         activity.5 AS max_hr,
-        user_baseline.global_max_hr AS global_max_hr,
-        user_baseline.resting_hr AS resting_hr,
         activity.6 AS avg_power,
         activity.7 AS power_samples,
         activity.8 AS hr_samples,
@@ -400,7 +380,6 @@ export class CyclingAnalyticsRepository {
         WHERE user_id = {userId:UUID} AND is_deleted = 0
       ) AS daily
       CROSS JOIN latest_weight
-      CROSS JOIN user_baseline
       LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
         ON metrics.user_id = daily.user_id AND metrics.activity_id = activity.1
       WHERE daily.user_id = {userId:UUID}

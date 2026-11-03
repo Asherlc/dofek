@@ -43,7 +43,6 @@ describe("PersonalizationPanel", () => {
       readinessWeights: { sampleCount: 90, correlation: 0.75 },
       sleepTarget: { sampleCount: 30 },
       stressThresholds: { sampleCount: 60 },
-      trainingImpulseConstants: { sampleCount: 50, r2: 0.9 },
     },
     effective: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
@@ -53,7 +52,6 @@ describe("PersonalizationPanel", () => {
         hrvThresholds: [-2, -1.25, -0.5],
         rhrThresholds: [2, 1.25, 0.5],
       },
-      trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
@@ -63,7 +61,6 @@ describe("PersonalizationPanel", () => {
         hrvThresholds: [-2, -1.5, -1],
         rhrThresholds: [2, 1.5, 1],
       },
-      trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
     modelCards: [
       {
@@ -118,19 +115,6 @@ describe("PersonalizationPanel", () => {
         uncertainty: "No calibrated uncertainty interval is available.",
         excludedData: ["Days without nonzero rolling variability"],
       },
-      {
-        key: "trainingImpulseConstants",
-        title: "Heart Rate Effort Model",
-        description: "How heart rate intensity translates to training load",
-        status: "personalized",
-        lastSuccessfulFitAt: null,
-        lastFitSummary: "Successful fit time unavailable until this model is refit",
-        dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-        dataSufficiency: "50 qualifying activities used; minimum 20 activities",
-        fitEvidence: "R²: 0.900",
-        uncertainty: "No calibrated uncertainty interval is available.",
-        excludedData: ["Activities without heart-rate samples or normalized power"],
-      },
     ],
   };
 
@@ -167,7 +151,7 @@ describe("PersonalizationPanel", () => {
 
   it("reports incomplete model evidence and renders an actionable panel error", () => {
     vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
-      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 4) },
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 3) },
       isLoading: false,
     });
 
@@ -180,7 +164,7 @@ describe("PersonalizationPanel", () => {
     ).toBeTruthy();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       context: "personalization-model-cards",
-      missingModelCard: "trainingImpulseConstants",
+      missingModelCard: "stressThresholds",
     });
   });
 

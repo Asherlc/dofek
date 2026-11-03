@@ -233,7 +233,6 @@ describe("Router transformation logic", () => {
         readinessWeights: null,
         sleepTarget: { minutes: 500, sampleCount: 10 },
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
 
       const { result: statusBefore } = await query("personalization.status");
@@ -723,43 +722,6 @@ describe("Router transformation logic", () => {
     });
   });
 
-  // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — ramp rate EWMA + load-change observation
-  // ══════════════════════════════════════════════════════════════
-  describe("cyclingAdvanced rampRate", () => {
-    it("computes ramp rate with EWMA and describes the load change", async () => {
-      // Data was already inserted in shared cycling fixture setup (cycling activities with HR + power)
-      const { status, result } = await query("cyclingAdvanced.rampRate", {
-        days: 90,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(typeof data.currentRampRate).toBe("number");
-      expect(typeof data.recommendation).toBe("string");
-      expect(data.recommendation.length).toBeGreaterThan(0);
-      expect(Array.isArray(data.weeks)).toBe(true);
-
-      if (data.weeks.length > 0) {
-        expect(data.recommendation).toMatch(
-          /^Weekly training-load change: [+-]?\d+(?:\.\d+)? points$/,
-        );
-        expect(data.currentRampRate).toBe(data.weeks.at(-1).rampRate);
-        for (const week of data.weeks) {
-          expect(week.week).toBeTruthy();
-          expect(typeof week.ctlStart).toBe("number");
-          expect(typeof week.ctlEnd).toBe("number");
-          expect(typeof week.rampRate).toBe("number");
-        }
-      } else {
-        expect(data.recommendation).toBe("No data");
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Efficiency — aerobic decoupling with power+HR data
-  // ══════════════════════════════════════════════════════════════
   describe("efficiency aerobicDecoupling", () => {
     it("returns decoupling results when activities have power and HR", async () => {
       const { status, result } = await query("efficiency.aerobicDecoupling", {

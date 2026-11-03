@@ -5,10 +5,6 @@ import {
 import { MINIMUM_READINESS_CORRELATION, MINIMUM_READINESS_DAYS } from "./fit-readiness-weights.ts";
 import { MINIMUM_QUALIFYING_SLEEP_NIGHTS } from "./fit-sleep-target.ts";
 import { MINIMUM_STRESS_DAYS } from "./fit-stress-thresholds.ts";
-import {
-  MINIMUM_TRAINING_IMPULSE_ACTIVITIES,
-  MINIMUM_TRAINING_IMPULSE_R_SQUARED,
-} from "./fit-trimp.ts";
 import type { PersonalizationModelKey, PersonalizedParams } from "./params.ts";
 
 export interface PersonalizationModelCard {
@@ -35,7 +31,6 @@ export function buildPersonalizationModelCards(
     buildReadinessCard(params),
     buildSleepTargetCard(params),
     buildStressThresholdCard(params),
-    buildTrainingImpulseCard(params),
   ];
 }
 
@@ -161,29 +156,6 @@ function buildStressThresholdCard(params: PersonalizedParams | null): Personaliz
     excludedData: [
       "Days without heart-rate variability or resting heart rate",
       "Days without nonzero rolling variability",
-    ],
-  };
-}
-
-function buildTrainingImpulseCard(params: PersonalizedParams | null): PersonalizationModelCard {
-  const fitted = params?.trainingImpulseConstants ?? null;
-  const personalized = fitted !== null;
-  return {
-    key: "trainingImpulseConstants",
-    title: "Heart Rate Effort Model",
-    description: "How heart rate intensity translates to training load",
-    status: personalized ? "personalized" : "default",
-    ...fitTime(params, "trainingImpulseConstants", personalized),
-    dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-    dataSufficiency: fitted
-      ? `${fitted.sampleCount} qualifying activities used; minimum ${MINIMUM_TRAINING_IMPULSE_ACTIVITIES} activities`
-      : `No accepted fit; requires at least ${MINIMUM_TRAINING_IMPULSE_ACTIVITIES} qualifying activities and R² of at least ${MINIMUM_TRAINING_IMPULSE_R_SQUARED.toFixed(2)}`,
-    fitEvidence: fitted ? `R²: ${fitted.r2.toFixed(3)}` : "No accepted fit statistic is available.",
-    uncertainty: NO_CALIBRATED_UNCERTAINTY,
-    excludedData: [
-      "Activities without heart-rate samples or normalized power",
-      "Activities with non-positive duration or power-based training load",
-      "Activities whose maximum heart rate is not above resting heart rate",
     ],
   };
 }
