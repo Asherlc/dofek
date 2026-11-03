@@ -628,6 +628,11 @@ occurred; retain the pending record when the evidence is inconclusive.
       `processing-reconciliation` remain stopped until the final stack deploy.
       Migrations whose first line is `-- dofek: deployment-mode=maintenance`
       also apply `stack.maintenance.yml`, stopping web before the schema changes.
+      The [HR-TSS retirement migration](../drizzle/0176_remove_heart_rate_tss_parameters.sql)
+      uses this boundary to stop old web readers before
+      [ClickHouse migration 0109](../src/db/clickhouse-migrations/0109_remove_heart_rate_tss.ts)
+      drops their query inputs. Its settings cleanup uses PostgreSQL's
+      [JSON deletion operators](https://www.postgresql.org/docs/current/functions-json.html).
       The workflow compares the requested image's journal with the deployed web
       image's journal, so a retry after a committed migration still selects
       maintenance until the app image advances. Missing or divergent image

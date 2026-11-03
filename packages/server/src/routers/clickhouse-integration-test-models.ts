@@ -29,12 +29,9 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.daily_recovery_inputs",
   "analytics.daily_recovery",
   "analytics.deduped_location",
-  "analytics.daily_endurance_load",
   "analytics.activity_summary",
   "analytics.hiking_activity",
   "analytics.daily_activity_load",
-  "analytics.weekly_endurance_ramp_rate",
-  "analytics.weekly_training_monotony",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
   "analytics.healthspan_activity_zone_minutes",
@@ -61,11 +58,8 @@ export const analyticsBuildOrder = [
   "analytics.activity_stream_points",
   "analytics.activity_heart_rate_zones",
   "analytics.activity_summary",
-  "analytics.daily_endurance_load",
   "analytics.hiking_activity",
   "analytics.daily_activity_load",
-  "analytics.weekly_endurance_ramp_rate",
-  "analytics.weekly_training_monotony",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
   "analytics.healthspan_activity_zone_minutes",
@@ -471,31 +465,6 @@ daily_load Nullable(Float64),
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    daily_endurance_load: `activity_id UUID,
-user_id UUID,
-started_at Nullable(DateTime64(6, 'UTC')),
-ended_at Nullable(DateTime64(6, 'UTC')),
-date Nullable(Date),
-training_load Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_endurance_ramp_rate: `user_id UUID,
-week Date,
-ctl_start Float64,
-ctl_end Float64,
-ramp_rate Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_training_monotony: `user_id UUID,
-week Date,
-monotony Float64,
-strain Float64,
-weekly_load Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
     daily_strain: `user_id UUID,
 date Date,
 daily_load Float64,
@@ -672,10 +641,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
     shortViewName === "daily_body_measurement" ||
-    shortViewName === "daily_endurance_load" ||
     shortViewName === "daily_activity_load" ||
-    shortViewName === "weekly_endurance_ramp_rate" ||
-    shortViewName === "weekly_training_monotony" ||
     shortViewName === "daily_strain" ||
     shortViewName === "healthspan_activity_zone_minutes" ||
     shortViewName === "weekly_healthspan" ||
@@ -709,34 +675,30 @@ refreshed_at DateTime64(9)`,
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
                   ? "(user_id, measurement_id)"
-                  : shortViewName === "daily_endurance_load" ||
-                      shortViewName === "daily_activity_load" ||
+                  : shortViewName === "daily_activity_load" ||
                       shortViewName === "healthspan_activity_zone_minutes"
                     ? "(user_id, activity_id)"
-                    : shortViewName === "weekly_endurance_ramp_rate" ||
-                        shortViewName === "weekly_training_monotony"
-                      ? "(user_id, week)"
-                      : shortViewName === "daily_strain"
-                        ? "(user_id, date)"
-                        : shortViewName === "weekly_healthspan"
-                          ? "(user_id, week_start)"
-                          : shortViewName === "provider_stats"
-                            ? "(user_id, provider_id)"
-                            : shortViewName === "activity_power_curve" ||
-                                shortViewName === "activity_pace_curve"
-                              ? "(user_id, activity_id, duration_seconds)"
-                              : shortViewName === "hiking_activity" ||
-                                  shortViewName === "activity_heart_rate_distribution" ||
-                                  shortViewName === "activity_aerobic_efficiency" ||
-                                  shortViewName === "activity_polarization_zones"
+                    : shortViewName === "daily_strain"
+                      ? "(user_id, date)"
+                      : shortViewName === "weekly_healthspan"
+                        ? "(user_id, week_start)"
+                        : shortViewName === "provider_stats"
+                          ? "(user_id, provider_id)"
+                          : shortViewName === "activity_power_curve" ||
+                              shortViewName === "activity_pace_curve"
+                            ? "(user_id, activity_id, duration_seconds)"
+                            : shortViewName === "hiking_activity" ||
+                                shortViewName === "activity_heart_rate_distribution" ||
+                                shortViewName === "activity_aerobic_efficiency" ||
+                                shortViewName === "activity_polarization_zones"
+                              ? "(user_id, activity_id)"
+                              : shortViewName === "cycling_activity"
                                 ? "(user_id, activity_id)"
-                                : shortViewName === "cycling_activity"
-                                  ? "(user_id, activity_id)"
-                                  : shortViewName === "daily_cycling"
-                                    ? "(user_id, date)"
-                                    : shortViewName === "resting_heart_rate_sleep_window"
-                                      ? "(user_id, sleep_id)"
-                                      : "tuple()";
+                                : shortViewName === "daily_cycling"
+                                  ? "(user_id, date)"
+                                  : shortViewName === "resting_heart_rate_sleep_window"
+                                    ? "(user_id, sleep_id)"
+                                    : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )

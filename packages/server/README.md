@@ -30,6 +30,21 @@ with incomplete power coverage withheld from weekly totals.
 
 ## Architecture
 
+Activity cards and the performance-management chart use canonical cycling
+power TSS from the [cycling power analytics](../../src/analytics/README.md).
+Heart-rate-derived TSS and its learned conversion are removed. Noncycling
+cards omit TSS; incomplete power stress withholds the PMC chart with an
+explanation. The TSS-derived ramp-rate and monotony charts are retired;
+the separate analytical HR-zone-load channel retains its descriptive summaries.
+See the
+[evidence review](../../docs/tss-evidence-review-2026-11-02.md) for the distinction
+between a load index and validated recovery prediction.
+
+Release this API retirement with the matching mobile client. Older builds that
+call the retired ramp-rate or monotony procedures need to update; those routes
+do not return fabricated empty datasets. See the [router](src/routers/cycling-advanced.ts)
+and [mobile training screen](../mobile/app/(tabs)/strain.tsx).
+
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.
 - **Express Server**: Hosts the tRPC middleware and supplementary REST routes for webhooks, file uploads, and authentication.
 - **Maintenance Webhooks**: Includes internal REST endpoints that run background maintenance asynchronously.
@@ -266,10 +281,15 @@ MapLibre documents its [camera coordinate and zoom conventions](https://maplibre
 
 `calendar.weekList` owns both Training Stress Score calculation and availability explanations.
 Each activity stat is discriminated by `status`: an `available` stat contains its display-ready
-`value`, while a `missing` stat contains an actionable `reason` naming the missing duration,
-power/functional-threshold-power, or heart-rate/maximum-heart-rate prerequisite. Web and mobile
+`value`, while a `missing` stat contains an actionable `reason` naming the missing duration
+or cycling power/eFTP prerequisite. Web and mobile
 render this contract without deriving metric availability. The numeric activity `tss` field remains
 nullable for consumers that need the score rather than its compact-card presentation.
+
+The retirement advances the [activity-list](src/routers/calendar.ts) and
+[personalization-status](src/routers/personalization.ts) server cache versions,
+plus the [mobile persisted-query contract](../mobile/lib/mobile-query-persistence.ts),
+so pre-retirement responses cannot restore HR-derived scores or calibration cards.
 
 ### Exercise-volume trend evidence contract
 

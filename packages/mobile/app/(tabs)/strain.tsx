@@ -161,13 +161,6 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
-  const monotonyQuery = trpc.cyclingAdvanced.trainingMonotony.useQuery(
-    { days },
-    {
-      enabled: isHydrated,
-      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
-    },
-  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
   useReportQueryError(trainingQuery);
@@ -175,7 +168,6 @@ export default function StrainScreen() {
   useReportQueryError(climbingStrengthsQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
-  useReportQueryError(monotonyQuery);
 
   const trainingData = isHydrated ? trainingQuery.data : undefined;
 
@@ -258,7 +250,6 @@ export default function StrainScreen() {
         utils.training.sportVolume.invalidate(),
         utils.hiking.activityComparison.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
-        utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -651,20 +642,9 @@ export default function StrainScreen() {
         <QueryStatePanel variant="loading" minHeight={120} />
       ) : null}
 
-      {monotonyQuery.isError ? (
-        <QueryStatePanel
-          variant="error"
-          title={`Could not load ${TRAINING_TERMINOLOGY.monotony.plainLabel.toLowerCase()}`}
-          message={monotonyQuery.error.message}
-        />
-      ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (
-        <QueryStatePanel variant="loading" minHeight={120} />
-      ) : null}
-
       <TrainingDistributionCards
         intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
         polarization={polarizationQuery.data ?? null}
-        monotony={monotonyQuery.data ?? null}
       />
     </ScrollView>
   );

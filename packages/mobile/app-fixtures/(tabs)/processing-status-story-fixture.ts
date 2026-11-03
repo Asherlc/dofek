@@ -9,16 +9,12 @@ type ProcessingStatusStoryCompanionResponses = {
   "efficiency.polarizationTrend"?: Awaited<
     ReturnType<AppRouterClient["efficiency"]["polarizationTrend"]["query"]>
   >;
-  "cyclingAdvanced.trainingMonotony"?: Awaited<
-    ReturnType<AppRouterClient["cyclingAdvanced"]["trainingMonotony"]["query"]>
-  >;
 };
 type ProcessingStatusStoryCompanionPath = keyof ProcessingStatusStoryCompanionResponses;
 
 const PROCESSING_STATUS_STORY_COMPANION_PATHS = [
   "training.hrZones",
   "efficiency.polarizationTrend",
-  "cyclingAdvanced.trainingMonotony",
 ] satisfies readonly ProcessingStatusStoryCompanionPath[];
 
 function isProcessingStatusStoryCompanionPath(

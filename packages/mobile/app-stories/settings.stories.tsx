@@ -20,11 +20,6 @@ const settingsModelCards = [
     "Past 365 days; next-day recovery uses up to 60 days of baseline history",
   ],
   ["stressThresholds", "Stress Sensitivity", "Past 425 days, including rolling-baseline warm-up"],
-  [
-    "trainingImpulseConstants",
-    "Heart Rate Effort Model",
-    "All qualifying activities; the power reference uses the past 365 days",
-  ],
 ].map(([key, title, dataWindow]) => ({
   key,
   title,
@@ -124,7 +119,6 @@ function createSeededProviders() {
         hrvThresholds: [-2.0, -1.5, -1.0],
         rhrThresholds: [2.0, 1.5, 1.0],
       },
-      trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
@@ -134,14 +128,12 @@ function createSeededProviders() {
         hrvThresholds: [-2.0, -1.5, -1.0],
         rhrThresholds: [2.0, 1.5, 1.0],
       },
-      trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     parameters: {
       exponentialMovingAverage: null,
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     },
     modelCards: settingsModelCards,
   });

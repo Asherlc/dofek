@@ -412,6 +412,20 @@ FTP setting is used. NP observation freshness and complete-user history
 publication prevent mixed input revisions; affected healthspan models run after
 the projection stage. See the [implementation design](../docs/superpowers/specs/2026-11-01-computed-cycling-eftp-design.md).
 
+Heart-rate-derived TSS is retired. The daily endurance-load and dependent weekly
+ramp-rate/monotony dbt models are removed; [migration 0109](../src/db/clickhouse-migrations/0109_remove_heart_rate_tss.ts)
+drops their stored tables. Canonical cycling power metrics remain the source
+for power TSS. See the [TSS evidence review](../docs/tss-evidence-review-2026-11-02.md).
+
+The paired [PostgreSQL migration 0176](../drizzle/0176_remove_heart_rate_tss_parameters.sql)
+removes retired calibration fields from personalization settings and marks the
+release for the existing maintenance deployment path. The
+[deployment selector](../scripts/migration-deployment.ts) reads that marker before
+rollout; [migration execution](../src/db/run-migrate.ts) applies PostgreSQL changes
+before ClickHouse changes. Old web replicas must stop before migration 0109
+drops their former query inputs, as described in the
+[deployment procedure](../deploy/README.md#implementation-details).
+
 Because `activity_power_curve` is append-incremental, a formula or
 standard-duration change does not rewrite unchanged historical activities.
 Before rebuilding, record the active row/activity count, oldest activity, and

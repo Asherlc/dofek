@@ -1,6 +1,5 @@
 import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 
 import type { Database } from "dofek/db";
 import { type EffectiveParams, getEffectiveParams } from "dofek/personalization/params";
@@ -17,7 +16,6 @@ import {
   type PmcNormalizedPowerRow,
   PmcTrainingLoadCalculator,
 } from "./pmc-training-load-calculator.ts";
-import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
@@ -26,16 +24,8 @@ const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 // ---------------------------------------------------------------------------
 
 const combinedActivityRowSchema = z.object({
-  global_max_hr: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number(),
   id: z.string(),
   date: z.string(),
-  duration_min: z.coerce.number(),
-  avg_hr: z.coerce.number().nullable(),
-  max_hr: z.coerce.number().nullable(),
-  avg_power: z.coerce.number().nullable(),
-  power_samples: z.coerce.number(),
-  hr_samples: z.coerce.number(),
 });
 
 const normalizedPowerRowSchema = z.object({
@@ -62,15 +52,7 @@ export async function buildPmcChartFromRows(input: {
     input.parameters ?? (await loadPmcChartParameters(input.db, input.userId, input.range));
   const { effective, queryRange } = parameters;
   const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
-  const { genderFactor, exponent } = effective.trainingImpulseConstants;
-  const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
-  const trainingLoadCalculator = new PmcTrainingLoadCalculator({
-    computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
-      trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
-    computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
-      trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
-    buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
-  });
+  const trainingLoadCalculator = new PmcTrainingLoadCalculator();
   const chartCalculator = new PmcChartCalculator({
     chronicTrainingLoadDays,
     acuteTrainingLoadDays,
@@ -130,53 +112,22 @@ export class PmcRepository extends BaseRepository {
     // Fetch enough history for EWMA convergence, regardless of display range.
     const parameters = await loadPmcChartParameters(this.db, this.userId, range);
     const { queryRange } = parameters;
-    const today = new Date().toISOString().slice(0, 10);
 
     if ((await this.#loadRawActivityCount(queryRange)) === 0) {
       return {
         data: [],
         unavailableReason: null,
-        model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+        model: { ftp: null },
       };
     }
 
     const activityRangeFilter = queryRange.clickHouseTimestampAfter("asum.started_at", "queryDays");
-    const rhrWindowStart = queryRange.windowStartString(today);
-    // QUERY 1: activities with HR data from analytics.activity_summary in CH.
-    // user_profile is accessed via ClickHouse read models.
-    // Sample counts come from the activity summary read model; do not recompute
-    // them by joining deduped_sensor on the request path.
     const activityRows = await this.#sensorStore.query(
       combinedActivityRowSchema,
-      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: !queryRange.isAll() })},
-      user_baseline AS (
-        SELECT
-          coalesce(nullIf(up.max_hr, 0), (
-            SELECT maxIf(max_hr, max_hr > 0) FROM analytics.activity_summary
-            WHERE user_id = {userId:UUID}
-              AND has({activityTypes:Array(String)}, canonical_type)
-          )) AS global_max_hr,
-          coalesce(nullIf(up.resting_hr, 0), (
-            SELECT resting_hr FROM resting_heart_rate
-            WHERE resting_hr IS NOT NULL AND resting_hr > 0
-            ORDER BY date DESC LIMIT 1
-          ), 60) AS resting_hr
-        FROM postgres_fitness.user_profile_current up
-        WHERE up.id = {userId:UUID}
-      )
-      SELECT
-        ub.global_max_hr AS global_max_hr,
-        ub.resting_hr AS resting_hr,
+      `SELECT
         toString(asum.activity_id) AS id,
-        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-        dateDiff('second', asum.started_at, asum.ended_at) / 60 AS duration_min,
-        asum.avg_hr AS avg_hr,
-        asum.max_hr AS max_hr,
-        asum.avg_power AS avg_power,
-        coalesce(asum.power_sample_count, 0) AS power_samples,
-        coalesce(asum.hr_sample_count, 0) AS hr_samples
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date
       FROM analytics.activity_summary asum
-      CROSS JOIN user_baseline ub
       WHERE asum.user_id = {userId:UUID}
         ${activityRangeFilter}
         AND has({activityTypes:Array(String)}, asum.canonical_type)
@@ -186,8 +137,6 @@ export class PmcRepository extends BaseRepository {
         timezone: this.timezone,
         ...queryRange.clickHouseParams("queryDays"),
         activityTypes: CYCLING_TYPES,
-        rhrEndDate: today,
-        ...(rhrWindowStart ? { rhrWindowStart } : {}),
       },
     );
 

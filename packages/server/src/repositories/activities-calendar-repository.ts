@@ -1,5 +1,4 @@
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import type { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
@@ -9,7 +8,6 @@ import { mergeDayGroups } from "./activity-calendar-day-groups.ts";
 import {
   type ActivityListPage,
   activityRowSchema,
-  baselineRowSchema,
   type CalendarActivityEntry,
   type CalendarDayActivities,
   createActiveCalendarEntry,
@@ -37,8 +35,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
-    const { rows, baselineRows } = await this.#getActiveRows(input);
-    const activeDays = await this.#getActiveDayGroups(rows, baselineRows);
+    const { rows } = await this.#getActiveRows(input);
+    const activeDays = await this.#getActiveDayGroups(rows);
     if (!input.includeProviderAbsent) {
       return activeDays;
     }
@@ -63,7 +61,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.#sensorStore,
       this.accessWindow,
     );
-    const [{ rows, baselineRows }, hiddenRows] = await Promise.all([
+    const [{ rows }, hiddenRows] = await Promise.all([
       this.#getActiveRows(input),
       input.includeProviderAbsent ? hiddenRepository.getRows(input) : Promise.resolve([]),
     ]);
@@ -87,10 +85,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       selected.filter((entry) => entry.hidden).map((entry) => entry.row.id),
     );
     const [activeDays, hiddenDays] = await Promise.all([
-      this.#getActiveDayGroups(
-        rows.filter((row) => selectedIds.has(row.id)),
-        baselineRows,
-      ),
+      this.#getActiveDayGroups(rows.filter((row) => selectedIds.has(row.id))),
       hiddenRepository.getDayGroups(hiddenRows.filter((row) => hiddenIds.has(row.id))),
     ]);
     const days = mergeDayGroups(activeDays, hiddenDays);
@@ -117,10 +112,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     };
     const activityDate = clickHouseActivityCalendarDate("activity");
 
-    const [activityRows, baselineRows] = await Promise.all([
-      this.#sensorStore.query(
-        activityRowSchema,
-        `SELECT
+    const activityRows = await this.#sensorStore.query(
+      activityRowSchema,
+      `SELECT
             toString(activity.activity_id) AS id,
             activity.name AS name,
             activity.canonical_type AS canonical_type,
@@ -170,18 +164,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND ${activityDate} >= toDate({windowStart:String})
             ${activityTypeFilter}
           ORDER BY activity.started_at DESC`,
-        queryParams,
-      ),
-      this.#sensorStore.query(
-        baselineRowSchema,
-        `SELECT
-            up.max_hr AS max_hr,
-            up.resting_hr AS resting_hr
-          FROM postgres_fitness.user_profile_current up
-          WHERE up.id = {userId:UUID}`,
-        { userId: this.userId },
-      ),
-    ]);
+      queryParams,
+    );
 
     const activityRowsMatchingType = filterActivityRowsByType(activityRows, input.activityType);
     const filteredActivityRows = await activityRepositoryFor(
@@ -190,12 +174,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.timezone,
       this.accessWindow,
     ).filterToVisibleCanonicalActivities(activityRowsMatchingType);
-    return { rows: filteredActivityRows, baselineRows };
+    return { rows: filteredActivityRows };
   }
 
   async #getActiveDayGroups(
     filteredActivityRows: z.infer<typeof activityRowSchema>[],
-    baselineRows: z.infer<typeof baselineRowSchema>[],
   ): Promise<CalendarDayActivities[]> {
     const locationActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
@@ -218,7 +201,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
     ]);
 
-    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null };
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
       this.userId,
@@ -234,13 +216,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           memberActivityIds: row.member_activity_ids,
         })),
     );
-    const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
       const entry = createActiveCalendarEntry(row, {
-        baseline,
-        calculator,
         routePreview: routePreviewByActivityId.get(row.id),
         sourceLocations: sourceLocationsByActivityId.get(row.id),
         mapReadiness: mapReadinessByActivityId.get(row.id),

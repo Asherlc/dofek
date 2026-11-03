@@ -11,7 +11,6 @@ function personalizedParams(overrides: Partial<PersonalizedParams> = {}): Person
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     },
     exponentialMovingAverage: {
       chronicTrainingLoadDays: 42,
@@ -22,7 +21,6 @@ function personalizedParams(overrides: Partial<PersonalizedParams> = {}): Person
     readinessWeights: null,
     sleepTarget: null,
     stressThresholds: null,
-    trainingImpulseConstants: null,
     ...overrides,
   };
 }
@@ -100,24 +98,6 @@ describe("buildPersonalizationModelCards", () => {
           "Days without nonzero rolling variability",
         ],
       },
-      {
-        key: "trainingImpulseConstants",
-        title: "Heart Rate Effort Model",
-        description: "How heart rate intensity translates to training load",
-        status: "default",
-        lastSuccessfulFitAt: null,
-        lastFitSummary: "No accepted personalized fit",
-        dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-        dataSufficiency:
-          "No accepted fit; requires at least 20 qualifying activities and R² of at least 0.30",
-        fitEvidence: "No accepted fit statistic is available.",
-        uncertainty: "No calibrated uncertainty interval is available.",
-        excludedData: [
-          "Activities without heart-rate samples or normalized power",
-          "Activities with non-positive duration or power-based training load",
-          "Activities whose maximum heart rate is not above resting heart rate",
-        ],
-      },
     ]);
   });
 
@@ -129,7 +109,6 @@ describe("buildPersonalizationModelCards", () => {
         readinessWeights: fittedAt,
         sleepTarget: fittedAt,
         stressThresholds: fittedAt,
-        trainingImpulseConstants: fittedAt,
       },
       readinessWeights: {
         hrv: 0.4,
@@ -144,12 +123,6 @@ describe("buildPersonalizationModelCards", () => {
         hrvThresholds: [-1.8, -1.1, -0.4],
         rhrThresholds: [1.9, 1.2, 0.5],
         sampleCount: 84,
-      },
-      trainingImpulseConstants: {
-        genderFactor: 0.64,
-        exponent: 1.92,
-        sampleCount: 33,
-        r2: 0.9124,
       },
     });
 
@@ -186,18 +159,10 @@ describe("buildPersonalizationModelCards", () => {
         dataSufficiency: "84 qualifying days used; minimum 60 days",
         fitEvidence: "This percentile-based fit does not calculate a goodness-of-fit statistic.",
       }),
-      expect.objectContaining({
-        key: "trainingImpulseConstants",
-        status: "personalized",
-        lastSuccessfulFitAt: fittedAt,
-        lastFitSummary: "Successful fit time recorded",
-        dataSufficiency: "33 qualifying activities used; minimum 20 activities",
-        fitEvidence: "R²: 0.912",
-      }),
     ]);
   });
 
-  it("builds all five model cards in stable order", () => {
+  it("builds all four model cards in stable order", () => {
     const cards = buildPersonalizationModelCards(personalizedParams());
 
     expect(cards.map((card) => card.key)).toEqual([
@@ -205,7 +170,6 @@ describe("buildPersonalizationModelCards", () => {
       "readinessWeights",
       "sleepTarget",
       "stressThresholds",
-      "trainingImpulseConstants",
     ]);
   });
 
@@ -256,7 +220,6 @@ describe("buildPersonalizationModelCards", () => {
         readinessWeights: null,
         sleepTarget: "2026-07-29T11:00:00.000Z",
         stressThresholds: null,
-        trainingImpulseConstants: null,
       },
     });
     const card = buildPersonalizationModelCards(params)[2];
@@ -267,18 +230,5 @@ describe("buildPersonalizationModelCards", () => {
       fitEvidence: "This average-based fit does not calculate a goodness-of-fit statistic.",
       uncertainty: "No calibrated uncertainty interval is available.",
     });
-  });
-
-  it("describes the exact heart-rate effort source window and exclusions", () => {
-    const card = buildPersonalizationModelCards(personalizedParams())[4];
-
-    expect(card?.dataWindow).toBe(
-      "All qualifying activities; the power reference uses the past 365 days",
-    );
-    expect(card?.excludedData).toEqual([
-      "Activities without heart-rate samples or normalized power",
-      "Activities with non-positive duration or power-based training load",
-      "Activities whose maximum heart rate is not above resting heart rate",
-    ]);
   });
 });

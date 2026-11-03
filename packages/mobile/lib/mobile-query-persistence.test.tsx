@@ -97,7 +97,7 @@ describe("mobile query persistence", () => {
     await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
   });
 
-  it.each([21, 22, 23])(
+  it.each([21, 22, 23, 25])(
     "discards an independently produced v%s cache before restoring the combined contract",
     async (version) => {
       const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;

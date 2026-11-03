@@ -45,7 +45,7 @@ describe("cyclingRouter", () => {
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,
-      keyVersion: "cycling-performance-computed-eftp-v3",
+      keyVersion: "cycling-performance-power-stress-v4",
     });
   });
 
@@ -87,7 +87,7 @@ describe("cyclingRouter", () => {
         pmc: {
           unavailableReason: "No computed cycling training stress is available.",
           data: [],
-          model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+          model: { ftp: null },
         },
         eftpTrend: {
           trend: [],

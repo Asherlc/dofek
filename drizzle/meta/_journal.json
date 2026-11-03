@@ -1233,6 +1233,13 @@
       "when": 1793594425786,
       "tag": "0175_remove_configured_cycling_ftp",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1793677094982,
+      "tag": "0176_remove_heart_rate_tss_parameters",
+      "breakpoints": true
     }
   ]
 }

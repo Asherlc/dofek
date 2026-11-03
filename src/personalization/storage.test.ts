@@ -20,7 +20,6 @@ const sampleParams: PersonalizedParams = {
   readinessWeights: null,
   sleepTarget: { minutes: 450, sampleCount: 30 },
   stressThresholds: null,
-  trainingImpulseConstants: null,
 };
 
 describe("loadPersonalizedParams", () => {
@@ -92,7 +91,6 @@ describe("loadPersonalizedParams", () => {
         rhrThresholds: [1.2, 0.8, 0.3],
         sampleCount: 80,
       },
-      trainingImpulseConstants: { genderFactor: 0.7, exponent: 1.8, sampleCount: 25, r2: 0.45 },
     };
     const db = createMockDb([{ value: fullParams }]);
     const result = await loadPersonalizedParams(db, "user-1");
@@ -118,7 +116,6 @@ describe("savePersonalizedParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     // Corrupt the version at runtime so Zod rejects it
     Object.assign(invalidParams, { version: 0 });
@@ -137,7 +134,6 @@ describe("savePersonalizedParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     Object.assign(invalidParams, { version: -1 });
 
@@ -159,7 +155,6 @@ describe("savePersonalizedParams", () => {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
 
     await savePersonalizedParams(db, "user-1", nullParams);
