@@ -97,3 +97,11 @@ MergeTree engine ordered by `id`. POST the SQL directly through the test HTTP
 client and verify both rows and six-digit precision. This fixture is not a
 production migration or approval to upgrade the production engine. The candidate
 version is documented in the [official release](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.10.2.103-stable).
+
+The [absolute-spill qualification](../../docs/pulsar-cdc-assessment.md#approved-absolute-spill-qualification)
+also verifies native query behavior, including a negative physical-disk result:
+the query's temporary-data allowance did not strictly bound its sort directory
+on either tested local engine. Do not treat that setting as filesystem
+isolation or as approval to lower service ceilings. Native spilling reduced
+memory, but the full production-data read still exceeded its temporary-data
+budget; production cutover remains blocked.

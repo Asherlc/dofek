@@ -529,3 +529,108 @@ qualification decision is whether to use native **absolute per-query spill
 budgets** that operate below the query-memory cap. Their temporary-disk bound,
 result equivalence, full insert/build behavior and simultaneous host workload
 would still need real tests. The current entire-host gate remains failed.
+
+### Approved absolute-spill qualification
+
+The user approved this qualification after the preceding review. Production
+remained on 26.6.1.1193; no global setting, model spill setting, build, write,
+deployment or hold restoration was applied. At 23:19:26 UTC, public health was
+ok, web 2/2, worker 1/1, the history sink 0/0, data free 10,202,755,072 bytes,
+and available host memory 15,413,587,968 bytes.
+
+The real-data diagnostic changed only the sort-ratio gate relative to the
+previous external-spill control: `max_bytes_ratio_before_external_sort=0` made
+the existing absolute 128 MiB threshold effective. The 3 GiB query-memory,
+512 MiB temporary-data and 240-second deadline limits stayed unchanged. The
+group ratio stayed at its default; the absolute group threshold was already
+effective. Versioned [sort settings](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Processors/QueryPlan/SortingStep.cpp#L106-L145)
+and [spill conditions](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Processors/Transforms/MergeSortingTransform.cpp#L200-L208)
+explain why zero removes the host-relative gate rather than disabling the
+absolute spill threshold.
+
+Query `operator-memory-dedup-20261103-absolute-sort` read **94,807,232 rows**
+in **127,907 ms**, with peak tracked memory **2,084,999,432 bytes**. It produced
+42 external sort runs and 174 external aggregation parts, proving that spilling
+actually ran. It then failed with **code 396**:
+
+```text
+Limit for temporary files size exceeded
+(would consume 537096706 / 536870912 bytes)
+```
+
+This is a **failed complete-workload qualification**, with positive evidence
+for the memory mechanism. There was no complete result or digest. Public health
+stayed ok and the query stopped without any admission or budget increase.
+Cumulative profile counters recorded 1,489,300,207 sort-compressed bytes and
+536,624,185 aggregation-compressed bytes; those counters are not a measurement
+of maximum simultaneous physical disk usage.
+
+The [executable fixture](../src/db/deduped-sensor-read-model.integration.test.ts)
+now checks the actual model against an identical count/min/max/full-row digest
+reference. With 400,000 IDs / 800,000 physical versions, a 128 MiB query budget,
+16 MiB spill thresholds and 8,192-row blocks, the host-relative control fails
+with code 241 and zero sort runs. Removing only the sort-ratio gate completes
+and records positive sort runs below the same memory cap. The test requires
+exact digest equality and successful query-log completion, not merely a setting
+string. An initial 65,536-row block control failed during spill-file merge;
+that failed control was preserved and not called a success. Smaller block
+sizes here are fixture controls, not a production configuration change.
+
+### Temporary-disk limit is not a physical isolation proof
+
+A separate synthetic adversarial test set
+`max_temporary_data_on_disk_size_for_query=1048576` (1 MiB) with the same
+absolute-spill mechanism. The query **completed successfully** despite the
+isolated ClickHouse temp directory reaching **24,424 allocated KiB**
+(25,010,176 bytes) in `du -sk` observations. At completion it returned to
+4 KiB. This was reproduced on both the local 26.9.19 engine and the pinned
+26.10.2.103 candidate, on separate named volumes. Both returned 1,000 rows and
+digest `5483460741417482121`; the candidate peak tracked memory was
+106,644,995 bytes. No production disk-exhaustion experiment was performed.
+
+The observations establish that the query setting is **not a strict physical
+temp-directory bound for this sort path**. They do not establish the internal
+accounting owner or authorize silently widening the configured allowance.
+The production aggregation-limit failure therefore must not be generalized
+into a proof that every sort/merge file is physically isolated by that limit.
+The newest tested engine did not remove this qualification failure.
+
+**Decision:** absolute spilling is a working memory mechanism, but the whole
+candidate remains rejected for the existing-server cutover. The complete
+workload exceeds the chosen temporary-data budget, physical temp isolation is
+unqualified, and full insert/build/concurrent-host tests remain outstanding.
+No spill/ratio/block-size knob from this work was added to production code.
+The next proposed strategy is bounded changed-key work items under an enforced
+physical temp-storage budget, preserving complete versions, candidate selection,
+tombstones and erasure fences. That is a separate execution-strategy decision;
+it has not been implemented or substituted for the approved plan.
+
+### Current stable releases rechecked
+
+The user explicitly required the most up-to-date versions during this work.
+Qualification targets the current stable releases, pinned to immutable versions
+and image digests; deployed older engines are compatibility baselines, not a
+recommendation to keep them. Rechecked on November 3, 2026:
+
+| Component | Current qualification release | Primary source |
+| --- | --- | --- |
+| ClickHouse candidate | 26.10.2.103-stable | [Release](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.10.2.103-stable) |
+| Pulsar | 5.0.1 | [Release](https://github.com/apache/pulsar/releases/tag/v5.0.1) |
+| Oxia | 0.18.0, newest stable release line | [Release](https://github.com/oxia-db/oxia/releases/tag/v0.18.0) |
+| Debezium Server and matching transform artifact | 3.7.0.Final | [Stable series](https://debezium.io/releases/3.7/) |
+| SeaTunnel | 3.0.0 | [Release](https://github.com/apache/seatunnel/releases/tag/v3.0.0) |
+| Temurin offloader build JDK | 25.0.5+8 | [Release](https://github.com/adoptium/temurin25-binaries/releases/tag/jdk-25.0.5%2B8) |
+
+Release metadata needs interpretation: Oxia's newer publication date for an
+older 0.16 maintenance patch is not a reason to downgrade the 0.18 candidate;
+the [release inventory](https://github.com/oxia-db/oxia/releases) identifies both
+lines. Debezium lists 3.8 as development, while 3.7 is stable. The tested
+SeaTunnel release's old bundled OpenJDK 8u342 is still a runtime-qualification
+blocker; a current application tag does not qualify stale embedded runtimes.
+No unsupported runtime substitution or production upgrade was performed.
+
+All three executable spill/result tests passed against the pinned **26.10.2.103**
+candidate, as well as the earlier local 26.9 baseline. The 1 MiB disk-allowance
+counterexample also reproduced on 26.10.2.103, so an older-engine comparison is
+not the sole basis for rejecting physical isolation. The latest-version result
+does not pass the missing full-host, full-build or physical-storage gates.
