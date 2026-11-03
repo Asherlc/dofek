@@ -95,6 +95,6 @@ describe("PmcChart", () => {
       />,
     );
 
-    expect(screen.getByText(/threshold 220W/)).toBeTruthy();
+    expect(screen.getByText(/current threshold 220W/)).toBeTruthy();
   });
 });

@@ -32,7 +32,7 @@ const COLOR_FATIGUE = chartColors.purple; // purple (intervals.icu uses purple, 
 function ModelBadge({ model }: { model: TssModelInfo }) {
   return (
     <span className="text-xs text-muted">
-      Power training stress{model.ftp != null && ` · threshold ${model.ftp}W`}
+      Power training stress{model.ftp != null && ` · current threshold ${model.ftp}W`}
     </span>
   );
 }
