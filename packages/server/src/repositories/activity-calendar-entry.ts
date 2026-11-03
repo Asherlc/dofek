@@ -243,6 +243,7 @@ function projectCalendarEntry(
 ): CalendarActivityEntry {
   const { baseline, calculator } = context;
   const trainingStress = computeActivityTrainingStress({
+    activityType: row.canonical_type,
     durationMin: row.duration_min,
     avgHr: row.avg_hr,
     maxHr: row.max_hr,
@@ -286,6 +287,7 @@ function projectCalendarEntry(
 }
 
 interface TssInput {
+  activityType: string;
   durationMin: number;
   avgHr: number | null;
   maxHr: number | null;
@@ -360,6 +362,9 @@ function formatTrainingStressUnavailableReason(
   const powerAction =
     "record cycling power with sufficient sustained-effort evidence for computed eFTP";
   const heartRateAction = joinActions(heartRateActions);
+  if (input.activityType !== "cycling") {
+    return `${capitalize(heartRateAction)}.`;
+  }
   return `${capitalize(powerAction)}, or ${heartRateAction}.`;
 }
 

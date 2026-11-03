@@ -905,8 +905,7 @@ describe("ActivitiesCalendarRepository", () => {
       {
         status: "missing",
         label: "Training Stress Score",
-        reason:
-          "Record cycling power with sufficient sustained-effort evidence for computed eFTP, or record average heart rate and set maximum heart rate.",
+        reason: "Record average heart rate and set maximum heart rate.",
       },
     ]);
   });

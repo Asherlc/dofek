@@ -9,6 +9,23 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
+  it.each([
+    ["walking", null, 190, "Record average heart rate."],
+    ["running", null, null, "Record average heart rate and set maximum heart rate."],
+    ["hiking", 120, null, "Set maximum heart rate."],
+    ["strength", 120, 60, "Set maximum heart rate above resting heart rate."],
+  ])("gives relevant heart-rate guidance for %s", (activityType, avgHr, maxHr, reason) => {
+    const row = activityRowSchema.parse(
+      makeActivityRow({ canonical_type: activityType, avg_hr: avgHr, max_hr: maxHr }),
+    );
+    const entry = createActiveCalendarEntry(row, {
+      baseline: { max_hr: null, resting_hr: null },
+      calculator: new TrainingStressCalculator(),
+    });
+
+    expect(entry.stats).toEqual([{ status: "missing", label: "Training Stress Score", reason }]);
+  });
+
   it("uses canonical per-activity power stress even without heart rate", () => {
     const row = activityRowSchema.parse({
       ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: 50 }),
