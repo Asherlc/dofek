@@ -42,10 +42,6 @@ vi.mock("../../components/TrainingInsightsPanel.tsx", () => ({
   TrainingInsightsPanel: () => <div>Volume and zones</div>,
 }));
 
-vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
-  RecentActivitiesSection: () => <div>Recent activities</div>,
-}));
-
 vi.mock("../../components/CorrelationCard.tsx", async () => {
   const actual = await vi.importActual<typeof import("../../components/CorrelationCard.tsx")>(
     "../../components/CorrelationCard.tsx",

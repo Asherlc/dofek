@@ -34,7 +34,7 @@ describe("ClimbingTrainingCard", () => {
     vi.clearAllMocks();
     mockTrainingState.data = defaultMockTrainingData();
   });
-  it("renders server-provided climbing grade progression, volume, and sessions", async () => {
+  it("renders server-provided climbing grade progression and volume", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
@@ -74,7 +74,6 @@ describe("ClimbingTrainingCard", () => {
     expect(screen.getAllByText("V4").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("8 attempts")).toBeTruthy();
     expect(screen.getByText("5 sends")).toBeTruthy();
-    expect(screen.getByText("Kaya climbing at Touchstone Pacific Pipe")).toBeTruthy();
   });
 
   it("reports malformed climbing rows while rendering valid partial climbing data", async () => {
@@ -99,7 +98,7 @@ describe("ClimbingTrainingCard", () => {
     });
   });
 
-  it("omits unknown grade attempts while retaining sends, recorded zero attempts, and sessions", async () => {
+  it("omits unknown grade attempts while retaining sends and recorded zero attempts", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
@@ -146,8 +145,6 @@ describe("ClimbingTrainingCard", () => {
     expect(unknownGrade?.textContent).toBe("VB1 sends");
     expect(screen.getByText("0 attempts")).toBeTruthy();
     expect(screen.getByText("0 sends")).toBeTruthy();
-    expect(screen.getByText("Kaya climbing")).toBeTruthy();
-    expect(screen.getByText("— attempts · 6 sends")).toBeTruthy();
   });
 
   it("renders recorded climbing attempt subtotals while complete totals are unknown", async () => {
@@ -286,6 +283,5 @@ describe("ClimbingTrainingCard", () => {
 
     expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
     expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
-    expect(screen.getByText("No climbing sessions")).toBeTruthy();
   });
 });

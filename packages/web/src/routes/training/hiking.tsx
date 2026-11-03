@@ -3,7 +3,6 @@ import { ActivityComparisonChart } from "../../components/ActivityComparisonChar
 import { ElevationGainChart } from "../../components/ElevationGainChart.tsx";
 import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { WalkingBiomechanicsChart } from "../../components/WalkingBiomechanicsChart.tsx";
 import { HIKING_PACE_COPY } from "../../lib/hikingPaceCopy.ts";
@@ -88,10 +87,6 @@ function HikingTab() {
             loading={routeComparison.isLoading}
           />
         )}
-      </Section>
-
-      <Section title="Recent Hikes">
-        <RecentActivitiesSection activityTypes={["hiking"]} />
       </Section>
     </>
   );

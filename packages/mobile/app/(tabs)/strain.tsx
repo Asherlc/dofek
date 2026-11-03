@@ -17,16 +17,7 @@ import {
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { ActivityCard } from "../../components/ActivityCard";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { ClimbingFilters } from "../../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../../components/ClimbingLocationMapCard";
@@ -55,7 +46,7 @@ import { useRefresh } from "../../lib/useRefresh";
 import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
-import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
+import { WeeklyVolumeRowSchema } from "../../types/api";
 
 const reportedTrainingErrors = new WeakSet<object>();
 
@@ -181,13 +172,6 @@ export default function StrainScreen() {
       : `${workloadResult.context.baselineDays}-day baseline load`;
   const todayWorkload = workloadData[workloadData.length - 1];
   const strainTarget = trainingData?.strainTarget;
-
-  const activitiesParsed = safeParseRows(
-    ActivityRowSchema,
-    trainingData == null ? [] : trainingData.activities,
-    "strain:activities",
-  );
-  const activities = activitiesParsed.data;
 
   const weeklyVolumeParsed = safeParseRows(
     WeeklyVolumeRowSchema,
@@ -563,62 +547,6 @@ export default function StrainScreen() {
               )}
             </View>
           )}
-
-          {/* Recent activities */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => router.push("/activities")}
-                style={styles.sectionLinkButton}
-                accessibilityRole="button"
-                accessibilityLabel="View all activities"
-              >
-                <Text style={styles.sectionLinkButtonText}>View all</Text>
-              </TouchableOpacity>
-            </View>
-            {isLoading ? (
-              <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : activitiesParsed.error ? (
-              <Text style={styles.errorText}>
-                {userFacingErrorMessage(
-                  activitiesParsed.error,
-                  "Recent activities could not be loaded. Please try again.",
-                )}
-              </Text>
-            ) : activities.length > 0 ? (
-              <View style={styles.activitiesStack}>
-                {activities.slice(0, 5).map((activity) => (
-                  <TouchableOpacity
-                    key={String(activity.id)}
-                    activeOpacity={0.7}
-                    onPress={() => router.push(`/activity/${activity.id}`)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${activity.name ?? formatActivityTypeLabel(activity.primary_canonical_type ?? activity.canonical_type ?? "other")}`}
-                  >
-                    <ActivityCard
-                      name={activity.name ?? null}
-                      activityType={activity.canonical_type ?? ""}
-                      primaryActivityType={activity.primary_canonical_type}
-                      startedAt={activity.started_at}
-                      endedAt={activity.ended_at ?? null}
-                      avgHr={activity.avg_hr ?? null}
-                      maxHr={activity.max_hr ?? null}
-                      avgPower={activity.avg_power ?? null}
-                      distanceKm={
-                        activity.distance_meters == null ? null : activity.distance_meters / 1000
-                      }
-                      distanceState={activity.distance_state}
-                      units={units}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.activitiesEmpty}>No recent activities</Text>
-            )}
-          </View>
         </>
       )}
 
@@ -810,41 +738,12 @@ const styles = StyleSheet.create({
   section: {
     gap: 12,
   },
-  sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-  sectionLinkButton: {
-    borderColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  sectionLinkButtonText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  activitiesStack: {
-    gap: 8,
-  },
-  activitiesLoader: {
-    paddingVertical: 24,
-  },
-  activitiesEmpty: {
-    color: colors.textTertiary,
-    fontSize: 13,
-    textAlign: "center",
-    paddingVertical: 24,
   },
   errorText: {
     color: "#f87171",

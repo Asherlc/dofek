@@ -287,7 +287,7 @@ vi.mock("../../lib/units", () => ({
 
 import { captureException } from "../../lib/telemetry";
 
-describe("StrainScreen recent activity navigation", () => {
+describe("StrainScreen", () => {
   it("requests current running response for the selected range", async () => {
     mockTimeRangePreference.days = 30;
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
@@ -326,47 +326,6 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("200 spm")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Park Run/ }));
     expect(mockRouterPush).toHaveBeenCalledWith("/activity/run-2");
-  });
-
-  it.each([
-    { name: "Morning Run", expectedTitle: "Morning Run" },
-    { name: null, expectedTitle: "Walking" },
-  ])(
-    "renders $expectedTitle from an older response without primary-type metadata",
-    async ({ name, expectedTitle }) => {
-      const { primary_canonical_type: _primaryType, ...olderActivity } =
-        recentCyclingActivityFixture();
-      mockTrainingState.data = {
-        ...defaultMockTrainingData(),
-        activities: [{ ...olderActivity, name, canonical_type: "walking" }],
-      };
-
-      const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-      render(<StrainScreen />);
-
-      expect(screen.getByText(expectedTitle)).toBeDefined();
-      expect(screen.getByRole("button", { name: `Open ${expectedTitle}` })).toBeDefined();
-    },
-  );
-
-  it("uses the primary activity type for missing recent-activity titles and accessible actions", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      activities: [
-        {
-          ...recentCyclingActivityFixture(),
-          name: null,
-          canonical_type: "walking",
-          primary_canonical_type: "running",
-        },
-      ],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Open Running" })).toBeDefined();
   });
 
   beforeEach(() => {
@@ -785,21 +744,6 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
     expect(screen.getByText("Suggested strain")).toBeTruthy();
     expect(screen.getByText("71% reached")).toBeTruthy();
-    expect(screen.getByText("Morning Ride")).toBeTruthy();
-  });
-
-  it("navigates to detail screen when a recent activity card is tapped", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      activities: [recentCyclingActivityFixture()],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    fireEvent.click(screen.getByText("Morning Ride"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/activity/42");
   });
 
   it("renders strain target card when target data is available", async () => {
@@ -941,38 +885,6 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByText("Suggested strain")).toBeNull();
   });
 
-  it("navigates to activities list when tapping View all", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      activities: [recentCyclingActivityFixture()],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    fireEvent.click(screen.getByText("View all"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/activities");
-  });
-
-  it("shows empty state and View all link when no activities exist", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.getByText("Recent Activities")).toBeTruthy();
-    expect(screen.getByText("No recent activities")).toBeTruthy();
-    expect(screen.getByText("View all")).toBeTruthy();
-  });
-
-  it("navigates to activities list from View all when no activities exist", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    fireEvent.click(screen.getByText("View all"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/activities");
-  });
-
   it("preserves cached Hangboarding data during a failed training refresh", async () => {
     mockTrainingState.data = defaultMockTrainingData();
     mockTrainingState.isError = true;
@@ -1039,7 +951,6 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByText("Training Load")).toBeNull();
     expect(screen.queryByText("Climbing")).toBeNull();
     expect(screen.getByText("Weekly Volume")).toBeTruthy();
-    expect(screen.queryByText("Recent Activities")).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
