@@ -1,4 +1,3 @@
-import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -24,10 +23,6 @@ export interface RefitSensorStore {
 
 import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
 import { fitExponentialMovingAverage } from "./fit-ewma.ts";
-import type { ReadinessWeightsInput } from "./fit-readiness-weights.ts";
-import { fitReadinessWeights } from "./fit-readiness-weights.ts";
-import type { SleepTargetInput } from "./fit-sleep-target.ts";
-import { fitSleepTarget } from "./fit-sleep-target.ts";
 import type { StressThresholdsInput } from "./fit-stress-thresholds.ts";
 import { fitStressThresholds } from "./fit-stress-thresholds.ts";
 import type { PersonalizedParams } from "./params.ts";
@@ -46,10 +41,8 @@ export async function refitAllParams(
   userId: string,
   sensorStore: RefitSensorStore,
 ): Promise<PersonalizedParams> {
-  const [ewmaResult, readinessResult, sleepResult, stressResult] = await Promise.allSettled([
+  const [ewmaResult, stressResult] = await Promise.allSettled([
     fitEwmaFromDb(sensorStore, userId),
-    fitReadinessFromDb(db, sensorStore, userId),
-    fitSleepFromDb(db, sensorStore, userId),
     fitStressFromDb(db, sensorStore, userId),
   ]);
 
@@ -69,14 +62,6 @@ export async function refitAllParams(
         ewmaResult.status === "fulfilled" && ewmaResult.value != null
           ? fittedAt
           : (existingParams?.successfulFitAt?.exponentialMovingAverage ?? null),
-      readinessWeights:
-        readinessResult.status === "fulfilled" && readinessResult.value != null
-          ? fittedAt
-          : (existingParams?.successfulFitAt?.readinessWeights ?? null),
-      sleepTarget:
-        sleepResult.status === "fulfilled" && sleepResult.value != null
-          ? fittedAt
-          : (existingParams?.successfulFitAt?.sleepTarget ?? null),
       stressThresholds:
         stressResult.status === "fulfilled" && stressResult.value != null
           ? fittedAt
@@ -86,14 +71,6 @@ export async function refitAllParams(
       ewmaResult.status === "fulfilled" && ewmaResult.value != null
         ? ewmaResult.value
         : (existingParams?.exponentialMovingAverage ?? null),
-    readinessWeights:
-      readinessResult.status === "fulfilled" && readinessResult.value != null
-        ? readinessResult.value
-        : (existingParams?.readinessWeights ?? null),
-    sleepTarget:
-      sleepResult.status === "fulfilled" && sleepResult.value != null
-        ? sleepResult.value
-        : (existingParams?.sleepTarget ?? null),
     stressThresholds:
       stressResult.status === "fulfilled" && stressResult.value != null
         ? stressResult.value
@@ -181,266 +158,6 @@ async function fitEwmaFromDb(sensorStore: RefitSensorStore, userId: string) {
   );
 
   return fitExponentialMovingAverage(parseExponentialMovingAverageRows(rows));
-}
-
-export const readinessRowSchema = z.object({
-  hrv: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
-  hrv_mean: z.coerce.number().nullable(),
-  hrv_sd: z.coerce.number().nullable(),
-  rhr_mean: z.coerce.number().nullable(),
-  rhr_sd: z.coerce.number().nullable(),
-  efficiency_pct: z.coerce.number().nullable(),
-  respiratory_rate: z.coerce.number().nullable(),
-  rr_mean: z.coerce.number().nullable(),
-  rr_sd: z.coerce.number().nullable(),
-  next_day_hrv: z.coerce.number().nullable(),
-  next_day_hrv_mean: z.coerce.number().nullable(),
-  next_day_hrv_sd: z.coerce.number().nullable(),
-});
-
-/** Parse raw readiness query rows into fitter input, computing z-scores and component scores. */
-export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWeightsInput[] {
-  const data: ReadinessWeightsInput[] = [];
-  for (const row of rows) {
-    const parsed = readinessRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    const parsedRow = parsed.data;
-
-    if (
-      parsedRow.hrv == null ||
-      parsedRow.hrv_mean == null ||
-      parsedRow.hrv_sd == null ||
-      Number(parsedRow.hrv_sd) === 0 ||
-      parsedRow.resting_hr == null ||
-      parsedRow.rhr_mean == null ||
-      parsedRow.rhr_sd == null ||
-      Number(parsedRow.rhr_sd) === 0 ||
-      parsedRow.next_day_hrv == null ||
-      parsedRow.next_day_hrv_mean == null ||
-      parsedRow.next_day_hrv_sd == null ||
-      Number(parsedRow.next_day_hrv_sd) === 0
-    )
-      continue;
-
-    const zHrv = (Number(parsedRow.hrv) - Number(parsedRow.hrv_mean)) / Number(parsedRow.hrv_sd);
-    const zRhr =
-      (Number(parsedRow.resting_hr) - Number(parsedRow.rhr_mean)) / Number(parsedRow.rhr_sd);
-    const hrvScore = zScoreToRecoveryScore(zHrv);
-    const rhrScore = zScoreToRecoveryScore(-zRhr);
-    const sleepScore =
-      parsedRow.efficiency_pct != null
-        ? Math.max(0, Math.min(100, Number(parsedRow.efficiency_pct)))
-        : 62;
-
-    // Respiratory rate score: lower is better (like RHR), inverted z-score
-    let respiratoryRateScore = 62;
-    if (
-      parsedRow.respiratory_rate != null &&
-      parsedRow.rr_mean != null &&
-      parsedRow.rr_sd != null &&
-      Number(parsedRow.rr_sd) > 0
-    ) {
-      const zRr =
-        (Number(parsedRow.respiratory_rate) - Number(parsedRow.rr_mean)) / Number(parsedRow.rr_sd);
-      respiratoryRateScore = zScoreToRecoveryScore(-zRr);
-    }
-
-    const nextDayHrvZScore =
-      (Number(parsedRow.next_day_hrv) - Number(parsedRow.next_day_hrv_mean)) /
-      Number(parsedRow.next_day_hrv_sd);
-
-    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, respiratoryRateScore, nextDayHrvZScore });
-  }
-  return data;
-}
-
-async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, userId: string) {
-  const restingHeartRateCte = restingHeartRateValuesCte(
-    await fetchRestingHeartRateRowsFromClickHouse({
-      queryStore: sensorStore,
-      userId,
-      timezone: "UTC",
-      endDate: currentUtcDateString(),
-      days: 425,
-    }),
-  );
-  const [metricRows, sleepRows] = await Promise.all([
-    db.execute(
-      sql`WITH ${restingHeartRateCte},
-        metrics_base AS (
-          SELECT
-            dm.date,
-            dm.hrv,
-            drhr.resting_hr,
-            dm.respiratory_rate_avg AS respiratory_rate,
-            AVG(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean,
-            STDDEV_POP(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd,
-            AVG(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean,
-            STDDEV_POP(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd,
-            AVG(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean,
-            STDDEV_POP(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd
-          FROM fitness.v_daily_metrics dm
-          LEFT JOIN resting_heart_rate drhr
-            ON drhr.date = dm.date
-          WHERE dm.user_id = ${userId}
-            AND dm.date > CURRENT_DATE - 425
-        ),
-        metrics AS (
-          SELECT
-            *,
-            LEAD(hrv) OVER (ORDER BY date) AS next_day_hrv,
-            LEAD(hrv_mean) OVER (ORDER BY date) AS next_day_hrv_mean,
-            LEAD(hrv_sd) OVER (ORDER BY date) AS next_day_hrv_sd
-          FROM metrics_base
-        )
-        SELECT
-          m.hrv, m.resting_hr, m.hrv_mean, m.hrv_sd, m.rhr_mean, m.rhr_sd,
-          m.respiratory_rate, m.rr_mean, m.rr_sd,
-          m.date,
-          NULL::real AS efficiency_pct,
-          m.next_day_hrv, m.next_day_hrv_mean, m.next_day_hrv_sd
-        FROM metrics m
-        WHERE m.date > CURRENT_DATE - 365
-        ORDER BY m.date ASC`,
-    ),
-    sensorStore.query(
-      z.object({
-        date: z.string(),
-        efficiency_pct: z.coerce.number().nullable(),
-      }),
-      `SELECT
-        toString(sleep.date) AS date,
-        sleep.efficiency_pct AS efficiency_pct
-      FROM analytics.daily_sleep AS sleep FINAL
-      WHERE sleep.user_id = {userId:UUID}
-        AND sleep.is_deleted = 0
-        AND sleep.date >= toDate(now() - INTERVAL 425 DAY)`,
-      { userId },
-    ),
-  ]);
-  const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
-  const rows = metricRows.map((row) => {
-    const rowDate = z.object({ date: z.coerce.string() }).parse(row).date;
-    return {
-      ...row,
-      efficiency_pct: sleepEfficiencyByDate.get(rowDate) ?? null,
-    };
-  });
-
-  return fitReadinessWeights(parseReadinessRows(rows));
-}
-
-export const sleepRowSchema = z.object({
-  duration_minutes: z.coerce.number(),
-  hrv_above_median: z.coerce.boolean(),
-});
-
-/** Parse raw sleep query rows into fitter input. */
-export function parseSleepRows(rows: Record<string, unknown>[]): SleepTargetInput[] {
-  const data: SleepTargetInput[] = [];
-  for (const row of rows) {
-    const parsed = sleepRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    data.push({
-      durationMinutes: parsed.data.duration_minutes,
-      nextDayHrvAboveMedian: parsed.data.hrv_above_median,
-    });
-  }
-  return data;
-}
-
-export async function fitSleepFromDb(
-  db: Database,
-  userId: string,
-): Promise<PersonalizedParams["sleepTarget"]>;
-export async function fitSleepFromDb(
-  db: Database,
-  sensorStore: RefitSensorStore,
-  userId: string,
-): Promise<PersonalizedParams["sleepTarget"]>;
-export async function fitSleepFromDb(
-  db: Database,
-  sensorStoreOrUserId: RefitSensorStore | string,
-  maybeUserId?: string,
-): Promise<PersonalizedParams["sleepTarget"]> {
-  const userId = typeof sensorStoreOrUserId === "string" ? sensorStoreOrUserId : maybeUserId;
-  if (!userId) {
-    throw new Error("fitSleepFromDb requires a user id");
-  }
-  const [sleepRows, hrvRows] = await Promise.all([
-    typeof sensorStoreOrUserId === "string"
-      ? db.execute(
-          sql`WITH nightly AS (
-            SELECT DISTINCT ON (date)
-              ((started_at AT TIME ZONE 'UTC') - INTERVAL '6 hours')::date::text AS date,
-              duration_minutes
-            FROM fitness.sleep_session
-            WHERE user_id = ${userId}
-              AND sleep_type = 'sleep'
-              AND started_at > NOW() - INTERVAL '365 days'
-            ORDER BY date, duration_minutes DESC NULLS LAST
-          )
-          SELECT date, duration_minutes FROM nightly ORDER BY date ASC`,
-        )
-      : sensorStoreOrUserId.query(
-          z.object({
-            date: z.string(),
-            duration_minutes: z.coerce.number().nullable(),
-          }),
-          `SELECT
-        toString(sleep.date) AS date,
-        sleep.duration_minutes AS duration_minutes
-      FROM analytics.daily_sleep AS sleep FINAL
-      WHERE sleep.user_id = {userId:UUID}
-        AND sleep.is_deleted = 0
-        AND sleep.date >= toDate(now() - INTERVAL 365 DAY)
-      ORDER BY date ASC`,
-          { userId },
-        ),
-    db.execute(
-      sql`WITH hrv_with_median AS (
-          SELECT
-            d.date,
-            d.hrv,
-            m.median_hrv
-          FROM fitness.v_daily_metrics d
-          CROSS JOIN LATERAL (
-            SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY d2.hrv) AS median_hrv
-            FROM fitness.v_daily_metrics d2
-            WHERE d2.user_id = d.user_id
-              AND d2.date BETWEEN d.date - 59 AND d.date
-              AND d2.hrv IS NOT NULL
-          ) m
-          WHERE d.user_id = ${userId}
-            AND d.date > CURRENT_DATE - 425
-            AND d.hrv IS NOT NULL
-        )
-        SELECT
-          date::text AS date,
-          CASE WHEN hrv >= median_hrv THEN true ELSE false END AS hrv_above_median
-        FROM hrv_with_median`,
-    ),
-  ]);
-  const hrvByDate = new Map(
-    hrvRows.map((row) => {
-      const parsed = z
-        .object({ date: z.string(), hrv_above_median: z.coerce.boolean() })
-        .parse(row);
-      return [parsed.date, parsed.hrv_above_median];
-    }),
-  );
-  const rows = sleepRows.flatMap((row) => {
-    if (row.duration_minutes == null) return [];
-    const date = new Date(`${row.date}T12:00:00Z`);
-    date.setUTCDate(date.getUTCDate() + 1);
-    const nextDate = date.toISOString().slice(0, 10);
-    const hrvAboveMedian = hrvByDate.get(nextDate);
-    if (hrvAboveMedian == null) return [];
-    return [{ duration_minutes: row.duration_minutes, hrv_above_median: hrvAboveMedian }];
-  });
-
-  return fitSleepTarget(parseSleepRows(rows));
 }
 
 export const stressRowSchema = z.object({

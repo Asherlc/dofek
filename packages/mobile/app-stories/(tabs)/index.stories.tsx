@@ -2,7 +2,6 @@ import { formatDateYmd } from "@dofek/format/format";
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MISSING_PREVIOUS_NIGHT_MESSAGE } from "dofek-server/sleep-need-contract";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
 import TodayScreen from "../../app/(tabs)/index";
@@ -37,17 +36,6 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
   queryClient.setQueryData(
     [["mobileDashboard", "dashboardV2"], { input: { endDate: todayDate }, type: "query" }],
     {
-      readiness: {
-        score: 82,
-        date: todayDate,
-        components: {
-          hrvScore: 84,
-          restingHrScore: 78,
-          sleepScore: 88,
-          respiratoryRateScore: 74,
-        },
-        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      },
       sleep: {
         lastNight: sleepDataUnavailable
           ? null
@@ -60,52 +48,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
               awakePct: 8,
               stagingAvailable: true,
             },
-        sleepDebt: sleepDataUnavailable ? 0 : 18,
       },
-      strain: {
-        dailyStrain: 11.8,
-        acuteLoad: 360,
-        chronicLoad: 395,
-        workloadRatio: 0.91,
-        date: todayDate,
-      },
-      sleepNeed: sleepDataUnavailable
-        ? {
-            availability: "missing_previous_night",
-            epistemicStatus: { kind: "unavailable", label: "Unavailable" },
-            message: MISSING_PREVIOUS_NIGHT_MESSAGE,
-          }
-        : {
-            availability: "available",
-            epistemicStatus: { kind: "estimated", label: "Estimated" },
-            baselineMinutes: 480,
-            strainDebtMinutes: 16,
-            accumulatedDebtMinutes: 28,
-            debtRecoveryMinutes: 7,
-            totalNeedMinutes: 503,
-            estimateMetadata: {
-              basis: "personalized_high_hrv_average",
-              baselineQualifyingNightCount: 12,
-              debtObservedNightCount: 11,
-              methodVersion: "sleep-need-heuristic-v1",
-              uncertainty: "not_established",
-              valueQualifier: "About",
-              summaryLabel: "Estimated sleep need",
-              componentLabels: {
-                baseline: "Baseline estimate",
-                strainDebt: "Previous-day load adjustment",
-                debtRecovery: "Debt recovery",
-              },
-              basisLabel:
-                "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
-              coverageLabel:
-                "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
-              methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
-              uncertaintyLabel: "Uncertainty: not established",
-              limitationLabel: "Estimated sleep need with unquantified uncertainty.",
-            },
-            recentNights: [],
-          },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: todayDate,
       summaryDateContext: { effectiveDate: todayDate, timezone: "UTC" },
@@ -122,20 +65,9 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
   );
 
   queryClient.setQueryData(
-    [["recovery", "readinessScore"], { input: { days: 30, endDate: todayDate }, type: "query" }],
-    [
-      {
-        date: todayDate,
-        readinessScore: 82,
-      },
-    ],
-  );
-
-  queryClient.setQueryData(
     [["recovery", "sleepAnalytics"], { input: { days: 30 }, type: "query" }],
     {
       nightly: [],
-      sleepDebt: 0,
     },
   );
 
@@ -149,13 +81,11 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
         recentDays: 7,
         baselineDays: 28,
       },
-      displayedStrain: 11.8,
       displayedDate: todayDate,
       timeSeries: [
         {
           date: todayDate,
           dailyLoad: 410,
-          strain: 11.8,
           acuteLoad: 360,
           chronicLoad: 395,
           workloadRatio: 0.91,
@@ -167,11 +97,6 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
   queryClient.setQueryData(
     [["dailyMetrics", "trends"], { input: { days: 30, endDate: todayDate }, type: "query" }],
     { latest_date: todayDate },
-  );
-
-  queryClient.setQueryData(
-    [["sleepNeed", "calculate"], { input: { endDate: todayDate }, type: "query" }],
-    null,
   );
 
   queryClient.setQueryData(

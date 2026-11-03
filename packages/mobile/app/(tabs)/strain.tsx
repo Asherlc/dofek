@@ -1,13 +1,12 @@
 import {
   formatDateShort,
   formatDurationMinutes,
-  formatIntensity,
   formatNumber,
   formatTrainingLoad,
 } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import { aggregateWeeklyVolume } from "@dofek/scoring/scoring";
 import type { ClimbingFilters as ClimbingFilterValues } from "@dofek/training/climbing-filters";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
@@ -23,8 +22,6 @@ import { ClimbingFilters } from "../../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../../components/ClimbingLocationMapCard";
 import { ClimbingStrengths } from "../../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
-import { SparkLine } from "../../components/charts/SparkLine";
-import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
@@ -171,7 +168,6 @@ export default function StrainScreen() {
       ? "Baseline load"
       : `${workloadResult.context.baselineDays}-day baseline load`;
   const todayWorkload = workloadData[workloadData.length - 1];
-  const strainTarget = trainingData?.strainTarget;
 
   const weeklyVolumeParsed = safeParseRows(
     WeeklyVolumeRowSchema,
@@ -196,24 +192,9 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain =
-    strainTarget?.currentStrain ??
-    (workloadResult?.displayedDate != null && workloadResult.displayedDate === endDate
-      ? workloadResult.displayedStrain
-      : 0);
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
-  const displayedDate = workloadResult?.displayedDate;
-  const strainDateLabel =
-    displayedDate == null
-      ? "No training load to display"
-      : displayedDate === todayWorkload?.date
-        ? "Today"
-        : `Last training day: ${formatDateShort(displayedDate)}`;
-
-  const strainTrend = workloadData.map((d) => d.strain);
-  const strainTrendAvailability = trainingData?.chartAvailability?.strainTrend;
   const verticalAscentAvailability = trainingData?.chartAvailability?.verticalAscent;
 
   const isLoading = shouldShowBlockingLoading({
@@ -279,60 +260,6 @@ export default function StrainScreen() {
         />
       ) : (
         <>
-          {/* Current strain gauge */}
-          <View style={styles.gaugeSection}>
-            <StrainGauge strain={dailyStrain} size={160} />
-            <Text style={styles.gaugeCaption}>{strainDateLabel}</Text>
-          </View>
-
-          {/* Strain Target */}
-          {strainTarget && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Suggested strain</Text>
-              <View style={styles.targetHeader}>
-                <View style={styles.targetValueRow}>
-                  <Text style={styles.targetValue}>{strainTarget.targetStrain}</Text>
-                  <Text
-                    style={[
-                      styles.zoneBadge,
-                      {
-                        backgroundColor:
-                          strainTarget.zone === "Push"
-                            ? colors.positiveSubtle
-                            : strainTarget.zone === "Recovery"
-                              ? colors.dangerSubtle
-                              : colors.warningSubtle,
-                        color:
-                          strainTarget.zone === "Push"
-                            ? colors.positive
-                            : strainTarget.zone === "Recovery"
-                              ? colors.danger
-                              : colors.warning,
-                      },
-                    ]}
-                  >
-                    {strainTarget.zone}
-                  </Text>
-                </View>
-                <Text style={styles.targetProgress}>
-                  {formatIntensity(strainTarget.progressPercent)} reached
-                </Text>
-              </View>
-              <View style={styles.targetBarTrack}>
-                <View
-                  style={[
-                    styles.targetBarFill,
-                    {
-                      width: `${Math.min(strainTarget.progressPercent, 100)}%`,
-                      backgroundColor: new StrainScore(strainTarget.currentStrain).color,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.targetExplanation}>{strainTarget.explanation}</Text>
-            </View>
-          )}
-
           {/* Workload breakdown */}
           <View style={styles.card}>
             <ChartTitleWithTooltip
@@ -364,24 +291,6 @@ export default function StrainScreen() {
             </View>
             {workloadResult == null ? null : (
               <Text style={styles.ratioHint}>{workloadResult.context.description}</Text>
-            )}
-          </View>
-
-          {/* Strain trend */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{`Daily Strain (${days} Days)`}</Text>
-            {strainTrendAvailability?.status === "available" ? (
-              <SparkLine
-                data={strainTrend}
-                height={60}
-                color={colors.accent}
-                showBaseline
-                showYAxis
-              />
-            ) : strainTrendAvailability ? (
-              <TrainingChartEmptyState availability={strainTrendAvailability} />
-            ) : (
-              <Text style={styles.emptyChartText}>No training data yet for this period</Text>
             )}
           </View>
 
@@ -588,15 +497,6 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
     gap: 16,
   },
-  gaugeSection: {
-    alignItems: "center",
-    paddingVertical: 16,
-    gap: 8,
-  },
-  gaugeCaption: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -634,55 +534,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     textAlign: "center",
-  },
-  targetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  targetValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  targetValue: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: colors.text,
-    fontVariant: ["tabular-nums"],
-  },
-  zoneBadge: {
-    fontSize: 11,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  targetProgress: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontVariant: ["tabular-nums"],
-  },
-  targetBarTrack: {
-    height: 8,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  targetBarFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  targetExplanation: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  sparkContainer: {
-    alignItems: "center",
   },
   emptyChartText: {
     fontSize: 13,

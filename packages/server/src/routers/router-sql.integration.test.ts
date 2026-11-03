@@ -168,7 +168,6 @@ describe("Router SQL validity", () => {
     it("hrvVariability", () => expectValidSql("recovery.hrvVariability", { days: 30 }));
     it("workloadRatio", () => expectValidSql("recovery.workloadRatio", { days: 30 }));
     it("sleepAnalytics", () => expectValidSql("recovery.sleepAnalytics", { days: 30 }));
-    it("readinessScore", () => expectValidSql("recovery.readinessScore", { days: 30 }));
     it("sleepConsistency", () => expectValidSql("recovery.sleepConsistency", { days: 30 }));
   });
 
@@ -210,11 +209,6 @@ describe("Router SQL validity", () => {
     it("weekList", () => expectValidSql("calendar.weekList", { weeks: 4, endDate: "2026-03-20" }));
     it("activityOverview", () =>
       expectValidSql("calendar.activityOverview", { weeks: 4, endDate: "2026-03-20" }));
-  });
-
-  // ── Sleep Need ──
-  describe("sleepNeed", () => {
-    it("calculate", () => expectValidSql("sleepNeed.calculate"));
   });
 
   // ── Healthspan ──

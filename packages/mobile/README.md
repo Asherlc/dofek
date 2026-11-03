@@ -2,6 +2,13 @@
 
 The mobile app for Dofek. Built with Expo and React Native, with native Swift modules for HealthKit and WHOOP BLE synchronization.
 
+The [Today route](<app/(tabs)/index.tsx>) retains recorded sleep and processing
+status. [Recovery](<app/(tabs)/recovery.tsx>) and
+[Training](<app/(tabs)/strain.tsx>) retain observed measurements, personal
+baselines, and descriptive workload data. Custom recovery, 0–21 strain, and
+sleep-performance scores and their dependent recommendations are retired;
+see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 ## Core Features
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.

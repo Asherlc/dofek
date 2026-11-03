@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { sleepStageColors, statusColors, textColors } from "./colors.ts";
 import {
   aggregateWeeklyVolume,
-  baselineReadinessComponents,
-  DEFAULT_READINESS_COMPONENT_SCORE,
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
   FORM_ZONE_GREY,
@@ -11,86 +9,15 @@ import {
   FORM_ZONE_TRANSITION,
   FormZone,
   healthStatusColor,
-  readinessLevelColor,
   SCORE_RECOVERED_THRESHOLD,
   SCORE_WARNING_THRESHOLD,
   SCORE_ZONES,
-  StrainScore,
   StressScore,
   scoreColor,
   scoreLabel,
-  sleepDebtColor,
-  sleepPerformanceColor,
-  sleepTierColor,
-  sleepTierDescription,
   trendColor,
   trendDirection,
-  zScoreToRecoveryScore,
 } from "./scoring.ts";
-
-describe("baselineReadinessComponents", () => {
-  it("maps the recovery metrics with their intended polarity", () => {
-    expect(
-      baselineReadinessComponents({
-        hrvZScore: 1,
-        restingHeartRateZScore: 1,
-        respiratoryRateZScore: -1,
-        sleepEfficiency: 85.4,
-      }),
-    ).toEqual({
-      hrvScore: 81,
-      restingHrScore: 31,
-      respiratoryRateScore: 81,
-      sleepScore: 85,
-    });
-  });
-
-  it("uses the named default when baseline context is unavailable", () => {
-    expect(
-      baselineReadinessComponents({
-        hrvZScore: null,
-        restingHeartRateZScore: null,
-        respiratoryRateZScore: null,
-        sleepEfficiency: null,
-      }),
-    ).toEqual({
-      hrvScore: DEFAULT_READINESS_COMPONENT_SCORE,
-      restingHrScore: DEFAULT_READINESS_COMPONENT_SCORE,
-      respiratoryRateScore: DEFAULT_READINESS_COMPONENT_SCORE,
-      sleepScore: DEFAULT_READINESS_COMPONENT_SCORE,
-    });
-  });
-});
-
-describe("zScoreToRecoveryScore", () => {
-  it("maps z=0 to 62 (Whoop-aligned average)", () => {
-    expect(zScoreToRecoveryScore(0)).toBe(62);
-  });
-  it("maps z=+1 to ~81 (1 SD above mean)", () => {
-    expect(zScoreToRecoveryScore(1)).toBe(81);
-  });
-  it("maps z=-1 to ~31 (1 SD below mean)", () => {
-    expect(zScoreToRecoveryScore(-1)).toBe(31);
-  });
-  it("maps z=+2 to ~92", () => {
-    expect(zScoreToRecoveryScore(2)).toBe(92);
-  });
-  it("maps z=-2 to ~12", () => {
-    expect(zScoreToRecoveryScore(-2)).toBe(12);
-  });
-  it("reaches 100 at extreme positive z", () => {
-    expect(zScoreToRecoveryScore(10)).toBe(100);
-  });
-  it("reaches 0 at extreme negative z", () => {
-    expect(zScoreToRecoveryScore(-10)).toBe(0);
-  });
-  it("is monotonically increasing", () => {
-    const scores = [-3, -2, -1, 0, 1, 2, 3].map(zScoreToRecoveryScore);
-    for (let i = 1; i < scores.length; i++) {
-      expect(scores[i]).toBeGreaterThanOrEqual(scores[i - 1] ?? 0);
-    }
-  });
-});
 
 describe("scoreColor", () => {
   it("returns positive for scores > 70", () => {
@@ -304,95 +231,12 @@ describe("trendColor", () => {
   });
 });
 
-describe("sleepDebtColor", () => {
-  it("returns positive for negative debt", () => {
-    expect(sleepDebtColor(-10)).toBe(statusColors.positive);
-  });
-
-  it("returns positive at exactly 0", () => {
-    expect(sleepDebtColor(0)).toBe(statusColors.positive);
-  });
-
-  it("returns warning at 1 (just above 0)", () => {
-    expect(sleepDebtColor(1)).toBe(statusColors.warning);
-  });
-
-  it("returns warning at 119 (just below 120)", () => {
-    expect(sleepDebtColor(119)).toBe(statusColors.warning);
-  });
-
-  it("returns danger at exactly 120", () => {
-    expect(sleepDebtColor(120)).toBe(statusColors.danger);
-  });
-
-  it("returns danger for high debt", () => {
-    expect(sleepDebtColor(300)).toBe(statusColors.danger);
-  });
-});
-
-describe("sleepTierColor", () => {
-  it("returns positive for Excellent", () => {
-    expect(sleepTierColor("Excellent")).toBe(statusColors.positive);
-  });
-
-  it("returns info for Good", () => {
-    expect(sleepTierColor("Good")).toBe(statusColors.info);
-  });
-
-  it("returns warning for Fair", () => {
-    expect(sleepTierColor("Fair")).toBe(statusColors.warning);
-  });
-
-  it("returns danger for Poor", () => {
-    expect(sleepTierColor("Poor")).toBe(statusColors.danger);
-  });
-});
-
-describe("sleepTierDescription", () => {
-  it("returns excellent context", () => {
-    const desc = sleepTierDescription("Excellent");
-    expect(desc).toContain("recovery");
-  });
-
-  it("returns good context", () => {
-    const desc = sleepTierDescription("Good");
-    expect(desc).toContain("most");
-  });
-
-  it("returns fair context", () => {
-    const desc = sleepTierDescription("Fair");
-    expect(desc).toContain("Below");
-  });
-
-  it("returns poor context", () => {
-    const desc = sleepTierDescription("Poor");
-    expect(desc).toContain("rest");
-  });
-});
-
 describe("sleepStageColors", () => {
   it("has all four sleep stages", () => {
     expect(sleepStageColors.deep).toBe("#5E35B1");
     expect(sleepStageColors.rem).toBe("#42A5F5");
     expect(sleepStageColors.light).toBe("#78909C");
     expect(sleepStageColors.awake).toBe("#FF8A65");
-  });
-});
-
-describe("sleepPerformanceColor", () => {
-  it("returns positive for >= 95%", () => {
-    expect(sleepPerformanceColor(95)).toBe(statusColors.positive);
-    expect(sleepPerformanceColor(100)).toBe(statusColors.positive);
-  });
-
-  it("returns warning for >= 85% and < 95%", () => {
-    expect(sleepPerformanceColor(85)).toBe(statusColors.warning);
-    expect(sleepPerformanceColor(94)).toBe(statusColors.warning);
-  });
-
-  it("returns danger for < 85%", () => {
-    expect(sleepPerformanceColor(84)).toBe(statusColors.danger);
-    expect(sleepPerformanceColor(0)).toBe(statusColors.danger);
   });
 });
 
@@ -480,24 +324,6 @@ describe("FormZone", () => {
   });
 });
 
-describe("readinessLevelColor", () => {
-  it("returns positive for high", () => {
-    expect(readinessLevelColor("high")).toBe(statusColors.positive);
-  });
-
-  it("returns warning for moderate", () => {
-    expect(readinessLevelColor("moderate")).toBe(statusColors.warning);
-  });
-
-  it("returns danger for low", () => {
-    expect(readinessLevelColor("low")).toBe(statusColors.danger);
-  });
-
-  it("returns neutral for unknown", () => {
-    expect(readinessLevelColor("unknown")).toBe(textColors.neutral);
-  });
-});
-
 describe("healthStatusColor", () => {
   it("returns positive for excellent", () => {
     expect(healthStatusColor("excellent")).toBe(statusColors.positive);
@@ -513,153 +339,5 @@ describe("healthStatusColor", () => {
 
   it("returns danger for poor", () => {
     expect(healthStatusColor("poor")).toBe(statusColors.danger);
-  });
-});
-
-describe("StrainScore", () => {
-  describe("fromRawLoad", () => {
-    it("returns 0 for zero raw load", () => {
-      expect(StrainScore.fromRawLoad(0).value).toBe(0);
-    });
-
-    it("returns 0 for negative raw load", () => {
-      expect(StrainScore.fromRawLoad(-5).value).toBe(0);
-    });
-
-    it("maps a light 30-min workout (~20 raw) to light strain (8-11)", () => {
-      const strain = StrainScore.fromRawLoad(19.5);
-      expect(strain.value).toBeGreaterThanOrEqual(8);
-      expect(strain.value).toBeLessThanOrEqual(11);
-    });
-
-    it("maps a two-workout daily load to the WHOOP-like strain scale", () => {
-      const strain = StrainScore.fromRawLoad(39.9);
-      expect(strain.value).toBe(10.3);
-    });
-
-    it("maps a moderate 60-min workout (~45 raw) to moderate strain (10-12)", () => {
-      const strain = StrainScore.fromRawLoad(45);
-      expect(strain.value).toBeGreaterThanOrEqual(10);
-      expect(strain.value).toBeLessThanOrEqual(12);
-    });
-
-    it("maps a hard 90-min workout (~76 raw) to moderate strain (12-14)", () => {
-      const strain = StrainScore.fromRawLoad(76);
-      expect(strain.value).toBeGreaterThanOrEqual(12);
-      expect(strain.value).toBeLessThanOrEqual(14);
-    });
-
-    it("maps a very hard 2-hour workout (~96 raw) to moderate strain (12-14)", () => {
-      const strain = StrainScore.fromRawLoad(96);
-      expect(strain.value).toBeGreaterThanOrEqual(12);
-      expect(strain.value).toBeLessThanOrEqual(14);
-    });
-
-    it("maps an extreme 3-hour endurance effort (~141 raw) to high strain (13-15)", () => {
-      const strain = StrainScore.fromRawLoad(141);
-      expect(strain.value).toBeGreaterThanOrEqual(13);
-      expect(strain.value).toBeLessThanOrEqual(15);
-    });
-
-    it("never exceeds 21 even for extreme values", () => {
-      expect(StrainScore.fromRawLoad(500).value).toBeLessThanOrEqual(21);
-      expect(StrainScore.fromRawLoad(1000).value).toBeLessThanOrEqual(21);
-    });
-
-    it("increases monotonically with raw load", () => {
-      let previous = StrainScore.fromRawLoad(0).value;
-      for (const load of [10, 20, 50, 100, 200, 500]) {
-        const current = StrainScore.fromRawLoad(load).value;
-        expect(current).toBeGreaterThan(previous);
-        previous = current;
-      }
-    });
-
-    it("shows diminishing returns at higher loads (logarithmic behavior)", () => {
-      const lowGain = StrainScore.fromRawLoad(50).value - StrainScore.fromRawLoad(0).value;
-      const highGain = StrainScore.fromRawLoad(150).value - StrainScore.fromRawLoad(100).value;
-      expect(lowGain).toBeGreaterThan(highGain);
-    });
-
-    it("returns a rounded value with 1 decimal place", () => {
-      const strain = StrainScore.fromRawLoad(45);
-      expect(strain.value).toBe(Math.round(strain.value * 10) / 10);
-    });
-  });
-
-  describe("fromAcuteLoad", () => {
-    it("converts seven-day acute load through its daily average", () => {
-      expect(StrainScore.fromAcuteLoad(700).value).toBe(StrainScore.fromRawLoad(100).value);
-    });
-
-    it("carries recent load through rest days", () => {
-      expect(StrainScore.fromAcuteLoad(350).value).toBeGreaterThan(0);
-    });
-  });
-
-  describe("color", () => {
-    it("returns textSecondary for light strain (< 10)", () => {
-      expect(new StrainScore(5).color).toBe(textColors.secondary);
-      expect(new StrainScore(9.9).color).toBe(textColors.secondary);
-    });
-
-    it("returns positive for moderate strain (10-13)", () => {
-      expect(new StrainScore(10).color).toBe(statusColors.positive);
-      expect(new StrainScore(13).color).toBe(statusColors.positive);
-    });
-
-    it("returns warning for high strain (14-17)", () => {
-      expect(new StrainScore(14).color).toBe(statusColors.warning);
-      expect(new StrainScore(17).color).toBe(statusColors.warning);
-    });
-
-    it("returns danger for all-out strain (> 17)", () => {
-      expect(new StrainScore(17.1).color).toBe(statusColors.danger);
-      expect(new StrainScore(21).color).toBe(statusColors.danger);
-    });
-  });
-
-  describe("label", () => {
-    it("returns Light for strain < 10", () => {
-      expect(new StrainScore(5).label).toBe("Light");
-      expect(new StrainScore(0).label).toBe("Light");
-    });
-
-    it("returns Moderate for strain 10-13", () => {
-      expect(new StrainScore(10).label).toBe("Moderate");
-      expect(new StrainScore(13).label).toBe("Moderate");
-    });
-
-    it("returns High for strain 14-17", () => {
-      expect(new StrainScore(14).label).toBe("High");
-      expect(new StrainScore(17).label).toBe("High");
-    });
-
-    it("returns All Out for strain > 17", () => {
-      expect(new StrainScore(17.1).label).toBe("All Out");
-      expect(new StrainScore(21).label).toBe("All Out");
-    });
-  });
-
-  describe("description", () => {
-    it("returns low-load context for light strain (< 10)", () => {
-      const desc = new StrainScore(5).description;
-      expect(desc).toContain("room");
-    });
-
-    it("returns productive context for moderate strain (10-13)", () => {
-      const desc = new StrainScore(12).description;
-      expect(desc).toContain("productive");
-    });
-
-    it("returns significant context for high strain (14-17)", () => {
-      const desc = new StrainScore(15).description;
-      expect(desc).toContain("Significant");
-    });
-
-    it("returns max-effort context for all-out strain (> 17)", () => {
-      const desc = new StrainScore(19).description;
-      expect(desc).toContain("recovery");
-    });
   });
 });

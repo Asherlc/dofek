@@ -4,7 +4,6 @@ import {
   formatDurationMinutes,
   formatHour,
   formatIntensity,
-  formatSleepDebt,
   isToday,
   isYesterday,
 } from "@dofek/format/format";
@@ -12,7 +11,6 @@ import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useRef } from "react";
 import {
   RefreshControl,
@@ -131,7 +129,6 @@ export default function SleepScreen() {
 
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
-  const sleepDebt = sleepResult?.sleepDebt;
   const averageSleepMinutes = sleepResult?.averageSleepMinutes;
   const averageEfficiencyPercent = sleepResult?.averageEfficiencyPercent;
   const mostRecentNight = nightly[nightly.length - 1];
@@ -230,17 +227,6 @@ export default function SleepScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Last Night's Stages</Text>
               <Hypnogram data={latestStagesQuery.data ?? []} />
-            </View>
-          )}
-
-          {/* Sleep debt */}
-          {sleepDebt != null && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Sleep Debt (14 Days)</Text>
-              <Text style={[styles.debtValue, { color: sleepDebtColor(sleepDebt) }]}>
-                {formatSleepDebt(sleepDebt)}
-              </Text>
-              <Text style={styles.debtSubtitle}>Compared with your sleep target</Text>
             </View>
           )}
 
@@ -448,14 +434,6 @@ const styles = StyleSheet.create({
   },
   partialRecordNextAction: {
     fontSize: 13,
-    color: colors.textTertiary,
-  },
-  debtValue: {
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  debtSubtitle: {
-    fontSize: 12,
     color: colors.textTertiary,
   },
   metricsGrid: {

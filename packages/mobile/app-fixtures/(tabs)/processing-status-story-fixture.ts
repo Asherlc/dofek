@@ -5,6 +5,25 @@ import type { AppRouter } from "dofek-server/router";
 type ScreenshotProcessingDataset = "activity" | "sleep" | "recovery" | "training" | "body";
 type AppRouterClient = inferRouterClient<AppRouter>;
 type ProcessingStatusStoryCompanionResponses = {
+  "hiking.activityComparison"?: Awaited<
+    ReturnType<AppRouterClient["hiking"]["activityComparison"]["query"]>
+  >;
+  "climbing.attachmentActivities"?: Awaited<
+    ReturnType<AppRouterClient["climbing"]["attachmentActivities"]["query"]>
+  >;
+  "climbing.attachClimbingLogEntry"?: Awaited<
+    ReturnType<AppRouterClient["climbing"]["attachClimbingLogEntry"]["mutate"]>
+  >;
+  "climbing.locationMap"?: Awaited<ReturnType<AppRouterClient["climbing"]["locationMap"]["query"]>>;
+  "climbing.strengths"?: Awaited<ReturnType<AppRouterClient["climbing"]["strengths"]["query"]>>;
+  "climbing.volumeOverTime"?: Awaited<
+    ReturnType<AppRouterClient["climbing"]["volumeOverTime"]["query"]>
+  >;
+  "strength.volumeOverTime"?: Awaited<
+    ReturnType<AppRouterClient["strength"]["volumeOverTime"]["query"]>
+  >;
+  "running.dynamicsV2"?: Awaited<ReturnType<AppRouterClient["running"]["dynamicsV2"]["query"]>>;
+
   "training.hrZones"?: Awaited<ReturnType<AppRouterClient["training"]["hrZones"]["query"]>>;
   "efficiency.polarizationTrend"?: Awaited<
     ReturnType<AppRouterClient["efficiency"]["polarizationTrend"]["query"]>
@@ -13,6 +32,15 @@ type ProcessingStatusStoryCompanionResponses = {
 type ProcessingStatusStoryCompanionPath = keyof ProcessingStatusStoryCompanionResponses;
 
 const PROCESSING_STATUS_STORY_COMPANION_PATHS = [
+  "hiking.activityComparison",
+  "climbing.attachmentActivities",
+  "climbing.attachClimbingLogEntry",
+  "climbing.locationMap",
+  "climbing.strengths",
+  "climbing.volumeOverTime",
+  "strength.volumeOverTime",
+  "running.dynamicsV2",
+
   "training.hrZones",
   "efficiency.polarizationTrend",
 ] satisfies readonly ProcessingStatusStoryCompanionPath[];

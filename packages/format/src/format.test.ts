@@ -25,8 +25,6 @@ import {
   formatPace,
   formatRelativeTime,
   formatSigned,
-  formatSleepDebt,
-  formatSleepDebtInline,
   formatSpO2,
   formatSpO2Measurement,
   formatStandardDeviation,
@@ -306,32 +304,6 @@ describe("formatDurationSeconds", () => {
   });
 });
 
-describe("formatSleepDebt", () => {
-  it("returns no debt for zero", () => {
-    expect(formatSleepDebt(0)).toBe("No sleep debt");
-  });
-
-  it("returns no debt for negative", () => {
-    expect(formatSleepDebt(-30)).toBe("No sleep debt");
-  });
-
-  it("formats positive debt in hours and minutes", () => {
-    expect(formatSleepDebt(90)).toBe("1h 30m debt");
-  });
-
-  it("formats small debt", () => {
-    expect(formatSleepDebt(15)).toBe("0h 15m debt");
-  });
-
-  it("returns no debt at exactly 0", () => {
-    expect(formatSleepDebt(0)).toBe("No sleep debt");
-  });
-
-  it("formats debt at exactly 1 minute", () => {
-    expect(formatSleepDebt(1)).toBe("0h 1m debt");
-  });
-});
-
 describe("formatHour", () => {
   it("formats midnight (0) as 12:00 AM in en-US", () => {
     expect(formatHour(0, "en-US")).toBe("12:00 AM");
@@ -380,16 +352,6 @@ describe("formatHour", () => {
   it("uses device locale when no locale specified", () => {
     // Should not throw regardless of environment locale
     expect(() => formatHour(12)).not.toThrow();
-  });
-});
-
-describe("formatSleepDebtInline", () => {
-  it("formats with 14-day context", () => {
-    expect(formatSleepDebtInline(90)).toBe("1h 30m sleep debt (14 days)");
-  });
-
-  it("formats zero minutes", () => {
-    expect(formatSleepDebtInline(0)).toBe("0h 0m sleep debt (14 days)");
   });
 });
 

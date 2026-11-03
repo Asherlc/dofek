@@ -30,7 +30,7 @@ export const Retryable: Story = {
 export const Contextual: Story = {
   args: {
     contextLabel: "Sleep",
-    error: new Error("Sleep performance is unavailable."),
+    error: new Error("Sleep history is unavailable."),
   },
 };
 

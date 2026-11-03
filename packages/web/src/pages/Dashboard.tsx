@@ -7,7 +7,6 @@ import {
 import { useMemo } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
-import { DailyOverview } from "../components/DailyOverview.tsx";
 import { DashboardEvidenceOverview } from "../components/DashboardEvidenceOverview.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -57,54 +56,16 @@ function buildHealthMetrics(trendData: TrendRow | undefined): HealthStatusMetric
   return trendData?.healthStatus ?? [];
 }
 
-function isCoreDashboardReady({
-  readinessReady,
-  workloadRatioReady,
-  strainTargetReady,
-  sleepPerformanceReady,
-}: {
-  readinessReady: boolean;
-  workloadRatioReady: boolean;
-  strainTargetReady: boolean;
-  sleepPerformanceReady: boolean;
-}): boolean {
-  return readinessReady && workloadRatioReady && strainTargetReady && sleepPerformanceReady;
-}
-
 export function Dashboard() {
   const units = useUnitConverter();
   const overviewDays = 90;
-  const planLookbackDays = 30;
   const endDate = useTodayQueryDate();
-  const readinessData = trpc.recovery.readinessScore.useQuery({ days: overviewDays, endDate });
-  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days: overviewDays, endDate });
-  const strainTarget = trpc.recovery.strainTarget.useQuery({ days: planLookbackDays, endDate });
-  const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const trends = trpc.dailyMetrics.trends.useQuery({ days: overviewDays, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({
     days: overviewDays,
     endDate,
   });
-  const coreDashboardReady = isCoreDashboardReady({
-    readinessReady:
-      readinessData.data !== undefined || (readinessData.isFetched && readinessData.error == null),
-    workloadRatioReady:
-      workloadRatio.data !== undefined || (workloadRatio.isFetched && workloadRatio.error == null),
-    strainTargetReady:
-      strainTarget.data !== undefined || (strainTarget.isFetched && strainTarget.error == null),
-    sleepPerformanceReady:
-      sleepPerformance.data !== undefined ||
-      (sleepPerformance.isFetched && sleepPerformance.error == null),
-  });
-  const coreDashboardLoading =
-    readinessData.isLoading ||
-    workloadRatio.isLoading ||
-    strainTarget.isLoading ||
-    sleepPerformance.isLoading;
-  const insightsQuery = trpc.insights.compute.useQuery(
-    { days: overviewDays, endDate },
-    { enabled: coreDashboardReady },
-  );
+  const insightsQuery = trpc.insights.compute.useQuery({ days: overviewDays, endDate });
   const processingStatus = useProcessingStatus({
     datasets: ["activity", "sleep", "recovery", "training", "body"],
   });
@@ -136,17 +97,6 @@ export function Dashboard() {
     [restingHeartRateRows],
   );
 
-  const cardQueries = [readinessData, workloadRatio, strainTarget, sleepPerformance];
-  usePageLoadDomSection(
-    "cards",
-    cardQueries.some((query) => query.error)
-      ? "error"
-      : cardQueries.some(
-            (query) => query.isFetching || (!query.isFetched && query.data === undefined),
-          )
-        ? undefined
-        : "ready",
-  );
   usePageLoadDomSection(
     "health",
     trends.error
@@ -167,9 +117,9 @@ export function Dashboard() {
   );
   usePageLoadDomSection(
     "insights",
-    insightsQuery.error || cardQueries.some((query) => query.error)
+    insightsQuery.error
       ? "error"
-      : !coreDashboardReady || insightsQuery.isFetching || !insightsQuery.isFetched
+      : insightsQuery.isFetching || !insightsQuery.isFetched
         ? undefined
         : topInsight
           ? undefined
@@ -203,24 +153,15 @@ export function Dashboard() {
         {trends.error ? <QueryStatePanel error={trends.error} height={72} /> : null}
       </>
     );
-  const insightStatePanel =
-    !coreDashboardReady && coreDashboardLoading ? (
-      <QueryStatePanel variant="loading" height={160} />
-    ) : !coreDashboardReady ? (
-      <QueryStatePanel
-        variant="empty"
-        message="Insights unavailable until dashboard data loads."
-        height={160}
-      />
-    ) : insightsQuery.isLoading ? (
-      <QueryStatePanel variant="loading" height={160} />
-    ) : insightsQuery.error ? (
-      <QueryStatePanel error={insightsQuery.error} height={160} />
-    ) : !insightsQuery.isFetched ? (
-      <QueryStatePanel variant="loading" height={160} />
-    ) : !topInsight ? (
-      <QueryStatePanel variant="empty" message="No insights to display." height={160} />
-    ) : null;
+  const insightStatePanel = insightsQuery.isLoading ? (
+    <QueryStatePanel variant="loading" height={160} />
+  ) : insightsQuery.error ? (
+    <QueryStatePanel error={insightsQuery.error} height={160} />
+  ) : !insightsQuery.isFetched ? (
+    <QueryStatePanel variant="loading" height={160} />
+  ) : !topInsight ? (
+    <QueryStatePanel variant="empty" message="No insights to display." height={160} />
+  ) : null;
 
   return (
     <PageLayout headerChildren={undefined}>
@@ -228,22 +169,6 @@ export function Dashboard() {
         data={processingStatus.data}
         error={processingStatus.error}
         loading={processingStatus.isLoading}
-      />
-      <DailyOverview
-        endDate={endDate}
-        summaryDateContext={sleepPerformance.data?.summaryDateContext}
-        readiness={readinessData.data}
-        workloadRatio={workloadRatio.data}
-        strainTarget={strainTarget.data}
-        sleepPerformance={sleepPerformance.data}
-        readinessLoading={readinessData.isLoading}
-        workloadLoading={workloadRatio.isLoading}
-        strainTargetLoading={strainTarget.isLoading}
-        sleepLoading={sleepPerformance.isLoading}
-        readinessError={readinessData.error}
-        workloadError={workloadRatio.error}
-        strainTargetError={strainTarget.error}
-        sleepError={sleepPerformance.error}
       />
       <DashboardEvidenceOverview
         days={overviewDays}

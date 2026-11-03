@@ -6,7 +6,6 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
-import type { SleepNeedResult } from "./sleep-need.ts";
 
 /**
  * Integration tests for mobile-dashboard router.
@@ -30,24 +29,7 @@ describe("mobile-dashboard router integration", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Seed daily metrics for the dashboard (last 60 days)
-    const today = new Date();
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().slice(0, 10);
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.daily_metrics (
-              date, user_id, provider_id, hrv, respiratory_rate_avg
-            ) VALUES (
-              ${dateStr}, ${TEST_USER_ID}, 'test_provider',
-              ${42 + i * 0.5}, ${14 + i * 0.1}
-            )
-            ON CONFLICT DO NOTHING`,
-      );
-    }
-
-    // Seed sleep data for last night and sleep debt calculation
+    // Seed recorded sleep for last night.
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
@@ -60,8 +42,6 @@ describe("mobile-dashboard router integration", () => {
             )
             ON CONFLICT DO NOTHING`,
     );
-
-    // Refresh sleep materialized view so dashboard queries pick up the data
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     const app = createApp(testCtx.db, sensorStore);
@@ -100,54 +80,28 @@ describe("mobile-dashboard router integration", () => {
     return first?.result?.data;
   }
 
-  it("returns dashboard data with readiness, sleep, strain, and other fields", async () => {
+  it("returns recorded sleep duration and stage proportions", async () => {
     const today = new Date().toISOString().slice(0, 10);
     const result = await query<{
-      readiness: {
-        score: number;
-        date: string;
-        components: Record<string, number>;
-        weights: Record<string, number>;
-      } | null;
       sleep: {
         lastNight: {
           date: string;
           durationMinutes: number;
           deepPct: number | null;
           remPct: number | null;
-          lightPct: number | null;
-          awakePct: number | null;
           stagingAvailable: boolean;
         } | null;
-        sleepDebt: number;
-      } | null;
-      strain: {
-        dailyStrain: number;
-        acuteLoad: number;
-        chronicLoad: number;
-        workloadRatio: number | null;
-        date: string | null;
-      } | null;
-      sleepNeed: SleepNeedResult | null;
-      anomalies: { needsAttention: boolean } | null;
+      };
       latestDate: string | null;
     }>({ endDate: today });
 
-    expect(result).toBeDefined();
-    // Should have readiness data (we seeded 30 days of metrics)
-    expect(result.readiness).not.toBeNull();
-    expect(result.readiness?.score).toBeGreaterThan(0);
-    expect(result.readiness?.components).toBeDefined();
-    expect(result.readiness?.weights).toBeDefined();
-
-    // Should have sleep data (we seeded a sleep session)
-    expect(result.sleep).not.toBeNull();
-    expect(result.sleep?.lastNight).not.toBeNull();
-    if (result.sleep?.lastNight) {
-      expect(result.sleep.lastNight.durationMinutes).toBe(480);
-    }
-
-    // Should have strain data
-    expect(result.strain).not.toBeNull();
+    expect(result.sleep.lastNight).toMatchObject({
+      date: today,
+      durationMinutes: 480,
+      deepPct: 25,
+      remPct: 20,
+      stagingAvailable: true,
+    });
+    expect(result.latestDate).toBe(today);
   });
 });

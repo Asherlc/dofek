@@ -75,7 +75,6 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `training` | Canonical activity types, provider normalization, and weekly-volume grouping |
 | `training-distribution` | [Karvonen](https://pubmed.ncbi.nlm.nih.gov/13470504/) and [Treff](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full) weekly intensity-distribution summaries |
 | `training-chart-availability` | [Shared chart availability schema](src/training-chart-availability.ts); counts and messages are computed by the server |
-| `workout-recommendation` | Workout recommendation types and calculation |
 
 ## Model details
 

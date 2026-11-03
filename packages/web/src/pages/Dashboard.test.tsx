@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import type {
-  ReadinessRow,
-  SleepPerformanceInfo,
-  StrainTargetResult,
-  WorkloadRatioResult,
-} from "dofek-server/types";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageLoadProvider } from "../lib/page-load-context.tsx";
@@ -25,38 +19,6 @@ type MockQueryResult<TData> = {
   error: Error | null;
 };
 
-const mockReadinessQuery = vi.hoisted(() =>
-  vi.fn<() => MockQueryResult<ReadinessRow[]>>(() => ({
-    data: undefined,
-    isLoading: false,
-    isFetched: false,
-    error: null,
-  })),
-);
-const mockWorkloadQuery = vi.hoisted(() =>
-  vi.fn<() => MockQueryResult<WorkloadRatioResult>>(() => ({
-    data: undefined,
-    isLoading: false,
-    isFetched: false,
-    error: null,
-  })),
-);
-const mockStrainTargetQuery = vi.hoisted(() =>
-  vi.fn<() => MockQueryResult<StrainTargetResult>>(() => ({
-    data: undefined,
-    isLoading: false,
-    isFetched: false,
-    error: null,
-  })),
-);
-const mockSleepPerformanceQuery = vi.hoisted(() =>
-  vi.fn<() => MockQueryResult<SleepPerformanceInfo | null>>(() => ({
-    data: undefined,
-    isLoading: false,
-    isFetched: false,
-    error: null,
-  })),
-);
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
@@ -75,15 +37,7 @@ const mockDataHealthQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
-const mockDailyOverview = vi.hoisted(() => vi.fn());
 const mockHealthStatusBar = vi.hoisted(() => vi.fn());
-
-vi.mock("../components/DailyOverview.tsx", () => ({
-  DailyOverview: (props: Record<string, unknown>) => {
-    mockDailyOverview(props);
-    return <section aria-label="Daily health summary">Daily overview</section>;
-  },
-}));
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
   DashboardEvidenceOverview: (props: { healthMonitor?: ReactNode; insightError?: ReactNode }) => {
@@ -114,14 +68,6 @@ vi.mock("../hooks/useTodayQueryDate.ts", () => ({
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
-    recovery: {
-      readinessScore: { useQuery: mockReadinessQuery },
-      workloadRatio: { useQuery: mockWorkloadQuery },
-      strainTarget: { useQuery: mockStrainTargetQuery },
-    },
-    sleepNeed: {
-      performance: { useQuery: mockSleepPerformanceQuery },
-    },
     dailyMetrics: {
       trends: { useQuery: mockTrendsQuery },
       hrvBaseline: { useQuery: mockHeartRateBaselineQuery },
@@ -145,41 +91,8 @@ import { Dashboard } from "./Dashboard";
 
 afterEach(cleanup);
 
-function createCoreDashboardQueryData(): {
-  readiness: ReadinessRow[];
-  workloadRatio: WorkloadRatioResult;
-  strainTarget: StrainTargetResult;
-  sleepPerformance: SleepPerformanceInfo | null;
-} {
-  return {
-    readiness: [],
-    workloadRatio: {
-      context: {
-        label: "Recent-to-baseline workload ratio",
-        description:
-          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
-        recentDays: 7,
-        baselineDays: 28,
-      },
-      displayedStrain: 0,
-      displayedDate: "2026-05-27",
-      timeSeries: [],
-    },
-    strainTarget: {
-      targetStrain: 12,
-      currentStrain: 8,
-      progressPercent: 67,
-      zone: "Maintain",
-      explanation: "Stay in range",
-    },
-    sleepPerformance: null,
-  };
-}
-
-const coreDashboardQueryData = createCoreDashboardQueryData();
-
 describe("Dashboard", () => {
-  it("measures primary cards independently and waits for delayed conditional insights", () => {
+  it("measures the dashboard when delayed insights settle", () => {
     const measure = vi.fn();
     let frames: FrameRequestCallback[] = [];
     vi.stubGlobal("performance", { now: () => 100, measure });
@@ -195,7 +108,7 @@ describe("Dashboard", () => {
       error: null,
     });
     const page = (
-      <PageLoadProvider route="/dashboard" startedAt={0} sections={["cards", "insights"]}>
+      <PageLoadProvider route="/dashboard" startedAt={0} sections={["insights"]}>
         <Dashboard />
       </PageLoadProvider>
     );
@@ -212,10 +125,10 @@ describe("Dashboard", () => {
     paint();
     paint();
     expect(measure).not.toHaveBeenCalled();
-    expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, isFetched: true, error: null });
     rendered.rerender(
-      <PageLoadProvider route="/dashboard" startedAt={0} sections={["cards", "insights"]}>
+      <PageLoadProvider route="/dashboard" startedAt={0} sections={["insights"]}>
         <Dashboard />
       </PageLoadProvider>,
     );
@@ -224,37 +137,13 @@ describe("Dashboard", () => {
     expect(measure).toHaveBeenCalledWith(
       "dofek.page.data-ready",
       expect.objectContaining({
-        detail: expect.objectContaining({ route: "/dashboard", outcome: "ready" }),
+        detail: expect.objectContaining({ route: "/dashboard", outcome: "empty" }),
       }),
     );
     rendered.unmount();
     vi.unstubAllGlobals();
   });
   beforeEach(() => {
-    mockReadinessQuery.mockReturnValue({
-      data: coreDashboardQueryData.readiness,
-      isLoading: false,
-      isFetched: true,
-      error: null,
-    });
-    mockWorkloadQuery.mockReturnValue({
-      data: coreDashboardQueryData.workloadRatio,
-      isLoading: false,
-      isFetched: true,
-      error: null,
-    });
-    mockStrainTargetQuery.mockReturnValue({
-      data: coreDashboardQueryData.strainTarget,
-      isLoading: false,
-      isFetched: true,
-      error: null,
-    });
-    mockSleepPerformanceQuery.mockReturnValue({
-      data: coreDashboardQueryData.sleepPerformance,
-      isLoading: false,
-      isFetched: true,
-      error: null,
-    });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({
@@ -265,7 +154,6 @@ describe("Dashboard", () => {
     });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
-    mockDailyOverview.mockClear();
   });
 
   it("passes through the canonical server health status without recalculating it", () => {
@@ -330,20 +218,13 @@ describe("Dashboard", () => {
     );
   });
 
-  it("uses a 90-day evidence window without widening current-day plan lookups", () => {
+  it("uses a 90-day evidence window", () => {
     render(<Dashboard />);
 
     const overviewRange = { days: 90, endDate: "2026-05-27" };
-    const planLookback = { days: 30, endDate: "2026-05-27" };
-    expect(mockReadinessQuery).toHaveBeenCalledWith(overviewRange);
-    expect(mockWorkloadQuery).toHaveBeenCalledWith(overviewRange);
-    expect(mockStrainTargetQuery).toHaveBeenCalledWith(planLookback);
     expect(mockTrendsQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(overviewRange);
-    expect(mockInsightsQuery).toHaveBeenCalledWith(
-      overviewRange,
-      expect.objectContaining({ enabled: true }),
-    );
+    expect(mockInsightsQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
       expect.objectContaining({ days: 90, endDate: "2026-05-27" }),
     );
@@ -398,127 +279,6 @@ describe("Dashboard", () => {
     ).toBeTruthy();
   });
 
-  it("does not enable insights during the initial core dashboard load", () => {
-    mockReadinessQuery.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isFetched: false,
-      error: null,
-    });
-    mockWorkloadQuery.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isFetched: false,
-      error: null,
-    });
-    mockStrainTargetQuery.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isFetched: false,
-      error: null,
-    });
-    mockSleepPerformanceQuery.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isFetched: false,
-      error: null,
-    });
-
-    render(<Dashboard />);
-
-    expect(mockInsightsQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ enabled: false }),
-    );
-    expect(screen.queryByText("No insights to display.")).toBeNull();
-    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
-  });
-
-  it("enables insights after core dashboard queries settle successfully", () => {
-    render(<Dashboard />);
-
-    expect(mockInsightsQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ enabled: true }),
-    );
-  });
-
-  it("does not enable insights when a core dashboard prerequisite fails without data", () => {
-    mockReadinessQuery.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isFetched: true,
-      error: new Error("Readiness unavailable"),
-    });
-
-    render(<Dashboard />);
-
-    expect(mockInsightsQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ enabled: false }),
-    );
-    expect(screen.queryByText("No insights to display.")).toBeNull();
-    expect(screen.getByText("Insights unavailable until dashboard data loads.")).toBeTruthy();
-  });
-
-  it("enables insights when a failed background refresh retains prerequisite data", () => {
-    mockReadinessQuery.mockReturnValue({
-      data: coreDashboardQueryData.readiness,
-      isLoading: false,
-      isFetched: true,
-      error: new Error("Readiness refresh unavailable"),
-    });
-
-    render(<Dashboard />);
-
-    expect(mockInsightsQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ enabled: true }),
-    );
-  });
-
-  it("passes every core dashboard query error into the daily summary", () => {
-    const readinessError = new Error("Readiness unavailable");
-    const workloadError = new Error("Workload unavailable");
-    const strainTargetError = new Error("Strain target unavailable");
-    const sleepError = new Error("Sleep performance unavailable");
-    mockReadinessQuery.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isFetched: true,
-      error: readinessError,
-    });
-    mockWorkloadQuery.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isFetched: true,
-      error: workloadError,
-    });
-    mockStrainTargetQuery.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isFetched: true,
-      error: strainTargetError,
-    });
-    mockSleepPerformanceQuery.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isFetched: true,
-      error: sleepError,
-    });
-
-    render(<Dashboard />);
-
-    expect(mockDailyOverview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        readinessError,
-        workloadError,
-        strainTargetError,
-        sleepError,
-      }),
-    );
-  });
-
   it("uses a loading panel while insights are loading", () => {
     mockInsightsQuery.mockReturnValue({
       data: undefined,
@@ -539,17 +299,6 @@ describe("Dashboard", () => {
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
     expect(screen.getByText("No insights to display.")).toBeTruthy();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
-  });
-
-  it("renders the daily summary outside and before the 90-day overview", () => {
-    render(<Dashboard />);
-
-    const dailySummary = screen.getByRole("region", { name: "Daily health summary" });
-    const overview = screen.getByRole("region", { name: "Dashboard overview" });
-
-    expect(
-      dailySummary.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("passes server-smoothed resting heart rate chart points into the dashboard overview", () => {

@@ -36,7 +36,7 @@ describe("reorderDashboardSections", () => {
   const order = [
     "healthMonitor",
     "topInsights",
-    "strain",
+    "trainingLoad",
     "stress",
     "healthspan",
     "spo2Temp",
@@ -104,7 +104,7 @@ describe("reorderDashboardSections", () => {
     expect(result).toEqual([
       "healthMonitor",
       "topInsights",
-      "strain",
+      "trainingLoad",
       "stress",
       "healthspan",
       "hrvRhr",
@@ -133,7 +133,7 @@ describe("reorderDashboardSections", () => {
       "topInsights",
       "stress",
       "healthspan",
-      "strain",
+      "trainingLoad",
       "spo2Temp",
       "steps",
       "hrvRhr",
@@ -150,7 +150,7 @@ describe("reorderDashboardSections", () => {
     expect(result).toEqual([
       "healthMonitor",
       "topInsights",
-      "strain",
+      "trainingLoad",
       "spo2Temp",
       "steps",
       "stress",
@@ -171,7 +171,7 @@ describe("reorderDashboardSections", () => {
     expect(result).toEqual([
       "healthMonitor",
       "topInsights",
-      "strain",
+      "trainingLoad",
       "stress",
       "healthspan",
       "spo2Temp",
@@ -190,7 +190,7 @@ describe("reorderDashboardSections", () => {
     expect(result).toEqual([
       "healthMonitor",
       "topInsights",
-      "strain",
+      "trainingLoad",
       "spo2Temp",
       "steps",
       "stress",
@@ -209,7 +209,7 @@ describe("reorderDashboardSections", () => {
     expect(result).toEqual([
       "healthMonitor",
       "topInsights",
-      "strain",
+      "trainingLoad",
       "spo2Temp",
       "steps",
       "stress",

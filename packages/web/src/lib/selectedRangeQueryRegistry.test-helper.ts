@@ -34,7 +34,6 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "dailyMetrics.hrvBaseline",
     "recovery.workloadRatio",
     "recovery.sleepAnalytics",
-    "recovery.readinessScore",
   ],
   sleep: ["sleep.list", "insights.compute"],
   strength: [

@@ -1,9 +1,11 @@
 interface ScreenshotTabButton {
   click(): Promise<void>;
+  and(other: ScreenshotTabButton): ScreenshotTabButton;
   getAttribute(name: string): Promise<string | null>;
 }
 
 interface ScreenshotNavigationPage {
+  locator(selector: string): ScreenshotTabButton;
   getByRole(role: "button", options: { name: string; exact: true }): ScreenshotTabButton;
   waitForFunction(
     condition: (label: string) => boolean,
@@ -17,7 +19,9 @@ export async function selectScreenshotTab(
   tabLabel?: string,
 ): Promise<void> {
   if (!tabLabel) return;
-  const tab = page.getByRole("button", { name: tabLabel, exact: true });
+  const tab = page
+    .getByRole("button", { name: tabLabel, exact: true })
+    .and(page.locator("[aria-selected]"));
   await tab.click();
   await page.waitForFunction(
     (label) =>

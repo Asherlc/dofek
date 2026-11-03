@@ -17,8 +17,6 @@ const sampleParams: PersonalizedParams = {
     sampleCount: 120,
     correlation: 0.35,
   },
-  readinessWeights: null,
-  sleepTarget: { minutes: 450, sampleCount: 30 },
   stressThresholds: null,
 };
 
@@ -77,15 +75,6 @@ describe("loadPersonalizedParams", () => {
         sampleCount: 120,
         correlation: 0.35,
       },
-      readinessWeights: {
-        hrv: 0.5,
-        restingHr: 0.15,
-        sleep: 0.2,
-        respiratoryRate: 0.15,
-        sampleCount: 90,
-        correlation: 0.25,
-      },
-      sleepTarget: { minutes: 450, sampleCount: 30 },
       stressThresholds: {
         hrvThresholds: [-1.2, -0.8, -0.3],
         rhrThresholds: [1.2, 0.8, 0.3],
@@ -113,8 +102,6 @@ describe("savePersonalizedParams", () => {
       version: 1, // will be overwritten below
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
     // Corrupt the version at runtime so Zod rejects it
@@ -131,8 +118,6 @@ describe("savePersonalizedParams", () => {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
     Object.assign(invalidParams, { version: -1 });
@@ -152,8 +137,6 @@ describe("savePersonalizedParams", () => {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
 

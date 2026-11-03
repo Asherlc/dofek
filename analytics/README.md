@@ -365,14 +365,14 @@ by that route instead of becoming a generic `_summary`, `_aggregate`, or
 `weekly_healthspan` are the named dashboard serving models. They build on compact ingredient
 models such as `daily_recovery_inputs`, `daily_activity_load`, and
 `healthspan_activity_zone_minutes` so dashboard, recovery, stress,
-sleep-need, and healthspan routes do not recompute broad windows at request
+sleep, and healthspan routes do not recompute broad windows at request
 time. `provider_stats` materializes provider record counts for the sync
 provider inventory route so the API does not compute all-provider counts on
 request.
 `daily_recovery_inputs`, `daily_activity_load`, and
 `healthspan_activity_zone_minutes` are compact serving models over daily
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
-recovery, stress, sleep-need, and healthspan routes.
+recovery, stress, sleep, and healthspan routes.
 
 ## Cycling power-duration semantics and refresh
 

@@ -17,8 +17,6 @@ function queryResult<T>(data: T | undefined): QueryResult<T> {
 const mocks = vi.hoisted(() => ({
   sleepList: vi.fn(),
   latestStages: vi.fn(),
-  sleepNeed: vi.fn(),
-  sleepPerformance: vi.fn(),
   insights: vi.fn(),
   processing: vi.fn(),
 }));
@@ -28,10 +26,6 @@ vi.mock("../lib/trpc.ts", () => ({
     sleep: {
       list: { useQuery: mocks.sleepList },
       latestStages: { useQuery: mocks.latestStages },
-    },
-    sleepNeed: {
-      calculateV2: { useQuery: mocks.sleepNeed },
-      performance: { useQuery: mocks.sleepPerformance },
     },
     insights: { compute: { useQuery: mocks.insights } },
     processing: { status: { useQuery: mocks.processing } },
@@ -74,7 +68,6 @@ vi.mock("../components/TimeRangeSelector.tsx", () => ({
   TimeRangeSelector: ({ description }: { description: string }) => <p>{description}</p>,
 }));
 vi.mock("../components/ProcessingStatusWidget.tsx", () => ({ ProcessingStatusWidget: () => null }));
-vi.mock("../components/SleepOverviewCards.tsx", () => ({ SleepOverviewCards: () => null }));
 vi.mock("../components/SleepChart.tsx", () => ({
   SleepChart: ({ data }: { data: unknown[] }) => <p>Sleep rows: {data.length}</p>,
 }));
@@ -115,8 +108,6 @@ describe("SleepPage", () => {
   beforeEach(() => {
     mocks.sleepList.mockReturnValue(queryResult([sleepRow]));
     mocks.latestStages.mockReturnValue(queryResult([]));
-    mocks.sleepNeed.mockReturnValue(queryResult(undefined));
-    mocks.sleepPerformance.mockReturnValue(queryResult(undefined));
     mocks.insights.mockReturnValue(queryResult([]));
     mocks.processing.mockReturnValue(queryResult(undefined));
   });
@@ -156,16 +147,6 @@ describe("SleepPage", () => {
       error: new Error("Latest stages unavailable"),
       isError: true,
     });
-    mocks.sleepNeed.mockReturnValue({
-      ...queryResult(undefined),
-      error: new Error("Sleep need unavailable"),
-      isError: true,
-    });
-    mocks.sleepPerformance.mockReturnValue({
-      ...queryResult(undefined),
-      error: new Error("Sleep performance unavailable"),
-      isError: true,
-    });
     mocks.insights.mockReturnValue({
       ...queryResult(undefined),
       error: new Error("Sleep insights unavailable"),
@@ -178,8 +159,6 @@ describe("SleepPage", () => {
     for (const message of [
       "Sleep history unavailable",
       "Latest stages unavailable",
-      "Sleep need unavailable",
-      "Sleep performance unavailable",
       "Sleep insights unavailable",
     ]) {
       expect(screen.getByText(message)).toBeTruthy();

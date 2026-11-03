@@ -92,7 +92,7 @@ describe("createAppQueryClient", () => {
   it("keeps authenticated data through route-away/back during an active session", async () => {
     const queryClient = createAppQueryClient();
     const queryKey = [
-      ["recovery", "readinessScore"],
+      ["recovery", "hrvVariability"],
       { input: { days: 30, endDate: "2026-07-28" }, type: "query" },
     ];
     const routeObserver = new QueryObserver(queryClient, {
@@ -138,7 +138,7 @@ describe("createAppQueryClient", () => {
   it("does not persist authenticated health data into a cold browser session", async () => {
     const activeSessionClient = createAppQueryClient();
     const queryKey = [
-      ["recovery", "readinessScore"],
+      ["recovery", "hrvVariability"],
       { input: { days: 30, endDate: "2026-07-28" }, type: "query" },
     ];
     await activeSessionClient.fetchQuery({

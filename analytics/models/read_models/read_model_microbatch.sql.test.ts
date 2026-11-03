@@ -950,12 +950,8 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "recovery_inputs.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
     );
-    expect(sql).toContain("if(sigmoid_scores.user_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).toContain("if(baseline_metrics.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).toContain("ref('daily_recovery_inputs')");
-    expect(sql).toContain("hrv_score");
-    expect(sql).toContain("resting_hr_score");
-    expect(sql).toContain("sleep_score");
-    expect(sql).toContain("respiratory_rate_score");
     expect(sql).toContain("hrv_z_score");
     expect(sql).toContain("resting_hr_z_score");
     expect(sql).toContain("respiratory_rate_z_score");
@@ -1017,7 +1013,6 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("acute_load_7d");
     expect(sql).toContain("chronic_load_28d");
     expect(sql).toContain("workload_ratio");
-    expect(sql).toContain("strain");
   });
 
   it("materializes healthspan zone minutes from bounded activity samples", () => {

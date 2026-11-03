@@ -159,8 +159,8 @@ describe("production PWA build", () => {
     expect(receivesApplicationShell("/admin")).toBe(true);
 
     for (const pathname of [
-      "/api/trpc/recovery.readinessScore",
-      "/api/trpc/recovery.readinessScore?batch=1",
+      "/api/trpc/recovery.hrvVariability",
+      "/api/trpc/recovery.hrvVariability?batch=1",
       "/auth/login/google",
       "/auth/login/google?return_to=%2Fdashboard",
       "/callback",

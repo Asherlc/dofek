@@ -88,7 +88,6 @@ function createRecoveryFixture(
     hrvVariability: [],
     hrvBaseline: [],
     restingHeartRateTrendDirection: null,
-    readinessScore: [],
     stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
     trends: null,
     dailyMetrics: [],
@@ -373,7 +372,9 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
   it("does not consume cached default-range data during preference hydration", async () => {
     mockRecoveryData = {
-      readinessScore: [{ date: "2026-04-06", readinessScore: 77 }],
+      baselineRelative: [baselineMetric("hrv", 77)],
+      hrvVariability: [],
+      hrvBaseline: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
     };
     mockTimeRangePreference.isHydrated = false;
@@ -382,7 +383,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     const view = render(<RecoveryScreen />);
 
     expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(false);
-    expect(screen.queryByText("77")).toBeNull();
+    expect(screen.queryByText("77 ms")).toBeNull();
 
     mockTimeRangePreference.days = 90;
     mockTimeRangePreference.isHydrated = true;
@@ -391,10 +392,11 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(mockRecoveryQueryCalls.at(-1)?.input.days).toBe(90);
     expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(true);
     expect(mockRecoveryQueryCalls.at(-1)?.options.placeholderData).toBeUndefined();
-    expect(screen.queryByText("77")).toBeNull();
+    expect(screen.queryByText("77 ms")).toBeNull();
 
     mockRecoveryDataDays = 90;
     view.rerender(<RecoveryScreen />);
+    expect(screen.getByText("77 ms")).toBeTruthy();
     mockTimeRangePreference.days = 30;
     view.rerender(<RecoveryScreen />);
 
@@ -433,7 +435,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       ],
       hrvBaseline: [],
       baselineRelative: [baselineMetric("hrv", 44)],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -474,7 +475,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       ],
       hrvBaseline: [],
       baselineRelative: [baselineMetric("hrv", 44)],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -498,7 +498,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       ],
       hrvBaseline: [],
       baselineRelative: [baselineMetric("hrv", 44)],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: 24, latest_skin_temp: null },
       dailyMetrics: [],
@@ -533,7 +532,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       ],
       restingHeartRateTrendDirection: "up",
       baselineRelative: [baselineMetric("resting_heart_rate", 54)],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -618,7 +616,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         },
       ],
       baselineRelative: [baselineMetric("resting_heart_rate", 54)],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -642,7 +639,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
         baselineMetric("respiratory_rate", 14),
         baselineMetric("sleep_efficiency", 90),
       ],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -665,7 +661,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       hrvVariability: [],
       hrvBaseline: [],
       baselineRelative: [baselineMetric("sleep_efficiency", 90)],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -685,7 +680,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: 97, latest_skin_temp: null },
       dailyMetrics: [{ spo2_avg: 96 }, { spo2_avg: 97 }],
@@ -704,7 +698,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: null, latest_skin_temp: 36.8 },
       dailyMetrics: [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }],
@@ -722,7 +715,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: null, latest_skin_temp: null },
       dailyMetrics: [],
@@ -740,7 +732,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: { latest_spo2: null, latest_skin_temp: null },
       dailyMetrics: [],
@@ -758,7 +749,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -798,7 +788,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -844,7 +833,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -911,7 +899,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -943,7 +930,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [],
-      readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
@@ -973,108 +959,5 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     render(<RecoveryScreen />);
 
     expect(screen.getByText("-0.3 kg/wk").style.color).toBe("rgb(153, 153, 153)");
-  });
-
-  it("expands recovery breakdown when recovery card is tapped", async () => {
-    mockRecoveryData = {
-      hrvVariability: [],
-      hrvBaseline: [],
-      readinessScore: [
-        {
-          date: "2026-04-05",
-          readinessScore: 72,
-          components: {
-            hrvScore: 80,
-            restingHrScore: 65,
-            sleepScore: 70,
-            respiratoryRateScore: 60,
-          },
-          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-        },
-        {
-          date: "2026-04-06",
-          readinessScore: 75,
-          components: {
-            hrvScore: 82,
-            restingHrScore: 68,
-            sleepScore: 72,
-            respiratoryRateScore: 63,
-          },
-          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-        },
-      ],
-      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
-      trends: null,
-      dailyMetrics: [],
-      weight: [],
-      healthspan: insufficientHealthspan,
-    };
-
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
-    render(<RecoveryScreen />);
-
-    expect(screen.queryByText("50%")).toBeNull();
-    expect(screen.queryByText("Respiratory Rate")).toBeNull();
-
-    fireEvent.click(screen.getByText("75"));
-
-    expect(screen.getByText("50%")).toBeTruthy();
-    expect(screen.getByText("20%")).toBeTruthy();
-    expect(screen.getAllByText("Resting Heart Rate").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
-  });
-
-  it("renders recovery score trend with neutral line and threshold bands", async () => {
-    mockRecoveryData = {
-      hrvVariability: [],
-      hrvBaseline: [],
-      readinessScore: [
-        {
-          date: "2026-03-29",
-          readinessScore: 58,
-          components: {
-            hrvScore: 60,
-            restingHrScore: 55,
-            sleepScore: 62,
-            respiratoryRateScore: 57,
-          },
-          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-        },
-        {
-          date: "2026-03-30",
-          readinessScore: 78,
-          components: {
-            hrvScore: 80,
-            restingHrScore: 76,
-            sleepScore: 77,
-            respiratoryRateScore: 79,
-          },
-          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-        },
-      ],
-      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
-      trends: null,
-      dailyMetrics: [],
-      weight: [],
-      healthspan: insufficientHealthspan,
-    };
-
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
-    render(<RecoveryScreen />);
-
-    const readinessSparklineCall = sparkLinePropsCalls.find((sparkLineProps) => {
-      const domain = sparkLineProps.domain;
-      if (typeof domain !== "object" || domain == null) return false;
-      if (!("min" in domain) || !("max" in domain)) return false;
-      return domain.min === 0 && domain.max === 100;
-    });
-
-    expect(readinessSparklineCall).toBeDefined();
-    expect(readinessSparklineCall?.color).toBe("#999");
-    expect(readinessSparklineCall?.backgroundBands).toEqual([
-      { min: 0, max: 50, color: "#f0020" },
-      { min: 50, max: 70, color: "#ff020" },
-      { min: 70, max: 100, color: "#0f020" },
-    ]);
   });
 });

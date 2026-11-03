@@ -217,7 +217,7 @@ export const DATASET_CONTRACTS = [
       "resting_heart_rate_sleep_window",
       "daily_sleep",
     ],
-    cacheQueryFamilies: ["sleep", "sleepNeed", "dashboard"],
+    cacheQueryFamilies: ["sleep", "dashboard"],
     providerIds: ["*"],
     dataTypes: ["sleep"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,

@@ -35452,3 +35452,79 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Migration formatting check:** the new migration initially failed the separate SQLFluff migration job with `LT02 Expected line break and indent of 2 spaces before value`. The normal repository lint command covers analytics SQL rather than new Drizzle files. Applied SQLFluff layout fixes to the unmerged migration and verified the exact CI lint invocation plus Squawk; SQL behavior and the first-line maintenance marker are unchanged. [Failed job](https://github.com/Asherlc/dofek/actions/runs/41573787118/job/125713471767). Future SQL migration validation should run the migration-specific formatter before pushing.
 
 - **Cached-response cutover:** verification found unchanged activity-list/personalization cache namespaces could retain old HR-derived responses for the existing ten-minute server TTL; mobile contract v25 also restored its previous persisted payload. The actual restore test reproduced this before the fix. Advanced the two activity-list cache contracts, personalization status namespace, and mobile contract to v26. All 69 focused router/mobile persistence tests pass after the change. This was a pre-release finding, with no observed production incident.
+
+## 2026-11-03 — Shared Docker VM AIO exhaustion during Daily summary removal
+
+- **Symptoms / impact:** Local database-backed verification could not start;
+  production was unaffected. `pnpm compose -- up -d --wait db clickhouse redis
+  redpanda` failed with `container normal-rhino-redpanda-1 is unhealthy`.
+- **Evidence / root cause:** Redpanda's first fatal line was `Could not setup
+  Async I/O: unknown error`. Reading `/proc/sys/fs/aio-nr` and
+  `/proc/sys/fs/aio-max-nr` inside the workspace ClickHouse container returned
+  `65536` for both: the shared VM had exhausted its system-wide AIO capacity.
+  Linux documents the counter and limit in its
+  [fs sysctl reference](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Direct fix:** With explicit user approval, raised the Docker VM runtime
+  `fs.aio-max-nr` to `1048576` using a disposable privileged container from the
+  existing pinned ClickHouse image, then restarted only this workspace's
+  Redpanda. No repository configuration or other workspace was changed.
+- **Validation:** `pnpm compose -- ps redpanda` reported healthy after the
+  explicit restart; the standard integration command then started its tests.
+  No additional retries, waits, or timeout changes were introduced.
+- **Remaining risk / follow-up:** The runtime setting resets when Docker's VM
+  restarts. Documenting an approved host-level AIO preflight would make future
+  local integration failures faster to diagnose.
+
+### Follow-up: router integration setup hit shared-VM memory exhaustion
+
+After AIO startup was repaired, the daily-activity-load read-model suite passed
+all five executable tests. The router suites failed with `socket hang up`
+while building their existing activity-origin ClickHouse fixture views, before
+application assertions ran. An isolated rerun of
+`pnpm test:integration -- packages/server/src/routers/mobile-dashboard.integration.test.ts`
+failed in the same fixture setup. Docker's VM kernel log reported `global_oom`
+and `Out of memory: Killed process ... (clickhouse-serv)` twice for this
+workspace's ClickHouse container ID. Container-scoped `OOMKilled` and
+`memory.events` checks did not expose the global-VM kills after restart.
+The remaining router integration validation is unresolved locally. No other
+workspace was stopped, and no memory limit, timeout, retry, or fixture behavior
+was changed to suppress this failure. The cleanup migrations were separately
+executed against populated Postgres and ClickHouse fixtures and passed
+preservation/idempotence checks. Remaining follow-up is to run the router suites
+in an environment with sufficient memory.
+
+### PR #3209 first CI pass: retirement cleanup omissions
+
+The first CI pass for the retirement reported two direct cleanup failures:
+[`Test / Knip`](https://github.com/Asherlc/dofek/actions/runs/41655590212/job/125985481697)
+failed at `pnpm knip` with `Unused dependencies (1)` (`@dofek/scoring` in the
+root package) and `Unused exports (1)` (`dateDaysBefore` in router test helpers).
+Deleting the last score consumers made these entries unused; the server's
+`sleep-need-contract` package export also pointed to a deleted file. Removed
+the unused dependency/helper and obsolete export.
+[`Test / SQLFluff`](https://github.com/Asherlc/dofek/actions/runs/41655590212/job/125985482169)
+failed at `uv tool run sqlfluff lint` for migration 0177 with `LT02 | Expected
+line break and indent of 8 spaces before '('`. Formatted the CASE branch with
+SQLFluff; its SQL behavior is unchanged. No production impact or resilience
+settings were involved. The local analytics SQL lint command does not lint
+new Postgres migrations, so future pre-push checks should include both that
+migration lint command and Knip.
+
+### PR #3209 mutation baseline: map worker import escaped the test boundary
+
+[`Test / Stryker (4)`](https://github.com/Asherlc/dofek/actions/runs/41656263680/job/125990235267)
+failed at `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`
+for the changed `packages/web/src/lib/trpc.ts` lines. Its unmutated initial test
+run failed in `ClimbingLocationMap`: the rendered error was `Map unavailable:
+Denied ID .../maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url`, so the expected
+cluster button never appeared. The exact command reproduced locally.
+The map component suites mocked the MapLibre SDK but left its separately loaded
+worker URL asset real; the Stryker sandbox denied that dependency transform.
+Completed the existing SDK test boundary by mocking the worker URL in the three
+map component suites. Production loading, sandbox policies, interaction
+assertions, and mutation collection remain unchanged. All 44 map component tests
+pass with the completed mocks. The exact Stryker command then passed its 182
+initial tests and achieved 100% mutation score (6 killed, 0 survived, 0 timeouts,
+0 errors; 2 string-literal mutants excluded by the existing configuration).
+Future worker-backed SDK test guidance should name both SDK and asset
+imports as dependencies of the mock boundary.

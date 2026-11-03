@@ -86,7 +86,6 @@ vi.mock("../../components/ProgressiveOverloadCards.tsx", () => ({
 vi.mock("../../components/QueryStatePanel.tsx", () => ({
   QueryStatePanel: ({ error }: { error?: Error }) => <div>{error?.message}</div>,
 }));
-vi.mock("../../components/ReadinessScoreCard.tsx", () => ({ ReadinessScoreCard: () => <div /> }));
 vi.mock("../../components/SleepAnalyticsChart.tsx", () => ({ SleepAnalyticsChart: () => <div /> }));
 vi.mock("../../components/StrengthVolumeChart.tsx", () => ({ StrengthVolumeChart: () => <div /> }));
 vi.mock("../../components/WorkloadRatioChart.tsx", () => ({ WorkloadRatioChart: () => <div /> }));
@@ -110,7 +109,6 @@ vi.mock("../../lib/trpc.ts", () => ({
     },
     recovery: {
       hrvVariability: { useQuery: recordQuery("recovery.hrvVariability") },
-      readinessScore: { useQuery: recordQuery("recovery.readinessScore") },
       sleepAnalytics: { useQuery: recordQuery("recovery.sleepAnalytics") },
       workloadRatio: {
         useQuery: (input: unknown, options?: unknown) => {
@@ -124,8 +122,6 @@ vi.mock("../../lib/trpc.ts", () => ({
                 recentDays: 7,
                 baselineDays: 28,
               },
-              displayedStrain: 0,
-              displayedDate: null,
               timeSeries: [],
             },
             isLoading: false,

@@ -1,8 +1,8 @@
 # @dofek/scoring
 
-Platform-agnostic TypeScript models for health scores, sleep and readiness
-presentation and shared design tokens. The package is used
-by both web and mobile clients but has no UI-framework dependency.
+Platform-agnostic TypeScript presentation helpers and shared design tokens,
+used by both web and mobile clients without a UI-framework dependency
+([package exports](package.json)).
 
 ## Install
 
@@ -17,50 +17,25 @@ Requires Node.js 22.14 or newer.
 There is no root export; import the subpath for the model you need.
 
 ```ts
-import {
-  StrainScore,
-  zScoreToRecoveryScore,
-} from "@dofek/scoring/scoring";
+import { statusColors } from "@dofek/scoring/colors";
 
-const strain = StrainScore.fromRawLoad(120);
-
-console.log({
-  strain: strain.value,
-  strainLabel: strain.label,
-  recovery: zScoreToRecoveryScore(0.75),
-});
+console.log(statusColors.positive);
 ```
 
 ## Public API
 
 | Subpath | Purpose |
 | --- | --- |
-| `@dofek/scoring/scoring` | Strain, recovery, trend, score-zone, and presentation helpers |
+| `@dofek/scoring/scoring` | Trend, score-zone, and presentation helpers |
 | `@dofek/scoring/colors` | Semantic, chart, surface, text, sleep-stage, and activity colors |
 | `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
-| `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
-| `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, server-authored caveats, freshness, and shared presentation helpers |
 | `@dofek/scoring/epistemic-status` | Shared Observed / Estimated / Associated / Suggested / Unavailable status vocabulary |
-| `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
 | `@dofek/scoring/loading-policy` | Blocking-loading state policy |
 | `@dofek/scoring/query-cache` | Shared query-cache age constant |
 
 ## Model behavior
 
-- `StrainScore.fromRawLoad` applies logarithmic scaling, maps non-positive loads
-  to zero, and caps the result at 21.
-- `zScoreToRecoveryScore` uses a Dofek-defined asymmetric sigmoid where a
-  z-score of zero maps to 62.
-- Strain targets use Dofek-defined readiness bands.
-- Today Plan presents a suggested strain target with supporting observations
-  ([rule builder](./src/today-plan.ts), [executable tests](./src/today-plan.test.ts)).
-- Ready Today Plan results include server-authored supporting observations and
-  caveats for missing or stale inputs; clients render these values without
-  deriving their meaning.
-- Sleep performance defaults to 70% sleep sufficiency and 30% efficiency. When
-  consistency or low-stress inputs are supplied, it averages all available
-  components equally.
 - Healthspan display deltas map scores from 0–100 onto +3 to -2 years.
 - The design-token modules contain values only; they do not install fonts or
   render UI.

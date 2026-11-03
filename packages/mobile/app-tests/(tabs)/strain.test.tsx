@@ -723,18 +723,6 @@ describe("StrainScreen", () => {
     mockTrainingState.isFetching = true;
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
-      strainTarget: {
-        targetStrain: 14,
-        currentStrain: 10,
-        progressPercent: 71,
-        zone: "Push",
-        explanation: "Based on the recovery score.",
-        dailyLoad: 50,
-        acuteLoad: 90,
-        chronicLoad: 80,
-        workloadRatio: 1.13,
-        readinessScore: 78,
-      },
       activities: [recentCyclingActivityFixture()],
     };
 
@@ -742,50 +730,12 @@ describe("StrainScreen", () => {
     render(<StrainScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
-    expect(screen.getByText("Suggested strain")).toBeTruthy();
-    expect(screen.getByText("71% reached")).toBeTruthy();
-  });
-
-  it("renders strain target card when target data is available", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      strainTarget: {
-        targetStrain: 14,
-        currentStrain: 10,
-        progressPercent: 71,
-        zone: "Push",
-        explanation: "Based on a recovery score of 78/100.",
-        dailyLoad: 50,
-        acuteLoad: 90,
-        chronicLoad: 80,
-        workloadRatio: 1.13,
-        readinessScore: 78,
-      },
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.getByText("Suggested strain")).toBeTruthy();
-    expect(screen.getByText("14")).toBeTruthy();
-    expect(screen.getByText("Push")).toBeTruthy();
-    expect(screen.getByText("71% reached")).toBeTruthy();
+    expect(screen.getByText("Training Load")).toBeTruthy();
+    expect(screen.getByText("27")).toBeTruthy();
   });
 
   it("shows the neutral server-owned workload comparison", async () => {
     mockTrainingState.data = {
-      strainTarget: {
-        targetStrain: 12,
-        currentStrain: 0,
-        progressPercent: 0,
-        zone: "Maintain",
-        explanation: "Based on a recovery score of 50/100.",
-        dailyLoad: 0,
-        acuteLoad: 133,
-        chronicLoad: 33,
-        workloadRatio: 4,
-        readinessScore: 50,
-      },
       workloadRatio: {
         context: {
           label: "Recent-to-baseline workload ratio",
@@ -794,7 +744,6 @@ describe("StrainScreen", () => {
           recentDays: 5,
           baselineDays: 20,
         },
-        displayedStrain: 0,
         displayedDate: "2026-03-28",
         timeSeries: [
           {
@@ -803,7 +752,6 @@ describe("StrainScreen", () => {
             acuteLoad: 133,
             chronicLoad: 33,
             workloadRatio: 4,
-            strain: 0,
           },
         ],
       },
@@ -840,49 +788,6 @@ describe("StrainScreen", () => {
       expect(labelElement.parentElement?.style.flex).toBe("1 1 0%");
       expect(labelElement.style.textAlign).toBe("center");
     }
-  });
-
-  it("does not use a prior displayed strain as today's strain fallback", async () => {
-    mockTrainingState.data = {
-      strainTarget: undefined,
-      workloadRatio: {
-        context: {
-          label: "Recent-to-baseline workload ratio",
-          description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
-          recentDays: 7,
-          baselineDays: 28,
-        },
-        displayedStrain: 13,
-        displayedDate: "2026-03-27",
-        timeSeries: [
-          {
-            date: "2026-03-28",
-            dailyLoad: 0,
-            acuteLoad: 133,
-            chronicLoad: 33,
-            workloadRatio: 4,
-            strain: 0,
-          },
-        ],
-      },
-      activities: [],
-      weeklyVolume: [],
-      verticalAscent: [],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.queryByText("13.0")).toBeNull();
-    expect(screen.getAllByText("0.0").length).toBeGreaterThan(0);
-  });
-
-  it("does not render strain target card when no target data", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.queryByText("Suggested strain")).toBeNull();
   });
 
   it("preserves cached Hangboarding data during a failed training refresh", async () => {

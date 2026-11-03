@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createTRPCClient } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { describe, expect, it } from "vitest";
+import { runningData } from "../../components/running-training-test-helpers";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
@@ -86,12 +87,14 @@ describe("seedReadyProcessingStatus", () => {
     const client = createTRPCClient<AppRouter>({
       links: [
         createProcessingStatusStoryLink(snapshot, {
+          "running.dynamicsV2": runningData,
           "training.hrZones": hrZones,
           "efficiency.polarizationTrend": polarizationTrend,
         }),
       ],
     });
 
+    await expect(client.running.dynamicsV2.query({ days: 30 })).resolves.toEqual(runningData);
     await expect(client.training.hrZones.query({ days: 30 })).resolves.toEqual(hrZones);
     await expect(client.efficiency.polarizationTrend.query({ days: 30 })).resolves.toEqual(
       polarizationTrend,
