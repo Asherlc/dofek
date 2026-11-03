@@ -158,7 +158,7 @@ const meta = {
   title: "Sleep/SleepAnalyticsChart",
   component: SleepAnalyticsChart,
   tags: ["autodocs"],
-  args: { nightly, sleepDebt: 96 },
+  args: { nightly },
   decorators: [
     (Story) => (
       <div className="w-[760px] p-4">
@@ -172,7 +172,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-export const Loading: Story = { args: { nightly: [], sleepDebt: null, loading: true } };
-export const Empty: Story = { args: { nightly: [], sleepDebt: null } };
-export const Unavailable: Story = { args: { nightly: [unavailableNight], sleepDebt: 0 } };
-export const SleepSurplus: Story = { args: { sleepDebt: -72 } };
+export const Loading: Story = { args: { nightly: [], loading: true } };
+export const Empty: Story = { args: { nightly: [] } };
+export const Unavailable: Story = { args: { nightly: [unavailableNight] } };

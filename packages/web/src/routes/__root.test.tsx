@@ -467,7 +467,7 @@ describe("AuthGate", () => {
     mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
 
     const { queryClient, rerender } = renderAuthGate();
-    queryClient.setQueryData(["dashboard"], { readiness: "cached" });
+    queryClient.setQueryData(["dashboard"], { health: "cached" });
 
     mockUseAuth.mockReturnValue({
       user: { id: "user-2", name: "Bob", email: null },

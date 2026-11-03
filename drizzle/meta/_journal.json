@@ -1240,6 +1240,13 @@
       "when": 1793677094982,
       "tag": "0176_remove_heart_rate_tss_parameters",
       "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1793716200000,
+      "tag": "0177_remove_daily_score_parameters",
+      "breakpoints": true
     }
   ]
 }

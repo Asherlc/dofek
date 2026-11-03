@@ -3,7 +3,6 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { HrvBaselineChart } from "../../components/HrvBaselineChart.tsx";
 import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
 import { useTodayQueryDate } from "../../hooks/useTodayQueryDate.ts";
@@ -36,22 +35,10 @@ function RecoveryTab() {
     { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const readiness = trpc.recovery.readinessScore.useQuery(
-    { ...selectedRangeQueryInput(days), endDate },
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
 
   return (
     <>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Readiness Score">
-          {readiness.error && !readiness.data ? (
-            <QueryStatePanel error={readiness.error} />
-          ) : (
-            <ReadinessScoreCard data={readiness.data ?? []} loading={readiness.isLoading} />
-          )}
-        </Section>
-
+      <div>
         <Section
           title={workloadRatio.data?.context.label ?? "Training load comparison"}
           subtitle={workloadRatio.data?.context.description}
@@ -94,7 +81,6 @@ function RecoveryTab() {
           ) : (
             <SleepAnalyticsChart
               nightly={sleepData.data?.nightly ?? []}
-              sleepDebt={sleepData.data?.sleepDebt ?? null}
               loading={sleepData.isLoading}
             />
           )}

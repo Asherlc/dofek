@@ -78,7 +78,6 @@ describe("SleepScreen", () => {
   it("shows one truthful empty state without zero-valued summary measurements", async () => {
     mockSleepData = {
       nightly: [],
-      sleepDebt: null,
       averageSleepMinutes: null,
       averageEfficiencyPercent: null,
     };
@@ -88,8 +87,6 @@ describe("SleepScreen", () => {
 
     expect(screen.getByText("No sleep records in this period")).toBeTruthy();
     expect(screen.getByText("Try a longer date range or check your sleep source.")).toBeTruthy();
-    expect(screen.queryByText("Sleep Debt (14 Days)")).toBeNull();
-    expect(screen.queryByText("No sleep debt")).toBeNull();
     expect(screen.queryByText("Average Duration")).toBeNull();
     expect(screen.queryByText("Average Efficiency")).toBeNull();
   });
@@ -121,7 +118,6 @@ describe("SleepScreen", () => {
           stageState: { status: "available" },
         },
       ],
-      sleepDebt: 30,
       averageSleepMinutes: 455,
       averageEfficiencyPercent: 91.2,
     };
@@ -129,9 +125,6 @@ describe("SleepScreen", () => {
     const { default: SleepScreen } = await import("../app/sleep");
     render(<SleepScreen />);
 
-    expect(screen.getByText("0h 30m debt")).toBeTruthy();
-    expect(screen.getByText("Compared with your sleep target")).toBeTruthy();
-    expect(screen.queryByText("vs 8 hour target per night")).toBeNull();
     expect(screen.getByText("7h 35m")).toBeTruthy();
     expect(screen.getByText("91%")).toBeTruthy();
     expect(screen.queryByText("5h 0m")).toBeNull();
@@ -190,7 +183,6 @@ describe("SleepScreen", () => {
           stageState: { status: "available" },
         },
       ],
-      sleepDebt: 30,
       averageSleepMinutes: 450,
       averageEfficiencyPercent: 93,
     };
@@ -233,7 +225,6 @@ describe("SleepScreen", () => {
           },
         },
       ],
-      sleepDebt: 0,
       averageSleepMinutes: 480,
       averageEfficiencyPercent: null,
     };
@@ -286,7 +277,6 @@ describe("SleepScreen", () => {
           },
         },
       ],
-      sleepDebt: null,
       averageSleepMinutes: null,
       averageEfficiencyPercent: null,
     };
@@ -329,7 +319,6 @@ describe("SleepScreen", () => {
           stageState: { status: "available" },
         },
       ],
-      sleepDebt: 0,
       averageSleepMinutes: 450,
       averageEfficiencyPercent: 90,
     };

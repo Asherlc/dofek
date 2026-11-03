@@ -2,6 +2,13 @@
 
 The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and Tailwind CSS.
 
+The [dashboard](src/pages/Dashboard.tsx) presents processing status, recorded
+health measurements, personal-baseline comparisons, and insights. The
+[Recovery view](src/routes/training/recovery.tsx) retains HRV and sleep analytics;
+custom recovery, 0–21 strain, and sleep-performance scores and their daily
+recommendations have been retired as described in the
+[removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 ## Architecture
 
 - **React + TypeScript**: Functional components with hooks.

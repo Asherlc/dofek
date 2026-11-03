@@ -1,8 +1,5 @@
-import { StrainScore } from "@dofek/scoring/scoring";
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import type { Database } from "dofek/db";
-import { getEffectiveParams } from "dofek/personalization/params";
-import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
@@ -14,6 +11,10 @@ import {
 } from "../contracts/mobile-dashboard-contracts.ts";
 import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import { ChartRange } from "../lib/chart-range.ts";
+import {
+  clickHouseDateAccessWindowClause,
+  clickHouseDateAccessWindowParams,
+} from "../lib/clickhouse-date-access-window.ts";
 import { ConcurrencyLimiter } from "../lib/concurrency-limiter.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -22,12 +23,6 @@ import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-re
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
-import {
-  buildStrainTargetResult,
-  clickHouseDateAccessWindowClause,
-  clickHouseDateAccessWindowParams,
-  strainTargetReadinessRowSchema,
-} from "./strain-target-result.ts";
 import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
 
 export {
@@ -68,7 +63,6 @@ function computeWorkloadRatio(rows: z.infer<typeof strainRowSchema>[]): Workload
     return {
       date: row.date,
       dailyLoad,
-      strain: StrainScore.fromRawLoad(dailyLoad).value,
       acuteLoad,
       chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
       workloadRatio:
@@ -140,8 +134,7 @@ async function loadMobileTrainingTabProjection<T>(
 
   const limiter = new ConcurrencyLimiter(TRAINING_TAB_READ_CONCURRENCY);
 
-  const [storedParams, climbingGradePreference, strainRows, readinessRows] = await Promise.all([
-    limiter.run(() => loadPersonalizedParams(ctx.db, ctx.userId)),
+  const [climbingGradePreference, strainRows] = await Promise.all([
     limiter.run(() => loadClimbingGradePreference(ctx.db, ctx.userId)),
     limiter.run(() =>
       ctx.sensorStore.query(
@@ -169,32 +162,6 @@ async function loadMobileTrainingTabProjection<T>(
         { priority: "dashboard" },
       ),
     ),
-    limiter.run(() =>
-      ctx.sensorStore.query(
-        strainTargetReadinessRowSchema,
-        `SELECT
-        toString(recovery.date) AS date,
-        recovery.hrv_score AS hrv_score,
-        recovery.resting_hr_score AS resting_hr_score,
-        recovery.sleep_score AS sleep_score,
-        recovery.respiratory_rate_score AS respiratory_rate_score
-      FROM analytics.daily_recovery AS recovery FINAL
-      WHERE recovery.user_id = {userId:UUID}
-        AND recovery.is_deleted = 0
-        AND recovery.date > toDate({windowStart:String})
-        AND recovery.date <= toDate({endDate:String})
-        ${clickHouseDateAccessWindowClause(ctx.accessWindow, "recovery")}
-      ORDER BY recovery.date DESC
-      LIMIT 1`,
-        {
-          userId: ctx.userId,
-          windowStart,
-          endDate,
-          ...accessParams,
-        },
-        { priority: "dashboard" },
-      ),
-    ),
   ]);
 
   const climbingRepo = new ClimbingRepository(
@@ -204,16 +171,6 @@ async function loadMobileTrainingTabProjection<T>(
     ctx.accessWindow,
     climbingGradePreference,
   );
-
-  const effective = getEffectiveParams(storedParams);
-  const workloadRatio = computeWorkloadRatio(strainRows);
-  const strainTarget =
-    buildStrainTargetResult({
-      endDate,
-      readinessMetrics: readinessRows[0],
-      loads: strainRows.map((row) => ({ date: row.date, daily_load: row.daily_load })),
-      readinessWeights: effective.readinessWeights,
-    }) ?? undefined;
 
   const [
     { activities, weeklyVolume },
@@ -241,23 +198,12 @@ async function loadMobileTrainingTabProjection<T>(
   ]);
 
   return {
-    workloadRatio,
-    strainTarget,
+    workloadRatio: computeWorkloadRatio(strainRows),
     activities,
     weeklyVolume,
     progressiveOverload: progressiveOverloadModels.map((model) => model.toDetail()),
     verticalAscent: cyclingAnalytics.verticalAscent,
     chartAvailability: {
-      strainTrend: makeTrainingChartAvailability({
-        sourceLabel: "Daily strain model",
-        observedCount: strainRows.length,
-        minimumCount: 2,
-        messages: {
-          available: "Daily strain trend is available from the daily strain model.",
-          insufficientData:
-            "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
-        },
-      }),
       verticalAscent: makeTrainingChartAvailability({
         sourceLabel: "Cycling activity altitude sensor summaries",
         observedCount: cyclingAnalytics.verticalAscent.length,

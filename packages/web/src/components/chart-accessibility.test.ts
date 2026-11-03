@@ -27,10 +27,10 @@ describe("chart accessibility helpers", () => {
           { name: " Recovery ", data: [1] },
           { name: "Recovery", data: [2] },
           { name: "Sleep", data: [3] },
-          { name: "Readiness", data: [4] },
+          { name: "HRV", data: [4] },
         ],
       }),
-    ).toBe("Recovery, Sleep, and Readiness chart.");
+    ).toBe("Recovery, Sleep, and HRV chart.");
 
     expect(buildChartSummary({ series: [{ name: " Recovery " }] })).toBe("Recovery chart.");
   });

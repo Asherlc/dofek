@@ -18,7 +18,6 @@ import { trainingChartAvailabilitySchema } from "./training-chart-availability.t
 
 const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
-const strainScoreSchema = z.number().min(0).max(21);
 const stressScoreSchema = z.number().min(0).max(3);
 const nonnegativeNumberSchema = z.number().min(0);
 const climbingGradeDisplaySchema = z
@@ -49,51 +48,15 @@ export const workloadRatioResultSchema = z.object({
     z.object({
       date: dateSchema,
       dailyLoad: nonnegativeNumberSchema,
-      strain: strainScoreSchema,
       acuteLoad: nonnegativeNumberSchema,
       chronicLoad: nonnegativeNumberSchema,
       workloadRatio: nonnegativeNumberSchema.nullable(),
     }),
   ),
-  displayedStrain: strainScoreSchema,
   displayedDate: dateSchema.nullable(),
 });
 
 export type WorkloadRatioResult = z.infer<typeof workloadRatioResultSchema>;
-
-export const strainTargetResultSchema = z.object({
-  targetStrain: strainScoreSchema,
-  currentStrain: strainScoreSchema,
-  currentStrainSource: z.enum(["activity", "none"]).optional(),
-  currentPhysiologyLoad: nonnegativeNumberSchema.nullable().optional(),
-  progressPercent: nonnegativeNumberSchema,
-  zone: z.enum(["Push", "Maintain", "Recovery"]),
-  explanation: z.string(),
-  dailyLoad: nonnegativeNumberSchema.optional(),
-  acuteLoad: nonnegativeNumberSchema.optional(),
-  chronicLoad: nonnegativeNumberSchema.optional(),
-  workloadRatio: nonnegativeNumberSchema.nullable().optional(),
-  readinessScore: score100Schema.optional(),
-});
-
-const readinessComponentsOutputSchema = z.object({
-  hrvScore: score100Schema,
-  restingHrScore: score100Schema,
-  sleepScore: score100Schema,
-  respiratoryRateScore: score100Schema,
-});
-
-const readinessRowOutputSchema = z.object({
-  date: dateSchema,
-  readinessScore: score100Schema,
-  components: readinessComponentsOutputSchema,
-  weights: z.object({
-    hrv: z.number().min(0).max(1),
-    restingHr: z.number().min(0).max(1),
-    sleep: z.number().min(0).max(1),
-    respiratoryRate: z.number().min(0).max(1),
-  }),
-});
 
 const stressOutputSchema = z.object({
   daily: z.array(
@@ -240,7 +203,6 @@ export const mobileRecoveryTabOutputSchema = z.object({
     }),
   ),
   restingHeartRateTrendDirection: z.enum(["up", "down", "stable"]).nullable(),
-  readinessScore: z.array(readinessRowOutputSchema),
   stress: stressOutputSchema,
   trends: z
     .object({
@@ -366,7 +328,6 @@ const activitySchema = z.object({
 
 export const mobileTrainingTabV2OutputSchema = z.object({
   workloadRatio: workloadRatioResultSchema,
-  strainTarget: strainTargetResultSchema.optional(),
   activities: z.array(activitySchema),
   weeklyVolume: z.array(
     z.object({
@@ -390,7 +351,6 @@ export const mobileTrainingTabV2OutputSchema = z.object({
     }),
   ),
   chartAvailability: z.object({
-    strainTrend: trainingChartAvailabilitySchema,
     verticalAscent: trainingChartAvailabilitySchema,
   }),
   climbing: z.object({
@@ -520,47 +480,6 @@ function nearlyEqual(left: number | null | undefined, right: number | null | und
   return Math.abs(left - right) < 0.01;
 }
 
-export const workloadDisplayFixtureSchema = z
-  .object({
-    workloadRatio: workloadRatioResultSchema,
-    strainTarget: strainTargetResultSchema.optional(),
-  })
-  .superRefine(({ workloadRatio, strainTarget }, context) => {
-    const displayedRow =
-      workloadRatio.displayedDate == null
-        ? undefined
-        : workloadRatio.timeSeries.find((row) => row.date === workloadRatio.displayedDate);
-    if (
-      workloadRatio.displayedDate != null &&
-      (!displayedRow || !nearlyEqual(displayedRow.strain, workloadRatio.displayedStrain))
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["workloadRatio", "displayedStrain"],
-        message: "Displayed strain and date must identify a matching time-series point",
-      });
-    }
-
-    if (strainTarget && displayedRow) {
-      const targetChecks = [
-        ["currentStrain", strainTarget.currentStrain, workloadRatio.displayedStrain],
-        ["dailyLoad", strainTarget.dailyLoad, displayedRow.dailyLoad],
-        ["acuteLoad", strainTarget.acuteLoad, displayedRow.acuteLoad],
-        ["chronicLoad", strainTarget.chronicLoad, displayedRow.chronicLoad],
-        ["workloadRatio", strainTarget.workloadRatio, displayedRow.workloadRatio],
-      ] as const;
-      for (const [field, targetValue, workloadValue] of targetChecks) {
-        if (targetValue !== undefined && !nearlyEqual(targetValue, workloadValue)) {
-          context.addIssue({
-            code: "custom",
-            path: ["strainTarget", field],
-            message: `${field} must match the displayed workload point`,
-          });
-        }
-      }
-    }
-  });
-
 export const mobileRecoveryFixtureSchema = z
   .object({
     input: fixtureInputSchema,
@@ -572,7 +491,6 @@ export const mobileRecoveryFixtureSchema = z
       [
         ...data.hrvVariability.map((row) => row.date),
         ...data.hrvBaseline.map((row) => row.date),
-        ...data.readinessScore.map((row) => row.date),
         ...data.stress.daily.map((row) => row.date),
         ...data.dailyMetrics.map((row) => row.date),
         ...data.weight.map((row) => row.date),
@@ -599,22 +517,11 @@ export const mobileRecoveryFixtureSchema = z
         message: "Latest stress must match the final daily stress point",
       });
     }
-
-    for (const [index, readiness] of data.readinessScore.entries()) {
-      const weightTotal = Object.values(readiness.weights).reduce((sum, weight) => sum + weight, 0);
-      if (!nearlyEqual(weightTotal, 1)) {
-        context.addIssue({
-          code: "custom",
-          path: ["data", "readinessScore", index, "weights"],
-          message: "Readiness weights must total 1",
-        });
-      }
-    }
   });
 
 type MobileTrainingFixtureChecks = Pick<
   MobileTrainingTabV2Result,
-  "workloadRatio" | "strainTarget" | "activities" | "verticalAscent" | "weeklyVolume"
+  "workloadRatio" | "activities" | "verticalAscent" | "weeklyVolume"
 > & {
   climbing: Pick<MobileTrainingTabV2Result["climbing"], "sessionSummary">;
 };
@@ -654,54 +561,6 @@ function validateMobileTrainingFixture(
     data.weeklyVolume.map((row) => row.week),
     context,
   );
-
-  const hasPositiveTrainingClaim =
-    data.workloadRatio.displayedStrain > 0 ||
-    (data.strainTarget?.currentStrain ?? 0) > 0 ||
-    data.activities.length > 0 ||
-    data.weeklyVolume.some((row) => row.count > 0 || row.hours > 0);
-  if (hasPositiveTrainingClaim && data.workloadRatio.timeSeries.length < 2) {
-    context.addIssue({
-      code: "custom",
-      path: ["data", "workloadRatio", "timeSeries"],
-      message: "Positive training claims require enough trend points to avoid a no-data chart",
-    });
-  }
-
-  const displayedRow =
-    data.workloadRatio.displayedDate == null
-      ? undefined
-      : data.workloadRatio.timeSeries.find((row) => row.date === data.workloadRatio.displayedDate);
-  if (
-    data.workloadRatio.displayedDate != null &&
-    (!displayedRow || !nearlyEqual(displayedRow.strain, data.workloadRatio.displayedStrain))
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["data", "workloadRatio", "displayedStrain"],
-      message: "Displayed strain and date must identify a matching time-series point",
-    });
-  }
-
-  const target = data.strainTarget;
-  if (target && data.workloadRatio.displayedDate === input.endDate) {
-    const targetChecks = [
-      ["currentStrain", target.currentStrain, data.workloadRatio.displayedStrain],
-      ["dailyLoad", target.dailyLoad, displayedRow?.dailyLoad],
-      ["acuteLoad", target.acuteLoad, displayedRow?.acuteLoad],
-      ["chronicLoad", target.chronicLoad, displayedRow?.chronicLoad],
-      ["workloadRatio", target.workloadRatio, displayedRow?.workloadRatio],
-    ] as const;
-    for (const [field, targetValue, workloadValue] of targetChecks) {
-      if (!nearlyEqual(targetValue, workloadValue)) {
-        context.addIssue({
-          code: "custom",
-          path: ["data", "strainTarget", field],
-          message: `${field} must match the displayed workload point`,
-        });
-      }
-    }
-  }
 
   const activityCounts = new Map<string, number>();
   const activityHours = new Map<string, number>();

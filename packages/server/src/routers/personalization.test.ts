@@ -108,10 +108,8 @@ describe("personalizationRouter", () => {
       expect(result.defaults).toEqual(DEFAULT_PARAMS);
       expect(result.effective).toEqual(DEFAULT_PARAMS);
       expect(result.parameters.exponentialMovingAverage).toBeNull();
-      expect(result.parameters.readinessWeights).toBeNull();
-      expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
-      expect(result.modelCards).toHaveLength(4);
+      expect(result.modelCards).toHaveLength(2);
       expect(result.modelCards.every((card) => card.status === "default")).toBe(true);
     });
 
@@ -125,8 +123,6 @@ describe("personalizationRouter", () => {
           sampleCount: 120,
           correlation: 0.35,
         },
-        readinessWeights: null,
-        sleepTarget: null,
         stressThresholds: null,
       };
       mockLoadPersonalizedParams.mockResolvedValue(stored);
@@ -156,8 +152,6 @@ describe("personalizationRouter", () => {
         version: 1,
         fittedAt: "2026-03-18T12:00:00Z",
         exponentialMovingAverage: null,
-        readinessWeights: null,
-        sleepTarget: null,
         stressThresholds: null,
       };
       mockLoadPersonalizedParams.mockResolvedValue(stored);
@@ -199,8 +193,6 @@ describe("personalizationRouter", () => {
           sampleCount: 100,
           correlation: 0.3,
         },
-        readinessWeights: null,
-        sleepTarget: { minutes: 450, sampleCount: 30 },
         stressThresholds: null,
       };
       mockLoadPersonalizedParams.mockResolvedValue(stored);
@@ -215,8 +207,6 @@ describe("personalizationRouter", () => {
 
       expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(28);
       expect(result.effective.exponentialMovingAverage.acuteTrainingLoadDays).toBe(5);
-      expect(result.effective.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
-      expect(result.effective.sleepTarget.minutes).toBe(450);
       expect(result.effective.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
     });
   });
@@ -232,8 +222,6 @@ describe("personalizationRouter", () => {
           sampleCount: 120,
           correlation: 0.35,
         },
-        readinessWeights: null,
-        sleepTarget: null,
         stressThresholds: null,
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
@@ -259,8 +247,6 @@ describe("personalizationRouter", () => {
         version: 1,
         fittedAt: "2026-03-18T14:00:00Z",
         exponentialMovingAverage: null,
-        readinessWeights: null,
-        sleepTarget: null,
         stressThresholds: null,
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
@@ -275,8 +261,6 @@ describe("personalizationRouter", () => {
 
       expect(result.effective).toEqual(DEFAULT_PARAMS);
       expect(result.parameters.exponentialMovingAverage).toBeNull();
-      expect(result.parameters.readinessWeights).toBeNull();
-      expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
       expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
@@ -286,8 +270,6 @@ describe("personalizationRouter", () => {
         version: 1,
         fittedAt: "2026-03-18T14:00:00Z",
         exponentialMovingAverage: null,
-        readinessWeights: null,
-        sleepTarget: null,
         stressThresholds: null,
       };
       mockRefitAllParams.mockResolvedValue(refitResult);

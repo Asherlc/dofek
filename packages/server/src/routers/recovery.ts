@@ -3,16 +3,8 @@ import {
   recordLocalHour,
   recordLocalTimeContextSchema,
 } from "@dofek/format/record-local-time";
-import {
-  type ReadinessComponents,
-  ReadinessScore,
-  type ReadinessWeights,
-} from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
-import { baselineReadinessComponents, StrainScore } from "@dofek/scoring/scoring";
 import { TRPCError } from "@trpc/server";
-import { getEffectiveParams } from "dofek/personalization/params";
-import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateAccessPredicate } from "../billing/entitlement.ts";
@@ -21,17 +13,10 @@ import {
   clickHouseWindowStartPredicate,
   dateWindowEnd,
   dateWindowStartPredicate,
-  endDateSchema,
 } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
-import {
-  buildStrainTargetResult,
-  loadStrainTargetInputs,
-  type StrainTargetResult,
-  strainTargetResultSchema,
-} from "../services/strain-target-result.ts";
 import {
   buildWorkloadRatioResult,
   type WorkloadRatioResult,
@@ -40,7 +25,7 @@ import {
 } from "../services/workload-ratio.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export type { StrainTargetResult, WorkloadRatioResult, WorkloadRatioRow };
+export type { WorkloadRatioResult, WorkloadRatioRow };
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -68,8 +53,6 @@ function populationStddev(values: number[]): number | null {
   return Math.sqrt(variance);
 }
 
-export type { ReadinessComponents, ReadinessWeights };
-
 export interface HrvVariabilityRow {
   date: string;
   hrv: number | null;
@@ -85,7 +68,7 @@ export interface SleepNightlyRow {
   date: string;
   /** Time in bed (includes awake time). Use for stage-percentage math. */
   durationMinutes: number | null;
-  /** Actual time asleep (deep + REM + light). Use for display and sleep debt. */
+  /** Actual time asleep (deep + REM + light). Use for display. */
   sleepMinutes: number | null;
   deepPct: number | null;
   remPct: number | null;
@@ -120,7 +103,6 @@ export interface SleepOverlappingSession {
 
 export interface SleepAnalyticsResult {
   nightly: SleepNightlyRow[];
-  sleepDebt: number | null;
   averageSleepMinutes: number | null;
   averageEfficiencyPercent: number | null;
 }
@@ -171,7 +153,6 @@ const sleepNightlyRowSchema = z.object({
 
 const sleepAnalyticsOutputSchema = z.object({
   nightly: z.array(sleepNightlyRowSchema),
-  sleepDebt: z.number().nullable(),
   averageSleepMinutes: z.number().nullable(),
   averageEfficiencyPercent: z.number().nullable(),
 }) satisfies z.ZodType<SleepAnalyticsResult>;
@@ -183,13 +164,6 @@ export interface SleepConsistencyRow {
   rollingBedtimeStddev: number | null;
   rollingWaketimeStddev: number | null;
   consistencyScore: number | null;
-}
-
-export interface ReadinessRow {
-  date: string;
-  readinessScore: number;
-  components: ReadinessComponents;
-  weights: ReadinessWeights;
 }
 
 export const recoveryRouter = router({
@@ -374,7 +348,6 @@ export const recoveryRouter = router({
         return {
           date: row.date,
           dailyLoad,
-          strain: StrainScore.fromRawLoad(dailyLoad).value,
           acuteLoad,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
@@ -388,7 +361,7 @@ export const recoveryRouter = router({
   ),
 
   /**
-   * Sleep analytics: stage percentages, rolling avg duration, sleep debt.
+   * Sleep analytics: stage percentages and rolling average duration.
    * Excludes naps. Sleep debt = cumulative deficit vs 8hr target over 14 days.
    */
   sleepAnalytics: selectedChartDateRangeQuery(
@@ -513,25 +486,9 @@ export const recoveryRouter = router({
         };
       });
 
-      // Compute 14-day sleep debt vs personalized target (using actual sleep time)
-      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
-      const effective = getEffectiveParams(storedParams);
-      const last14 = nightly.slice(-14);
-      const targetMinutes = effective.sleepTarget.minutes;
-      const measuredLast14 = last14.filter(
-        (night): night is typeof night & { sleepMinutes: number } => night.sleepMinutes != null,
-      );
       const measuredSleepMinutes = nightly
         .map((night) => night.sleepMinutes)
         .filter((minutes): minutes is number => minutes != null);
-      const sleepDebt =
-        measuredLast14.length > 0
-          ? Math.round(
-              measuredLast14.reduce((debt, night) => {
-                return debt + (targetMinutes - night.sleepMinutes);
-              }, 0),
-            )
-          : null;
       const averageSleepMinutes =
         measuredSleepMinutes.length > 0
           ? Math.round(
@@ -554,131 +511,10 @@ export const recoveryRouter = router({
 
       return {
         nightly,
-        sleepDebt,
         averageSleepMinutes,
         averageEfficiencyPercent,
       };
     },
     { outputSchema: sleepAnalyticsOutputSchema },
   ),
-
-  /**
-   * Composite readiness score 0-100 modeled after Whoop's recovery algorithm:
-   *   HRV vs 30d baseline (50%), resting HR vs baseline (20%),
-   *   sleep efficiency (15%), respiratory rate vs baseline (15%).
-   * Uses asymmetric sigmoid mapping instead of linear z-score for more natural scaling.
-   */
-  readinessScore: selectedChartDateRangeQuery(
-    "recovery.readinessScore",
-    CacheTTL.MEDIUM,
-    async ({ ctx, input, range }): Promise<ReadinessRow[]> => {
-      // Load personalized readiness weights
-      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
-      const effective = getEffectiveParams(storedParams);
-      const weights = effective.readinessWeights;
-
-      const queryRange = range.withWarmupDays(30);
-
-      // Fetch HRV + resting HR + respiratory rate baselines and sleep efficiency
-      const readinessRowSchema = z.object({
-        date: dateStringSchema,
-        hrv_z_score: z.coerce.number().nullable(),
-        resting_hr_z_score: z.coerce.number().nullable(),
-        respiratory_rate_z_score: z.coerce.number().nullable(),
-        efficiency_pct: z.coerce.number().nullable(),
-      });
-      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.readinessScore");
-      const accessWindowClause =
-        ctx.accessWindow?.kind === "limited"
-          ? `
-            AND recovery_inputs.date >= toDate({accessStartDate:String})
-            AND recovery_inputs.date < toDate({accessEndDateExclusive:String})`
-          : "";
-      const windowStart = queryRange.windowStartString(input.endDate);
-      const combinedRows = await sensorStore.query(
-        readinessRowSchema,
-        `SELECT
-          toString(recovery_inputs.date) AS date,
-          hrv_z_score,
-          resting_hr_z_score,
-          respiratory_rate_z_score,
-          efficiency_pct
-        FROM analytics.daily_recovery AS recovery_inputs FINAL
-        WHERE recovery_inputs.user_id = {userId:UUID}
-          AND recovery_inputs.is_deleted = 0
-          ${clickHouseWindowStartPredicate({
-            expression: "recovery_inputs.date",
-            days: queryRange.days,
-            paramName: "windowStart",
-          })}
-          AND recovery_inputs.date <= toDate({endDate:String})
-          ${accessWindowClause}
-        ORDER BY recovery_inputs.date ASC`,
-        {
-          userId: ctx.userId,
-          ...(windowStart === undefined ? {} : { windowStart }),
-          endDate: input.endDate,
-          ...(ctx.accessWindow?.kind === "limited"
-            ? {
-                accessStartDate: ctx.accessWindow.startDate,
-                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
-              }
-            : {}),
-        },
-        { priority: "dashboard" },
-      );
-      const cutoffDate = range.windowStartString(input.endDate);
-
-      const results: ReadinessRow[] = [];
-
-      for (const metrics of combinedRows) {
-        if (cutoffDate !== undefined && metrics.date <= cutoffDate) continue;
-        if (metrics.date > input.endDate) continue;
-
-        const components: ReadinessComponents = baselineReadinessComponents({
-          hrvZScore: metrics.hrv_z_score,
-          restingHeartRateZScore: metrics.resting_hr_z_score,
-          respiratoryRateZScore: metrics.respiratory_rate_z_score,
-          sleepEfficiency: metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null,
-        });
-
-        const readiness = new ReadinessScore(components, weights);
-
-        results.push({
-          date: metrics.date,
-          readinessScore: readiness.score,
-          components: readiness.components,
-          weights,
-        });
-      }
-
-      return results;
-    },
-  ),
-
-  /**
-   * Daily strain target based on current readiness and training loads.
-   * Returns a recommended strain level and progress toward it.
-   */
-  strainTarget: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
-    .output(strainTargetResultSchema.nullable())
-    .query(async ({ ctx, input }): Promise<StrainTargetResult | null> => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
-      const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
-      const { readinessMetrics, loads } = await loadStrainTargetInputs({
-        sensorStore,
-        userId: ctx.userId,
-        endDate: input.endDate,
-        days: input.days,
-        accessWindow: ctx.accessWindow,
-      });
-
-      return buildStrainTargetResult({
-        endDate: input.endDate,
-        readinessMetrics,
-        loads,
-        readinessWeights: params.readinessWeights,
-      });
-    }),
 });

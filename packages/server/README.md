@@ -7,6 +7,12 @@ separate published and reported grades, and scoped attempt facts. See the
 
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
+The [mobile dashboard overview](src/services/dashboard-overview.ts) serves
+recorded sleep, and the [recovery router](src/routers/recovery.ts) retains
+baseline and descriptive workload analytics. Custom recovery, 0–21 strain,
+sleep-performance/need, and dependent daily recommendation APIs are retired;
+see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
 weekly volume queries provide the charts with attempt counts, working sets,
 weight multiplied by repetitions, and recorded activity duration. The

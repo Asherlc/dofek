@@ -119,9 +119,10 @@ export const Discovery: Story = {
       id: "insight-3",
       type: "conditional",
       confidence: "early",
-      metric: "Ready Score",
+      metric: "Heart Rate Variability",
       action: "Nutrition: Magnesium",
-      message: "Observed association: readiness was higher on days when Magnesium was logged.",
+      message:
+        "Observed association: heart-rate variability was higher on days when Magnesium was logged.",
       detail: "Early signal based on 10 entries.",
       whenTrue: { mean: 82, n: 4 },
       whenFalse: { mean: 75, n: 6 },

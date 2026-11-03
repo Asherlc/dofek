@@ -12,24 +12,13 @@ import { formatMeasurementText } from "@dofek/format/units";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
   trendDirection as computeTrend,
-  SCORE_ZONES,
   scoreColor,
   scoreLabel,
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import {
-  LayoutAnimation,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  UIManager,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { BodyDecisionContext } from "../../components/BodyDecisionContext";
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -45,79 +34,6 @@ import { useRefresh } from "../../lib/useRefresh";
 import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
-
-function withOpacity(hexColor: string, opacityHex: string): string {
-  return `${hexColor}${opacityHex}`;
-}
-
-const RECOVERY_SCORE_BANDS = SCORE_ZONES.map((zone) => {
-  if (zone.status === "danger") {
-    return { min: zone.min, max: zone.max, color: withOpacity(colors.danger, "20") };
-  }
-  if (zone.status === "warning") {
-    return { min: zone.min, max: zone.max, color: withOpacity(colors.warning, "20") };
-  }
-  return { min: zone.min, max: zone.max, color: withOpacity(colors.positive, "20") };
-});
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
-  const color = scoreColor(value);
-  return (
-    <View style={breakdownStyles.row}>
-      <View style={breakdownStyles.labelCol}>
-        <Text style={breakdownStyles.label}>{label}</Text>
-        <Text style={breakdownStyles.weight}>{formatIntensity(weight * 100)}</Text>
-      </View>
-      <View style={breakdownStyles.barTrack}>
-        <View style={[breakdownStyles.barFill, { width: `${value}%`, backgroundColor: color }]} />
-      </View>
-      <Text style={breakdownStyles.valueText}>{value}</Text>
-    </View>
-  );
-}
-
-function RecoveryBreakdown({
-  components,
-  weights,
-}: {
-  components: {
-    hrvScore: number;
-    restingHrScore: number;
-    sleepScore: number;
-    respiratoryRateScore: number;
-  };
-  weights: {
-    hrv: number;
-    restingHr: number;
-    sleep: number;
-    respiratoryRate: number;
-  };
-}) {
-  return (
-    <View style={breakdownStyles.container}>
-      <ComponentBar
-        label="Heart Rate Variability"
-        value={components.hrvScore}
-        weight={weights.hrv}
-      />
-      <ComponentBar
-        label="Resting Heart Rate"
-        value={components.restingHrScore}
-        weight={weights.restingHr}
-      />
-      <ComponentBar label="Sleep" value={components.sleepScore} weight={weights.sleep} />
-      <ComponentBar
-        label="Respiratory Rate"
-        value={components.respiratoryRateScore}
-        weight={weights.respiratoryRate}
-      />
-    </View>
-  );
-}
 
 function TrendMetricGridItem({
   label,
@@ -137,55 +53,6 @@ function TrendMetricGridItem({
     </View>
   );
 }
-
-const breakdownStyles = StyleSheet.create({
-  container: {
-    gap: 10,
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceSecondary,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  labelCol: {
-    width: 120,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  label: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    flexShrink: 1,
-  },
-  weight: {
-    fontSize: 10,
-    color: colors.textTertiary,
-  },
-  barTrack: {
-    flex: 1,
-    height: 6,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  barFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-  valueText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.text,
-    width: 28,
-    textAlign: "right",
-    fontVariant: ["tabular-nums"],
-  },
-});
 
 export default function RecoveryScreen() {
   const router = useRouter();
@@ -227,10 +94,6 @@ export default function RecoveryScreen() {
     d.resting_hr == null ? null : d.resting_hr_mean_7d,
   );
 
-  const readinessData = recoveryData?.readinessScore ?? [];
-  const readinessValues = readinessData.map((d) => d.readinessScore);
-  const latestReadiness = readinessData[readinessData.length - 1];
-
   const stressResult = recoveryData?.stress;
   const stressDaily = stressResult?.daily ?? [];
   const stressValues = stressDaily.map((d) => d.stressScore);
@@ -267,7 +130,6 @@ export default function RecoveryScreen() {
         )
       : null;
 
-  const [recoveryExpanded, setRecoveryExpanded] = useState(false);
   const [bodyTrendMetric, setBodyTrendMetric] = useState<"weight" | "bodyFat">("weight");
   const displayedBodyTrendMetric =
     bodyTrendMetric === "weight"
@@ -375,63 +237,6 @@ export default function RecoveryScreen() {
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : recoveryData != null ? (
         <>
-          {/* Recovery trend chart */}
-          {readinessValues.length >= 2 && (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setRecoveryExpanded((prev) => !prev);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`${recoveryExpanded ? "Collapse" : "Expand"} recovery score`}
-              accessibilityState={{ expanded: recoveryExpanded }}
-            >
-              <Card title="Recovery Score">
-                <View style={styles.chartRow}>
-                  <Text
-                    style={[
-                      styles.bigValue,
-                      {
-                        color:
-                          latestReadiness?.readinessScore != null
-                            ? scoreColor(latestReadiness.readinessScore)
-                            : colors.text,
-                      },
-                    ]}
-                  >
-                    {latestReadiness?.readinessScore ?? "--"}
-                  </Text>
-                  <View style={styles.sparkContainer}>
-                    <SparkLine
-                      data={readinessValues}
-                      height={60}
-                      color={colors.textSecondary}
-                      showBaseline
-                      domain={{ min: 0, max: 100 }}
-                      backgroundBands={RECOVERY_SCORE_BANDS}
-                    />
-                  </View>
-                </View>
-                <View style={styles.subtitleRow}>
-                  <Text style={styles.chartSubtitle}>
-                    {days}-day avg:{" "}
-                    {Math.round(
-                      readinessValues.reduce((s, v) => s + v, 0) / readinessValues.length,
-                    )}
-                  </Text>
-                  <Text style={styles.expandHint}>{recoveryExpanded ? "▲" : "▼"}</Text>
-                </View>
-                {recoveryExpanded && latestReadiness && (
-                  <RecoveryBreakdown
-                    components={latestReadiness.components}
-                    weights={latestReadiness.weights}
-                  />
-                )}
-              </Card>
-            </TouchableOpacity>
-          )}
-
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
@@ -883,28 +688,9 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
     gap: 16,
   },
-  chartRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
   sparkContainer: {
     flex: 1,
     marginLeft: 16,
-  },
-  bigValue: {
-    fontSize: 36,
-    fontWeight: "800",
-    fontVariant: ["tabular-nums"],
-  },
-  subtitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  expandHint: {
-    fontSize: 10,
-    color: colors.textTertiary,
   },
   chartSubtitle: {
     fontSize: 12,

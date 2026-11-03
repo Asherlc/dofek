@@ -1,9 +1,4 @@
-import {
-  formatDateMedium,
-  formatDurationMinutes,
-  formatIntensity,
-  formatStandardDeviation,
-} from "@dofek/format/format";
+import { formatDateMedium, formatStandardDeviation } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { PersonalizationModelCard } from "dofek-server/types";
 import { useEffect } from "react";
@@ -84,18 +79,6 @@ export function PersonalizationPanel() {
         modelCard={modelCards.exponentialMovingAverage}
         value={`Fitness: ${data.effective.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.effective.exponentialMovingAverage.acuteTrainingLoadDays}d`}
         defaultValue={`Fitness: ${data.defaults.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.defaults.exponentialMovingAverage.acuteTrainingLoadDays}d`}
-      />
-
-      <ParamCard
-        modelCard={modelCards.readinessWeights}
-        value={`Heart Rate Variability ${formatIntensity(data.effective.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.effective.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.effective.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.effective.readinessWeights.respiratoryRate * 100)}`}
-        defaultValue={`Heart Rate Variability ${formatIntensity(data.defaults.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.defaults.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.defaults.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.defaults.readinessWeights.respiratoryRate * 100)}`}
-      />
-
-      <ParamCard
-        modelCard={modelCards.sleepTarget}
-        value={formatDurationMinutes(data.effective.sleepTarget.minutes)}
-        defaultValue={formatDurationMinutes(data.defaults.sleepTarget.minutes)}
       />
 
       <ParamCard
@@ -187,18 +170,12 @@ function resolveModelCards(
     (card) => card.key === "exponentialMovingAverage",
   );
   if (!exponentialMovingAverage) return { missingKey: "exponentialMovingAverage" };
-  const readinessWeights = modelCards.find((card) => card.key === "readinessWeights");
-  if (!readinessWeights) return { missingKey: "readinessWeights" };
-  const sleepTarget = modelCards.find((card) => card.key === "sleepTarget");
-  if (!sleepTarget) return { missingKey: "sleepTarget" };
   const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
   if (!stressThresholds) return { missingKey: "stressThresholds" };
 
   return {
     cards: {
       exponentialMovingAverage,
-      readinessWeights,
-      sleepTarget,
       stressThresholds,
     },
   };

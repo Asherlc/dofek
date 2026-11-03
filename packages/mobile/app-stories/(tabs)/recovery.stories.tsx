@@ -45,13 +45,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
   const dates = createFixtureDates(new Date());
   const endDate = dates.date();
   const trendDates = Array.from({ length: 14 }, (_, index) => dates.date(index - 13));
-  const readinessComponents = {
-    hrvScore: 84,
-    restingHrScore: 78,
-    sleepScore: 88,
-    respiratoryRateScore: 74,
-  };
-  const readinessWeights = { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 };
   const stressDaily = trendDates.map((date, index) => ({
     date,
     stressScore: 1 + (index % 4) * 0.3,
@@ -111,10 +104,10 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
           },
         ],
         history: [
-          { weekStart: "2026-03-02", score: 73 },
-          { weekStart: "2026-03-09", score: 75 },
-          { weekStart: "2026-03-16", score: 78 },
-          { weekStart: "2026-03-23", score: 80 },
+          { weekStart: dates.weekStart(-21), score: 73 },
+          { weekStart: dates.weekStart(-14), score: 75 },
+          { weekStart: dates.weekStart(-7), score: 78 },
+          { weekStart: dates.weekStart(0), score: 80 },
         ],
         trend: "improving" as const,
         availability: {
@@ -145,12 +138,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         resting_hr_mean_7d: 53 + Math.sin(index / 4) * 0.5,
       })),
       restingHeartRateTrendDirection: "down",
-      readinessScore: trendDates.map((date, index) => ({
-        date,
-        readinessScore: 68 + (index % 5) * 4,
-        components: readinessComponents,
-        weights: readinessWeights,
-      })),
       stress: {
         daily: stressDaily,
         weekly: [],

@@ -226,7 +226,7 @@ describe("mobile query persistence", () => {
         meta: { persist: false },
         queryFn: () => ({ images: [{ url: "https://private.test/image?signature=secret" }] }),
       });
-      client.setQueryData(["dashboard"], { readiness: "cached" });
+      client.setQueryData(["dashboard"], { sleepDuration: "cached" });
     });
 
     await waitFor(
@@ -282,10 +282,10 @@ describe("mobile query persistence", () => {
   });
 
   it("restores persisted user data before the query refetches", async () => {
-    let resolveRefetch: ((value: { readiness: string }) => void) | undefined;
+    let resolveRefetch: ((value: { sleepDuration: string }) => void) | undefined;
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const seedClient = createQueryClient();
-    seedClient.setQueryData(["dashboard"], { readiness: "cached" });
+    seedClient.setQueryData(["dashboard"], { sleepDuration: "cached" });
     await AsyncStorage.setItem(
       "dofek-query-cache:user-1",
       JSON.stringify({
@@ -299,7 +299,7 @@ describe("mobile query persistence", () => {
     const refetch = restoredClient.fetchQuery({
       queryKey: ["dashboard"],
       queryFn: () =>
-        new Promise<{ readiness: string }>((resolve) => {
+        new Promise<{ sleepDuration: string }>((resolve) => {
           resolveRefetch = resolve;
         }),
     });
@@ -310,8 +310,8 @@ describe("mobile query persistence", () => {
       buster: mobileQueryCacheBuster("user-1"),
     });
 
-    expect(restoredClient.getQueryData(["dashboard"])).toEqual({ readiness: "cached" });
-    resolveRefetch?.({ readiness: "fresh" });
+    expect(restoredClient.getQueryData(["dashboard"])).toEqual({ sleepDuration: "cached" });
+    resolveRefetch?.({ sleepDuration: "fresh" });
     await refetch;
   });
 
@@ -572,7 +572,7 @@ describe("mobile query persistence", () => {
   it("scopes persisted data by authenticated user", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const seedClient = createQueryClient();
-    seedClient.setQueryData(["dashboard"], { readiness: "cached" });
+    seedClient.setQueryData(["dashboard"], { sleepDuration: "cached" });
     await AsyncStorage.setItem(
       "dofek-query-cache:user-1",
       JSON.stringify({
@@ -596,7 +596,7 @@ describe("mobile query persistence", () => {
   it("does not restore expired persisted data", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const seedClient = createQueryClient();
-    seedClient.setQueryData(["dashboard"], { readiness: "old" });
+    seedClient.setQueryData(["dashboard"], { sleepDuration: "old" });
     await AsyncStorage.setItem(
       "dofek-query-cache:user-1",
       JSON.stringify({

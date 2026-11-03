@@ -1273,14 +1273,12 @@ describe("Router data coverage", () => {
           stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
-        sleepDebt: number;
       }>("recovery.sleepAnalytics", { days: 90 });
 
       expect(result.nightly.length).toBeGreaterThan(0);
       // With 90+ nights, rollingAvgDuration should be non-null for later entries
       const withRolling = result.nightly.filter((n) => n.rollingAvgDuration != null);
       expect(withRolling.length).toBeGreaterThan(0);
-      expect(typeof result.sleepDebt).toBe("number");
     });
 
     it("hrvVariability returns HRV daily data", async () => {
@@ -1291,12 +1289,11 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with descriptive load data", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
           dailyLoad: number;
-          strain: number;
           acuteLoad: number;
           chronicLoad: number;
           workloadRatio: number | null;
@@ -1307,24 +1304,10 @@ describe("Router data coverage", () => {
           recentDays: 7;
           baselineDays: 28;
         };
-        displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });
 
       expect(Array.isArray(result.timeSeries)).toBe(true);
-      expect(typeof result.displayedStrain).toBe("number");
-      expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
-      expect(result.displayedStrain).toBeLessThanOrEqual(21);
-    });
-
-    it("readinessScore returns composite score", async () => {
-      const result = await query<{
-        score: number | null;
-        components: Record<string, unknown>;
-        history: unknown[];
-      }>("recovery.readinessScore", { days: 30 });
-
-      expect(result).toBeDefined();
     });
   });
 

@@ -35452,3 +35452,43 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Migration formatting check:** the new migration initially failed the separate SQLFluff migration job with `LT02 Expected line break and indent of 2 spaces before value`. The normal repository lint command covers analytics SQL rather than new Drizzle files. Applied SQLFluff layout fixes to the unmerged migration and verified the exact CI lint invocation plus Squawk; SQL behavior and the first-line maintenance marker are unchanged. [Failed job](https://github.com/Asherlc/dofek/actions/runs/41573787118/job/125713471767). Future SQL migration validation should run the migration-specific formatter before pushing.
 
 - **Cached-response cutover:** verification found unchanged activity-list/personalization cache namespaces could retain old HR-derived responses for the existing ten-minute server TTL; mobile contract v25 also restored its previous persisted payload. The actual restore test reproduced this before the fix. Advanced the two activity-list cache contracts, personalization status namespace, and mobile contract to v26. All 69 focused router/mobile persistence tests pass after the change. This was a pre-release finding, with no observed production incident.
+
+## 2026-11-03 — Shared Docker VM AIO exhaustion during Daily summary removal
+
+- **Symptoms / impact:** Local database-backed verification could not start;
+  production was unaffected. `pnpm compose -- up -d --wait db clickhouse redis
+  redpanda` failed with `container normal-rhino-redpanda-1 is unhealthy`.
+- **Evidence / root cause:** Redpanda's first fatal line was `Could not setup
+  Async I/O: unknown error`. Reading `/proc/sys/fs/aio-nr` and
+  `/proc/sys/fs/aio-max-nr` inside the workspace ClickHouse container returned
+  `65536` for both: the shared VM had exhausted its system-wide AIO capacity.
+  Linux documents the counter and limit in its
+  [fs sysctl reference](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Direct fix:** With explicit user approval, raised the Docker VM runtime
+  `fs.aio-max-nr` to `1048576` using a disposable privileged container from the
+  existing pinned ClickHouse image, then restarted only this workspace's
+  Redpanda. No repository configuration or other workspace was changed.
+- **Validation:** `pnpm compose -- ps redpanda` reported healthy after the
+  explicit restart; the standard integration command then started its tests.
+  No additional retries, waits, or timeout changes were introduced.
+- **Remaining risk / follow-up:** The runtime setting resets when Docker's VM
+  restarts. Documenting an approved host-level AIO preflight would make future
+  local integration failures faster to diagnose.
+
+### Follow-up: router integration setup hit shared-VM memory exhaustion
+
+After AIO startup was repaired, the daily-activity-load read-model suite passed
+all five executable tests. The router suites failed with `socket hang up`
+while building their existing activity-origin ClickHouse fixture views, before
+application assertions ran. An isolated rerun of
+`pnpm test:integration -- packages/server/src/routers/mobile-dashboard.integration.test.ts`
+failed in the same fixture setup. Docker's VM kernel log reported `global_oom`
+and `Out of memory: Killed process ... (clickhouse-serv)` twice for this
+workspace's ClickHouse container ID. Container-scoped `OOMKilled` and
+`memory.events` checks did not expose the global-VM kills after restart.
+The remaining router integration validation is unresolved locally. No other
+workspace was stopped, and no memory limit, timeout, retry, or fixture behavior
+was changed to suppress this failure. The cleanup migrations were separately
+executed against populated Postgres and ClickHouse fixtures and passed
+preservation/idempotence checks. Remaining follow-up is to run the router suites
+in an environment with sufficient memory.

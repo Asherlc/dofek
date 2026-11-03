@@ -96,14 +96,11 @@ describe("createTRPCClient", () => {
     }
     expect(mutationCondition({ type: "mutation" })).toBe(true);
     expect(mutationCondition({ type: "query" })).toBe(false);
-    expect(queryCondition({ type: "query", path: "recovery.readinessScore" })).toBe(true);
     expect(queryCondition({ type: "query", path: "recovery.workloadRatio" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "recovery.strainTarget" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "sleepNeed.performance" })).toBe(true);
+    expect(queryCondition({ type: "mutation", path: "recovery.workloadRatio" })).toBe(false);
     expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);
     expect(queryCondition({ type: "query", path: "insights.compute" })).toBe(false);
     expect(queryCondition({ type: "query", path: "anomalyDetection.check" })).toBe(false);
-    expect(queryCondition({ type: "mutation", path: "recovery.readinessScore" })).toBe(false);
 
     const batchLinkOptions = httpBatchLinkMock.mock.calls[0]?.[0];
     const httpLinkOptions = httpLinkMock.mock.calls[0]?.[0];

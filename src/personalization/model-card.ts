@@ -2,8 +2,6 @@ import {
   MINIMUM_EXPONENTIAL_MOVING_AVERAGE_ABSOLUTE_CORRELATION,
   MINIMUM_EXPONENTIAL_MOVING_AVERAGE_DAYS,
 } from "./fit-ewma.ts";
-import { MINIMUM_READINESS_CORRELATION, MINIMUM_READINESS_DAYS } from "./fit-readiness-weights.ts";
-import { MINIMUM_QUALIFYING_SLEEP_NIGHTS } from "./fit-sleep-target.ts";
 import { MINIMUM_STRESS_DAYS } from "./fit-stress-thresholds.ts";
 import type { PersonalizationModelKey, PersonalizedParams } from "./params.ts";
 
@@ -26,12 +24,7 @@ const NO_CALIBRATED_UNCERTAINTY = "No calibrated uncertainty interval is availab
 export function buildPersonalizationModelCards(
   params: PersonalizedParams | null,
 ): PersonalizationModelCard[] {
-  return [
-    buildExponentialMovingAverageCard(params),
-    buildReadinessCard(params),
-    buildSleepTargetCard(params),
-    buildStressThresholdCard(params),
-  ];
+  return [buildExponentialMovingAverageCard(params), buildStressThresholdCard(params)];
 }
 
 function fitTime(
@@ -81,57 +74,6 @@ function buildExponentialMovingAverageCard(
       "Days without a nonzero performance observation",
       "Unfinished activities",
       "Activities without average heart rate",
-    ],
-  };
-}
-
-function buildReadinessCard(params: PersonalizedParams | null): PersonalizationModelCard {
-  const fitted = params?.readinessWeights ?? null;
-  const personalized = fitted !== null;
-  return {
-    key: "readinessWeights",
-    title: "Readiness Score Weights",
-    description: "How much each factor contributes to your daily readiness score",
-    status: personalized ? "personalized" : "default",
-    ...fitTime(params, "readinessWeights", personalized),
-    dataWindow: "Past 365 days after a 60-day rolling-baseline warm-up",
-    dataSufficiency: fitted
-      ? `${fitted.sampleCount} qualifying days used; minimum ${MINIMUM_READINESS_DAYS} days`
-      : `No accepted fit; requires at least ${MINIMUM_READINESS_DAYS} qualifying days and Pearson correlation of at least ${MINIMUM_READINESS_CORRELATION.toFixed(2)}`,
-    fitEvidence: fitted
-      ? `Pearson correlation: ${fitted.correlation.toFixed(3)}`
-      : "No accepted fit statistic is available.",
-    uncertainty: NO_CALIBRATED_UNCERTAINTY,
-    excludedData: [
-      "Days without heart-rate variability or resting heart rate",
-      "Days without stable rolling baselines",
-      "Days without a next-day heart-rate variability outcome",
-    ],
-  };
-}
-
-function buildSleepTargetCard(params: PersonalizedParams | null): PersonalizationModelCard {
-  const fitted = params?.sleepTarget ?? null;
-  const personalized = fitted !== null;
-  return {
-    key: "sleepTarget",
-    title: "Sleep Target",
-    description: "The amount of sleep associated with your best recovery",
-    status: personalized ? "personalized" : "default",
-    ...fitTime(params, "sleepTarget", personalized),
-    dataWindow: "Past 365 days; next-day recovery uses up to 60 days of baseline history",
-    dataSufficiency: fitted
-      ? `${fitted.sampleCount} qualifying nights used; minimum ${MINIMUM_QUALIFYING_SLEEP_NIGHTS} nights`
-      : `No accepted fit; requires at least ${MINIMUM_QUALIFYING_SLEEP_NIGHTS} qualifying nights`,
-    fitEvidence: fitted
-      ? "This average-based fit does not calculate a goodness-of-fit statistic."
-      : "No accepted fit statistic is available.",
-    uncertainty: NO_CALIBRATED_UNCERTAINTY,
-    excludedData: [
-      "Naps and shorter duplicate sleep sessions",
-      "Sleep sessions without duration",
-      "Nights without a next-day heart-rate variability comparison",
-      "Nights not followed by above-median heart-rate variability",
     ],
   };
 }

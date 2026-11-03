@@ -100,14 +100,6 @@ export function formatDurationRange(start: string, end: string | null): string {
   return formatDurationMinutes(totalMinutes);
 }
 
-/** Format sleep debt in minutes as a human-readable string */
-export function formatSleepDebt(minutes: number): string {
-  if (minutes <= 0) return "No sleep debt";
-  const hours = Math.floor(Math.abs(minutes) / 60);
-  const mins = Math.abs(minutes) % 60;
-  return `${hours}h ${mins}m debt`;
-}
-
 /** Format a decimal hour (e.g. 22.5) in the user's locale time format.
  *  Uses 12-hour or 24-hour notation based on device locale.
  *  Pass an explicit locale for deterministic output (e.g. in tests). */
@@ -119,13 +111,6 @@ export function formatHour(decimalHour: number, locale?: string): string {
   return date
     .toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })
     .replace(/\u202f/g, " ");
-}
-
-/** Format sleep debt for inline display: "Xh Ym sleep debt (14 days)" */
-export function formatSleepDebtInline(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m sleep debt (14 days)`;
 }
 
 type DateInput = Date | number | string;

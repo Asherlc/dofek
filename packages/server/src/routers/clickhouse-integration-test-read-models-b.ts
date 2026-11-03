@@ -539,10 +539,6 @@ export function buildTestRecoveryReadModelSelectSql(
   hrv_sd_60d,
   rhr_mean_60d,
   rhr_sd_60d,
-  CAST(NULL, 'Nullable(Float64)') AS hrv_score,
-  CAST(NULL, 'Nullable(Float64)') AS resting_hr_score,
-  CAST(NULL, 'Nullable(Float64)') AS sleep_score,
-  CAST(NULL, 'Nullable(Float64)') AS respiratory_rate_score,
   0 AS is_deleted,
   refresh_version,
   refreshed_at
@@ -604,7 +600,6 @@ SELECT
   user_id,
   date,
   daily_load,
-  least(21, round(2.775 * log(1 + greatest(daily_load, 0)), 1)) AS strain,
   acute_load_7d,
   chronic_load_28d,
   if(chronic_load_28d > 0 AND chronic_count = 28, acute_load_7d / chronic_load_28d, NULL) AS workload_ratio,

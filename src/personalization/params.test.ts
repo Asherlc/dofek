@@ -12,8 +12,6 @@ function baseParams(overrides: Partial<Record<string, unknown>> = {}): Record<st
     version: 1,
     fittedAt: "2026-03-18T12:00:00Z",
     exponentialMovingAverage: null,
-    readinessWeights: null,
-    sleepTarget: null,
     stressThresholds: null,
     ...overrides,
   };
@@ -29,18 +27,6 @@ describe("personalizedParamsSchema", () => {
         acuteTrainingLoadDays: 9,
         sampleCount: 120,
         correlation: 0.35,
-      },
-      readinessWeights: {
-        hrv: 0.5,
-        restingHr: 0.15,
-        sleep: 0.2,
-        respiratoryRate: 0.15,
-        sampleCount: 90,
-        correlation: 0.25,
-      },
-      sleepTarget: {
-        minutes: 450,
-        sampleCount: 30,
       },
       stressThresholds: {
         hrvThresholds: [-1.2, -0.8, -0.3],
@@ -58,8 +44,6 @@ describe("personalizedParamsSchema", () => {
 
     const result = personalizedParamsSchema.parse(input);
     expect(result.exponentialMovingAverage).toBeNull();
-    expect(result.readinessWeights).toBeNull();
-    expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
   });
 
@@ -72,8 +56,6 @@ describe("personalizedParamsSchema", () => {
   it("parses per-model successful-fit timestamps", () => {
     const successfulFitAt = {
       exponentialMovingAverage: "2026-03-18T12:00:00.000Z",
-      readinessWeights: null,
-      sleepTarget: "2026-03-17T11:00:00.000Z",
       stressThresholds: null,
     };
 
@@ -89,8 +71,6 @@ describe("personalizedParamsSchema", () => {
           version: 2,
           successfulFitAt: {
             exponentialMovingAverage: "not-a-timestamp",
-            readinessWeights: null,
-            sleepTarget: null,
             stressThresholds: null,
           },
         }),
@@ -126,8 +106,6 @@ describe("personalizedParamsSchema", () => {
     const input = {
       version: 1,
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
     expect(() => personalizedParamsSchema.parse(input)).toThrow();
@@ -325,320 +303,6 @@ describe("personalizedParamsSchema", () => {
     });
   });
 
-  describe("readiness weights sub-schema", () => {
-    it("rejects weights that do not sum to 1", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.5,
-              restingHr: 0.3,
-              sleep: 0.2,
-              respiratoryRate: 0.2,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts weights that sum to exactly 1.0", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          readinessWeights: {
-            hrv: 0.5,
-            restingHr: 0.2,
-            sleep: 0.15,
-            respiratoryRate: 0.15,
-            sampleCount: 60,
-            correlation: 0.2,
-          },
-        }),
-      );
-      expect(result.readinessWeights).not.toBeNull();
-    });
-
-    it("accepts weights that sum within 0.01 tolerance of 1.0", () => {
-      // 0.33 + 0.23 + 0.22 + 0.22 = 1.00
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          readinessWeights: {
-            hrv: 0.33,
-            restingHr: 0.23,
-            sleep: 0.22,
-            respiratoryRate: 0.22,
-            sampleCount: 60,
-            correlation: 0.2,
-          },
-        }),
-      );
-      expect(result.readinessWeights).not.toBeNull();
-    });
-
-    it("accepts weights summing to 1.009 (within 0.01 tolerance)", () => {
-      // sum = 0.409 + 0.2 + 0.2 + 0.2 = 1.009 => abs(1.009-1.0)=0.009 < 0.01
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          readinessWeights: {
-            hrv: 0.409,
-            restingHr: 0.2,
-            sleep: 0.2,
-            respiratoryRate: 0.2,
-            sampleCount: 60,
-            correlation: 0.2,
-          },
-        }),
-      );
-      expect(result.readinessWeights).not.toBeNull();
-    });
-
-    it("rejects weights summing to 1.011 (outside 0.01 tolerance)", () => {
-      // sum = 0.411 + 0.2 + 0.2 + 0.2 = 1.011 => abs(1.011-1.0)=0.011 >= 0.01
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.411,
-              restingHr: 0.2,
-              sleep: 0.2,
-              respiratoryRate: 0.2,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects weights summing to 0.98 (outside tolerance)", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.3,
-              restingHr: 0.2,
-              sleep: 0.23,
-              respiratoryRate: 0.25,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects hrv weight below minimum 0.05", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.04,
-              restingHr: 0.32,
-              sleep: 0.32,
-              respiratoryRate: 0.32,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts hrv weight at minimum 0.05", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({
-          readinessWeights: {
-            hrv: 0.05,
-            restingHr: 0.35,
-            sleep: 0.3,
-            respiratoryRate: 0.3,
-            sampleCount: 60,
-            correlation: 0.2,
-          },
-        }),
-      );
-      expect(result.readinessWeights?.hrv).toBe(0.05);
-    });
-
-    it("rejects restingHr weight below minimum 0.05", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.32,
-              restingHr: 0.04,
-              sleep: 0.32,
-              respiratoryRate: 0.32,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects sleep weight below minimum 0.05", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.32,
-              restingHr: 0.32,
-              sleep: 0.04,
-              respiratoryRate: 0.32,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects respiratoryRate weight below minimum 0.05", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.32,
-              restingHr: 0.32,
-              sleep: 0.32,
-              respiratoryRate: 0.04,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects hrv weight above maximum 1", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 1.01,
-              restingHr: 0.05,
-              sleep: 0.05,
-              respiratoryRate: 0.05,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts hrv weight at maximum 1.0", () => {
-      // Won't pass sum-to-1 refine but should pass the field-level max check;
-      // we need all four to sum to 1 with each >= 0.05 and hrv = 1 is impossible
-      // because others need >= 0.05. So this tests the .max(1) constraint.
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 1.0,
-              restingHr: 0.05,
-              sleep: 0.05,
-              respiratoryRate: 0.05,
-              sampleCount: 60,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow(); // fails refine (sum > 1) but hrv:1 itself is valid
-    });
-
-    it("rejects negative sampleCount in readiness weights", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.5,
-              restingHr: 0.2,
-              sleep: 0.15,
-              respiratoryRate: 0.15,
-              sampleCount: -1,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects non-integer sampleCount in readiness weights", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({
-            readinessWeights: {
-              hrv: 0.5,
-              restingHr: 0.2,
-              sleep: 0.15,
-              respiratoryRate: 0.15,
-              sampleCount: 60.5,
-              correlation: 0.2,
-            },
-          }),
-        ),
-      ).toThrow();
-    });
-  });
-
-  describe("sleep target sub-schema", () => {
-    it("rejects minutes below minimum 240", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({ sleepTarget: { minutes: 239, sampleCount: 10 } }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts minutes at minimum 240", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({ sleepTarget: { minutes: 240, sampleCount: 10 } }),
-      );
-      expect(result.sleepTarget?.minutes).toBe(240);
-    });
-
-    it("accepts minutes at maximum 720", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({ sleepTarget: { minutes: 720, sampleCount: 10 } }),
-      );
-      expect(result.sleepTarget?.minutes).toBe(720);
-    });
-
-    it("rejects minutes above maximum 720", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({ sleepTarget: { minutes: 721, sampleCount: 10 } }),
-        ),
-      ).toThrow();
-    });
-
-    it("rejects negative sampleCount", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({ sleepTarget: { minutes: 480, sampleCount: -1 } }),
-        ),
-      ).toThrow();
-    });
-
-    it("accepts sampleCount of 0", () => {
-      const result = personalizedParamsSchema.parse(
-        baseParams({ sleepTarget: { minutes: 480, sampleCount: 0 } }),
-      );
-      expect(result.sleepTarget?.sampleCount).toBe(0);
-    });
-
-    it("rejects non-integer sampleCount", () => {
-      expect(() =>
-        personalizedParamsSchema.parse(
-          baseParams({ sleepTarget: { minutes: 480, sampleCount: 1.5 } }),
-        ),
-      ).toThrow();
-    });
-  });
-
   describe("stress thresholds sub-schema", () => {
     it("rejects HRV thresholds not in ascending order", () => {
       expect(() =>
@@ -826,20 +490,8 @@ describe("DEFAULT_PARAMS", () => {
   it("matches current hardcoded values", () => {
     expect(DEFAULT_PARAMS.exponentialMovingAverage.chronicTrainingLoadDays).toBe(42);
     expect(DEFAULT_PARAMS.exponentialMovingAverage.acuteTrainingLoadDays).toBe(7);
-    expect(DEFAULT_PARAMS.readinessWeights.hrv).toBe(0.5);
-    expect(DEFAULT_PARAMS.readinessWeights.restingHr).toBe(0.2);
-    expect(DEFAULT_PARAMS.readinessWeights.sleep).toBe(0.15);
-    expect(DEFAULT_PARAMS.readinessWeights.respiratoryRate).toBe(0.15);
-    expect(DEFAULT_PARAMS.sleepTarget.minutes).toBe(480);
     expect(DEFAULT_PARAMS.stressThresholds.hrvThresholds).toEqual([-1.5, -1.0, -0.5]);
     expect(DEFAULT_PARAMS.stressThresholds.rhrThresholds).toEqual([1.5, 1.0, 0.5]);
-  });
-
-  it("readiness weights sum to 1", () => {
-    const weights = DEFAULT_PARAMS.readinessWeights;
-    expect(weights.hrv + weights.restingHr + weights.sleep + weights.respiratoryRate).toBeCloseTo(
-      1.0,
-    );
   });
 
   it("stress thresholds are in correct order", () => {
@@ -864,8 +516,6 @@ describe("getEffectiveParams", () => {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
 
@@ -883,55 +533,13 @@ describe("getEffectiveParams", () => {
         sampleCount: 120,
         correlation: 0.35,
       },
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
 
     const result = getEffectiveParams(stored);
     expect(result.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
     expect(result.exponentialMovingAverage.acuteTrainingLoadDays).toBe(9);
-    expect(result.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
-    expect(result.sleepTarget).toEqual(DEFAULT_PARAMS.sleepTarget);
     expect(result.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
-  });
-
-  it("uses personalized readiness weights with all four fields", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: {
-        hrv: 0.5,
-        restingHr: 0.15,
-        sleep: 0.2,
-        respiratoryRate: 0.15,
-        sampleCount: 90,
-        correlation: 0.25,
-      },
-      sleepTarget: null,
-      stressThresholds: null,
-    };
-
-    const result = getEffectiveParams(stored);
-    expect(result.readinessWeights.hrv).toBe(0.5);
-    expect(result.readinessWeights.restingHr).toBe(0.15);
-    expect(result.readinessWeights.sleep).toBe(0.2);
-    expect(result.readinessWeights.respiratoryRate).toBe(0.15);
-  });
-
-  it("uses personalized sleep target when available", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: { minutes: 450, sampleCount: 30 },
-      stressThresholds: null,
-    };
-
-    const result = getEffectiveParams(stored);
-    expect(result.sleepTarget.minutes).toBe(450);
   });
 
   it("uses personalized stress thresholds when available", () => {
@@ -939,8 +547,6 @@ describe("getEffectiveParams", () => {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: {
         hrvThresholds: [-2.0, -1.3, -0.7],
         rhrThresholds: [2.0, 1.3, 0.7],
@@ -963,8 +569,6 @@ describe("getEffectiveParams", () => {
         sampleCount: 150,
         correlation: 0.4,
       },
-      readinessWeights: null,
-      sleepTarget: { minutes: 420, sampleCount: 20 },
       stressThresholds: {
         hrvThresholds: [-1.8, -1.2, -0.6],
         rhrThresholds: [1.8, 1.2, 0.6],
@@ -975,8 +579,6 @@ describe("getEffectiveParams", () => {
     const result = getEffectiveParams(stored);
     expect(result.exponentialMovingAverage.chronicTrainingLoadDays).toBe(49);
     expect(result.exponentialMovingAverage.acuteTrainingLoadDays).toBe(11);
-    expect(result.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
-    expect(result.sleepTarget.minutes).toBe(420);
     expect(result.stressThresholds.hrvThresholds).toEqual([-1.8, -1.2, -0.6]);
     expect(result.stressThresholds.rhrThresholds).toEqual([1.8, 1.2, 0.6]);
   });
@@ -991,8 +593,6 @@ describe("getEffectiveParams", () => {
         sampleCount: 120,
         correlation: 0.35,
       },
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
 
@@ -1004,53 +604,11 @@ describe("getEffectiveParams", () => {
     ]);
   });
 
-  it("strips sampleCount and correlation from effective readiness weights", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: {
-        hrv: 0.5,
-        restingHr: 0.2,
-        sleep: 0.15,
-        respiratoryRate: 0.15,
-        sampleCount: 90,
-        correlation: 0.25,
-      },
-      sleepTarget: null,
-      stressThresholds: null,
-    };
-
-    const result = getEffectiveParams(stored);
-    expect(Object.keys(result.readinessWeights).sort()).toEqual([
-      "hrv",
-      "respiratoryRate",
-      "restingHr",
-      "sleep",
-    ]);
-  });
-
-  it("strips sampleCount from effective sleep target", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: { minutes: 450, sampleCount: 30 },
-      stressThresholds: null,
-    };
-
-    const result = getEffectiveParams(stored);
-    expect(Object.keys(result.sleepTarget)).toEqual(["minutes"]);
-  });
-
   it("strips sampleCount from effective stress thresholds", () => {
     const stored: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: {
         hrvThresholds: [-1.5, -1.0, -0.5],
         rhrThresholds: [1.5, 1.0, 0.5],
@@ -1067,15 +625,11 @@ describe("getEffectiveParams", () => {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
 
     const result = getEffectiveParams(stored);
     expect(result.exponentialMovingAverage).toEqual(DEFAULT_PARAMS.exponentialMovingAverage);
-    expect(result.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
-    expect(result.sleepTarget).toEqual(DEFAULT_PARAMS.sleepTarget);
     expect(result.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
   });
 
@@ -1089,8 +643,6 @@ describe("getEffectiveParams", () => {
         sampleCount: 100,
         correlation: 0.3,
       },
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
     const result = getEffectiveParams(stored);
@@ -1109,8 +661,6 @@ describe("getEffectiveParams", () => {
         sampleCount: 100,
         correlation: 0.3,
       },
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
     };
     const result = getEffectiveParams(stored);
@@ -1118,36 +668,11 @@ describe("getEffectiveParams", () => {
     expect(result.exponentialMovingAverage.acuteTrainingLoadDays).not.toBe(49);
   });
 
-  it("picks stored hrv weight, not restingHr/sleep/respiratoryRate for readiness hrv", () => {
-    const stored: PersonalizedParams = {
-      version: 1,
-      fittedAt: "2026-03-18T12:00:00Z",
-      exponentialMovingAverage: null,
-      readinessWeights: {
-        hrv: 0.5,
-        restingHr: 0.15,
-        sleep: 0.2,
-        respiratoryRate: 0.15,
-        sampleCount: 90,
-        correlation: 0.25,
-      },
-      sleepTarget: null,
-      stressThresholds: null,
-    };
-    const result = getEffectiveParams(stored);
-    expect(result.readinessWeights.hrv).toBe(0.5);
-    expect(result.readinessWeights.restingHr).toBe(0.15);
-    expect(result.readinessWeights.sleep).toBe(0.2);
-    expect(result.readinessWeights.respiratoryRate).toBe(0.15);
-  });
-
   it("picks stored hrvThresholds not rhrThresholds", () => {
     const stored: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: {
         hrvThresholds: [-2.0, -1.3, -0.7],
         rhrThresholds: [2.0, 1.3, 0.7],

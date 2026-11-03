@@ -16,7 +16,7 @@ import { getPageNavigationStart, PageLoadProvider } from "../lib/page-load-conte
 import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
 const PAGE_LOAD_SECTIONS: Record<string, readonly string[]> = {
-  "/dashboard": ["cards", "health", "insights", "resting-heart-rate", "processing"],
+  "/dashboard": ["health", "insights", "resting-heart-rate", "processing"],
   "/body/heart-rate": ["chart", "sources"],
 };
 

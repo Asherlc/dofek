@@ -21,8 +21,6 @@ const personalizedStressThresholds = {
 
 const defaultEffectiveParameters = {
   exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-  readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-  sleepTarget: { minutes: 480 },
   stressThresholds: defaultStressThresholds,
 };
 
@@ -43,22 +41,6 @@ function modelCards(personalized: boolean) {
       ...defaultEvidence,
       dataWindow: "Past 365 days",
       excludedData: ["Days without a nonzero performance observation"],
-    },
-    {
-      key: "readinessWeights" as const,
-      title: "Readiness Score Weights",
-      description: "How much each factor contributes to your daily readiness score",
-      ...defaultEvidence,
-      dataWindow: "Past 365 days after a 60-day rolling-baseline warm-up",
-      excludedData: ["Days without heart-rate variability or resting heart rate"],
-    },
-    {
-      key: "sleepTarget" as const,
-      title: "Sleep Target",
-      description: "The amount of sleep associated with your best recovery",
-      ...defaultEvidence,
-      dataWindow: "Past 365 days; next-day recovery uses up to 60 days of baseline history",
-      excludedData: ["Naps and shorter duplicate sleep sessions"],
     },
     {
       key: "stressThresholds" as const,
@@ -100,8 +82,6 @@ function personalizationStatus(scenario: PersonalizationDataScenario) {
     },
     parameters: {
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds,
     },
     modelCards: modelCards(stressThresholds !== null),

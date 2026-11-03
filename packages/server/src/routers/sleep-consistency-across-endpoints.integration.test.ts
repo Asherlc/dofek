@@ -5,10 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import {
-  createClickHouseTestActivitySensorStore,
-  seedClickHouseMetricStreamRows,
-} from "./clickhouse-integration-test-helpers.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration test: sleep data consistency across all dashboard endpoints.
@@ -19,7 +16,6 @@ import {
  * BOTH sessions. Each endpoint then handles (or ignores) the duplicate
  * differently:
  *   - sleep.list returns all rows (duplicate bars in the chart)
- *   - sleepNeed.calculate uses Map overwrite (latest start time wins)
  *   - recovery.sleepAnalytics returns duplicate rows per date
  *
  * This test inserts multi-source non-overlapping-enough sleep data and
@@ -110,60 +106,7 @@ describe("sleep data consistency across endpoints", () => {
       testDates.push(date.toISOString().slice(0, 10));
     }
 
-    // Also insert daily metrics so sleepNeed works
-    for (let daysAgo = 90; daysAgo >= 0; daysAgo--) {
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps
-            ) VALUES (
-              CURRENT_DATE - ${daysAgo}::int,
-              'whoop', ${TEST_USER_ID}, 60, 8000
-            ) ON CONFLICT DO NOTHING`,
-      );
-    }
-
-    // Seed a real activity load on the date sleepNeed.calculate treats as
-    // yesterday (one day before its endDate), so this test exercises the
-    // ClickHouse daily_strain-backed availability path.
-    const loadActivityRows = await testCtx.db.execute<{ id: string; started_at: Date | string }>(
-      sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
-          ) VALUES (
-            'whoop', ${TEST_USER_ID}, 'sleep-consistency-load-activity',
-            'cycling', 'cycling', NULL,
-            (CURRENT_DATE - 2) + TIME '10:00:00',
-            (CURRENT_DATE - 2) + TIME '10:30:00',
-            'Sleep consistency load activity'
-          )
-          RETURNING id, started_at`,
-    );
-    const loadActivity = loadActivityRows[0];
-    if (!loadActivity) {
-      throw new Error("Expected the sleep consistency load activity to be inserted");
-    }
-
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
-    const loadStartedAt = new Date(loadActivity.started_at);
-    await seedClickHouseMetricStreamRows(testCtx, [
-      {
-        activityId: loadActivity.id,
-        userId: TEST_USER_ID,
-        recordedAt: loadStartedAt.toISOString(),
-        channel: "heart_rate",
-        providerId: "whoop",
-        sourceType: "api",
-        scalar: 120,
-      },
-      {
-        activityId: loadActivity.id,
-        userId: TEST_USER_ID,
-        recordedAt: new Date(loadStartedAt.getTime() + 5 * 60 * 1000).toISOString(),
-        channel: "heart_rate",
-        providerId: "whoop",
-        sourceType: "api",
-        scalar: 140,
-      },
-    ]);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -241,83 +184,6 @@ describe("sleep data consistency across endpoints", () => {
       expect(count, `recovery.sleepAnalytics returned ${count} rows for ${date}, expected 1`).toBe(
         1,
       );
-    }
-  });
-
-  it("sleepNeed.calculate picks the longest session per date (WHOOP 480min, not Apple Health 330min)", async () => {
-    await queryCache.invalidateAll();
-    const result = await query<{
-      recentNights: { date: string; actualMinutes: number | null }[];
-    }>("sleepNeed.calculate", { endDate });
-    expect(result).toBeDefined();
-
-    for (const night of result.recentNights) {
-      if (night.actualMinutes !== null) {
-        // Should be the WHOOP session (480 min), not the Apple Health session (330 min)
-        expect(
-          night.actualMinutes,
-          `sleepNeed picked ${night.actualMinutes}min for ${night.date}, expected ~480 (WHOOP), not ~330 (Apple Health)`,
-        ).toBeGreaterThanOrEqual(450);
-      }
-    }
-  });
-
-  it("all sleep endpoints agree on duration for each date", async () => {
-    await queryCache.invalidateAll();
-
-    // 1. sleep.list
-    const sleepList = await query<{ started_at: string; duration_minutes: number | null }[]>(
-      "sleep.list",
-      { days: 14, endDate },
-    );
-    const listByDate = new Map<string, number>();
-    for (const row of sleepList) {
-      const date = row.started_at.slice(0, 10);
-      if (row.duration_minutes !== null) {
-        // If there are duplicates, this overwrites — but we already test for no duplicates above
-        listByDate.set(date, row.duration_minutes);
-      }
-    }
-
-    // 2. sleepNeed.calculate
-    const sleepNeed = await query<{
-      recentNights: { date: string; actualMinutes: number | null }[];
-    }>("sleepNeed.calculate", { endDate });
-    expect(sleepNeed).not.toBeNull();
-    const needByDate = new Map<string, number>();
-    for (const night of sleepNeed.recentNights) {
-      if (night.actualMinutes !== null) {
-        needByDate.set(night.date, night.actualMinutes);
-      }
-    }
-
-    // 3. recovery.sleepAnalytics
-    const analytics = await query<{
-      nightly: { date: string; durationMinutes: number }[];
-    }>("recovery.sleepAnalytics", { days: 14 });
-    const analyticsByDate = new Map<string, number>();
-    for (const night of analytics.nightly) {
-      analyticsByDate.set(night.date, night.durationMinutes);
-    }
-
-    // For each date present in sleepNeed's recent nights, all endpoints should agree
-    for (const [date, needMinutes] of needByDate) {
-      const listMinutes = listByDate.get(date);
-      const analyticsMinutes = analyticsByDate.get(date);
-
-      if (listMinutes !== undefined) {
-        expect(
-          listMinutes,
-          `sleep.list says ${listMinutes}min for ${date}, but sleepNeed says ${needMinutes}min`,
-        ).toBe(needMinutes);
-      }
-
-      if (analyticsMinutes !== undefined) {
-        expect(
-          analyticsMinutes,
-          `recovery.sleepAnalytics says ${analyticsMinutes}min for ${date}, but sleepNeed says ${needMinutes}min`,
-        ).toBe(needMinutes);
-      }
     }
   });
 });

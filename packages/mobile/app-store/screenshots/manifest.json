@@ -8,9 +8,9 @@
   "screenshots": [
     {
       "id": "pages-home--default",
-      "filename": "01-today-readiness.png",
-      "caption": "See your daily readiness at a glance",
-      "outputPath": "app-store/screenshots/01-today-readiness.png",
+      "filename": "01-today.png",
+      "caption": "See your health data at a glance",
+      "outputPath": "app-store/screenshots/01-today.png",
       "pixelSize": "1284x2778"
     },
     {

@@ -56,8 +56,6 @@ const mockData = {
   fittedAt: "2026-03-19T12:00:00Z",
   parameters: {
     exponentialMovingAverage: { sampleCount: 100, correlation: 0.85 },
-    readinessWeights: { sampleCount: 90, correlation: 0.75 },
-    sleepTarget: { sampleCount: 30 },
     stressThresholds: {
       ...personalizedStressThresholds,
       sampleCount: 60,
@@ -65,14 +63,10 @@ const mockData = {
   },
   effective: {
     exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-    readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.1 },
-    sleepTarget: { minutes: 480 },
     stressThresholds: personalizedStressThresholds,
   },
   defaults: {
     exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-    readinessWeights: { hrv: 0.3, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.2 },
-    sleepTarget: { minutes: 480 },
     stressThresholds: defaultStressThresholds,
   },
   modelCards: [
@@ -88,32 +82,6 @@ const mockData = {
       fitEvidence: "Pearson correlation: 0.850",
       uncertainty: "No calibrated uncertainty interval is available.",
       excludedData: ["Days without a nonzero performance observation", "Unfinished activities"],
-    },
-    {
-      key: "readinessWeights",
-      title: "Readiness Score Weights",
-      description: "How much each factor contributes to your daily readiness score",
-      status: "personalized",
-      lastSuccessfulFitAt: null,
-      lastFitSummary: "Successful fit time unavailable until this model is refit",
-      dataWindow: "Past 365 days after a 60-day rolling-baseline warm-up",
-      dataSufficiency: "90 qualifying days used; minimum 60 days",
-      fitEvidence: "Pearson correlation: 0.750",
-      uncertainty: "No calibrated uncertainty interval is available.",
-      excludedData: ["Days without heart-rate variability or resting heart rate"],
-    },
-    {
-      key: "sleepTarget",
-      title: "Sleep Target",
-      description: "The amount of sleep associated with your best recovery",
-      status: "personalized",
-      lastSuccessfulFitAt: null,
-      lastFitSummary: "Successful fit time unavailable until this model is refit",
-      dataWindow: "Past 365 days; next-day recovery uses up to 60 days of baseline history",
-      dataSufficiency: "30 qualifying nights used; minimum 14 nights",
-      fitEvidence: "This average-based fit does not calculate a goodness-of-fit statistic.",
-      uncertainty: "No calibrated uncertainty interval is available.",
-      excludedData: ["Naps and shorter duplicate sleep sessions"],
     },
     {
       key: "stressThresholds",
@@ -157,7 +125,7 @@ describe("PersonalizationPanel", () => {
 
   it("reports incomplete model evidence and renders an actionable panel error", () => {
     statusUseQuery.mockReturnValue({
-      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 3) },
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 1) },
       isLoading: false,
     });
 

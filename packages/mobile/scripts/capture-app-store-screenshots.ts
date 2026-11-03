@@ -32,8 +32,8 @@ interface ScreenshotConfig {
 const SCREENSHOTS: ScreenshotConfig[] = [
   {
     id: "pages-home--default",
-    filename: "01-today-readiness.png",
-    caption: "See your daily readiness at a glance",
+    filename: "01-today.png",
+    caption: "See your health data at a glance",
   },
   {
     id: "pages-recovery--default",
@@ -54,7 +54,7 @@ const SCREENSHOTS: ScreenshotConfig[] = [
     id: "pages-settings--default",
     filename: "06-connected-providers.png",
     caption: "Connect Strava, WHOOP, Apple Health, and more",
-    tabLabel: "Connections",
+    tabLabel: "Data Sources",
   },
   {
     id: "pages-activitydetail-zonecharts--heart-rate-zones",

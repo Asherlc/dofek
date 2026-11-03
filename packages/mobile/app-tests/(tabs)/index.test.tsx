@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -159,12 +159,6 @@ describe("TodayScreen independent loading states", () => {
     mockDashboardV2UseQuery.mockClear();
     mockAnomalyUseQuery.mockClear();
     mockDashboardData = {
-      readiness: {
-        score: 85,
-        date: "2026-03-21",
-        components: { hrvScore: 80, restingHrScore: 90, sleepScore: 85, respiratoryRateScore: 80 },
-        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      },
       sleep: {
         lastNight: {
           date: "2026-03-20",
@@ -175,45 +169,6 @@ describe("TodayScreen independent loading states", () => {
           awakePct: 10,
           stagingAvailable: true,
         },
-        sleepDebt: 0,
-      },
-      strain: {
-        dailyStrain: 12,
-        acuteLoad: 300,
-        chronicLoad: 250,
-        workloadRatio: 1.2,
-        date: "2026-03-21",
-      },
-      sleepNeed: {
-        availability: "available",
-        epistemicStatus: { kind: "estimated", label: "Estimated" },
-        baselineMinutes: 480,
-        strainDebtMinutes: 20,
-        accumulatedDebtMinutes: 10,
-        debtRecoveryMinutes: 17,
-        totalNeedMinutes: 517,
-        estimateMetadata: {
-          basis: "personalized_high_hrv_average",
-          baselineQualifyingNightCount: 7,
-          debtObservedNightCount: 1,
-          methodVersion: "sleep-need-heuristic-v1",
-          uncertainty: "not_established",
-          valueQualifier: "About",
-          summaryLabel: "Estimated sleep need",
-          componentLabels: {
-            baseline: "Baseline estimate",
-            strainDebt: "Previous-day load adjustment",
-            debtRecovery: "Debt recovery",
-          },
-          basisLabel:
-            "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
-          coverageLabel:
-            "Sleep-debt input uses 1 observed night from the model's recent-night window.",
-          methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
-          uncertaintyLabel: "Uncertainty: not established",
-          limitationLabel: "Estimated sleep need with unquantified uncertainty.",
-        },
-        recentNights: [],
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: "2026-03-21",
@@ -284,17 +239,6 @@ describe("TodayScreen independent loading states", () => {
     vi.useRealTimers();
   });
 
-  it("shows skeleton placeholder for recovery ring while readiness is loading", async () => {
-    mockDashboardLoading = true;
-    mockDashboardData = undefined;
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    // In the consolidated query, everything loads together
-    expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
-  });
-
   it("keeps cached dashboard data visible while refreshing", async () => {
     mockDashboardLoading = true;
     mockDashboardFetching = true;
@@ -302,9 +246,9 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
-    expect(screen.queryByTestId("skeleton-circle")).toBeNull();
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getByText("RECOVERY BREAKDOWN")).toBeTruthy();
+    expect(screen.getByText("8h 0m")).toBeTruthy();
+    expect(screen.queryByTestId("query-state-loading")).toBeNull();
   });
 
   it("shows a non-blocking error when cached dashboard data fails to refresh", async () => {
@@ -315,27 +259,26 @@ describe("TodayScreen independent loading states", () => {
 
     expect(screen.getByText("Refresh failed")).toBeTruthy();
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getByText("RECOVERY BREAKDOWN")).toBeTruthy();
   });
 
-  it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
+  it("shows last night loading while the dashboard loads after processing is ready", async () => {
     mockDashboardLoading = true;
+    mockDashboardFetching = true;
     mockDashboardData = undefined;
+    mockDataHealthData = {
+      overallStatus: "ready",
+      generatedAt: "2026-03-21T08:00:00.000Z",
+      scope: { providerId: null, datasets: ["activity", "sleep", "recovery", "training", "body"] },
+      operations: [],
+      datasets: [],
+    };
 
     const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
-    expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("hides sleep summary section while sleep analytics is loading", async () => {
-    mockDashboardLoading = true;
-    mockDashboardData = undefined;
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(screen.queryByText("LAST NIGHT")).toBeNull();
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("No sleep data")).toBeNull();
   });
 
   it("shows last night summary when sleep data has yesterday's date", async () => {
@@ -400,11 +343,10 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("8h 0m recorded. Sleep stages were not reported.")).toBeTruthy();
   });
 
-  it("shows one sleep empty state when both the recorded night and estimate are missing", async () => {
+  it("shows a sleep empty state when the recorded night is missing", async () => {
     mockDashboardData = {
       ...mockDashboardData,
-      sleep: { lastNight: null, sleepDebt: 0 },
-      sleepNeed: null,
+      sleep: { lastNight: null },
     };
 
     const { default: TodayScreen } = await import("../../app/(tabs)/index");
@@ -412,137 +354,6 @@ describe("TodayScreen independent loading states", () => {
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
     expect(screen.getAllByText("No sleep data")).toHaveLength(1);
-  });
-
-  it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {
-    mockDashboardData = {
-      ...mockDashboardData,
-      sleep: {
-        lastNight: null,
-        sleepDebt: 0,
-      },
-      sleepNeed: {
-        availability: "missing_previous_night",
-        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
-        message: "Sync last night's sleep data to see tonight's sleep need.",
-      },
-    };
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(screen.getByText("SLEEP DATA NEEDED")).toBeTruthy();
-    expect(screen.queryByText("LAST NIGHT")).toBeNull();
-    expect(screen.queryByText("SLEEP COACH")).toBeNull();
-    expect(screen.queryByText("No sleep data")).toBeNull();
-    expect(
-      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Baseline need")).toBeNull();
-    expect(screen.queryByText("Strain debt")).toBeNull();
-    expect(screen.queryByText("Debt recovery")).toBeNull();
-    expect(screen.queryByText("8h 37m")).toBeNull();
-  });
-
-  it("keeps a legacy cached sleep prerequisite visible without a status", async () => {
-    mockDashboardData = {
-      ...mockDashboardData,
-      sleep: { lastNight: null, sleepDebt: 0 },
-      sleepNeed: {
-        availability: "missing_previous_night",
-        message: "Sync last night's sleep data to see tonight's sleep need.",
-      },
-    };
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(
-      screen.getByText("Sync last night's sleep data to see tonight's sleep need."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Unavailable")).toBeNull();
-  });
-
-  it("renders the server-authored next action for insufficient sleep need data", async () => {
-    mockDashboardData = {
-      ...mockDashboardData,
-      sleep: {
-        lastNight: {
-          date: "2026-03-20",
-          durationMinutes: 480,
-          deepPct: 20,
-          remPct: 25,
-          lightPct: 45,
-          awakePct: 10,
-          stagingAvailable: true,
-        },
-        sleepDebt: 0,
-      },
-      sleepNeed: {
-        availability: "insufficient_data",
-        epistemicStatus: { kind: "unavailable", label: "Unavailable" },
-        reason: "insufficient_baseline_history",
-        message: "Sync at least 7 qualifying nights to estimate sleep need.",
-        nextAction: "Sync more sleep and recovery data.",
-      },
-    };
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(
-      screen.getByText("Sync at least 7 qualifying nights to estimate sleep need."),
-    ).toBeTruthy();
-    expect(screen.getByText("Sync more sleep and recovery data.")).toBeTruthy();
-    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
-    expect(screen.queryByText("SLEEP DATA NEEDED")).toBeNull();
-  });
-
-  it("renders the V2 sleep value as an uncalibrated heuristic estimate", async () => {
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(mockDashboardV2UseQuery).toHaveBeenCalled();
-    expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
-    expect(screen.queryByText("SLEEP COACH")).toBeNull();
-    expect(screen.getByText("About 8h 37m")).toBeTruthy();
-    expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
-    expect(screen.getByText("+17m")).toBeTruthy();
-    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Sleep-debt input uses 1 observed night from the model's recent-night window.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Baseline average plus previous-day load and sleep-debt adjustments."),
-    ).toBeTruthy();
-    expect(screen.queryByText("recommended tonight")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
-    expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
-  });
-
-  it("renders all rings when no queries are loading", async () => {
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByTestId("skeleton-circle")).toBeNull();
-  });
-
-  it("keeps chart tooltip buttons outside dashboard ring navigation buttons", async () => {
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    const { container } = render(<TodayScreen />);
-
-    expect(container.querySelector("button button")).toBeNull();
   });
 
   it("does not enable anomaly detection during the initial dashboard load", async () => {
@@ -613,7 +424,7 @@ describe("TodayScreen independent loading states", () => {
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  it("shows a recovery error panel when the readiness query fails", async () => {
+  it("shows a dashboard error panel when the query fails", async () => {
     mockDashboardError = new Error("Dashboard failed");
     mockDashboardData = undefined;
 
@@ -625,16 +436,5 @@ describe("TodayScreen independent loading states", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
-  });
-
-  it("shows a sleep coach error card when the sleep-need query fails", async () => {
-    // In consolidated approach, they share the same error state
-    mockDashboardError = new Error("Dashboard failed");
-    mockDashboardData = undefined;
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(screen.getByText("Dashboard failed")).toBeTruthy();
   });
 });

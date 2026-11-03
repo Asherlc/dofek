@@ -99,7 +99,6 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "power.eftpTrend": { defaultDays: 365, routerFile: "power.ts", input: "days" },
   "power.powerCurve": { defaultDays: 90, routerFile: "power.ts", input: "days" },
   "recovery.hrvVariability": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
-  "recovery.readinessScore": { defaultDays: 30, routerFile: "recovery.ts", input: "dateRange" },
   "recovery.sleepAnalytics": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
   "recovery.workloadRatio": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
   "running.dynamics": { defaultDays: 90, routerFile: "running.ts", input: "custom" },
