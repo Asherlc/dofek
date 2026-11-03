@@ -9,11 +9,6 @@ import type { TimeRangeDays } from "../../lib/timeRange.ts";
 const state: {
   days: TimeRangeDays;
   queryCalls: Array<{ name: string; input: unknown; options?: unknown }>;
-  recentActivitiesProps: Array<{
-    activityTypes?: readonly string[];
-    emptyMessage?: string;
-  }>;
-  recentActivityTypes: readonly string[] | undefined;
   routeComponents: Record<string, ComponentType>;
   trainingVolumeQuery: {
     data: unknown;
@@ -28,8 +23,6 @@ const state: {
 } = {
   days: 90,
   queryCalls: [],
-  recentActivitiesProps: [],
-  recentActivityTypes: undefined,
   routeComponents: {},
   trainingVolumeQuery: { data: [], isLoading: false, error: null },
   trainingHrZonesQuery: {
@@ -95,16 +88,6 @@ vi.mock("../../components/QueryStatePanel.tsx", () => ({
 }));
 vi.mock("../../components/RampRateChart.tsx", () => ({ RampRateChart: () => <div /> }));
 vi.mock("../../components/ReadinessScoreCard.tsx", () => ({ ReadinessScoreCard: () => <div /> }));
-vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
-  RecentActivitiesSection: (props: {
-    activityTypes?: readonly string[];
-    emptyMessage?: string;
-  }) => {
-    state.recentActivitiesProps.push(props);
-    state.recentActivityTypes = props.activityTypes;
-    return <div>Recent activities</div>;
-  },
-}));
 vi.mock("../../components/SleepAnalyticsChart.tsx", () => ({ SleepAnalyticsChart: () => <div /> }));
 vi.mock("../../components/StrengthVolumeChart.tsx", () => ({ StrengthVolumeChart: () => <div /> }));
 vi.mock("../../components/TrainingMonotonyChart.tsx", () => ({
@@ -205,8 +188,6 @@ export function expectRegistryInputs(
 export function resetRangePlumbingState() {
   state.days = 90;
   state.queryCalls.length = 0;
-  state.recentActivitiesProps.length = 0;
-  state.recentActivityTypes = undefined;
   state.trainingVolumeQuery = { data: [], isLoading: false, error: null };
   state.trainingHrZonesQuery = {
     data: {

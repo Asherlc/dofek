@@ -4,7 +4,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { TrainingChartAvailability } from "dofek-server/types";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { RunningDynamics } from "../../components/RunningDynamics.tsx";
 import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState.tsx";
@@ -26,8 +25,6 @@ import { useUnitConverter } from "../../lib/unitContext.ts";
 export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
-
-const RUNNING_ACTIVITY_TYPES = ["running"] as const;
 
 export function RunningTab() {
   const { days } = useTrainingDays();
@@ -80,10 +77,6 @@ export function RunningTab() {
         </Section>
       </div>
       <RunningDynamics data={dynamics.data} loading={dynamics.isLoading} error={dynamics.error} />
-
-      <Section title="Recent Runs">
-        <RecentActivitiesSection activityTypes={RUNNING_ACTIVITY_TYPES} />
-      </Section>
     </>
   );
 }

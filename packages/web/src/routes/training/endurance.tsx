@@ -1,10 +1,8 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { PolarizationTrendChart } from "../../components/PolarizationTrendChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RampRateChart } from "../../components/RampRateChart.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { TrainingMonotonyChart } from "../../components/TrainingMonotonyChart.tsx";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
@@ -64,10 +62,6 @@ function EnduranceTab() {
         ) : (
           <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
         )}
-      </Section>
-
-      <Section title="Recent Endurance Activities">
-        <RecentActivitiesSection activityTypes={ENDURANCE_ACTIVITY_TYPES} />
       </Section>
     </>
   );

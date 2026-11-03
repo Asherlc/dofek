@@ -42,9 +42,6 @@ vi.mock("../../components/ElevationGainChart.tsx", () => ({
 vi.mock("../../components/GradeAdjustedPaceTable.tsx", () => ({
   GradeAdjustedPaceTable: () => <div data-testid="grade-adjusted-pace" />,
 }));
-vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
-  RecentActivitiesSection: () => <div data-testid="recent-activities" />,
-}));
 vi.mock("../../components/WalkingBiomechanicsChart.tsx", () => ({
   WalkingBiomechanicsChart: () => <div data-testid="walking-biomechanics" />,
 }));

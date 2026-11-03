@@ -1,10 +1,8 @@
 import { createLazyFileRoute } from "@tanstack/react-router";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
 import { MuscleGroupVolumeChart } from "../../components/MuscleGroupVolumeChart.tsx";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { StrengthVolumeChart } from "../../components/StrengthVolumeChart.tsx";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -15,17 +13,8 @@ export const Route = createLazyFileRoute("/training/strength")({
   component: StrengthTab,
 });
 
-const STRENGTH_ACTIVITY_TYPES = ["strength"] as const;
-const STRENGTH_SCOPE_LABEL = "Strength";
-
 function StrengthTab() {
   const { days } = useTrainingDays();
-  const rangeLabel = strengthRangeLabel(days);
-  const emptyMessage =
-    days === null
-      ? `No strength workouts across all recorded time. Included types: ${STRENGTH_SCOPE_LABEL.toLowerCase()}.`
-      : `No strength workouts in the selected ${strengthFiniteRangeLabel(days)}. Included types: ${STRENGTH_SCOPE_LABEL.toLowerCase()}.`;
-
   const strengthVolume = trpc.strength.volumeOverTime.useQuery(
     selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
@@ -92,39 +81,15 @@ function StrengthTab() {
           )}
         </Section>
       </div>
-
-      <Section title="Strength Workouts" subtitle={`${rangeLabel} · ${STRENGTH_SCOPE_LABEL}`}>
-        <RecentActivitiesSection
-          activityTypes={STRENGTH_ACTIVITY_TYPES}
-          emptyMessage={emptyMessage}
-        />
-      </Section>
     </>
   );
 }
 
-function strengthRangeLabel(days: number | null): string {
-  return days === null ? "All recorded time" : `Selected ${strengthFiniteRangeLabel(days)}`;
-}
-
-function strengthFiniteRangeLabel(days: number): string {
-  return days === 365 ? "1-year range" : `${days}-day range`;
-}
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
       <div className="card p-4">{children}</div>
     </section>

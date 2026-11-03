@@ -1,9 +1,6 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { ActivityList } from "../../components/ActivityList.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails.tsx";
@@ -42,8 +39,6 @@ function formatTte(seconds: number | null): string {
   return `${mins}m`;
 }
 
-const ACTIVITY_PAGE_SIZE = 20;
-
 interface EstimateEvidence {
   method: string;
   confidence: "high" | "moderate" | "limited" | "not_available";
@@ -64,27 +59,8 @@ function CyclingTab() {
 }
 
 function CyclingContent({ days }: { days: TimeRangeDays }) {
-  const [activityPage, setActivityPage] = useState(0);
-  const trpcUtils = trpc.useUtils();
   const performance = trpc.cycling.performance.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
-  const activityAnalytics = trpc.cycling.activities.useQuery(
-    {
-      days,
-      activityLimit: ACTIVITY_PAGE_SIZE,
-      activityOffset: activityPage * ACTIVITY_PAGE_SIZE,
-    },
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
-  const bulkDelete = trpc.activity.bulkDelete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.cycling.activities.invalidate(),
-        trpcUtils.cycling.performance.invalidate(),
-        trpcUtils.calendar.weekListV2.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
-    },
-  });
+  const activityAnalytics = trpc.cycling.activities.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
 
   // Build lookup: duration → best power for each period
   const recentByDuration = new Map(
@@ -219,27 +195,6 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
               />
             </Section>
           </div>
-
-          <Section title="Recent Cycling Activities">
-            <ActivityList
-              activities={activityAnalytics.data?.activities.items ?? []}
-              loading={activityAnalytics.isLoading}
-              totalCount={activityAnalytics.data?.activities.totalCount}
-              page={activityPage}
-              pageSize={ACTIVITY_PAGE_SIZE}
-              onPageChange={setActivityPage}
-              onBulkDelete={(ids) => bulkDelete.mutate({ ids })}
-              bulkDeletePending={bulkDelete.isPending}
-              bulkDeleteError={
-                bulkDelete.error
-                  ? userFacingErrorMessage(
-                      bulkDelete.error,
-                      "The activities could not be deleted. Please try again.",
-                    )
-                  : undefined
-              }
-            />
-          </Section>
         </>
       )}
     </>
