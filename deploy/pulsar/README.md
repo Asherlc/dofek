@@ -86,3 +86,14 @@ verify pinned releases again when updating:
 
 Stop these services without deleting their named volumes to test restart
 recovery. Never remove production or another workspace's volumes during cleanup.
+
+The separate [CDC qualification](../../docs/pulsar-cdc-assessment.md#confirmed-timestamp-trigger-and-qualified-target-version)
+records a server-side timestamp regression: a direct HTTP `VALUES` batch with a
+DateTime64 value followed by NULL failed on 26.9.19.9 and passed on the isolated
+26.10.2.103 candidate. [timestamp-values.sql](timestamp-values.sql) is the minimal
+fixture; its target must be created in the isolated `qualification` database as
+`timestamp_values_probe(id Int32, ended_at Nullable(DateTime64(6, 'UTC')))` with a
+MergeTree engine ordered by `id`. POST the SQL directly through the test HTTP
+client and verify both rows and six-digit precision. This fixture is not a
+production migration or approval to upgrade the production engine. The candidate
+version is documented in the [official release](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.10.2.103-stable).

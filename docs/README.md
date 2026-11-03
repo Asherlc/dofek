@@ -142,8 +142,9 @@ Cross-provider reverse-engineering references:
   Pulsar qualification, actual R2 correction, memory/storage gates and retained
   production safety holds; not production deployment instructions.
 - [pulsar-cdc-assessment.md](pulsar-cdc-assessment.md): November 3, 2026 isolated
-  Debezium-to-Pulsar assessment, PeerDB replacement contracts and unresolved
-  whole-host capacity; not approval to retire production CDC.
+  CDC assessment and follow-up qualification: verified projection/replay
+  controls, timestamp regression resolved on the latest stable test engine,
+  and failed whole-host capacity; not approval to retire production CDC.
 
 These files explain why the current system exists but are not current
 instructions:

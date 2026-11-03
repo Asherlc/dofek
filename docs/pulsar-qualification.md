@@ -301,3 +301,19 @@ consumer limitations and the incomplete whole-host budget. It does not approve
 or qualify production retirement. Existing-server fit, physical admission,
 failure soaks, erasure/restore guarantees and all-archive conversion remain
 required; the four production holds remain owned and unchanged.
+
+The user's subsequent qualification request exercised released SeaTunnel 3.0.0
+against actual ClickHouse 26.9.19. Official Debezium normalization enabled
+versioned-row projection, reverse-order replay and durable subscription recovery
+in bounded controls. The nullable `DateTime64` failure was isolated to a direct
+HTTP date-before-NULL insert on ClickHouse 26.9.19.9. The latest stable
+26.10.2.103 passed that minimal regression and the full bounded timestamp
+pipeline, including non-UTC input and microsecond precision; production was
+not upgraded. An actual WAL-loss fixture made source readiness return 503, but
+controlled recovery is not yet qualified. The complete candidate allocation
+also exceeds physical RAM before OS reserve. See the
+[follow-up results](pulsar-cdc-assessment.md#follow-up-qualification-debezium-server--pulsar--seatunnel--clickhouse)
+for the exact failures, protocol configuration, counts and limits. The CDC
+retirement gate remains failed; the temporal gate's success on the qualified
+candidate does not replace whole-host, application compatibility or erasure
+qualification.
