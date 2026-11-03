@@ -2555,62 +2555,75 @@ describe("StravaProvider.sync — additional coverage", () => {
     );
   });
 
-  it("writes expected upsert payloads for activity records", async () => {
-    setupEnv();
+  it.each([
+    { deviceName: undefined, expectedSource: undefined },
+    { deviceName: "", expectedSource: undefined },
+    { deviceName: " \t", expectedSource: undefined },
+    { deviceName: " Garmin Edge ", expectedSource: " Garmin Edge " },
+  ])(
+    "writes expected upsert payloads for device name: $deviceName",
+    async ({ deviceName, expectedSource }) => {
+      setupEnv();
 
-    const secondActivity = {
-      ...MOCK_ACTIVITY,
-      id: 87654321,
-      name: "Evening Ride",
-    };
+      const secondActivity = {
+        ...MOCK_ACTIVITY,
+        id: 87654321,
+        name: "Evening Ride",
+      };
 
-    const mockFetch = vi.fn().mockImplementation((url: string) => {
-      const urlStr = String(url);
-      if (urlStr.includes("/athlete/activities")) {
-        return Promise.resolve(Response.json([MOCK_ACTIVITY, secondActivity]));
-      }
-      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}/streams`)) {
-        return Promise.resolve(Response.json(MOCK_STREAMS));
-      }
-      if (urlStr.includes(`/activities/${secondActivity.id}/streams`)) {
-        return Promise.resolve(Response.json(MOCK_STREAMS));
-      }
-      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
-        return Promise.resolve(Response.json({ ...MOCK_ACTIVITY, device_name: "Garmin Edge" }));
-      }
-      if (urlStr.includes(`/activities/${secondActivity.id}`)) {
-        return Promise.resolve(Response.json({ ...secondActivity, device_name: "Garmin Edge" }));
-      }
-      return Promise.resolve(Response.json([]));
-    });
+      const mockFetch = vi.fn().mockImplementation((url: string) => {
+        const urlStr = String(url);
+        if (urlStr.includes("/athlete/activities")) {
+          return Promise.resolve(Response.json([MOCK_ACTIVITY, secondActivity]));
+        }
+        if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}/streams`)) {
+          return Promise.resolve(Response.json(MOCK_STREAMS));
+        }
+        if (urlStr.includes(`/activities/${secondActivity.id}/streams`)) {
+          return Promise.resolve(Response.json(MOCK_STREAMS));
+        }
+        if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
+          return Promise.resolve(Response.json({ ...MOCK_ACTIVITY, device_name: deviceName }));
+        }
+        if (urlStr.includes(`/activities/${secondActivity.id}`)) {
+          return Promise.resolve(Response.json({ ...secondActivity, device_name: deviceName }));
+        }
+        return Promise.resolve(Response.json([]));
+      });
 
-    const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
-    const result = await provider.sync(
-      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
-    );
+      const mockDb = createMockDb();
+      const provider = new StravaProvider(mockFetch);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
 
-    expect(result.errors).toHaveLength(0);
-    const upsertCalls = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls;
-    expect(upsertCalls).toHaveLength(2);
-    expect(upsertCalls[0]?.[1]).toMatchObject({
-      providerId: "strava",
-      externalId: String(MOCK_ACTIVITY.id),
-      raw: { id: MOCK_ACTIVITY.id },
-    });
-    expect(upsertCalls[1]?.[1]).toMatchObject({
-      providerId: "strava",
-      externalId: String(secondActivity.id),
-      raw: { id: secondActivity.id },
-    });
-    expect(upsertCalls[0]?.[2]).toMatchObject({
-      raw: expect.objectContaining({ id: MOCK_ACTIVITY.id }),
-    });
-    expect(upsertCalls[1]?.[2]).toMatchObject({
-      raw: expect.objectContaining({ id: secondActivity.id }),
-    });
-    expect(hasQueryChunks(upsertCalls[0]?.[2]?.sourceName)).toBe(true);
-  });
+      expect(result.errors).toHaveLength(0);
+      const upsertCalls = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls;
+      expect(upsertCalls).toHaveLength(2);
+      expect(upsertCalls[0]?.[1]).toMatchObject({
+        providerId: "strava",
+        externalId: String(MOCK_ACTIVITY.id),
+        sourceName: expectedSource,
+        raw: { id: MOCK_ACTIVITY.id },
+      });
+      expect(upsertCalls[1]?.[1]).toMatchObject({
+        providerId: "strava",
+        externalId: String(secondActivity.id),
+        sourceName: expectedSource,
+        raw: { id: secondActivity.id },
+      });
+      expect(upsertCalls[0]?.[2]).toMatchObject({
+        raw: expect.objectContaining({ id: MOCK_ACTIVITY.id }),
+      });
+      expect(upsertCalls[1]?.[2]).toMatchObject({
+        raw: expect.objectContaining({ id: secondActivity.id }),
+      });
+      expect(hasQueryChunks(upsertCalls[0]?.[2]?.sourceName)).toBe(true);
+    },
+  );
 
   it("converts since date to epoch seconds using division by 1000", async () => {
     setupEnv();

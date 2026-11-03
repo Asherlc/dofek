@@ -3,7 +3,9 @@ import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { activity } from "../db/schema/activity.ts";
+import { activityImage } from "../db/schema/activity-images.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -302,49 +304,124 @@ describe("StravaProvider.sync() (integration)", () => {
     },
   );
 
-  it("fills a missing raw payload from inventory when detail is unavailable", async () => {
+  it.each([
+    { deviceName: undefined, expectedSource: "Previously recorded device" },
+    { deviceName: "", expectedSource: "Previously recorded device" },
+    { deviceName: " \t", expectedSource: "Previously recorded device" },
+    { deviceName: "Wahoo ELEMNT", expectedSource: "Wahoo ELEMNT" },
+  ])(
+    "preserves source attribution for missing or blank device names: $deviceName",
+    async ({ deviceName, expectedSource }) => {
+      const isolated = await setupTestDatabase();
+      try {
+        const db = isolated.db;
+        await ensureProvider(db, "strava", "Strava", "https://www.strava.com/api/v3");
+        await saveTokens(db, "strava", {
+          accessToken: "valid-token",
+          refreshToken: "valid-refresh",
+          expiresAt: new Date("2027-01-01T00:00:00Z"),
+          scopes: "read,activity:read_all",
+        });
+        const summary = fakeActivity({ id: 8000, start_date: "2026-06-01T10:00:00Z" });
+        await upsertProviderActivity(
+          db,
+          {
+            ...parseStravaActivity(summary),
+            providerId: "strava",
+            sourceName: "Previously recorded device",
+            raw: null,
+          },
+          { name: summary.name },
+        );
+        server.use(...stravaHandlers([summary]));
+        const detail =
+          deviceName === undefined ? undefined : { ...summary, device_name: deviceName };
+        server.use(
+          http.get("https://www.strava.com/api/v3/activities/:activityId", () =>
+            detail === undefined
+              ? new HttpResponse("Not found", { status: 404 })
+              : HttpResponse.json(detail),
+          ),
+        );
+        const result = await new StravaProvider(globalThis.fetch).sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromIsoRange({
+              sinceIso: "2026-06-01T00:00:00.000Z",
+              untilIso: "2026-06-02T00:00:00.000Z",
+            }),
+            metricStreamPublisher: metricStreamCapture.publisher,
+          }),
+        );
+        expect(result.errors).toEqual([]);
+        const [stored] = await db.select().from(activity).where(eq(activity.externalId, "8000"));
+        expect(stored?.raw).toEqual(detail ?? summary);
+        expect(stored?.sourceName).toBe(expectedSource);
+      } finally {
+        await isolated.cleanup();
+      }
+    },
+  );
+
+  it("stores the discovered image after retrying an incomplete gallery", async () => {
     const isolated = await setupTestDatabase();
     try {
-      const db = isolated.db;
-      await ensureProvider(db, "strava", "Strava", "https://www.strava.com/api/v3");
-      await saveTokens(db, "strava", {
+      const userId = getTokenUserId();
+      if (!userId) throw new Error("Photo retry fixture requires a scoped user");
+      await ensureProvider(isolated.db, "strava", "Strava", "https://www.strava.com/api/v3");
+      await saveTokens(isolated.db, "strava", {
         accessToken: "valid-token",
         refreshToken: "valid-refresh",
         expiresAt: new Date("2027-01-01T00:00:00Z"),
         scopes: "read,activity:read_all",
       });
-      const summary = fakeActivity({ id: 8000, start_date: "2026-06-01T10:00:00Z" });
-      await upsertProviderActivity(
-        db,
-        {
-          ...parseStravaActivity(summary),
-          providerId: "strava",
-          sourceName: "Previously recorded device",
-          raw: null,
-        },
-        { name: summary.name },
-      );
+      const summary = fakeActivity({ id: 9000, start_date: "2026-06-01T10:00:00Z" });
+      let photoReads = 0;
       server.use(...stravaHandlers([summary]));
       server.use(
-        http.get(
-          "https://www.strava.com/api/v3/activities/:activityId",
-          () => new HttpResponse("Not found", { status: 404 }),
+        http.get("https://www.strava.com/api/v3/activities/:activityId", () =>
+          HttpResponse.json({ ...summary, photos: { count: 1 } }),
         ),
-      );
-      const result = await new StravaProvider(globalThis.fetch).sync(
-        new SyncRun({
-          db: db,
-          window: SyncWindow.fromIsoRange({
-            sinceIso: "2026-06-01T00:00:00.000Z",
-            untilIso: "2026-06-02T00:00:00.000Z",
-          }),
-          metricStreamPublisher: metricStreamCapture.publisher,
+        http.get("https://www.strava.com/api/v3/activities/:activityId/photos", () => {
+          photoReads++;
+          return photoReads === 1
+            ? new HttpResponse("Unavailable", { status: 500 })
+            : HttpResponse.json([
+                { unique_id: "retry-photo", urls: { 600: "https://cdn.example.test/photo.jpg" } },
+              ]);
         }),
       );
-      expect(result.errors).toEqual([]);
-      const [stored] = await db.select().from(activity).where(eq(activity.externalId, "8000"));
-      expect(stored?.raw).toEqual(summary);
-      expect(stored?.sourceName).toBe("Previously recorded device");
+      const checkpoint = createMemoryCheckpointStore();
+      const options = {
+        db: isolated.db,
+        userId,
+        checkpoint,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-06-01T00:00:00.000Z",
+          untilIso: "2026-06-02T00:00:00.000Z",
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      };
+      const provider = new StravaProvider(globalThis.fetch);
+      const first = await provider.sync(new SyncRun(options));
+      expect(first.errors.some((error) => error.message.includes("Photos"))).toBe(true);
+      const resumed = await provider.sync(new SyncRun(options));
+      expect(resumed.errors).toEqual([]);
+      expect(photoReads).toBe(2);
+      expect(await checkpoint.load()).toBeNull();
+      const [storedActivity] = await isolated.db
+        .select()
+        .from(activity)
+        .where(eq(activity.externalId, "9000"));
+      const images = await isolated.db.select().from(activityImage);
+      expect(images).toHaveLength(1);
+      expect(images[0]).toMatchObject({
+        userId,
+        activityId: storedActivity?.id,
+        providerId: "strava",
+        sourceId: "retry-photo",
+        candidate: { variants: [{ url: "https://cdn.example.test/photo.jpg" }] },
+      });
     } finally {
       await isolated.cleanup();
     }

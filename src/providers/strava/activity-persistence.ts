@@ -22,7 +22,12 @@ export function upsertStravaActivity(
 ) {
   return upsertProviderActivity(
     db,
-    { ...fields, providerId: "strava", sourceName, raw: detail ?? summary },
+    {
+      ...fields,
+      providerId: "strava",
+      sourceName: sourceName?.trim() ? sourceName : undefined,
+      raw: detail ?? summary,
+    },
     {
       activityType: fields.activityType,
       startedAt: fields.startedAt,
