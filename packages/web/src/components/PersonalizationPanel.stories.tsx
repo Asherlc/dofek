@@ -24,7 +24,6 @@ const defaultEffectiveParameters = {
   readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
   sleepTarget: { minutes: 480 },
   stressThresholds: defaultStressThresholds,
-  trainingImpulseConstants: { genderFactor: 0.64, exponent: 1.92 },
 };
 
 function modelCards(personalized: boolean) {
@@ -79,14 +78,6 @@ function modelCards(personalized: boolean) {
       dataWindow: "Past 425 days, including rolling-baseline warm-up",
       excludedData: ["Days without nonzero rolling variability"],
     },
-    {
-      key: "trainingImpulseConstants" as const,
-      title: "Heart Rate Effort Model",
-      description: "How heart rate intensity translates to training load",
-      ...defaultEvidence,
-      dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-      excludedData: ["Activities without heart-rate samples or normalized power"],
-    },
   ];
 }
 
@@ -112,7 +103,6 @@ function personalizationStatus(scenario: PersonalizationDataScenario) {
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds,
-      trainingImpulseConstants: null,
     },
     modelCards: modelCards(stressThresholds !== null),
   };

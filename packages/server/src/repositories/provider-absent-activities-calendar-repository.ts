@@ -1,4 +1,3 @@
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -6,7 +5,6 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import {
   activityRowSchema,
-  baselineRowSchema,
   type CalendarActivityEntry,
   type CalendarDayActivities,
   createProviderAbsentCalendarEntry,
@@ -128,17 +126,8 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
     }
 
     const activityIds = activityRows.map((row) => row.id);
-    const [summaryRows, baselineRows, routePreviewByActivityId] = await Promise.all([
+    const [summaryRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchSummaryMetricsByActivityId(activityIds),
-      this.#sensorStore.query(
-        baselineRowSchema,
-        `SELECT
-            up.max_hr AS max_hr,
-            up.resting_hr AS resting_hr
-          FROM postgres_fitness.user_profile_current up
-          WHERE up.id = {userId:UUID}`,
-        { userId: this.userId },
-      ),
       getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
     ]);
 
@@ -159,7 +148,6 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       };
     });
 
-    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null };
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
       this.userId,
@@ -171,13 +159,10 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           memberActivityIds: row.member_activity_ids,
         })),
     );
-    const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of enrichedRows) {
       const entry = createProviderAbsentCalendarEntry(row, {
-        baseline,
-        calculator,
         routePreview: routePreviewByActivityId.get(row.id),
         mapReadiness: mapReadinessByActivityId.get(row.id),
       });

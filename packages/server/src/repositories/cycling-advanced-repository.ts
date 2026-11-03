@@ -4,11 +4,8 @@ import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import {
-  clickHouseDateRangeLowerBound,
   clickHouseIntervalDayLowerBound,
-  clickHouseMondayDateRangeLowerBound,
   type RangeDays,
-  rangeDaysOrNullAdd,
   rangeDaysParams,
 } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
@@ -17,9 +14,6 @@ import { activityRepositoryFor } from "./activity-repository.ts";
 import {
   ActivityVariabilityModel,
   PedalDynamicsModel,
-  type RampRateResultData,
-  RampRateWeekModel,
-  TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
 
@@ -33,22 +27,6 @@ export type ActivityVariabilityEmptyReason =
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
-
-const rampRateRowSchema = z.object({
-  week: dateStringSchema,
-  ctl_start: z.coerce.number(),
-  ctl_end: z.coerce.number(),
-  ramp_rate: z.coerce.number(),
-});
-
-const monotonyRowSchema = z.object({
-  week: dateStringSchema,
-  monotony: z.coerce.number(),
-  strain: z.coerce.number(),
-  weekly_load: z.coerce.number(),
-  daily_mean_load: z.coerce.number(),
-  daily_load_standard_deviation: z.coerce.number(),
-});
 
 const variabilityRowSchema = z.object({
   activity_id: z.string(),
@@ -104,239 +82,6 @@ export class CyclingAdvancedRepository {
     this.#userId = userId;
     this.#timezone = timezone;
     this.#sensorStore = sensorStore;
-  }
-
-  /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
-  async getRampRate(days: RangeDays): Promise<RampRateResultData> {
-    const loadDays = rangeDaysOrNullAdd(days, 42);
-    const loadRangeFilter = clickHouseDateRangeLowerBound(loadDays, "load.date", "loadDays");
-    const displayRangeFilter = clickHouseMondayDateRangeLowerBound(days, "ramp.week");
-    const rows = await this.#sensorStore.query(
-      rampRateRowSchema,
-      `WITH cycling_daily_load AS (
-        SELECT
-          load.user_id AS user_id,
-          assumeNotNull(load.date) AS load_date,
-          sum(load.training_load) AS training_load
-        FROM analytics.daily_endurance_load AS load FINAL
-        INNER JOIN analytics.activity_summary AS activity
-          ON activity.activity_id = load.activity_id
-         AND activity.user_id = load.user_id
-        WHERE load.user_id = {userId:UUID}
-          AND load.is_deleted = 0
-          AND load.date IS NOT NULL
-          ${loadRangeFilter}
-          AND has({activityTypes:Array(String)}, activity.canonical_type)
-        GROUP BY
-          load.user_id,
-          load_date
-      ),
-      date_bounds AS (
-        SELECT
-          user_id,
-          min(load_date) AS first_load_date,
-          max(load_date) AS latest_load_date
-        FROM cycling_daily_load
-        GROUP BY user_id
-      ),
-      date_series AS (
-        SELECT
-          user_id,
-          first_load_date + INTERVAL date_offset DAY AS date
-        FROM date_bounds
-        ARRAY JOIN range(
-          toUInt32(dateDiff('day', first_load_date, latest_load_date) + 1)
-        ) AS date_offset
-      ),
-      ctl_by_date AS (
-        SELECT
-          date_series.user_id AS user_id,
-          date_series.date AS date,
-          sum(
-            cycling_daily_load.training_load
-            * (1.0 / 42.0)
-            * pow(41.0 / 42.0, dateDiff('day', cycling_daily_load.load_date, date_series.date))
-          ) AS ctl
-        FROM date_series
-        LEFT JOIN cycling_daily_load
-          ON cycling_daily_load.user_id = date_series.user_id
-         AND cycling_daily_load.load_date <= date_series.date
-        GROUP BY
-          date_series.user_id,
-          date_series.date
-      ),
-      weekly_ctl AS (
-        SELECT
-          user_id,
-          toMonday(date) AS week,
-          argMax(ctl, date) AS ctl_end
-        FROM ctl_by_date
-        GROUP BY
-          user_id,
-          toMonday(date)
-      ),
-      weekly_with_previous AS (
-        SELECT
-          user_id,
-          week,
-          ctl_end,
-          lagInFrame(toNullable(ctl_end), 1, CAST(NULL, 'Nullable(Float64)')) OVER (
-            PARTITION BY user_id ORDER BY week
-          ) AS previous_ctl_end
-        FROM weekly_ctl
-      ),
-      ramp AS (
-        SELECT
-          user_id,
-          week,
-          round(previous_ctl_end, 2) AS ctl_start,
-          round(ctl_end, 2) AS ctl_end,
-          round(ctl_end - previous_ctl_end, 2) AS ramp_rate,
-          0 AS is_deleted
-        FROM weekly_with_previous
-        WHERE previous_ctl_end IS NOT NULL
-      )
-      SELECT
-        toString(ramp.week) AS week,
-        ramp.ctl_start AS ctl_start,
-        ramp.ctl_end AS ctl_end,
-        ramp.ramp_rate AS ramp_rate
-      FROM ramp
-      WHERE ramp.user_id = {userId:UUID}
-        AND ramp.is_deleted = 0
-        ${displayRangeFilter}
-      ORDER BY ramp.week`,
-      {
-        userId: this.#userId,
-        timezone: this.#timezone,
-        ...rangeDaysParams(days),
-        ...rangeDaysParams(loadDays, "loadDays"),
-        activityTypes: CYCLING_TYPES,
-      },
-    );
-
-    if (rows.length === 0) return { weeks: [], currentRampRate: 0, recommendation: "No data" };
-
-    const weeks = rows.map(
-      (row) =>
-        new RampRateWeekModel({
-          week: row.week,
-          ctlStart: row.ctl_start,
-          ctlEnd: row.ctl_end,
-          rampRate: row.ramp_rate,
-        }),
-    );
-
-    const currentRampRate = weeks.length > 0 ? (weeks[weeks.length - 1]?.rampRate ?? 0) : 0;
-
-    const recommendation = `Weekly training-load change: ${currentRampRate > 0 ? "+" : ""}${currentRampRate} points`;
-
-    return { weeks, currentRampRate, recommendation };
-  }
-
-  /** Training monotony: weekly monotony (mean daily load / stdev) and strain. */
-  async getTrainingMonotony(days: RangeDays): Promise<TrainingMonotonyWeekModel[]> {
-    const rangeFilter = clickHouseMondayDateRangeLowerBound(days, "monotony.week", "days", ">=");
-    const rows = await this.#sensorStore.query(
-      monotonyRowSchema,
-      `WITH cycling_daily_load AS (
-        SELECT
-          load.user_id AS user_id,
-          assumeNotNull(load.date) AS load_date,
-          sum(load.training_load) AS training_load
-        FROM analytics.daily_endurance_load AS load FINAL
-        INNER JOIN analytics.activity_summary AS activity
-          ON activity.activity_id = load.activity_id
-         AND activity.user_id = load.user_id
-        WHERE load.user_id = {userId:UUID}
-          AND load.is_deleted = 0
-          AND load.date IS NOT NULL
-          AND has({activityTypes:Array(String)}, activity.canonical_type)
-        GROUP BY
-          load.user_id,
-          load_date
-      ),
-      week_bounds AS (
-        SELECT
-          user_id,
-          toMonday(min(load_date)) AS first_week,
-          toMonday(max(load_date)) AS latest_week
-        FROM cycling_daily_load
-        GROUP BY user_id
-      ),
-      calendar_dates AS (
-        SELECT
-          user_id,
-          first_week + INTERVAL date_offset DAY AS load_date
-        FROM week_bounds
-        ARRAY JOIN range(toUInt32(dateDiff('day', first_week, latest_week + INTERVAL 6 DAY) + 1)) AS date_offset
-      ),
-      load_by_calendar_date AS (
-        SELECT
-          calendar_dates.user_id AS user_id,
-          calendar_dates.load_date AS load_date,
-          coalesce(cycling_daily_load.training_load, 0) AS training_load
-        FROM calendar_dates
-        LEFT JOIN cycling_daily_load
-          ON cycling_daily_load.user_id = calendar_dates.user_id
-         AND cycling_daily_load.load_date = calendar_dates.load_date
-      ),
-      weekly_stats AS (
-        SELECT
-          user_id,
-          toMonday(load_date) AS week,
-          avg(training_load) AS mean_load,
-          stddevPop(training_load) AS stdev_load,
-          sum(training_load) AS weekly_load
-        FROM load_by_calendar_date
-        GROUP BY
-          user_id,
-          toMonday(load_date)
-        HAVING stddevPop(training_load) > 1e-6
-      ),
-      monotony AS (
-        SELECT
-          user_id,
-          week,
-          round(mean_load / stdev_load, 2) AS monotony,
-          round(weekly_load * (mean_load / stdev_load), 1) AS strain,
-          round(weekly_load, 1) AS weekly_load,
-          round(mean_load, 2) AS daily_mean_load,
-          round(stdev_load, 2) AS daily_load_standard_deviation,
-          0 AS is_deleted
-        FROM weekly_stats
-      )
-      SELECT
-        toString(monotony.week) AS week,
-        monotony.monotony AS monotony,
-        monotony.strain AS strain,
-        monotony.weekly_load AS weekly_load,
-        monotony.daily_mean_load AS daily_mean_load,
-        monotony.daily_load_standard_deviation AS daily_load_standard_deviation
-      FROM monotony
-      WHERE monotony.user_id = {userId:UUID}
-        AND monotony.is_deleted = 0
-        ${rangeFilter}
-      ORDER BY monotony.week`,
-      {
-        userId: this.#userId,
-        timezone: this.#timezone,
-        ...rangeDaysParams(days),
-        activityTypes: CYCLING_TYPES,
-      },
-    );
-
-    return rows.map(
-      (row) =>
-        new TrainingMonotonyWeekModel({
-          week: row.week,
-          monotony: row.monotony,
-          strain: row.strain,
-          weeklyLoad: row.weekly_load,
-          dailyMeanLoad: row.daily_mean_load,
-          dailyLoadStandardDeviation: row.daily_load_standard_deviation,
-        }),
-    );
   }
 
   /** Activity variability: NP, VI, IF per activity. */

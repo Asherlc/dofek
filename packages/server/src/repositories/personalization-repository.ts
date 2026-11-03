@@ -47,12 +47,6 @@ export interface PersonalizationParameters {
     rhrThresholds: [number, number, number];
     sampleCount: number;
   } | null;
-  trainingImpulseConstants: {
-    genderFactor: number;
-    exponent: number;
-    sampleCount: number;
-    r2: number;
-  } | null;
 }
 
 export interface RefitResult {
@@ -92,8 +86,7 @@ export class PersonalizationRepository {
         (stored.exponentialMovingAverage !== null ||
           stored.readinessWeights !== null ||
           stored.sleepTarget !== null ||
-          stored.stressThresholds !== null ||
-          stored.trainingImpulseConstants !== null),
+          stored.stressThresholds !== null),
       fittedAt: stored?.fittedAt ?? null,
       defaults: DEFAULT_PARAMS,
       effective,
@@ -102,7 +95,6 @@ export class PersonalizationRepository {
         readinessWeights: stored?.readinessWeights ?? null,
         sleepTarget: stored?.sleepTarget ?? null,
         stressThresholds: stored?.stressThresholds ?? null,
-        trainingImpulseConstants: stored?.trainingImpulseConstants ?? null,
       },
       modelCards: buildPersonalizationModelCards(stored),
     };
@@ -121,7 +113,6 @@ export class PersonalizationRepository {
         readinessWeights: params.readinessWeights,
         sleepTarget: params.sleepTarget,
         stressThresholds: params.stressThresholds,
-        trainingImpulseConstants: params.trainingImpulseConstants,
       },
     };
   }

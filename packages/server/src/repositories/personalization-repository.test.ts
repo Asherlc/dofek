@@ -44,9 +44,8 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
-      expect(result.modelCards).toHaveLength(5);
+      expect(result.modelCards).toHaveLength(4);
       expect(result.modelCards.every((card) => card.status === "default")).toBe(true);
     });
 
@@ -58,7 +57,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: { minutes: 450, sampleCount: 30 },
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
 
@@ -87,7 +85,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -109,7 +106,6 @@ describe("PersonalizationRepository", () => {
         },
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -127,27 +123,6 @@ describe("PersonalizationRepository", () => {
           hrvThresholds: [30, 50, 70] satisfies [number, number, number],
           rhrThresholds: [50, 60, 70] satisfies [number, number, number],
           sampleCount: 30,
-        },
-        trainingImpulseConstants: null,
-      });
-      const { repo } = makeRepository();
-      const result = await repo.getStatus();
-      expect(result.isPersonalized).toBe(true);
-    });
-
-    it("returns isPersonalized=true when only trainingImpulseConstants is fitted", async () => {
-      mockedLoadParams.mockResolvedValue({
-        version: 1,
-        fittedAt: "2025-06-01T00:00:00Z",
-        exponentialMovingAverage: null,
-        readinessWeights: null,
-        sleepTarget: null,
-        stressThresholds: null,
-        trainingImpulseConstants: {
-          genderFactor: 1.92,
-          exponent: 1.67,
-          sampleCount: 100,
-          r2: 0.95,
         },
       });
       const { repo } = makeRepository();
@@ -170,7 +145,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
 
@@ -192,7 +166,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
 
@@ -221,7 +194,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: { minutes: 460, sampleCount: 60 },
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
 
@@ -252,7 +224,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
 
@@ -305,12 +276,6 @@ describe("PersonalizationRepository", () => {
           rhrThresholds: [50, 60, 70] satisfies [number, number, number],
           sampleCount: 30,
         },
-        trainingImpulseConstants: {
-          genderFactor: 1.92,
-          exponent: 1.67,
-          sampleCount: 100,
-          r2: 0.95,
-        },
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -324,8 +289,6 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.sleepTarget?.minutes).toBe(450);
       expect(result.parameters.stressThresholds).not.toBeNull();
       expect(result.parameters.stressThresholds?.hrvThresholds).toEqual([30, 50, 70]);
-      expect(result.parameters.trainingImpulseConstants).not.toBeNull();
-      expect(result.parameters.trainingImpulseConstants?.genderFactor).toBe(1.92);
     });
 
     it("maps fittedAt from stored params using ?? null (not empty string)", async () => {
@@ -336,7 +299,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -353,7 +315,6 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.readinessWeights).toBeNull();
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
-      expect(result.parameters.trainingImpulseConstants).toBeNull();
     });
   });
 
@@ -382,12 +343,6 @@ describe("PersonalizationRepository", () => {
           rhrThresholds: [48, 58, 68] satisfies [number, number, number],
           sampleCount: 40,
         },
-        trainingImpulseConstants: {
-          genderFactor: 1.85,
-          exponent: 1.7,
-          sampleCount: 150,
-          r2: 0.92,
-        },
       });
       const { repo } = makeRepository();
       const result = await repo.refit();
@@ -396,7 +351,6 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.readinessWeights?.hrv).toBe(0.35);
       expect(result.parameters.sleepTarget?.minutes).toBe(460);
       expect(result.parameters.stressThresholds?.hrvThresholds).toEqual([25, 45, 65]);
-      expect(result.parameters.trainingImpulseConstants?.genderFactor).toBe(1.85);
     });
 
     it("maps each refit parameter to the correct output key (not swapped)", async () => {
@@ -422,12 +376,6 @@ describe("PersonalizationRepository", () => {
           hrvThresholds: [20, 40, 60] satisfies [number, number, number],
           rhrThresholds: [45, 55, 65] satisfies [number, number, number],
           sampleCount: 35,
-        },
-        trainingImpulseConstants: {
-          genderFactor: 1.9,
-          exponent: 1.65,
-          sampleCount: 180,
-          r2: 0.93,
         },
       });
       const { repo } = makeRepository();
@@ -460,12 +408,6 @@ describe("PersonalizationRepository", () => {
         rhrThresholds: [45, 55, 65],
         sampleCount: 35,
       });
-      expect(result.parameters.trainingImpulseConstants).toStrictEqual({
-        genderFactor: 1.9,
-        exponent: 1.65,
-        sampleCount: 180,
-        r2: 0.93,
-      });
     });
 
     it("maps refit parameters with all null sub-params", async () => {
@@ -476,7 +418,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.refit();
@@ -485,7 +426,6 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.readinessWeights).toStrictEqual(null);
       expect(result.parameters.sleepTarget).toStrictEqual(null);
       expect(result.parameters.stressThresholds).toStrictEqual(null);
-      expect(result.parameters.trainingImpulseConstants).toStrictEqual(null);
     });
   });
 
@@ -512,7 +452,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -529,7 +468,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: { minutes: 480, sampleCount: 14 },
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -546,7 +484,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.refit();
@@ -554,7 +491,7 @@ describe("PersonalizationRepository", () => {
       expect(Object.keys(result).sort()).toStrictEqual(["effective", "fittedAt", "parameters"]);
     });
 
-    it("parameters object has exactly five keys", async () => {
+    it("parameters object has exactly four keys", async () => {
       mockedRefitAll.mockResolvedValue({
         version: 1,
         fittedAt: "2025-07-01T00:00:00Z",
@@ -562,7 +499,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.refit();
@@ -571,7 +507,6 @@ describe("PersonalizationRepository", () => {
         "readinessWeights",
         "sleepTarget",
         "stressThresholds",
-        "trainingImpulseConstants",
       ]);
     });
   });
@@ -610,7 +545,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -631,7 +565,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -669,7 +602,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trainingImpulseConstants: null,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -699,12 +631,6 @@ describe("PersonalizationRepository", () => {
         rhrThresholds: [50, 60, 70] satisfies [number, number, number],
         sampleCount: 30,
       };
-      const trimp = {
-        genderFactor: 1.92,
-        exponent: 1.67,
-        sampleCount: 100,
-        r2: 0.95,
-      };
 
       mockedLoadParams.mockResolvedValue({
         version: 1,
@@ -713,7 +639,6 @@ describe("PersonalizationRepository", () => {
         readinessWeights: weights,
         sleepTarget: sleep,
         stressThresholds: stress,
-        trainingImpulseConstants: trimp,
       });
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -723,7 +648,6 @@ describe("PersonalizationRepository", () => {
       expect(result.parameters.readinessWeights).toStrictEqual(weights);
       expect(result.parameters.sleepTarget).toStrictEqual(sleep);
       expect(result.parameters.stressThresholds).toStrictEqual(stress);
-      expect(result.parameters.trainingImpulseConstants).toStrictEqual(trimp);
     });
   });
 });

@@ -67,9 +67,6 @@ const pmcSchema = z.object({
     }),
   ),
   model: z.object({
-    type: z.enum(["learned", "generic"]),
-    pairedActivities: z.number(),
-    r2: z.number().nullable(),
     ftp: z.number().nullable(),
   }),
 });
@@ -188,7 +185,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
-    { keyVersion: "cycling-performance-computed-eftp-v3" },
+    { keyVersion: "cycling-performance-power-stress-v4" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",

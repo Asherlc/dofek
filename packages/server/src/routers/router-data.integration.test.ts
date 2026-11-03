@@ -24,7 +24,6 @@ import {
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
  * - food (search, quickAdd, update, delete, list with meal filter)
- * - pmc (learned model path)
  * - healthspan (trend with weekly history)
  * - nutrition-analytics (micronutrientAdequacy, macroRatios)
  */
@@ -966,30 +965,6 @@ describe("Router data coverage", () => {
         expect(row.date).toBeTruthy();
         expect(Number(row.calories)).toBeGreaterThan(0);
       }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // PMC — verify model info is populated
-  // ══════════════════════════════════════════════════════════════
-  describe("pmc", () => {
-    it("chart returns heart-rate load and model type", async () => {
-      const result = await query<{
-        data: { date: string; load: number; ctl: number; atl: number; tsb: number }[];
-        model: {
-          type: "learned" | "generic";
-          pairedActivities: number;
-          r2: number | null;
-        };
-      }>("pmc.chart", { days: 90 });
-
-      expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model.type).toBe("generic");
-      expect(result.model.pairedActivities).toBeGreaterThanOrEqual(0);
-
-      // Verify daily load computation produces non-zero values
-      const loadDays = result.data.filter((d) => d.load > 0);
-      expect(loadDays.length).toBeGreaterThan(0);
     });
   });
 

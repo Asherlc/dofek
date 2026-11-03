@@ -29,38 +29,6 @@ function requireSensorStore(
   return sensorStore;
 }
 
-export interface RampRateWeek {
-  week: string;
-  ctlStart: number;
-  ctlEnd: number;
-  rampRate: number;
-}
-
-export interface RampRateResult {
-  weeks: RampRateWeek[];
-  currentRampRate: number;
-  recommendation: string;
-}
-
-export interface TrainingMonotonyWeek {
-  week: string;
-  monotony: number;
-  strain: number;
-  weeklyLoad: number;
-  dailyMeanLoad: number;
-  dailyLoadStandardDeviation: number;
-  method: {
-    formula: string;
-    calendar: string;
-    activityScope: string;
-    interpretation: string;
-    source: {
-      title: string;
-      url: string;
-    };
-  };
-}
-
 export interface ActivityVariabilityRow {
   activityId: string;
   date: string;
@@ -97,32 +65,6 @@ export interface PedalDynamicsRow {
 }
 
 export const cyclingAdvancedRouter = router({
-  rampRate: selectedChartRangeQuery(
-    "cyclingAdvanced.rampRate",
-    CacheTTL.LONG,
-    async ({ ctx, range }): Promise<RampRateResult> => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-      const result = await repo.getRampRate(range.days);
-      return {
-        weeks: result.weeks.map((week) => week.toDetail()),
-        currentRampRate: result.currentRampRate,
-        recommendation: result.recommendation,
-      };
-    },
-  ),
-
-  trainingMonotony: selectedChartRangeQuery(
-    "cyclingAdvanced.trainingMonotony",
-    CacheTTL.LONG,
-    async ({ ctx, range }): Promise<TrainingMonotonyWeek[]> => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-      const models = await repo.getTrainingMonotony(range.days);
-      return models.map((model) => model.toDetail());
-    },
-  ),
-
   activityVariability: selectedChartCustomRangeQuery(
     "cyclingAdvanced.activityVariability",
     CacheTTL.LONG,
