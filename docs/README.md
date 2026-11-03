@@ -138,6 +138,10 @@ Cross-provider reverse-engineering references:
 
 ## Historical Records
 
+- [pulsar-qualification.md](pulsar-qualification.md): November 3, 2026 isolated
+  Pulsar qualification, actual R2 failure, memory/storage gates and retained
+  production safety holds; not production deployment instructions.
+
 These files explain why the current system exists but are not current
 instructions:
 

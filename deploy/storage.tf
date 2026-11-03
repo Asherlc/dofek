@@ -83,6 +83,38 @@ resource "cloudflare_r2_bucket" "metric_stream_archive" {
   location   = "WEUR"
 }
 
+# Synthetic Pulsar offload/recovery tests must not share production archive data.
+# https://developers.cloudflare.com/r2/buckets/object-lifecycles/
+resource "cloudflare_r2_bucket" "pulsar_qualification" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-pulsar-qualification"
+  location   = "WNAM"
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "pulsar_qualification_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.pulsar_qualification.name
+  rules = [{
+    id      = "expire-synthetic-qualification-data"
+    enabled = true
+    conditions = {
+      prefix = ""
+    }
+    delete_objects_transition = {
+      condition = {
+        type    = "Age"
+        max_age = 604800
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        type    = "Age"
+        max_age = 86400
+      }
+    }
+  }]
+}
+
 resource "cloudflare_r2_bucket" "account_erasure_ledger" {
   account_id = var.cloudflare_account_id
   name       = "dofek-account-erasure-ledger"
