@@ -102,18 +102,19 @@ describe("provider issue email delivery", () => {
     expect(JSON.stringify(emailRequests)).not.toContain("private-token");
   });
 
-  it("emails after two scheduled failures and suppresses further alerts during the issue", async () => {
-    await recordFailure();
+  it.each([
+    "Provider request timed out",
+    "theCrag logbook service is unavailable (522)",
+    "theCrag logbook service is unavailable (525)",
+    "Provider returned HTTP 503",
+    "Provider rate limit exceeded",
+    "Unexpected sync error",
+  ])("records repeated non-authorization failures without emailing: %s", async (errorMessage) => {
+    await recordFailure({ errorMessage });
+    await recordFailure({ errorMessage });
+    await recordFailure({ errorMessage });
     expect(emailRequests).toHaveLength(0);
-
-    await recordFailure();
-    expect(emailRequests).toHaveLength(1);
-    expect(emailRequests[0]).toMatchObject({
-      textContent: expect.stringContaining("automatic syncs"),
-    });
-
-    await recordFailure();
-    expect(emailRequests).toHaveLength(1);
+    expect(await context.db.select().from(syncLog)).toHaveLength(3);
   });
 
   it.each([
@@ -154,10 +155,11 @@ describe("provider issue email delivery", () => {
     expect(emailRequests).toHaveLength(1);
   });
 
-  it("confirms an authorization issue when the next automatic attempt fails for another reason", async () => {
+  it("requires another authorization failure instead of confirming with an outage", async () => {
     await recordFailure({ origin: "manual", authFailureReason: "authorization_failed" });
+    await recordFailure({ errorMessage: "Provider request timed out" });
     expect(emailRequests).toHaveLength(0);
-    await recordFailure();
+    await recordFailure({ authFailureReason: "authorization_failed" });
     expect(emailRequests).toHaveLength(1);
     expect(emailRequests[0]).toMatchObject({
       textContent: expect.stringContaining("Reconnect Test Provider"),
@@ -191,15 +193,15 @@ describe("provider issue email delivery", () => {
   );
 
   it.each(["manual", "scheduled"] as const)(
-    "resets the scheduled failure streak after a successful %s sync",
+    "resets authorization confirmation after a successful %s sync",
     async (origin) => {
-      await recordFailure();
-      await recordFailure();
+      await recordFailure({ authFailureReason: "session_expired" });
+      await recordFailure({ authFailureReason: "session_expired" });
       await recordRecovery(origin);
-      await recordFailure();
+      await recordFailure({ authFailureReason: "session_expired" });
       expect(emailRequests).toHaveLength(1);
 
-      await recordFailure();
+      await recordFailure({ authFailureReason: "session_expired" });
       expect(emailRequests).toHaveLength(2);
     },
   );
@@ -234,13 +236,13 @@ describe("provider issue email delivery", () => {
     expect(emailRequests).toHaveLength(2);
   });
 
-  it("does not count manual errors toward the scheduled failure threshold", async () => {
-    await recordFailure({ origin: "manual" });
+  it("does not count generic failures toward authorization confirmation", async () => {
     await recordFailure({ origin: "manual" });
     await recordFailure();
+    await recordFailure();
+    await recordFailure({ authFailureReason: "session_expired" });
     expect(emailRequests).toHaveLength(0);
-
-    await recordFailure();
+    await recordFailure({ authFailureReason: "session_expired" });
     expect(emailRequests).toHaveLength(1);
   });
 
@@ -379,7 +381,7 @@ describe("provider issue email delivery", () => {
     expect(await context.db.select().from(syncLog)).toHaveLength(3);
   });
 
-  it("retries an unaccepted authorization warning after a different manual sync error", async () => {
+  it("retries an unaccepted authorization warning only after another authorization failure", async () => {
     server.use(
       http.post(
         BREVO_EMAIL_URL,
@@ -394,6 +396,8 @@ describe("provider issue email delivery", () => {
     await recordFailure({ origin: "manual" });
     await recordFailure({ origin: "manual" });
 
+    expect(emailRequests).toHaveLength(1);
+    await recordFailure({ origin: "manual", authFailureReason: "refresh_token_revoked" });
     expect(emailRequests).toHaveLength(2);
     expect(emailRequests[1]).toMatchObject({
       textContent: expect.stringContaining("Reconnect Test Provider"),
@@ -401,7 +405,7 @@ describe("provider issue email delivery", () => {
   });
 
   it.each(["manual", "scheduled"] as const)(
-    "clears a pending authorization warning after a successful %s sync",
+    "requires fresh authorization failures after clearing a pending warning after a successful %s sync",
     async (origin) => {
       await context.db
         .update(userProfile)
@@ -416,11 +420,12 @@ describe("provider issue email delivery", () => {
       await recordFailure({ origin: "manual" });
       expect(emailRequests).toHaveLength(0);
 
-      await recordFailure();
-      await recordFailure();
+      await recordFailure({ authFailureReason: "session_expired" });
+      expect(emailRequests).toHaveLength(0);
+      await recordFailure({ authFailureReason: "session_expired" });
       expect(emailRequests).toHaveLength(1);
       expect(emailRequests[0]).toMatchObject({
-        textContent: expect.stringContaining("automatic syncs"),
+        textContent: expect.stringContaining("Reconnect Test Provider"),
       });
     },
   );
@@ -451,13 +456,10 @@ describe("provider issue email delivery", () => {
 
     await recordFailure();
     await recordFailure();
-    expect(emailRequests).toHaveLength(1);
-    expect(emailRequests[0]).toMatchObject({
-      textContent: expect.stringContaining("automatic syncs"),
-    });
+    expect(emailRequests).toHaveLength(0);
   });
 
-  it("retries a rejected repeated-failure email after a degraded sync and another failure", async () => {
+  it("retries a rejected authorization email after a degraded sync and another failure", async () => {
     server.use(
       http.post(
         BREVO_EMAIL_URL,
@@ -468,8 +470,8 @@ describe("provider issue email delivery", () => {
         { once: true },
       ),
     );
-    await recordFailure();
-    await recordFailure();
+    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "session_expired" });
     await logSync(context.db, {
       providerId: "issue-provider",
       userId: TEST_USER_ID,
@@ -477,12 +479,12 @@ describe("provider issue email delivery", () => {
       status: "degraded",
       origin: "scheduled",
     });
-    await recordFailure();
-    await recordFailure();
+    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "session_expired" });
 
     expect(emailRequests).toHaveLength(2);
     expect(emailRequests[1]).toMatchObject({
-      textContent: expect.stringContaining("automatic syncs"),
+      textContent: expect.stringContaining("Reconnect Test Provider"),
     });
   });
 

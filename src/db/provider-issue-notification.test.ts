@@ -49,25 +49,6 @@ describe("provider issue email content", () => {
     );
   });
 
-  it("explains automatic retries for repeated sync failures", async () => {
-    execute.mockResolvedValue([
-      {
-        email: "owner@example.test",
-        provider_name: "Test Provider",
-        auth_failure_reason: null,
-      },
-    ]);
-
-    await notifyProviderSyncIssue(db, "user-123", "test-provider");
-
-    expect(sendPlainTextEmail).toHaveBeenCalledExactlyOnceWith({
-      toEmail: "owner@example.test",
-      subject: "Your Test Provider connection needs attention",
-      text: expect.stringContaining("We will keep trying automatically"),
-      signal: expect.any(AbortSignal),
-    });
-  });
-
   it("skips sending when the connection is not eligible", async () => {
     await notifyProviderSyncIssue(db, "user-123", "test-provider");
 
