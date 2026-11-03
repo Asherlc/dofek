@@ -16,9 +16,10 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - `provider_issue_email`: Accepted issue-email delivery for each connection. The
   [notification query](./provider-issue-notification.ts) alerts immediately for
   confirmed refresh-token revocation. Other authorization failures wait for the
-  next automatic sync: recovery sends no email, another error sends one. Repeated
-  manual failures alone do not trigger that confirmation. Generic errors require
-  two automatic failures. Successful overall syncs clear the failure streak;
+  next automatic authorization failure: recovery sends no email, and timeouts,
+  outages, rate limits and other non-authorization errors never trigger or confirm
+  an email. Repeated manual failures alone do not trigger that confirmation.
+  Successful overall syncs clear the failure streak;
   history from before the current connection was created is excluded. The
   [integration tests](./provider-issue-notification.integration.test.ts) exercise
   recovery, confirmation, delivery retry, and concurrent suppression.
