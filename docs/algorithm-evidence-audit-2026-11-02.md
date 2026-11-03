@@ -5,6 +5,11 @@ This is a dated review of implementation and evidence, not a claim that every
 deployed process runs this revision. No product algorithms were changed during
 the audit. The separately approved TSS removal has not been implemented.
 
+Follow-up: [TSS empirical evidence review](tss-evidence-review-2026-11-02.md)
+examines measured outcomes separately from recognition of a published formula.
+The later implementation request changes the TSS direction to replacing the
+custom HR fallback; that replacement has not been implemented.
+
 ## What the ratings mean
 
 The central distinction is between a published ingredient and a validated

@@ -144,6 +144,9 @@ instructions:
 - [algorithm-evidence-audit-2026-11-02.md](algorithm-evidence-audit-2026-11-02.md):
   dated catalogue of algorithm implementations, primary sources, validation gaps,
   and scientific naming mismatches; assessments refer to the recorded code snapshot.
+- [tss-evidence-review-2026-11-02.md](tss-evidence-review-2026-11-02.md):
+  primary studies of TSS, HR-based alternatives, adaptation and fatigue, including
+  formula mismatches and limits on recovery claims.
 - [alltrails.md](alltrails.md): investigation of the retired AllTrails provider,
   including its verification block and former implementation.
 - `superpowers/plans/` and `superpowers/specs/`: dated implementation plans and
