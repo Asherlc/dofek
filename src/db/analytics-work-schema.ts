@@ -34,7 +34,9 @@ export function analyticsWorkSchemaStatements(): string[] {
       channel String, recorded_at DateTime64(9,'UTC'), ingested_at DateTime64(9,'UTC'),
       activity_id Nullable(UUID), deleted UInt8,
       PROJECTION by_provider_generation (SELECT source_id,user_id,provider_id,generation,deleted
-        ORDER BY (user_id,provider_id,generation,source_id,deleted))
+        ORDER BY (user_id,provider_id,generation,source_id,deleted)),
+      PROJECTION by_user_channel_recorded_at (SELECT user_id,channel,recorded_at,source_id
+        ORDER BY (user_id,channel,recorded_at,source_id))
     ) ENGINE=ReplacingMergeTree
     ORDER BY (source_id,source_version,ingested_at,user_id,provider_id,generation,
       channel,recorded_at,ifNull(toString(activity_id),''),deleted)

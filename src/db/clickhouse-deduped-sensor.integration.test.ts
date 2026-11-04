@@ -1,358 +1,421 @@
-import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { createClient } from "@clickhouse/client";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  buildDedupedSensorBackfillSql,
-  buildIncrementalDedupedSensorStatements,
-  buildSensorScalarSampleBackfillSql,
-} from "./clickhouse-deduped-sensor.ts";
-import { clickHouseMigrations } from "./clickhouse-migrations/registry.ts";
-import { buildPostgresFitnessActivityRawTableStatement } from "./clickhouse-raw-tables.ts";
-import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
+  BoundedSensorFixture,
+  type SensorFixtureRow,
+  sensorId,
+  sensorRow,
+} from "./bounded-sensor-test-helpers.ts";
 
-describe("deduped sensor source activity attribution", () => {
-  const database = `sensor_attribution_${randomUUID().replaceAll("-", "")}`;
-  const user = "00000000-0000-0000-0000-000000000001";
-  const member = "00000000-0000-0000-0000-000000000002";
-  let client: ReturnType<typeof createClient>;
-  const scope = (query: string) =>
-    query
-      .replaceAll("analytics.", `${database}.`)
-      .replaceAll("ingest.", `${database}.`)
-      .replaceAll("postgres_fitness.", `${database}.`)
-      .replaceAll("database = 'analytics'", `database = '${database}'`);
-  const command = (query: string) => client.command({ query: scope(query) });
-  const render = (sql: string) =>
-    renderDbtModelSql(sql, { isIncremental: false })
-      .replace(/{{ source\('[^']+', '([^']+)'\) }}/g, `${database}.$1`)
-      .replace(/{{ ref\('([^']+)'\) }}/g, `${database}.$1`);
-
-  beforeAll(async () => {
-    if (!process.env.CLICKHOUSE_URL) throw new Error("CLICKHOUSE_URL is required");
-    client = createClient({
-      url: process.env.CLICKHOUSE_URL,
-      clickhouse_settings: { join_use_nulls: 1, optimize_on_insert: 0 },
-    });
-    await command(`CREATE DATABASE ${database}`);
-    await command(`CREATE TABLE ${database}.metric_stream (
-      id UUID, activity_id Nullable(UUID), user_id UUID, recorded_at DateTime64(6, 'UTC'),
-      channel String, provider_id String, device_id Nullable(String), scalar Nullable(Float32),
-      external_id Nullable(String), source_type Nullable(String), metadata String,
-      ingested_at DateTime64(9), is_deleted Int8, version Int64
-    ) ENGINE = ReplacingMergeTree(version) ORDER BY id`);
-    await command(
-      `CREATE VIEW ${database}.metric_stream_freshness AS SELECT * FROM ${database}.metric_stream`,
-    );
-    await command(`SYSTEM STOP MERGES ${database}.metric_stream`);
-    await command(`CREATE TABLE ${database}.sensor_provider_priority
-      (provider_id String, channel String, priority UInt16, _peerdb_is_deleted UInt8)
-      ENGINE = ReplacingMergeTree ORDER BY (provider_id, channel)`);
-    await command(`CREATE TABLE ${database}.sensor_device_priority
-      (provider_id String, source_name_pattern String, channel String, priority UInt16, _peerdb_is_deleted UInt8)
-      ENGINE = ReplacingMergeTree ORDER BY (provider_id, source_name_pattern, channel)`);
-    await command(
-      `INSERT INTO ${database}.sensor_provider_priority VALUES ('winner', 'power', 1, 0), ('loser', 'power', 2, 0)`,
-    );
+// These pages intentionally exclude unchanged competing sources and unrelated keys.
+// Capture uses the real sealed-run reader and native compiler; executor checkpointing is separate.
+describe("bounded canonical scalar and dedup pages", () => {
+  let fixture: BoundedSensorFixture;
+  beforeEach(async () => {
+    fixture = new BoundedSensorFixture();
+    await fixture.create();
+  });
+  afterEach(async () => {
+    await fixture.close();
   });
 
-  afterAll(async () => {
-    await command(`DROP DATABASE IF EXISTS ${database} SYNC`);
-    await client.close();
+  const expected = (winner: SensorFixtureRow, freshness = winner.ingested_at) => ({
+    user_id: winner.user_id,
+    recorded_at: winner.recorded_at,
+    recorded_date: winner.recorded_at.slice(0, 10),
+    channel: winner.channel === "rr_interval_ms" ? "heart_rate" : winner.channel,
+    scalar: winner.channel === "rr_interval_ms" ? 60000 / (winner.scalar ?? 1) : winner.scalar,
+    provider_id: winner.provider_id,
+    member_activity_id: winner.activity_id,
+    device_id: winner.device_id,
+    source_external_id: winner.external_id,
+    source_type: winner.source_type,
+    measurement_kind: winner.channel === "rr_interval_ms" ? "estimated" : "direct",
+    source_metric_stream_id: winner.id,
+    source_activity_id: winner.activity_id,
+    provider_priority: winner.provider_id === "fallback" ? 2 : 1,
+    source_refreshed_at: freshness,
+    is_deleted: 0,
+    refreshed_at: freshness,
+  });
+  const unrelated = () => sensorRow(999, { recorded_at: "2026-01-01 00:59:00.123456" });
+  const newer = (row: SensorFixtureRow, changes: Partial<SensorFixtureRow> = {}) => ({
+    ...row,
+    version: "9007199254740994",
+    ingested_at: "2026-01-03 00:00:00.123456782",
+    ...changes,
   });
 
-  async function resetSensorFixture(): Promise<void> {
-    await command(`TRUNCATE TABLE ${database}.metric_stream`);
-    await command(`DROP TABLE IF EXISTS ${database}.sensor_scalar_sample SYNC`);
-    await command(`DROP TABLE IF EXISTS ${database}.deduped_sensor SYNC`);
-    // Winner starts linked, then the latest version explicitly removes the link.
-    // A lower-priority sample at that same timestamp must not supply its member ID.
-    await command(`INSERT INTO ${database}.metric_stream
-      (id, activity_id, user_id, recorded_at, channel, provider_id, device_id, scalar,
-       ingested_at, is_deleted, version) VALUES
-      ('00000000-0000-0000-0000-000000000010', '${member}', '${user}', '2026-09-07 10:00:00', 'power', 'winner', NULL, 100, now64(9), 0, 1),
-      ('00000000-0000-0000-0000-000000000010', NULL, '${user}', '2026-09-07 10:00:00', 'power', 'winner', NULL, 101, now64(9), 0, 2),
-      ('00000000-0000-0000-0000-000000000011', '${member}', '${user}', '2026-09-07 10:00:00', 'power', 'loser', NULL, 200, now64(9), 0, 1),
-      ('00000000-0000-0000-0000-000000000012', '${member}', '${user}', '2026-09-07 10:01:00', 'power', 'winner', NULL, 102, now64(9), 0, 1)`);
-  }
-
-  async function refreshSensorModels(path: string): Promise<void> {
-    for (const statement of buildIncrementalDedupedSensorStatements()) await command(statement);
-    await command(`SYSTEM STOP MERGES ${database}.sensor_scalar_sample`);
-    if (path === "dbt") {
-      const staging = readFileSync(
-        new URL("../../analytics/models/staging/sensor_scalar_sample.sql", import.meta.url),
-        "utf8",
-      );
-      await command(`INSERT INTO ${database}.sensor_scalar_sample ${render(staging)}`);
-      const deduped = render(
-        readModelSql("deduped_sensor.sql")
-          .replaceAll(
-            "{{ ref('sensor_scalar_sample').render() }}",
-            `${database}.sensor_scalar_sample`,
-          )
-          .replaceAll(
-            "{{ ref('sensor_scalar_sample') }}",
-            `(SELECT * FROM ${database}.sensor_scalar_sample
-              WHERE _peerdb_synced_at >= toStartOfDay(now64(9)))`,
-          ),
-      );
-      await command(
-        `INSERT INTO ${database}.deduped_sensor SELECT * EXCEPT (source_refreshed_at)
-          FROM (${deduped})`,
-      );
-    } else {
-      await command(buildSensorScalarSampleBackfillSql());
-      await command(buildDedupedSensorBackfillSql());
-    }
-  }
-
-  it.each(["dbt", "manual"])(
-    "%s derives heart rate from beat intervals with source provenance and heart-rate priorities",
-    async (path) => {
-      await resetSensorFixture();
-      await command(`INSERT INTO ${database}.sensor_provider_priority VALUES
-        ('interval-source', 'heart_rate', 9, 0), ('interval-source', 'rr_interval_ms', 99, 0)`);
-      await command(`INSERT INTO ${database}.sensor_device_priority VALUES
-        ('interval-source', 'strap-a', 'heart_rate', 3, 0)`);
-      await command(`INSERT INTO ${database}.metric_stream
-        (id, activity_id, user_id, recorded_at, channel, provider_id, device_id, scalar,
-         external_id, source_type, metadata, ingested_at, is_deleted, version) VALUES
-        ('00000000-0000-0000-0000-000000000021', NULL, '${user}', '2026-09-07 10:00:00', 'rr_interval_ms', 'interval-source', 'strap-a', 750,
-         'beat-1', 'ble', '{"measurement_kind":"direct"}', now64(9), 0, 1),
-        ('00000000-0000-0000-0000-000000000022', '${member}', '${user}', '2026-09-07 10:01:00', 'rr_interval_ms', 'interval-source', 'strap-b', 500,
-         'beat-2', 'ble', '{}', now64(9), 0, 1)`);
-      await refreshSensorModels(path);
-      const result = await client.query({
-        query: `SELECT channel, scalar, provider_id, device_id, source_external_id, source_type,
-          measurement_kind, source_activity_id, provider_priority
-          FROM ${database}.deduped_sensor FINAL
-          WHERE channel = 'heart_rate' AND is_deleted = 0 ORDER BY recorded_at`,
-        format: "JSONEachRow",
-      });
-      expect(await result.json()).toEqual([
-        {
-          channel: "heart_rate",
-          scalar: 80,
-          provider_id: "interval-source",
-          device_id: "strap-a",
-          source_external_id: "beat-1",
-          source_type: "ble",
-          measurement_kind: "estimated",
-          source_activity_id: null,
-          provider_priority: 3,
-        },
-        {
-          channel: "heart_rate",
-          scalar: 120,
-          provider_id: "interval-source",
-          device_id: "strap-b",
-          source_external_id: "beat-2",
-          source_type: "ble",
-          measurement_kind: "estimated",
-          source_activity_id: member,
-          provider_priority: 9,
-        },
-      ]);
-      if (path === "dbt") {
-        const staging = readFileSync(
-          new URL("../../analytics/models/staging/sensor_scalar_sample.sql", import.meta.url),
-          "utf8",
-        );
-        const types = await client.query({
-          query: `SELECT DISTINCT toTypeName(_peerdb_is_deleted) AS deletion_type FROM (${render(staging)})`,
-          format: "JSONEachRow",
-        });
-        expect(await types.json()).toEqual([{ deletion_type: "Int8" }]);
-      }
-    },
-  );
-
-  it.each(["dbt", "manual"])(
-    "%s prefers reported heart rate to a derived reading from the same source",
-    async (path) => {
-      await resetSensorFixture();
-      await command(`INSERT INTO ${database}.metric_stream
-        (id, user_id, recorded_at, channel, provider_id, device_id, scalar,
-         ingested_at, is_deleted, version) VALUES
-        ('00000000-0000-0000-0000-000000000001', '${user}', '2026-09-07 10:00:00', 'rr_interval_ms', 'combined-source', 'strap', 500, now64(9), 0, 1),
-        ('00000000-0000-0000-0000-000000000099', '${user}', '2026-09-07 10:00:00', 'heart_rate', 'combined-source', 'strap', 115, now64(9), 0, 1)`);
-      await refreshSensorModels(path);
-      const result = await client.query({
-        query: `SELECT scalar, source_metric_stream_id FROM ${database}.deduped_sensor FINAL
-          WHERE channel = 'heart_rate' AND is_deleted = 0`,
-        format: "JSONEachRow",
-      });
-      expect(await result.json()).toEqual([
-        { scalar: 115, source_metric_stream_id: "00000000-0000-0000-0000-000000000099" },
-      ]);
-    },
-  );
-
-  it.each(["dbt", "manual"])(
-    "%s retracts derived readings when intervals become invalid or are deleted",
-    async (path) => {
-      await resetSensorFixture();
-      const samples = ["0", "-500", "NULL", "toFloat32('inf')", "toFloat32('nan')", "750"];
-      for (const index of samples.keys()) {
-        const id = `00000000-0000-0000-0000-00000000003${index}`;
-        await command(`INSERT INTO ${database}.metric_stream
-          (id, user_id, recorded_at, channel, provider_id, scalar, ingested_at, is_deleted, version)
-          VALUES ('${id}', '${user}', '2026-09-07 10:00:0${index}', 'rr_interval_ms', 'interval-source', 500, now64(9), 0, 1)`);
-      }
-      await refreshSensorModels(path);
-      const initial = await client.query({
-        query: `SELECT count() AS samples FROM ${database}.deduped_sensor FINAL
-          WHERE channel = 'heart_rate' AND is_deleted = 0`,
-        format: "JSONEachRow",
-      });
-      expect(await initial.json()).toEqual([{ samples: 6 }]);
-      for (const [index, scalar] of samples.entries()) {
-        const id = `00000000-0000-0000-0000-00000000003${index}`;
-        await command(`INSERT INTO ${database}.metric_stream
-          (id, user_id, recorded_at, channel, provider_id, scalar, ingested_at, is_deleted, version)
-          VALUES ('${id}', '${user}', '2026-09-07 10:00:0${index}', 'rr_interval_ms', 'interval-source', ${scalar}, now64(9), ${index === 5 ? 1 : 0}, 2)`);
-      }
-      await refreshSensorModels(path);
-      const result = await client.query({
-        query: `SELECT is_deleted FROM ${database}.deduped_sensor FINAL
-          WHERE channel = 'heart_rate' ORDER BY recorded_at`,
-        format: "JSONEachRow",
-      });
-      expect(await result.json()).toEqual(Array.from({ length: 6 }, () => ({ is_deleted: 1 })));
-    },
-  );
-
-  it("keeps earlier reported heart rate when a matching interval arrives and is invalidated in a later microbatch", async () => {
-    await resetSensorFixture();
-    await command(`INSERT INTO ${database}.metric_stream
-      (id, user_id, recorded_at, channel, provider_id, device_id, scalar,
-       ingested_at, is_deleted, version) VALUES
-      ('00000000-0000-0000-0000-000000000099', '${user}', '2026-09-07 10:00:00', 'heart_rate', 'combined-source', 'strap', 115, now64(9) - INTERVAL 2 DAY, 0, 1)`);
-    await refreshSensorModels("manual");
-    await command(`INSERT INTO ${database}.metric_stream
-      (id, user_id, recorded_at, channel, provider_id, device_id, scalar,
-       ingested_at, is_deleted, version) VALUES
-      ('00000000-0000-0000-0000-000000000001', '${user}', '2026-09-07 10:00:00', 'rr_interval_ms', 'combined-source', 'strap', 500, now64(9), 0, 1)`);
-    await refreshSensorModels("dbt");
-    const reported = [{ scalar: 115, is_deleted: 0 }];
-    const afterArrival = await client.query({
-      query: `SELECT scalar, is_deleted FROM ${database}.deduped_sensor FINAL WHERE channel = 'heart_rate'`,
-      format: "JSONEachRow",
-    });
-    expect(await afterArrival.json()).toEqual(reported);
-    await command(`INSERT INTO ${database}.metric_stream
-      (id, user_id, recorded_at, channel, provider_id, device_id, scalar,
-       ingested_at, is_deleted, version) VALUES
-      ('00000000-0000-0000-0000-000000000001', '${user}', '2026-09-07 10:00:00', 'rr_interval_ms', 'combined-source', 'strap', 0, now64(9), 0, 2)`);
-    await refreshSensorModels("dbt");
-    const afterInvalidation = await client.query({
-      query: `SELECT scalar, is_deleted FROM ${database}.deduped_sensor FINAL WHERE channel = 'heart_rate'`,
-      format: "JSONEachRow",
-    });
-    expect(await afterInvalidation.json()).toEqual(reported);
-  });
-
-  it.each(["dbt", "manual"])(
-    "%s retains the winning sample's nullable linkage, including latest null updates",
-    async (path) => {
-      await resetSensorFixture();
-      if (path === "dbt") {
-        const staging = readFileSync(
-          new URL("../../analytics/models/staging/sensor_scalar_sample.sql", import.meta.url),
-          "utf8",
-        );
-        await command(
-          `CREATE TABLE ${database}.sensor_scalar_sample ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id AS ${render(staging)}`,
-        );
-        await command(
-          `CREATE TABLE ${database}.deduped_sensor ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, channel, recorded_at) AS ${render(readModelSql("deduped_sensor.sql"))}`,
-        );
-      } else {
-        for (const sql of buildIncrementalDedupedSensorStatements()) await command(sql);
-        await command(buildSensorScalarSampleBackfillSql());
-        await command(buildDedupedSensorBackfillSql());
-      }
-      const result = await client.query({
-        query: `SELECT scalar, provider_id, source_metric_stream_id, source_activity_id FROM ${database}.deduped_sensor FINAL ORDER BY recorded_at`,
-        format: "JSONEachRow",
-      });
-      expect(await result.json()).toEqual([
-        {
-          scalar: 101,
-          provider_id: "winner",
-          source_metric_stream_id: "00000000-0000-0000-0000-000000000010",
-          source_activity_id: null,
-        },
-        {
-          scalar: 102,
-          provider_id: "winner",
-          source_metric_stream_id: "00000000-0000-0000-0000-000000000012",
-          source_activity_id: member,
-        },
-      ]);
-    },
-  );
-
-  it("upgrades existing sensor tables idempotently and keeps historical rows unlinked until refresh", async () => {
-    await resetSensorFixture();
-    const migration = clickHouseMigrations("postgres://test").find(
-      (entry) => entry.id === "0080_sensor_source_activity_id",
+  it("pagedDiscoveryRetainsOlderUnchangedCandidate", async () => {
+    const reported = sensorRow(1);
+    const interval = newer(sensorRow(2, { channel: "rr_interval_ms", scalar: 500 }));
+    const competitors = Array.from({ length: 25 }, (_, i) =>
+      sensorRow(100 + i, { provider_id: "fallback", scalar: 80 }),
     );
-    expect(migration).toBeDefined();
-    if (!migration?.run) throw new Error("0077 must handle absent dbt tables");
-    const run = migration.run;
-    const applyMigration = () =>
-      run(
-        {
-          command: async (options) => {
-            await client.command({ ...options, query: scope(options.query) });
-          },
-          query: (options) => client.query({ ...options, query: scope(options.query) }),
-        },
-        "postgres://test",
-      );
-    await applyMigration(); // Fresh deployments may not have either dbt target yet.
-    for (const sql of buildIncrementalDedupedSensorStatements()) await command(sql);
-    await command(buildSensorScalarSampleBackfillSql());
-    await command(buildDedupedSensorBackfillSql());
-    for (const [table, column] of [
-      ["sensor_scalar_sample", "activity_id"],
-      ["deduped_sensor", "source_activity_id"],
-    ]) {
-      await command(`ALTER TABLE ${database}.${table} DROP COLUMN IF EXISTS ${column}`);
-    }
-    await applyMigration();
-    await applyMigration();
-    const result = await client.query({
-      query: `SELECT source_activity_id FROM ${database}.deduped_sensor FINAL`,
-      format: "JSONEachRow",
-    });
-    expect(await result.json()).toEqual([
-      { source_activity_id: null },
-      { source_activity_id: null },
-    ]);
-    await command(`TRUNCATE TABLE ${database}.sensor_scalar_sample`);
-    await command(buildSensorScalarSampleBackfillSql());
-    await command(buildDedupedSensorBackfillSql());
-    const refreshed = await client.query({
-      query: `SELECT source_activity_id FROM ${database}.deduped_sensor FINAL ORDER BY recorded_at`,
-      format: "JSONEachRow",
-    });
-    expect(await refreshed.json()).toEqual([
-      { source_activity_id: null },
-      { source_activity_id: member },
+    await fixture.seed([reported, interval, ...competitors, unrelated()]);
+    await fixture.page([{ before: null, after: interval }]);
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([expected(reported, interval.ingested_at)]);
+  });
+
+  it("deletedWinnerExposesProviderFallback", async () => {
+    const winner = sensorRow(1),
+      fallback = sensorRow(2, { provider_id: "fallback", scalar: 88 });
+    const deleted = newer(winner, { is_deleted: 1 });
+    await fixture.seed([winner, fallback, unrelated()]);
+    await fixture.page([{ before: null, after: winner }]);
+    await fixture.scalar();
+    await fixture.seed([deleted]);
+    await fixture.page([{ before: winner, after: deleted }], "2");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([expected(fallback, deleted.ingested_at)]);
+  });
+
+  it("allDeletedKeyEmitsTombstone", async () => {
+    const winner = sensorRow(1),
+      deleted = newer(winner, { is_deleted: 1 });
+    await fixture.seed([winner, unrelated()]);
+    await fixture.page([{ before: null, after: winner }]);
+    await fixture.scalar();
+    await fixture.seed([deleted]);
+    await fixture.page([{ before: winner, after: deleted }], "2");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      {
+        ...expected(deleted),
+        scalar: null,
+        provider_id: null,
+        measurement_kind: "unknown",
+        source_metric_stream_id: null,
+        provider_priority: 65535,
+        is_deleted: 1,
+      },
     ]);
   });
 
-  it("bootstraps nullable membership in the same physical position as migration 0076", async () => {
-    await command(buildPostgresFitnessActivityRawTableStatement());
-    await command(`INSERT INTO ${database}.activity (id, provider_id, user_id, canonical_type, provider_type, started_at, created_at, group_id)
-      VALUES ('${member}', 'winner', '${user}', 'cycling', 'cycling', now64(6), now64(6), NULL)`);
-    const result = await client.query({
-      query: `SELECT name, type FROM system.columns WHERE database = '${database}' AND table = 'activity' ORDER BY position DESC LIMIT 1`,
-      format: "JSONEachRow",
+  it("movedIdIsRetractedFromFormerKey", async () => {
+    const original = sensorRow(1),
+      moved = newer(original, { recorded_at: "2026-01-01 00:00:01.123456" });
+    await fixture.seed([original, unrelated()]);
+    await fixture.page([{ before: null, after: original }]);
+    await fixture.scalar();
+    await fixture.seed([moved]);
+    await fixture.page([{ before: original, after: moved }], "2");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      {
+        ...expected(original, moved.ingested_at),
+        scalar: null,
+        provider_id: null,
+        measurement_kind: "unknown",
+        source_metric_stream_id: null,
+        provider_priority: 65535,
+        is_deleted: 1,
+      },
+      expected(moved),
+    ]);
+  });
+
+  it("invalidRrRetractsEstimatedHeartRate", async () => {
+    const interval = sensorRow(1, { channel: "rr_interval_ms", scalar: 500 });
+    const invalid = newer(interval, { scalar: null });
+    await fixture.seed([interval, unrelated()]);
+    await fixture.page([{ before: null, after: interval }]);
+    await fixture.scalar();
+    await fixture.seed([invalid]);
+    await fixture.page([{ before: interval, after: invalid }], "2");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      {
+        ...expected(invalid),
+        scalar: null,
+        provider_id: null,
+        measurement_kind: "unknown",
+        source_metric_stream_id: null,
+        provider_priority: 65535,
+        is_deleted: 1,
+      },
+    ]);
+  });
+
+  it("nullableProvenanceSurvivesPagedSelection", async () => {
+    const winner = sensorRow(1),
+      fallback = newer(
+        sensorRow(2, {
+          provider_id: "fallback",
+          activity_id: sensorId(500),
+          external_id: "other",
+          device_id: "other",
+          source_type: "other",
+        }),
+      );
+    await fixture.seed([winner, fallback, unrelated()]);
+    await fixture.page([{ before: null, after: fallback }]);
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([expected(winner, fallback.ingested_at)]);
+  });
+
+  it("duplicateEffectsMatchFullStablePayload", async () => {
+    const winner = sensorRow(1),
+      fallback = newer(sensorRow(2, { provider_id: "fallback" }));
+    await fixture.seed([winner, fallback, unrelated()]);
+    await fixture.page([
+      { before: null, after: fallback },
+      { before: null, after: fallback },
+    ]);
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([expected(winner, fallback.ingested_at)]);
+  });
+});
+
+describe("bounded scalar prerequisite guards", () => {
+  let fixture: BoundedSensorFixture;
+  beforeEach(async () => {
+    fixture = new BoundedSensorFixture();
+    await fixture.create();
+  });
+  afterEach(async () => {
+    await fixture.close();
+  });
+
+  it("emptyRawPopulationStillChecksPayload", async () => {
+    const row = sensorRow(1);
+    await fixture.seed([row]);
+    await fixture.page([{ before: null, after: row }]);
+    await fixture.command(
+      `ALTER TABLE ${fixture.database}.metric_stream DELETE WHERE id=toUUID('${row.id}') SETTINGS mutations_sync=1`,
+    );
+    await expect(fixture.scalar()).rejects.toThrow("exact raw payload");
+  });
+
+  it("emptyStructuralPopulationStillChecksOwner", async () => {
+    const row = sensorRow(1);
+    await fixture.seed([row]);
+    await fixture.page([{ before: null, after: row }]);
+    await fixture.command(
+      `ALTER TABLE ${fixture.database}.source_placement DELETE WHERE source_id=toUUID('${row.id}') SETTINGS mutations_sync=1`,
+    );
+    await expect(fixture.scalar()).rejects.toThrow("global owner");
+  });
+
+  it("rejectsConflictingGlobalOwnersBeforeChoosingLatestPlacement", async () => {
+    const row = sensorRow(1);
+    await fixture.seed([row, { ...row, user_id: sensorId(777), version: "9007199254740994" }]);
+    await fixture.page([{ before: null, after: row }]);
+    await expect(fixture.scalar()).rejects.toThrow("global owner");
+  });
+
+  it("rejectsAmbiguousExactStructuralRevision", async () => {
+    const row = sensorRow(1);
+    await fixture.seed([row, { ...row, recorded_at: "2026-01-01 00:00:01.123456" }]);
+    await fixture.page([{ before: null, after: row }]);
+    await expect(fixture.scalar()).rejects.toThrow("ambiguous global placement");
+  });
+
+  it("rejectsAmbiguousExactRawPayload", async () => {
+    const row = sensorRow(1);
+    await fixture.command(`SYSTEM STOP MERGES ${fixture.database}.metric_stream`);
+    await fixture.seed([row]);
+    await fixture.seed([{ ...row, scalar: 117 }]);
+    await fixture.page([{ before: null, after: row }]);
+    const retained = [];
+    for (const form of ["", " FINAL"]) {
+      const rows = await fixture.read(
+        `SELECT id, version, ingested_at, scalar
+        FROM ${fixture.database}.metric_stream${form}
+        WHERE id=toUUID('${row.id}') LIMIT 4`,
+      );
+      retained.push({ form: form ? "FINAL" : "PLAIN", rows });
+    }
+    expect(retained[0]?.rows, "PLAIN fixture must retain both exact raw payloads").toHaveLength(2);
+    expect(retained[0]?.rows).toEqual(
+      expect.arrayContaining(
+        [115, 117].map((scalar) => ({
+          id: row.id,
+          version: row.version,
+          ingested_at: row.ingested_at,
+          scalar,
+        })),
+      ),
+    );
+    await expect(fixture.scalar()).rejects.toThrow("ambiguous exact raw payload");
+  });
+
+  it("versionZeroUsesOriginalNanosecondIngestionTieBreaker", async () => {
+    const old = sensorRow(1, { version: "0", device_id: "old" });
+    const latest = {
+      ...old,
+      ingested_at: "2026-01-02 00:00:00.123456782",
+      scalar: 123,
+      device_id: null,
+    };
+    await fixture.seed([old, latest]);
+    await fixture.page([{ before: old, after: latest }]);
+    await fixture.scalar();
+    expect(
+      await fixture.read(
+        `SELECT toString(_peerdb_version) AS version, toString(_peerdb_synced_at) AS ingested_at, scalar, device_id FROM ${fixture.database}.sensor_scalar_sample`,
+      ),
+    ).toEqual([{ version: "0", ingested_at: latest.ingested_at, scalar: 123, device_id: null }]);
+    expect(await fixture.dedup()).toEqual([
+      expect.objectContaining({
+        scalar: 123,
+        device_id: null,
+        source_refreshed_at: latest.ingested_at,
+      }),
+    ]);
+    await fixture.explain("scalar");
+    await fixture.explain("dedup");
+  });
+
+  it("movedTwiceResolvesLatestStateBeforeFormerKeyMembership", async () => {
+    const first = sensorRow(1);
+    const middle = {
+      ...first,
+      recorded_at: "2026-01-01 00:00:01.123456",
+      version: "9007199254740994",
+      ingested_at: "2026-01-03 00:00:00.123456782",
+    };
+    const latest = {
+      ...middle,
+      recorded_at: "2026-01-01 00:00:02.123456",
+      version: "9007199254740995",
+      ingested_at: "2026-01-04 00:00:00.123456783",
+    };
+    await fixture.seed([first]);
+    await fixture.page([{ before: null, after: first }]);
+    await fixture.scalar();
+    await fixture.seed([middle, latest]);
+    await fixture.page([{ before: first, after: middle }], "2");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      expect.objectContaining({
+        recorded_at: first.recorded_at,
+        scalar: null,
+        is_deleted: 1,
+        source_refreshed_at: latest.ingested_at,
+      }),
+      expect.objectContaining({
+        recorded_at: middle.recorded_at,
+        scalar: null,
+        is_deleted: 1,
+        source_refreshed_at: latest.ingested_at,
+      }),
+    ]);
+    await fixture.page([{ before: middle, after: latest }], "3");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      expect.objectContaining({ recorded_at: middle.recorded_at, scalar: null, is_deleted: 1 }),
+      expect.objectContaining({ recorded_at: latest.recorded_at, scalar: 115, is_deleted: 0 }),
+    ]);
+  });
+
+  it("unsupportedLatestChannelRetractsFormerEligibleSample", async () => {
+    const first = sensorRow(1);
+    const latest = {
+      ...first,
+      channel: "unsupported_sensor",
+      scalar: null,
+      version: "9007199254740994",
+      ingested_at: "2026-01-03 00:00:00.123456782",
+    };
+    await fixture.seed([first]);
+    await fixture.page([{ before: null, after: first }]);
+    await fixture.scalar();
+    await fixture.seed([latest]);
+    await fixture.page([{ before: first, after: latest }], "2");
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      expect.objectContaining({
+        channel: "heart_rate",
+        scalar: null,
+        is_deleted: 1,
+        source_refreshed_at: latest.ingested_at,
+      }),
+    ]);
+  });
+
+  it("emptyReceiptCompilesAndExecutesWithNoKeys", async () => {
+    await fixture.page([]);
+    const scope = await fixture.capture("scalar");
+    expect(scope).toMatchObject({
+      next: { delivery: { offset: "9007199254740993" }, effectOrdinal: "-1" },
+      exhausted: true,
+      vars: { analytics_source_ids: [], analytics_keys: [] },
     });
-    expect(await result.json()).toEqual([{ name: "group_id", type: "Nullable(UUID)" }]);
+    await fixture.scalar();
+    expect(
+      await fixture.read(`SELECT count() AS n FROM ${fixture.database}.sensor_scalar_sample`),
+    ).toEqual([{ n: "0" }]);
+  });
+
+  it("typedPulsarCapturePreservesNativeCoordinatesThroughCompilation", async () => {
+    const row = sensorRow(1);
+    await fixture.seed([row]);
+    await fixture.page([{ before: null, after: row }], "1", "pulsar");
+    const scope = await fixture.capture("scalar");
+    expect(scope.next).toEqual({
+      delivery: { major: "10", minor: "9007199254740993", batch: -1 },
+      effectOrdinal: "0",
+    });
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      expect.objectContaining({
+        scalar: 115,
+        source_metric_stream_id: row.id,
+        source_refreshed_at: row.ingested_at,
+      }),
+    ]);
+  });
+
+  it("rejects a raw revision arriving between scalar and dedup then converges after scalar refresh", async () => {
+    const first = sensorRow(1),
+      next = sensorRow(1, {
+        version: "9007199254740994",
+        scalar: 120,
+        ingested_at: "2026-01-03 00:00:00.123456782",
+      });
+    await fixture.seed([first]);
+    await fixture.page([{ before: null, after: first }]);
+    await fixture.scalar();
+    await fixture.seed([next]);
+    await expect(fixture.dedup()).rejects.toThrow("current scalar publication");
+    fixture.publicationRevision = "2";
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([
+      expect.objectContaining({ scalar: 120, source_refreshed_at: next.ingested_at }),
+    ]);
+  });
+
+  it("rejects missing raw payload of an unchanged candidate absent from page IDs", async () => {
+    const changed = sensorRow(1),
+      unchanged = sensorRow(2, { provider_id: "fallback" });
+    await fixture.seed([changed, unchanged]);
+    await fixture.page([{ before: null, after: changed }]);
+    await fixture.command(
+      `ALTER TABLE ${fixture.database}.metric_stream DELETE WHERE id=toUUID('${unchanged.id}') SETTINGS mutations_sync=1`,
+    );
+    await expect(fixture.scalar()).rejects.toThrow("exact raw payload");
+  });
+
+  it("rejects raw candidate missing structural history independently", async () => {
+    const changed = sensorRow(1),
+      unchanged = sensorRow(2, { provider_id: "fallback" });
+    await fixture.seed([changed, unchanged]);
+    await fixture.page([{ before: null, after: changed }]);
+    await fixture.command(
+      `ALTER TABLE ${fixture.database}.source_placement DELETE WHERE source_id=toUUID('${unchanged.id}') SETTINGS mutations_sync=1`,
+    );
+    await expect(fixture.scalar()).rejects.toThrow("global owner");
+  });
+
+  it("captures at most twenty receipt references before repeated keys collapse", async () => {
+    const row = sensorRow(1);
+    await fixture.seed([row]);
+    await fixture.page(Array.from({ length: 21 }, () => ({ before: null, after: row })));
+    const scope = await fixture.capture("scalar");
+    expect(scope.next).toEqual({ delivery: { offset: "9007199254740993" }, effectOrdinal: "19" });
+    expect(scope.exhausted).toBe(false);
+    expect(scope.vars.analytics_source_ids).toEqual([row.id]);
+    expect(scope.vars.analytics_keys).toHaveLength(1);
   });
 });

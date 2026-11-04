@@ -3,6 +3,7 @@ name = "dofek-analytics"
 version = "0.1.0"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+    "dbt-core==1.11.16",
     "dbt-clickhouse>=1.10.3,<1.11",
     "sqlfluff==4.3.0",
     "sqlfluff-templater-dbt==4.3.0",

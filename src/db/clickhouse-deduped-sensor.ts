@@ -1,135 +1,3 @@
-import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
-
-const sensorScalarChannels = [
-  "heart_rate",
-  "rr_interval_ms",
-  "power",
-  "speed",
-  "cadence",
-  "altitude",
-  "grade",
-  "distance",
-  "temperature",
-  "left_right_balance",
-  "left_torque_effectiveness",
-  "right_torque_effectiveness",
-  "left_pedal_smoothness",
-  "right_pedal_smoothness",
-  "stance_time",
-  "vertical_oscillation",
-  "ground_contact_time",
-  "stride_length",
-] as const;
-
-interface RecordedAtRangeSql {
-  lowerBound: string;
-  upperBound: string;
-}
-
-function sensorScalarChannelListSql(): string {
-  return sensorScalarChannels.map((channel) => `'${channel}'`).join(",\n      ");
-}
-
-function sensorScalarSampleSelectSql(
-  sourceTable: string,
-  sourceFinalClause: "" | " FINAL",
-  recordedAtRange?: RecordedAtRangeSql,
-): string {
-  return `WITH
-metric_stream_source_rows AS (
-  SELECT *
-  FROM ${sourceTable}${sourceFinalClause}
-  WHERE (scalar IS NOT NULL OR is_deleted = 1 OR channel = 'rr_interval_ms')
-    AND channel IN (
-      ${sensorScalarChannelListSql()}
-    )
-    ${recordedAtRange ? `AND recorded_at >= ${recordedAtRange.lowerBound}\n    AND recorded_at < ${recordedAtRange.upperBound}` : ""}
-),
-metric_stream_rows AS (
-  SELECT
-    source_rows.* EXCEPT (channel, scalar, is_deleted),
-    if(source_rows.channel = 'rr_interval_ms', 'heart_rate', source_rows.channel) AS channel,
-    if(
-      source_rows.channel = 'rr_interval_ms',
-      if(
-        coalesce(source_rows.scalar, 0) > 0 AND isFinite(coalesce(source_rows.scalar, 0)),
-        toFloat32(60000.0 / nullIf(source_rows.scalar, 0)),
-        0
-      ),
-      coalesce(source_rows.scalar, 0)
-    ) AS scalar,
-    toInt8(if(
-      source_rows.channel = 'rr_interval_ms'
-      AND NOT (coalesce(source_rows.scalar, 0) > 0 AND isFinite(coalesce(source_rows.scalar, 0))),
-      1,
-      source_rows.is_deleted
-    )) AS is_deleted,
-    source_rows.channel = 'rr_interval_ms' AS derived_heart_rate
-  FROM metric_stream_source_rows AS source_rows
-),
-active_sensor_provider_priority AS (
-  SELECT provider_id, channel, toNullable(priority) AS priority
-  FROM postgres_fitness.sensor_provider_priority FINAL
-  WHERE _peerdb_is_deleted = 0
-),
-active_sensor_device_priority AS (
-  SELECT provider_id, source_name_pattern, channel, toNullable(priority) AS priority
-  FROM postgres_fitness.sensor_device_priority FINAL
-  WHERE _peerdb_is_deleted = 0
-),
-device_priority_match AS (
-  SELECT metric_stream_id, priority
-  FROM (
-    SELECT
-      metric_stream_rows.id AS metric_stream_id,
-      active_sensor_device_priority.priority AS priority,
-      row_number() OVER (
-        PARTITION BY metric_stream_rows.id
-        ORDER BY
-          length(active_sensor_device_priority.source_name_pattern) DESC,
-          active_sensor_device_priority.priority ASC,
-          active_sensor_device_priority.source_name_pattern ASC
-      ) AS row_number
-    FROM metric_stream_rows
-    INNER JOIN active_sensor_device_priority
-      ON active_sensor_device_priority.provider_id = metric_stream_rows.provider_id
-     AND active_sensor_device_priority.channel = metric_stream_rows.channel
-     AND metric_stream_rows.device_id IS NOT NULL
-     AND assumeNotNull(metric_stream_rows.device_id) LIKE active_sensor_device_priority.source_name_pattern
-  )
-  WHERE row_number = 1
-)
-SELECT
-  metric_stream_rows.id AS id,
-  metric_stream_rows.activity_id AS activity_id,
-  metric_stream_rows.activity_id AS member_activity_id,
-  metric_stream_rows.user_id AS user_id,
-  metric_stream_rows.recorded_at AS recorded_at,
-  toDate(metric_stream_rows.recorded_at) AS recorded_date,
-  metric_stream_rows.channel AS channel,
-  metric_stream_rows.provider_id AS provider_id,
-  metric_stream_rows.external_id AS source_external_id,
-  metric_stream_rows.device_id AS device_id,
-  metric_stream_rows.source_type AS source_type,
-  multiIf(
-    metric_stream_rows.derived_heart_rate, 'estimated',
-    JSONExtractString(metric_stream_rows.metadata, 'measurement_kind') = 'direct', 'direct',
-    JSONExtractString(metric_stream_rows.metadata, 'measurement_kind') = 'estimated', 'estimated',
-    'unknown'
-  ) AS measurement_kind,
-  assumeNotNull(metric_stream_rows.scalar) AS scalar,
-  coalesce(device_priority_match.priority, active_sensor_provider_priority.priority, 1000) AS provider_priority,
-  metric_stream_rows.ingested_at AS _peerdb_synced_at,
-  metric_stream_rows.is_deleted AS _peerdb_is_deleted,
-  metric_stream_rows.version AS _peerdb_version
-FROM metric_stream_rows
-LEFT JOIN active_sensor_provider_priority
-  ON active_sensor_provider_priority.provider_id = metric_stream_rows.provider_id
- AND active_sensor_provider_priority.channel = metric_stream_rows.channel
-LEFT JOIN device_priority_match
-  ON device_priority_match.metric_stream_id = metric_stream_rows.id`;
-}
-
 function buildSensorScalarSampleTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample (
   id UUID,
@@ -148,33 +16,11 @@ function buildSensorScalarSampleTableSql(): string {
   provider_priority Int32,
   _peerdb_synced_at DateTime64(9),
   _peerdb_is_deleted Int8,
-  _peerdb_version Int64
+  _peerdb_version Int64,
+  refresh_version UInt64
 )
-ENGINE = ReplacingMergeTree(_peerdb_version)
+ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, channel, recorded_date, recorded_at, provider_id, id)`;
-}
-
-export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
-  return `INSERT INTO analytics.sensor_scalar_sample (
-  id,
-  activity_id,
-  member_activity_id,
-  user_id,
-  recorded_at,
-  recorded_date,
-  channel,
-  provider_id,
-  source_external_id,
-  device_id,
-  source_type,
-  measurement_kind,
-  scalar,
-  provider_priority,
-  _peerdb_synced_at,
-  _peerdb_is_deleted,
-  _peerdb_version
-)
-${sensorScalarSampleSelectSql(METRIC_STREAM_TABLE, " FINAL", recordedAtRange)}`;
 }
 
 function buildDedupedSensorTableSql(): string {
@@ -193,109 +39,13 @@ function buildDedupedSensorTableSql(): string {
   source_metric_stream_id Nullable(UUID),
   source_activity_id Nullable(UUID),
   provider_priority Int32,
+  source_refreshed_at DateTime64(9),
   refresh_version UInt64,
   is_deleted UInt8,
   refreshed_at DateTime64(9)
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, channel, recorded_date, recorded_at)`;
-}
-
-export function buildDedupedSensorRecomputeInsertSql(pendingKeySql: string): string {
-  return `INSERT INTO analytics.deduped_sensor (
-  user_id,
-  recorded_at,
-  recorded_date,
-  channel,
-  scalar,
-  provider_id,
-  member_activity_id,
-  device_id,
-  source_external_id,
-  source_type,
-  measurement_kind,
-  source_metric_stream_id,
-  source_activity_id,
-  provider_priority,
-  refresh_version,
-  is_deleted,
-  refreshed_at
-)
-WITH pending_keys AS (
-  ${pendingKeySql}
-),
-selected_samples AS (
-  SELECT
-    pending_keys.user_id AS user_id,
-    pending_keys.recorded_at AS recorded_at,
-    pending_keys.channel AS channel,
-    argMinIf(
-      tuple(
-        samples.scalar,
-        samples.provider_id,
-        samples.member_activity_id,
-        samples.device_id,
-        samples.source_external_id,
-        samples.source_type,
-        samples.measurement_kind,
-        samples.id,
-        samples.activity_id
-      ),
-      (
-        samples.provider_priority,
-        samples.provider_id,
-        samples.channel = 'heart_rate' AND samples.measurement_kind = 'estimated',
-        samples.id
-      ),
-      samples._peerdb_is_deleted = 0
-    ) AS selected_sample,
-    coalesce(minIf(samples.provider_priority, samples._peerdb_is_deleted = 0), 65535) AS provider_priority,
-    countIf(samples._peerdb_is_deleted = 0) AS active_sample_count
-  FROM pending_keys
-  LEFT JOIN (
-    SELECT *
-    FROM analytics.sensor_scalar_sample FINAL
-    WHERE (user_id, channel, recorded_at) IN (
-      SELECT user_id, channel, recorded_at
-      FROM pending_keys
-    )
-  ) AS samples
-    ON samples.user_id = pending_keys.user_id
-   AND samples.channel = pending_keys.channel
-   AND samples.recorded_at = pending_keys.recorded_at
-  GROUP BY pending_keys.user_id, pending_keys.channel, pending_keys.recorded_at
-)
-SELECT
-  selected_samples.user_id AS user_id,
-  selected_samples.recorded_at AS recorded_at,
-  toDate(selected_samples.recorded_at) AS recorded_date,
-  selected_samples.channel AS channel,
-  tupleElement(selected_samples.selected_sample, 1) AS scalar,
-  tupleElement(selected_samples.selected_sample, 2) AS provider_id,
-  tupleElement(selected_samples.selected_sample, 3) AS member_activity_id,
-  tupleElement(selected_samples.selected_sample, 4) AS device_id,
-  tupleElement(selected_samples.selected_sample, 5) AS source_external_id,
-  tupleElement(selected_samples.selected_sample, 6) AS source_type,
-  tupleElement(selected_samples.selected_sample, 7) AS measurement_kind,
-  tupleElement(selected_samples.selected_sample, 8) AS source_metric_stream_id,
-  tupleElement(selected_samples.selected_sample, 9) AS source_activity_id,
-  selected_samples.provider_priority AS provider_priority,
-  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  if(selected_samples.active_sample_count = 0, 1, 0) AS is_deleted,
-  now64(9) AS refreshed_at
-FROM selected_samples`;
-}
-
-export function buildDedupedSensorBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
-  return buildDedupedSensorRecomputeInsertSql(`SELECT DISTINCT
-    user_id,
-    channel,
-    recorded_at
-  FROM analytics.sensor_scalar_sample FINAL${
-    recordedAtRange
-      ? `\n  WHERE recorded_at >= ${recordedAtRange.lowerBound}\n    AND recorded_at < ${recordedAtRange.upperBound}`
-      : ""
-  }`);
 }
 
 export function buildIncrementalDedupedSensorStatements(): string[] {

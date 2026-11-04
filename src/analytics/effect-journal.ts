@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
+import type { SchemaExecutionDatabase } from "../db/typed-sql.ts";
 import {
   compareMetricStreamPositions,
   type MetricStreamPosition,
@@ -45,20 +46,27 @@ export interface AnalyticsJournalClient {
 }
 const stageSchema = z.enum(["scalar", "dedup", "activity"]);
 const stageOrder = { scalar: 1, dedup: 2, activity: 3 } as const;
-const streamSchema = z.object({
-  transport: z.enum(["pulsar", "kafka"]),
-  epoch: z.string().min(1),
-  topic: z.string().min(1),
-  partition: z.number().int().min(-1).max(2147483647),
-});
-const cursorSchema = z.object({
+export const analyticsStreamSchema = z
+  .object({
+    transport: z.enum(["pulsar", "kafka"]),
+    epoch: z.string().min(1),
+    topic: z.string().min(1),
+    partition: z.number().int().min(-1).max(2147483647),
+  })
+  .refine((stream) => stream.transport !== "kafka" || stream.partition >= 0, {
+    path: ["partition"],
+    message: "Kafka partition must be nonnegative",
+  });
+export const analyticsEffectCursorSchema = z.strictObject({
   delivery: journalDeliveryKeySchema,
   effectOrdinal: z.union([z.literal("-1"), sourcePlacementSchema.shape.sourceVersion]),
 });
 const effectSchema = z.object({
-  stream: streamSchema,
+  stream: analyticsStreamSchema,
   position: metricStreamPositionSchema,
-  cursor: cursorSchema.extend({ effectOrdinal: sourcePlacementSchema.shape.sourceVersion }),
+  cursor: analyticsEffectCursorSchema.extend({
+    effectOrdinal: sourcePlacementSchema.shape.sourceVersion,
+  }),
   stage: stageSchema,
   operationId: z.uuid().nullable(),
   sourceId: z.uuid(),
@@ -83,7 +91,7 @@ const discoveryReceiptSchema = z.object({
   major: z.string(),
   minor: z.string(),
   batch: z.number(),
-  effect_ordinal: cursorSchema.shape.effectOrdinal,
+  effect_ordinal: analyticsEffectCursorSchema.shape.effectOrdinal,
   stage: stageSchema,
   effect_hash: z.string().length(64),
   is_empty: z.number().int().min(0).max(1),
@@ -815,7 +823,7 @@ export async function hasCompleteAnalyticsDeliveryReceipt(
   return true;
 }
 export async function readAnalyticsEffectPage(
-  client: AnalyticsJournalClient,
+  client: { clickhouse: ClickHouseClient; database: SchemaExecutionDatabase },
   input: {
     runId: string;
     stage: AnalyticsStage;
@@ -825,8 +833,14 @@ export async function readAnalyticsEffectPage(
   },
 ): Promise<AnalyticsEffectPage> {
   z.number().int().min(1).max(RECEIPT_PAGE_SIZE).parse(input.limit);
+  z.uuid().parse(input.runId);
+  analyticsStreamSchema.parse(input.stream);
   stageSchema.parse(input.stage);
-  if (input.after) cursorSchema.parse(input.after);
+  if (input.after) {
+    analyticsEffectCursorSchema.parse(input.after);
+    if ((input.stream.transport === "kafka") !== "offset" in input.after.delivery)
+      throw new Error("Analytics cursor transport must match its stream");
+  }
   const frontier = await loadAnalyticsRunFrontier(client.database, input);
   if (
     input.after &&

@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
-import { appendAnalyticsDelivery, appendAnalyticsEffects } from "./effect-journal.ts";
+import {
+  appendAnalyticsDelivery,
+  appendAnalyticsEffects,
+  readAnalyticsEffectPage,
+} from "./effect-journal.ts";
 import { analyticsEffect, analyticsPosition } from "./test-helpers.ts";
 
 const client: ClickHouseClient = {
@@ -66,5 +70,50 @@ describe("analytics effect validation", () => {
         },
       ]),
     ).rejects.toThrow(/ownership/);
+  });
+});
+
+describe("analytics page capture input boundary", () => {
+  const valid = {
+    runId: "00000000-0000-4000-8000-000000000001",
+    stage: "scalar" as const,
+    stream: { transport: "kafka" as const, epoch: "epoch", topic: "sensor", partition: 0 },
+    after: { delivery: { offset: "9007199254740993" }, effectOrdinal: "0" },
+    limit: 20,
+  };
+  const database = {
+    execute: async () => {
+      throw new Error("Unexpected frontier I/O");
+    },
+  };
+  it.each([
+    { name: "invalid run", input: { ...valid, runId: "not-a-run" }, error: /UUID/ },
+    {
+      name: "empty epoch",
+      input: { ...valid, stream: { ...valid.stream, epoch: "" } },
+      error: /epoch/,
+    },
+    {
+      name: "negative Kafka partition",
+      input: { ...valid, stream: { ...valid.stream, partition: -1 } },
+      error: /partition/,
+    },
+    {
+      name: "cursor transport mismatch",
+      input: {
+        ...valid,
+        after: { delivery: { major: "1", minor: "2", batch: -1 }, effectOrdinal: "0" },
+      },
+      error: /transport/,
+    },
+    {
+      name: "extra cursor field",
+      input: { ...valid, after: { ...valid.after, stray: true } },
+      error: /Unrecognized/,
+    },
+  ])("rejects $name before frontier or receipt reads", async ({ input, error }) => {
+    await expect(readAnalyticsEffectPage({ clickhouse: client, database }, input)).rejects.toThrow(
+      error,
+    );
   });
 });

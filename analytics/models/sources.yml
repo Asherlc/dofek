@@ -4,6 +4,9 @@ sources:
   - name: analytics
     schema: "{{ env_var('DBT_ANALYTICS_SOURCE_SCHEMA', 'analytics') }}"
     tables:
+      - name: effect_journal
+      - name: effect_receipt
+      - name: source_placement
       - name: cycling_activity_power_metrics
       - name: cycling_power_history_rows
       - name: cycling_power_observation_rows

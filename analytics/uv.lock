@@ -276,7 +276,7 @@ wheels = [
 
 [[package]]
 name = "dbt-core"
-version = "1.11.12"
+version = "1.11.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "agate" },
@@ -302,9 +302,9 @@ dependencies = [
     { name = "sqlparse" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/26/ab9584f57f8a5561693e909f15cbe109d07584defbd2a910efc003bad0ae/dbt_core-1.11.12.tar.gz", hash = "sha256:108ced0a65d1f5330e86920df5c7182f79cd6ddcedf8f2d73c7928a310751ae8", size = 973664, upload-time = "2026-07-01T13:17:45.514Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4c/28/daa86eabf9b27ead2590eb2ac6adbd6390f918f5feba09fec685b0d3d966/dbt_core-1.11.16.tar.gz", hash = "sha256:80f0585d1391f6c54c1893d6dabcee5578d549764942544ba8f00b7a46bd2377", size = 975301, upload-time = "2026-10-14T08:26:49.91Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/c8/9f958ad09b2cab584e081058d743ef031350fba306e85ef5d4fc3425b40d/dbt_core-1.11.12-py3-none-any.whl", hash = "sha256:3b7760a3760a6db8a14a6ef38fb86532b2c2b150d49beaa1feb0f50170baa86e", size = 1062483, upload-time = "2026-07-01T13:17:43.867Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/d3/f87d4e8f464a21e292e6626b4f103f513b4fec3bb5466e62627dca9c9e48/dbt_core-1.11.16-py3-none-any.whl", hash = "sha256:8798a8e2b4f7addd62807d96f7e6d9d1c29688282a19a467cb39f6b20d972959", size = 1064459, upload-time = "2026-10-14T08:26:48.329Z" },
 ]
 
 [[package]]
@@ -395,6 +395,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dbt-clickhouse" },
+    { name = "dbt-core" },
     { name = "sqlfluff" },
     { name = "sqlfluff-templater-dbt" },
 ]
@@ -402,6 +403,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "dbt-clickhouse", specifier = ">=1.10.3,<1.11" },
+    { name = "dbt-core", specifier = "==1.11.16" },
     { name = "sqlfluff", git = "https://github.com/sqlfluff/sqlfluff.git?rev=f59543a25e13a9932a8eacc97bdcb6ede35bc011" },
     { name = "sqlfluff-templater-dbt", git = "https://github.com/sqlfluff/sqlfluff.git?subdirectory=plugins%2Fsqlfluff-templater-dbt&rev=f59543a25e13a9932a8eacc97bdcb6ede35bc011" },
 ]
