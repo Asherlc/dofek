@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { verifyAnalyticsDeliveryReceipt } from "../analytics/effect-journal.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
@@ -106,6 +107,184 @@ describe("canonical provider generation deletion", () => {
     });
     return result.json();
   }
+  async function preparedPageFixture() {
+    const first = fence();
+    const events = Array.from({ length: 20 }, () => source(first.providerId));
+    const insert = context.client.insert;
+    if (!insert) throw new Error("Fixture requires insert");
+    await insert({
+      table: "ingest.metric_stream",
+      format: "JSONEachRow",
+      values: events.map((event) =>
+        mapMetricStreamEventToClickHouseRow(event, "2026-11-03T01:00:00Z"),
+      ),
+    });
+    const page = createMetricStreamProviderGenerationDeletedEvent({
+      ...first,
+      previousCommandId: first.commandId,
+      sourceIds: events.map((event) => event.id),
+    });
+    const delivery = batch(2);
+    await apply([first], { ...delivery, positions: delivery.positions.slice(0, 1) });
+    return {
+      first,
+      events,
+      page,
+      delivery,
+      current: { ...delivery, positions: delivery.positions.slice(1) },
+    };
+  }
+
+  test("erasedPreparedTailBlocksEveryRawMutationBeforeFirstPage", async () => {
+    const fixture = await preparedPageFixture();
+    const insert = context.client.insert;
+    if (!insert) throw new Error("Fixture requires insert");
+    let rawWrites = 0;
+    const client: ClickHouseClient = {
+      ...context.client,
+      command: (options) => {
+        if (options.query.startsWith("INSERT INTO ingest.metric_stream (")) rawWrites++;
+        return context.client.command(options);
+      },
+      insert: async (options) => {
+        const result = await insert(options);
+        if (
+          options.table === "analytics.delivery_receipt" &&
+          options.values.some(
+            (value) =>
+              "status" in value &&
+              value.status === "prepared" &&
+              "effect_count" in value &&
+              value.effect_count === "20",
+          )
+        )
+          await context.client.command({
+            query:
+              "ALTER TABLE analytics.effect_journal DELETE WHERE epoch={epoch:String} AND kafka_offset=1 AND effect_ordinal=19 SETTINGS mutations_sync=2",
+            query_params: { epoch: fixture.current.positions[0]?.epoch },
+          });
+        return result;
+      },
+    };
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        client,
+        [fixture.page],
+        fixture.current,
+        context.database,
+      ),
+    ).rejects.toThrow("Complete preparation");
+    expect(rawWrites).toBe(0);
+    for (const event of fixture.events)
+      expect(await rows(event.id)).toMatchObject([{ is_deleted: 0 }]);
+    expect(await readProviderDeletionAcknowledgement(context.client, fixture.page)).toBeNull();
+  });
+
+  test.each(["analytics.delivery_receipt", "analytics.effect_receipt", "analytics.effect_journal"])(
+    "erasedCommittedEvidence%sCannotBecomeFreshACKOrFrontierProof",
+    async (table) => {
+      const fixture = await preparedPageFixture();
+      const insert = context.client.insert;
+      if (!insert) throw new Error("Fixture requires insert");
+      const client: ClickHouseClient = {
+        ...context.client,
+        insert: async (options) => {
+          const result = await insert(options);
+          if (
+            options.table === "analytics.delivery_receipt" &&
+            options.values.some(
+              (value) =>
+                "status" in value &&
+                value.status === "committed" &&
+                "effect_count" in value &&
+                value.effect_count === "20",
+            )
+          )
+            await context.client.command({
+              query: `ALTER TABLE ${table} DELETE WHERE epoch={epoch:String} AND kafka_offset=1 ${table === "analytics.delivery_receipt" ? "AND status='committed'" : ""} SETTINGS mutations_sync=2`,
+              query_params: { epoch: fixture.current.positions[0]?.epoch },
+            });
+          return result;
+        },
+      };
+      await expect(
+        applyMetricStreamEventsToClickHouse(
+          client,
+          [fixture.page],
+          fixture.current,
+          context.database,
+        ),
+      ).rejects.toThrow();
+      expect(await readProviderDeletionAcknowledgement(context.client, fixture.page)).toBeNull();
+      const state = await context.database.execute(
+        sql`SELECT processed FROM fitness.analytics_stream_state WHERE epoch=${fixture.delivery.positions[0]?.epoch}`,
+      );
+      expect(state).toEqual([{ processed: fixture.delivery.positions[0] }]);
+    },
+  );
+
+  test.each(["proof", "payload"])(
+    "lostBatched%sReadResponseStopsPublicationAndReplacement",
+    async (boundary) => {
+      const fixture = await preparedPageFixture();
+      const insert = context.client.insert;
+      if (!insert) throw new Error("Fixture requires insert");
+      let lost = false,
+        writesAfterLoss = 0;
+      let queryId: string | undefined;
+      const client: ClickHouseClient = {
+        ...context.client,
+        command: async (options) => {
+          if (lost) writesAfterLoss++;
+          return context.client.command(options);
+        },
+        insert: async (options) => {
+          if (lost) writesAfterLoss++;
+          return insert(options);
+        },
+        query: async <T extends object>(options: Parameters<ClickHouseClient["query"]>[0]) => {
+          const result = await context.client.query<T>(options);
+          if (
+            !lost &&
+            options.query.includes("LIMIT 2 BY") &&
+            (boundary === "proof"
+              ? options.query.includes("FROM analytics.delivery_receipt")
+              : options.query.startsWith("SELECT * FROM analytics.effect_journal"))
+          ) {
+            await result.json();
+            lost = true;
+            queryId = options.query_id;
+            throw new Error("batched read response disconnected");
+          }
+          return result;
+        },
+      };
+      await expect(
+        applyMetricStreamEventsToClickHouse(
+          client,
+          [fixture.page],
+          fixture.current,
+          context.database,
+        ),
+      ).rejects.toThrow("batched read response disconnected");
+      expect(lost).toBe(true);
+      expect(writesAfterLoss).toBe(0);
+      expect(queryId).toEqual(expect.any(String));
+      const owner = await context.database.execute(
+        sql`SELECT query_id,query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`,
+      );
+      expect(owner).toMatchObject([
+        {
+          query_id: queryId,
+          query_terminal: false,
+          quiescent: false,
+          intent_id: expect.any(String),
+        },
+      ]);
+      expect(await readProviderDeletionAcknowledgement(context.client, fixture.page)).toBeNull();
+      await expect(apply([source("replacement")])).rejects.toThrow("verified recovery");
+    },
+  );
   test("fenceCommitPrecedesEnumerationAndLateOldWritesCannotEscapeNewGenerations", async () => {
     const providerId = `provider-${randomUUID()}`;
     const original = createMetricStreamEvent(

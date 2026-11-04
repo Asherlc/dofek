@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import Pulsar from "pulsar-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { logger } from "../logger.ts";
 import { metricStreamPosition } from "../metric-stream/transport-position.ts";
 import {
   beginAnalyticsDelivery,
@@ -20,6 +21,7 @@ import {
   readPreparedAnalyticsEffectPages,
   verifyAnalyticsDeliveryReceipt,
 } from "./effect-journal.ts";
+import { journalDeliveryKey } from "./journal-position.ts";
 import {
   analyticsEffect,
   analyticsPosition,
@@ -31,6 +33,317 @@ describe("analytics effect journal", () => {
   let context: Awaited<ReturnType<typeof createAnalyticsTestContext>>;
   beforeAll(async () => {
     context = await createAnalyticsTestContext();
+  });
+
+  it("twentyEffectPreflightUsesThreeBoundedProofReadsBeforeExistingWrites", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 5n);
+    const effects = Array.from({ length: 20 }, (_, ordinal) =>
+      analyticsEffect(position, BigInt(ordinal), context.userId),
+    );
+    const reads: string[] = [];
+    const client: ClickHouseClient = {
+      ...context.clickhouse,
+      query<T extends object>(options: Parameters<ClickHouseClient["query"]>[0]) {
+        reads.push(options.query);
+        return context.clickhouse.query<T>(options);
+      },
+    };
+    await appendAnalyticsEffects(client, effects);
+    expect(reads).toHaveLength(3);
+    const rows = await context.clickhouse.query<{ count: string }>({
+      query:
+        "SELECT toString(count()) AS count FROM analytics.effect_journal FINAL WHERE epoch={epoch:String}",
+      query_params: { epoch: position.epoch },
+      format: "JSONEachRow",
+    });
+    expect(await rows.json()).toEqual([{ count: "20" }]);
+    reads.length = 0;
+    await appendAnalyticsEffects(client, effects);
+    expect(reads).toHaveLength(3);
+  });
+
+  it("twentyDiscoveryReferencesUseOneExactPayloadFetch", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 6n);
+    const effects = Array.from({ length: 20 }, (_, ordinal) =>
+      analyticsEffect(position, BigInt(ordinal), context.userId),
+    );
+    await appendAnalyticsDelivery(context.clickhouse, { position, effects });
+    let payloadReads = 0;
+    const client: ClickHouseClient = {
+      ...context.clickhouse,
+      query<T extends object>(options: Parameters<ClickHouseClient["query"]>[0]) {
+        if (options.query.includes("FROM analytics.effect_journal")) payloadReads++;
+        return context.clickhouse.query<T>(options);
+      },
+    };
+    expect(await verifyAnalyticsDeliveryReceipt(client, position)).toEqual({ effectCount: 20n });
+    expect(payloadReads).toBe(1);
+  });
+
+  it("publicAppendPreflightsAllChunksBeforeWritingWhenTwentyFirstIdentityConflicts", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 7n);
+    const effects = Array.from({ length: 21 }, (_, ordinal) =>
+      analyticsEffect(position, BigInt(ordinal), context.userId),
+    );
+    const last = effects[20];
+    if (!last || !context.clickhouse.insert) throw new Error("Fixture requires last effect/insert");
+    await appendAnalyticsEffects(context.clickhouse, [last]);
+    let writes = 0;
+    const insert = context.clickhouse.insert.bind(context.clickhouse);
+    const client: ClickHouseClient = {
+      ...context.clickhouse,
+      insert: async (options) => {
+        writes++;
+        return insert(options);
+      },
+    };
+    await expect(
+      appendAnalyticsEffects(client, [
+        ...effects.slice(0, 20),
+        { ...last, operationId: randomUUID() },
+      ]),
+    ).rejects.toThrow("changed an existing");
+    expect(writes).toBe(0);
+    const rows = await context.clickhouse.query<{ count: string }>({
+      query:
+        "SELECT toString(count()) AS count FROM analytics.effect_journal FINAL WHERE epoch={epoch:String}",
+      query_params: { epoch: position.epoch },
+      format: "JSONEachRow",
+    });
+    expect(await rows.json()).toEqual([{ count: "1" }]);
+  });
+
+  it.each([0, 19])("proofLookupRejectsTamperedJournalHashAtPageEdge%s", async (ordinal) => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 8n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    await appendAnalyticsEffects(context.clickhouse, effects);
+    await context.clickhouse.command({
+      query:
+        "ALTER TABLE analytics.effect_journal UPDATE effect_hash=repeat('0',64) WHERE epoch={epoch:String} AND effect_ordinal={ordinal:UInt64} SETTINGS mutations_sync=2",
+      query_params: { epoch: position.epoch, ordinal },
+    });
+    await expect(appendAnalyticsEffects(context.clickhouse, effects)).rejects.toThrow(
+      "changed an existing analytics effect identity",
+    );
+  });
+
+  it.each([0, 19])("proofLookupRejectsTamperedDiscoveryHashAtPageEdge%s", async (ordinal) => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 9n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    await appendAnalyticsEffects(context.clickhouse, effects);
+    await context.clickhouse.command({
+      query:
+        "ALTER TABLE analytics.effect_receipt UPDATE effect_hash=repeat('0',64) WHERE epoch={epoch:String} AND effect_ordinal={ordinal:Int128} SETTINGS mutations_sync=2",
+      query_params: { epoch: position.epoch, ordinal },
+    });
+    await expect(appendAnalyticsEffects(context.clickhouse, effects)).rejects.toThrow(
+      "effect receipt identity",
+    );
+  });
+
+  it.each([0, 19])("payloadFetchRejectsMissingPageEdge%s", async (ordinal) => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 10n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    await appendAnalyticsDelivery(context.clickhouse, { position, effects });
+    await context.clickhouse.command({
+      query:
+        "ALTER TABLE analytics.effect_journal DELETE WHERE epoch={epoch:String} AND effect_ordinal={ordinal:UInt64} SETTINGS mutations_sync=2",
+      query_params: { epoch: position.epoch, ordinal },
+    });
+    await expect(verifyAnalyticsDeliveryReceipt(context.clickhouse, position)).rejects.toThrow(
+      "Missing analytics journal effect",
+    );
+  });
+
+  it.each([0, 19])(
+    "closedStageCannotAdoptMissingDiscoveryIdentityAtPageEdge%s",
+    async (ordinal) => {
+      const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 11n);
+      const effects = Array.from({ length: 20 }, (_, index) =>
+        analyticsEffect(position, BigInt(index), context.userId),
+      );
+      await appendAnalyticsDelivery(context.clickhouse, { position, effects });
+      await context.clickhouse.command({
+        query:
+          "ALTER TABLE analytics.effect_receipt DELETE WHERE epoch={epoch:String} AND effect_ordinal={ordinal:Int128} SETTINGS mutations_sync=2",
+        query_params: { epoch: position.epoch, ordinal },
+      });
+      await expect(appendAnalyticsEffects(context.clickhouse, effects)).rejects.toThrow(
+        "closed stage",
+      );
+    },
+  );
+
+  it("closedStageRejectsANewLastKeyWithoutPublishingEarlierKeys", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 12n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    await appendAnalyticsDelivery(context.clickhouse, { position, effects });
+    await expect(
+      appendAnalyticsEffects(context.clickhouse, [
+        ...effects.slice(0, 19),
+        analyticsEffect(position, 20n, context.userId),
+      ]),
+    ).rejects.toThrow("closed stage");
+  });
+
+  it("proofSetsPreserveMixedStreamStageAndLosslessNativeKafkaIdentities", async () => {
+    const stream = { ...context.stream, partition: 0, epoch: randomUUID() };
+    const native = analyticsPosition(stream, 9007199254740993n);
+    const kafka = {
+      transport: "kafka" as const,
+      epoch: stream.epoch,
+      topic: stream.topic,
+      partition: 0,
+      offset: "9007199254740993",
+    };
+    const stages = ["scalar", "dedup", "activity"] as const;
+    const effects = Array.from({ length: 20 }, (_, index) => {
+      const base = analyticsEffect(native, 9007199254740993n + BigInt(index), context.userId);
+      const position = index % 2 ? kafka : native;
+      return {
+        ...base,
+        stream: { ...stream, transport: position.transport },
+        position,
+        cursor: {
+          delivery: journalDeliveryKey(position),
+          effectOrdinal: base.cursor.effectOrdinal,
+        },
+        stage: stages[index % 3] ?? "scalar",
+      };
+    });
+    await appendAnalyticsEffects(context.clickhouse, effects);
+    await appendAnalyticsEffects(context.clickhouse, effects);
+    for (const index of [0, 19]) {
+      const selected = effects[index];
+      if (!selected) throw new Error("Fixture requires page edge");
+      await expect(
+        appendAnalyticsEffects(
+          context.clickhouse,
+          effects.map((effect, offset) =>
+            offset === index ? { ...selected, operationId: randomUUID() } : effect,
+          ),
+        ),
+      ).rejects.toThrow("changed an existing");
+    }
+  });
+
+  it.each(["user_id", "serialized_message_id"])(
+    "payloadFetchRejectsCorrupt%sAtLastKey",
+    async (column) => {
+      const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 13n);
+      const effects = Array.from({ length: 20 }, (_, index) =>
+        analyticsEffect(position, BigInt(index), context.userId),
+      );
+      await appendAnalyticsDelivery(context.clickhouse, { position, effects });
+      await context.clickhouse.command({
+        query: `ALTER TABLE analytics.effect_journal UPDATE ${column}={value:${column === "user_id" ? "UUID" : "String"}} WHERE epoch={epoch:String} AND effect_ordinal=19 SETTINGS mutations_sync=2`,
+        query_params: {
+          epoch: position.epoch,
+          value: column === "user_id" ? randomUUID() : "AA==",
+        },
+      });
+      await expect(verifyAnalyticsDeliveryReceipt(context.clickhouse, position)).rejects.toThrow();
+    },
+  );
+
+  it.each(["duplicate", "unexpected"])("payloadFetchRejectsActualSQL%sRows", async (kind) => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 14n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    const foreign = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 15n);
+    await appendAnalyticsDelivery(context.clickhouse, { position, effects });
+    await appendAnalyticsDelivery(context.clickhouse, {
+      position: foreign,
+      effects: [analyticsEffect(foreign, 0n, context.userId)],
+    });
+    const client: ClickHouseClient = {
+      ...context.clickhouse,
+      query<T extends object>(options: Parameters<ClickHouseClient["query"]>[0]) {
+        if (
+          !options.query.startsWith("SELECT * FROM analytics.effect_journal") ||
+          !options.query.includes("LIMIT 2 BY")
+        )
+          return context.clickhouse.query<T>(options);
+        const extra =
+          kind === "duplicate"
+            ? options.query
+            : "SELECT * FROM analytics.effect_journal FINAL WHERE epoch={foreignEpoch:String} LIMIT 1";
+        return context.clickhouse.query<T>({
+          ...options,
+          query: `(${options.query}) UNION ALL (${extra})`,
+          query_params: { ...options.query_params, foreignEpoch: foreign.epoch },
+        });
+      },
+    };
+    await expect(verifyAnalyticsDeliveryReceipt(client, position)).rejects.toThrow(
+      kind === "duplicate"
+        ? "Missing analytics journal effect"
+        : "Unexpected analytics proof identity",
+    );
+  });
+
+  it("duplicateIdentityAcrossChunksRejectsBeforeAnyPublicAppendWrite", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 16n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    const first = effects[0];
+    if (!first || !context.clickhouse.insert) throw new Error("Fixture requires effect/insert");
+    let writes = 0;
+    const insert = context.clickhouse.insert.bind(context.clickhouse);
+    const client = {
+      ...context.clickhouse,
+      insert: async (options: Parameters<typeof insert>[0]) => {
+        writes++;
+        return insert(options);
+      },
+    };
+    await expect(appendAnalyticsEffects(client, [...effects, first])).rejects.toThrow(
+      "duplicate effect identities",
+    );
+    expect(writes).toBe(0);
+  });
+
+  it("perKeyTwoRowBoundDoesNotHideTheLastConflictingIdentity", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 17n);
+    const effects = Array.from({ length: 20 }, (_, index) =>
+      analyticsEffect(position, BigInt(index), context.userId),
+    );
+    await appendAnalyticsEffects(context.clickhouse, effects);
+    await context.clickhouse.command({
+      query:
+        "ALTER TABLE analytics.effect_journal UPDATE effect_hash=repeat('0',64) WHERE epoch={epoch:String} AND effect_ordinal=19 SETTINGS mutations_sync=2",
+      query_params: { epoch: position.epoch },
+    });
+    const client: ClickHouseClient = {
+      ...context.clickhouse,
+      query<T extends object>(options: Parameters<ClickHouseClient["query"]>[0]) {
+        if (!options.query.includes("effect_hash FROM analytics.effect_journal"))
+          return context.clickhouse.query<T>(options);
+        const from =
+          "FROM (SELECT * FROM analytics.effect_journal FINAL UNION ALL SELECT * FROM analytics.effect_journal FINAL WHERE epoch={fixtureEpoch:String} AND effect_ordinal=0)";
+        const query = options.query
+          .replace("FROM analytics.effect_journal FINAL", from)
+          .replace(/\bLIMIT\b/, "ORDER BY effect_ordinal LIMIT");
+        return context.clickhouse.query<T>({
+          ...options,
+          query,
+          query_params: { ...options.query_params, fixtureEpoch: position.epoch },
+        });
+      },
+    };
+    await expect(appendAnalyticsEffects(client, effects)).rejects.toThrow(
+      "changed an existing analytics effect identity",
+    );
   });
 
   it("preparedIntentIsImmutableAndUndiscoverableUntilRawSuccess", async () => {
@@ -680,12 +993,18 @@ describe("analytics effect journal", () => {
       const input = await seedAnalyticsKeysetFixture(context, shape, transport);
       const queryId = randomUUID();
       let captured: Parameters<ClickHouseClient["query"]>[0] | undefined;
+      const lookups: Parameters<ClickHouseClient["query"]>[0][] = [];
       const clickhouse: ClickHouseClient = {
         ...context.clickhouse,
         query<TRow extends object>(options: Parameters<ClickHouseClient["query"]>[0]) {
           if (options.query.includes("PREWHERE")) {
             captured = { ...options, query_id: queryId };
             return context.clickhouse.query<TRow>(captured);
+          }
+          if (options.query.includes("LIMIT 2 BY")) {
+            const lookup = { ...options, query_id: options.query_id ?? randomUUID() };
+            lookups.push(lookup);
+            return context.clickhouse.query<TRow>(lookup);
           }
           return context.clickhouse.query<TRow>(options);
         },
@@ -695,6 +1014,8 @@ describe("analytics effect journal", () => {
         { ...input, stage: "scalar", limit: 20 },
       );
       expect(page.effects).toEqual(input.expected);
+      await appendAnalyticsEffects(clickhouse, input.expected);
+      expect(lookups).toHaveLength(4);
       if (!captured) throw new Error("Missing captured native page query");
       const plan = await context.clickhouse.query<{ explain: string }>({
         ...captured,
@@ -722,6 +1043,34 @@ describe("analytics effect journal", () => {
       const [row] = await statistics.json();
       if (!row) throw new Error("Missing native query read_rows evidence");
       expect(Number(row.read_rows), text).toBeLessThan(input.total);
+      for (const lookup of lookups) {
+        const explanation = await context.clickhouse.query<{ explain: string }>({
+          ...lookup,
+          query_id: undefined,
+          query: `EXPLAIN PLAN indexes=1 ${lookup.query}`,
+        });
+        const lookupPlan = (await explanation.json()).map((line) => line.explain).join("\n");
+        expect(lookupPlan).toContain("PrimaryKey");
+        if (
+          !(shape === "one-delivery" && lookup.query.includes("FROM analytics.delivery_receipt"))
+        ) {
+          const selected = /Granules: (\d+)\/(\d+)/.exec(lookupPlan);
+          if (!selected) throw new Error(`Missing bounded lookup granules: ${lookupPlan}`);
+          expect(Number(selected[1]), lookupPlan).toBeLessThan(Number(selected[2]));
+        }
+        const profile = await context.clickhouse.query<{ read_rows: string }>({
+          query:
+            "SELECT toString(read_rows) AS read_rows FROM system.query_log WHERE query_id={id:String} AND type='QueryFinish'",
+          query_params: { id: lookup.query_id },
+          format: "JSONEachRow",
+        });
+        const statistics = await profile.json();
+        expect(statistics).toHaveLength(1);
+        expect(Number(statistics[0]?.read_rows), lookupPlan).toBeLessThan(input.total);
+        logger.info(
+          `[bounded-journal-lookup] ${JSON.stringify({ transport, shape, queryId: lookup.query_id, readRows: statistics[0]?.read_rows, plan: lookupPlan })}`,
+        );
+      }
     },
   );
 });

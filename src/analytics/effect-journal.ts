@@ -170,6 +170,152 @@ function receiptValues(position: MetricStreamPosition) {
 const deliveryWhere =
   "epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32} AND transport={transport:String} AND kafka_offset={kafka_offset:UInt64} AND major={major:UInt64} AND minor={minor:UInt64} AND batch={batch:Int32}";
 const integerSettings = { output_format_json_quote_64bit_integers: 1 };
+const storageKeySchema = discoveryReceiptSchema.pick({
+  epoch: true,
+  topic: true,
+  partition: true,
+  transport: true,
+  kafka_offset: true,
+  major: true,
+  minor: true,
+  batch: true,
+});
+const effectKeySchema = storageKeySchema.extend({
+  effect_ordinal: sourcePlacementSchema.shape.sourceVersion,
+  stage: stageSchema,
+});
+type StorageKey = z.infer<typeof storageKeySchema>;
+type EffectKey = z.infer<typeof effectKeySchema>;
+
+function storageKey(row: StorageKey): string {
+  return JSON.stringify([
+    row.epoch,
+    row.topic,
+    row.partition,
+    row.transport,
+    row.kafka_offset,
+    row.major,
+    row.minor,
+    row.batch,
+  ]);
+}
+function effectKey(row: EffectKey): string {
+  return JSON.stringify([storageKey(row), row.effect_ordinal, row.stage]);
+}
+function selectKeys(keys: readonly (StorageKey | EffectKey)[]) {
+  z.number().int().min(1).max(RECEIPT_PAGE_SIZE).parse(keys.length);
+  const params: Record<string, unknown> = {};
+  let columns = "";
+  const tuples = keys.map((key, index) => {
+    const fields: [string, string, unknown][] = [
+      ["epoch", "String", key.epoch],
+      ["topic", "String", key.topic],
+      ["partition", "Int32", key.partition],
+      ["transport", "String", key.transport],
+      ["kafka_offset", "UInt64", key.kafka_offset],
+      ["major", "UInt64", key.major],
+      ["minor", "UInt64", key.minor],
+      ["batch", "Int32", key.batch],
+    ];
+    if ("effect_ordinal" in key)
+      fields.push(["effect_ordinal", "UInt64", key.effect_ordinal], ["stage", "String", key.stage]);
+    columns = fields.map(([name]) => name).join(",");
+    return `(${fields
+      .map(([name, type, value]) => {
+        const parameter = `key${index}_${name}`;
+        params[parameter] = value;
+        return `{${parameter}:${type}}`;
+      })
+      .join(",")})`;
+  });
+  return { columns, params, where: `(${columns}) IN (${tuples.join(",")})` };
+}
+function indexProofRows<Row>(
+  rows: readonly Row[],
+  expected: ReadonlySet<string>,
+  identify: (row: Row) => string,
+) {
+  const indexed = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = identify(row);
+    if (!expected.has(key)) throw new Error("Unexpected analytics proof identity");
+    const matches = indexed.get(key) ?? [];
+    if (matches.length === 2) throw new Error("Analytics proof exceeded its per-key bound");
+    matches.push(row);
+    indexed.set(key, matches);
+  }
+  return indexed;
+}
+async function readEffectProofs(
+  client: Pick<ClickHouseClient, "query">,
+  effects: readonly AnalyticsEffect[],
+) {
+  const keys = effects.map((effect) => ({
+    ...deliveryParams(effect.position),
+    effect_ordinal: effect.cursor.effectOrdinal,
+    stage: effect.stage,
+  }));
+  const deliveries = [
+    ...new Map(
+      effects.map((effect) => {
+        const key = deliveryParams(effect.position);
+        return [storageKey(key), key] as const;
+      }),
+    ).values(),
+  ];
+  const delivery = selectKeys(deliveries);
+  const manifests = await client.query({
+    query: `SELECT ${delivery.columns},serialized_message_id,effect_count,chunk_count,effect_digest,stages
+      FROM analytics.delivery_receipt FINAL WHERE ${delivery.where} AND status='committed'
+      LIMIT 2 BY ${delivery.columns}`,
+    query_params: delivery.params,
+    format: "JSONEachRow",
+    clickhouse_settings: integerSettings,
+  });
+  const manifestRows = z
+    .array(storageKeySchema.merge(receiptSchema))
+    .max(deliveries.length * 2)
+    .parse(await manifests.json());
+  const manifestIndex = indexProofRows(
+    manifestRows,
+    new Set(deliveries.map(storageKey)),
+    storageKey,
+  );
+  const selected = selectKeys(keys);
+  const expected = new Set(keys.map(effectKey));
+  const hashSchema = effectKeySchema.extend({ effect_hash: z.string() });
+  const discovery = await client.query({
+    query: `SELECT ${selected.columns},effect_hash FROM analytics.effect_receipt FINAL
+      WHERE ${selected.where} LIMIT 2 BY ${selected.columns}`,
+    query_params: selected.params,
+    format: "JSONEachRow",
+    clickhouse_settings: integerSettings,
+  });
+  const receipts = indexProofRows(
+    z
+      .array(hashSchema)
+      .max(keys.length * 2)
+      .parse(await discovery.json()),
+    expected,
+    effectKey,
+  );
+  const prior = await client.query({
+    query: `SELECT ${selected.columns},effect_hash FROM analytics.effect_journal FINAL
+      WHERE ${selected.where} LIMIT 2 BY ${selected.columns}`,
+    query_params: selected.params,
+    format: "JSONEachRow",
+    clickhouse_settings: integerSettings,
+  });
+  const journal = indexProofRows(
+    z
+      .array(hashSchema)
+      .max(keys.length * 2)
+      .parse(await prior.json()),
+    expected,
+    effectKey,
+  );
+  return { manifests: manifestIndex, receipts, journal };
+}
 async function readReceipt(
   client: Pick<ClickHouseClient, "query">,
   position: MetricStreamPosition,
@@ -201,61 +347,58 @@ async function persistAnalyticsEffectPage(
   const validated = validateEffectBatch(effects);
   const rows: object[] = [];
   const receipts: object[] = [];
-  for (const effect of validated) {
-    const hash = effectHash(effect);
-    const receipt = await readReceipt(client, effect.position);
-    const params = {
-      ...deliveryParams(effect.position),
-      ordinal: effect.cursor.effectOrdinal,
-      stage: effect.stage,
-    };
-    const expectedResult = await client.query({
-      query: `SELECT effect_hash FROM analytics.effect_receipt FINAL WHERE ${deliveryWhere} AND effect_ordinal={ordinal:Int128} AND stage={stage:String} LIMIT 2`,
-      query_params: params,
-      format: "JSONEachRow",
-    });
-    const expected = z
-      .array(z.object({ effect_hash: z.string() }))
-      .parse(await expectedResult.json());
-    if (receipt?.stages.includes(effect.stage) && !expected.some((row) => row.effect_hash === hash))
-      throw new Error(
-        "Analytics delivery receipt forbids adding or changing effects in a closed stage",
-      );
-    if (expected.some((row) => row.effect_hash !== hash))
-      throw new Error("Replay changed an existing analytics effect receipt identity");
-    const prior = await client.query({
-      query: `SELECT effect_hash FROM analytics.effect_journal FINAL WHERE ${deliveryWhere} AND effect_ordinal={ordinal:UInt64} AND stage={stage:String} LIMIT 2`,
-      query_params: params,
-      format: "JSONEachRow",
-    });
-    for (const row of z.array(z.object({ effect_hash: z.string() })).parse(await prior.json()))
-      if (row.effect_hash !== hash)
-        throw new Error("Replay changed an existing analytics effect identity");
-    const owner = effect.after?.userId ?? effect.before?.userId;
-    if (!owner) throw new Error("Analytics effect account ownership is missing");
-    rows.push({
-      ...receiptValues(effect.position),
-      effect_ordinal: effect.cursor.effectOrdinal,
-      stage: effect.stage,
-      serialized_message_id:
-        effect.position.transport === "pulsar" ? effect.position.serializedMessageId : "",
-      operation_id: effect.operationId,
-      user_id: owner,
-      source_id: effect.sourceId,
-      source_version: effect.sourceVersion,
-      generation: effect.generation,
-      before: effect.before === null ? null : JSON.stringify(effect.before),
-      after: effect.after === null ? null : JSON.stringify(effect.after),
-      effect_hash: hash,
-    });
-    receipts.push({
-      ...receiptValues(effect.position),
-      effect_ordinal: effect.cursor.effectOrdinal,
-      stage: effect.stage,
-      effect_hash: hash,
-      is_empty: 0,
-      user_id: owner,
-    });
+  for (let offset = 0; offset < validated.length; offset += RECEIPT_PAGE_SIZE) {
+    const page = validated.slice(offset, offset + RECEIPT_PAGE_SIZE);
+    const proofs = await readEffectProofs(client, page);
+    for (const effect of page) {
+      const hash = effectHash(effect);
+      const key = {
+        ...deliveryParams(effect.position),
+        effect_ordinal: effect.cursor.effectOrdinal,
+        stage: effect.stage,
+      };
+      const manifests = proofs.manifests.get(storageKey(key)) ?? [];
+      if (manifests.length > 1) throw new Error("Conflicting analytics delivery receipts");
+      const receipt = manifests[0];
+      const expected = proofs.receipts.get(effectKey(key)) ?? [];
+      if (
+        receipt?.stages.includes(effect.stage) &&
+        !expected.some((row) => row.effect_hash === hash)
+      )
+        throw new Error(
+          "Analytics delivery receipt forbids adding or changing effects in a closed stage",
+        );
+      if (expected.some((row) => row.effect_hash !== hash))
+        throw new Error("Replay changed an existing analytics effect receipt identity");
+      for (const row of proofs.journal.get(effectKey(key)) ?? [])
+        if (row.effect_hash !== hash)
+          throw new Error("Replay changed an existing analytics effect identity");
+      const owner = effect.after?.userId ?? effect.before?.userId;
+      if (!owner) throw new Error("Analytics effect account ownership is missing");
+      rows.push({
+        ...receiptValues(effect.position),
+        effect_ordinal: effect.cursor.effectOrdinal,
+        stage: effect.stage,
+        serialized_message_id:
+          effect.position.transport === "pulsar" ? effect.position.serializedMessageId : "",
+        operation_id: effect.operationId,
+        user_id: owner,
+        source_id: effect.sourceId,
+        source_version: effect.sourceVersion,
+        generation: effect.generation,
+        before: effect.before === null ? null : JSON.stringify(effect.before),
+        after: effect.after === null ? null : JSON.stringify(effect.after),
+        effect_hash: hash,
+      });
+      receipts.push({
+        ...receiptValues(effect.position),
+        effect_ordinal: effect.cursor.effectOrdinal,
+        stage: effect.stage,
+        effect_hash: hash,
+        is_empty: 0,
+        user_id: owner,
+      });
+    }
   }
   if (rows.length) {
     if (phase !== "commit")
@@ -563,38 +706,58 @@ export async function commitPreparedAnalyticsDelivery(
   });
 }
 
-async function readReferencedEffect(
+async function readReferencedEffects(
   client: Pick<ClickHouseClient, "query">,
-  receipt: DiscoveryReceipt,
-): Promise<AnalyticsEffect | null> {
-  if (receipt.is_empty) {
-    if (receipt.effect_ordinal !== "-1" || receipt.effect_hash !== EMPTY_DIGEST)
-      throw new Error("Malformed empty analytics discovery receipt");
-    return null;
+  receipts: readonly DiscoveryReceipt[],
+): Promise<(AnalyticsEffect | null)[]> {
+  z.number().int().max(RECEIPT_PAGE_SIZE).parse(receipts.length);
+  const nonempty: EffectKey[] = [];
+  for (const receipt of receipts) {
+    if (receipt.is_empty) {
+      if (receipt.effect_ordinal !== "-1" || receipt.effect_hash !== EMPTY_DIGEST)
+        throw new Error("Malformed empty analytics discovery receipt");
+    } else {
+      if (receipt.effect_ordinal === "-1")
+        throw new Error("Negative ordinal cannot identify an analytics effect");
+      nonempty.push(effectKeySchema.parse(receipt));
+    }
   }
-  if (receipt.effect_ordinal === "-1")
-    throw new Error("Negative ordinal cannot identify an analytics effect");
-  const result = await client.query({
-    query: `SELECT * FROM analytics.effect_journal FINAL WHERE ${deliveryWhere} AND effect_ordinal={ordinal:UInt64} AND stage={stage:String} LIMIT 2`,
-    query_params: { ...receipt, ordinal: receipt.effect_ordinal },
-    format: "JSONEachRow",
-    clickhouse_settings: integerSettings,
+  let indexed = new Map<string, z.infer<typeof journalRowSchema>[]>();
+  if (nonempty.length) {
+    const expected = new Set(nonempty.map(effectKey));
+    if (expected.size !== nonempty.length)
+      throw new Error("Duplicate analytics discovery reference identity");
+    const selected = selectKeys(nonempty);
+    const result = await client.query({
+      query: `SELECT * FROM analytics.effect_journal FINAL WHERE ${selected.where} LIMIT 2 BY ${selected.columns}`,
+      query_params: selected.params,
+      format: "JSONEachRow",
+      clickhouse_settings: integerSettings,
+    });
+    const rows = z
+      .array(journalRowSchema)
+      .max(nonempty.length * 2)
+      .parse(await result.json());
+    indexed = indexProofRows(rows, expected, effectKey);
+  }
+  return receipts.map((receipt) => {
+    if (receipt.is_empty) return null;
+    const rows = indexed.get(effectKey(effectKeySchema.parse(receipt))) ?? [];
+    const row = rows[0];
+    if (rows.length !== 1 || !row)
+      throw new Error(
+        `Missing analytics journal effect referenced by receipt ${receipt.topic}/${receipt.partition}/${receipt.major}:${receipt.minor}:${receipt.batch}/${receipt.effect_ordinal}/${receipt.stage}; replay the input delivery`,
+      );
+    const effect = decodeJournalRow(row);
+    if (
+      (effect.after?.userId ?? effect.before?.userId) !== row.user_id ||
+      receipt.user_id !== row.user_id ||
+      effectHash(effect) !== row.effect_hash ||
+      row.effect_hash !== receipt.effect_hash
+    )
+      throw new Error("Analytics journal ownership or receipt effect identity is corrupt");
+    return effect;
   });
-  const rows = z.array(journalRowSchema).parse(await result.json());
-  const row = rows[0];
-  if (rows.length !== 1 || !row)
-    throw new Error(
-      `Missing analytics journal effect referenced by receipt ${receipt.topic}/${receipt.partition}/${receipt.major}:${receipt.minor}:${receipt.batch}/${receipt.effect_ordinal}/${receipt.stage}; replay the input delivery`,
-    );
-  const effect = decodeJournalRow(row);
-  if (
-    (effect.after?.userId ?? effect.before?.userId) !== row.user_id ||
-    receipt.user_id !== row.user_id ||
-    effectHash(effect) !== row.effect_hash ||
-    row.effect_hash !== receipt.effect_hash
-  )
-    throw new Error("Analytics journal ownership or receipt effect identity is corrupt");
-  return effect;
 }
 export async function verifyAnalyticsDeliveryReceipt(
   client: Pick<ClickHouseClient, "query">,
@@ -627,11 +790,12 @@ export async function verifyAnalyticsDeliveryReceipt(
     });
     const refs = z.array(discoveryReceiptSchema).parse(await result.json());
     if (!refs.length) break;
-    for (const reference of refs) {
+    if (chunkCount + BigInt(refs.length) > BigInt(receipt.chunk_count))
+      throw new Error("Analytics delivery receipt has unexpected effect references");
+    const effects = await readReferencedEffects(client, refs);
+    for (const [index, reference] of refs.entries()) {
       chunkCount++;
-      if (chunkCount > BigInt(receipt.chunk_count))
-        throw new Error("Analytics delivery receipt has unexpected effect references");
-      const effect = await readReferencedEffect(client, reference);
+      const effect = effects[index];
       if (effect) {
         effectCount++;
         digest.update(effectHash(effect));
@@ -712,11 +876,9 @@ export async function readAnalyticsEffectPage(
   });
   const receipts = z.array(discoveryReceiptSchema).parse(await result.json());
   const selected = receipts.slice(0, input.limit);
-  const effects: AnalyticsEffect[] = [];
-  for (const receipt of selected) {
-    const effect = await readReferencedEffect(client.clickhouse, receipt);
-    if (effect) effects.push(effect);
-  }
+  const effects = (await readReferencedEffects(client.clickhouse, selected)).filter(
+    (effect): effect is AnalyticsEffect => effect !== null,
+  );
   const last = selected.at(-1);
   return {
     effects,
