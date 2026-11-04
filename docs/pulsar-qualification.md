@@ -398,9 +398,55 @@ deadline and remains open. Thirteen other provider-command engine cases and the
 owner-preserving legacy profiling regression pass; the smaller cases do not
 replace that large-case gate.
 
-The next correctness check prevents a callback from swallowing an unknown
-ClickHouse request outcome and replacing its persisted query identity with a
-second request. Request-registration cost can then be reduced within the same
-fail-closed ownership protocol and measured against the retained baseline.
-Native acknowledgment, complete erasure, CDC mapping, old R2 conversion and
-whole-server resource qualification remain release gates.
+The subsequent ownership fix (`b86fe246c`) passed ten real-engine cases and
+independent review: catching an unknown request outcome can neither replace the
+first query identity nor return apparent success and clear its pending intent.
+A separate attribution run observed 6,479 checked-out PostgreSQL client query
+calls for forty deliveries, alongside the same 1,400 ClickHouse calls and forty
+visible rows, in 13,881 ms. This is a second baseline observation, not evidence of
+an optimization or a native throughput result. Request-registration reduction
+remains under implementation and requires its own correctness review.
+
+Provider command checkpoint `55ed6754d` also passed independent re-review.
+Actual `FINAL` queries ignored a fully materialized alternate projection and
+read all 65,536 unrelated ACK rows. Deterministic command slots for each deletion
+root/predecessor now use the existing event-ID primary key; full immutable-body
+hash and exact receipt checks remain. Twelve measured lookups read 8,192–8,194
+rows with useful primary-key plans. Nineteen selected protocol engine cases and
+207 focused unit tests passed. The original 1,001-source workload remains open;
+necessary constructor-ID changes did not reduce its workload or deadline.
+
+The legacy suite now uses the existing private current-schema fixture
+(`89eb029a5`), resolving fixed-ID/new-account collisions with retained structural
+history. Its independent review passed, and twelve cases passed before an
+unchanged 350-delete case reached its 30-second deadline; two cases remained
+unrun. Cooperative cleanup awaited operations before dropping the fixture, with
+no post-drop query failure. Both large-case gates, native acknowledgment,
+complete erasure, CDC mappings, R2 conversion and whole-server qualification
+remain open.
+
+## 2026-11-04: Bounded observation of legacy R2 archive shapes
+
+Read-only source preparation was supplemented by LIST of twenty objects, HEAD
+of five and conditional GET of those five small revisions. Only counts, schema
+shapes and digests were recorded; payload values were neither printed nor
+retained. The listing was truncated. The five objects contained respectively
+1, 500, 1, 4 and 2 row-v1 lines: 508 records, all with IDs, without explicit
+operation revision, generation, transport envelope or processing-membership
+fields. Existing [v1 codec defaults](../src/metric-stream/events.ts) remain
+defined semantics; an omitted field is not automatically lost required evidence.
+No conversion, archive mutation, completeness verdict or claim that any actual
+range is irrecoverable follows from this sample.
+
+All five inspected headers exposed ETag and no VersionId. Three metadata maps
+were empty; two contained archive endpoints and Kafka fields. The pinned
+[line-archive implementation](https://github.com/redpanda-data/benthos/blob/v4.76.0/internal/impl/pure/processor_archive.go#L137)
+retains the first member's metadata, and the pinned
+[S3 writer](https://github.com/redpanda-data/connect/blob/v4.99.0/internal/impl/aws/s3/output.go#L378)
+copies selected metadata into object headers. These are object-level fields,
+not per-line positions. The actual historical writer version remains unobserved.
+[Erasure rewrites](../src/account-erasure/archive-erasure.ts) can remove lines
+while preserving those headers, so a header offset cannot automatically identify
+the current first line. Task 9 still requires complete inventory, exact provenance
+and explicit resolution of overlap, deletion and ordering evidence; neither key
+endpoints nor line ordinals manufacture missing Kafka offsets.
