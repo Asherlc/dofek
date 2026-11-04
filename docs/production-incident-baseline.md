@@ -35806,3 +35806,10 @@ unresolved. Local retries stopped; ARM CI plan qualification and the whole-host
 assessment are next, with the 128 MiB page budget unchanged. All four production
 holds were reverified. See the [results and limits](pulsar-qualification.md#2026-11-04-sensor-semantics-and-original-memory-gate-pass-larger-gates-remain-open)
 and ClickHouse's [memory tracking behavior](https://clickhouse.com/docs/concepts/features/configuration/settings/memory-overcommit).
+
+
+### 2026-11-04 — Local qualification memory allocation corrected
+
+Local qualification had used a 768 MiB ClickHouse container inside a 16 GiB Docker VM shared by 43 running containers, despite the Mac having 64 GiB RAM. The user authorized more local memory. Docker VM memory is now 32 GiB; this workspace ClickHouse is 4 GiB with a 3 GiB native server ceiling. Its image, named volume and query-log configuration were preserved; the test query budget remains 128 MiB. This is a local environment change; production and its four holds were untouched. Earlier server-wide memory failures are consistent with insufficient local allocation, but that causal explanation is not independently proved. Docker documents the VM allocation and settings file in its [settings reference](https://docs.docker.com/desktop/settings-and-maintenance/settings/).
+
+After the graceful Docker restart, three previously healthy local Redpanda containers failed with `Could not setup Async I/O`; guest `aio-nr` equalled its 65,536 ceiling. Raising the guest runtime ceiling to 1,048,576 restored them. All 43 original containers are running and healthy, with unchanged images and named volumes. This runtime sysctl must be checked after future VM restarts; no repository runtime workaround was added. The [Linux kernel documentation](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr) explains this shared limit. Next time, inspect physical RAM, VM allocation, container limits and shared kernel limits before moving qualification solely for resource reasons.
