@@ -9,6 +9,82 @@ service ceilings. This is evidence for Task 1 of the
 production certification or a completed resync. No production producer, sink,
 retention, filesystem feature, or resource limit was changed.
 
+## November 4 retention decision and remaining risk gates
+
+The [approved broker-expiry policy](account-erasure-runbook.md#approved-broker-expiry-policy-for-the-pulsar-migration)
+allows unread broker data to expire when necessary to meet account erasure,
+after an alert and operator incident. Lost ranges remain incomplete until
+verified recovery; historical reconstruction is not guaranteed. The 30-day
+deletion deadline remains unchanged. Shared topics are the selected layout
+under that policy, conditional on qualification of expiry, offload and physical
+cleanup; account isolation is no longer required to preserve indefinitely
+stalled backlog. No production setting has been changed.
+
+The native BookKeeper replacement result below remains a primitive qualification.
+It does not qualify the broker's full deletion lifecycle or failed-delete
+reconciliation. Exact source attribution for failed-delete cleanup remains
+unqualified; further upstream provenance investigation has stopped. The planned
+native lifecycle fixture must exercise a real failed deletion, safe orphan
+attribution and physical removal. An unattributed ledger must never be deleted
+on the basis of absence alone. These are open gates, not evidence that the
+mechanism is impossible. Pulsar's verified release commit is
+[`9ef1a62af60850cfae91c386e8d3bf84aa401a5c`](https://github.com/apache/pulsar/tree/9ef1a62af60850cfae91c386e8d3bf84aa401a5c);
+its [dependency catalog](https://github.com/apache/pulsar/blob/9ef1a62af60850cfae91c386e8d3bf84aa401a5c/gradle/libs.versions.toml#L29)
+pins BookKeeper 4.18.2. Unverified web excerpts are insufficient for storage
+invariants.
+
+One workstation-only R2 metadata census reached its fixed limit of 100 LIST
+pages: 100,000 objects totaling 19,945,268,349 compressed bytes. It did not reach
+the end of the namespace. Origin classification remains unknown, and the eight
+syntactic overlap components are not proven Kafka coverage. No payload was read
+or modified by that census, and it does not qualify full conversion or snapshot
+consistency.
+
+A separate conditional read of three objects in one actual overlap component
+examined 489,891 compressed bytes and 10,208 version-1 rows. It found 8,208 unique
+IDs: 6,208 occurred once and 2,000 were exact duplicates, with no conflicting
+payloads. Those rows lacked explicit operation revisions and original ingestion
+times. Order is harmless for this component because duplicate payloads match;
+this does not qualify the remaining archive. Conversion must check each component
+and block conflicting identities rather than invent offsets. Originals remain
+untouched, and a complete inventory is still required.
+
+### Storage prerequisite remains unresolved
+
+The November 4, 22:00 UTC read-only production snapshot found 9,732,775,936 bytes
+(9.064 GiB) free on the data filesystem, below the unchanged 15 GiB admission
+guard. Public health and service replicas were healthy. Analytics, Ride with GPS
+and Strava queues remained paused with no active jobs; the history ClickHouse
+sink remained at zero replicas. No hold was restored.
+
+Active canonical CDC destinations occupied 277,913,171 bytes across 134,207
+physical rows, excluding 252,425,693 bytes of internal PeerDB tables. Active
+analytics occupied 9,322,944,772 bytes, including 637,658,688 bytes in dbt staging
+tables. These are measured current footprints, not bounds for replacement
+generations, compression or future history growth. No staging cleanup credit
+has been assumed. Migration must account concurrently for hot Pulsar storage,
+the evacuation copy, replacement CDC and analytics tables, conversion staging,
+ClickHouse growth and temporary merges, WAL, and reserve.
+
+Retiring the retained Redpanda history data is not currently justified by the
+archive evidence. The truncated census contains no observed history-topic
+objects; that does not establish their absence from R2. Zero archive lag and
+filename range unions do not establish present coverage of every retained
+record: the [archive configuration](../deploy/redpanda/metric-stream-r2-archive.connect.yml)
+groups by timestamp hour and writes payload lines with endpoint metadata, while
+[account erasure](../src/account-erasure/archive-erasure.ts) can replace an object
+under the same key after removing records. Historical writer/acknowledgement,
+object-preservation and erasure lineage remain unproved. No topic has been
+trimmed or retired. This does not prove a larger disk is required. Pulsar's
+[tiered storage](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/)
+offloads sealed broker ledgers and permits reads from remote storage; it does
+not relocate ClickHouse tables or automatically retire existing Redpanda data.
+The remaining gate is a safe transition sequence with a bounded local footprint
+and verified release of old storage. The approved expansion is a fallback,
+currently blocked on OCI access and canonical Terraform state, rather than an
+established prerequisite. No additional archive-provenance investigation or
+storage-dependent production change has begun.
+
 ## Acceptance results
 
 | Gate | Result | Evidence / limit |

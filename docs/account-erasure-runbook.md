@@ -14,6 +14,24 @@ This runbook covers account erasure, not the narrower removal of one provider's
 data. Use the [provider data deletion runbook](provider-data-deletion-runbook.md)
 for the latter.
 
+### Approved broker-expiry policy for the Pulsar migration
+
+On November 4, 2026, the approved retention decision allowed expiry to meet
+the deletion deadline. Unread broker records, including another account's records,
+may expire when required to meet the existing account-deletion deadline.
+The workflow must alert and open an operator incident before that expiry,
+record the affected ranges, and keep affected syncs incomplete until recovery
+is verified. Reconstruction of every historical record is not guaranteed;
+expiry must never be reported as successful processing.
+
+This permits a shared-topic Pulsar layout without extending the deletion
+deadline. It does not qualify the expiry mechanism or physical cleanup.
+The [Pulsar qualification gates](pulsar-qualification.md) still require bounded
+drain, rollover, offload, local and remote deletion, failure recovery and
+day-29 verification. Original R2 archive conversion remains mandatory.
+Production retention settings and the existing safety holds have not changed.
+This policy does not authorize discarding broker data to reclaim migration space.
+
 The product contract follows Apple's in-app account-deletion requirement,
 Google Play's account-deletion policy, and the right-to-erasure framework in
 GDPR Article 17:

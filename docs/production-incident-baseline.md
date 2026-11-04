@@ -35813,3 +35813,23 @@ and ClickHouse's [memory tracking behavior](https://clickhouse.com/docs/concepts
 Local qualification had used a 768 MiB ClickHouse container inside a 16 GiB Docker VM shared by 43 running containers, despite the Mac having 64 GiB RAM. The user authorized more local memory. Docker VM memory is now 32 GiB; this workspace ClickHouse is 4 GiB with a 3 GiB native server ceiling. Its image, named volume and query-log configuration were preserved; the test query budget remains 128 MiB. This is a local environment change; production and its four holds were untouched. Earlier server-wide memory failures are consistent with insufficient local allocation, but that causal explanation is not independently proved. Docker documents the VM allocation and settings file in its [settings reference](https://docs.docker.com/desktop/settings-and-maintenance/settings/).
 
 After the graceful Docker restart, three previously healthy local Redpanda containers failed with `Could not setup Async I/O`; guest `aio-nr` equalled its 65,536 ceiling. Raising the guest runtime ceiling to 1,048,576 restored them. All 43 original containers are running and healthy, with unchanged images and named volumes. This runtime sysctl must be checked after future VM restarts; no repository runtime workaround was added. The [Linux kernel documentation](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr) explains this shared limit. Next time, inspect physical RAM, VM allocation, container limits and shared kernel limits before moving qualification solely for resource reasons.
+
+### 2026-11-04 — Migration capacity prerequisite remains unresolved
+
+At 22:00 UTC, read-only inspection found 9,732,775,936 bytes free on the data
+filesystem, below the unchanged 15 GiB admission guard. Public health passed,
+web and worker replicas were healthy, and all four operation-owned holds remained:
+analytics, Ride with GPS and Strava queues paused with no active jobs, and the
+history ClickHouse sink at zero replicas. Freshness remains deliberately held.
+No storage, retention, deployment or queue setting was changed.
+
+Safe retirement of retained history-topic data is not established by zero archive
+lag or filename ranges. The bounded R2 census did not reach history-topic keys;
+it does not establish that those archives are absent. Existing writer and object
+lineage is insufficient to authorize deletion. Storage-dependent migration work
+requires a verified transition-space plan rather than assumed reclaimable
+capacity. Expansion is an approved fallback, not proven necessary; OCI access
+remains unavailable. The [qualification checkpoint](pulsar-qualification.md#storage-prerequisite-remains-unresolved)
+records the measured subsets, limits and remaining risks. Future retirement
+reviews should distinguish archive-consumer progress from present durable
+coverage after rewrites and erasure.
