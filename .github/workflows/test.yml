@@ -948,6 +948,35 @@ jobs:
           path: integration-test-timings.json
           if-no-files-found: error
 
+  test-pulsar-consumer:
+    name: Native Pulsar Consumer
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      PULSAR_TEST_SERVICE_URL: pulsar://127.0.0.1:6650
+      PULSAR_TEST_ADMIN_URL: http://127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Start isolated native client test broker
+        run: pnpm compose -- -f docker-compose.pulsar-test.yml up -d --wait --wait-timeout 120 pulsar-consumer-broker
+      - name: Verify Consumer lifecycle and native delivery positions
+        run: >-
+          pnpm exec vitest run --project=pulsar-integration --maxWorkers=1 --retry=0 --bail=1
+          src/metric-stream/pulsar-consumer.pulsar.integration.test.ts
+          src/metric-stream/transport-position.pulsar.integration.test.ts
+      - name: Capture native broker logs
+        if: always()
+        run: pnpm compose -- -f docker-compose.pulsar-test.yml logs --no-color
+      - name: Remove disposable native test broker
+        if: always()
+        run: pnpm compose -- -f docker-compose.pulsar-test.yml down
+
   test-bookie-evacuation:
     name: Native BookKeeper Evacuation
     runs-on: ubuntu-24.04-arm

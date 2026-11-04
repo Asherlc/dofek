@@ -27,6 +27,22 @@ to the real Node ESM loader. No production transport cutover or storage
 power-loss claim follows from this position test; the separate gates are in the
 [bounded analytics plan](superpowers/plans/2026-11-03-bounded-analytics.md).
 
+The `Native Pulsar Consumer` ARM job runs that position test together with the
+[Consumer lifecycle case](../src/metric-stream/pulsar-consumer.pulsar.integration.test.ts).
+It uses the pinned 5.0.1 [standalone Docker broker](https://pulsar.apache.org/docs/5.0.x/getting-started-docker/)
+in `docker-compose.pulsar-test.yml`, with private fresh test topics and no existing
+data volumes. The lifecycle case checks individual batch-member acknowledgments,
+native IDs, original bytes and redelivery after a handler failure and consumer
+restart. Standalone's embedded metadata and bookie do not qualify the production
+Oxia topology, offload, erasure, reconnect behavior or whole-host resource fit.
+The separate BookKeeper evacuation job remains unchanged.
+
+For a local run, start only this fixture using
+`pnpm compose -- -f docker-compose.pulsar-test.yml up -d --wait --wait-timeout 120 pulsar-consumer-broker`,
+provide the two test URLs for its loopback ports, and run the two named files
+through the `pulsar-integration` project. Stop it afterward with
+`pnpm compose -- -f docker-compose.pulsar-test.yml down`.
+
 ## Native Swift mutation testing
 
 Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the
