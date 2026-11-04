@@ -27,7 +27,13 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   let phase = "setup";
   let succeeded = false;
   const cleanupFailures: unknown[] = [];
-  const run = (command: string, args: string[], limit = 60_000, evidence = false): string => {
+  const run = (
+    command: string,
+    args: string[],
+    limit = 60_000,
+    evidence = false,
+    observeLeader = false,
+  ): string => {
     const timeout = evidence ? limit : Math.min(limit, deadline - Date.now());
     if (timeout <= 0) throw new Error(`Native fixture deadline exceeded in ${phase}`);
     const prefix = join(owned, `${String(++sequence).padStart(3, "0")}-${phase}`);
@@ -43,6 +49,19 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     });
     writeFileSync(`${prefix}.stdout`, result.stdout ?? "");
     writeFileSync(`${prefix}.stderr`, result.stderr ?? "");
+    // pnpm prints the known repository wrapper invocation before the native CLI stderr.
+    const nativeError = result.stderr
+      .trim()
+      .replace(/^\$ tsx scripts\/compose-command\.ts [^\n]*\n/u, "");
+    if (
+      observeLeader &&
+      !result.error &&
+      result.status === 1 &&
+      nativeError ===
+        "Error: unknown: rpc error: code = Unavailable desc = oxia: server not initialized yet"
+    ) {
+      return ""; // Native read observation: coordinator has not published its leader runtime yet.
+    }
     if (result.error || result.status !== 0) {
       throw new Error(
         `Native fixture phase ${phase} failed; evidence ${prefix}; status=${result.status} signal=${result.signal}`,
@@ -51,7 +70,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     }
     return result.stdout;
   };
-  const compose = (args: string[], limit?: number, evidence = false) =>
+  const compose = (args: string[], limit?: number, evidence = false, observeLeader = false) =>
     run(
       "pnpm",
       [
@@ -65,6 +84,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       ],
       limit,
       evidence,
+      observeLeader,
     );
   const client = (...args: string[]) => compose(["exec", "-T", "client", ...args]);
   const java = (mode: string) => {
@@ -82,19 +102,18 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   };
   const shell = (...args: string[]) =>
     client("bin/bookkeeper", "shell", "-conf", "conf/bookkeeper.conf", ...args);
-  const metadataAdmin = (...args: string[]) =>
-    compose([
-      "exec",
-      "-T",
-      "pulsar-oxia-coordinator",
-      "oxia",
-      "admin",
-      "--admin-address",
-      "localhost:6650",
-      "--output",
-      "json",
-      ...args,
-    ]);
+  const coordinatorAdmin = [
+    "exec",
+    "-T",
+    "pulsar-oxia-coordinator",
+    "oxia",
+    "admin",
+    "--admin-address",
+    "localhost:6650",
+    "--output",
+    "json",
+  ];
+  const metadataAdmin = (...args: string[]) => compose([...coordinatorAdmin, ...args]);
   const state = (service: string) =>
     JSON.parse(
       client(
@@ -119,6 +138,19 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       fixture,
       "src/metric-stream/BookieEvacuationFixture.java",
     ]);
+    phase = "metadata-leader-ready";
+    const leaderDeadline = Math.min(deadline, Date.now() + 60_000);
+    let leaderState = "";
+    while (!leaderState) {
+      leaderState = compose(
+        [...coordinatorAdmin, "dataserver", "get"],
+        leaderDeadline - Date.now(),
+        false,
+        true,
+      );
+    }
+    // This native read succeeds only after Raft leadership and runtime publication, even on an empty cluster.
+    expect(JSON.parse(leaderState)).toEqual([]);
     phase = "metadata-data-server";
     metadataAdmin(
       "dataserver",
