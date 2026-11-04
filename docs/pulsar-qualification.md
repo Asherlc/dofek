@@ -647,3 +647,46 @@ native cleanup, retaining the existing server and erasure deadline. No alternati
 layout commands or code have been executed, no policy weakened and no production change
 made. Cutover remains blocked. Independent transport-neutral analytics
 correctness work may continue while that layout decision is pending.
+
+## 2026-11-04: Existing raw locator passes a finite twenty-ID prerequisite
+
+An isolated real-engine probe used the current [raw schema](../src/metric-stream/clickhouse-table.ts)
+and [structural history/MV](../src/db/analytics-work-schema.ts), without a new index
+or payload copy. On 400,000 rows in ten parts, twenty scattered source IDs included
+ten NULL and ten linked activities. Literal and structural-subquery scopes returned
+identical complete raw payloads. The guarded lookup resolved global identity and
+the exact `(source_version, ingested_at)` before eligibility filtering, then rejected
+missing payloads, cross-account UUID ownership, conflicting payloads and ambiguous
+placement. A missing-newer-payload control retained one older raw row and still
+failed explicitly rather than selecting it.
+
+The final guarded query finished in 117 ms with 5,296,361 bytes peak under the
+unchanged 134,217,728-byte query allowance. Its 819,300 total reads comprise
+163,840 raw rows, four structural traversals and scope reads; this is material
+granule/read amplification, not twenty point reads. Native plans selected existing
+indexes/projections without forced optimizer settings. The disjoint NULL/non-NULL
+lookup follows [ClickHouse IN semantics](https://clickhouse.com/docs/reference/statements/in#null-processing);
+[native projections](https://clickhouse.com/docs/data-modeling/projections) and
+[MergeTree indexes](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree)
+explain the retained neighboring-granule work. No additional index was justified
+for this supplied-ID fixture.
+
+Independent review approved this finite prerequisite, verified all seventeen
+artifact hashes and independently reconstructed the complete semantic fixture
+digest. An initial probe JSON-number precision error was preserved and corrected
+with explicit lossless SQL strings before accepting payload evidence. An existing
+private DELETE initially waited behind the fixture's stopped merges; resuming
+only that private table settled the original request, after which merges were
+stopped again. All 163 requests settled and the private fixture was synchronously
+dropped. No resource failure, deadline increase, retry or server restart occurred.
+
+The field-domain boundary is explicit: raw version is Int64, structural version
+UInt64, raw recorded time DateTime64(6), and structural recorded time DateTime64(9).
+The fixture proves above-2^53 values within raw Int64 and nanosecond ingestion
+ties, not full-UInt64 raw versions or nanosecond recorded-time storage. Complete
+affected-key candidate discovery, missing-candidate detection, historical/index
+bootstrap, merge/replay retention, publication ordering and the actual bounded
+models remain unqualified. In particular, [ReplacingMergeTree](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree)
+does not use ingestion time as a secondary equal-version replacement key.
+This lookup proof cannot establish those separate obligations, native ACK,
+physical erasure or cutover. Production and all four safety holds were unchanged.
