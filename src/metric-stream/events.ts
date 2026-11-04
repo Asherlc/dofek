@@ -44,7 +44,9 @@ const timestampInputSchema = z.union([z.string().min(1), z.date()]).transform((v
   // finer source/scope boundaries that the canonical DateTime64(6) preserves.
   const fraction =
     typeof value === "string" ? /\.(\d{4,})(?:Z|[+-]\d{2}:?\d{2})$/i.exec(value)?.[1] : undefined;
-  return fraction ? normalized.replace(/\.\d{3}Z$/, `.${fraction}Z`) : normalized;
+  return fraction
+    ? normalized.replace(/\.\d{3}Z$/, `.${fraction.replace(/0+$/, "").padEnd(3, "0")}Z`)
+    : normalized;
 });
 
 export const metricStreamRowInputSchema = z
@@ -212,7 +214,8 @@ function createDeterministicMetricStreamId(
     .update("\0")
     .update(row.channel)
     .update("\0")
-    .update(row.recordedAt);
+    // Source precision is emitted separately; historical implicit IDs hash UTC milliseconds.
+    .update(new Date(row.recordedAt).toISOString());
   const metadata = row.metadata;
   if (
     metadata &&

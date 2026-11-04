@@ -8,6 +8,7 @@ import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { mapMetricStreamEventToClickHouseRow } from "./clickhouse-row.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
+  METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
@@ -22,7 +23,7 @@ import type { MetricStreamPosition } from "./transport-position.ts";
 
 function effect(
   position: MetricStreamPosition,
-  ordinal: number,
+  ordinal: bigint,
   before: SourcePlacement | null,
   after: SourcePlacement,
 ): AnalyticsEffect {
@@ -148,11 +149,19 @@ export async function* prepareMetricStreamSourceEffects(
       activityId: event.activityId ?? null,
       deleted: staleGeneration || BigInt(guard) > BigInt(row.version),
     };
-    yield [effect(position, 0, before, after)];
+    yield [effect(position, 0n, before, after)];
     return;
   }
+  if ("eventId" in event) {
+    const acknowledged = await client.query({
+      query: `SELECT event_id FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} WHERE event_id={eventId:UUID} LIMIT 1`,
+      query_params: { eventId: event.eventId },
+      format: "JSONEachRow",
+    });
+    if (z.array(z.object({ event_id: z.uuid() })).parse(await acknowledged.json()).length) return;
+  }
   let cursor: string | null = null;
-  let ordinal = 0;
+  let ordinal = 0n;
   for (;;) {
     const params: Record<string, unknown> = { cursor };
     const predicate = scopePredicate(event.scope, params);

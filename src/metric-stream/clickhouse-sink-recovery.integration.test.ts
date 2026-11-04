@@ -20,6 +20,7 @@ import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
+  metricStreamDeletedEventV2Schema,
 } from "./events.ts";
 import { type MetricStreamPosition, metricStreamPositionSchema } from "./transport-position.ts";
 
@@ -427,5 +428,44 @@ describe("metric stream durable recovery", () => {
       client,
       metricStreamPositionSchema.parse(guardedDelivery.positions[1]),
     );
+  });
+
+  test("archivedV2DeleteEventIdReplayAtNewPositionKeepsReplacementAndHasEmptyReceipt", async () => {
+    const original = event();
+    const delivery = batch(4);
+    const deletion = metricStreamDeletedEventV2Schema.parse({
+      version: 2,
+      eventType: "metric_stream_deleted",
+      eventId: randomUUID(),
+      scope: { userId: original.userId, providerId: original.providerId },
+      partitionKey: "fixture",
+    });
+    const replacement = { ...original, operationRevision: "2", scalar: 93 };
+    await applyMetricStreamEventsToClickHouse(
+      client,
+      [original, deletion, replacement, deletion],
+      delivery,
+      context.database,
+    );
+    expect(await raw(original.id)).toMatchObject([{ version: "5", is_deleted: 0 }]);
+    const replayPosition = metricStreamPositionSchema.parse(delivery.positions[3]);
+    await verifyAnalyticsDeliveryReceipt(client, replayPosition);
+    expect(await frontier(replayPosition)).toEqual(replayPosition);
+    const receipt = await client.query<{ effect_count: string; status: string }>({
+      query:
+        "SELECT toString(effect_count) AS effect_count,status FROM analytics.delivery_receipt FINAL WHERE epoch={epoch:String} AND kafka_offset=3 ORDER BY status",
+      query_params: { epoch: replayPosition.epoch },
+      format: "JSONEachRow",
+    });
+    expect(await receipt.json()).toEqual([
+      { effect_count: "0", status: "prepared" },
+      { effect_count: "0", status: "committed" },
+    ]);
+    const scalar = await client.query<{ scalar: number }>({
+      query: "SELECT scalar FROM ingest.metric_stream FINAL WHERE id={id:UUID}",
+      query_params: { id: original.id },
+      format: "JSONEachRow",
+    });
+    expect(await scalar.json()).toEqual([{ scalar: 93 }]);
   });
 });

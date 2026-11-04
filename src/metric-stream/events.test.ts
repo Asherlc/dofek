@@ -47,18 +47,29 @@ describe("createMetricStreamEvent", () => {
     });
   });
 
-  it("distinguishes new fractional identities while preserving supplied archive IDs", () => {
-    const first = createCurrentMetricStreamEvent({
-      ...baseMetricStreamRow,
-      externalId: "precision-identity",
-      recordedAt: "2026-11-03T00:00:00.123456Z",
-    });
-    const second = createCurrentMetricStreamEvent({
-      ...baseMetricStreamRow,
-      externalId: "precision-identity",
-      recordedAt: "2026-11-03T00:00:00.123457Z",
-    });
-    expect(first.id).not.toBe(second.id);
+  it("preserves historical generated IDs while emitting precise canonical timestamps", () => {
+    for (const recordedAt of [
+      "2026-11-03T00:00:00.123Z",
+      "2026-11-03T00:00:00.123000Z",
+      "2026-11-03T00:00:00.123456Z",
+      "2026-11-03T02:00:00.1234560+02:00",
+      "2026-11-03T00:00:00.123457Z",
+    ]) {
+      expect(
+        createCurrentMetricStreamEvent({
+          ...baseMetricStreamRow,
+          externalId: "precision-identity",
+          recordedAt,
+        }).id,
+      ).toBe("c5980e88-f3ae-590d-b8e9-32f0ff3867f0");
+    }
+    expect(
+      createCurrentMetricStreamEvent({
+        ...baseMetricStreamRow,
+        externalId: "precision-identity",
+        recordedAt: "2026-11-03T00:00:00.124Z",
+      }).id,
+    ).toBe("c9c1ccc4-047e-56dc-986b-c962dc0dac8b");
     expect(
       createCurrentMetricStreamEvent({
         ...baseMetricStreamRow,
@@ -66,6 +77,26 @@ describe("createMetricStreamEvent", () => {
         recordedAt: "2026-11-03T00:00:00.123456Z",
       }).id,
     ).toBe("10000000-0000-4000-8000-000000000001");
+  });
+
+  it.each([
+    ["2026-11-03T00:00:00.123000Z", "2026-11-03T00:00:00.123Z"],
+    ["2026-11-03T02:00:00.1234560+02:00", "2026-11-03T00:00:00.123456Z"],
+    ["2026-11-03T02:00:00.000000+02:00", "2026-11-03T00:00:00.000Z"],
+  ])("canonicalizes equivalent timestamp representations: %s", (input, expected) => {
+    expect(
+      createCurrentMetricStreamEvent({
+        ...baseMetricStreamRow,
+        externalId: "precision",
+        recordedAt: input,
+      }).recordedAt,
+    ).toBe(expected);
+    expect(
+      createCurrentMetricStreamDeletedEvent({
+        userId: "00000000-0000-4000-8000-000000000001",
+        recordedAtStart: input,
+      }).scope.recordedAtStart,
+    ).toBe(expected);
   });
   it("keeps interval identity stable across display renames and distinguishes stable source facts", () => {
     const row = {
