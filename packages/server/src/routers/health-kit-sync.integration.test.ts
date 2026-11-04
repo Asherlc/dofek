@@ -7,7 +7,7 @@ import {
   type MetricStreamEventV2,
   type MetricStreamRowInput,
 } from "../../../../src/metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";

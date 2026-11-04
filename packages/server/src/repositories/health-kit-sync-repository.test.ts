@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import { createMetricStreamDeletedEvent } from "../../../../src/metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
 import {
   HealthKitDeletionTombstonesUnsupportedError,
   HealthKitSyncRepository,

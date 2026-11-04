@@ -9,7 +9,7 @@ import {
 } from "../account-erasure/postgres-erasure.ts";
 import type { AccountErasureRestoreIntent } from "../account-erasure/restore-ledger.ts";
 import { createMetricStreamEvent } from "../metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import { writeMetricStreamRows } from "../metric-stream/write-metric-stream.ts";
 import { recordMetricStreamBatchPublishedInTransaction } from "../processing/processing-event-store.ts";

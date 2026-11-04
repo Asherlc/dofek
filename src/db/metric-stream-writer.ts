@@ -5,11 +5,11 @@ import {
   type MetricStreamRowInput,
   metricStreamRowInputSchema,
 } from "../metric-stream/events.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-  type MetricStreamReplacementPublishResult,
-} from "../metric-stream/redpanda-producer.ts";
+import type {
+  MetricStreamEventPublisher,
+  MetricStreamReplacementPublishResult,
+} from "../metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import {
   prepareMetricStreamRows,
   withAccountErasureMetricStreamWriteFence,
