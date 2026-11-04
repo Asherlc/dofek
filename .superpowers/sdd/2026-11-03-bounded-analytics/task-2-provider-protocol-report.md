@@ -194,3 +194,16 @@ cost and the test-timeout cleanup race. Next work should retain the same fixture
 measure the separately approved owner change and document the private runner's
 timeout/cleanup ownership in the testing runbook. Reuse integration-tests-ready,
 test-driven-development and verification-before-completion skills for that work.
+
+## Fix round1 checkpoint
+
+Independent review found an unbounded reverse ACK-history scan. Source fix
+`55ed6754d8339858f17fb68472323c98f04a23be` is pushed: deterministic
+deletion/predecessor command slots now use the existing event-ID FINAL primary
+key while retaining immutable body/hash/receipt checks. Native26.10.2.103
+projection assessment read65536 rows with and without the projection; the fixed
+lookup read8192–8194 per captured query. New status/evidence and scope separation
+are in `task-2-provider-protocol-fix1-report.md`:207units,19selectedenginecases,
+typecheck/Biome GREEN. Original1001 workload/bounds/deadline remain OPEN and were
+not rerun; ID-constructor fixture adaptation is explicitly disclosed. FullTask2
+and resource/release gates remain incomplete.
