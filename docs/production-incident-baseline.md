@@ -35764,3 +35764,12 @@ registration hypothesis is unverified. Logs and 69 synthetic artifact files were
 preserved and hashed; no further native attempt or fixture change was started.
 No new production impact or hold changes. Evacuation remains unqualified; see
 [the scoped result](pulsar-qualification.md#2026-11-04-leader-readiness-passes-native-client-setup-still-blocks-evacuation).
+
+
+GitHub subsequently reported an [Actions/Pages incident](https://www.githubstatus.com/incidents/xr3myzj7ms51)
+starting at 16:05 UTC, with Actions later listed as a partial outage in the
+[official status summary](https://www.githubstatus.com/api/v2/summary.json).
+This overlaps delayed run/cancellation status updates; their exact internal
+cause is unconfirmed. The retained Java initialization exception is a separate
+fixture failure and is not attributed to that incident. Further CI control
+changes remain held while local work and evidence review continue.
