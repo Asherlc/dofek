@@ -1,17 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { analyticsWorkSchemaStatements } from "../db/analytics-work-schema.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
+import type { Database } from "../db/index.ts";
+import { setupTestDatabase } from "../db/test-helpers.ts";
+import { mapMetricStreamEventToClickHouseRow } from "./clickhouse-row.ts";
+import { applyMetricStreamEventsToClickHouse as applyCoordinatedEvents } from "./clickhouse-sink.ts";
 import {
-  applyMetricStreamEventsToClickHouse,
-  type ClickHouseMetricStreamInsertClient,
-  insertMetricStreamEventsIntoClickHouse,
-  mapMetricStreamEventToClickHouseRow,
-  markMetricStreamScopeDeletedInClickHouse,
-  markMetricStreamScopesDeletedInClickHouse,
-} from "./clickhouse-sink.ts";
-import {
+  buildMetricStreamSourcePlacementIngestSql,
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_TABLE,
@@ -19,9 +17,83 @@ import {
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
+  METRIC_STREAM_DELETED_EVENT_TYPE,
+  type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScopeInput,
+  type MetricStreamRedpandaEvent,
+  type MetricStreamRowEvent,
   type MetricStreamRowInput,
+  metricStreamDeleteScopeSchema,
 } from "./events.ts";
+
+type ClickHouseMetricStreamInsertClient = ClickHouseClient &
+  Required<Pick<ClickHouseClient, "insert">>;
+let database: Database;
+function applyMetricStreamEventsToClickHouse(
+  client: ClickHouseClient,
+  events: readonly MetricStreamRedpandaEvent[],
+) {
+  const topic = `fixture-${randomUUID()}`;
+  const epoch = randomUUID();
+  return applyCoordinatedEvents(
+    client,
+    events,
+    {
+      topic,
+      partition: 0,
+      assertActive: async () => undefined,
+      positions: events.map((_, offset) => ({
+        transport: "kafka",
+        epoch,
+        topic,
+        partition: 0,
+        offset: String(offset),
+      })),
+    },
+    database,
+  );
+}
+async function insertMetricStreamEventsIntoClickHouse(
+  client: ClickHouseClient,
+  events: readonly MetricStreamRowEvent[],
+) {
+  if (!client.insert) throw new Error("Fixture requires insert");
+  const values = events
+    .filter((event) => event.channel !== "imu")
+    .map((event) => mapMetricStreamEventToClickHouseRow(event, new Date().toISOString()));
+  if (values.length)
+    await client.insert({
+      table: METRIC_STREAM_TABLE,
+      values,
+      format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
+    });
+  return values.length;
+}
+async function markMetricStreamScopeDeletedInClickHouse(
+  client: ClickHouseClient,
+  scope: MetricStreamDeleteScopeInput,
+  eventId?: string,
+  operationRevision?: string,
+) {
+  const common = {
+    eventType: METRIC_STREAM_DELETED_EVENT_TYPE,
+    scope: metricStreamDeleteScopeSchema.parse(scope),
+    partitionKey: "fixture",
+  } as const;
+  const event = eventId
+    ? operationRevision
+      ? { ...common, version: 3 as const, eventId, operationRevision }
+      : { ...common, version: 2 as const, eventId }
+    : { ...common, version: 1 as const };
+  await applyMetricStreamEventsToClickHouse(client, [event]);
+}
+async function markMetricStreamScopesDeletedInClickHouse(
+  client: ClickHouseClient,
+  events: readonly MetricStreamDeletedEventV3[],
+) {
+  await applyMetricStreamEventsToClickHouse(client, events);
+}
 
 const testUserId = randomUUID();
 const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
@@ -116,17 +188,26 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
 describe("metric stream ClickHouse sink (integration)", () => {
   const client = createClickHouseClientFromEnv();
   assertInsertCapable(client);
+  let postgres: Awaited<ReturnType<typeof setupTestDatabase>>;
 
   beforeAll(async () => {
+    postgres = await setupTestDatabase();
+    database = postgres.db;
     for (const statement of buildClickHouseBootstrapStatementsForNativeMetricStream("")) {
       await client.command({ query: statement });
     }
+    for (const query of [
+      ...analyticsWorkSchemaStatements(),
+      buildMetricStreamSourcePlacementIngestSql(),
+    ])
+      await client.command({ query });
     await removeTestEvent(client);
   }, 120_000);
 
   afterAll(async () => {
     await removeTestEvent(client);
     await client.close?.();
+    await postgres?.cleanup();
   });
 
   it("retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries", async () => {
@@ -283,12 +364,12 @@ describe("metric stream ClickHouse sink (integration)", () => {
     const latestEvent = { ...matchingEvent, providerId: "garmin" };
     try {
       const matchingRow = {
-        ...mapMetricStreamEventToClickHouseRow(matchingEvent),
+        ...mapMetricStreamEventToClickHouseRow(matchingEvent, "2026-11-03T00:00:00Z"),
         ingested_at: "2026-06-08T14:36:12.000Z",
         version: 1,
       };
       const latestRow = {
-        ...mapMetricStreamEventToClickHouseRow(latestEvent),
+        ...mapMetricStreamEventToClickHouseRow(latestEvent, "2026-11-03T00:00:01Z"),
         ingested_at: "2026-06-08T14:36:13.000Z",
         version: 2,
       };

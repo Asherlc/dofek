@@ -14,7 +14,10 @@ import {
 import {
   appendAnalyticsDelivery,
   appendAnalyticsEffects,
+  commitPreparedAnalyticsDelivery,
+  prepareAnalyticsDelivery,
   readAnalyticsEffectPage,
+  readPreparedAnalyticsEffectPages,
   verifyAnalyticsDeliveryReceipt,
 } from "./effect-journal.ts";
 import {
@@ -28,6 +31,153 @@ describe("analytics effect journal", () => {
   let context: Awaited<ReturnType<typeof createAnalyticsTestContext>>;
   beforeAll(async () => {
     context = await createAnalyticsTestContext();
+  });
+
+  it("preparedIntentIsImmutableAndUndiscoverableUntilRawSuccess", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 1n);
+    const effect = analyticsEffect(position, 0n, context.userId);
+    await prepareAnalyticsDelivery(context.clickhouse, {
+      position,
+      async *pages() {
+        yield [effect];
+      },
+    });
+    await expect(verifyAnalyticsDeliveryReceipt(context.clickhouse, position)).rejects.toThrow(
+      "missing",
+    );
+    const receipt = await context.clickhouse.query<{ count: string }>({
+      query:
+        "SELECT toString(count()) AS count FROM analytics.effect_receipt WHERE epoch={epoch:String}",
+      query_params: { epoch: position.epoch },
+      format: "JSONEachRow",
+    });
+    expect(await receipt.json()).toEqual([{ count: "0" }]);
+    await prepareAnalyticsDelivery(context.clickhouse, {
+      position,
+      pages() {
+        throw new Error("Must not re-derive a changed preimage");
+      },
+    });
+    const restarted = context.makeClient();
+    try {
+      const restored = [];
+      for await (const page of readPreparedAnalyticsEffectPages(restarted, position))
+        restored.push(...page);
+      expect(restored).toEqual([effect]);
+      await commitPreparedAnalyticsDelivery(restarted, position);
+      await verifyAnalyticsDeliveryReceipt(restarted, position);
+    } finally {
+      await restarted.close?.();
+    }
+  });
+
+  it("partialIntentCannotBeMistakenForCompleteAndReplayPreservesPrefix", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 2n);
+    const first = analyticsEffect(position, 0n, context.userId);
+    const second = analyticsEffect(position, 1n, context.userId);
+    await expect(
+      prepareAnalyticsDelivery(context.clickhouse, {
+        position,
+        async *pages() {
+          yield [first];
+          throw new Error("crash during preparation");
+        },
+      }),
+    ).rejects.toThrow("crash during preparation");
+    await expect(commitPreparedAnalyticsDelivery(context.clickhouse, position)).rejects.toThrow(
+      "complete preparation",
+    );
+    await expect(
+      prepareAnalyticsDelivery(context.clickhouse, {
+        position,
+        async *pages() {
+          yield [{ ...first, operationId: randomUUID() }];
+        },
+      }),
+    ).rejects.toThrow("changed an existing");
+    await expect(
+      prepareAnalyticsDelivery(context.clickhouse, {
+        position,
+        async *pages() {
+          yield [first, second];
+          throw new Error("crash after both intent rows");
+        },
+      }),
+    ).rejects.toThrow("crash after both");
+    await expect(
+      prepareAnalyticsDelivery(context.clickhouse, {
+        position,
+        async *pages() {
+          yield [first];
+        },
+      }),
+    ).rejects.toThrow("previously persisted intent was complete");
+    await prepareAnalyticsDelivery(context.clickhouse, {
+      position,
+      async *pages() {
+        yield [first];
+        yield [second];
+      },
+    });
+    await commitPreparedAnalyticsDelivery(context.clickhouse, position);
+    await verifyAnalyticsDeliveryReceipt(context.clickhouse, position);
+  });
+
+  it("zeroEffectIntentNeedsExplicitCompletePreparation", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 3n);
+    await expect(
+      prepareAnalyticsDelivery(context.clickhouse, {
+        position,
+        pages() {
+          throw new Error("crash before empty preparation completes");
+        },
+      }),
+    ).rejects.toThrow("crash before empty");
+    await expect(commitPreparedAnalyticsDelivery(context.clickhouse, position)).rejects.toThrow(
+      "complete preparation",
+    );
+    await prepareAnalyticsDelivery(context.clickhouse, {
+      position,
+      async *pages() {
+        yield [];
+      },
+    });
+    await expect(verifyAnalyticsDeliveryReceipt(context.clickhouse, position)).rejects.toThrow(
+      "missing",
+    );
+    await commitPreparedAnalyticsDelivery(context.clickhouse, position);
+    await verifyAnalyticsDeliveryReceipt(context.clickhouse, position);
+  });
+
+  it("scopeSizedIntentUsesBoundedPagesAndStreamedReceiptFinalization", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 4n);
+    const effects = Array.from({ length: 45 }, (_, ordinal) =>
+      analyticsEffect(position, BigInt(ordinal), context.userId),
+    );
+    let maximumInsert = 0;
+    const insert = context.clickhouse.insert?.bind(context.clickhouse);
+    if (!insert) throw new Error("Fixture requires insert");
+    const bounded = {
+      ...context.clickhouse,
+      insert: async (options: Parameters<typeof insert>[0]) => {
+        maximumInsert = Math.max(maximumInsert, options.values.length);
+        return insert(options);
+      },
+    };
+    await prepareAnalyticsDelivery(bounded, {
+      position,
+      async *pages() {
+        for (let index = 0; index < effects.length; index += 20)
+          yield effects.slice(index, index + 20);
+      },
+    });
+    const lengths = [];
+    for await (const page of readPreparedAnalyticsEffectPages(bounded, position))
+      lengths.push(page.length);
+    expect(lengths).toEqual([20, 20, 5]);
+    await commitPreparedAnalyticsDelivery(bounded, position);
+    expect(maximumInsert).toBe(20);
+    await verifyAnalyticsDeliveryReceipt(bounded, position);
   });
   afterAll(async () => {
     await context?.cleanup();

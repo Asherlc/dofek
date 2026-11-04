@@ -899,6 +899,17 @@ table fitness.activity_image_work {
   }
 }
 
+table fitness.analytics_query_owner {
+  resource_id text [pk, not null]
+  owner_id uuid
+  backend_pid integer
+  quiescent boolean [not null, default: true]
+  intent_id text
+  ingested_at "timestamp with time zone" [not null, default: `'epoch'`]
+  query_id uuid
+  query_terminal boolean [not null, default: true]
+}
+
 table fitness.analytics_required_frontier {
   run_id uuid [not null]
   operation_id uuid [not null]

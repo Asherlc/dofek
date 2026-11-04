@@ -1,10 +1,30 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, integer, jsonb, primaryKey, text, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  check,
+  integer,
+  jsonb,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import type { AnalyticsEffectCursor } from "../../analytics/effect-journal.ts";
 import type { MetricStreamPosition } from "../../metric-stream/transport-position.ts";
 import { fitness } from "./core.ts";
 import { processingOperation } from "./processing.ts";
 import { userProfile } from "./reference.ts";
+
+export const analyticsQueryOwner = fitness.table("analytics_query_owner", {
+  resourceId: text("resource_id").primaryKey(),
+  ownerId: uuid("owner_id"),
+  backendPid: integer("backend_pid"),
+  quiescent: boolean("quiescent").notNull().default(true),
+  intentId: text("intent_id"),
+  ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().default(sql`'epoch'`),
+  queryId: uuid("query_id"),
+  queryTerminal: boolean("query_terminal").notNull().default(true),
+});
 
 export const analyticsRun = fitness.table("analytics_run", {
   id: uuid("id").primaryKey(),

@@ -136,6 +136,16 @@ export async function claimAnalyticsStream(
   });
 }
 
+/** Publication ownership serializes callers; transport ownership still comes from assertActive. */
+export async function loadAnalyticsStreamState(database: Database, stream: AnalyticsStream) {
+  const rows = await executeWithSchema(
+    database,
+    streamStateSchema,
+    sql`SELECT owner_id,processed,pending FROM fitness.analytics_stream_state WHERE ${streamWhere(stream)}`,
+  );
+  return rows[0] ?? null;
+}
+
 export async function beginAnalyticsDelivery(
   database: Database,
   input: DeliveryInput & { expected: MetricStreamPosition | null },

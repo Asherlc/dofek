@@ -5,10 +5,12 @@ import {
   buildMetricStreamDeleteAcknowledgementTableSql,
   buildMetricStreamDeleteScopeTableSql,
   buildMetricStreamProcessingAcknowledgementTableSql,
+  buildMetricStreamSourcePlacementIngestSql,
   buildProviderDataGenerationTableSql,
   INGEST_DATABASE,
   METRIC_STREAM_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
+import { analyticsWorkSchemaStatements } from "./analytics-work-schema.ts";
 import { buildIncrementalActivitySummaryStatements } from "./clickhouse-activity-summary.ts";
 import { buildActivityTrendDailyCreateReadModelStatements } from "./clickhouse-activity-trend-read-model.ts";
 import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
@@ -49,6 +51,8 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
     ...cyclingPowerSchemaStatements(),
     ...buildIncrementalActivitySummaryStatements(),
     ...buildActivityTrendDailyCreateReadModelStatements(),
+    ...analyticsWorkSchemaStatements(),
+    buildMetricStreamSourcePlacementIngestSql(),
   ];
 }
 

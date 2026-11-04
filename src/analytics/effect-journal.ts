@@ -16,7 +16,9 @@ import {
   metricStreamPositionIdentity,
   positionAtJournalKey,
 } from "./journal-position.ts";
-import { sourcePlacementSchema } from "./source-placement.ts";
+import { type SourcePlacement, sourcePlacementSchema } from "./source-placement.ts";
+
+export type { SourcePlacement } from "./source-placement.ts";
 
 export type AnalyticsStage = "scalar" | "dedup" | "activity";
 export interface AnalyticsStream {
@@ -29,7 +31,6 @@ export interface AnalyticsEffectCursor {
   delivery: JournalDeliveryKey;
   effectOrdinal: string;
 }
-export type SourcePlacement = z.infer<typeof sourcePlacementSchema>;
 export type SensorKey = SourcePlacement["key"];
 export interface AnalyticsEffect {
   stream: AnalyticsStream;
@@ -169,10 +170,14 @@ function receiptValues(position: MetricStreamPosition) {
 const deliveryWhere =
   "epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32} AND transport={transport:String} AND kafka_offset={kafka_offset:UInt64} AND major={major:UInt64} AND minor={minor:UInt64} AND batch={batch:Int32}";
 const integerSettings = { output_format_json_quote_64bit_integers: 1 };
-async function readReceipt(client: ClickHouseClient, position: MetricStreamPosition) {
+async function readReceipt(
+  client: Pick<ClickHouseClient, "query">,
+  position: MetricStreamPosition,
+  status: "prepared" | "committed" = "committed",
+) {
   const result = await client.query({
-    query: `SELECT serialized_message_id,effect_count,chunk_count,effect_digest,stages FROM analytics.delivery_receipt FINAL WHERE ${deliveryWhere} LIMIT 2`,
-    query_params: deliveryParams(position),
+    query: `SELECT serialized_message_id,effect_count,chunk_count,effect_digest,stages FROM analytics.delivery_receipt FINAL WHERE ${deliveryWhere} AND status={status:String} LIMIT 2`,
+    query_params: { ...deliveryParams(position), status },
     format: "JSONEachRow",
     clickhouse_settings: integerSettings,
   });
@@ -183,6 +188,13 @@ async function readReceipt(client: ClickHouseClient, position: MetricStreamPosit
 export async function appendAnalyticsEffects(
   client: ClickHouseClient,
   effects: readonly AnalyticsEffect[],
+): Promise<void> {
+  return persistAnalyticsEffectPage(client, effects, "append");
+}
+async function persistAnalyticsEffectPage(
+  client: ClickHouseClient,
+  effects: readonly AnalyticsEffect[],
+  phase: "prepare" | "commit" | "append",
 ): Promise<void> {
   if (!client.insert)
     throw new Error("Analytics journal requires a ClickHouse insert-capable client");
@@ -246,18 +258,20 @@ export async function appendAnalyticsEffects(
     });
   }
   if (rows.length) {
-    await client.insert({
-      table: "analytics.effect_journal",
-      format: "JSONEachRow",
-      values: rows,
-      clickhouse_settings: { async_insert: 0 },
-    });
-    await client.insert({
-      table: "analytics.effect_receipt",
-      format: "JSONEachRow",
-      values: receipts,
-      clickhouse_settings: { async_insert: 0 },
-    });
+    if (phase !== "commit")
+      await client.insert({
+        table: "analytics.effect_journal",
+        format: "JSONEachRow",
+        values: rows,
+        clickhouse_settings: { async_insert: 0 },
+      });
+    if (phase !== "prepare")
+      await client.insert({
+        table: "analytics.effect_receipt",
+        format: "JSONEachRow",
+        values: receipts,
+        clickhouse_settings: { async_insert: 0 },
+      });
   }
 }
 export async function appendAnalyticsDelivery(
@@ -349,8 +363,208 @@ const journalRowSchema = z.object({
   after: z.string().nullable(),
   effect_hash: z.string(),
 });
-async function readReferencedEffect(
+function decodeJournalRow(row: z.infer<typeof journalRowSchema>): AnalyticsEffect {
+  const stream = {
+    transport: row.transport,
+    epoch: row.epoch,
+    topic: row.topic,
+    partition: row.partition,
+  };
+  const position: MetricStreamPosition =
+    row.transport === "kafka"
+      ? { ...stream, transport: "kafka", offset: row.kafka_offset }
+      : {
+          ...stream,
+          transport: "pulsar",
+          delivery: { major: row.major, minor: row.minor, batch: row.batch },
+          serializedMessageId: row.serialized_message_id,
+        };
+  const effect = validateEffect({
+    stream,
+    position,
+    cursor: { delivery: journalDeliveryKey(position), effectOrdinal: row.effect_ordinal },
+    stage: row.stage,
+    operationId: row.operation_id,
+    sourceId: row.source_id,
+    sourceVersion: row.source_version,
+    generation: row.generation,
+    before: row.before === null ? null : sourcePlacementSchema.parse(JSON.parse(row.before)),
+    after: row.after === null ? null : sourcePlacementSchema.parse(JSON.parse(row.after)),
+  });
+  if (
+    (effect.after?.userId ?? effect.before?.userId) !== row.user_id ||
+    effectHash(effect) !== row.effect_hash
+  )
+    throw new Error("Analytics journal ownership or effect identity is corrupt");
+  return effect;
+}
+
+async function* readSourceIntentPages(client: ClickHouseClient, position: MetricStreamPosition) {
+  let afterOrdinal = "-1";
+  for (;;) {
+    const result = await client.query({
+      query: `SELECT * FROM analytics.effect_journal FINAL WHERE ${deliveryWhere}
+        AND stage='scalar' AND effect_ordinal>{afterOrdinal:Int128}
+        ORDER BY effect_ordinal LIMIT {limit:UInt32}`,
+      query_params: { ...deliveryParams(position), afterOrdinal, limit: RECEIPT_PAGE_SIZE },
+      format: "JSONEachRow",
+      clickhouse_settings: integerSettings,
+    });
+    const rows = z.array(journalRowSchema).parse(await result.json());
+    if (!rows.length) return;
+    const effects = rows.map(decodeJournalRow);
+    for (const effect of effects) {
+      if (metricStreamPositionIdentity(effect.position) !== metricStreamPositionIdentity(position))
+        throw new Error("Prepared intent native message identity changed");
+      if (BigInt(effect.cursor.effectOrdinal) !== BigInt(afterOrdinal) + 1n)
+        throw new Error("Prepared intent contains a missing or duplicate ordinal");
+      afterOrdinal = effect.cursor.effectOrdinal;
+    }
+    yield effects;
+  }
+}
+
+async function sourceIntentFingerprint(client: ClickHouseClient, position: MetricStreamPosition) {
+  const digest = createHash("sha256");
+  let count = 0n;
+  for await (const page of readSourceIntentPages(client, position)) {
+    for (const effect of page) {
+      digest.update(effectHash(effect));
+      count++;
+    }
+  }
+  return { effect_count: String(count), effect_digest: digest.digest("hex") };
+}
+
+async function verifyPreparation(client: ClickHouseClient, position: MetricStreamPosition) {
+  const receipt = await readReceipt(client, position, "prepared");
+  if (!receipt)
+    throw new Error("Delivery has no complete preparation; resume preparing the original intent");
+  const actual = await sourceIntentFingerprint(client, position);
+  if (
+    receipt.serialized_message_id !==
+      (position.transport === "pulsar" ? position.serializedMessageId : "") ||
+    receipt.effect_count !== actual.effect_count ||
+    receipt.effect_digest !== actual.effect_digest ||
+    receipt.chunk_count !== (actual.effect_count === "0" ? "1" : actual.effect_count) ||
+    receipt.stages.length !== 1 ||
+    receipt.stages[0] !== "scalar"
+  )
+    throw new Error("Complete preparation does not match its immutable structural intent");
+  return receipt;
+}
+
+/**
+ * Persist structural intent without discovery receipts. The generator must finish
+ * before its manifest is published, including zero-effect and resumed preparations.
+ * A complete manifest is replayed as-is; its source preimage is never recalculated.
+ */
+export async function prepareAnalyticsDelivery(
   client: ClickHouseClient,
+  input: { position: MetricStreamPosition; pages(): AsyncIterable<readonly AnalyticsEffect[]> },
+): Promise<void> {
+  metricStreamPositionSchema.parse(input.position);
+  if (!client.insert) throw new Error("Analytics preparation requires an insert-capable client");
+  if (await readReceipt(client, input.position, "prepared")) {
+    await verifyPreparation(client, input.position);
+    return;
+  }
+  if (await readReceipt(client, input.position))
+    throw new Error("Cannot prepare an already committed delivery");
+  const digest = createHash("sha256");
+  let count = 0n;
+  for await (const page of input.pages()) {
+    if (page.length > RECEIPT_PAGE_SIZE)
+      throw new Error("Preparation accepts at most 20 effects per page");
+    const effects = validateEffectBatch(page);
+    for (const effect of effects) {
+      if (
+        effect.stage !== "scalar" ||
+        BigInt(effect.cursor.effectOrdinal) !== count ||
+        compareMetricStreamPositions(effect.position, input.position) !== 0 ||
+        metricStreamPositionIdentity(effect.position) !==
+          metricStreamPositionIdentity(input.position)
+      )
+        throw new Error(
+          "Source preparation requires consecutive scalar effects from its exact delivery",
+        );
+      digest.update(effectHash(effect));
+      count++;
+    }
+    await persistAnalyticsEffectPage(client, effects, "prepare");
+  }
+  const expected = { effect_count: String(count), effect_digest: digest.digest("hex") };
+  const actual = await sourceIntentFingerprint(client, input.position);
+  if (
+    expected.effect_count !== actual.effect_count ||
+    expected.effect_digest !== actual.effect_digest
+  )
+    throw new Error("Preparation ended before its previously persisted intent was complete");
+  await client.insert({
+    table: "analytics.delivery_receipt",
+    format: "JSONEachRow",
+    values: [
+      {
+        ...receiptValues(input.position),
+        ...expected,
+        serialized_message_id:
+          input.position.transport === "pulsar" ? input.position.serializedMessageId : "",
+        chunk_count: String(count === 0n ? 1n : count),
+        stages: ["scalar"],
+        status: "prepared",
+      },
+    ],
+    clickhouse_settings: { async_insert: 0 },
+  });
+}
+
+export async function* readPreparedAnalyticsEffectPages(
+  client: ClickHouseClient,
+  position: MetricStreamPosition,
+): AsyncGenerator<readonly AnalyticsEffect[]> {
+  // Verify the whole manifest with bounded reads before returning any raw-write work.
+  await verifyPreparation(client, position);
+  yield* readSourceIntentPages(client, position);
+}
+
+/** The caller must finish every raw mutation before making this intent discoverable. */
+export async function commitPreparedAnalyticsDelivery(
+  client: ClickHouseClient,
+  position: MetricStreamPosition,
+): Promise<void> {
+  if (!client.insert) throw new Error("Analytics commit requires an insert-capable client");
+  const prepared = await verifyPreparation(client, position);
+  const previous = await readReceipt(client, position);
+  if (previous && JSON.stringify(previous) !== JSON.stringify(prepared))
+    throw new Error("Committed delivery differs from its complete preparation");
+  for await (const page of readSourceIntentPages(client, position))
+    await persistAnalyticsEffectPage(client, page, "commit");
+  if (prepared.effect_count === "0")
+    await client.insert({
+      table: "analytics.effect_receipt",
+      format: "JSONEachRow",
+      values: [
+        {
+          ...receiptValues(position),
+          effect_ordinal: "-1",
+          stage: "scalar",
+          effect_hash: EMPTY_DIGEST,
+          is_empty: 1,
+          user_id: null,
+        },
+      ],
+      clickhouse_settings: { async_insert: 0 },
+    });
+  await client.insert({
+    table: "analytics.delivery_receipt",
+    format: "JSONEachRow",
+    values: [{ ...receiptValues(position), ...prepared, status: "committed" }],
+    clickhouse_settings: { async_insert: 0 },
+  });
+}
+
+async function readReferencedEffect(
+  client: Pick<ClickHouseClient, "query">,
   receipt: DiscoveryReceipt,
 ): Promise<AnalyticsEffect | null> {
   if (receipt.is_empty) {
@@ -372,34 +586,7 @@ async function readReferencedEffect(
     throw new Error(
       `Missing analytics journal effect referenced by receipt ${receipt.topic}/${receipt.partition}/${receipt.major}:${receipt.minor}:${receipt.batch}/${receipt.effect_ordinal}/${receipt.stage}; replay the input delivery`,
     );
-  const stream = {
-    transport: row.transport,
-    epoch: row.epoch,
-    topic: row.topic,
-    partition: row.partition,
-  };
-  const position: MetricStreamPosition =
-    row.transport === "kafka"
-      ? { ...stream, transport: "kafka", offset: row.kafka_offset }
-      : {
-          ...stream,
-          transport: "pulsar",
-          delivery: { major: row.major, minor: row.minor, batch: row.batch },
-          serializedMessageId: row.serialized_message_id,
-        };
-  const delivery = journalDeliveryKey(position);
-  const effect = validateEffect({
-    stream,
-    position,
-    cursor: { delivery, effectOrdinal: row.effect_ordinal },
-    stage: row.stage,
-    operationId: row.operation_id,
-    sourceId: row.source_id,
-    sourceVersion: row.source_version,
-    generation: row.generation,
-    before: row.before === null ? null : sourcePlacementSchema.parse(JSON.parse(row.before)),
-    after: row.after === null ? null : sourcePlacementSchema.parse(JSON.parse(row.after)),
-  });
+  const effect = decodeJournalRow(row);
   if (
     (effect.after?.userId ?? effect.before?.userId) !== row.user_id ||
     receipt.user_id !== row.user_id ||
@@ -410,7 +597,7 @@ async function readReferencedEffect(
   return effect;
 }
 export async function verifyAnalyticsDeliveryReceipt(
-  client: ClickHouseClient,
+  client: Pick<ClickHouseClient, "query">,
   position: MetricStreamPosition,
 ): Promise<void> {
   const receipt = await readReceipt(client, position);
@@ -461,6 +648,16 @@ export async function verifyAnalyticsDeliveryReceipt(
     throw new Error(
       "Analytics delivery receipt is incomplete: durable effect identities do not match",
     );
+}
+
+/** Missing completion is pending work; an existing corrupt receipt is an error. */
+export async function hasCompleteAnalyticsDeliveryReceipt(
+  client: Pick<ClickHouseClient, "query">,
+  position: MetricStreamPosition,
+): Promise<boolean> {
+  if (!(await readReceipt(client, position))) return false;
+  await verifyAnalyticsDeliveryReceipt(client, position);
+  return true;
 }
 export async function readAnalyticsEffectPage(
   client: AnalyticsJournalClient,

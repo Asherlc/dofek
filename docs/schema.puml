@@ -478,6 +478,18 @@ entity "activity_image_work" {
   created_at : timestamp
 }
 
+entity "analytics_query_owner" {
+  * resource_id : text <<PK>>
+  --
+  owner_id : uuid
+  backend_pid : integer
+  quiescent : boolean
+  intent_id : text
+  ingested_at : timestamp
+  query_id : uuid
+  query_terminal : boolean
+}
+
 entity "analytics_required_frontier" {
   * run_id : uuid <<PK>>
   * operation_id : uuid <<PK>>

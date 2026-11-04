@@ -39,7 +39,12 @@ const timestampInputSchema = z.union([z.string().min(1), z.date()]).transform((v
     });
     return z.NEVER;
   }
-  return date.toISOString();
+  const normalized = date.toISOString();
+  // Date normalizes the timezone, but its millisecond precision must not erase
+  // finer source/scope boundaries that the canonical DateTime64(6) preserves.
+  const fraction =
+    typeof value === "string" ? /\.(\d{4,})(?:Z|[+-]\d{2}:?\d{2})$/i.exec(value)?.[1] : undefined;
+  return fraction ? normalized.replace(/\.\d{3}Z$/, `.${fraction}Z`) : normalized;
 });
 
 export const metricStreamRowInputSchema = z

@@ -5,11 +5,15 @@ import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./click
 export interface ClickHouseCommandClient {
   command(options: {
     query: string;
+    query_id?: string;
+    abort_signal?: AbortSignal;
     clickhouse_settings?: Record<string, string | number | boolean>;
     query_params?: Record<string, unknown>;
   }): Promise<unknown>;
   insert?(options: {
     table: string;
+    query_id?: string;
+    abort_signal?: AbortSignal;
     values: readonly object[];
     format: "JSONEachRow";
     clickhouse_settings?: Record<string, string | number | boolean>;

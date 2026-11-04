@@ -27,6 +27,46 @@ const baseMetricStreamRow = {
 };
 
 describe("createMetricStreamEvent", () => {
+  it("preserves fractional source and scope timestamps across timezone normalization", () => {
+    expect(
+      createCurrentMetricStreamEvent({
+        ...baseMetricStreamRow,
+        externalId: "precision",
+        recordedAt: "2026-11-03T02:00:00.123456+02:00",
+      }).recordedAt,
+    ).toBe("2026-11-03T00:00:00.123456Z");
+    expect(
+      createCurrentMetricStreamDeletedEvent({
+        userId: "00000000-0000-4000-8000-000000000001",
+        recordedAtStart: "2026-11-03T02:00:00.123455+02:00",
+        recordedAtEnd: "2026-11-03T02:00:00.123457+02:00",
+      }).scope,
+    ).toMatchObject({
+      recordedAtStart: "2026-11-03T00:00:00.123455Z",
+      recordedAtEnd: "2026-11-03T00:00:00.123457Z",
+    });
+  });
+
+  it("distinguishes new fractional identities while preserving supplied archive IDs", () => {
+    const first = createCurrentMetricStreamEvent({
+      ...baseMetricStreamRow,
+      externalId: "precision-identity",
+      recordedAt: "2026-11-03T00:00:00.123456Z",
+    });
+    const second = createCurrentMetricStreamEvent({
+      ...baseMetricStreamRow,
+      externalId: "precision-identity",
+      recordedAt: "2026-11-03T00:00:00.123457Z",
+    });
+    expect(first.id).not.toBe(second.id);
+    expect(
+      createCurrentMetricStreamEvent({
+        ...baseMetricStreamRow,
+        id: "10000000-0000-4000-8000-000000000001",
+        recordedAt: "2026-11-03T00:00:00.123456Z",
+      }).id,
+    ).toBe("10000000-0000-4000-8000-000000000001");
+  });
   it("keeps interval identity stable across display renames and distinguishes stable source facts", () => {
     const row = {
       ...baseMetricStreamRow,

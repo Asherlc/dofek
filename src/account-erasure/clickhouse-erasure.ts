@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ClickHouseCommandClient } from "../db/clickhouse.ts";
-import { markMetricStreamScopeDeletedInClickHouse } from "../metric-stream/clickhouse-sink.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
   ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
@@ -797,37 +796,6 @@ export async function eraseClickHouseAccount(
   if (newlyCapturedOperationIds.length > 0) {
     await fenceClickHouseAccount(client, parsedIdentifiers.userId, newlyCapturedOperationIds);
   }
-
-  const insert = client.insert;
-  const piiSafeClient = {
-    command: (commandOptions: Parameters<ClickHouseCommandClient["command"]>[0]) =>
-      client.command({
-        ...commandOptions,
-        clickhouse_settings: {
-          ...commandOptions.clickhouse_settings,
-          log_queries: 0,
-        },
-      }),
-    insert: (insertOptions: Parameters<NonNullable<ClickHouseCommandClient["insert"]>>[0]) =>
-      insert({
-        ...insertOptions,
-        clickhouse_settings: {
-          ...insertOptions.clickhouse_settings,
-          log_queries: 0,
-        },
-      }),
-    query: (queryOptions: Parameters<AccountErasureClickHouseClient["query"]>[0]) =>
-      client.query({
-        ...queryOptions,
-        clickhouse_settings: {
-          ...queryOptions.clickhouse_settings,
-          log_queries: 0,
-        },
-      }),
-  };
-  await markMetricStreamScopeDeletedInClickHouse(piiSafeClient, {
-    userId: parsedIdentifiers.userId,
-  });
 
   const physicalErasureTargets = [];
   for (const table of personalTables) {
