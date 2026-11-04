@@ -62,6 +62,7 @@ async function withOwnedQueries<T>(
   let admitted = false;
   let closed = false;
   let queryTerminal = true;
+  let admittedIntentId: string | null = null;
   let inFlight: Promise<unknown> | null = null;
   let outcome: { value: T } | { error: unknown } | undefined;
   let releaseFailed = false;
@@ -71,9 +72,13 @@ async function withOwnedQueries<T>(
   };
   session.on("error", onError);
 
-  async function assertActive() {
+  function assertSessionActive() {
     if (closed || connectionError)
       throw new Error("Analytics query owner lost its session; verified recovery is required");
+  }
+
+  async function assertActive() {
+    assertSessionActive();
     const result = await session.query(
       `SELECT owner_id FROM fitness.analytics_query_owner
        WHERE resource_id=$1 AND owner_id=$2 AND NOT quiescent`,
@@ -90,20 +95,57 @@ async function withOwnedQueries<T>(
       );
   }
 
+  function assertRequestRow(
+    result: { rowCount: number | null; rows: unknown[] },
+    queryId: string,
+    boundary: "registration" | "completion",
+  ) {
+    const proof = z
+      .tuple([
+        z.object({
+          owner_id: z.literal(ownerId),
+          intent_id: z.literal(admittedIntentId),
+          query_id: z.literal(queryId),
+        }),
+      ])
+      .safeParse(result.rows);
+    if (result.rowCount !== 1 || !proof.success)
+      throw new Error(
+        `Analytics query ${boundary} did not confirm the exact admitted owner and intent; verified recovery is required`,
+      );
+  }
+
+  async function markRequestTerminal(queryId: string) {
+    assertSessionActive();
+    const result = await session.query(
+      `UPDATE fitness.analytics_query_owner SET query_terminal=true
+       WHERE resource_id=$1 AND owner_id=$2 AND query_id=$3
+         AND intent_id IS NOT DISTINCT FROM $4 AND NOT quiescent AND NOT query_terminal
+       RETURNING owner_id,intent_id,query_id`,
+      [input.resourceId, ownerId, queryId, admittedIntentId],
+    );
+    assertRequestRow(result, queryId, "completion");
+    assertSessionActive();
+    queryTerminal = true;
+  }
+
   async function execute<R>(dispatch: (queryId: string) => Promise<R>): Promise<R> {
     if (inFlight) throw new Error("Analytics query owner requires serial requests");
-    if (closed) throw new Error("Analytics query owner is closed");
+    assertSessionActive();
     assertKnownRequestOutcome();
     const pending = (async () => {
-      await assertActive();
       const queryId = randomUUID();
-      await session.query(
-        `UPDATE fitness.analytics_query_owner SET query_id=$3,query_terminal=false
-         WHERE resource_id=$1 AND owner_id=$2`,
-        [input.resourceId, ownerId, queryId],
-      );
+      // A committed registration with a lost PG response is uncertain too.
       queryTerminal = false;
-      await assertActive();
+      const registration = await session.query(
+        `UPDATE fitness.analytics_query_owner SET query_id=$3,query_terminal=false
+         WHERE resource_id=$1 AND owner_id=$2 AND NOT quiescent
+           AND intent_id IS NOT DISTINCT FROM $4 AND query_terminal
+         RETURNING owner_id,intent_id,query_id`,
+        [input.resourceId, ownerId, queryId, admittedIntentId],
+      );
+      assertRequestRow(registration, queryId, "registration");
+      assertSessionActive();
       let value: R;
       try {
         value = await dispatch(queryId);
@@ -111,23 +153,13 @@ async function withOwnedQueries<T>(
         // The official client consumes the server's error response before
         // constructing ClickHouseError. A socket/client error has no such proof.
         if (error instanceof ClickHouseError) {
-          await session.query(
-            `UPDATE fitness.analytics_query_owner SET query_terminal=true
-             WHERE resource_id=$1 AND owner_id=$2 AND query_id=$3`,
-            [input.resourceId, ownerId, queryId],
-          );
-          queryTerminal = true;
+          await markRequestTerminal(queryId);
         }
         throw error;
       }
       // A successful, fully consumed response is terminal for this request. A
       // rejected HTTP promise is deliberately not interpreted as server death.
-      await session.query(
-        `UPDATE fitness.analytics_query_owner SET query_terminal=true
-         WHERE resource_id=$1 AND owner_id=$2 AND query_id=$3`,
-        [input.resourceId, ownerId, queryId],
-      );
-      queryTerminal = true;
+      await markRequestTerminal(queryId);
       return value;
     })();
     inFlight = pending;
@@ -168,18 +200,19 @@ async function withOwnedQueries<T>(
            THEN greatest(clock_timestamp(),ingested_at + interval '1 microsecond')
            ELSE ingested_at END
        WHERE resource_id=$1
-       RETURNING to_char(ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ingested_at`
+       RETURNING to_char(ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ingested_at,intent_id`
         : `UPDATE fitness.analytics_query_owner SET owner_id=$2,backend_pid=pg_backend_pid(),
          quiescent=false,query_id=NULL WHERE resource_id=$1
-         RETURNING to_char(ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ingested_at`,
+         RETURNING to_char(ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ingested_at,intent_id`,
       input.mode === "write"
         ? [input.resourceId, ownerId, input.intentId]
         : [input.resourceId, ownerId],
     );
     admitted = true;
-    const { ingested_at: ingestedAt } = z
-      .object({ ingested_at: z.string() })
+    const { ingested_at: ingestedAt, intent_id: intentId } = z
+      .object({ ingested_at: z.string(), intent_id: z.string().nullable() })
       .parse(admittedRow.rows[0]);
+    admittedIntentId = intentId;
     const insert = clickhouse.insert?.bind(clickhouse);
     if (input.mode === "write" && !insert)
       throw new Error("Analytics query ownership requires an insert-capable client");

@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
+import type { PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import type { Database } from "../db/index.ts";
 import {
+  type AnalyticsReceiptQueryOwner,
   withAnalyticsQueryOwner,
   withAnalyticsReceiptQueryOwner,
 } from "./analytics-query-owner.ts";
@@ -14,6 +17,319 @@ describe("analytics query ownership", () => {
   });
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  function databaseAtSessionBoundary(
+    exchange: (
+      text: string,
+      dispatch: () => Promise<unknown>,
+      session: PoolClient,
+    ) => Promise<unknown>,
+  ): Database {
+    const pool = new Proxy(context.database.$client, {
+      get(target, key) {
+        if (key === "connect")
+          return async () => {
+            const session = await target.connect();
+            return new Proxy(session, {
+              get(client, property) {
+                if (property === "query")
+                  return (...args: unknown[]) => {
+                    if (typeof args[0] !== "string")
+                      throw new Error("Owner query fixture requires a statement string");
+                    return exchange(
+                      args[0],
+                      async () => Reflect.apply(client.query, client, args),
+                      client,
+                    );
+                  };
+                const value = Reflect.get(client, property, client);
+                return typeof value === "function" ? value.bind(client) : value;
+              },
+            });
+          };
+        const value = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    return new Proxy(context.database, {
+      get(target, key) {
+        if (key === "$client") return pool;
+        const value = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  test("oneOwnedRequestUsesTwoActualPostgresExchanges", async () => {
+    let counting = false;
+    const exchanges: string[] = [];
+    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      if (counting) exchanges.push(text);
+      return dispatch();
+    });
+    await withAnalyticsQueryOwner(
+      database,
+      context.clickhouse,
+      { resourceId: randomUUID(), intentId: randomUUID() },
+      async (owner) => {
+        counting = true;
+        try {
+          await owner.client.command({ query: "SELECT 1" });
+        } finally {
+          counting = false;
+        }
+      },
+    );
+    expect(exchanges).toHaveLength(2);
+  });
+
+  test("lostCommittedRegistrationResponseBlocksContinuationAndCallbackSuccess", async () => {
+    const resourceId = randomUUID(),
+      intentId = randomUUID();
+    const boundaryError = new Error("committed registration response lost");
+    let firstQueryId: unknown;
+    let fail = true;
+    let dispatched = 0;
+    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      const result = await dispatch();
+      if (fail && /\bSET\s+query_id\s*=/i.test(text)) {
+        fail = false;
+        const rows = await context.database.execute(
+          sql`SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        );
+        firstQueryId = rows[0]?.query_id;
+        throw boundaryError;
+      }
+      return result;
+    });
+    const clickhouse = {
+      ...context.clickhouse,
+      command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+        dispatched++;
+        return context.clickhouse.command(options);
+      },
+    };
+    let caught: unknown;
+    let continuation: unknown;
+    await expect(
+      withAnalyticsQueryOwner(database, clickhouse, { resourceId, intentId }, async (owner) => {
+        try {
+          await owner.client.command({ query: "SELECT 1" });
+        } catch (error) {
+          caught = error;
+        }
+        try {
+          await owner.client.command({ query: "SELECT 2" });
+        } catch (error) {
+          continuation = error;
+        }
+        return "swallowed registration failure";
+      }),
+    ).rejects.toThrow("unknown request outcome");
+    expect(caught).toBe(boundaryError);
+    expect(continuation).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("unknown request outcome") }),
+    );
+    expect(dispatched).toBe(0);
+    expect(firstQueryId).toEqual(expect.any(String));
+    const state = await context.database.execute(
+      sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+    );
+    expect(state).toEqual([
+      { intent_id: intentId, query_id: firstQueryId, query_terminal: false, quiescent: false },
+    ]);
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId, intentId },
+        async () => undefined,
+      ),
+    ).rejects.toThrow("verified recovery");
+  });
+
+  test.each(["write", "receipt"])(
+    "registrationRejectsChangedAdmittedIntentFor%sOwnerBeforeDispatch",
+    async (mode) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID(),
+        changedIntent = randomUUID();
+      if (mode === "receipt")
+        await expect(
+          withAnalyticsQueryOwner(
+            context.database,
+            context.clickhouse,
+            { resourceId, intentId },
+            async () => {
+              throw new Error("leave known pending intent");
+            },
+          ),
+        ).rejects.toThrow("leave known pending intent");
+      let dispatched = 0;
+      const clickhouse = {
+        ...context.clickhouse,
+        query: <T extends object>(options: Parameters<typeof context.clickhouse.query>[0]) => {
+          dispatched++;
+          return context.clickhouse.query<T>(options);
+        },
+      };
+      const operation = async (owner: AnalyticsReceiptQueryOwner) => {
+        await context.database.execute(
+          sql`UPDATE fitness.analytics_query_owner SET intent_id=${changedIntent} WHERE resource_id=${resourceId}`,
+        );
+        await owner.client.query({ query: "SELECT 1", format: "JSONEachRow" });
+      };
+      const result =
+        mode === "write"
+          ? withAnalyticsQueryOwner(
+              context.database,
+              clickhouse,
+              { resourceId, intentId },
+              operation,
+            )
+          : withAnalyticsReceiptQueryOwner(context.database, clickhouse, { resourceId }, operation);
+      await expect(result).rejects.toThrow("registration");
+      expect(dispatched).toBe(0);
+      const state = await context.database.execute(
+        sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+      );
+      expect(state).toEqual([
+        { intent_id: changedIntent, query_id: null, query_terminal: true, quiescent: false },
+      ]);
+    },
+  );
+
+  test.each(["success", "server rejection"])(
+    "terminalUpdateRequiresExactIntentAfter%s",
+    async (response) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID(),
+        changedIntent = randomUUID();
+      let firstQueryId: unknown;
+      const database = databaseAtSessionBoundary(async (text, dispatch) => {
+        if (/\bSET\s+query_terminal\s*=\s*true\b/i.test(text)) {
+          const rows = await context.database.execute(
+            sql`SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          );
+          firstQueryId = rows[0]?.query_id;
+          await context.database.execute(
+            sql`UPDATE fitness.analytics_query_owner SET intent_id=${changedIntent} WHERE resource_id=${resourceId}`,
+          );
+        }
+        return dispatch();
+      });
+      await expect(
+        withAnalyticsQueryOwner(
+          database,
+          context.clickhouse,
+          { resourceId, intentId },
+          async (owner) => {
+            await owner.client.command({
+              query:
+                response === "success" ? "SELECT 1" : "SELECT throwIf(1,'terminal proof boundary')",
+            });
+          },
+        ),
+      ).rejects.toThrow("completion");
+      expect(firstQueryId).toEqual(expect.any(String));
+      const state = await context.database.execute(
+        sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+      );
+      expect(state).toEqual([
+        {
+          intent_id: changedIntent,
+          query_id: firstQueryId,
+          query_terminal: false,
+          quiescent: false,
+        },
+      ]);
+    },
+  );
+
+  test("registrationCannotReplaceAnUnterminatedPredecessorQuery", async () => {
+    const resourceId = randomUUID(),
+      intentId = randomUUID(),
+      predecessor = randomUUID();
+    let dispatched = 0;
+    const clickhouse = {
+      ...context.clickhouse,
+      command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+        dispatched++;
+        return context.clickhouse.command(options);
+      },
+    };
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        clickhouse,
+        { resourceId, intentId },
+        async (owner) => {
+          await context.database.execute(
+            sql`UPDATE fitness.analytics_query_owner SET query_id=${predecessor},query_terminal=false WHERE resource_id=${resourceId}`,
+          );
+          await owner.client.command({ query: "SELECT 1" });
+        },
+      ),
+    ).rejects.toThrow("registration");
+    expect(dispatched).toBe(0);
+    const rows = await context.database.execute(
+      sql`SELECT query_id,query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+    );
+    expect(rows).toEqual([
+      { query_id: predecessor, query_terminal: false, quiescent: false, intent_id: intentId },
+    ]);
+  });
+
+  test("lostSessionAfterCommittedRegistrationPreventsClickHouseDispatch", async () => {
+    const resourceId = randomUUID(),
+      intentId = randomUUID();
+    let fail = true;
+    let dispatched = 0;
+    const database = databaseAtSessionBoundary(async (text, dispatch, session) => {
+      const result = await dispatch();
+      if (fail && /\bSET\s+query_id\s*=/i.test(text)) {
+        fail = false;
+        const lost = new Promise<void>((resolve) => session.once("error", () => resolve()));
+        await context.database.execute(
+          sql`SELECT pg_terminate_backend(backend_pid) FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        );
+        await lost;
+      }
+      return result;
+    });
+    const clickhouse = {
+      ...context.clickhouse,
+      command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+        dispatched++;
+        return context.clickhouse.command(options);
+      },
+    };
+    await expect(
+      withAnalyticsQueryOwner(database, clickhouse, { resourceId, intentId }, async (owner) => {
+        await owner.client.command({ query: "SELECT 1" });
+      }),
+    ).rejects.toThrow("lost its session");
+    expect(dispatched).toBe(0);
+    const rows = await context.database.execute(
+      sql`SELECT query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+    );
+    expect(rows).toEqual([{ query_terminal: false, quiescent: false, intent_id: intentId }]);
+  });
+
+  test("serialAdmissionRejectsOverlappingRequestsWithoutPoisoningSuccessfulOwner", async () => {
+    await withAnalyticsQueryOwner(
+      context.database,
+      context.clickhouse,
+      { resourceId: randomUUID(), intentId: randomUUID() },
+      async (owner) => {
+        const first = owner.client.command({ query: "SELECT 1" });
+        await expect(owner.client.command({ query: "SELECT 2" })).rejects.toThrow(
+          "serial requests",
+        );
+        await first;
+      },
+    );
   });
 
   test("cooperativeFailureKeepsPendingIntentAndFreezesIngestionTime", async () => {
