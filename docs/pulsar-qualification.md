@@ -816,3 +816,38 @@ The useful correction is to include the adjacent component's fresh bootstrap
 procedure in the fixture, and distinguish process startup, coordinator readiness,
 configuration persistence and shard assignment. This fixture has not justified
 any production cutover or weaker erasure policy.
+
+
+## 2026-11-04: Leader readiness passes; native client setup still blocks evacuation
+
+The user approved one additional readiness-gated attempt after reviewing the two
+bootstrap failures. The [approved ARM run](https://github.com/Asherlc/dofek/actions/runs/41863160374)
+used commit `acd26afd3` and retained the existing 60-second observation and
+300-second case bounds, memory caps, quorum and erasure assertions. Its read-only
+leader check observed the known not-initialized state, then succeeded. Native
+data-server registration, namespace creation, metadata formatting and exact
+single-shard RF1 assignment passed. The source bookie's native HTTP state was
+running, writable and not shutting down.
+
+The first standalone Java client invocation then failed in phase `initial`:
+`java.lang.IllegalArgumentException: Unknown backend metadata-store`, from
+`MetadataDrivers.getClientDriver` before the client could create any ledger.
+This proves a client initialization failure; missing metadata-driver registration
+is an inference, not a source-confirmed root cause. No A/B entries, recovery,
+replacement restart, marker exclusion or old-storage retirement were exercised.
+**Native evacuation remains unqualified; its behavioral criteria have neither
+passed nor failed.** The partial metadata/bootstrap result applies to this pinned
+fixture and does not qualify production capacity or the complete pipeline.
+
+The run's log and 69 synthetic evidence files were retained with SHA-256 hashes.
+No fourth attempt, fixture fix, deadline increase or alternative mechanism was
+started. The monitor stopped after collecting the failed native step. Any future
+attempt requires explicit direction after a source-confirmed client setup fix,
+with client create/read capability checked before the A/B recovery sequence.
+All production holds and original archives remain unchanged. Independent bounded
+analytics work continues; full erasure, memory, temporary-copy disk and legacy
+conversion gates remain open.
+
+The useful lesson is to qualify the official client initialization path before
+building recovery assertions on it. Future fixture briefs should name that
+precondition alongside coordinator readiness and namespace assignment.

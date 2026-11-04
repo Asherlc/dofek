@@ -35752,3 +35752,15 @@ format checks. Full local typecheck still has two unresolved Task 3 stale-import
 errors outside this fix. No production impact, deployment, schema/SQL behavior
 change or resilience knob was introduced. Reusing the existing CI fixture inputs
 for Knip avoided mistaking missing app configuration for a valid analysis.
+
+
+### 2026-11-04 — Native CI reaches healthy bookie, fails client initialization
+
+The [single approved readiness-gated CI attempt](https://github.com/Asherlc/dofek/actions/runs/41863160374)
+passed Oxia readiness/bootstrap and source-bookie health, then failed before
+ledger creation: `java.lang.IllegalArgumentException: Unknown backend metadata-store`.
+Standalone client initialization is the observed failure boundary; the missing
+registration hypothesis is unverified. Logs and 69 synthetic artifact files were
+preserved and hashed; no further native attempt or fixture change was started.
+No new production impact or hold changes. Evacuation remains unqualified; see
+[the scoped result](pulsar-qualification.md#2026-11-04-leader-readiness-passes-native-client-setup-still-blocks-evacuation).
