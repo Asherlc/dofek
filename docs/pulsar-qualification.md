@@ -22,6 +22,7 @@ retention, filesystem feature, or resource limit was changed.
 | ext4 project quota enforcement | PASS in disposable host-kernel filesystem | Unprivileged writer hit EDQUOT at an 8 MiB directory budget while filesystem use was 8%. Root capability bypass was observed. |
 | Production filesystem enablement | NOT QUALIFIED | Production ext4 has neither quota nor project features; maintenance, recoverable backups and enablement procedure remain prerequisites. |
 | Bookie memory | 512 MiB FAIL; 768 MiB fixture PASS | 512 MiB hit a cgroup OOM during 10,000 × 8 KiB publishing. At 768 MiB the same workload passed, cgroup peak 688,697,344 bytes. |
+| Native BookKeeper evacuation and old-storage retirement | PASS, bounded ARM fixture | One 135.687-second case validates surviving ledgers, erased-marker exclusion, replacement crash/restart and exclusive old-file retirement; excludes full-pipeline erasure and production fit. |
 | Whole production host resource fit | FAIL at current ceilings | Proposed capped steady services total about 23.992 GiB on a 23.413 GiB host, before uncapped services and host reserve. |
 | Native offload to actual R2 | Source correction PASS, bounded fixture; stock FAIL | Corrected offloader uploaded ledger 25; native GC removed its BookKeeper metadata, broker replacement then read 10,000 messages continuously from R2 with matching digest. Stock drivers retain the failures below. |
 | Broker memory | 768 MiB / one CPU fixture PASS | Continuous R2 readback peak 778,567,680 bytes, cgroup max/oom/oom_kill all zero. Unlimited-CPU lab broker previously exceeded this memory cap. |
@@ -861,3 +862,42 @@ closed-ledger create/full-read/delete preflight before A/B recovery. Independent
 source review and exact-JAR offline compilation passed; native execution remains
 pending GitHub Actions recovery. No dependency, cap, deadline, quorum or erasure
 criterion changed, and no runtime success is claimed for the correction.
+
+
+## 2026-11-04: Native evacuation primitive passes in ARM CI
+
+The [approved native job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
+passed on `ubuntu-24.04-arm` at commit `10735959f`, completing at 16:57:24 UTC.
+The single case took **135.687 seconds**, under its unchanged 300-second limit,
+with retry zero, quorum 1, two 768 MiB bookies, two 128 MiB Oxia processes and a
+separate 512 MiB client. The source-confirmed driver correction and closed-ledger
+create/read/delete preflight executed before the recovery workload.
+
+The [checked-in fixture](https://github.com/Asherlc/dofek/blob/10735959fa4bac8547f56d9cac4ce483b3f46460/src/metric-stream/bookie-evacuation.pulsar.integration.test.ts)
+asserted all surviving B entry counts and full payload hashes, every surviving
+ledger's ensemble excluding the old bookie, source-readable manual-read-only
+recovery, old-offline readback and new writes, replacement SIGKILL/restart
+readback, B-marker presence and A-marker absence across replacement journals and
+entry logs, and removal of exclusively owned old native storage. Source marker
+presence was the positive scan control. All assertions and success cleanup passed.
+
+Independent review reconciled the exact commit, source hashes, ARM job, retry-zero
+command and successful result. The retained job log has SHA-256
+`a17a8157fdd806d5c84ee94795082afe7a8c335be749771455406159afcb330a`.
+Successful per-phase manifests/native files were intentionally removed by the
+test cleanup; the evidence is the immutable tested source plus successful
+non-skipping assertions, not a separately retained per-phase forensic capture.
+The reported duration covers the entire fixture, not a production evacuation
+throughput measurement. Whole CI success is not claimed.
+
+This qualifies the native local-file replacement primitive only. Pulsar broker
+current-ledger succession and cursors, offloaded-only data, R2/legacy conversion,
+metadata/backups, actual day-29/day-30 enforcement, complete CDC/ClickHouse
+behavior, and production aggregate memory/temporary-copy disk remain open gates.
+The replacement becomes the sole persistent bookie; production must retain enough
+space for the old files and the complete required replacement copy concurrently.
+No production service, hold, data, resource ceiling or erasure requirement changed.
+
+The milestone closes a concrete native mechanism question. The next work remains
+the minimal bounded query and then the complete host/storage envelope; this pass
+does not authorize a production cutover or weaken any remaining gate.

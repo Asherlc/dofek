@@ -35780,3 +35780,15 @@ comparison with the [stock launcher](https://github.com/apache/pulsar/blob/v5.0.
 The narrowly reviewed fixture correction and create/read/delete preflight pass
 offline checks. Runtime qualification remains held for Actions recovery; no new
 native run, production change or resource relaxation occurred.
+
+
+### 2026-11-04 — Native client correction validated; evacuation primitive passes
+
+After GitHub reported Actions operational, the [single approved native job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
+passed on ARM in 135.687 seconds with unchanged caps, quorum and retry zero.
+The stock metadata-driver initialization fixes the observed client setup cause;
+create/read/delete preflight and all reviewed A/B recovery assertions passed.
+Independent source/log review confirms the bounded result. No resilience knob,
+production change or hold restoration was used. Complete pipeline erasure,
+whole-host resources and cutover remain unresolved; see the
+[qualification limits](pulsar-qualification.md#2026-11-04-native-evacuation-primitive-passes-in-arm-ci).
