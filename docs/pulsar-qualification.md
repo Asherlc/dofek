@@ -690,3 +690,41 @@ models remain unqualified. In particular, [ReplacingMergeTree](https://clickhous
 does not use ingestion time as a secondary equal-version replacement key.
 This lookup proof cannot establish those separate obligations, native ACK,
 physical erasure or cutover. Production and all four safety holds were unchanged.
+
+## 2026-11-04: Complete key membership and native structural index qualified narrowly
+
+A separate actual-schema/MV fixture discovered all 35 historical source IDs,
+including 28 at one key, prior memberships of a twice-moved UUID and both original
+HR/RR channels for normalized heart-rate scope. An unchanged candidate absent
+from the page remained discoverable after its entire raw payload was removed;
+raw-only discovery lost it. The opposite raw-present/structure-absent control
+also failed explicitly through the complete candidate union. Missing-from-both
+coverage still requires protected historical inventory.
+
+Existing ID-leading structure read about 200,000 unrelated rows for these keys.
+One native four-field projection over `(user_id,channel,recorded_at,source_id)`
+was materialized only in the private fixture. Materialization alone did not help:
+both ordered and unordered DISTINCT retained an in-order base read. The
+[released eligibility guard](https://github.com/ClickHouse/ClickHouse/blob/v26.10.2.103-stable/src/Processors/QueryPlan/Optimizations/projectionsCommon.cpp#L46-L79)
+excludes that mode before [normal projection selection](https://github.com/ClickHouse/ClickHouse/blob/v26.10.2.103-stable/src/Processors/QueryPlan/Optimizations/optimizeUseNormalProjection.cpp#L390-L406).
+Matched unordered GROUP BY returned the identical complete membership set and
+naturally selected one of 49 projection granules: 6,787 reads including four
+scope rows, versus 400,003 for either DISTINCT form. No setting forced selection.
+
+The actual guarded query retained projection access, global revision lookup and
+raw/structural consistency checks. It read 66,989 rows, peaked at 6,500,881 bytes
+and rejected the deliberately missing structural owner. That first error masks
+the simultaneously missing raw payload; it is not a successful complete-payload
+qualification of the new form. Canonical model tests must establish that positive
+path and isolated negatives independently. All 156 requests settled and the private
+database was synchronously removed. Independent review matched 29 artifact hashes
+and approved this finite prerequisite, not the actual new macro or full Task 3.
+
+The initial fixture exceeded its 400,000-total-row ceiling by 39 semantic rows;
+those extra unrelated rows were removed before the corrected baseline. Preserved
+UNION typing and assertion-order mistakes were corrected without hiding them.
+All historical semantic memberships survived the explicit private merge. The
+projection added 4,159,764 disk bytes; observed materialization/merge/mutation
+peaks reached 109,274,490 bytes, distinct from foreground query memory. Production
+bootstrap, insertion overhead, physical erasure and complete host fit remain open.
+No canonical index or production deployment was performed by this qualification.
