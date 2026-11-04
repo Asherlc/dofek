@@ -494,3 +494,70 @@ The subsequent legacy sink invocation passed fourteen cases in 54.14 seconds,
 excluding only the unchanged 350-message case. This includes the two cases
 previously left unrun after that timeout. The exclusion retains an explicit
 open gate; it is not a full fifteen-case suite pass.
+
+## 2026-11-04: Raw input separates values from SQL; all-log erasure remains open
+
+Reviewed source `e320e1758` sends raw metric fields through the official client's
+separate request body, using `input()` and a fresh JSONEachRow stream per row.
+The canonical client privately uses its existing SDK's `exec` capability; no
+dependency, alternate HTTP client or production transport was added. Input
+commands force synchronous inserts, end-of-query buffering and disabled progress
+headers, consume the response fully and require empty output. Unexpected
+nonempty success output, truncation and lost responses preserve uncertain query
+ownership rather than publishing success. See the [client adapter](../src/db/clickhouse.ts),
+[source writer](../src/metric-stream/source-effects.ts),
+[official SDK API](https://github.com/ClickHouse/clickhouse-js/blob/client-1.23.1/packages/client-common/src/client.ts)
+and [HTTP response caveats](https://clickhouse.com/docs/interfaces/http#http-response-codes-caveats).
+
+An attempted whole-row input changed generation lookup into a correlated
+subquery. Its first form silently inserted zero rows with no generation record;
+explicit coalescing restored that semantic but the native plan aggregated the
+whole generation table, reading 20,002 rows against 20,000 unrelated records.
+That candidate was rejected. User/provider alone remain constant SQL bindings,
+preserving the bounded lookup and insert-time account/generation predicates.
+All remaining raw fields are separate input data. Exact field equivalence,
+nullable/Float32 values, timestamps, versions, opaque metadata, empty/current/
+stale generations and erased live/tombstone rows passed real-engine checks.
+This is limited query-text privacy: account/provider identities remain visible.
+
+The final combined owner/input/HTTP/recovery run passed 45/45 in 30.74 seconds;
+35 focused units and static checks also passed. Independent review initially
+found that the stream-failure fixture rejected before the SDK returned a
+response. Test fix `8e2827104` causally observes the real SDK's fulfilled HTTP
+200 response before inducing body failure, then requires drain-time
+`ECONNRESET`/`aborted`, distinct from unexpected nonempty output. Original query
+identity, pending intent, blocked continuation and blocked replacements remain
+asserted. Scoped re-review approved the fix with no new findings. These are
+finite correctness checks, not sustained throughput or host qualification.
+
+Malformed input still exposed its synthetic marker in the retained server
+exception and default SDK logger, despite absence from query text. The specific
+diagnostic emits counts/booleans; ordinary expected SDK exception text remains
+in synthetic test logs. One original diagnostic was overwritten before hashing;
+its lost provenance is explicitly unresolved, while later independent evidence
+corroborates the finding. Fix-round originals and hashes are retained. No live
+personal data was used or queried.
+
+Complete log erasure is therefore still a release blocker. The current eraser's
+application-database inventory excludes native system logs; SDK errors also
+have local Docker and configured processor routes. Current query-owner state
+retains only its latest query ID, not an account history. Task 7 must qualify
+actual account attribution, writer/logging cutoffs, retained log generations,
+physical removal or verified expiry and processor copies. Query-string privacy
+and a retention setting alone do not prove those properties. See the
+[erasure implementation](../src/account-erasure/clickhouse-erasure.ts),
+[error routing](../src/lib/error-reporting.ts),
+[collector configuration](../deploy/otel-collector-config.yaml),
+[native query-log schema](https://clickhouse.com/docs/operations/system-tables/query_log)
+and [text-log schema](https://clickhouse.com/docs/operations/system-tables/text_log).
+No logs were disabled, retention changed, production deployment performed or
+safety hold restored. Native ACK, the 350-message gate, CDC, archive conversion
+and resource/erasure qualification remain incomplete.
+
+One subsequent forty-delivery measurement completed with forty visible rows in
+13,490 ms and the same 1,400 ClickHouse requests (1,200 queries, forty commands,
+160 inserts) and 3,679 PostgreSQL client query calls. These one-effect deliveries
+receive no benefit from the earlier page amortization; the new input path adds
+no request. Broker receive/ACK and concurrent streams are excluded. Earlier
+elapsed baselines used different PostgreSQL resources, so this is request-count
+attribution, not a controlled latency-improvement claim.
