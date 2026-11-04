@@ -4,10 +4,12 @@ import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { analyticsDeliveryGroupIngestionTimes } from "./analytics-delivery-group.ts";
 
 export interface AnalyticsQueryOwner {
   client: ClickHouseClient;
   ingestedAt: string;
+  reserveIngestionThrough(through: string): Promise<void>;
   assertActive(): Promise<void>;
 }
 
@@ -303,7 +305,28 @@ async function withOwnedQueries<T>(
           return { json: async () => rows };
         }),
     };
-    const value = await operation({ client, ingestedAt, assertActive });
+    const value = await operation({
+      client,
+      ingestedAt,
+      assertActive,
+      reserveIngestionThrough: async (through) => {
+        assertSessionActive();
+        z.iso.datetime({ precision: 6 }).parse(through);
+        const maximum = analyticsDeliveryGroupIngestionTimes(ingestedAt, 500).at(-1);
+        if (!maximum || through < ingestedAt || through > maximum)
+          throw new Error("Ingestion timestamp is outside this owners bounded reservation");
+        const rows = await session.query(
+          `UPDATE fitness.analytics_query_owner SET ingested_at=$3::timestamptz
+           WHERE resource_id=$1 AND owner_id=$2 AND quiescent=false AND intent_id IS NOT NULL
+             AND ingested_at<=$3::timestamptz RETURNING owner_id`,
+          [input.resourceId, ownerId, through],
+        );
+        assertSessionConnected();
+        const parsed = z.array(z.object({ owner_id: z.literal(ownerId) })).parse(rows.rows);
+        if (parsed.length !== 1)
+          throw new Error("Analytics ingestion reservation lost its owner or high-watermark");
+      },
+    });
     closed = true;
     returnedWithRequest = inFlight !== null;
     if (returnedWithRequest)

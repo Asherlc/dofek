@@ -29,7 +29,7 @@ import {
 } from "./provider-generation-deletion.ts";
 import type { MetricStreamPosition } from "./transport-position.ts";
 
-function effect(
+export function metricStreamSourceEffect(
   position: MetricStreamPosition,
   ordinal: bigint,
   before: SourcePlacement | null,
@@ -124,7 +124,7 @@ export async function* prepareMetricStreamSourceEffects(
         )
           continue;
         page.push(
-          effect(position, ordinal++, before, {
+          metricStreamSourceEffect(position, ordinal++, before, {
             ...before,
             sourceVersion: String(BigInt(before.sourceVersion) + 1n),
             deleted: true,
@@ -192,7 +192,7 @@ export async function* prepareMetricStreamSourceEffects(
       activityId: event.activityId ?? null,
       deleted: staleGeneration || BigInt(guard) > BigInt(row.version),
     };
-    yield [effect(position, 0n, before, after)];
+    yield [metricStreamSourceEffect(position, 0n, before, after)];
     return;
   }
   if ("eventId" in event) {
@@ -252,7 +252,7 @@ export async function* prepareMetricStreamSourceEffects(
           : BigInt(before.sourceVersion) + 1n;
       if (version < BigInt(before.sourceVersion)) continue;
       page.push(
-        effect(position, ordinal++, before, {
+        metricStreamSourceEffect(position, ordinal++, before, {
           ...before,
           sourceVersion: String(version),
           deleted: true,

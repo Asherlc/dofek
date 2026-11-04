@@ -530,6 +530,12 @@ entity "analytics_stream_state" {
   owner_id : uuid
   processed : jsonb
   pending : jsonb
+  group_state : text
+  group_first_position : jsonb
+  group_last_position : jsonb
+  group_member_count : integer
+  group_positions_digest : text
+  group_first_ingested_at : timestamp
 }
 
 entity "area" {

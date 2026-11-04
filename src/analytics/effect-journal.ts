@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { TupleParam } from "@clickhouse/client";
 import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
@@ -45,7 +46,7 @@ export interface AnalyticsJournalClient {
   database: Database;
 }
 const stageSchema = z.enum(["scalar", "dedup", "activity"]);
-const stageOrder = { scalar: 1, dedup: 2, activity: 3 } as const;
+export const stageOrder = { scalar: 1, dedup: 2, activity: 3 } as const;
 export const analyticsStreamSchema = z
   .object({
     transport: z.enum(["pulsar", "kafka"]),
@@ -75,14 +76,14 @@ const effectSchema = z.object({
   before: sourcePlacementSchema.nullable(),
   after: sourcePlacementSchema.nullable(),
 });
-const receiptSchema = z.object({
+export const receiptSchema = z.object({
   serialized_message_id: z.string(),
   effect_count: sourcePlacementSchema.shape.sourceVersion,
   chunk_count: sourcePlacementSchema.shape.sourceVersion,
   effect_digest: z.string().length(64),
   stages: z.array(stageSchema).min(1).max(3),
 });
-const discoveryReceiptSchema = z.object({
+export const discoveryReceiptSchema = z.object({
   transport: z.enum(["pulsar", "kafka"]),
   kafka_offset: z.string(),
   epoch: z.string(),
@@ -97,10 +98,10 @@ const discoveryReceiptSchema = z.object({
   is_empty: z.number().int().min(0).max(1),
   user_id: z.uuid().nullable(),
 });
-type DiscoveryReceipt = z.infer<typeof discoveryReceiptSchema>;
-const EMPTY_DIGEST = createHash("sha256").digest("hex");
+export type DiscoveryReceipt = z.infer<typeof discoveryReceiptSchema>;
+export const EMPTY_DIGEST = createHash("sha256").digest("hex");
 // Each discovery receipt holds exactly one reference; pages inspect at most 20.
-const RECEIPT_PAGE_SIZE = 20;
+export const RECEIPT_PAGE_SIZE = 20;
 
 function validateEffect(input: AnalyticsEffect): AnalyticsEffect {
   const effect = effectSchema.parse(input);
@@ -136,7 +137,7 @@ function validateEffect(input: AnalyticsEffect): AnalyticsEffect {
     throw new Error("Analytics effect source version must match its new placement");
   return effect;
 }
-function validateEffectBatch(effects: readonly AnalyticsEffect[]): AnalyticsEffect[] {
+export function validateEffectBatch(effects: readonly AnalyticsEffect[]): AnalyticsEffect[] {
   const validated = effects.map(validateEffect);
   const identities = new Set<string>();
   for (const effect of validated) {
@@ -156,19 +157,19 @@ function validateEffectBatch(effects: readonly AnalyticsEffect[]): AnalyticsEffe
   }
   return validated;
 }
-function effectHash(effect: AnalyticsEffect) {
+export function effectHash(effect: AnalyticsEffect) {
   return createHash("sha256").update(JSON.stringify(effect)).digest("hex");
 }
-function deliveryParams(position: MetricStreamPosition) {
+export function deliveryParams(position: MetricStreamPosition) {
   return journalPositionColumns(position);
 }
-function receiptValues(position: MetricStreamPosition) {
+export function receiptValues(position: MetricStreamPosition) {
   return journalPositionColumns(position);
 }
 const deliveryWhere =
   "epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32} AND transport={transport:String} AND kafka_offset={kafka_offset:UInt64} AND major={major:UInt64} AND minor={minor:UInt64} AND batch={batch:Int32}";
-const integerSettings = { output_format_json_quote_64bit_integers: 1 };
-const storageKeySchema = discoveryReceiptSchema.pick({
+export const integerSettings = { output_format_json_quote_64bit_integers: 1 };
+export const storageKeySchema = discoveryReceiptSchema.pick({
   epoch: true,
   topic: true,
   partition: true,
@@ -185,7 +186,7 @@ const effectKeySchema = storageKeySchema.extend({
 type StorageKey = z.infer<typeof storageKeySchema>;
 type EffectKey = z.infer<typeof effectKeySchema>;
 
-function storageKey(row: StorageKey): string {
+export function storageKey(row: StorageKey): string {
   return JSON.stringify([
     row.epoch,
     row.topic,
@@ -200,11 +201,13 @@ function storageKey(row: StorageKey): string {
 function effectKey(row: EffectKey): string {
   return JSON.stringify([storageKey(row), row.effect_ordinal, row.stage]);
 }
-function selectKeys(keys: readonly (StorageKey | EffectKey)[]) {
-  z.number().int().min(1).max(RECEIPT_PAGE_SIZE).parse(keys.length);
-  const params: Record<string, unknown> = {};
+export function selectKeys(keys: readonly (StorageKey | EffectKey)[]) {
+  // Delivery manifests can cover one finite intake group. Effect/reference
+  // callers still enforce their separate twenty-reference page bound.
+  z.number().int().min(1).max(500).parse(keys.length);
   let columns = "";
-  const tuples = keys.map((key, index) => {
+  let types = "";
+  const tuples = keys.map((key) => {
     const fields: [string, string, unknown][] = [
       ["epoch", "String", key.epoch],
       ["topic", "String", key.topic],
@@ -218,17 +221,18 @@ function selectKeys(keys: readonly (StorageKey | EffectKey)[]) {
     if ("effect_ordinal" in key)
       fields.push(["effect_ordinal", "UInt64", key.effect_ordinal], ["stage", "String", key.stage]);
     columns = fields.map(([name]) => name).join(",");
-    return `(${fields
-      .map(([name, type, value]) => {
-        const parameter = `key${index}_${name}`;
-        params[parameter] = value;
-        return `{${parameter}:${type}}`;
-      })
-      .join(",")})`;
+    types = fields.map(([, type]) => type).join(",");
+    return new TupleParam(
+      fields.map(([, type, value]) => (type === "UInt64" ? BigInt(String(value)) : value)),
+    );
   });
-  return { columns, params, where: `(${columns}) IN (${tuples.join(",")})` };
+  return {
+    columns,
+    params: { deliveryKeys: tuples },
+    where: `(${columns}) IN {deliveryKeys:Array(Tuple(${types}))}`,
+  };
 }
-function indexProofRows<Row>(
+export function indexProofRows<Row>(
   rows: readonly Row[],
   expected: ReadonlySet<string>,
   identify: (row: Row) => string,
@@ -335,10 +339,10 @@ export async function appendAnalyticsEffects(
 ): Promise<void> {
   return persistAnalyticsEffectPage(client, effects, "append");
 }
-async function persistAnalyticsEffectPage(
+export async function persistAnalyticsEffectPage(
   client: ClickHouseClient,
   effects: readonly AnalyticsEffect[],
-  phase: "prepare" | "commit" | "append",
+  phase: "prepare" | "commit" | "append" | "prepareFresh" | "commitFresh",
 ): Promise<void> {
   if (!client.insert)
     throw new Error("Analytics journal requires a ClickHouse insert-capable client");
@@ -347,7 +351,12 @@ async function persistAnalyticsEffectPage(
   const receipts: object[] = [];
   for (let offset = 0; offset < validated.length; offset += RECEIPT_PAGE_SIZE) {
     const page = validated.slice(offset, offset + RECEIPT_PAGE_SIZE);
-    const proofs = await readEffectProofs(client, page);
+    // A fresh group has one artifact probe under exclusive publication ownership.
+    // Its newly written rows are verified together before the frontier advances.
+    const proofs =
+      phase === "prepareFresh" || phase === "commitFresh"
+        ? null
+        : await readEffectProofs(client, page);
     for (const effect of page) {
       const hash = effectHash(effect);
       const key = {
@@ -355,10 +364,10 @@ async function persistAnalyticsEffectPage(
         effect_ordinal: effect.cursor.effectOrdinal,
         stage: effect.stage,
       };
-      const manifests = proofs.manifests.get(storageKey(key)) ?? [];
+      const manifests = proofs?.manifests.get(storageKey(key)) ?? [];
       if (manifests.length > 1) throw new Error("Conflicting analytics delivery receipts");
       const receipt = manifests[0];
-      const expected = proofs.receipts.get(effectKey(key)) ?? [];
+      const expected = proofs?.receipts.get(effectKey(key)) ?? [];
       if (
         receipt?.stages.includes(effect.stage) &&
         !expected.some((row) => row.effect_hash === hash)
@@ -368,7 +377,7 @@ async function persistAnalyticsEffectPage(
         );
       if (expected.some((row) => row.effect_hash !== hash))
         throw new Error("Replay changed an existing analytics effect receipt identity");
-      for (const row of proofs.journal.get(effectKey(key)) ?? [])
+      for (const row of proofs?.journal.get(effectKey(key)) ?? [])
         if (row.effect_hash !== hash)
           throw new Error("Replay changed an existing analytics effect identity");
       const owner = effect.after?.userId ?? effect.before?.userId;
@@ -399,14 +408,14 @@ async function persistAnalyticsEffectPage(
     }
   }
   if (rows.length) {
-    if (phase !== "commit")
+    if (phase !== "commit" && phase !== "commitFresh")
       await client.insert({
         table: "analytics.effect_journal",
         format: "JSONEachRow",
         values: rows,
         clickhouse_settings: { async_insert: 0 },
       });
-    if (phase !== "prepare")
+    if (phase !== "prepare" && phase !== "prepareFresh")
       await client.insert({
         table: "analytics.effect_receipt",
         format: "JSONEachRow",
@@ -704,7 +713,7 @@ export async function commitPreparedAnalyticsDelivery(
   });
 }
 
-async function readReferencedEffects(
+export async function readReferencedEffects(
   client: Pick<ClickHouseClient, "query">,
   receipts: readonly DiscoveryReceipt[],
 ): Promise<(AnalyticsEffect | null)[]> {

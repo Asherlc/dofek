@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http, passthrough } from "msw";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { verifyAnalyticsDeliveryReceipt } from "../analytics/effect-journal.ts";
 import { createAnalyticsTestContext } from "../analytics/test-helpers.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
@@ -30,7 +30,7 @@ import { type MetricStreamPosition, metricStreamPositionSchema } from "./transpo
 describe("metric stream durable recovery", () => {
   let context: Awaited<ReturnType<typeof createAnalyticsTestContext>>;
   let client: ClickHouseClient;
-  beforeAll(async () => {
+  beforeEach(async () => {
     context = await createAnalyticsTestContext();
     const rewrite = (value: string) => value.replaceAll("ingest.", "analytics.");
     const insert = context.clickhouse.insert?.bind(context.clickhouse);
@@ -53,7 +53,7 @@ describe("metric stream durable recovery", () => {
     ])
       await client.command({ query });
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await context?.cleanup();
   });
 
@@ -304,7 +304,7 @@ describe("metric stream durable recovery", () => {
     expect(rawWrites).toBe(0);
   });
 
-  test("completedBatchedSiblingCanReplayWhileLaterIntentIsPending", async () => {
+  test("pendingGroupRejectsPartialMembershipThenReplaysTheOriginalGroup", async () => {
     const first = event();
     const second = event();
     const delivery = batch(2);
@@ -336,12 +336,14 @@ describe("metric stream durable recovery", () => {
       sql`SELECT intent_id,ingested_at FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`,
     );
     expect(pendingBefore[0]?.intent_id).toEqual(expect.any(String));
-    await applyMetricStreamEventsToClickHouse(
-      client,
-      [first],
-      { ...delivery, positions: delivery.positions.slice(0, 1) },
-      context.database,
-    );
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        client,
+        [first],
+        { ...delivery, positions: delivery.positions.slice(0, 1) },
+        context.database,
+      ),
+    ).rejects.toThrow("pending intent");
     expect(
       await context.database.execute(
         sql`SELECT intent_id,ingested_at FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`,
@@ -355,6 +357,42 @@ describe("metric stream durable recovery", () => {
     expect(await frontier(metricStreamPositionSchema.parse(delivery.positions[1]))).toEqual(
       delivery.positions[1],
     );
+  });
+
+  test("committedMemberWithMismatchedEffectsCannotSkipRawReplayOrAdvanceFrontier", async () => {
+    const row = event();
+    const delivery = batch(1);
+    const position = delivery.positions[0];
+    if (!position) throw new Error("Fixture position missing");
+    await context.database.execute(
+      sql`ALTER TABLE fitness.analytics_stream_state ADD CONSTRAINT fixture_frontier_failure CHECK(processed IS NULL)`,
+    );
+    try {
+      await expect(
+        applyMetricStreamEventsToClickHouse(client, [row], delivery, context.database),
+      ).rejects.toThrow();
+    } finally {
+      await context.database.execute(
+        sql`ALTER TABLE fitness.analytics_stream_state DROP CONSTRAINT fixture_frontier_failure`,
+      );
+    }
+    await client.command({
+      query:
+        "ALTER TABLE analytics.delivery_receipt UPDATE effect_digest=repeat('0',64) WHERE status='committed' SETTINGS mutations_sync=2",
+    });
+    let rawWrites = 0;
+    const replay = {
+      ...client,
+      command: (options: Parameters<ClickHouseClient["command"]>[0]) => {
+        if (options.query.startsWith("INSERT INTO ingest.metric_stream (")) rawWrites++;
+        return client.command(options);
+      },
+    };
+    await expect(
+      applyMetricStreamEventsToClickHouse(replay, [row], delivery, context.database),
+    ).rejects.toThrow(/receipt|digest|identity/i);
+    expect(rawWrites).toBe(0);
+    expect(await frontier(position)).toBeNull();
   });
 
   test("markerCannotOutrunPriorEffects", async () => {

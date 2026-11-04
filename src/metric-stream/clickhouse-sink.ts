@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
 import { z } from "zod";
-import { coordinateAnalyticsDelivery } from "../analytics/analytics-delivery.ts";
+import {
+  coordinateAnalyticsDelivery,
+  coordinateAnalyticsDeliveryGroup,
+} from "../analytics/analytics-delivery.ts";
+import { metricStreamPositionIdentity } from "../analytics/journal-position.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { createDatabaseFromEnv, type Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -20,6 +24,8 @@ import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
   isMetricStreamProviderGenerationDeletedEvent,
+  type MetricStreamEventV1,
+  type MetricStreamEventV2,
   type MetricStreamRedpandaEvent,
 } from "./events.ts";
 import {
@@ -36,6 +42,10 @@ import {
   applyMetricStreamSourceEffects,
   prepareMetricStreamSourceEffects,
 } from "./source-effects.ts";
+import {
+  applyMetricStreamSourceEffectsGroup,
+  prepareMetricStreamSourceEffectsGroup,
+} from "./source-effects-group.ts";
 import { compareMetricStreamPositions, metricStreamPositionSchema } from "./transport-position.ts";
 
 async function keepMetricStreamHeartbeatAlive<T>(
@@ -105,9 +115,62 @@ export async function applyMetricStreamEventsToClickHouse(
       );
   }
   let inserted = 0;
-  for (const [index, event] of events.entries()) {
+  for (let index = 0; index < events.length; ) {
+    const event = events[index];
+    if (!event) throw new Error("Metric-stream event is missing");
     const position = context.positions[index];
     if (!position) throw new Error("Metric-stream delivery position is missing");
+    if (isMetricStreamRow(event)) {
+      const members: {
+        event: MetricStreamEventV1 | MetricStreamEventV2;
+        position: typeof position;
+      }[] = [];
+      const seen = new Set<string>();
+      while (index < events.length && members.length < 500) {
+        const next = events[index],
+          nextPosition = context.positions[index];
+        if (!next || !nextPosition) throw new Error("Metric-stream group input is incomplete");
+        if (!isMetricStreamRow(next) || seen.has(next.id.toLowerCase())) break;
+        seen.add(next.id.toLowerCase());
+        members.push({ event: next, position: nextPosition });
+        index++;
+      }
+      const byPosition = new Map(
+        members.map((member) => [metricStreamPositionIdentity(member.position), member]),
+      );
+      const inputs = (positions: readonly (typeof position)[], times: readonly string[]) => {
+        if (positions.length !== times.length)
+          throw new Error("Grouped ingestion times do not match native members");
+        return positions.map((position, ordinal) => {
+          const member = byPosition.get(metricStreamPositionIdentity(position)),
+            ingestedAt = times[ordinal];
+          if (!member || !ingestedAt)
+            throw new Error("Grouped native member or ingestion time is missing");
+          return { ...member, ingestedAt };
+        });
+      };
+      await keepMetricStreamHeartbeatAlive(context, () =>
+        coordinateAnalyticsDeliveryGroup(
+          { database, clickhouse: client },
+          {
+            positions: members.map((member) => member.position),
+            maximum: 500,
+            assertActive: context.assertActive,
+            prepare: (owner, positions, times) =>
+              prepareMetricStreamSourceEffectsGroup(owner, inputs(positions, times)),
+            apply: async (owner, positions, effects, times) => {
+              inserted += await applyMetricStreamSourceEffectsGroup(
+                owner,
+                inputs(positions, times),
+                effects,
+              );
+            },
+          },
+        ),
+      );
+      await context.assertActive();
+      continue;
+    }
     if (isMetricStreamBatchCompletedEvent(event) && position.transport !== "kafka")
       throw new Error("Native processing marker schema has not been installed");
     await context.assertActive();
@@ -194,8 +257,19 @@ export async function applyMetricStreamEventsToClickHouse(
       ),
     );
     await context.assertActive();
+    index++;
   }
   return inserted;
+}
+
+function isMetricStreamRow(
+  event: MetricStreamRedpandaEvent,
+): event is MetricStreamEventV1 | MetricStreamEventV2 {
+  return (
+    !isMetricStreamDeletedEvent(event) &&
+    !isMetricStreamBatchCompletedEvent(event) &&
+    !isMetricStreamProviderGenerationDeletedEvent(event)
+  );
 }
 
 export async function runMetricStreamClickHouseSinkFromEnv(

@@ -15,6 +15,27 @@ adjacent integration suites. Production activation requires the account-erasure
 ownership migration in the same release unit; see the
 [approved plan](../../docs/superpowers/plans/2026-11-03-bounded-analytics.md).
 
+The [grouped delivery coordinator](analytics-delivery.ts) retains each message's
+native position, receipt and ingestion timestamp while processing a bounded
+group under one publication owner. PostgreSQL retains the exact pending or
+completed membership descriptor; receipt verification precedes the processed
+frontier update. The [native consumer](../metric-stream/pulsar-consumer.ts)
+acknowledges individual messages only after that operation returns. These
+contracts have [database recovery tests](analytics-delivery-group-coordinator.integration.test.ts)
+and [native acknowledgement tests](../metric-stream/pulsar-consumer.pulsar.integration.test.ts).
+
+Single local measurements with 469–503-byte synthetic samples, producer batches
+of 20 and a 128 MiB query budget reached 139.8 samples/s at a group of 100 and
+259.6 samples/s at 500. Both include subscription and first-group warm-up;
+the measured process high-water mark was about 311 MiB. Every measured message
+had a verified raw row, receipt, processed frontier and individual native ACK.
+These results do not meet the 300 samples/s drain qualification target and do
+not establish production throughput. The remaining sink operations still use
+20-row chunks; qualifying set operations over the finite group is the next
+performance gate. Analytics discovery pages remain bounded to 20 references.
+Canonical Pulsar activation and retirement of the Kafka consumer remain release
+gates; this checkpoint must not be deployed as a mixed-consumer recovery scheme.
+
 The bounded sensor SQL qualification uses the canonical sealed page and native
 dbt compiler, retaining complete candidates at each affected key. The
 [resource fixtures](../db/deduped-sensor-read-model.integration.test.ts) compare

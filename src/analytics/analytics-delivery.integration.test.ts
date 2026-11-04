@@ -335,12 +335,14 @@ describe("exact cooperative delivery completion", () => {
     const database = databaseAtSessionBoundary(context.database, async (text, dispatch) => {
       if (text.startsWith("SELECT quiescent,intent_id"))
         await context.database.execute(
-          sql`UPDATE fitness.analytics_stream_state SET processed=NULL`,
+          sql`UPDATE fitness.analytics_stream_state SET processed=NULL,
+            group_state=NULL,group_first_position=NULL,group_last_position=NULL,
+            group_member_count=NULL,group_positions_digest=NULL,group_first_ingested_at=NULL`,
         );
       return dispatch();
     });
     await expect(coordinateAnalyticsDelivery({ ...context, database }, input)).rejects.toThrow(
-      "frontier does not cover",
+      "frontier no longer covers",
     );
     expect(counts).toEqual(before);
     expect(await state()).toMatchObject({

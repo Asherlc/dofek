@@ -74,9 +74,46 @@ export const analyticsStreamState = fitness.table(
     ownerId: uuid("owner_id").notNull(),
     processed: jsonb("processed").$type<MetricStreamPosition>(),
     pending: jsonb("pending").$type<MetricStreamPosition>(),
+    groupState: text("group_state", { enum: ["pending", "completed"] }),
+    groupFirstPosition: jsonb("group_first_position").$type<MetricStreamPosition>(),
+    groupLastPosition: jsonb("group_last_position").$type<MetricStreamPosition>(),
+    groupMemberCount: integer("group_member_count"),
+    groupPositionsDigest: text("group_positions_digest"),
+    groupFirstIngestedAt: timestamp("group_first_ingested_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
   },
   (table) => [
     primaryKey({ columns: [table.transport, table.epoch, table.topic, table.partition] }),
+    check(
+      "analytics_stream_state_delivery_group",
+      sql`(
+        ${table.groupState} IS NULL
+        AND ${table.groupFirstPosition} IS NULL
+        AND ${table.groupLastPosition} IS NULL
+        AND ${table.groupMemberCount} IS NULL
+        AND ${table.groupPositionsDigest} IS NULL
+        AND ${table.groupFirstIngestedAt} IS NULL
+      ) OR (
+        ${table.groupState} IS NOT NULL
+        AND ${table.groupFirstPosition} IS NOT NULL
+        AND ${table.groupLastPosition} IS NOT NULL
+        AND ${table.groupMemberCount} IS NOT NULL
+        AND ${table.groupPositionsDigest} IS NOT NULL
+        AND ${table.groupFirstIngestedAt} IS NOT NULL
+        AND jsonb_typeof(${table.groupFirstPosition}) = 'object'
+        AND jsonb_typeof(${table.groupLastPosition}) = 'object'
+        AND ${table.groupMemberCount} BETWEEN 1 AND 500
+        AND ${table.groupPositionsDigest} ~ '^[a-f0-9]{64}$'
+        AND (
+          (${table.groupState} = 'pending' AND ${table.pending} IS NOT NULL
+            AND ${table.pending} = ${table.groupLastPosition})
+          OR (${table.groupState} = 'completed' AND ${table.pending} IS NULL
+            AND ${table.processed} IS NOT NULL AND ${table.processed} = ${table.groupLastPosition})
+        )
+      )`,
+    ),
   ],
 );
 

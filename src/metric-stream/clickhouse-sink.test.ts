@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { coordinateAnalyticsDelivery } from "../analytics/analytics-delivery.ts";
+import type { coordinateAnalyticsDeliveryGroup } from "../analytics/analytics-delivery.ts";
 import * as clickhouse from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import {
@@ -16,7 +16,7 @@ import { kafkaTestPositions } from "./test-helpers.ts";
 
 const runtime = vi.hoisted(() => ({
   database: Object.create(null),
-  coordinate: vi.fn<typeof coordinateAnalyticsDelivery>(async () => undefined),
+  coordinate: vi.fn<typeof coordinateAnalyticsDeliveryGroup>(async () => undefined),
   runConsumer: vi.fn<(options: RunMetricStreamEventConsumerOptions) => Promise<void>>(
     async () => undefined,
   ),
@@ -29,7 +29,8 @@ const client = {
   insert: vi.fn(async () => undefined),
 };
 vi.mock("../analytics/analytics-delivery.ts", () => ({
-  coordinateAnalyticsDelivery: runtime.coordinate,
+  coordinateAnalyticsDelivery: vi.fn(async () => undefined),
+  coordinateAnalyticsDeliveryGroup: runtime.coordinate,
 }));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: runtime.captureException }));
 vi.mock("../db/index.ts", () => ({ createDatabaseFromEnv: () => runtime.database }));
@@ -150,7 +151,7 @@ describe("Kafka production composition", () => {
     await invocation.handleEvents([row], batch);
     expect(runtime.coordinate).toHaveBeenCalledWith(
       { database, clickhouse: client },
-      expect.objectContaining({ position: batch.positions[0], assertActive: batch.assertActive }),
+      expect.objectContaining({ positions: batch.positions, assertActive: batch.assertActive }),
     );
     expect(invocation.epoch).toBe("test-epoch");
   });
