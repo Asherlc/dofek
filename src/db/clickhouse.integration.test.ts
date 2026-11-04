@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import { ClickHouseError } from "@clickhouse/client";
+import { ClickHouseError, ClickHouseClient as NativeClickHouseClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http, passthrough } from "msw";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
@@ -140,6 +140,14 @@ describe("ClickHouse private input command HTTP boundary", () => {
         intentId = randomUUID();
       let originalQueryId: string | null = null;
       let dispatched = 0;
+      let failedAfterResponse = false;
+      // Transparent observation of the real SDK promise; network faults remain
+      // exclusively in MSW. No fake exec implementation or response is supplied.
+      const nativePrototype: Pick<NativeClickHouseClient, "exec"> = Object.getPrototypeOf(
+        NativeClickHouseClient.prototype,
+      );
+      const nativeExec =
+        mode === "response stream failure" ? vi.spyOn(nativePrototype, "exec") : undefined;
       server.use(
         http.post("*", ({ request }) => {
           const url = new URL(request.url);
@@ -152,61 +160,114 @@ describe("ClickHouse private input command HTTP boundary", () => {
               new ReadableStream({
                 start(controller) {
                   controller.enqueue(new TextEncoder().encode("synthetic private bytes"));
+                },
+                async pull(controller) {
+                  const execution = nativeExec?.mock.results[0];
+                  if (execution?.type !== "return")
+                    throw new Error("Missing real SDK exec promise for response barrier");
+                  // Await the actual SDK result, not a timer or a fabricated
+                  // response. The first body chunk releases HTTP availability;
+                  // only then may the network response body fail.
+                  const response = await execution.value;
+                  failedAfterResponse = response.http_status_code === 200;
                   controller.error(new Error("synthetic truncated stream"));
                 },
               }),
+              { headers: { "X-Raw-Input-Fixture": "response-available" } },
             );
           return HttpResponse.text("synthetic private late response body");
         }),
       );
       let caught: unknown;
       let continuation: unknown;
-      await expect(
-        withAnalyticsQueryOwner(
-          context.database,
-          context.clickhouse,
-          { resourceId, intentId },
-          async (owner) => {
-            try {
-              await owner.client.command({
-                query: inputQuery,
-                values: Readable.from(['{"n":1}\n']),
-              });
-            } catch (error) {
-              caught = error;
-            }
-            try {
-              await owner.client.command({ query: "SELECT 1" });
-            } catch (error) {
-              continuation = error;
-            }
-            return "swallowed input error";
-          },
-        ),
-      ).rejects.toThrow("unknown request outcome");
-      expect(caught instanceof Error).toBe(true);
-      expect(caught instanceof ClickHouseError).toBe(false);
-      expect(caught instanceof Error && caught.message.includes("private")).toBe(false);
-      expect(
-        continuation instanceof Error && continuation.message.includes("unknown request outcome"),
-      ).toBe(true);
-      expect(dispatched).toBe(1);
-      expect(typeof originalQueryId).toBe("string");
-      const rows = await context.database.execute(
-        sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
-      );
-      expect(rows).toEqual([
-        { intent_id: intentId, query_id: originalQueryId, query_terminal: false, quiescent: false },
-      ]);
-      for (const replacement of [intentId, randomUUID()])
+      try {
         await expect(
           withAnalyticsQueryOwner(
             context.database,
             context.clickhouse,
-            { resourceId, intentId: replacement },
-            async () => undefined,
+            { resourceId, intentId },
+            async (owner) => {
+              try {
+                await owner.client.command({
+                  query: inputQuery,
+                  values: Readable.from(['{"n":1}\n']),
+                });
+              } catch (error) {
+                caught = error;
+              }
+              try {
+                await owner.client.command({ query: "SELECT 1" });
+              } catch (error) {
+                continuation = error;
+              }
+              return "swallowed input error";
+            },
           ),
-        ).rejects.toThrow("verified recovery");
+        ).rejects.toThrow("unknown request outcome");
+        if (nativeExec) {
+          const responses = await Promise.allSettled(
+            nativeExec.mock.results.map((result) => result.value),
+          );
+          expect(responses).toHaveLength(1);
+          const response = responses[0];
+          expect(response?.status).toBe("fulfilled");
+          if (response?.status !== "fulfilled") throw new Error("SDK response was unavailable");
+          expect(response.value.http_status_code).toBe(200);
+          expect(response.value.response_headers["x-raw-input-fixture"]).toBe("response-available");
+          expect(response.value.query_id).toBe(originalQueryId);
+          expect(failedAfterResponse).toBe(true);
+          // This must be IncomingMessage truncation during iteration, rather
+          // than the adapter's separate nonempty-response check after EOF.
+          expect(caught).toEqual(
+            expect.objectContaining({ code: "ECONNRESET", message: "aborted" }),
+          );
+          process.stdout.write(
+            `${JSON.stringify({
+              qualification: "post-response-input-body-failure",
+              realSdkResponses: responses.length,
+              httpStatus: response.value.http_status_code,
+              fixtureHeaderObserved:
+                response.value.response_headers["x-raw-input-fixture"] === "response-available",
+              failureAfterSdkResponse: failedAfterResponse,
+              genericFailure: caught instanceof Error && !(caught instanceof ClickHouseError),
+              drainFailureConfirmed:
+                caught instanceof Error &&
+                caught.message === "aborted" &&
+                Reflect.get(caught, "code") === "ECONNRESET",
+            })}\n`,
+          );
+        }
+        expect(caught instanceof Error).toBe(true);
+        expect(caught instanceof ClickHouseError).toBe(false);
+        expect(caught instanceof Error && caught.message.includes("private")).toBe(false);
+        expect(
+          continuation instanceof Error && continuation.message.includes("unknown request outcome"),
+        ).toBe(true);
+        expect(dispatched).toBe(1);
+        expect(typeof originalQueryId).toBe("string");
+        const rows = await context.database.execute(
+          sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        );
+        expect(rows).toEqual([
+          {
+            intent_id: intentId,
+            query_id: originalQueryId,
+            query_terminal: false,
+            quiescent: false,
+          },
+        ]);
+        for (const replacement of [intentId, randomUUID()])
+          await expect(
+            withAnalyticsQueryOwner(
+              context.database,
+              context.clickhouse,
+              { resourceId, intentId: replacement },
+              async () => undefined,
+            ),
+          ).rejects.toThrow("verified recovery");
+      } finally {
+        nativeExec?.mockRestore();
+      }
     },
   );
 });
