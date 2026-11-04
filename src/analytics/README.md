@@ -70,6 +70,40 @@ The [ownership test](analytics-work-store.integration.test.ts) covers handoff at
 an unchanged cursor. PostgreSQL documents the underlying
 [row-lock semantics](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS).
 
+The qualified [query owner](analytics-query-owner.ts) records an exact request
+identity before dispatch. A fully consumed response establishes terminal
+execution evidence in that live executor; the next exact-predecessor
+registration combines its persistence with registration of the successor.
+The final request is flushed separately before intent clearance or quiescence,
+including on known-terminal callback failure. Thus request-related PostgreSQL
+exchanges are N+1 for N > 0 requests, excluding lifecycle statements; zero
+requests create no synthetic request proof. Between those
+boundaries the durable row conservatively remains nonterminal. Losing the
+executor's local evidence requires verified external recovery; a free lock,
+missing process or elapsed time never authorizes takeover. The
+[owner engine cases](analytics-query-owner.integration.test.ts) cover lost
+registration/final responses, late writes and actual executor death.
+
+Processed receipt replay uses the coordinator's required completion verifier:
+fresh frontier coverage, the full exact receipt and the final transport-active
+check precede its returned intent identity. That identity names the proof's
+subject; it is not an independent proof or recovery token. Successful finalization
+may retire only that exact matching completed intent through guarded
+[UPDATE/RETURNING](https://www.postgresql.org/docs/current/sql-update.html).
+
+| Admitted owner state | Verified replay of A |
+| --- | --- |
+| Terminal/quiescent, pending A | Retire only A; the next delivery can proceed. |
+| Terminal/quiescent, pending B | Preserve B and its original ingestion time. |
+| Terminal/quiescent, no pending intent | Preserve time and frontier; create no intent. |
+| Unknown or nonquiescent | Reject before verification; require verified recovery. |
+
+Missing proof, a void verifier, transport failure or unconfirmed retirement
+cannot publish success. A lost retirement response keeps the owner blocked even
+if PostgreSQL committed the clear. These distinctions are exercised by the
+[coordinator cases](analytics-delivery.integration.test.ts) and the
+[completed-A/pending-B sink case](../metric-stream/clickhouse-sink-recovery.integration.test.ts).
+
 Receipt checks cover missing journal payloads while discovery receipts remain.
 Loss of both receipts and payloads is part of the separate storage/restore
 qualification gate. Per-effect receipts add metadata rows and write overhead

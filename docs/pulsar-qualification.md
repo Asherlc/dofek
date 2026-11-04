@@ -561,3 +561,89 @@ receive no benefit from the earlier page amortization; the new input path adds
 no request. Broker receive/ACK and concurrent streams are excluded. Earlier
 elapsed baselines used different PostgreSQL resources, so this is request-count
 attribution, not a controlled latency-improvement claim.
+
+## 2026-11-04: Exact successor ownership and cooperative receipt completion
+
+Reviewed `7e15af803` reduces request-related PostgreSQL exchanges from 2N to N+1
+for N > 0 within one query-owner lifetime. Exact predecessor identity and locally known
+terminal execution authorize successor registration; every ClickHouse query and
+data-proof observation remains. Final terminal persistence precedes outer owner
+success/quiescence on both callback success and known-terminal failure. This
+intentionally leaves a longer conservative nonterminal window after executor
+loss, requiring the approved positive external recovery proof. Actual killed
+executors, late writes, lost registration/final proof and closing were covered.
+The [owner contract](../src/analytics/README.md) documents that boundary.
+
+Qualification also found a pre-existing cooperative progress bug: A's receipt
+and frontier could commit before a final transport check failed. Receipt replay
+then verified A but retained its pending intent, blocking B. The desired-B-success
+regression failed on both old and candidate source. Reviewed fix `aa6a05e44`
+tightens the existing receipt callback into a required canonical completion
+verifier and retires only the exact matching completed intent after fresh proof
+and terminal finalization. Unrelated B and its ingestion time survive A replay;
+unknown owners remain blocked. No new recovery mode, state store or raw-data
+mutation capability was added.
+
+One final invocation passed 146 real-engine cases across seven files in 77.07
+seconds, including thirty coordinator and forty-five owner cases. Thirty-two
+focused units, types, scoped Biome and diff checks passed. Independent review
+approved the named fix, with all twenty-one evidence hashes matching. Earlier
+fixture mistakes and one redundant failed attempt are retained, not counted as
+independent passes. No full repository or native-broker result follows.
+
+A post-review forty-delivery measurement completed in 11,996 ms with forty rows
+visible, unchanged 1,400 ClickHouse requests and 2,319 PostgreSQL client calls,
+versus 3,679 PostgreSQL calls in the preceding same-budget observation. That is
+1,360 fewer measured client calls. One elapsed pair is not sustained-throughput
+or latency-regression proof. The original 350-message gate still reached its
+unchanged 30-second deadline: 3,369 observed HTTP requests, zero HTTP errors,
+476 ms cooperative cleanup and no post-drop failure or resource fatal. The warm
+ClickHouse/PostgreSQL processes and caps were unchanged. Do not retry to green
+or increase its deadline.
+
+The bounded logged subset for that failed run includes 1,110 manifest SELECTs,
+806 journal SELECTs and 320 reference SELECTs, each with maxima of 32, 30 and
+38 ms respectively. This confirms continuing serial metadata-request cost;
+the aggregation includes fixture setup/cleanup and excludes unlogged requests,
+PostgreSQL and client time. It does not establish a completed-delivery count or
+prove every millisecond's owner. Performance, native ACK, physical enforcement,
+erasure, CDC and archive gates remain open; all production holds remain.
+
+## 2026-11-04: Shared-ledger erasure conflict blocks cutover
+
+Released-source qualification identifies a conflict in the proposed shared
+legacy/live/history topic layout. A durable subscription requiring account B's
+unprocessed records can indefinitely retain a ledger also containing erased A.
+Managed-ledger trimming is gated by the slowest required cursor before retention
+is applied. Native offload deletion removes whole data/index objects, without
+an account predicate. Thus this required failure case cannot preserve B while
+certifying A's physical removal within the existing day-29/day-30 policy. See
+[Pulsar 5.0.1 trimming](https://github.com/apache/pulsar/blob/v5.0.1/managed-ledger/src/main/java/org/apache/bookkeeper/mledger/impl/ManagedLedgerImpl.java),
+[the released offloader](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java)
+and [the application erasure policy](account-erasure-runbook.md).
+
+Pulsar 5.0.1 pins BookKeeper 4.18.2 in its
+[version catalog](https://github.com/apache/pulsar/blob/v5.0.1/gradle/libs.versions.toml).
+Its published [4.18.2 sources](https://repo.maven.apache.org/maven2/org/apache/bookkeeper/bookkeeper-server/4.18.2/bookkeeper-server-4.18.2-sources.jar)
+distinguish metadata deletion from journal/entry-log byte reclamation. Size-based
+rotation, retained backup journals, active entry-log exclusion and compaction
+eligibility also prevent treating default scheduling intervals as a low-write
+physical-expiry bound. Broker timed ledger sealing is a different mechanism;
+it does not prove those bookie files disappeared. Effective runtime settings
+and every retained generation still need executable qualification.
+
+Healthy finite-drain cleanup is unqualified, not proved impossible. The
+indefinitely retained required-subscription counterexample is the specific
+blocker; it is not a claim that every Pulsar layout is unsuitable. Source review
+alone does not certify an actual running distribution's deletion behavior.
+Native fixtures must separately inspect mixed-account backlog, metadata-gone/
+bytes-present behavior, low-write offload/cleanup and quarantine/matched restore.
+Local files, native R2 data/index/orphan uploads, attributable metadata and new
+component backups all require proof. TTL, ledger-list absence or a successful
+trigger-GC response alone cannot certify completion.
+
+Q10 requests approval to assess account-isolated Pulsar streams with bounded
+native cleanup, retaining the existing server and erasure deadline. No alternative
+layout commands or code have been executed, no policy weakened and no production change
+made. Cutover remains blocked. Independent transport-neutral analytics
+correctness work may continue while that layout decision is pending.
