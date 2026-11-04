@@ -1,0 +1,36 @@
+{
+  "sourceBase": "c616f5790ae7a5413dbfda43bde4ee7e76617e12",
+  "recordedFromObservedToolResults": true,
+  "records": [
+    {
+      "command": "rtk pnpm tsx .superpowers/sdd/2026-11-03-bounded-analytics/run-database-tests.ts src/analytics/analytics-delivery.integration.test.ts src/analytics/analytics-query-owner.integration.test.ts src/metric-stream/clickhouse-sink-recovery.integration.test.ts src/analytics/effect-journal.integration.test.ts src/analytics/analytics-work-store.integration.test.ts src/db/clickhouse.integration.test.ts src/metric-stream/source-effects.integration.test.ts --retry 0 --bail 1",
+      "log": "cooperative-intent-combined-verified.log",
+      "exitCode": 0,
+      "result": "7 files, 146 tests passed, 77.07s"
+    },
+    {
+      "command": "rtk pnpm exec vitest run --project unit src/db/clickhouse.test.ts src/metric-stream/clickhouse-sink.test.ts --retry 0 --bail 1",
+      "log": "cooperative-intent-unit.log",
+      "exitCode": 0,
+      "result": "2 files, 32 tests passed, 483ms"
+    },
+    {
+      "command": "rtk pnpm typecheck",
+      "log": "cooperative-intent-typecheck-verified.log",
+      "exitCode": 0,
+      "result": "tsc --noEmit"
+    },
+    {
+      "command": "rtk pnpm exec biome check src/analytics/analytics-delivery.ts src/analytics/analytics-query-owner.ts src/analytics/analytics-query-owner.integration.test.ts src/analytics/analytics-delivery.integration.test.ts src/analytics/analytics-query-owner-test-helpers.ts src/metric-stream/clickhouse-sink-recovery.integration.test.ts",
+      "log": "cooperative-intent-biome-verified.log",
+      "exitCode": 0,
+      "result": "6 files, no fixes or warnings"
+    },
+    {
+      "command": "rtk git diff --check",
+      "log": "cooperative-intent-diff-check.log",
+      "exitCode": 0,
+      "result": "empty output"
+    }
+  ]
+}
