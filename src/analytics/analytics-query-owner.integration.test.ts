@@ -1,15 +1,19 @@
+import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { sql } from "drizzle-orm";
 import type { PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { Database } from "../db/index.ts";
+import { coordinateAnalyticsDelivery } from "./analytics-delivery.ts";
 import {
   type AnalyticsReceiptQueryOwner,
   withAnalyticsQueryOwner,
   withAnalyticsReceiptQueryOwner,
 } from "./analytics-query-owner.ts";
-import { createAnalyticsTestContext } from "./test-helpers.ts";
+import { loadAnalyticsStreamState } from "./analytics-work-store.ts";
+import { verifyAnalyticsDeliveryReceipt } from "./effect-journal.ts";
+import { analyticsPosition, createAnalyticsTestContext } from "./test-helpers.ts";
 
 describe("analytics query ownership", () => {
   let context: Awaited<ReturnType<typeof createAnalyticsTestContext>>;
@@ -25,6 +29,7 @@ describe("analytics query ownership", () => {
       text: string,
       dispatch: () => Promise<unknown>,
       session: PoolClient,
+      values: unknown[],
     ) => Promise<unknown>,
   ): Database {
     const pool = new Proxy(context.database.$client, {
@@ -42,6 +47,7 @@ describe("analytics query ownership", () => {
                       args[0],
                       async () => Reflect.apply(client.query, client, args),
                       client,
+                      Array.isArray(args[1]) ? args[1] : [],
                     );
                   };
                 const value = Reflect.get(client, property, client);
@@ -62,11 +68,66 @@ describe("analytics query ownership", () => {
     });
   }
 
-  test("oneOwnedRequestUsesTwoActualPostgresExchanges", async () => {
-    let counting = false;
-    const exchanges: string[] = [];
+  test.each([0, 1, 3])("serialRequestsUseNPlusOneExchanges: %s", async (count) => {
+    const resourceId = randomUUID(),
+      intentId = randomUUID();
+    for (const mode of ["write", "receipt"] as const) {
+      const exchanges: string[] = [],
+        ids: string[] = [];
+      const database = databaseAtSessionBoundary(async (text, dispatch) => {
+        if (/SET query_(id|terminal)=/.test(text)) exchanges.push(text);
+        return dispatch();
+      });
+      const operation = async (owner: AnalyticsReceiptQueryOwner) => {
+        for (let index = 0; index < count; index++) {
+          const result = await owner.client.query<{ value: number }>({
+            query: "SELECT 7 AS value",
+            format: "JSONEachRow",
+          });
+          expect(await result.json()).toEqual([{ value: 7 }]);
+          const rows = await context.database.execute<{
+            query_id: string;
+            query_terminal: boolean;
+            quiescent: boolean;
+          }>(
+            sql`SELECT query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          );
+          expect(rows[0]).toEqual({
+            query_id: expect.any(String),
+            query_terminal: false,
+            quiescent: false,
+          });
+          ids.push(rows[0]?.query_id ?? "");
+        }
+      };
+      if (mode === "write")
+        await withAnalyticsQueryOwner(
+          database,
+          context.clickhouse,
+          { resourceId, intentId },
+          operation,
+        );
+      else
+        await withAnalyticsReceiptQueryOwner(
+          database,
+          context.clickhouse,
+          { resourceId },
+          operation,
+        );
+      expect(exchanges).toHaveLength(count === 0 ? 0 : count + 1);
+      expect(new Set(ids).size).toBe(count);
+      expect(
+        await context.database.execute(
+          sql`SELECT query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        ),
+      ).toEqual([{ query_terminal: true, quiescent: true }]);
+    }
+  });
+
+  test("threeRequestsUseFourActualRequestExchanges", async () => {
+    let exchanges = 0;
     const database = databaseAtSessionBoundary(async (text, dispatch) => {
-      if (counting) exchanges.push(text);
+      if (/SET query_(id|terminal)=/.test(text)) exchanges++;
       return dispatch();
     });
     await withAnalyticsQueryOwner(
@@ -74,15 +135,10 @@ describe("analytics query ownership", () => {
       context.clickhouse,
       { resourceId: randomUUID(), intentId: randomUUID() },
       async (owner) => {
-        counting = true;
-        try {
-          await owner.client.command({ query: "SELECT 1" });
-        } finally {
-          counting = false;
-        }
+        for (let index = 0; index < 3; index++) await owner.client.command({ query: "SELECT 1" });
       },
     );
-    expect(exchanges).toHaveLength(2);
+    expect(exchanges).toBe(4);
   });
 
   test("lostCommittedRegistrationResponseBlocksContinuationAndCallbackSuccess", async () => {
@@ -149,6 +205,617 @@ describe("analytics query ownership", () => {
       ),
     ).rejects.toThrow("verified recovery");
   });
+
+  test.each(["first", "successor"])(
+    "registrationFailureIsLatchedBeforeAwait: %s",
+    async (boundary) => {
+      for (const committed of [false, true]) {
+        const resourceId = randomUUID(),
+          intentId = randomUUID();
+        let registrations = 0,
+          dispatched = 0;
+        let predecessor: unknown = null,
+          registered: unknown = null;
+        const database = databaseAtSessionBoundary(async (text, dispatch) => {
+          if (/SET query_id=/.test(text) && ++registrations === (boundary === "first" ? 1 : 2)) {
+            if (committed) {
+              await dispatch();
+              registered = (
+                await context.database.execute(
+                  sql`SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+                )
+              )[0]?.query_id;
+            }
+            throw new Error("registration response unavailable");
+          }
+          return dispatch();
+        });
+        const client = {
+          ...context.clickhouse,
+          command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+            dispatched++;
+            return context.clickhouse.command(options);
+          },
+        };
+        await expect(
+          withAnalyticsQueryOwner(database, client, { resourceId, intentId }, async (owner) => {
+            if (boundary === "successor") {
+              await owner.client.command({ query: "SELECT 1" });
+              predecessor = (
+                await context.database.execute(
+                  sql`SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+                )
+              )[0]?.query_id;
+            }
+            await expect(owner.client.command({ query: "SELECT 2" })).rejects.toThrow(
+              "registration response unavailable",
+            );
+            await expect(owner.client.command({ query: "SELECT 3" })).rejects.toThrow(
+              "unknown request outcome",
+            );
+          }),
+        ).rejects.toThrow("unknown request outcome");
+        expect(dispatched).toBe(boundary === "first" ? 0 : 1);
+        const durable = (
+          await context.database.execute(
+            sql`SELECT query_id,query_terminal FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          )
+        )[0];
+        expect(durable).toEqual({
+          query_id: committed ? registered : predecessor,
+          query_terminal: !committed && boundary === "first",
+        });
+        if (committed) {
+          expect(registered).toEqual(expect.any(String));
+          expect(registered).not.toBe(predecessor);
+        }
+        expect(
+          await context.database.execute(
+            sql`SELECT intent_id,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          ),
+        ).toEqual([{ intent_id: intentId, quiescent: false }]);
+        for (const replay of [intentId, randomUUID()])
+          await expect(
+            withAnalyticsQueryOwner(
+              context.database,
+              context.clickhouse,
+              { resourceId, intentId: replay },
+              async () => undefined,
+            ),
+          ).rejects.toThrow("verified recovery");
+      }
+    },
+  );
+
+  test.each(["first", "successor"])(
+    "malformedActualRegistrationProofBlocksDispatch: %s",
+    async (boundary) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID();
+      let registrations = 0,
+        dispatched = 0;
+      const database = databaseAtSessionBoundary(async (text, dispatch, session, values) => {
+        if (/SET query_id=/.test(text) && ++registrations === (boundary === "first" ? 1 : 2)) {
+          // Execute the original registration with an unexpected real RETURNING
+          // column; the database result is neither mocked nor reconstructed.
+          return session.query(
+            text.replace("RETURNING owner_id,", "RETURNING owner_id AS unexpected_owner,"),
+            values,
+          );
+        }
+        return dispatch();
+      });
+      const client = {
+        ...context.clickhouse,
+        command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+          dispatched++;
+          return context.clickhouse.command(options);
+        },
+      };
+      await expect(
+        withAnalyticsQueryOwner(database, client, { resourceId, intentId }, async (owner) => {
+          if (boundary === "successor") await owner.client.command({ query: "SELECT 1" });
+          await expect(owner.client.command({ query: "SELECT 2" })).rejects.toThrow("registration");
+          await expect(owner.client.command({ query: "SELECT 3" })).rejects.toThrow(
+            "unknown request outcome",
+          );
+        }),
+      ).rejects.toThrow("unknown request outcome");
+      expect(dispatched).toBe(boundary === "first" ? 0 : 1);
+      expect(
+        await context.database.execute(
+          sql`SELECT intent_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        ),
+      ).toEqual([{ intent_id: intentId, query_terminal: false, quiescent: false }]);
+    },
+  );
+
+  test.each(["successor", "final"])(
+    "receiptRetainsExactAdmittedIntentAtDeferredBoundary: %s",
+    async (boundary) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID(),
+        changedIntent = randomUUID();
+      await expect(
+        withAnalyticsQueryOwner(
+          context.database,
+          context.clickhouse,
+          { resourceId, intentId },
+          async () => {
+            throw new Error("leave pending");
+          },
+        ),
+      ).rejects.toThrow("leave pending");
+      await expect(
+        withAnalyticsReceiptQueryOwner(
+          context.database,
+          context.clickhouse,
+          { resourceId },
+          async (owner) => {
+            await owner.client.query({ query: "SELECT 1", format: "JSONEachRow" });
+            await context.database.execute(
+              sql`UPDATE fitness.analytics_query_owner SET intent_id=${changedIntent} WHERE resource_id=${resourceId}`,
+            );
+            if (boundary === "successor")
+              await owner.client.query({ query: "SELECT 2", format: "JSONEachRow" });
+          },
+        ),
+      ).rejects.toThrow(boundary === "successor" ? "registration" : "completion");
+      expect(
+        await context.database.execute(
+          sql`SELECT intent_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        ),
+      ).toEqual([{ intent_id: changedIntent, query_terminal: false, quiescent: false }]);
+    },
+  );
+
+  test.each(["first", "successor", "final"])(
+    "exactRowMutationsBlockDispatchOrFinalSuccess: %s",
+    async (boundary) => {
+      for (const mutation of [
+        "resource_id",
+        "owner_id",
+        "intent_id",
+        "query_id",
+        "query_terminal",
+        "quiescent",
+      ] as const) {
+        const resourceId = randomUUID(),
+          intentId = randomUUID();
+        let dispatched = 0;
+        const client = {
+          ...context.clickhouse,
+          command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+            dispatched++;
+            return context.clickhouse.command(options);
+          },
+        };
+        const mutate = async () => {
+          const value =
+            mutation === "query_terminal"
+              ? boundary !== "first"
+              : mutation === "quiescent"
+                ? true
+                : randomUUID();
+          await context.database.execute(
+            sql`UPDATE fitness.analytics_query_owner SET ${sql.identifier(mutation)}=${value} WHERE resource_id=${resourceId}`,
+          );
+        };
+        await expect(
+          withAnalyticsQueryOwner(
+            context.database,
+            client,
+            { resourceId, intentId },
+            async (owner) => {
+              if (boundary !== "first") await owner.client.command({ query: "SELECT 1" });
+              await mutate();
+              if (boundary !== "final") await owner.client.command({ query: "SELECT 2" });
+            },
+          ),
+        ).rejects.toThrow(boundary === "final" ? "completion" : "registration");
+        expect(dispatched).toBe(boundary === "first" ? 0 : 1);
+      }
+    },
+  );
+
+  test.each(["success", "server rejection"])(
+    "failedFinalProofNeverReleasesEvenAfterCommit: %s",
+    async (response) => {
+      for (const failure of ["lost", "zero row", "malformed"] as const) {
+        const resourceId = randomUUID(),
+          intentId = randomUUID();
+        let completed = false;
+        const database = databaseAtSessionBoundary(async (text, dispatch, session, values) => {
+          if (/SET query_terminal=true/.test(text)) {
+            if (failure === "zero row")
+              await context.database.execute(
+                sql`UPDATE fitness.analytics_query_owner SET query_id=${randomUUID()} WHERE resource_id=${resourceId}`,
+              );
+            // A malformed real RETURNING row is obtained by renaming the column in
+            // this real statement, never by fabricating a result object.
+            if (failure === "malformed")
+              return session.query(
+                text.replace("RETURNING owner_id,", "RETURNING owner_id AS unexpected_owner,"),
+                values,
+              );
+            const result = await dispatch();
+            completed = true;
+            if (failure === "lost") throw new Error("final proof response lost");
+            return result;
+          }
+          return dispatch();
+        });
+        await expect(
+          withAnalyticsQueryOwner(
+            database,
+            context.clickhouse,
+            { resourceId, intentId },
+            async (owner) => {
+              await owner.client.command({
+                query:
+                  response === "success"
+                    ? "SELECT 1"
+                    : "SELECT throwIf(1,'final fixture rejection')",
+              });
+            },
+          ),
+        ).rejects.toThrow(
+          response === "success" ? /completion|final proof/ : "final fixture rejection",
+        );
+        if (failure === "lost") expect(completed).toBe(true);
+        expect(
+          await context.database.execute(
+            sql`SELECT intent_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          ),
+        ).toEqual([
+          { intent_id: intentId, query_terminal: failure !== "zero row", quiescent: false },
+        ]);
+        for (const replay of [intentId, randomUUID()])
+          await expect(
+            withAnalyticsQueryOwner(
+              context.database,
+              context.clickhouse,
+              { resourceId, intentId: replay },
+              async () => undefined,
+            ),
+          ).rejects.toThrow("verified recovery");
+      }
+    },
+  );
+
+  test("frontierCommitsBeforeFailedFinalFlushButOuterSuccessAndReceiptReplayRemainBlocked", async () => {
+    const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 1n);
+    let observed = false;
+    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      if (/SET query_terminal=true/.test(text)) {
+        expect((await loadAnalyticsStreamState(context.database, position))?.processed).toEqual(
+          position,
+        );
+        await verifyAnalyticsDeliveryReceipt(context.clickhouse, position);
+        observed = true;
+        await dispatch();
+        throw new Error("frontier committed; final proof lost");
+      }
+      return dispatch();
+    });
+    const input = {
+      position,
+      assertActive: async () => undefined,
+      prepare: async function* () {
+        yield [];
+      },
+      applyControl: async () => undefined,
+      apply: async () => undefined,
+      acknowledgeEffects: async () => undefined,
+    };
+    await expect(
+      coordinateAnalyticsDelivery({ database, clickhouse: context.clickhouse }, input),
+    ).rejects.toThrow("final proof lost");
+    expect(observed).toBe(true);
+    expect((await loadAnalyticsStreamState(context.database, position))?.processed).toEqual(
+      position,
+    );
+    expect(
+      await context.database.execute(
+        sql`SELECT intent_id IS NOT NULL AS pending,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`,
+      ),
+    ).toEqual([{ pending: true, query_terminal: true, quiescent: false }]);
+    await expect(
+      coordinateAnalyticsDelivery(
+        { database: context.database, clickhouse: context.clickhouse },
+        input,
+      ),
+    ).rejects.toThrow("verified recovery");
+  });
+
+  test.each(["consumed response", "successor registered"])(
+    "executorLossRequiresExternalProof: %s",
+    async (boundary) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID();
+      let registrations = 0,
+        dispatched = 0,
+        firstId: unknown;
+      const database = databaseAtSessionBoundary(async (text, dispatch, session) => {
+        const result = await dispatch();
+        if (
+          /SET query_id=/.test(text) &&
+          ++registrations === 2 &&
+          boundary === "successor registered"
+        ) {
+          const lost = new Promise<void>((resolve) => session.once("error", () => resolve()));
+          await context.database.execute(
+            sql`SELECT pg_terminate_backend(backend_pid) FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          );
+          await lost;
+        }
+        return result;
+      });
+      const client = {
+        ...context.clickhouse,
+        command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+          dispatched++;
+          return context.clickhouse.command(options);
+        },
+      };
+      await expect(
+        withAnalyticsQueryOwner(database, client, { resourceId, intentId }, async (owner) => {
+          await owner.client.command({ query: "SELECT 1" });
+          const rows = await context.database.execute(
+            sql`SELECT query_id,query_terminal FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          );
+          firstId = rows[0]?.query_id;
+          expect(rows[0]?.query_terminal).toBe(false);
+          if (boundary === "consumed response") {
+            await context.database.execute(
+              sql`SELECT pg_terminate_backend(backend_pid) FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+            );
+            await vi.waitFor(async () => {
+              await expect(owner.assertActive()).rejects.toThrow();
+            });
+          } else await owner.client.command({ query: "SELECT 2" });
+        }),
+      ).rejects.toThrow();
+      expect(dispatched).toBe(1);
+      const rows = await context.database.execute(
+        sql`SELECT query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+      );
+      expect(rows[0]).toEqual({
+        query_id: expect.any(String),
+        query_terminal: false,
+        quiescent: false,
+      });
+      if (boundary === "consumed response") expect(rows[0]?.query_id).toBe(firstId);
+      else expect(rows[0]?.query_id).not.toBe(firstId);
+      for (const replay of [intentId, randomUUID()])
+        await expect(
+          withAnalyticsQueryOwner(
+            context.database,
+            context.clickhouse,
+            { resourceId, intentId: replay },
+            async () => undefined,
+          ),
+        ).rejects.toThrow("verified recovery");
+    },
+  );
+
+  test.each(["consumed response", "successor registered"])(
+    "killedExecutorCannotRecoverItsLocalTerminalEvidence: %s",
+    async (boundary) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID();
+      const child = fork(
+        new URL("./analytics-query-owner-executor-test-helpers.ts", import.meta.url),
+        [],
+        { execArgv: ["--import", "tsx"], stdio: ["ignore", "pipe", "pipe", "ipc"] },
+      );
+      let stderr = "";
+      child.stderr?.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+        (resolve) => child.once("exit", (code, signal) => resolve({ code, signal })),
+      );
+      const reached = new Promise<string>((resolve, reject) => {
+        child.once("message", (message) => {
+          if (
+            typeof message === "object" &&
+            message !== null &&
+            "queryId" in message &&
+            typeof message.queryId === "string"
+          )
+            resolve(message.queryId);
+          else reject(new Error("Executor fixture returned an invalid boundary"));
+        });
+        child.once("error", reject);
+        child.once("exit", () => reject(new Error(`Executor exited before boundary: ${stderr}`)));
+      });
+      child.send({ connectionString: context.connectionString, resourceId, intentId, boundary });
+      try {
+        const queryId = await reached;
+        expect(
+          await context.database.execute(
+            sql`SELECT query_id,query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          ),
+        ).toEqual([
+          { query_id: queryId, query_terminal: false, quiescent: false, intent_id: intentId },
+        ]);
+        expect(child.kill("SIGKILL")).toBe(true);
+        expect(await exited).toEqual({ code: null, signal: "SIGKILL" });
+        for (const replay of [intentId, randomUUID()])
+          await expect(
+            withAnalyticsQueryOwner(
+              context.database,
+              context.clickhouse,
+              { resourceId, intentId: replay },
+              async () => undefined,
+            ),
+          ).rejects.toThrow("verified recovery");
+        expect(
+          await context.database.execute(
+            sql`SELECT query_id,query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+          ),
+        ).toEqual([
+          { query_id: queryId, query_terminal: false, quiescent: false, intent_id: intentId },
+        ]);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        await exited;
+      }
+    },
+  );
+
+  test("closingNeverReopensAdmissionAndUnawaitedRequestCannotRelease", async () => {
+    const resourceId = randomUUID(),
+      intentId = randomUUID();
+    let escaped: AnalyticsReceiptQueryOwner | undefined;
+    await withAnalyticsQueryOwner(
+      context.database,
+      context.clickhouse,
+      { resourceId, intentId },
+      async (owner) => {
+        escaped = owner;
+        await owner.client.command({ query: "SELECT 1" });
+      },
+    );
+    if (!escaped) throw new Error("Missing escaped owner");
+    await expect(
+      escaped.client.query({ query: "SELECT 2", format: "JSONEachRow" }),
+    ).rejects.toThrow("closed");
+    const unawaitedResource = randomUUID();
+    let pending: Promise<unknown> | undefined;
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId: unawaitedResource, intentId },
+        async (owner) => {
+          pending = owner.client.command({
+            query: "SELECT sleepEachRow(0.1) FROM numbers(30) SETTINGS max_block_size=1",
+          });
+          await vi.waitFor(async () => {
+            const rows = await context.database.execute<{ query_id: string }>(
+              sql`SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${unawaitedResource}`,
+            );
+            const running = await context.clickhouse.query<{ count: string }>({
+              query:
+                "SELECT toString(count()) AS count FROM system.processes WHERE query_id={id:String}",
+              query_params: { id: rows[0]?.query_id ?? "" },
+              format: "JSONEachRow",
+            });
+            expect(await running.json()).toEqual([{ count: "1" }]);
+          });
+        },
+      ),
+    ).rejects.toThrow("before its request completed");
+    await pending;
+    expect(
+      await context.database.execute(
+        sql`SELECT query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id=${unawaitedResource}`,
+      ),
+    ).toEqual([{ query_terminal: false, quiescent: false, intent_id: intentId }]);
+  });
+
+  test("finalFlushKeepsEscapedCallbacksClosed", async () => {
+    let escaped: AnalyticsReceiptQueryOwner | undefined;
+    let flushing = false;
+    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      if (/SET query_terminal=true/.test(text)) {
+        flushing = true;
+        if (!escaped) throw new Error("Missing owner at final flush");
+        await expect(
+          escaped.client.query({ query: "SELECT 2", format: "JSONEachRow" }),
+        ).rejects.toThrow("closed");
+        await expect(escaped.assertActive()).rejects.toThrow("closed");
+      }
+      return dispatch();
+    });
+    await withAnalyticsQueryOwner(
+      database,
+      context.clickhouse,
+      { resourceId: randomUUID(), intentId: randomUUID() },
+      async (owner) => {
+        escaped = owner;
+        await owner.client.command({ query: "SELECT 1" });
+      },
+    );
+    expect(flushing).toBe(true);
+  });
+
+  test("zeroRequestFailuresRetainIntentWithoutSyntheticRequestProof", async () => {
+    const resourceId = randomUUID(),
+      intentId = randomUUID();
+    let requestExchanges = 0;
+    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      if (/SET query_(id|terminal)=/.test(text)) requestExchanges++;
+      return dispatch();
+    });
+    let ingestedAt = "";
+    await expect(
+      withAnalyticsQueryOwner(
+        database,
+        context.clickhouse,
+        { resourceId, intentId },
+        async (owner) => {
+          ingestedAt = owner.ingestedAt;
+          throw new Error("no-query write failure");
+        },
+      ),
+    ).rejects.toThrow("no-query write failure");
+    await expect(
+      withAnalyticsReceiptQueryOwner(database, context.clickhouse, { resourceId }, async () => {
+        throw new Error("no-query receipt failure");
+      }),
+    ).rejects.toThrow("no-query receipt failure");
+    expect(requestExchanges).toBe(0);
+    expect(
+      await context.database.execute(
+        sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+      ),
+    ).toEqual([{ intent_id: intentId, query_id: null, query_terminal: true, quiescent: true }]);
+    await withAnalyticsQueryOwner(
+      database,
+      context.clickhouse,
+      { resourceId, intentId },
+      async (owner) => {
+        expect(owner.ingestedAt).toBe(ingestedAt);
+      },
+    );
+  });
+
+  test.each([false, true])(
+    "caughtDefinitiveErrorFinalizesWithoutAnotherRequest: %s",
+    async (applicationFailure) => {
+      const resourceId = randomUUID(),
+        intentId = randomUUID();
+      const result = withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId, intentId },
+        async (owner) => {
+          await expect(
+            owner.client.command({ query: "SELECT throwIf(1,'caught final rejection')" }),
+          ).rejects.toThrow("caught final rejection");
+          expect(
+            await context.database.execute(
+              sql`SELECT query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+            ),
+          ).toEqual([{ query_terminal: false, quiescent: false }]);
+          if (applicationFailure) throw new Error("application failure");
+          return 7;
+        },
+      );
+      if (applicationFailure) await expect(result).rejects.toThrow("application failure");
+      else await expect(result).resolves.toBe(7);
+      expect(
+        await context.database.execute(
+          sql`SELECT query_terminal,quiescent,intent_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        ),
+      ).toEqual([
+        { query_terminal: true, quiescent: true, intent_id: applicationFailure ? intentId : null },
+      ]);
+    },
+  );
 
   test.each(["write", "receipt"])(
     "registrationRejectsChangedAdmittedIntentFor%sOwnerBeforeDispatch",
@@ -232,7 +899,7 @@ describe("analytics query ownership", () => {
             });
           },
         ),
-      ).rejects.toThrow("completion");
+      ).rejects.toThrow(response === "success" ? "completion" : "terminal proof boundary");
       expect(firstQueryId).toEqual(expect.any(String));
       const state = await context.database.execute(
         sql`SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
@@ -499,7 +1166,7 @@ describe("analytics query ownership", () => {
     ).rejects.toThrow("verified recovery");
   });
 
-  test.each(["second request", "callback return"])(
+  test.each(["second request", "callback return", "successor"])(
     "caughtUnknownOutcomeBlocks%sAndRetainsFirstQueryWhileLateInsertCompletes",
     async (continuation) => {
       const resourceId = randomUUID();
@@ -514,6 +1181,7 @@ describe("analytics query ownership", () => {
       let firstQueryId = "";
       let caught: unknown;
       let secondCaught: unknown;
+      let predecessorId: string | undefined;
       const disconnected = {
         ...context.clickhouse,
         command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
@@ -545,6 +1213,10 @@ describe("analytics query ownership", () => {
           disconnected,
           { resourceId, intentId },
           async (owner) => {
+            if (continuation === "successor") {
+              await owner.client.command({ query: "SELECT 1" });
+              predecessorId = dispatched[0];
+            }
             try {
               await owner.client.command({
                 query: `INSERT INTO ${table} SELECT sleepEachRow(0.1) FROM numbers(30) SETTINGS max_block_size=1`,
@@ -552,7 +1224,7 @@ describe("analytics query ownership", () => {
             } catch (error) {
               caught = error;
             }
-            if (continuation === "second request") {
+            if (continuation !== "callback return") {
               try {
                 await owner.client.command({ query: "SELECT 1" });
               } catch (error) {
@@ -566,13 +1238,13 @@ describe("analytics query ownership", () => {
           (error: unknown) => ({ error }),
         );
         expect(caught).toBe(transportError);
-        if (continuation === "second request")
+        if (continuation !== "callback return")
           expect(secondCaught).toEqual(
             expect.objectContaining({
               message: expect.stringContaining("unknown request outcome"),
             }),
           );
-        expect(dispatched).toEqual([firstQueryId]);
+        expect(dispatched).toEqual(predecessorId ? [predecessorId, firstQueryId] : [firstQueryId]);
         expect(outcome).toEqual({
           error: expect.objectContaining({
             message: expect.stringContaining("unknown request outcome"),

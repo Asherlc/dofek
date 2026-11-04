@@ -62,6 +62,10 @@ async function withOwnedQueries<T>(
   let admitted = false;
   let closed = false;
   let queryTerminal = true;
+  // Terminal evidence belongs to this live executor only. Request promises may
+  // resolve before it is persisted; a crash still requires external Q7 proof.
+  let acknowledgedQueryId: string | null = null;
+  let returnedWithRequest = false;
   let admittedIntentId: string | null = null;
   let inFlight: Promise<unknown> | null = null;
   let outcome: { value: T } | { error: unknown } | undefined;
@@ -72,13 +76,23 @@ async function withOwnedQueries<T>(
   };
   session.on("error", onError);
 
-  function assertSessionActive() {
-    if (closed || connectionError)
+  function assertSessionConnected() {
+    if (connectionError)
       throw new Error("Analytics query owner lost its session; verified recovery is required");
+  }
+
+  function assertSessionActive() {
+    if (closed) throw new Error("Analytics query owner is closed");
+    assertSessionConnected();
   }
 
   async function assertActive() {
     assertSessionActive();
+    await assertOwnerActive();
+  }
+
+  async function assertOwnerActive() {
+    assertSessionConnected();
     const result = await session.query(
       `SELECT owner_id FROM fitness.analytics_query_owner
        WHERE resource_id=$1 AND owner_id=$2 AND NOT quiescent`,
@@ -116,7 +130,9 @@ async function withOwnedQueries<T>(
   }
 
   async function markRequestTerminal(queryId: string) {
-    assertSessionActive();
+    assertSessionConnected();
+    // Lost completion proof must block release even when PG committed it.
+    queryTerminal = false;
     const result = await session.query(
       `UPDATE fitness.analytics_query_owner SET query_terminal=true
        WHERE resource_id=$1 AND owner_id=$2 AND query_id=$3
@@ -125,7 +141,7 @@ async function withOwnedQueries<T>(
       [input.resourceId, ownerId, queryId, admittedIntentId],
     );
     assertRequestRow(result, queryId, "completion");
-    assertSessionActive();
+    assertSessionConnected();
     queryTerminal = true;
   }
 
@@ -140,12 +156,16 @@ async function withOwnedQueries<T>(
       const registration = await session.query(
         `UPDATE fitness.analytics_query_owner SET query_id=$3,query_terminal=false
          WHERE resource_id=$1 AND owner_id=$2 AND NOT quiescent
-           AND intent_id IS NOT DISTINCT FROM $4 AND query_terminal
+           AND intent_id IS NOT DISTINCT FROM $4
+           AND ${acknowledgedQueryId === null ? "query_id IS NULL AND query_terminal" : "query_id=$5 AND NOT query_terminal"}
          RETURNING owner_id,intent_id,query_id`,
-        [input.resourceId, ownerId, queryId, admittedIntentId],
+        acknowledgedQueryId === null
+          ? [input.resourceId, ownerId, queryId, admittedIntentId]
+          : [input.resourceId, ownerId, queryId, admittedIntentId, acknowledgedQueryId],
       );
       assertRequestRow(registration, queryId, "registration");
       assertSessionActive();
+      acknowledgedQueryId = queryId;
       let value: R;
       try {
         value = await dispatch(queryId);
@@ -153,13 +173,15 @@ async function withOwnedQueries<T>(
         // The official client consumes the server's error response before
         // constructing ClickHouseError. A socket/client error has no such proof.
         if (error instanceof ClickHouseError) {
-          await markRequestTerminal(queryId);
+          assertSessionConnected();
+          queryTerminal = true;
         }
         throw error;
       }
       // A successful, fully consumed response is terminal for this request. A
       // rejected HTTP promise is deliberately not interpreted as server death.
-      await markRequestTerminal(queryId);
+      assertSessionConnected();
+      queryTerminal = true;
       return value;
     })();
     inFlight = pending;
@@ -250,23 +272,29 @@ async function withOwnedQueries<T>(
         }),
     };
     const value = await operation({ client, ingestedAt, assertActive });
-    if (inFlight) throw new Error("Analytics owner callback returned before its request completed");
+    closed = true;
+    returnedWithRequest = inFlight !== null;
+    if (returnedWithRequest)
+      throw new Error("Analytics owner callback returned before its request completed");
     assertKnownRequestOutcome();
-    await assertActive();
-    if (input.mode === "write")
-      await session.query(
-        "UPDATE fitness.analytics_query_owner SET intent_id=NULL WHERE resource_id=$1 AND owner_id=$2",
-        [input.resourceId, ownerId],
-      );
     outcome = { value };
   } catch (error) {
+    returnedWithRequest ||= inFlight !== null;
     outcome = { error };
     captureException(error, { tags: { source: "analytics-query-owner" } });
   } finally {
     closed = true;
     try {
       if (inFlight) await inFlight;
-      if (admitted && queryTerminal && !connectionError) {
+      if (outcome && "value" in outcome) assertSessionConnected();
+      if (admitted && queryTerminal && !connectionError && !returnedWithRequest) {
+        if (acknowledgedQueryId !== null) await markRequestTerminal(acknowledgedQueryId);
+        await assertOwnerActive();
+        if (input.mode === "write" && outcome && "value" in outcome)
+          await session.query(
+            "UPDATE fitness.analytics_query_owner SET intent_id=NULL WHERE resource_id=$1 AND owner_id=$2",
+            [input.resourceId, ownerId],
+          );
         await session.query(
           `UPDATE fitness.analytics_query_owner SET quiescent=true,backend_pid=NULL
            WHERE resource_id=$1 AND owner_id=$2`,
