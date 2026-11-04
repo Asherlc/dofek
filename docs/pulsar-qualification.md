@@ -728,3 +728,47 @@ projection added 4,159,764 disk bytes; observed materialization/merge/mutation
 peaks reached 109,274,490 bytes, distinct from foreground query memory. Production
 bootstrap, insertion overhead, physical erasure and complete host fit remain open.
 No canonical index or production deployment was performed by this qualification.
+
+## 2026-11-04: Account isolation does not bound local journal erasure
+
+The user reaffirmed Pulsar on the existing server as the project goal and accepts
+held production ingestion while it is qualified. An independent direction review
+prioritized erasure viability and aggregate host fit before further framework
+work. The following is a finite source assessment, not an adopted topic layout,
+runtime experiment or cutover approval.
+
+Account-isolated topics can give an account independent ledger ownership, but
+BookKeeper still shares local journal and entry-log files. In the exact
+[BookKeeper 4.18.2 source artifact](https://repo.maven.apache.org/maven2/org/apache/bookkeeper/bookkeeper-server/4.18.2/bookkeeper-server-4.18.2-sources.jar),
+`Journal.run` rolls when flushed bytes exceed the journal size limit and blocks
+when no entries are queued. `Journal.checkpointComplete` deletes only journal IDs
+strictly older than the checkpoint's journal and retains the configured backup
+generations. This version is pinned by the
+[Pulsar 5.0.1 version catalog](https://github.com/apache/pulsar/blob/v5.0.1/gradle/libs.versions.toml).
+
+Consequently, after deleting account A's independently owned ledgers, an idle
+current journal can still retain A's bytes while account B's ledgers remain
+valid. Reducing a byte threshold does not bound elapsed time without more writes.
+The inspected public configuration and administrative API provide no journal-age
+rollover or selective current-journal cleanup mechanism. This blocks certifying
+the existing [day-29 verification/day-30 completion contract](account-erasure-runbook.md)
+from passive native expiry alone; it does not establish that every Pulsar
+deployment or maintenance mechanism is unsuitable.
+
+The same source accepts scheduled `majorCompactionThreshold=1.0`, allowing native
+compaction of eligible partially-live entry logs while retaining foreign live
+ledgers. Thus the default 0.5 threshold is tunable, not a fundamental limit.
+That control does not solve current-journal or current-entry-log eligibility.
+No setting was changed and no confirming fixture was started.
+
+A supported bookie evacuation/replacement procedure is a proposed assessment,
+not a selected remedy. It would need to preserve foreign backlog and durability,
+remove every relevant old local file, meet the existing deadline, and fit the
+temporary copy plus memory overhead on this server. Those capabilities and costs
+remain unqualified. No filler traffic, disabled journaling/backups, restart loop,
+custom storage-engine rewrite or weaker erasure policy is assumed.
+
+The source pass ended at this decisive missing mechanism. The useful lesson is
+to separate broker-ledger eligibility from physical journal reclamation and to
+resolve that release gate before building dependent integration. Production,
+existing jobs and archives, and all four safety holds remain unchanged.
