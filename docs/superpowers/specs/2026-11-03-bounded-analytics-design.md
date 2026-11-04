@@ -73,6 +73,15 @@ transport boundary, not analytics completion.
 
 Write raw data first, then journal effects durably, then acknowledge the delivery
 or processing marker. Replay after failure must regenerate the same effects.
+Before mutating raw data, durably prepare the complete immutable structural
+intent needed to reproduce its before/after placements. Preparation contains no
+metric values and is not a committed effect, discoverable receipt, seal or
+acknowledgment. Only after the raw write succeeds may that intent become
+committed effects and receipts. This closes the crash window where a
+ReplacingMergeTree merge could remove the old placement before replay; its
+[replacement semantics](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+do not provide a cross-table transaction. Partial preparation must fail closed
+and remain replayable rather than becoming evidence of a complete delivery.
 Duplicate journal writes are acceptable only if cursor discovery remains bounded
 and output reconciliation is semantically idempotent. Missing journal evidence
 must never be interpreted as a completed delivery. No atomic transaction across
