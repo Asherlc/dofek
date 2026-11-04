@@ -82,8 +82,52 @@ not relocate ClickHouse tables or automatically retire existing Redpanda data.
 The remaining gate is a safe transition sequence with a bounded local footprint
 and verified release of old storage. The approved expansion is a fallback,
 currently blocked on OCI access and canonical Terraform state, rather than an
-established prerequisite. No additional archive-provenance investigation or
-storage-dependent production change has begun.
+established prerequisite. The subsequently authorized manual offload below is
+the selected capacity assessment; further archive-provenance investigation has
+not begun.
+
+### November 4 manual offload: verified method, bulk copy in progress
+
+The user authorized manual R2 offload to qualify migration on the existing disk.
+Fresh broker inspection found one history partition with retained offsets
+`[21,161,777, 74,445,631)`, a ClickHouse consumer position of `55,609,019`, and
+30,938,607,616 bytes in its local history directory. The first target is the
+already-consumed prefix, ending at that consumer position. The unread tail is
+retained. The topic uses seven-day retention; observed record timestamps at the
+retained start and unread-tail start were November 2 and November 3 respectively.
+These observations are not a complete segment-expiry proof.
+
+The first 100,000 records were uploaded without overwriting an existing object.
+Their 52,195,417 payload bytes compressed to 4,168,391 bytes. A full independent
+R2 download matched the compressed and payload hashes; a second broker read
+matched the exact record-tuple and payload hashes. All offsets were contiguous,
+all values passed the deployed strict event schema, and a complete dry run of
+the deployed archive-erasure parser passed without writes. Topic bounds, leader
+epoch and partition-directory identity remained unchanged. No local records
+were deleted for this qualification.
+
+The bulk operator copy now applies those checks in ranges of at most 100,000
+records, using only a bounded workstation spool. Every range checks public
+health, production disk space and the frozen topic identity before continuing.
+It stops on the first failure and performs no automatic record deletion.
+Completed ranges retain independent read-back and erasure-parser receipts.
+Only a contiguous verified prefix may later be reclaimed, after confirming the
+remote object revisions still match and recording fresh broker boundaries and
+consumer positions. Redpanda's stock
+[`trim-prefix` operation](https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-trim-prefix/)
+is the proposed reclaim mechanism; broker files must never be unlinked manually.
+
+This is an application event-log archive, not a broker image. Original event
+bytes, revisions and order are preserved in the existing gzip JSONL format, which
+the [production archive writer](../deploy/redpanda/metric-stream-r2-archive.connect.yml)
+already uses without Kafka keys and timestamps. Structural manifests retain
+offsets, counts, hashes and hashed processing-key runs for verification before
+erasure; raw processing keys are not stored there. The original processing
+context remains in marker event payloads. Kafka key, timestamp and offset
+restoration is not promised. Account erasure may rewrite objects, so conversion
+must use the content-identity checks above rather than infer original offsets
+from line numbers or depend on stale manifest hashes. All four production holds
+remain in place; neither bulk offload nor migration capacity is yet qualified.
 
 ## Acceptance results
 

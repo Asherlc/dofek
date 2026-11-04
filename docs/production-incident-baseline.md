@@ -35833,3 +35833,14 @@ remains unavailable. The [qualification checkpoint](pulsar-qualification.md#stor
 records the measured subsets, limits and remaining risks. Future retirement
 reviews should distinguish archive-consumer progress from present durable
 coverage after rewrites and erasure.
+
+The user subsequently authorized manual R2 offload. A first 100,000-record
+application-event archive passed contiguous-offset checks, full remote read-back
+against a second broker read, and the deployed erasure-parser dry run. A bounded
+bulk copy of the already-consumed history prefix is running; no local record has
+been removed. This replaces the proposed archive-provenance investigation with
+a directly verified copy. Source history occupies 30,938,607,616 bytes, but no
+reclaim is credited before a supported deletion and measured filesystem result.
+The [manual-offload checkpoint](pulsar-qualification.md#november-4-manual-offload-verified-method-bulk-copy-in-progress)
+states the recovery contract and remaining gates. Website health and all four
+holds remain unchanged.
