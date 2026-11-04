@@ -1,5 +1,6 @@
 import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createMetricStreamProviderGenerationDeletedEvent } from "../metric-stream/events.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const {
@@ -242,10 +243,7 @@ describe("queues", () => {
         generation: 2,
         providerId: "garmin",
         userId: "20000000-0000-4000-8000-000000000002",
-        lastCommittedCommand: {
-          version: 1,
-          eventType: "metric_stream_provider_generation_deleted",
-          commandId: "40000000-0000-4000-8000-000000000004",
+        lastCommittedCommand: createMetricStreamProviderGenerationDeletedEvent({
           deletionEventId: "10000000-0000-4000-8000-000000000001",
           userId: "20000000-0000-4000-8000-000000000002",
           providerId: "garmin",
@@ -253,8 +251,7 @@ describe("queues", () => {
           sourceIds: ["30000000-0000-4000-8000-000000000003"],
           complete: false,
           previousCommandId: "50000000-0000-4000-8000-000000000005",
-          partitionKey: "provider-generation:20000000-0000-4000-8000-000000000002:garmin",
-        },
+        }),
         checkpoint: {
           batches: 3,
           deletedRows: 30_000,

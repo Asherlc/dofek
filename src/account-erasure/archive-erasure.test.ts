@@ -148,7 +148,6 @@ describe("eraseMetricStreamArchive", () => {
     const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-18-19.jsonl.gz";
     const command = (userId: string) =>
       createMetricStreamProviderGenerationDeletedEvent({
-        commandId: "30000000-0000-4000-8000-000000001994",
         deletionEventId: "40000000-0000-4000-8000-000000001994",
         userId,
         providerId: "garmin",

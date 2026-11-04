@@ -182,6 +182,11 @@ export const metricStreamProviderGenerationDeletedEventSchema = z
     if (command.partitionKey !== `provider-generation:${command.userId}:${command.providerId}`)
       invalid("Provider generation command requires its fixed owner/provider partition key");
     if (
+      command.commandId !==
+      providerGenerationCommandId(command.deletionEventId, command.previousCommandId)
+    )
+      invalid("Provider generation command must use its canonical deletion/predecessor slot");
+    if (
       command.commandId === command.deletionEventId ||
       command.commandId === command.previousCommandId
     )
@@ -232,10 +237,14 @@ export type MetricStreamProviderGenerationDeletedEvent = z.infer<
 >;
 
 export function createMetricStreamProviderGenerationDeletedEvent(
-  input: Omit<MetricStreamProviderGenerationDeletedEvent, "version" | "eventType" | "partitionKey">,
+  input: Omit<
+    MetricStreamProviderGenerationDeletedEvent,
+    "version" | "eventType" | "partitionKey" | "commandId"
+  >,
 ): MetricStreamProviderGenerationDeletedEvent {
   return metricStreamProviderGenerationDeletedEventSchema.parse({
     ...input,
+    commandId: providerGenerationCommandId(input.deletionEventId, input.previousCommandId),
     version: 1,
     eventType: METRIC_STREAM_PROVIDER_GENERATION_DELETED_EVENT_TYPE,
     partitionKey: `provider-generation:${input.userId}:${input.providerId}`,
@@ -256,6 +265,31 @@ function formatUuidFromBytes(bytes: Uint8Array): string {
     16,
     20,
   )}-${hex.slice(20, 32)}`;
+}
+
+function formatUuidV5Digest(digest: Uint8Array): string {
+  const bytes = Uint8Array.from(digest.subarray(0, 16));
+  const versionByte = bytes[6];
+  const variantByte = bytes[8];
+  if (versionByte === undefined || variantByte === undefined) {
+    throw new Error("Metric stream deterministic id hash is too short");
+  }
+  bytes[6] = (versionByte & 0x0f) | 0x50;
+  bytes[8] = (variantByte & 0x3f) | 0x80;
+  return formatUuidFromBytes(bytes);
+}
+
+function providerGenerationCommandId(deletionEventId: string, previousCommandId: string | null) {
+  const name = JSON.stringify([
+    deletionEventId.toLowerCase(),
+    previousCommandId?.toLowerCase() ?? null,
+  ]);
+  return formatUuidV5Digest(
+    createHash("sha1")
+      .update(Buffer.from("6ba7b8109dad11d180b400c04fd430c8", "hex"))
+      .update(`dofek.provider-generation-command.v1:${name}`)
+      .digest(),
+  );
 }
 
 function createDeterministicMetricStreamId(
@@ -294,16 +328,7 @@ function createDeterministicMetricStreamId(
   if (row.generation > 0) {
     hash.update("\0generation:").update(String(row.generation));
   }
-  const digest = hash.digest();
-  const bytes = Uint8Array.from(digest.subarray(0, 16));
-  const versionByte = bytes[6];
-  const variantByte = bytes[8];
-  if (versionByte === undefined || variantByte === undefined) {
-    throw new Error("Metric stream deterministic id hash is too short");
-  }
-  bytes[6] = (versionByte & 0x0f) | 0x50;
-  bytes[8] = (variantByte & 0x3f) | 0x80;
-  return formatUuidFromBytes(bytes);
+  return formatUuidV5Digest(hash.digest());
 }
 
 export function createMetricStreamEvent(

@@ -95,7 +95,6 @@ describe("createProviderDataDeletionDependencies", () => {
       query: vi.fn(async () => ({ json: async () => [] })),
     };
     const command = createMetricStreamProviderGenerationDeletedEvent({
-      commandId: "10000000-0000-4000-8000-000000000001",
       deletionEventId: "30000000-0000-4000-8000-000000000003",
       userId: "00000000-0000-4000-8000-000000000004",
       providerId: "garmin",

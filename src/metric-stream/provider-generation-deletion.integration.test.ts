@@ -67,7 +67,6 @@ describe("canonical provider generation deletion", () => {
   }
   function fence(providerId = `provider-${randomUUID()}`, generation = 2) {
     return createMetricStreamProviderGenerationDeletedEvent({
-      commandId: randomUUID(),
       deletionEventId: randomUUID(),
       userId: context.userId,
       providerId,
@@ -130,7 +129,6 @@ describe("canonical provider generation deletion", () => {
     const current = { ...original, generation: 2, operationRevision: "2", scalar: 93 };
     const deletionEventId = randomUUID();
     const fence = createMetricStreamProviderGenerationDeletedEvent({
-      commandId: randomUUID(),
       deletionEventId,
       userId: context.userId,
       providerId,
@@ -141,13 +139,11 @@ describe("canonical provider generation deletion", () => {
     });
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...fence,
-      commandId: randomUUID(),
       sourceIds: [original.id, deletable.id, staleLow.id],
       previousCommandId: fence.commandId,
     });
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...page,
-      commandId: randomUUID(),
       sourceIds: [],
       complete: true,
       previousCommandId: page.commandId,
@@ -203,7 +199,6 @@ describe("canonical provider generation deletion", () => {
     const providerId = `empty-${randomUUID()}`,
       deletionEventId = randomUUID();
     const fence = createMetricStreamProviderGenerationDeletedEvent({
-      commandId: randomUUID(),
       deletionEventId,
       userId: context.userId,
       providerId,
@@ -214,7 +209,6 @@ describe("canonical provider generation deletion", () => {
     });
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...fence,
-      commandId: randomUUID(),
       previousCommandId: fence.commandId,
       complete: true,
     });
@@ -258,7 +252,6 @@ describe("canonical provider generation deletion", () => {
       old = source(first.providerId);
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       sourceIds: [old.id],
     });
@@ -284,26 +277,104 @@ describe("canonical provider generation deletion", () => {
 
   test("committedPredecessorRejectsDifferentSuccessorWithoutWritingItsACK", async () => {
     const first = fence(),
-      old = source(first.providerId);
+      old = source(first.providerId),
+      untouched = source(first.providerId);
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       sourceIds: [old.id],
     });
-    const fork = { ...page, commandId: randomUUID() };
-    await expect(apply([old, first, page, fork])).rejects.toThrow(
-      "different identity or successor",
+    const fork = { ...page, commandId: randomUUID(), sourceIds: [untouched.id] };
+    const delivery = batch(5);
+    await expect(apply([old, untouched, first, page, fork], delivery)).rejects.toThrow(
+      "canonical deletion/predecessor slot",
     );
-    expect(await readProviderDeletionAcknowledgement(context.client, fork)).toBeNull();
+    const acknowledgements = await context.client.query({
+      query:
+        "SELECT event_id FROM ingest.metric_stream_delete_acknowledgement FINAL WHERE event_id={id:UUID}",
+      query_params: { id: fork.commandId },
+      format: "JSONEachRow",
+    });
+    expect(await acknowledgements.json()).toEqual([]);
     expect(await rows(old.id)).toMatchObject([{ is_deleted: 1 }]);
+    expect(await rows(untouched.id)).toMatchObject([{ is_deleted: 0 }]);
+    const position = delivery.positions[4];
+    if (!position) throw new Error("Fixture requires fork position");
+    await expect(verifyAnalyticsDeliveryReceipt(context.client, position)).rejects.toThrow(
+      "delivery receipt is missing or mismatched",
+    );
   });
+
+  test.each(["page", "terminal"])(
+    "sameSuccessorSlotRejectsConflicting%sBeforeRawMutation",
+    async (kind) => {
+      const first = fence(),
+        old = source(first.providerId),
+        untouched = source(first.providerId);
+      const page = createMetricStreamProviderGenerationDeletedEvent({
+        ...first,
+        previousCommandId: first.commandId,
+        sourceIds: [old.id],
+      });
+      const conflict = createMetricStreamProviderGenerationDeletedEvent({
+        ...page,
+        sourceIds: kind === "page" ? [untouched.id] : [],
+        complete: kind === "terminal",
+      });
+      expect(conflict.commandId).toBe(page.commandId);
+      const delivery = batch(5);
+      await expect(apply([old, untouched, first, page, conflict], delivery)).rejects.toThrow(
+        "immutable page content changed",
+      );
+      expect(await rows(old.id)).toMatchObject([{ is_deleted: 1 }]);
+      expect(await rows(untouched.id)).toMatchObject([{ is_deleted: 0 }]);
+      expect(await readProviderDeletionAcknowledgement(context.client, page)).toMatchObject({
+        position: delivery.positions[3],
+        effectCount: 1n,
+      });
+      const position = delivery.positions[4];
+      if (!position) throw new Error("Fixture requires conflict position");
+      await expect(verifyAnalyticsDeliveryReceipt(context.client, position)).rejects.toThrow(
+        "delivery receipt is missing or mismatched",
+      );
+    },
+  );
+
+  test.each(["owner", "provider", "generation"])(
+    "rootSlotRejectsChanged%sIdentityWithoutInstallingAnotherFence",
+    async (kind) => {
+      const first = fence();
+      const change =
+        kind === "owner"
+          ? { userId: randomUUID() }
+          : kind === "provider"
+            ? { providerId: "different-provider" }
+            : { generation: 3 };
+      const conflict = createMetricStreamProviderGenerationDeletedEvent({ ...first, ...change });
+      expect(conflict.commandId).toBe(first.commandId);
+      const delivery = batch(2);
+      await expect(apply([first, conflict], delivery)).rejects.toThrow(
+        "matching typed operation identity",
+      );
+      const fences = await context.client.query({
+        query:
+          "SELECT user_id,provider_id,toString(generation) AS generation FROM ingest.provider_data_generation FINAL",
+        format: "JSONEachRow",
+      });
+      expect(await fences.json()).toEqual([
+        { user_id: first.userId, provider_id: first.providerId, generation: "2" },
+      ]);
+      expect(await readProviderDeletionAcknowledgement(context.client, first)).toMatchObject({
+        position: delivery.positions[0],
+        effectCount: 0n,
+      });
+    },
+  );
 
   test("missingPredecessorCannotEstablishCommandReceipt", async () => {
     const first = fence();
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: randomUUID(),
       sourceIds: [randomUUID()],
     });
@@ -315,7 +386,6 @@ describe("canonical provider generation deletion", () => {
     const first = fence();
     const other = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       deletionEventId: randomUUID(),
       previousCommandId: first.commandId,
       complete: true,
@@ -331,7 +401,6 @@ describe("canonical provider generation deletion", () => {
     await context.client.command({ query: "TRUNCATE TABLE analytics.delivery_receipt" });
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       complete: true,
     });
@@ -346,7 +415,6 @@ describe("canonical provider generation deletion", () => {
       old = source(first.providerId);
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       sourceIds: [old.id],
     });
@@ -387,7 +455,6 @@ describe("canonical provider generation deletion", () => {
       old = source(first.providerId);
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       complete: true,
     });
@@ -406,7 +473,6 @@ describe("canonical provider generation deletion", () => {
     });
     const cancelled = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: randomUUID(),
       complete: true,
     });
@@ -442,13 +508,11 @@ describe("canonical provider generation deletion", () => {
       moved = { ...old, providerId: "moved-provider", operationRevision: "2", scalar: 88 };
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...stale,
-      commandId: randomUUID(),
       previousCommandId: stale.commandId,
       sourceIds: [old.id],
     });
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...page,
-      commandId: randomUUID(),
       previousCommandId: page.commandId,
       sourceIds: [],
       complete: true,
@@ -492,13 +556,11 @@ describe("canonical provider generation deletion", () => {
     };
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       sourceIds: events.map((event) => event.id),
     });
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...page,
-      commandId: randomUUID(),
       previousCommandId: page.commandId,
       sourceIds: [],
       complete: true,
@@ -527,6 +589,71 @@ describe("canonical provider generation deletion", () => {
       expect(before).toMatchObject({ deleted: false, generation: "0", sourceVersion: "3" });
       expect(after).toEqual({ ...before, deleted: true, sourceVersion: "4" });
     }
+  });
+
+  test("commandACKLookupUsesPrimaryKeyWith65536UnrelatedLegacyAcknowledgements", async () => {
+    await context.client.command({
+      query:
+        "INSERT INTO ingest.metric_stream_delete_acknowledgement(event_id) SELECT generateUUIDv4() FROM numbers(65536)",
+      clickhouse_settings: { async_insert: 0 },
+    });
+    const first = fence();
+    const terminal = createMetricStreamProviderGenerationDeletedEvent({
+      ...first,
+      previousCommandId: first.commandId,
+      complete: true,
+    });
+    const queryIds: string[] = [];
+    const lookups: Parameters<ClickHouseClient["query"]>[0][] = [];
+    const client: ClickHouseClient = {
+      ...context.client,
+      query: <T extends object>(options: Parameters<ClickHouseClient["query"]>[0]) => {
+        if (!options.query.includes("FROM ingest.metric_stream_delete_acknowledgement"))
+          return context.client.query<T>(options);
+        if (!options.query_id) throw new Error("ACK lookup requires its owned query ID");
+        queryIds.push(options.query_id);
+        lookups.push(options);
+        return context.client.query<T>({
+          ...options,
+          clickhouse_settings: {
+            ...options.clickhouse_settings,
+            log_queries: 1,
+            log_profile_events: 1,
+          },
+        });
+      },
+    };
+    await applyMetricStreamEventsToClickHouse(
+      client,
+      [first, terminal],
+      batch(2),
+      context.database,
+    );
+    await context.client.command({ query: "SYSTEM FLUSH LOGS" });
+    const profiles = await context.client.query<{ query_id: string; read_rows: number }>({
+      query:
+        "SELECT query_id,read_rows FROM system.query_log WHERE query_id IN {ids:Array(String)} AND type='QueryFinish' ORDER BY query_id",
+      query_params: { ids: queryIds },
+      format: "JSONEachRow",
+    });
+    const records = await profiles.json();
+    expect(queryIds.length).toBeGreaterThan(0);
+    expect(records.map((row) => row.query_id)).toEqual([...queryIds].sort());
+    for (const row of records) expect(Number(row.read_rows)).toBeLessThanOrEqual(16384);
+    for (const lookup of new Map(lookups.map((options) => [options.query, options])).values()) {
+      const explanation = await context.client.query<{ explain: string }>({
+        ...lookup,
+        query_id: randomUUID(),
+        query: `EXPLAIN indexes=1 ${lookup.query}`,
+      });
+      const plan = (await explanation.json()).map((row) => row.explain).join("\n");
+      expect(plan).toContain("FINAL: 1");
+      expect(plan).toContain("PrimaryKey");
+      expect(plan).not.toContain("Condition: true");
+    }
+    expect(await readProviderDeletionAcknowledgement(context.client, terminal)).toMatchObject({
+      effectCount: 0n,
+    });
   });
 
   test("structural1001SourceContinuationAndTwentyEffectWrites", async () => {
@@ -570,19 +697,16 @@ describe("canonical provider generation deletion", () => {
     ).toEqual([]);
     const page = createMetricStreamProviderGenerationDeletedEvent({
       ...first,
-      commandId: randomUUID(),
       previousCommandId: first.commandId,
       sourceIds: keys.map((key) => key.id),
     });
     const tail = createMetricStreamProviderGenerationDeletedEvent({
       ...page,
-      commandId: randomUUID(),
       previousCommandId: page.commandId,
       sourceIds: rest.map((key) => key.id),
     });
     const terminal = createMetricStreamProviderGenerationDeletedEvent({
       ...tail,
-      commandId: randomUUID(),
       previousCommandId: tail.commandId,
       sourceIds: [],
       complete: true,

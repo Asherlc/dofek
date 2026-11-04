@@ -28,9 +28,60 @@ const baseMetricStreamRow = {
 };
 
 describe("provider generation deletion command codec", () => {
+  it("derives fixed UUIDv5 root and successor slots independently of immutable command contents", () => {
+    const input = {
+      deletionEventId: "20000000-0000-4000-8000-000000000002",
+      userId: "30000000-0000-4000-8000-000000000003",
+      providerId: "garmin",
+      generation: 2,
+      sourceIds: [],
+      complete: false,
+      previousCommandId: null,
+    };
+    const root = createMetricStreamProviderGenerationDeletedEvent(input);
+    expect(root.commandId).toBe("9f4dca66-ed4b-5f1f-a287-fa15fed6709d");
+    const page = createMetricStreamProviderGenerationDeletedEvent({
+      ...input,
+      previousCommandId: root.commandId,
+      sourceIds: ["40000000-0000-4000-8000-000000000004"],
+    });
+    expect(page.commandId).toBe("6d392e41-69d3-5500-b6d8-544436a28595");
+    expect(
+      createMetricStreamProviderGenerationDeletedEvent({
+        ...page,
+        sourceIds: ["50000000-0000-4000-8000-000000000005"],
+        generation: 3,
+      }).commandId,
+    ).toBe(page.commandId);
+    const mixedCaseRoot = "abcdef00-0000-4000-8000-000000000001";
+    expect(
+      createMetricStreamProviderGenerationDeletedEvent({
+        ...input,
+        deletionEventId: mixedCaseRoot.toUpperCase(),
+      }).commandId,
+    ).toBe(
+      createMetricStreamProviderGenerationDeletedEvent({ ...input, deletionEventId: mixedCaseRoot })
+        .commandId,
+    );
+  });
+  it("rejects hand-crafted arbitrary root and fork successor identities in the wire codec", () => {
+    const root = fence();
+    const page = {
+      ...root,
+      commandId: "70000000-0000-4000-8000-000000000007",
+      previousCommandId: root.commandId,
+      sourceIds: ["40000000-0000-4000-8000-000000000004"],
+    };
+    for (const command of [root, page])
+      expect(
+        metricStreamRedpandaEventSchema.safeParse({
+          ...command,
+          commandId: "60000000-0000-4000-8000-000000000006",
+        }).success,
+      ).toBe(false);
+  });
   const fence = () =>
     createMetricStreamProviderGenerationDeletedEvent({
-      commandId: "10000000-0000-4000-8000-000000000001",
       deletionEventId: "20000000-0000-4000-8000-000000000002",
       userId: "30000000-0000-4000-8000-000000000003",
       providerId: "garmin",
@@ -48,7 +99,11 @@ describe("provider generation deletion command codec", () => {
     { complete: true },
     { sourceIds: ["40000000-0000-4000-8000-000000000004"] },
     { commandId: "20000000-0000-4000-8000-000000000002" },
-    { previousCommandId: "10000000-0000-4000-8000-000000000001", complete: true },
+    {
+      commandId: "10000000-0000-4000-8000-000000000001",
+      previousCommandId: "10000000-0000-4000-8000-000000000001",
+      complete: true,
+    },
     { previousCommandId: "50000000-0000-4000-8000-000000000005" },
     {
       previousCommandId: "50000000-0000-4000-8000-000000000005",
@@ -67,15 +122,24 @@ describe("provider generation deletion command codec", () => {
       ),
     },
   ])("rejects malformed structural command %j", (change) => {
-    expect(metricStreamRedpandaEventSchema.safeParse({ ...fence(), ...change }).success).toBe(
-      false,
-    );
+    const root = fence();
+    const commandId =
+      typeof change.previousCommandId === "string"
+        ? createMetricStreamProviderGenerationDeletedEvent({
+            ...root,
+            previousCommandId: change.previousCommandId,
+            complete: true,
+          }).commandId
+        : root.commandId;
+    expect(
+      metricStreamRedpandaEventSchema.safeParse({ ...root, commandId, ...change }).success,
+    ).toBe(false);
   });
   it("retains the stable fence-only command and its fixed provider routing key", () => {
     const command = {
       version: 1,
       eventType: "metric_stream_provider_generation_deleted",
-      commandId: "10000000-0000-4000-8000-000000000001",
+      commandId: "9f4dca66-ed4b-5f1f-a287-fa15fed6709d",
       deletionEventId: "20000000-0000-4000-8000-000000000002",
       userId: "30000000-0000-4000-8000-000000000003",
       providerId: "garmin",

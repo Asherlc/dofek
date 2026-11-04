@@ -94,6 +94,7 @@ async function readCommittedCommandAcknowledgement(
   client: Reader,
   command: MetricStreamProviderGenerationDeletedEvent,
 ): Promise<ProviderDeletionAcknowledgement | null> {
+  metricStreamProviderGenerationDeletedEventSchema.parse(command);
   const row = await readAck(client, command.commandId);
   if (!row) return null;
   assertIdentity(row, command);
@@ -167,25 +168,9 @@ export async function verifyProviderDeletionPredecessor(
   command: MetricStreamProviderGenerationDeletedEvent,
   position: MetricStreamPosition,
 ) {
-  const conflicts = await client.query({
-    query: `SELECT command_id FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
-      WHERE deletion_event_id={deletion:UUID} AND event_id=command_id
-        AND ((user_id!={user:UUID} OR provider_id!={provider:String} OR generation!={generation:UInt64})
-          OR (isNotDistinctFrom(previous_command_id,{previous:Nullable(UUID)}) AND command_id!={command:UUID})) LIMIT 1`,
-    query_params: {
-      deletion: command.deletionEventId,
-      user: command.userId,
-      provider: command.providerId,
-      generation: command.generation,
-      previous: command.previousCommandId,
-      command: command.commandId,
-    },
-    format: "JSONEachRow",
-  });
-  if (z.array(z.object({ command_id: z.uuid() })).parse(await conflicts.json()).length)
-    throw new Error(
-      "Provider deletion chain already committed a different identity or successor for this predecessor; preserve pending evidence and use verified operator recovery",
-    );
+  // A root/predecessor has only one canonical command ID. Its immutable ACK
+  // binds the full body, so fork rejection needs no scan of unrelated history.
+  metricStreamProviderGenerationDeletedEventSchema.parse(command);
   if (command.previousCommandId === null) return;
   const previous = await readAck(client, command.previousCommandId);
   if (!previous)

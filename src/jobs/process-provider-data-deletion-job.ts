@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
@@ -163,7 +162,6 @@ export async function processProviderDataDeletionJob(
       };
   }
   const command = createMetricStreamProviderGenerationDeletedEvent({
-    commandId: randomUUID(),
     deletionEventId: job.data.eventId,
     userId: job.data.userId,
     providerId: job.data.providerId,

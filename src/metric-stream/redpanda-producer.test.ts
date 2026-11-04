@@ -14,7 +14,6 @@ it("publishes stable provider-generation commands on the fixed provider partitio
     "metric-stream-live",
   );
   const command = createMetricStreamProviderGenerationDeletedEvent({
-    commandId: "10000000-0000-4000-8000-000000000001",
     deletionEventId: "20000000-0000-4000-8000-000000000002",
     userId: "30000000-0000-4000-8000-000000000003",
     providerId: "garmin",
