@@ -1,15 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { analyticsWorkSchemaStatements } from "../db/analytics-work-schema.ts";
-import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
-import { setupTestDatabase } from "../db/test-helpers.ts";
 import { mapMetricStreamEventToClickHouseRow } from "./clickhouse-row.ts";
 import { applyMetricStreamEventsToClickHouse as applyCoordinatedEvents } from "./clickhouse-sink.ts";
 import {
-  buildMetricStreamSourcePlacementIngestSql,
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_TABLE,
@@ -25,23 +21,26 @@ import {
   type MetricStreamRowInput,
   metricStreamDeleteScopeSchema,
 } from "./events.ts";
+import { createMetricStreamAnalyticsTestContext } from "./test-helpers.ts";
 
 type ClickHouseMetricStreamInsertClient = ClickHouseClient &
   Required<Pick<ClickHouseClient, "insert">>;
 let database: Database;
+const admission = new AbortController();
+const inFlight = new Set<ReturnType<typeof applyCoordinatedEvents>>();
 function applyMetricStreamEventsToClickHouse(
   client: ClickHouseClient,
   events: readonly MetricStreamRedpandaEvent[],
 ) {
   const topic = `fixture-${randomUUID()}`;
   const epoch = randomUUID();
-  return applyCoordinatedEvents(
+  const pending = applyCoordinatedEvents(
     client,
     events,
     {
       topic,
       partition: 0,
-      assertActive: async () => undefined,
+      assertActive: async () => admission.signal.throwIfAborted(),
       positions: events.map((_, offset) => ({
         transport: "kafka",
         epoch,
@@ -52,6 +51,12 @@ function applyMetricStreamEventsToClickHouse(
     },
     database,
   );
+  inFlight.add(pending);
+  void pending.then(
+    () => inFlight.delete(pending),
+    () => inFlight.delete(pending),
+  );
+  return pending;
 }
 async function insertMetricStreamEventsIntoClickHouse(
   client: ClickHouseClient,
@@ -159,55 +164,28 @@ function assertInsertCapable(
   }
 }
 
-async function removeTestEvent(client: ClickHouseClient): Promise<void> {
-  await client.command({
-    query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE} DELETE WHERE user_id = {user_id:UUID} SETTINGS mutations_sync = 1`,
-    query_params: { user_id: testUserId },
-  });
-  await client.command({
-    query: `ALTER TABLE ${METRIC_STREAM_TABLE}
-      DELETE WHERE id IN {ids:Array(UUID)}
-      SETTINGS mutations_sync = 1`,
-    query_params: {
-      ids: [
-        testEventId,
-        latestScopeTestEventId,
-        nullExternalIdTestEventId,
-        replacementTestEventId,
-        crossRouteReplacementTestEventId,
-        ...zeppSamples.map((event) => event.id),
-        batchedDeleteTestEventId,
-        batchedDeleteSecondTestEventId,
-        batchedDeleteUnrelatedTestEventId,
-        ...longDeleteTestEventIds,
-      ],
-    },
-  });
-}
-
 describe("metric stream ClickHouse sink (integration)", () => {
-  const client = createClickHouseClientFromEnv();
-  assertInsertCapable(client);
-  let postgres: Awaited<ReturnType<typeof setupTestDatabase>>;
+  let context: Awaited<ReturnType<typeof createMetricStreamAnalyticsTestContext>>;
+  let client: ClickHouseMetricStreamInsertClient;
 
   beforeAll(async () => {
-    postgres = await setupTestDatabase();
-    database = postgres.db;
-    for (const statement of buildClickHouseBootstrapStatementsForNativeMetricStream("")) {
-      await client.command({ query: statement });
-    }
-    for (const query of [
-      ...analyticsWorkSchemaStatements(),
-      buildMetricStreamSourcePlacementIngestSql(),
-    ])
-      await client.command({ query });
-    await removeTestEvent(client);
+    context = await createMetricStreamAnalyticsTestContext();
+    assertInsertCapable(context.client);
+    client = context.client;
+    database = context.database;
   }, 120_000);
 
   afterAll(async () => {
-    await removeTestEvent(client);
-    await client.close?.();
-    await postgres?.cleanup();
+    admission.abort(new Error("Legacy sink fixture stopped admitting requests"));
+    const settlements = await Promise.allSettled([...inFlight]);
+    await context?.cleanup();
+    const unexpected = settlements.flatMap((settlement) =>
+      settlement.status === "rejected" && settlement.reason !== admission.signal.reason
+        ? [settlement.reason]
+        : [],
+    );
+    if (unexpected.length)
+      throw new AggregateError(unexpected, "Legacy sink requests failed during fixture cleanup");
   });
 
   it("retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries", async () => {
