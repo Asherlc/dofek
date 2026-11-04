@@ -1,6 +1,6 @@
 # Single-server Pulsar Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execute in this conversation without subagents, branch switches or rebases, as requested by the user.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execute in this conversation without branch switches or rebases. The user subsequently explicitly approved Codex subagents, superseding the original no-agent instruction.
 
 **Goal:** Replace Redpanda with self-hosted Pulsar on the existing server, convert the existing R2 archive, and restore safe historical processing without losing source data or weakening deletion guarantees.
 
@@ -14,7 +14,7 @@
 
 - Existing server only; no additional machines or managed messaging service.
 - No zero-RPO disk-loss claim: one local bookie cannot provide it before offload.
-- No branch switches/rebases, no agents; prefix shell commands with `rtk` and push every commit.
+- No branch switches/rebases; Codex subagents are explicitly approved. Prefix shell commands with `rtk` and push every commit.
 - Keep production's four owned holds until the relevant restoration gate passes.
 - Preserve original provider jobs/windows and Strava's 789 completed IDs; no fresh full-history request.
 - Never evict unconsumed backlog, skip corrupt source data, inflate timeouts/retries, or lower safety guards.
@@ -48,6 +48,14 @@
 New directories receive README/AGENTS and matching CLAUDE/GEMINI symlinks when required by repository policy. Generated Drizzle/ClickHouse migration filenames must use the next available sequence at execution time, never overwrite an existing journal entry. Every task reads the parent/local instructions before editing.
 
 ## Task 1: Qualify the topology and prove physical/resource feasibility
+
+**Approved follow-up:** The existing-host budget and historical analytics work
+remain unqualified. The user approved the [bounded analytics amendment](../specs/2026-11-03-bounded-analytics-design.md);
+its [implementation plan](2026-11-03-bounded-analytics.md) expands analytics
+qualification and causal-completion requirements here and in Task 3. Isolated
+transport-position/consumer-contract work needed by that qualification may be
+developed before the aggregate budget passes; this does not pass Task 1 or admit
+production deployment. Keep all resource, erasure, recovery and cutover gates.
 
 **Files:** Create `docker-compose.pulsar.yml`, `docs/pulsar-qualification.md`; modify workspace Compose/test integration only where needed to run the isolated topology.
 

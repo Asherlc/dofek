@@ -1,8 +1,9 @@
 # Bounded analytics within the single-server Pulsar migration
 
-Date: 2026-11-03. Status: proposed amendment; the user approved the direction
-and an isolated throwaway proof, not production implementation or filesystem
-maintenance. Read with the [Pulsar design](2026-11-03-single-server-pulsar-design.md)
+Date: 2026-11-03. Status: approved for implementation planning by the user's “Y”
+after review of commit `d0b39c0c8`. Durable code follows review of the
+[implementation plan](../plans/2026-11-03-bounded-analytics.md); production
+filesystem maintenance remains a separate gate. Read with the [Pulsar design](2026-11-03-single-server-pulsar-design.md)
 and [qualification evidence](../../pulsar-cdc-assessment.md).
 
 ## Purpose
