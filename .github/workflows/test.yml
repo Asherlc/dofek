@@ -981,9 +981,91 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  test-analytics-access-plan:
+    name: Analytics Access Plan
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --memory 1g
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+        ports:
+          - 6379:6379
+        options: >-
+          --memory 256m
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:88ccb7d52d9c2efe263ded5616417295dcdfbb4832b9e27ec7bb97a6f4ff3c2a
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: test
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --memory 3g
+          --cpus 1
+          --health-cmd "clickhouse-client --password test --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      CLICKHOUSE_URL: http://default:test@localhost:8123
+      REDIS_URL: redis://localhost:6379
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv-analytics
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked analytics toolchain
+        run: uv sync --project analytics --locked --python 3.13
+      - name: Admit fixed ARM qualification resources
+        run: pnpm tsx scripts/check-analytics-plan-ci-admission.ts '${{ runner.temp }}/analytics-access-plan' '${{ job.services.clickhouse.id }}' '${{ job.services.postgres.id }}' '${{ job.services.redis.id }}'
+      - name: Qualify current canonical access plans without retries
+        id: analytics-access-plan
+        run: pnpm exec vitest run --project analytics-qualification src/db/bounded-sensor-access-plan.analytics-qualification.integration.test.ts --retry=0 --bail=1 -t currentCanonicalPlansHaveDiscriminatingInput
+        env:
+          TMPDIR: ${{ runner.temp }}/analytics-access-plan
+      - name: Capture ClickHouse failure diagnostics
+        if: ${{ failure() && steps.analytics-access-plan.outcome == 'failure' }}
+        run: pnpm tsx scripts/collect-clickhouse-ci-diagnostics.ts '${{ job.services.clickhouse.id }}' '${{ runner.temp }}/analytics-access-plan/diagnostics'
+      - name: Upload synthetic access-plan evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: analytics-access-plan-evidence
+          path: ${{ runner.temp }}/analytics-access-plan/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, test-analytics-access-plan, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -995,6 +1077,7 @@ jobs:
             "${{ needs.test-integration.result }}" \
             "${{ needs.test-peerdb-integration.result }}" \
             "${{ needs.test-bookie-evacuation.result }}" \
+            "${{ needs.test-analytics-access-plan.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
@@ -1003,6 +1086,10 @@ jobs:
           done
           if [ "${{ needs.test-bookie-evacuation.result }}" != "success" ]; then
             echo "Required native BookKeeper qualification did not succeed"
+            exit 1
+          fi
+          if [ "${{ needs.test-analytics-access-plan.result }}" != "success" ]; then
+            echo "Required analytics access-plan qualification did not succeed"
             exit 1
           fi
 

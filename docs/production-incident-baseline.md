@@ -35792,3 +35792,17 @@ Independent source/log review confirms the bounded result. No resilience knob,
 production change or hold restoration was used. Complete pipeline erasure,
 whole-host resources and cutover remain unresolved; see the
 [qualification limits](pulsar-qualification.md#2026-11-04-native-evacuation-primitive-passes-in-arm-ci).
+
+### 2026-11-04 — Local analytics qualification reaches the shared lab memory boundary
+
+No new production incident or hold change: the original bounded sensor correctness
+and 800,000-version resource gates passed, but larger local qualification hit
+server-wide code 241 at the fixed 768 MiB ClickHouse container boundary. The
+four-times-background dedup query failed with a 91,184,127-byte query peak; a
+later plan-input load (`acc37f3a-333f-43a5-b51e-9b5f61e2dd5c`) failed before EXPLAIN.
+All owned requests and cleanup settled; the exact server process stayed healthy
+with no restart or OOM kill. Allocation ownership beyond the global/RSS error is
+unresolved. Local retries stopped; ARM CI plan qualification and the whole-host
+assessment are next, with the 128 MiB page budget unchanged. All four production
+holds were reverified. See the [results and limits](pulsar-qualification.md#2026-11-04-sensor-semantics-and-original-memory-gate-pass-larger-gates-remain-open)
+and ClickHouse's [memory tracking behavior](https://clickhouse.com/docs/concepts/features/configuration/settings/memory-overcommit).

@@ -132,7 +132,28 @@ export default defineConfig({
             "**/packages/mobile/**",
             "**/*.peerdb.integration.test.ts",
             "**/*.pulsar.integration.test.ts",
+            "**/*.analytics-qualification.integration.test.ts",
           ],
+          env: {
+            ...sharedTestEnv,
+            CLICKHOUSE_URL: testClickHouseUrl,
+            TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
+          },
+        },
+      },
+      {
+        extends: false,
+        test: {
+          ...sharedTestConfig,
+          name: "analytics-qualification",
+          retry: 0,
+          includeTaskLocation: true,
+          setupFiles: [path.resolve(dirname, "src/test/early-msw-setup.ts")],
+          fileParallelism: false,
+          maxWorkers: 1,
+          sequence: { groupOrder: 1 },
+          isolate: false,
+          include: ["src/**/*.analytics-qualification.integration.test.ts"],
           env: {
             ...sharedTestEnv,
             CLICKHOUSE_URL: testClickHouseUrl,

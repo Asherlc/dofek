@@ -2,6 +2,17 @@
 
 Utility and maintenance scripts for development, infrastructure, and reverse engineering.
 
+[`check-analytics-plan-ci-admission.ts`](./check-analytics-plan-ci-admission.ts)
+checks the fixed ARM access-plan qualification environment before its database
+test. Run `pnpm tsx scripts/check-analytics-plan-ci-admission.ts <output-directory>
+<clickhouse-id> <postgres-id> <redis-id>`. It retains admission observations and
+command outcomes in `admission.json`, and fails when the architecture, available
+memory, service ceilings, native ClickHouse configuration, or locked dbt versions
+do not satisfy the [qualification admission policy](./analytics-plan-admission.ts).
+The CI job uploads this synthetic evidence alongside the fixture's request ledger,
+compiled SQL, plans, and layout frames on every outcome; see the
+[Analytics Access Plan job](../.github/workflows/test.yml).
+
 `collect-clickhouse-ci-diagnostics.ts <container-id> <output-directory>` captures
 bounded, read-only ClickHouse CI failure evidence before the service is removed.
 It writes a manifest, allowlisted container state, resource usage, redacted log

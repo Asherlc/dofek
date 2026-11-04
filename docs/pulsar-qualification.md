@@ -901,3 +901,54 @@ No production service, hold, data, resource ceiling or erasure requirement chang
 The milestone closes a concrete native mechanism question. The next work remains
 the minimal bounded query and then the complete host/storage envelope; this pass
 does not authorize a production cutover or weaken any remaining gate.
+
+## 2026-11-04: Sensor semantics and original memory gate pass; larger gates remain open
+
+The [validated-page compiler checkpoint](https://github.com/Asherlc/dofek/commit/ab6ec3a6a)
+passed the seven named sensor semantic cases and the missing/stale/ambiguous-input
+controls through actual PostgreSQL capture, native dbt compilation and ClickHouse.
+The original resource fixture contained 800,000 normalized versions, matching raw
+history, 400,000 source IDs and 1,000 keys. One 20-reference page matched all 8,000
+scalar and 20 deduplicated stable rows. Observed query peaks were 67,159,715 and
+100,813,112 bytes, below the unchanged 134,217,728-byte allowance. The pathological
+single-key page failed with its own code 241, wrote no target rows and left the
+same healthy server process running. Actual executor cursor/CAS behavior remains
+unproven until Task 5's `pathologicalPageMemoryFailureDoesNotCheckpoint` case.
+
+Adding four times the unrelated neighboring history preserved the exact affected
+page. Scalar still matched its complete output, but read 66,619,703 rows versus
+25,003,575 originally. Raw/normalized held parts also increased from 80 to 320,
+so that ratio alone does not establish an absent index predicate. Dedup then
+failed at the local server-wide memory boundary, despite an observed query peak
+of 91,184,127 bytes. A separate plan-input attempt also stopped during loading
+at that global boundary, before EXPLAIN. Neither attempt qualifies pruning or
+the complete larger workload. ClickHouse distinguishes global and query memory
+tracking; see its [memory-overcommit documentation](https://clickhouse.com/docs/concepts/features/configuration/settings/memory-overcommit).
+The allocation owner beyond the recorded global/RSS failure is unresolved; no
+OOM kill or container restart was observed.
+
+Further local Task 3 runtime is stopped. The next qualification is one ARM CI
+EXPLAIN-only run with a discriminating recorded layout and the same per-query
+budget, alongside a complete production memory/temporary-copy assessment. No
+query rewrite is selected without an identified unprunable read leg. Production
+fit, analytics drain throughput, larger dedup execution and cutover remain open.
+At 18:55 UTC the three operation-owned queues remained paused and idle, and the
+history ClickHouse sink remained at zero replicas; no hold was restored.
+
+A read-only production check found 23,974.86 MiB physical RAM and 9,744,707,584
+available data-disk bytes. The favorable retained-PeerDB steady ceiling total is
+still 24,568 MiB before Redis, host reserve and other omitted costs: the existing
+allocation fails. Historical resident-memory queries separately measured
+2,371.781 MiB during the held November 4 window and 4,625.582 MiB during the
+November 3 history-drain window after analytics became idle. The latter has
+47,111 samples over 03:35:00–16:40:10 UTC, query ID
+`whole-host-drain-memory-20261103-033500-164011`. These are resident samples,
+not cgroup ceilings or permission to lower the 13 GiB production allocation.
+Adding a serialized 128 MiB page leaves non-resident costs, consumer increment,
+host/uncapped-service reserve and intake-rate equivalence unqualified. The full
+surviving-ledger replacement copy, conversion overlap and erasure deadline also
+remain unqualified. No service limit, capture topology or hold changed.
+
+The useful distinction is fixture loading/verification versus measured model
+execution, and query-owned failure versus aggregate server pressure. Preserve
+those phases and the physical part layout when reviewing future resource results.
