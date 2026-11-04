@@ -43,7 +43,8 @@ enumeration cannot be obtained by changing the hourly batch size alone.
 
 ```mermaid
 flowchart LR
-    B[Pulsar delivery with typed position] --> W[Fenced raw write]
+    B[Pulsar delivery with typed position] --> I[Complete structural intent]
+    I --> W[Fenced raw write]
     W --> J[Durable effect journal]
     J --> A[Acknowledge delivery or marker]
     J --> S[Seal finite frontier per transport partition]
@@ -163,6 +164,17 @@ query is terminal; a lost client connection is not proof of termination. Preserv
 the existing account-erasure writer barrier and add every journal, cursor and
 intermediate output store to its ownership/deletion inventory. Source fences must
 be checked at the actual insert boundary, not just when work is scheduled.
+
+The user selected fail-closed recovery for uncertain crashes (Q7 A). Normal
+handoff may proceed only after the old executor is quiescent and its dispatched
+queries have terminal outcomes. A registered-but-unsent request cannot be
+declared terminated merely because it is absent from the server process list.
+If the old executor's ability to dispatch is uncertain, retain pending ownership
+and block takeover with an actionable error until an operator verifies executor
+and request termination. Do not infer safety from an expired lease or released
+[PostgreSQL session advisory lock](https://www.postgresql.org/docs/18/explicit-locking.html#ADVISORY-LOCKS),
+and do not add a privileged automatic isolation service. The verified operator
+procedure remains a release prerequisite, not a caller-supplied boolean.
 
 Do not mark a model, processing operation or dashboard cache ready until every
 sealed effect has successful output coverage and dependent stages have completed.

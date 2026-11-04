@@ -113,6 +113,15 @@ requirements without introducing another scheduler or a timeout-based takeover.
 
 **Interfaces:** `resolveSourcePlacements(client, sourceIds: readonly string[]): Promise<readonly SourcePlacement[]>`; `applyMetricStreamEventsToClickHouse` consumes required typed batch positions from parent Task 3 and Task 1's effect writer. No optional no-journal production path. Preserve the native publisher/consumer interfaces from the parent plan.
 
+Implementation clarification: source UUID identity spans all intake streams.
+Serialize structural preparation and raw/effect completion across those streams,
+without per-source PostgreSQL rows. Persist complete immutable structural intent
+before raw mutation, including the original ingestion tie-breaker for version-zero
+rows; publish effects/receipts only after raw success. Preparation and receipt
+finalization for large scopes must themselves be paged. A session mutex alone
+does not fence a previously dispatched ClickHouse write; use the shared query
+ownership prerequisite and Q7's fail-closed recovery contract below.
+
 - [ ] **Write failing tests:** `journalFailureAfterRawWritePreventsAck`, `replayReconstructsIdenticalEffects`, `scopeDeleteAndGenerationTombstonesHaveEffects`, `markerCannotOutrunPriorEffects`, `sourceMovesTwiceBeforeProjectionRetractBothFormerKeys`, `crossOwnerUuidCollisionFails`, `newestVersionOutsideOldKeyIsResolved`. Include failure after each raw/effect/receipt boundary.
 - [ ] **Run red:** focused sink/source-placement integration suites and parent native-consumer suite; verify missing journal behavior causes the failures.
 - [ ] **Implement structural placement lookup and sink integration.** Use an ID-leading projection/index over canonical source identity/history, preserving global UUID resolution and ownership. Retain enough structural history to recover every former key, even if a later delivery arrives before analytics runs. No second copy of metric values. Require bounded source-ID input; bootstrap by stable keyset traversal, not global distinct discovery.
@@ -149,6 +158,15 @@ requirements without introducing another scheduler or a timeout-based takeover.
 **Files:** Create `bounded-analytics.ts`, `analytics-query-owner.ts`, `analytics-model-compiler.ts` and their colocated/unit/real-engine tests; extend `src/db/clickhouse.ts` command options for actual query IDs/cancellation; modify build/local-build scripts and their tests.
 
 **Interfaces:** `runBoundedAnalyticsPage(input: { runId: string; stage: AnalyticsStage; stream: AnalyticsStream; pageSize: number }): Promise<{ progressed: boolean; remaining: boolean }>`; `assertPreviousAnalyticsQueriesTerminal(client, runId: string): Promise<void>`; `compileAnalyticsPageSql(input: { stage: AnalyticsStage; vars: Record<string, string>; artifactDirectory: string }): Promise<string>`. Required clients/work-store/fence dependencies are supplied by the production composition root, not optional test branches.
+
+Q7 A recovery clarification: cooperative handoff requires a quiescent executor
+and terminal dispatched queries. An uncertain crash blocks takeover until an
+operator verifies the predecessor and its requests have terminated. Query-ID
+registration followed by an unsent request is an explicit failure case: absence
+from `system.processes`, a released advisory lock, cancellation attempt or lease
+expiry is insufficient. No privileged isolation service or boolean proof bypass.
+The shared prerequisite may be implemented during Task 2, but the verified
+operator recovery procedure and actual termination tests remain release gates.
 
 - [ ] **Write failing recovery cases:** `crashAfterOutputBeforeEffectsReplays`, `crashAfterEffectsBeforeCursorReplays`, `replacementWaitsForServerQueryTermination`, `failedCancellationBlocksTakeover`, `latePredecessorCannotOverwriteNewerOutput`, `sourceRevisionChangeBeforePublicationRemainsDirty`.
 - [ ] **Run executor unit and real ClickHouse integration tests red.** Keep a server query alive after disconnect in the fixture; observing a closed client alone must not satisfy termination.
