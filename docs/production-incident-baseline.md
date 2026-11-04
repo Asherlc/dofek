@@ -35528,3 +35528,32 @@ initial tests and achieved 100% mutation score (6 killed, 0 survived, 0 timeouts
 0 errors; 2 string-literal mutants excluded by the existing configuration).
 Future worker-backed SDK test guidance should name both SDK and asset
 imports as dependencies of the mock boundary.
+
+## 2026-11-03: retired dashboard procedures requested by an older client
+
+- **Symptoms / impact:** The user reported Recovery, Strain target, and Sleep
+  section errors. Production web logs at `2026-11-04T03:58:04Z` confirmed
+  `POST /api/trpc/recovery.readinessScore`, `recovery.strainTarget`, and
+  `sleepNeed.performance` returning 404 with `No procedure found on path`.
+- **Cause / evidence:** [PR #3209](https://github.com/Asherlc/dofek/pull/3209)
+  intentionally removed these procedures and their web/mobile consumers.
+  The [matching deployment](https://github.com/Asherlc/dofek/actions/runs/41666680770)
+  completed its server job at `2026-11-03T16:10:29Z`, OTA at `16:14:29Z`, and
+  TestFlight upload at `16:43:22Z`. Live production HTML referenced
+  `web/sha-f02798b/` and returned `Cache-Control: no-cache`; both web replicas
+  were running. The requests therefore came from a client predating the removal;
+  whether it was an open page, cached installation, or older mobile client
+  remained unconfirmed.
+- **Mitigation / validation:** Advised reloading the page or reopening the
+  installed web app to load the current client. User-visible recovery remains
+  **unresolved pending confirmation**. No server aliases, retries, timeouts,
+  or other resilience settings were added.
+- **Related local setup failure:** The worktree setup command
+  `MISE_LOCKED=1 mise install --locked && mise run cloud:prebuild` failed first
+  with `Config files ... are not trusted`. After inspecting `mise.toml`, ran
+  `mise trust` for this worktree and retried the exact command; it exited 0,
+  installed dependencies, and completed CodeGraph initialization. Mise documents
+  explicit configuration trust in its [trust command](https://mise.jdx.dev/cli/trust.html).
+- **Follow-up:** Capture the affected client's platform and release before any
+  further fix. A client-version comparison step in the stale-page runbook would
+  make future retired-endpoint reports faster to classify.
