@@ -131,6 +131,30 @@ remain in place; neither bulk offload nor migration capacity is yet qualified.
 
 ## Acceptance results
 
+### Parallel archive-reader checkpoint
+
+The [streaming reader](../src/metric-stream/archive-reader.ts) now validates
+legacy gzip JSONL while preserving original payload bytes, revisions, controls
+and physical line ordinals. It enforces explicit compressed, decompressed and
+line bounds, checks the observed ETag and sealed compressed digest, and owns
+stream cleanup. Yields remain provisional until successful EOF; neither a line
+ordinal nor a filename endpoint is a recovered Kafka offset.
+
+Independent review found a mutable-input ownership issue. Two reproductions
+failed before the fix; the reader now snapshots its source, identity and bounds.
+All 68 focused reader/schema/key cases pass. A local dry run over the retained
+independent R2 download of 100,000 manual-offload records reached verified EOF
+and matched the payload digest, publishing nothing. The full unit/mobile tier
+passed 24,700 tests, with 19 skipped; root/server/web types and dependency
+analysis also pass. Earlier stale client, migration-list and obsolete SQL-shape
+test expectations were repaired without changing production behavior.
+
+The publisher contracts have also moved out of the Kafka implementation without
+changing its factory or runtime selection. The concrete Pulsar sender, component
+planner, transfer ledger, real broker/offload proof and complete archive inventory
+remain open. This checkpoint is not a completed converter or permission to
+replay production data.
+
 | Gate | Result | Evidence / limit |
 | --- | --- | --- |
 | ARM64 images and Node native client | PASS | Pulsar 5.0.1, Oxia 0.18.0, official pulsar-client 1.18.0 on Node 26.13.0 / Alpine ARM64. |
