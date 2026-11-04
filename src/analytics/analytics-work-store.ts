@@ -12,13 +12,12 @@ import {
   PROCESSING_DATASET_KEYS,
   type ProcessingDatasetKey,
 } from "../processing/dataset-contracts.ts";
+import { loadAnalyticsRunFrontier } from "./analytics-run-frontier.ts";
+import { type AnalyticsStage, verifyAnalyticsDeliveryReceipt } from "./effect-journal.ts";
 import {
   type AnalyticsEffectCursor,
-  type AnalyticsStage,
   type AnalyticsStream,
-  verifyAnalyticsDeliveryReceipt,
-} from "./effect-journal.ts";
-import {
+  assertPositionStream,
   journalDeliveryKey,
   journalDeliveryKeySchema,
   metricStreamPositionIdentity,
@@ -87,17 +86,6 @@ function samePosition(left: MetricStreamPosition | null, right: MetricStreamPosi
     ? left === right
     : compareMetricStreamPositions(left, right) === 0 &&
         metricStreamPositionIdentity(left) === metricStreamPositionIdentity(right);
-}
-function assertPositionStream(position: MetricStreamPosition, stream: AnalyticsStream) {
-  metricStreamPositionSchema.parse(position);
-  if (position.transport !== stream.transport)
-    throw new Error("Analytics position transport must match its stream");
-  compareMetricStreamPositions(position, {
-    ...position,
-    epoch: stream.epoch,
-    topic: stream.topic,
-    partition: stream.partition,
-  });
 }
 async function lockStream(database: SchemaExecutionDatabase, stream: AnalyticsStream) {
   const [state] = await executeWithSchema(
@@ -275,25 +263,6 @@ export async function sealAnalyticsRun(
       sql`UPDATE fitness.analytics_run SET sealed=true WHERE id=${input.runId}`,
     );
   });
-}
-
-export async function loadAnalyticsRunFrontier(
-  database: SchemaExecutionDatabase,
-  input: { runId: string; stream: AnalyticsStream },
-): Promise<MetricStreamPosition> {
-  const rows = await executeWithSchema(
-    database,
-    z.object({ position: metricStreamPositionSchema }),
-    sql`SELECT frontier.position FROM fitness.analytics_required_frontier AS frontier JOIN fitness.analytics_run AS run ON run.id=frontier.run_id WHERE run.id=${input.runId} AND run.sealed AND frontier.transport=${input.stream.transport} AND frontier.epoch=${input.stream.epoch} AND frontier.topic=${input.stream.topic} AND frontier.partition=${input.stream.partition}`,
-  );
-  let result: MetricStreamPosition | null = null;
-  for (const row of rows) {
-    assertPositionStream(row.position, input.stream);
-    if (!result || compareMetricStreamPositions(row.position, result) > 0) result = row.position;
-  }
-  if (!result)
-    throw new Error("Required sealed analytics frontier is missing; the run cannot complete");
-  return result;
 }
 
 export async function checkpointAnalyticsPage(

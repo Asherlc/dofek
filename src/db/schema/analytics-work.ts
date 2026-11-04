@@ -9,7 +9,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { AnalyticsEffectCursor } from "../../analytics/effect-journal.ts";
+import type { AnalyticsEffectCursor } from "../../analytics/journal-position.ts";
 import type { MetricStreamPosition } from "../../metric-stream/transport-position.ts";
 import { fitness } from "./core.ts";
 import { processingOperation } from "./processing.ts";

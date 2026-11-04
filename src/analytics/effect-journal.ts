@@ -7,9 +7,10 @@ import {
   type MetricStreamPosition,
   metricStreamPositionSchema,
 } from "../metric-stream/transport-position.ts";
-import { loadAnalyticsRunFrontier } from "./analytics-work-store.ts";
+import { loadAnalyticsRunFrontier } from "./analytics-run-frontier.ts";
 import {
-  type JournalDeliveryKey,
+  type AnalyticsEffectCursor,
+  type AnalyticsStream,
   journalDeliveryKey,
   journalDeliveryKeySchema,
   journalPositionColumns,
@@ -21,17 +22,6 @@ import { type SourcePlacement, sourcePlacementSchema } from "./source-placement.
 export type { SourcePlacement } from "./source-placement.ts";
 
 export type AnalyticsStage = "scalar" | "dedup" | "activity";
-export interface AnalyticsStream {
-  transport: MetricStreamPosition["transport"];
-  epoch: string;
-  topic: string;
-  partition: number;
-}
-export interface AnalyticsEffectCursor {
-  delivery: JournalDeliveryKey;
-  effectOrdinal: string;
-}
-export type SensorKey = SourcePlacement["key"];
 export interface AnalyticsEffect {
   stream: AnalyticsStream;
   position: MetricStreamPosition;

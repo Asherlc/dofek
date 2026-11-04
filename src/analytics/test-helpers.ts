@@ -11,8 +11,12 @@ import {
 } from "../metric-stream/transport-position.ts";
 import { createProcessingOperation } from "../processing/processing-event-store.ts";
 import { claimAnalyticsStream, sealAnalyticsRun } from "./analytics-work-store.ts";
-import type { AnalyticsEffect, AnalyticsStream } from "./effect-journal.ts";
-import { journalDeliveryKey, journalPositionColumns } from "./journal-position.ts";
+import type { AnalyticsEffect } from "./effect-journal.ts";
+import {
+  type AnalyticsStream,
+  journalDeliveryKey,
+  journalPositionColumns,
+} from "./journal-position.ts";
 
 export function analyticsPosition(
   stream: AnalyticsStream,

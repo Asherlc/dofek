@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { loadAnalyticsRunFrontier } from "./analytics-run-frontier.ts";
 import {
   beginAnalyticsDelivery,
   checkpointAnalyticsPage,
   claimAnalyticsRunOwnership,
   claimAnalyticsStream,
   completeAnalyticsDelivery,
-  loadAnalyticsRunFrontier,
   sealAnalyticsRun,
 } from "./analytics-work-store.ts";
 import { appendAnalyticsDelivery } from "./effect-journal.ts";

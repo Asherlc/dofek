@@ -35738,3 +35738,17 @@ without timeout/retry changes. This was CI-only: no additional production impact
 cutover or restoration of the four existing holds. Native evacuation and other
 branch CI release gates remain unresolved. See the
 [qualification evidence and CI links](pulsar-qualification.md#2026-11-04-native-evacuation-remains-unqualified-after-fixture-bootstrap-failures).
+
+
+### 2026-11-04 — Analytics dependency cycles blocked branch CI
+
+[Branch CI](https://github.com/Asherlc/dofek/actions/runs/41859366383) identified
+three analytics import cycles and one unused exported type. The schema depended
+on journal-owned cursor types, and journal/store runtime imports were reciprocal.
+Shared position contracts now own the types, and the unchanged frontier query
+has one independent module; consumers import their canonical modules directly.
+Dependency checks and Knip pass, as do 18 focused unit cases and changed-file
+format checks. Full local typecheck still has two unresolved Task 3 stale-import
+errors outside this fix. No production impact, deployment, schema/SQL behavior
+change or resilience knob was introduced. Reusing the existing CI fixture inputs
+for Knip avoided mistaking missing app configuration for a valid analysis.

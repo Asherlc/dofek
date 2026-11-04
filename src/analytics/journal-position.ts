@@ -1,15 +1,41 @@
 import { z } from "zod";
 import {
+  compareMetricStreamPositions,
   kafkaMetricStreamPositionSchema,
   type MetricStreamPosition,
+  metricStreamPositionSchema,
   pulsarMetricStreamPositionSchema,
 } from "../metric-stream/transport-position.ts";
+
+export interface AnalyticsStream {
+  transport: MetricStreamPosition["transport"];
+  epoch: string;
+  topic: string;
+  partition: number;
+}
 
 export const journalDeliveryKeySchema = z.union([
   pulsarMetricStreamPositionSchema.shape.delivery.strict(),
   z.strictObject({ offset: kafkaMetricStreamPositionSchema.shape.offset }),
 ]);
 export type JournalDeliveryKey = z.infer<typeof journalDeliveryKeySchema>;
+
+export interface AnalyticsEffectCursor {
+  delivery: JournalDeliveryKey;
+  effectOrdinal: string;
+}
+
+export function assertPositionStream(position: MetricStreamPosition, stream: AnalyticsStream) {
+  metricStreamPositionSchema.parse(position);
+  if (position.transport !== stream.transport)
+    throw new Error("Analytics position transport must match its stream");
+  compareMetricStreamPositions(position, {
+    ...position,
+    epoch: stream.epoch,
+    topic: stream.topic,
+    partition: stream.partition,
+  });
+}
 
 export function journalDeliveryKey(position: MetricStreamPosition): JournalDeliveryKey {
   return position.transport === "kafka" ? { offset: position.offset } : position.delivery;
