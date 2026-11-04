@@ -182,6 +182,122 @@ describe("analytics query ownership", () => {
     ).rejects.toThrow("verified recovery");
   });
 
+  test.each(["second request", "callback return"])(
+    "caughtUnknownOutcomeBlocks%sAndRetainsFirstQueryWhileLateInsertCompletes",
+    async (continuation) => {
+      const resourceId = randomUUID();
+      const intentId = randomUUID();
+      const table = `analytics.owner_unknown_${randomUUID().replaceAll("-", "")}`;
+      await context.clickhouse.command({
+        query: `CREATE TABLE ${table}(value UInt8) ENGINE=MergeTree ORDER BY tuple()`,
+      });
+      const transportError = new Error("unknown client response while insert still runs");
+      const dispatched: string[] = [];
+      let lateResult: Promise<{ error?: unknown }> | undefined;
+      let firstQueryId = "";
+      let caught: unknown;
+      let secondCaught: unknown;
+      const disconnected = {
+        ...context.clickhouse,
+        command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+          if (!options.query_id) throw new Error("Fixture requires owned query ID");
+          dispatched.push(options.query_id);
+          if (!options.query.startsWith(`INSERT INTO ${table}`))
+            return context.clickhouse.command(options);
+          firstQueryId = options.query_id;
+          lateResult = context.clickhouse.command(options).then(
+            () => ({}),
+            (error: unknown) => ({ error }),
+          );
+          // Observe the actual server request before losing the client boundary.
+          await vi.waitFor(async () => {
+            const running = await context.clickhouse.query<{ count: string }>({
+              query:
+                "SELECT toString(count()) AS count FROM system.processes WHERE query_id={id:String}",
+              query_params: { id: firstQueryId },
+              format: "JSONEachRow",
+            });
+            expect(await running.json()).toEqual([{ count: "1" }]);
+          });
+          throw transportError;
+        },
+      };
+      try {
+        const outcome = await withAnalyticsQueryOwner(
+          context.database,
+          disconnected,
+          { resourceId, intentId },
+          async (owner) => {
+            try {
+              await owner.client.command({
+                query: `INSERT INTO ${table} SELECT sleepEachRow(0.1) FROM numbers(30) SETTINGS max_block_size=1`,
+              });
+            } catch (error) {
+              caught = error;
+            }
+            if (continuation === "second request") {
+              try {
+                await owner.client.command({ query: "SELECT 1" });
+              } catch (error) {
+                secondCaught = error;
+              }
+            }
+            return "swallowed failure";
+          },
+        ).then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+        expect(caught).toBe(transportError);
+        if (continuation === "second request")
+          expect(secondCaught).toEqual(
+            expect.objectContaining({
+              message: expect.stringContaining("unknown request outcome"),
+            }),
+          );
+        expect(dispatched).toEqual([firstQueryId]);
+        expect(outcome).toEqual({
+          error: expect.objectContaining({
+            message: expect.stringContaining("unknown request outcome"),
+          }),
+        });
+        const state = await context.database.execute(sql`
+          SELECT intent_id,query_id,query_terminal,quiescent FROM fitness.analytics_query_owner
+          WHERE resource_id=${resourceId}`);
+        expect(state).toEqual([
+          { intent_id: intentId, query_id: firstQueryId, query_terminal: false, quiescent: false },
+        ]);
+        for (const replayIntent of [intentId, randomUUID()])
+          await expect(
+            withAnalyticsQueryOwner(
+              context.database,
+              context.clickhouse,
+              { resourceId, intentId: replayIntent },
+              async () => undefined,
+            ),
+          ).rejects.toThrow("verified recovery");
+      } finally {
+        // The deliberately disconnected client does not own the server lifetime.
+        // Always await the real request before the suite may drop its database.
+        expect(lateResult).toBeDefined();
+        expect(await lateResult).toEqual({});
+      }
+      const rows = await context.clickhouse.query<{ count: string }>({
+        query: `SELECT toString(count()) AS count FROM ${table}`,
+        format: "JSONEachRow",
+      });
+      expect(await rows.json()).toEqual([{ count: "30" }]);
+      await expect(
+        withAnalyticsQueryOwner(
+          context.database,
+          context.clickhouse,
+          { resourceId, intentId },
+          async () => undefined,
+        ),
+      ).rejects.toThrow("verified recovery");
+    },
+  );
+
   test("terminalServerRejectionAllowsOriginalIntentReplay", async () => {
     const resourceId = randomUUID();
     const intentId = randomUUID();
@@ -204,6 +320,24 @@ describe("analytics query ownership", () => {
       async (owner) => {
         expect(owner.ingestedAt).toBe(originalTimestamp);
         await owner.client.command({ query: "SELECT 1" });
+      },
+    );
+  });
+
+  test("caughtDefinitiveServerRejectionStillAllowsNextOwnedRequest", async () => {
+    await withAnalyticsQueryOwner(
+      context.database,
+      context.clickhouse,
+      { resourceId: randomUUID(), intentId: randomUUID() },
+      async (owner) => {
+        await expect(
+          owner.client.command({ query: "SELECT throwIf(1, 'caught terminal rejection')" }),
+        ).rejects.toThrow("caught terminal rejection");
+        const result = await owner.client.query<{ value: number }>({
+          query: "SELECT 7 AS value",
+          format: "JSONEachRow",
+        });
+        expect(await result.json()).toEqual([{ value: 7 }]);
       },
     );
   });

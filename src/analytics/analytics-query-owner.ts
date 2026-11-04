@@ -82,9 +82,18 @@ async function withOwnedQueries<T>(
     if (result.rowCount !== 1) throw new Error("Analytics query owner is no longer active");
   }
 
+  function assertKnownRequestOutcome() {
+    // A settled client promise can leave its server request running.
+    if (!queryTerminal)
+      throw new Error(
+        "Analytics query owner has an unknown request outcome; verified recovery is required",
+      );
+  }
+
   async function execute<R>(dispatch: (queryId: string) => Promise<R>): Promise<R> {
     if (inFlight) throw new Error("Analytics query owner requires serial requests");
     if (closed) throw new Error("Analytics query owner is closed");
+    assertKnownRequestOutcome();
     const pending = (async () => {
       await assertActive();
       const queryId = randomUUID();
@@ -209,6 +218,7 @@ async function withOwnedQueries<T>(
     };
     const value = await operation({ client, ingestedAt, assertActive });
     if (inFlight) throw new Error("Analytics owner callback returned before its request completed");
+    assertKnownRequestOutcome();
     await assertActive();
     if (input.mode === "write")
       await session.query(
