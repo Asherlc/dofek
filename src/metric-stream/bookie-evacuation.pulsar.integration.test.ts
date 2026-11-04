@@ -82,6 +82,19 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   };
   const shell = (...args: string[]) =>
     client("bin/bookkeeper", "shell", "-conf", "conf/bookkeeper.conf", ...args);
+  const metadataAdmin = (...args: string[]) =>
+    compose([
+      "exec",
+      "-T",
+      "pulsar-oxia-coordinator",
+      "oxia",
+      "admin",
+      "--admin-address",
+      "localhost:6650",
+      "--output",
+      "json",
+      ...args,
+    ]);
   const state = (service: string) =>
     JSON.parse(
       client(
@@ -106,8 +119,51 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       fixture,
       "src/metric-stream/BookieEvacuationFixture.java",
     ]);
+    phase = "metadata-data-server";
+    metadataAdmin(
+      "dataserver",
+      "create",
+      "pulsar-oxia",
+      "--public",
+      "pulsar-oxia:6648",
+      "--internal",
+      "pulsar-oxia:6649",
+    );
+    const identity = {
+      name: "pulsar-oxia",
+      public: "pulsar-oxia:6648",
+      internal: "pulsar-oxia:6649",
+    };
+    expect(JSON.parse(metadataAdmin("dataserver", "get", "pulsar-oxia"))).toMatchObject({
+      data_server: { identity },
+    });
+    phase = "metadata-namespace";
+    metadataAdmin(
+      "namespace",
+      "create",
+      "bookkeeper",
+      "--initial-shards",
+      "1",
+      "--replication-factor",
+      "1",
+    );
+    expect(JSON.parse(metadataAdmin("namespace", "get", "bookkeeper"))).toMatchObject({
+      namespace: {
+        name: "bookkeeper",
+        initial_shard_count: 1,
+        replication_factor: 1,
+        notifications_enabled: true,
+      },
+    });
     phase = "metadata-format";
     shell("metaformat", "-nonInteractive");
+    // Successful native formatting requires usable shard assignments; inspect their exact identity too.
+    phase = "metadata-assignment";
+    const namespace = JSON.parse(metadataAdmin("namespace", "get", "bookkeeper"));
+    expect(namespace.namespace_status?.replication_factor).toBe(1);
+    const shards = Object.values(namespace.namespace_status?.shards ?? {});
+    expect(shards).toHaveLength(1);
+    expect(shards[0]).toMatchObject({ status: 1, leader: identity, ensemble: [identity] });
     phase = "source-ready";
     compose(["up", "-d", "--wait", "--wait-timeout", "90", "source"], 90_000);
     expect(state("source")).toMatchObject({ running: true, readOnly: false, shuttingDown: false });
@@ -140,7 +196,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     );
     expect(readonly).toMatchObject({ readOnly: true });
     expect(state("source")).toMatchObject({ running: true, readOnly: true, shuttingDown: false });
-    java("registered"); // Includes independent source readback after the manual transition.
+    java("registered"); // Includes independent source read verification after the manual transition.
     phase = "recover";
     shell("recover", "-f", "source:3181");
     expect(state("source")).toMatchObject({ running: true, readOnly: true, shuttingDown: false });
