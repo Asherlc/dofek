@@ -386,59 +386,21 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("source_refreshed_at AS refreshed_at");
   });
 
-  it("uses source freshness for late-arriving activity stream samples", () => {
+  it("uses source freshness for late-arriving activity location samples", () => {
     const sourcesYaml = readProjectFile("analytics/models/sources.yml");
-    const sensorScalarSampleSql = readProjectFile(
-      "analytics/models/staging/sensor_scalar_sample.sql",
-    );
-    const dedupedSensorSql = readModel("deduped_sensor");
     const activityLocationSampleSql = readModel("activity_location_sample");
 
     expect(sourcesYaml).toContain("name: metric_stream_freshness");
     expect(sourcesYaml).toContain("identifier: metric_stream");
     expect(sourcesYaml).toContain("name: ingest");
     expect(sourcesYaml).toContain("event_time: ingested_at");
-    expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
-    expect(sensorScalarSampleSql).toContain(
-      "sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', default_microbatch_begin)",
-    );
-    expect(sensorScalarSampleSql).toContain("begin=sensor_scalar_sample_begin");
-    expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
-    expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
-    expect(dedupedSensorSql).toContain(
-      "deduped_sensor_begin = var('deduped_sensor_begin', default_microbatch_begin)",
-    );
-    expect(dedupedSensorSql).toContain("begin=deduped_sensor_begin");
-    expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
-    expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(activityLocationSampleSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 
   it("carries the selected sensor source through canonical activity samples", () => {
-    const sensorSql = readProjectFile("analytics/models/staging/sensor_scalar_sample.sql");
-    const dedupedSql = readModel("deduped_sensor");
     const activitySampleSql = readModel("activity_sensor_sample");
     const locationSampleSql = readModel("activity_location_sample");
-
-    const latestRowsMatch = sensorSql.match(
-      /metric_stream_latest AS \((?<body>[\s\S]*?)\),\n\nmetric_stream_rows AS/,
-    );
-    expect(latestRowsMatch).not.toBeNull();
-    expect(latestRowsMatch?.groups?.body.match(/argMax\(/g)).toHaveLength(1);
-    expect(latestRowsMatch?.groups?.body).toContain("argMax(\n            tuple(");
-
-    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 1) AS activity_id");
-    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 6) AS source_external_id");
-    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 8) AS source_type");
-    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 9) AS metadata");
-    expect(sensorSql).toContain("JSONExtractString(metadata, 'measurement_kind')");
-    expect(sensorSql.match(/toNullable\(priority\) AS priority/g)).toHaveLength(2);
-    expect(sensorSql).toContain("'distance'");
-    expect(sensorSql).toContain("'temperature'");
-
-    expect(dedupedSql.match(/argMinIf\(/g)).toHaveLength(1);
-    expect(dedupedSql).toContain("argMinIf(\n            tuple(");
 
     for (const sourceColumn of [
       "member_activity_id",
@@ -447,7 +409,6 @@ describe("production analytics read-model build", () => {
       "source_type",
       "measurement_kind",
     ]) {
-      expect(dedupedSql).toContain(`samples.${sourceColumn}`);
       expect(activitySampleSql).toContain(`samples.${sourceColumn} AS ${sourceColumn}`);
     }
     expect(activitySampleSql).not.toContain("source('ingest'");

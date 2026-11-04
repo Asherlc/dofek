@@ -3,14 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 
 vi.mock("@clickhouse/client", () => ({
-  createClient: vi.fn(),
+  createClient: vi.fn(() => ({
+    query: vi.fn(),
+    insert: vi.fn(),
+    close: vi.fn(),
+    command: vi.fn(),
+    exec: vi.fn(),
+  })),
 }));
 
 const mockCreateClient = vi.mocked(createClient);
 
 describe("createClickHouseClientFromEnv", () => {
   beforeEach(() => {
-    mockCreateClient.mockReset();
+    mockCreateClient.mockClear();
   });
 
   it("uses a request timeout long enough for production refresh waits", () => {
