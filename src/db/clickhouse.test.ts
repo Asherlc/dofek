@@ -1,7 +1,8 @@
+import { PassThrough, Readable } from "node:stream";
 import { createClient } from "@clickhouse/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const createClientMock = vi.mocked(createClient);
+const createClientMock = vi.mocked(createClient, { partial: true });
 
 vi.mock("@clickhouse/client", () => ({
   createClient: vi.fn(),
@@ -58,6 +59,103 @@ describe("parsePostgresConnectionForClickHouse", () => {
 });
 
 describe("createClickHouseClientFromEnv", () => {
+  function nativeClient() {
+    return {
+      command: vi.fn().mockResolvedValue({ query_id: "native" }),
+      exec: vi.fn().mockResolvedValue({ stream: Readable.from([]), query_id: "input" }),
+      query: vi.fn().mockResolvedValue({ json: async () => [] }),
+      insert: vi.fn().mockResolvedValue({ query_id: "insert" }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+  beforeEach(() => {
+    createClientMock.mockReturnValue(nativeClient());
+  });
+
+  it("routes input through the same official client and consumes an empty response", async () => {
+    const native = nativeClient();
+    const response = new PassThrough();
+    native.exec.mockResolvedValue({ stream: response, query_id: "input" });
+    createClientMock.mockReturnValue(native);
+    const client = createClickHouseClientFromEnv({ CLICKHOUSE_URL: "http://clickhouse:8123" });
+    const values = Readable.from([]);
+    const pending = client.command({
+      query: "INSERT INTO example SELECT * FROM input('n UInt8') FORMAT JSONEachRow",
+      query_id: "owned",
+      values,
+      clickhouse_settings: {
+        http_wait_end_of_query: 0,
+        async_insert: 1,
+        send_progress_in_http_headers: 1,
+      },
+    });
+    let completed = false;
+    void pending.then(() => {
+      completed = true;
+    });
+    await Promise.resolve();
+    expect(completed).toBe(false);
+    response.end();
+    expect(await pending).toBeUndefined();
+    expect(native.command).not.toHaveBeenCalled();
+    expect(native.exec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        values,
+        query_id: "owned",
+        clickhouse_settings: {
+          http_wait_end_of_query: 1,
+          async_insert: 0,
+          send_progress_in_http_headers: 0,
+        },
+      }),
+    );
+  });
+
+  it.each(["unexpected body", "stream failure", "premature close"])(
+    "rejects %s without exposing body bytes",
+    async (failure) => {
+      const native = nativeClient();
+      const response = new PassThrough();
+      native.exec.mockResolvedValue({ stream: response, query_id: "input" });
+      createClientMock.mockReturnValue(native);
+      const client = createClickHouseClientFromEnv({ CLICKHOUSE_URL: "http://clickhouse:8123" });
+      const pending = client.command({ query: "INSERT", values: Readable.from([]) });
+      const rejected = expect(pending).rejects.toThrow(
+        failure === "unexpected body"
+          ? "Unexpected nonempty ClickHouse input command response"
+          : failure === "stream failure"
+            ? "synthetic transport failure"
+            : "Premature close",
+      );
+      await Promise.resolve();
+      if (failure === "unexpected body") response.end("private synthetic response bytes");
+      else
+        response.destroy(
+          failure === "stream failure" ? new Error("synthetic transport failure") : undefined,
+        );
+      await rejected;
+    },
+  );
+
+  it("preserves ordinary command and bound SDK method behavior", async () => {
+    const native = nativeClient();
+    for (const method of ["command", "query", "insert", "close"] as const) {
+      native[method].mockImplementation(function (this: unknown) {
+        expect(this).toBe(native);
+        return Promise.resolve(
+          method === "query" ? { json: async () => [] } : { query_id: method },
+        );
+      });
+    }
+    createClientMock.mockReturnValue(native);
+    const client = createClickHouseClientFromEnv({ CLICKHOUSE_URL: "http://clickhouse:8123" });
+    expect(await client.command({ query: "SELECT 1" })).toEqual({ query_id: "command" });
+    await client.query({ query: "SELECT 1", format: "JSONEachRow" });
+    await client.insert?.({ table: "example", format: "JSONEachRow", values: [] });
+    await client.close?.();
+    expect(native.exec).not.toHaveBeenCalled();
+  });
+
   it("throws when CLICKHOUSE_URL is missing", () => {
     expect(() => {
       createClickHouseClientFromEnv({}, {});

@@ -1,3 +1,4 @@
+import type { Readable } from "node:stream";
 import { createClient } from "@clickhouse/client";
 import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./clickhouse-metric-stream-bootstrap.ts";
@@ -5,6 +6,7 @@ import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./click
 export interface ClickHouseCommandClient {
   command(options: {
     query: string;
+    values?: Readable;
     query_id?: string;
     abort_signal?: AbortSignal;
     clickhouse_settings?: Record<string, string | number | boolean>;
@@ -115,11 +117,36 @@ export function createClickHouseClientFromEnv(
   if (!url) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
-  return createClient({
+  const client = createClient({
     url,
     request_timeout: options.requestTimeoutMs ?? CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS,
     clickhouse_settings: CLICKHOUSE_DEFAULT_SETTINGS,
   });
+  return {
+    query: client.query.bind(client),
+    insert: client.insert.bind(client),
+    close: client.close.bind(client),
+    async command({ values, ...command }) {
+      if (values === undefined) return client.command(command);
+      const result = await client.exec({
+        ...command,
+        values,
+        clickhouse_settings: {
+          ...command.clickhouse_settings,
+          http_wait_end_of_query: 1,
+          send_progress_in_http_headers: 0,
+          async_insert: 0,
+        },
+      });
+      // An INSERT has no result body. EOF alone could also follow a late HTTP
+      // 200 exception, so drain without retaining bytes and verify emptiness.
+      let nonempty = false;
+      for await (const chunk of result.stream) {
+        if (chunk.length > 0) nonempty = true;
+      }
+      if (nonempty) throw new Error("Unexpected nonempty ClickHouse input command response");
+    },
+  };
 }
 
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {

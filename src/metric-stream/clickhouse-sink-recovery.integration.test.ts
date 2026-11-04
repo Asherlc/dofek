@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { HttpResponse, http, passthrough } from "msw";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { verifyAnalyticsDeliveryReceipt } from "../analytics/effect-journal.ts";
 import { createAnalyticsTestContext } from "../analytics/test-helpers.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { applyMetricStreamEventsToClickHouse } from "./clickhouse-sink.ts";
 import {
   buildAccountErasureFenceTableSql,
@@ -22,6 +24,7 @@ import {
   createMetricStreamEvent,
   metricStreamDeletedEventV2Schema,
 } from "./events.ts";
+import { createMetricStreamAnalyticsTestContext } from "./test-helpers.ts";
 import { type MetricStreamPosition, metricStreamPositionSchema } from "./transport-position.ts";
 
 describe("metric stream durable recovery", () => {
@@ -468,4 +471,63 @@ describe("metric stream durable recovery", () => {
     });
     expect(await scalar.json()).toEqual([{ scalar: 93 }]);
   });
+  test.each(["native insert rejection", "nonempty 200"])(
+    "raw input %s cannot publish a receipt or frontier",
+    async (mode) => {
+      const isolated = await createMetricStreamAnalyticsTestContext();
+      const client = isolated.client;
+      const row = { ...event(), userId: isolated.userId };
+      const delivery = batch(1);
+      const position = delivery.positions[0];
+      if (!position) throw new Error("Missing fixture position");
+      const network = createIntegrationMswFixture();
+      let rawQueryId: string | null = null;
+      if (mode === "nonempty 200") {
+        network.activate({ onUnhandledFrame: "bypass" });
+        network.use(
+          http.post("*", ({ request }) => {
+            const url = new URL(request.url);
+            if (!url.searchParams.get("query")?.includes(".metric_stream (")) return passthrough();
+            rawQueryId = url.searchParams.get("query_id");
+            return HttpResponse.text("synthetic unexpected body must remain private");
+          }),
+        );
+      } else
+        await client.command({
+          query:
+            "ALTER TABLE ingest.metric_stream ADD CONSTRAINT reject_synthetic_input CHECK provider_id!={provider:String}",
+          query_params: { provider: row.providerId },
+        });
+      try {
+        await expect(
+          applyMetricStreamEventsToClickHouse(client, [row], delivery, isolated.database),
+        ).rejects.toThrow(
+          mode === "nonempty 200"
+            ? "Unexpected nonempty ClickHouse input command response"
+            : "reject_synthetic_input",
+        );
+        const rows = await client.query({
+          query: "SELECT id FROM ingest.metric_stream WHERE id={id:UUID}",
+          query_params: { id: row.id },
+          format: "JSONEachRow",
+        });
+        expect(await rows.json()).toEqual([]);
+        const progress = await isolated.database.execute(
+          sql`SELECT processed FROM fitness.analytics_stream_state WHERE transport=${position.transport} AND epoch=${position.epoch} AND topic=${position.topic} AND partition=${position.partition}`,
+        );
+        expect(progress[0]?.processed ?? null).toBeNull();
+        await expect(verifyAnalyticsDeliveryReceipt(client, position)).rejects.toThrow();
+        if (mode === "nonempty 200") {
+          expect(typeof rawQueryId).toBe("string");
+          const owner = await isolated.database.execute(
+            sql`SELECT query_terminal,intent_id IS NOT NULL AS pending FROM fitness.analytics_query_owner WHERE query_id=${rawQueryId}`,
+          );
+          expect(owner).toEqual([{ query_terminal: false, pending: true }]);
+        }
+      } finally {
+        network.deactivate();
+        await isolated.cleanup();
+      }
+    },
+  );
 });

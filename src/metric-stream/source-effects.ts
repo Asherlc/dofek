@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { z } from "zod";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
 import type { AnalyticsEffect } from "../analytics/effect-journal.ts";
@@ -281,32 +282,22 @@ export async function applyMetricStreamSourceEffects(
       version: after.sourceVersion,
       is_deleted: after.deleted ? 1 : 0,
     };
+    // Constant identity predicates keep the generation lookup bounded; an input
+    // correlation scans all generation history. These IDs remain visible in logs.
+    const { user_id: userId, provider_id: providerId, ...input } = row;
     await owner.client.command({
       query: `INSERT INTO ${METRIC_STREAM_TABLE} (id,activity_id,user_id,recorded_at,channel,provider_id,external_id,device_id,source_type,scalar,vector,point,metadata,ingested_at,is_deleted,version,generation)
-        SELECT {id:UUID},{activity:Nullable(UUID)},{user:UUID},parseDateTime64BestEffort({recorded:String},6),{channel:String},{provider:String},
-          {external:Nullable(String)},{device:Nullable(String)},{sourceType:String},{scalar:Nullable(Float32)},{vector:Array(Float32)},{point:String},{metadata:String},
-          parseDateTime64BestEffort({ingested:String},9),{deleted:Int8},{version:Int64},{generation:UInt64}
+        SELECT incoming.id,incoming.activity_id,{user:UUID},parseDateTime64BestEffort(incoming.recorded_at,6),incoming.channel,{provider:String},
+          incoming.external_id,incoming.device_id,incoming.source_type,incoming.scalar,incoming.vector,incoming.point,incoming.metadata,
+          parseDateTime64BestEffort(incoming.ingested_at,9),incoming.is_deleted,incoming.version,incoming.generation
+        FROM input('id UUID,activity_id Nullable(UUID),recorded_at String,channel String,
+          external_id Nullable(String),device_id Nullable(String),source_type String,scalar Nullable(Float32),vector Array(Float32),point String,metadata String,
+          ingested_at String,is_deleted Int8,version Int64,generation UInt64') AS incoming
         WHERE lower(hex(SHA256(toString({user:UUID})))) NOT IN (SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL)
-          AND ({deleted:Int8}=1 OR {generation:UInt64}>=(SELECT max(generation) FROM ${PROVIDER_DATA_GENERATION_TABLE} WHERE user_id={user:UUID} AND provider_id={provider:String}))`,
-      query_params: {
-        id: row.id,
-        activity: row.activity_id,
-        user: row.user_id,
-        recorded: row.recorded_at,
-        channel: row.channel,
-        provider: row.provider_id,
-        external: row.external_id,
-        device: row.device_id,
-        sourceType: row.source_type,
-        scalar: row.scalar,
-        vector: row.vector,
-        point: row.point ?? "",
-        metadata: row.metadata,
-        ingested: owner.ingestedAt,
-        deleted: row.is_deleted,
-        version: String(row.version),
-        generation: row.generation,
-      },
+          AND (incoming.is_deleted=1 OR incoming.generation>=(SELECT max(generation) FROM ${PROVIDER_DATA_GENERATION_TABLE} WHERE user_id={user:UUID} AND provider_id={provider:String}))
+        FORMAT JSONEachRow`,
+      query_params: { user: userId, provider: providerId },
+      values: Readable.from([`${JSON.stringify({ ...input, point: row.point ?? "" })}\n`]),
     });
     return after.deleted ? 0 : 1;
   }

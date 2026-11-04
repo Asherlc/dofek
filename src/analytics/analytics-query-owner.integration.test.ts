@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { sql } from "drizzle-orm";
 import type { PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -726,65 +727,77 @@ describe("analytics query ownership", () => {
     expect(await rows.json()).toEqual([{ count: "0" }]);
   });
 
-  test("lateClickHouseInsertAfterLostPostgresSessionKeepsReplacementBlocked", async () => {
-    const resourceId = randomUUID();
-    const intentId = randomUUID();
-    await context.clickhouse.command({
-      query:
-        "CREATE TABLE analytics.owner_late_insert(value UInt8) ENGINE=MergeTree ORDER BY tuple()",
-    });
-    await expect(
-      withAnalyticsQueryOwner(
-        context.database,
-        context.clickhouse,
-        { resourceId, intentId },
-        async (owner) => {
-          const finished = expect(
-            owner.client.command({
-              query:
-                "INSERT INTO analytics.owner_late_insert SELECT sleepEachRow(0.1) FROM numbers(30) SETTINGS max_block_size=1",
-            }),
-          ).rejects.toThrow();
-          await vi.waitFor(async () => {
-            const rows = await context.database.execute<{ query_id: string | null }>(sql`
+  test.each(["command", "input"])(
+    "lateClickHouseInsertAfterLostPostgresSessionKeepsReplacementBlocked: %s",
+    async (mode) => {
+      const resourceId = randomUUID();
+      const intentId = randomUUID();
+      await context.clickhouse.command({
+        query: `CREATE TABLE analytics.owner_late_insert_${mode}(value UInt8) ENGINE=MergeTree ORDER BY tuple()`,
+      });
+      await expect(
+        withAnalyticsQueryOwner(
+          context.database,
+          context.clickhouse,
+          { resourceId, intentId },
+          async (owner) => {
+            const finished = expect(
+              owner.client.command({
+                query:
+                  mode === "input"
+                    ? `INSERT INTO analytics.owner_late_insert_${mode} SELECT sleepEachRow(0.1)+toUInt8(n*0) FROM input('n UInt64') SETTINGS max_block_size=1 FORMAT JSONEachRow`
+                    : `INSERT INTO analytics.owner_late_insert_${mode} SELECT sleepEachRow(0.1) FROM numbers(30) SETTINGS max_block_size=1`,
+                ...(mode === "input"
+                  ? {
+                      values: Readable.from([
+                        Array.from({ length: 30 }, (_, n) => JSON.stringify({ n })).join("\n") +
+                          "\n",
+                      ]),
+                    }
+                  : {}),
+              }),
+            ).rejects.toThrow();
+            await vi.waitFor(async () => {
+              const rows = await context.database.execute<{ query_id: string | null }>(sql`
             SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`);
-            const queryId = rows[0]?.query_id;
-            expect(queryId).toBeTruthy();
-            const running = await context.clickhouse.query<{ count: string }>({
-              query:
-                "SELECT toString(count()) AS count FROM system.processes WHERE query_id={id:String}",
-              query_params: { id: queryId },
-              format: "JSONEachRow",
+              const queryId = rows[0]?.query_id;
+              expect(queryId).toBeTruthy();
+              const running = await context.clickhouse.query<{ count: string }>({
+                query:
+                  "SELECT toString(count()) AS count FROM system.processes WHERE query_id={id:String}",
+                query_params: { id: queryId },
+                format: "JSONEachRow",
+              });
+              expect(await running.json()).toEqual([{ count: "1" }]);
             });
-            expect(await running.json()).toEqual([{ count: "1" }]);
-          });
-          await context.database.execute(sql`
+            await context.database.execute(sql`
           SELECT pg_terminate_backend(backend_pid)
           FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`);
-          await expect(
-            withAnalyticsQueryOwner(
-              context.database,
-              context.clickhouse,
-              { resourceId, intentId: randomUUID() },
-              async () => undefined,
-            ),
-          ).rejects.toThrow("verified recovery");
-          await finished;
-        },
-      ),
-    ).rejects.toThrow();
-    const inserted = await context.clickhouse.query<{ count: string }>({
-      query: "SELECT toString(count()) AS count FROM analytics.owner_late_insert",
-      format: "JSONEachRow",
-    });
-    expect(await inserted.json()).toEqual([{ count: "30" }]);
-    await expect(
-      withAnalyticsQueryOwner(
-        context.database,
-        context.clickhouse,
-        { resourceId, intentId },
-        async () => undefined,
-      ),
-    ).rejects.toThrow("verified recovery");
-  });
+            await expect(
+              withAnalyticsQueryOwner(
+                context.database,
+                context.clickhouse,
+                { resourceId, intentId: randomUUID() },
+                async () => undefined,
+              ),
+            ).rejects.toThrow("verified recovery");
+            await finished;
+          },
+        ),
+      ).rejects.toThrow();
+      const inserted = await context.clickhouse.query<{ count: string }>({
+        query: `SELECT toString(count()) AS count FROM analytics.owner_late_insert_${mode}`,
+        format: "JSONEachRow",
+      });
+      expect(await inserted.json()).toEqual([{ count: "30" }]);
+      await expect(
+        withAnalyticsQueryOwner(
+          context.database,
+          context.clickhouse,
+          { resourceId, intentId },
+          async () => undefined,
+        ),
+      ).rejects.toThrow("verified recovery");
+    },
+  );
 });
