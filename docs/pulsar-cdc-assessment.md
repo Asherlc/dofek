@@ -706,3 +706,41 @@ candidate, as well as the earlier local 26.9 baseline. The 1 MiB disk-allowance
 counterexample also reproduced on 26.10.2.103, so an older-engine comparison is
 not the sole basis for rejecting physical isolation. The latest-version result
 does not pass the missing full-host, full-build or physical-storage gates.
+
+### Native CDC effect identity: confirmed connector blocker
+
+On November 4 UTC, an early check of the bounded analytics causal contract found
+a released-connector limitation in SeaTunnel 3.0.0. Its Pulsar source records
+`message.getMessageId()` in internal split/checkpoint state, then calls the
+deserializer with only `message.getData()`. The optional collector adds a logical
+table ID, not native delivery coordinates. Downstream SQL and receipt sinks
+therefore do not receive the actual serialized message ID. This was verified in
+the exact [source reader](https://github.com/apache/seatunnel/blob/v3.0.0/seatunnel-connectors-v2/connector-pulsar/src/main/java/org/apache/seatunnel/connectors/seatunnel/pulsar/source/reader/PulsarSourceReader.java#L141-L179)
+and [collector](https://github.com/apache/seatunnel/blob/v3.0.0/seatunnel-connectors-v2/connector-pulsar/src/main/java/org/apache/seatunnel/connectors/seatunnel/pulsar/source/reader/TableIdInjectingCollector.java#L25-L40).
+
+The released [factory options](https://github.com/apache/seatunnel/blob/v3.0.0/seatunnel-connectors-v2/connector-pulsar/src/main/java/org/apache/seatunnel/connectors/seatunnel/pulsar/source/PulsarSourceFactory.java#L48-L89)
+and supported deserializers provide no native-message-ID output configuration.
+JSON, CANAL_JSON, AVRO and TEXT all use that payload-only boundary. Adding schema
+fields cannot reconstruct metadata that is not passed to the row path. Debezium
+Server receives the assigned broker ID only after sending the already-built
+payload; its [Pulsar completion callback](https://github.com/debezium/debezium-server/blob/v3.7.0.Final/debezium-server-pulsar/src/main/java/io/debezium/server/pulsar/PulsarChangeConsumer.java#L175-L197)
+does not put it back into that payload. Source LSNs, timestamps and acknowledgment
+counts must not be presented as those native delivery IDs.
+
+This blocks the selected native path's required exact delivery receipts.
+Prior timestamp, row and durable checkpoint controls remain valid narrow results;
+they did not qualify this contract. No new large runtime fixture or production
+experiment was performed for this assessment. Native before/after-field options
+still have untested possibilities; cross-destination preparation/raw/receipt
+ordering and a small PostgreSQL frontier export remain unqualified, rather than
+proven impossible. A [multi-table prepare](https://github.com/apache/seatunnel/blob/v3.0.0/seatunnel-api/src/main/java/org/apache/seatunnel/api/sink/multitablesink/MultiTableSinkWriter.java#L728-L775)
+can run sub-writers concurrently, so ordinary fan-out alone is not an ordering
+proof.
+
+Dependent implementation is stopped with work preserved. No custom connector,
+fork, invented frontier or alternate framework has been adopted. Assessing Flink
+in place of SeaTunnel, while retaining Pulsar, the existing server and the
+licensing/connector constraints, was proposed for explicit user direction. Its
+capability, maintenance and resource fit have not been researched or qualified
+in this checkpoint. PeerDB remains in production; all four safety holds and the
+independent warm-memory/full-host gates remain open.
