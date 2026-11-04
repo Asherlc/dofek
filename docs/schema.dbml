@@ -899,6 +899,54 @@ table fitness.activity_image_work {
   }
 }
 
+table fitness.analytics_required_frontier {
+  run_id uuid [not null]
+  operation_id uuid [not null]
+  user_id uuid
+  dataset_key text [not null]
+  epoch text [not null]
+  topic text [not null]
+  partition integer [not null]
+  position jsonb [not null]
+
+  indexes {
+    (run_id, operation_id, dataset_key, epoch, topic, partition) [pk]
+  }
+}
+
+table fitness.analytics_run {
+  id uuid [pk, not null]
+  owner_id uuid
+  sealed boolean [not null, default: false]
+}
+
+table fitness.analytics_stage_cursor {
+  run_id uuid [not null]
+  stage text [not null]
+  epoch text [not null]
+  topic text [not null]
+  partition integer [not null]
+  cursor jsonb [not null]
+
+  indexes {
+    (run_id, stage, epoch, topic, partition) [pk]
+
+  }
+}
+
+table fitness.analytics_stream_state {
+  epoch text [not null]
+  topic text [not null]
+  partition integer [not null]
+  owner_id uuid [not null]
+  processed jsonb
+  pending jsonb
+
+  indexes {
+    (epoch, topic, partition) [pk]
+  }
+}
+
 table fitness.area {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -2146,6 +2194,14 @@ ref activity_image_discovery_owned_climbing_log_fk: fitness.activity_image_disco
 ref activity_image_object_user_id_user_profile_id_fk: fitness.activity_image_object.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref activity_image_work_owned_image_fk: fitness.activity_image_work.(user_id, image_id) > fitness.activity_image.(user_id, id) [delete: cascade, update: no action]
+
+ref analytics_required_frontier_run_id_analytics_run_id_fk: fitness.analytics_required_frontier.run_id > fitness.analytics_run.id [delete: cascade, update: no action]
+
+ref analytics_required_frontier_operation_id_processing_operation_id_fk: fitness.analytics_required_frontier.operation_id > fitness.processing_operation.id [delete: cascade, update: no action]
+
+ref analytics_required_frontier_user_id_user_profile_id_fk: fitness.analytics_required_frontier.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref analytics_stage_cursor_run_id_analytics_run_id_fk: fitness.analytics_stage_cursor.run_id > fitness.analytics_run.id [delete: cascade, update: no action]
 
 ref area_user_id_user_profile_id_fk: fitness.area.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

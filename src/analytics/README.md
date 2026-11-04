@@ -7,6 +7,48 @@ Application reference data and policy live in
 [`cycling-power-policy.ts`](cycling-power-policy.ts); persistence is defined by
 [`cycling-power-schema.ts`](../db/cycling-power-schema.ts).
 
+The bounded-work foundation uses [`effect-journal.ts`](effect-journal.ts) for
+structural effects and discovery receipts in ClickHouse, and
+[`analytics-work-store.ts`](analytics-work-store.ts) for small PostgreSQL
+run/frontier/cursor and ownership records. Its executable contracts are in the
+adjacent integration suites. Production activation requires the account-erasure
+ownership migration in the same release unit; see the
+[approved plan](../../docs/superpowers/plans/2026-11-03-bounded-analytics.md).
+
+Each discovery receipt contains at most one effect reference. A page reads at most 20
+references plus one lookahead before fetching the referenced effects. A missing
+payload fails the page. An explicit empty delivery uses cursor ordinal `-1`;
+actual effect ordinals are unsigned. Empty pages can advance a cursor while
+`exhausted` remains false. Delivery completion verifies the count and ordered
+SHA-256 identity digest through bounded receipt pages before advancing the
+processed delivery frontier. Integer holes are allowed; exclusive admission
+orders observed native deliveries. These behaviors are covered by the
+[journal tests](effect-journal.integration.test.ts) and
+[work-store tests](analytics-work-store.integration.test.ts).
+
+Native delivery order is scoped to one epoch/topic/partition and preserves the
+serialized ID. The adapter is pinned to Node `pulsar-client` 1.18.0 and its
+[declared C++ 4.2.0 dependency](https://github.com/apache/pulsar-client-node/blob/v1.18.0/pulsar-client-cpp.txt).
+The exact supported native representation and ledger/entry/batch ordering come
+from the [pinned implementation](https://github.com/apache/pulsar-client-cpp/blob/v4.2.0/lib/MessageId.cc);
+unknown and chunked representations fail qualification. See
+[native tests](../../docs/testing.md#native-pulsar-position-qualification).
+
+Run-writer ownership is separate from transport-consumer ownership. A run owner
+is claimed by explicit compare-and-set, and checkpointing locks that same run
+row before checking its owner and cursor. Before transferring ownership, the
+caller must prove that the former writer and its server-side queries have
+terminated; ownership CAS alone does not establish safe publication takeover.
+The [ownership test](analytics-work-store.integration.test.ts) covers handoff at
+an unchanged cursor. PostgreSQL documents the underlying
+[row-lock semantics](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS).
+
+Receipt checks cover missing journal payloads while discovery receipts remain.
+Loss of both receipts and payloads is part of the separate storage/restore
+qualification gate. Per-effect receipts add metadata rows and write overhead
+that must be included in the host storage and throughput budget; see the
+[resource qualification requirements](../../docs/superpowers/plans/2026-11-03-bounded-analytics.md).
+
 The projector first refreshes normalized power for at most 100 changed completed
 activities with power, including cycling activities whose power is unavailable.
 It then reconstructs at most 32 ready users' compact cycling histories. Each user

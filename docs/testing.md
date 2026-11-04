@@ -1,5 +1,32 @@
 # Testing Notes
 
+## Native Pulsar position qualification
+
+`pnpm test:pulsar-integration` runs the explicit `pulsar-integration` Vitest
+project. Supply `PULSAR_TEST_SERVICE_URL` and `PULSAR_TEST_ADMIN_URL` for an
+isolated Pulsar 5.0.1 broker. Both keys are required; missing configuration
+fails immediately. The ordinary unit/mobile and database tiers retain their
+existing dependencies. Vitest documents
+[separate projects](https://vitest.dev/guide/projects).
+
+The test creates fresh `persistent://public/default/bounded-order-<uuid>` topics,
+publishes native batches, closes the producer, unloads its topic through the
+broker admin API, and reopens it to establish ledger rollover. It consumes the
+messages and verifies serialized message-ID round trips and ledger/entry/batch
+order. Only the fresh test topic is unloaded. Pulsar documents
+[topic unloading](https://pulsar.apache.org/docs/5.0.x/admin-api-topics/), and the
+client's [pinned native implementation](https://github.com/apache/pulsar-client-cpp/blob/v4.2.0/lib/MessageId.cc)
+defines the qualified representation. Upgrading the client or broker requires
+rerunning this qualification; a successful binary load alone is insufficient.
+
+The client is CommonJS: Node ESM scripts use a default import followed by
+destructuring, as in the [native test](../src/metric-stream/transport-position.pulsar.integration.test.ts).
+Node documents [CommonJS interoperability](https://nodejs.org/api/esm.html#interoperability-with-commonjs).
+Its named exports may appear under test-runner interop without being available
+to the real Node ESM loader. No production transport cutover or storage
+power-loss claim follows from this position test; the separate gates are in the
+[bounded analytics plan](superpowers/plans/2026-11-03-bounded-analytics.md).
+
 ## Native Swift mutation testing
 
 Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the

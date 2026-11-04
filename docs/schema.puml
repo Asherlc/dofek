@@ -478,6 +478,45 @@ entity "activity_image_work" {
   created_at : timestamp
 }
 
+entity "analytics_required_frontier" {
+  * run_id : uuid <<PK>>
+  * operation_id : uuid <<PK>>
+  * dataset_key : text <<PK>>
+  * epoch : text <<PK>>
+  * topic : text <<PK>>
+  * partition : integer <<PK>>
+  --
+  user_id : uuid <<FK>>
+  position : jsonb
+}
+
+entity "analytics_run" {
+  * id : uuid <<PK>>
+  --
+  owner_id : uuid
+  sealed : boolean
+}
+
+entity "analytics_stage_cursor" {
+  * run_id : uuid <<PK>>
+  * stage : text <<PK>>
+  * epoch : text <<PK>>
+  * topic : text <<PK>>
+  * partition : integer <<PK>>
+  --
+  cursor : jsonb
+}
+
+entity "analytics_stream_state" {
+  * epoch : text <<PK>>
+  * topic : text <<PK>>
+  * partition : integer <<PK>>
+  --
+  owner_id : uuid
+  processed : jsonb
+  pending : jsonb
+}
+
 entity "area" {
   * id : uuid <<PK>>
   --
@@ -1335,6 +1374,10 @@ activity ||--o{ activity_image_discovery
 climbing_log_entry ||--o{ activity_image_discovery
 user_profile ||--o{ activity_image_object
 activity_image ||--o{ activity_image_work
+analytics_run ||--o{ analytics_required_frontier
+processing_operation ||--o{ analytics_required_frontier
+user_profile ||--o{ analytics_required_frontier
+analytics_run ||--o{ analytics_stage_cursor
 user_profile ||--o{ area
 provider ||--o{ area
 area ||--o{ area

@@ -349,14 +349,14 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).not.toContain("'final': 1");
     expect(normalizedSql).toContain(
-      "FROM {{ ref('deduped_sensor') }} ORDER BY refresh_version DESC LIMIT 1 BY user_id, channel, recorded_date, recorded_at",
+      "FROM {{ ref('deduped_sensor') }} ORDER BY user_id ASC, channel ASC, recorded_date ASC, recorded_at ASC, refresh_version DESC LIMIT 1 BY user_id, channel, recorded_date, recorded_at",
     );
     expect(sql).toContain("existing_activity_samples AS (");
     expect(normalizedSql).toContain(
       "(existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN",
     );
     expect(normalizedSql).toContain(
-      "ORDER BY existing_samples.refresh_version DESC LIMIT 1 BY existing_samples.user_id, existing_samples.activity_id, existing_samples.recorded_date, existing_samples.channel, existing_samples.recorded_at",
+      "ORDER BY existing_samples.user_id ASC, existing_samples.activity_id ASC, existing_samples.recorded_date ASC, existing_samples.channel ASC, existing_samples.recorded_at ASC, existing_samples.refresh_version DESC LIMIT 1 BY existing_samples.user_id, existing_samples.activity_id, existing_samples.recorded_date, existing_samples.channel, existing_samples.recorded_at",
     );
     expect(sql).toContain("activity_samples AS (");
     expect(normalizedSql).toContain(
