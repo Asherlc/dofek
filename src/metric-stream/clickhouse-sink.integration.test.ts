@@ -690,13 +690,14 @@ describe("metric stream ClickHouse sink (integration)", () => {
       command: (options) => client.command(options),
       insert: (options) => client.insert(options),
       query: (options) => {
-        const queryId = randomUUID();
+        const queryId = options.query_id;
+        if (!queryId)
+          throw new Error("Profiled sink query is missing its persisted owner query ID");
         if (options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)) {
           scopeQueryIds.push(queryId);
         }
         return client.query({
           ...options,
-          query_id: queryId,
           clickhouse_settings: {
             ...options.clickhouse_settings,
             log_queries: 1,
@@ -732,14 +733,20 @@ describe("metric stream ClickHouse sink (integration)", () => {
 
       await client.command({ query: "SYSTEM FLUSH LOGS" });
       const profileResult = await client.query({
-        query: `SELECT ProfileEvents['JoinResultRowCount'] AS join_rows
+        query: `SELECT query_id,ProfileEvents['JoinResultRowCount'] AS join_rows
           FROM system.query_log
-          WHERE query_id IN {queryIds:Array(String)} AND type = 'QueryFinish'`,
+          WHERE query_id IN {queryIds:Array(String)} AND type = 'QueryFinish'
+          ORDER BY query_id`,
         query_params: { queryIds: scopeQueryIds },
         format: "JSONEachRow",
       });
-      const profileSchema = z.array(z.object({ join_rows: z.coerce.number() }));
-      expect(profileSchema.parse(await profileResult.json())).toEqual([{ join_rows: 0 }]);
+      const profiles = z
+        .array(z.object({ query_id: z.string(), join_rows: z.coerce.number() }))
+        .parse(await profileResult.json());
+      expect(scopeQueryIds.length).toBeGreaterThan(0);
+      expect(new Set(scopeQueryIds).size).toBe(scopeQueryIds.length);
+      expect(profiles.map((profile) => profile.query_id)).toEqual([...scopeQueryIds].sort());
+      for (const profile of profiles) expect(profile.join_rows).toBe(0);
     } finally {
       await client.command({
         query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE}

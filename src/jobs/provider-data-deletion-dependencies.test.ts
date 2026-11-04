@@ -4,15 +4,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { markProviderDataDeletionCompleted } from "../db/provider-data-deletion.ts";
-import { createProviderDataDeletionDependencies } from "./provider-data-deletion-dependencies.ts";
-import type { ProviderDataDeletionContinuationJobData } from "./queues.ts";
+import { createMetricStreamProviderGenerationDeletedEvent } from "../metric-stream/events.ts";
 import {
-  enqueueProviderDataDeletionContinuation,
-  enqueueProviderDeleteAnalyticsRefresh,
-  getProviderDataDeletionQueue,
-} from "./queues.ts";
+  readProviderDeletionAcknowledgement,
+  readProviderDeletionSourcePage,
+} from "../metric-stream/provider-generation-deletion.ts";
+import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
+import { createProviderDataDeletionDependencies } from "./provider-data-deletion-dependencies.ts";
+import { enqueueProviderDeleteAnalyticsRefresh } from "./queues.ts";
 
 const deleteProviderArtifacts = vi.hoisted(() => vi.fn(async () => undefined));
+const publishCommand = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  createKafkaMetricStreamEventPublisherForRoute: vi.fn(async () => ({
+    publishProviderGenerationDeletion: publishCommand,
+  })),
+}));
+vi.mock("../metric-stream/provider-generation-deletion.ts", () => ({
+  readProviderDeletionAcknowledgement: vi.fn(async () => null),
+  readProviderDeletionSourcePage: vi.fn(async () => []),
+}));
 
 vi.mock("../provider-artifact-storage.ts", () => ({
   createProviderArtifactStorageFromEnv: () => ({ deleteForProvider: deleteProviderArtifacts }),
@@ -23,9 +34,7 @@ vi.mock("../db/provider-data-deletion.ts", () => ({
 }));
 
 vi.mock("./queues.ts", () => ({
-  enqueueProviderDataDeletionContinuation: vi.fn(async () => undefined),
   enqueueProviderDeleteAnalyticsRefresh: vi.fn(async () => undefined),
-  getProviderDataDeletionQueue: vi.fn(() => ({ name: "provider-data-deletion" })),
 }));
 
 describe("createProviderDataDeletionDependencies", () => {
@@ -64,7 +73,6 @@ describe("createProviderDataDeletionDependencies", () => {
       const dependencies = createProviderDataDeletionDependencies(
         { execute: vi.fn(async () => []) },
         {
-          command: vi.fn(async () => undefined),
           query: vi.fn(async () => ({ json: async () => [] })),
         },
         async () => true,
@@ -81,26 +89,28 @@ describe("createProviderDataDeletionDependencies", () => {
     }
   });
 
-  it("binds the durable database, ClickHouse client, and canonical queues", async () => {
+  it("binds the canonical publisher, exact ACK reader and bounded structural source reader", async () => {
     const database = { execute: vi.fn(async () => []) };
     const clickHouseClient = {
-      command: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
     };
-    const continuation = {
-      type: "provider-data-deletion",
-      eventId: "30000000-0000-4000-8000-000000000003",
-      generation: 2,
-      providerId: "garmin",
+    const command = createMetricStreamProviderGenerationDeletedEvent({
+      commandId: "10000000-0000-4000-8000-000000000001",
+      deletionEventId: "30000000-0000-4000-8000-000000000003",
       userId: "00000000-0000-4000-8000-000000000004",
-      checkpoint: {
-        batches: 1,
-        deletedRows: 1_000,
-        examinedRows: 1_000,
-        lastGeneration: 1,
-        lastId: "10000000-0000-4000-8000-000000000001",
-      },
-    } satisfies ProviderDataDeletionContinuationJobData;
+      providerId: "garmin",
+      generation: 2,
+      sourceIds: [],
+      complete: false,
+      previousCommandId: null,
+    });
+    const data = {
+      type: "provider-data-deletion" as const,
+      eventId: command.deletionEventId,
+      generation: 2,
+      providerId: command.providerId,
+      userId: command.userId,
+    };
     const accountErasureAllowsWork = vi.fn(async () => true);
 
     const dependencies = createProviderDataDeletionDependencies(
@@ -108,18 +118,21 @@ describe("createProviderDataDeletionDependencies", () => {
       clickHouseClient,
       accountErasureAllowsWork,
     );
-    await dependencies.enqueueContinuation(continuation);
-    await dependencies.markCompleted(continuation.eventId);
-    await dependencies.deleteProviderArtifacts(continuation.userId, continuation.providerId);
+    await dependencies.publishProviderGenerationDeletion(command);
+    await dependencies.readCommandAcknowledgement(command);
+    await dependencies.readSourcePage(data);
+    await dependencies.markCompleted(command.deletionEventId);
+    await dependencies.deleteProviderArtifacts(command.userId, command.providerId);
 
-    const queue = vi.mocked(getProviderDataDeletionQueue).mock.results[0]?.value;
-    expect(enqueueProviderDataDeletionContinuation).toHaveBeenCalledWith(continuation, queue);
-    expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(database, continuation.eventId);
-    expect(deleteProviderArtifacts).toHaveBeenCalledWith(
-      continuation.userId,
-      continuation.providerId,
+    expect(createKafkaMetricStreamEventPublisherForRoute).toHaveBeenCalledWith("live");
+    expect(publishCommand).toHaveBeenCalledWith(command);
+    expect(readProviderDeletionAcknowledgement).toHaveBeenCalledWith(clickHouseClient, command);
+    expect(readProviderDeletionSourcePage).toHaveBeenCalledWith(clickHouseClient, data, null, 1000);
+    expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(
+      database,
+      command.deletionEventId,
     );
-    expect(dependencies.clickHouseClient).toBe(clickHouseClient);
+    expect(deleteProviderArtifacts).toHaveBeenCalledWith(command.userId, command.providerId);
     expect(dependencies.accountErasureAllowsWork).toBe(accountErasureAllowsWork);
     expect(dependencies.enqueueAnalyticsRefresh).toBe(enqueueProviderDeleteAnalyticsRefresh);
   });

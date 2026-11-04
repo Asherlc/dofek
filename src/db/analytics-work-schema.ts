@@ -32,9 +32,12 @@ export function analyticsWorkSchemaStatements(): string[] {
     `CREATE TABLE IF NOT EXISTS analytics.source_placement (
       source_id UUID, user_id UUID, provider_id String, source_version UInt64, generation UInt64,
       channel String, recorded_at DateTime64(9,'UTC'), ingested_at DateTime64(9,'UTC'),
-      activity_id Nullable(UUID), deleted UInt8
+      activity_id Nullable(UUID), deleted UInt8,
+      PROJECTION by_provider_generation (SELECT source_id,user_id,provider_id,generation,deleted
+        ORDER BY (user_id,provider_id,generation,source_id,deleted))
     ) ENGINE=ReplacingMergeTree
     ORDER BY (source_id,source_version,ingested_at,user_id,provider_id,generation,
-      channel,recorded_at,ifNull(toString(activity_id),''),deleted)`,
+      channel,recorded_at,ifNull(toString(activity_id),''),deleted)
+    SETTINGS deduplicate_merge_projection_mode='rebuild'`,
   ];
 }

@@ -19,8 +19,15 @@ import {
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
+  isMetricStreamProviderGenerationDeletedEvent,
   type MetricStreamRedpandaEvent,
 } from "./events.ts";
+import {
+  acknowledgeProviderDeletionCommand,
+  advanceProviderDeletionFence,
+  isProviderDeletionAccountErased,
+  readProviderDeletionAcknowledgement,
+} from "./provider-generation-deletion.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
   runMetricStreamEventConsumer,
@@ -112,6 +119,11 @@ export async function applyMetricStreamEventsToClickHouse(
           assertActive: context.assertActive,
           prepare: (owner) => prepareMetricStreamSourceEffects(owner, event, position),
           applyControl: async (owner) => {
+            if (isMetricStreamProviderGenerationDeletedEvent(event)) {
+              if (await isProviderDeletionAccountErased(owner.client, event)) return;
+              if (!(await readProviderDeletionAcknowledgement(owner.client, event)))
+                await advanceProviderDeletionFence(owner.client, event, owner.ingestedAt);
+            }
             if (isMetricStreamDeletedEvent(event) && "operationRevision" in event) {
               const scope = event.scope;
               if (!owner.client.insert) throw new Error("Source owner requires insert");
@@ -139,6 +151,8 @@ export async function applyMetricStreamEventsToClickHouse(
             inserted += await applyMetricStreamSourceEffects(owner, event, effects);
           },
           acknowledgeEffects: async (owner) => {
+            if (isMetricStreamProviderGenerationDeletedEvent(event))
+              await acknowledgeProviderDeletionCommand(owner.client, event, position);
             if (isMetricStreamDeletedEvent(event) && "eventId" in event) {
               await owner.client.command({
                 query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id) VALUES ({eventId:UUID})`,

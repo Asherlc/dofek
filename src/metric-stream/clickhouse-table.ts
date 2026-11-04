@@ -157,10 +157,34 @@ export function buildMetricStreamSourcePlacementIngestSql(): string {
 export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (
   event_id UUID,
-  applied_at DateTime64(9) DEFAULT now64(9)
+  applied_at DateTime64(9) DEFAULT now64(9),
+  command_id Nullable(UUID), deletion_event_id Nullable(UUID), user_id Nullable(UUID),
+  provider_id Nullable(String), generation Nullable(UInt64), previous_command_id Nullable(UUID),
+  command_hash Nullable(FixedString(64)), command_complete Nullable(UInt8), position Nullable(String),
+  CONSTRAINT provider_command_ack_metadata CHECK command_id IS NULL OR
+    (deletion_event_id IS NOT NULL AND user_id IS NOT NULL AND provider_id IS NOT NULL
+     AND generation IS NOT NULL AND command_hash IS NOT NULL AND command_complete IN (0,1) AND position IS NOT NULL)
 )
 ENGINE = ReplacingMergeTree(applied_at)
 ORDER BY event_id`;
+}
+
+export function providerDeletionAcknowledgementUpgradeStatements(): string[] {
+  return [
+    `ALTER TABLE ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+      ADD COLUMN IF NOT EXISTS command_id Nullable(UUID),
+      ADD COLUMN IF NOT EXISTS deletion_event_id Nullable(UUID),
+      ADD COLUMN IF NOT EXISTS user_id Nullable(UUID),
+      ADD COLUMN IF NOT EXISTS provider_id Nullable(String),
+      ADD COLUMN IF NOT EXISTS generation Nullable(UInt64),
+      ADD COLUMN IF NOT EXISTS previous_command_id Nullable(UUID),
+      ADD COLUMN IF NOT EXISTS command_hash Nullable(FixedString(64)),
+      ADD COLUMN IF NOT EXISTS command_complete Nullable(UInt8),
+      ADD COLUMN IF NOT EXISTS position Nullable(String)`,
+    `ALTER TABLE ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} ADD CONSTRAINT IF NOT EXISTS provider_command_ack_metadata
+      CHECK command_id IS NULL OR (deletion_event_id IS NOT NULL AND user_id IS NOT NULL AND provider_id IS NOT NULL
+        AND generation IS NOT NULL AND command_hash IS NOT NULL AND command_complete IN (0,1) AND position IS NOT NULL)`,
+  ];
 }
 
 export function buildMetricStreamDeleteScopeTableSql(): string {

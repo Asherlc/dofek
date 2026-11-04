@@ -599,7 +599,7 @@ async function readReferencedEffect(
 export async function verifyAnalyticsDeliveryReceipt(
   client: Pick<ClickHouseClient, "query">,
   position: MetricStreamPosition,
-): Promise<void> {
+): Promise<{ effectCount: bigint }> {
   const receipt = await readReceipt(client, position);
   if (
     !receipt ||
@@ -648,6 +648,7 @@ export async function verifyAnalyticsDeliveryReceipt(
     throw new Error(
       "Analytics delivery receipt is incomplete: durable effect identities do not match",
     );
+  return { effectCount };
 }
 
 /** Missing completion is pending work; an existing corrupt receipt is an error. */

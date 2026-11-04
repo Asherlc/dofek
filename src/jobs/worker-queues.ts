@@ -1,4 +1,4 @@
-import { Job, UnrecoverableError, Worker } from "bullmq";
+import { DelayedError, Job, UnrecoverableError, Worker } from "bullmq";
 import { createActivityImageJobDependencies } from "../activity-images/acquire.ts";
 import { loadActivityImageWork } from "../db/activity-images.ts";
 import type { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
@@ -25,7 +25,10 @@ import { processFileUploadImportJob } from "./process-file-upload-import-job.ts"
 import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
-import { processProviderDataDeletionJob } from "./process-provider-data-deletion-job.ts";
+import {
+  type ProviderDataDeletionJob,
+  processProviderDataDeletionJob,
+} from "./process-provider-data-deletion-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
@@ -47,6 +50,7 @@ import {
   type ImportJobData,
   POST_SYNC_QUEUE,
   type PostSyncJobData,
+  PROVIDER_DATA_DELETION_DELAY_MS,
   PROVIDER_DATA_DELETION_QUEUE,
   type ProviderDataDeletionJobData,
   providerDataDeletionJobDataSchema,
@@ -240,33 +244,34 @@ export function createWorkerQueues({
       ),
     { autorun: false, connection, concurrency: 1 },
   );
-  const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
-    PROVIDER_DATA_DELETION_QUEUE,
-    (job) => {
-      try {
-        job.data = providerDataDeletionJobDataSchema.parse(job.data);
-      } catch (error) {
-        throw new UnrecoverableError(error instanceof Error ? error.message : String(error));
-      }
-      return jobContext.run(job, () =>
-        runQueuedUserWorkUnlessAccountErasing(
-          accountErasureWorkLockPool,
-          db,
-          job.data.userId,
-          "provider data deletion",
-          () =>
-            processProviderDataDeletionJob(
-              job,
-              createProviderDataDeletionDependencies(db, getClickHouseClient(), (workKind) =>
-                accountErasureAllowsQueuedUserWork(db, job.data.userId, workKind),
+  const providerDataDeletionWorker: Worker<ProviderDataDeletionJobData> =
+    new Worker<ProviderDataDeletionJobData>(
+      PROVIDER_DATA_DELETION_QUEUE,
+      (job, token, signal) => {
+        try {
+          job.data = providerDataDeletionJobDataSchema.parse(job.data);
+        } catch (error) {
+          throw new UnrecoverableError(error instanceof Error ? error.message : String(error));
+        }
+        return jobContext.run(job, () =>
+          runQueuedUserWorkUnlessAccountErasing(
+            accountErasureWorkLockPool,
+            db,
+            job.data.userId,
+            "provider data deletion",
+            () =>
+              processProviderDataDeletionJob(
+                providerDeletionJobWithContinuation(job, token, signal, providerDataDeletionWorker),
+                createProviderDataDeletionDependencies(db, getClickHouseClient(), (workKind) =>
+                  accountErasureAllowsQueuedUserWork(db, job.data.userId, workKind),
+                ),
               ),
-            ),
-          job.data.providerId,
-        ),
-      );
-    },
-    { autorun: false, connection, concurrency: 1 },
-  );
+            job.data.providerId,
+          ),
+        );
+      },
+      { autorun: false, connection, concurrency: 1 },
+    );
   const accountErasureWorker = createAccountErasureWorker(
     db,
     accountErasureLeaseOwner,
@@ -316,6 +321,42 @@ export function createWorkerQueues({
     imageWorker,
   ];
   return { allWorkers, fitFileImportWorker, providerDataDeletionWorker };
+}
+
+function providerDeletionJobWithContinuation(
+  job: Job<ProviderDataDeletionJobData>,
+  token: string | undefined,
+  signal: AbortSignal | undefined,
+  worker: Worker<ProviderDataDeletionJobData>,
+): ProviderDataDeletionJob {
+  const assertActive = async () => {
+    if (!job.id || !token || !signal)
+      throw new Error(
+        "BullMQ provider deletion requires an active job ID, lock token and cancellation signal",
+      );
+    signal.throwIfAborted();
+    const redis = await worker.getBackend().client;
+    const actualToken = await redis.get(`${worker.toKey(job.id)}:lock`);
+    signal.throwIfAborted();
+    if (actualToken !== token)
+      throw new Error(`BullMQ provider deletion job lock is no longer owned: ${job.id}`);
+  };
+  return {
+    get data() {
+      return job.data;
+    },
+    set data(data) {
+      job.data = data;
+    },
+    assertActive,
+    updateData: (data) => job.updateData(data),
+    updateProgress: (data) => job.updateProgress(data),
+    deferUntilReceipt: async () => {
+      await assertActive();
+      await job.moveToDelayed(Date.now() + PROVIDER_DATA_DELETION_DELAY_MS, token);
+      throw new DelayedError();
+    },
+  };
 }
 function importJobWithLockExtender(
   job: Job<ImportJobData>,

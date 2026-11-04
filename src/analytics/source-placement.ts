@@ -45,7 +45,7 @@ const resolvedPlacementSchema = z.object({
 
 /** Resolve global UUID identity before applying any former key/provider filter. */
 export async function resolveSourcePlacements(
-  client: ClickHouseClient,
+  client: Pick<ClickHouseClient, "query">,
   sourceIds: readonly string[],
 ): Promise<readonly SourcePlacement[]> {
   if (sourceIds.length > 20) throw new Error("Placement lookup accepts at most 20 source IDs");

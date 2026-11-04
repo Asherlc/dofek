@@ -3,6 +3,7 @@ import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
+  createMetricStreamProviderGenerationDeletedEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
   metricStreamRedpandaEventSchema,
@@ -25,6 +26,68 @@ const baseMetricStreamRow = {
   sourceType: "api",
   channel: "heart_rate",
 };
+
+describe("provider generation deletion command codec", () => {
+  const fence = () =>
+    createMetricStreamProviderGenerationDeletedEvent({
+      commandId: "10000000-0000-4000-8000-000000000001",
+      deletionEventId: "20000000-0000-4000-8000-000000000002",
+      userId: "30000000-0000-4000-8000-000000000003",
+      providerId: "garmin",
+      generation: 2,
+      sourceIds: [],
+      complete: false,
+      previousCommandId: null,
+    });
+  it.each([
+    { generation: 0 },
+    { generation: Number.MAX_SAFE_INTEGER + 1 },
+    { commandId: "invalid" },
+    { providerId: "" },
+    { partitionKey: "different-route" },
+    { complete: true },
+    { sourceIds: ["40000000-0000-4000-8000-000000000004"] },
+    { commandId: "20000000-0000-4000-8000-000000000002" },
+    { previousCommandId: "10000000-0000-4000-8000-000000000001", complete: true },
+    { previousCommandId: "50000000-0000-4000-8000-000000000005" },
+    {
+      previousCommandId: "50000000-0000-4000-8000-000000000005",
+      complete: true,
+      sourceIds: ["40000000-0000-4000-8000-000000000004"],
+    },
+    {
+      previousCommandId: "50000000-0000-4000-8000-000000000005",
+      sourceIds: Array(2).fill("40000000-0000-4000-8000-000000000004"),
+    },
+    {
+      previousCommandId: "50000000-0000-4000-8000-000000000005",
+      sourceIds: Array.from(
+        { length: 1001 },
+        (_, index) => `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      ),
+    },
+  ])("rejects malformed structural command %j", (change) => {
+    expect(metricStreamRedpandaEventSchema.safeParse({ ...fence(), ...change }).success).toBe(
+      false,
+    );
+  });
+  it("retains the stable fence-only command and its fixed provider routing key", () => {
+    const command = {
+      version: 1,
+      eventType: "metric_stream_provider_generation_deleted",
+      commandId: "10000000-0000-4000-8000-000000000001",
+      deletionEventId: "20000000-0000-4000-8000-000000000002",
+      userId: "30000000-0000-4000-8000-000000000003",
+      providerId: "garmin",
+      generation: 2,
+      sourceIds: [],
+      complete: false,
+      previousCommandId: null,
+      partitionKey: "provider-generation:30000000-0000-4000-8000-000000000003:garmin",
+    };
+    expect(metricStreamRedpandaEventSchema.parse(command)).toEqual(command);
+  });
+});
 
 describe("createMetricStreamEvent", () => {
   it("preserves fractional source and scope timestamps across timezone normalization", () => {

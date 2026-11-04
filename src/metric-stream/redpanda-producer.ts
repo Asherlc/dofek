@@ -9,7 +9,9 @@ import {
   type MetricStreamDeleteScopeInput,
   type MetricStreamEventV2,
   type MetricStreamProcessingContext,
+  type MetricStreamProviderGenerationDeletedEvent,
   type MetricStreamRowInput,
+  metricStreamProviderGenerationDeletedEventSchema,
 } from "./events.ts";
 import { type MetricStreamRoute, metricStreamTopicForRoute } from "./routes.ts";
 
@@ -50,6 +52,12 @@ export interface MetricStreamEventPublisher {
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 
+export interface ProviderGenerationDeletionPublisher {
+  publishProviderGenerationDeletion(
+    command: MetricStreamProviderGenerationDeletedEvent,
+  ): Promise<void>;
+}
+
 export interface MetricStreamPublishOptions {
   operationRevision: string;
   partitionKey?: string;
@@ -61,7 +69,9 @@ export interface MetricStreamReplacementPublishResult {
   rows: MetricStreamEventV2[];
 }
 
-export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublisher {
+export class KafkaMetricStreamEventPublisher
+  implements MetricStreamEventPublisher, ProviderGenerationDeletionPublisher
+{
   readonly #producer: KafkaProducerLike;
   readonly #topic: string;
 
@@ -168,6 +178,13 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
 
   async disconnect(): Promise<void> {
     await this.#producer.disconnect();
+  }
+
+  async publishProviderGenerationDeletion(
+    input: MetricStreamProviderGenerationDeletedEvent,
+  ): Promise<void> {
+    const command = metricStreamProviderGenerationDeletedEventSchema.parse(input);
+    await this.#sendChunked([{ key: command.partitionKey, value: JSON.stringify(command) }]);
   }
 }
 

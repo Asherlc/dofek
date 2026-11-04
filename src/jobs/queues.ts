@@ -8,6 +8,7 @@ import type {} from "../bullmq-redis-client.ts";
 import type { DataExportRequest } from "../db/data-export.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { SyncLogOrigin } from "../db/schema/events.ts";
+import { metricStreamProviderGenerationDeletedEventSchema } from "../metric-stream/events.ts";
 import type { WebhookEvent } from "../webhook-event.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -192,27 +193,55 @@ export interface ProviderDeleteAnalyticsJobData {
   deletionEventId: string;
 }
 
-export const providerDataDeletionJobDataSchema = z.object({
-  type: z.literal("provider-data-deletion"),
-  eventId: z.uuid(),
-  generation: z.number().int().positive(),
-  providerId: z.string().min(1),
-  userId: z.uuid(),
-  checkpoint: z
-    .object({
-      batches: z.number().int().nonnegative(),
-      deletedRows: z.number().int().nonnegative(),
-      examinedRows: z.number().int().nonnegative().optional(),
-      lastGeneration: z.number().int().nonnegative().default(0),
-      lastId: z.uuid(),
-    })
-    .optional(),
+const providerDataDeletionCheckpointSchema = z.object({
+  batches: z.number().int().nonnegative(),
+  deletedRows: z.number().int().nonnegative(),
+  examinedRows: z.number().int().nonnegative().optional(),
+  lastGeneration: z.number().int().nonnegative().default(0),
+  lastId: z.uuid(),
 });
+export const providerDataDeletionJobDataSchema = z
+  .object({
+    type: z.literal("provider-data-deletion"),
+    eventId: z.uuid(),
+    generation: z.number().int().positive(),
+    providerId: z.string().min(1),
+    userId: z.uuid(),
+    checkpoint: providerDataDeletionCheckpointSchema.optional(),
+    lastCommittedCommand: metricStreamProviderGenerationDeletedEventSchema.optional(),
+    pendingCommand: z
+      .object({
+        command: metricStreamProviderGenerationDeletedEventSchema,
+        nextCheckpoint: providerDataDeletionCheckpointSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .superRefine((data, context) => {
+    const invalid = (message: string) => context.addIssue({ code: z.ZodIssueCode.custom, message });
+    if (data.checkpoint && !data.lastCommittedCommand)
+      invalid(
+        "Provider deletion checkpoint lacks canonical command evidence; operator redrive must retain the original deletion identity and audit checkpoint before establishing a fresh fence-only chain",
+      );
+    for (const command of [data.lastCommittedCommand, data.pendingCommand?.command]) {
+      if (
+        command &&
+        (command.deletionEventId !== data.eventId ||
+          command.userId !== data.userId ||
+          command.providerId !== data.providerId ||
+          command.generation !== data.generation)
+      )
+        invalid("Provider deletion command does not match its durable operation identity");
+    }
+    if (
+      data.pendingCommand &&
+      data.pendingCommand.command.previousCommandId !==
+        (data.lastCommittedCommand?.commandId ?? null)
+    )
+      invalid("Provider deletion pending command must follow the last committed command");
+  });
 
 export type ProviderDataDeletionJobData = z.infer<typeof providerDataDeletionJobDataSchema>;
-export type ProviderDataDeletionContinuationJobData = ProviderDataDeletionJobData & {
-  checkpoint: NonNullable<ProviderDataDeletionJobData["checkpoint"]>;
-};
 
 export interface ProviderDataDeletionQueue {
   add(name: string, data: ProviderDataDeletionJobData, options?: JobsOptions): Promise<unknown>;
@@ -267,6 +296,7 @@ const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh"
 const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
 const PROVIDER_DELETE_ANALYTICS_JOB_NAME = "provider-delete-analytics-refresh";
 const PROVIDER_DATA_DELETION_JOB_NAME = "provider-data-deletion";
+export const PROVIDER_DATA_DELETION_DELAY_MS = 30_000;
 const ACCOUNT_ERASURE_JOB_NAME = "account-erasure";
 const DATA_EXPORT_JOB_NAME = "export";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
@@ -274,7 +304,7 @@ const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 function providerDataDeletionJobOptions(jobId: string): JobsOptions {
   return {
     attempts: 20,
-    backoff: { type: "fixed", delay: 30_000 },
+    backoff: { type: "fixed", delay: PROVIDER_DATA_DELETION_DELAY_MS },
     jobId,
     removeOnComplete: { age: 604_800, count: 1_000 },
     removeOnFail: { age: 2_592_000, count: 1_000 },
@@ -586,17 +616,6 @@ export async function enqueueProviderDataDeletion(
       userId: request.userId,
     },
     providerDataDeletionJobOptions(request.eventId),
-  );
-}
-
-export async function enqueueProviderDataDeletionContinuation(
-  data: ProviderDataDeletionContinuationJobData,
-  queue: ProviderDataDeletionQueue = getProviderDataDeletionQueue(),
-): Promise<void> {
-  await queue.add(
-    PROVIDER_DATA_DELETION_JOB_NAME,
-    data,
-    providerDataDeletionJobOptions(`${data.eventId}-batch-${data.checkpoint.batches}`),
   );
 }
 

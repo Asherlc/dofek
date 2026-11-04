@@ -6,7 +6,6 @@ import {
   hoisted,
   invokeProcessor,
   mockAddJobLog,
-  mockClickHouseClient,
   mockDatabase,
   processorArity,
   workerProcessors,
@@ -16,6 +15,45 @@ import {
 const dependencies = await workerQueueDependencies();
 createWorkerQueues(dependencies);
 describe("worker queues", () => {
+  it("provider continuation checks the actual lock token and defers the same job at the established cadence", async () => {
+    const { DelayedError } = await import("bullmq");
+    const { processProviderDataDeletionJob } = await import(
+      "./process-provider-data-deletion-job.ts"
+    );
+    vi.mocked(processProviderDataDeletionJob).mockClear();
+    const moveToDelayed = vi.fn(async (_timestamp: number, _token: string) => undefined);
+    const controller = new AbortController();
+    await invokeProcessor(
+      "provider-data-deletion-queue",
+      {
+        type: "provider-data-deletion",
+        eventId: "30000000-0000-4000-8000-000000000003",
+        generation: 2,
+        providerId: "garmin",
+        userId: "00000000-0000-4000-8000-000000000004",
+      },
+      "provider-test-token",
+      {
+        moveToDelayed,
+        updateData: vi.fn(async () => undefined),
+        updateProgress: vi.fn(async () => undefined),
+      },
+      controller.signal,
+    );
+    const job = vi.mocked(processProviderDataDeletionJob).mock.calls[0]?.[0];
+    if (!job) throw new Error("Provider driver was not invoked");
+    await job.assertActive();
+    hoisted.mockReadJobLock.mockResolvedValueOnce("replacement-token");
+    await expect(job.deferUntilReceipt()).rejects.toThrow("no longer owned");
+    expect(moveToDelayed).not.toHaveBeenCalled();
+    const before = Date.now();
+    await expect(job.deferUntilReceipt()).rejects.toBeInstanceOf(DelayedError);
+    expect(moveToDelayed).toHaveBeenCalledWith(expect.any(Number), "provider-test-token");
+    const delayedAt = moveToDelayed.mock.calls[0]?.[0];
+    expect(delayedAt).toBeGreaterThanOrEqual(before + 30000);
+    controller.abort(new Error("provider cancelled"));
+    await expect(job.assertActive()).rejects.toThrow("provider cancelled");
+  });
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
     expect(Worker).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
@@ -524,7 +562,9 @@ describe("worker queues", () => {
     expect(processProviderDataDeletionJob).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
-        clickHouseClient: mockClickHouseClient,
+        publishProviderGenerationDeletion: expect.any(Function),
+        readCommandAcknowledgement: expect.any(Function),
+        readSourcePage: expect.any(Function),
         enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
         markCompleted: expect.any(Function),
       }),

@@ -1,527 +1,337 @@
+import { randomUUID } from "node:crypto";
+import { DelayedError } from "bullmq";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logger } from "../logger.ts";
+import type { MetricStreamProviderGenerationDeletedEvent } from "../metric-stream/events.ts";
+import type {
+  ProviderDeletionAcknowledgement,
+  ProviderDeletionSourceKey,
+} from "../metric-stream/provider-generation-deletion.ts";
 import {
+  type ProviderDataDeletionDependencies,
   type ProviderDataDeletionJob,
   processProviderDataDeletionJob,
 } from "./process-provider-data-deletion-job.ts";
 import type { ProviderDataDeletionJobData } from "./queues.ts";
 
-const mockCaptureException = vi.hoisted(() => vi.fn());
-const mockInvalidateAllUserQueries = vi.hoisted(() => vi.fn(async () => undefined));
-
-vi.mock("@sentry/node", () => ({ captureException: mockCaptureException }));
-vi.mock("dofek/lib/cache", () => ({
-  invalidateAllUserQueries: mockInvalidateAllUserQueries,
-}));
-
-const firstId = "10000000-0000-4000-8000-000000000001";
-const secondId = "20000000-0000-4000-8000-000000000002";
-
+const captureException = vi.hoisted(() => vi.fn());
+const invalidateAllUserQueries = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("../lib/error-reporting.ts", () => ({ captureException }));
+vi.mock("dofek/lib/cache", () => ({ invalidateAllUserQueries }));
 afterEach(() => {
-  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
-function tombstoneRow(id: string, generation: number) {
-  return {
-    activity_id: null,
-    channel: "heart_rate",
-    device_id: null,
-    external_id: id,
-    generation,
-    id,
-    ingested_at: "2026-07-19 00:00:00.000000000",
-    is_deleted: 1,
-    metadata: "{}",
-    point: "null",
-    provider_id: "garmin",
-    recorded_at: "2026-07-18 12:00:00.000000",
-    scalar: 140,
-    source_type: "test",
-    user_id: "00000000-0000-4000-8000-000000000004",
-    vector: [],
-    version: 2,
-  };
-}
-
-function makeJob(dataOverrides: Partial<ProviderDataDeletionJobData> = {}) {
-  const data: ProviderDataDeletionJobData = {
+function fixture() {
+  let stored: ProviderDataDeletionJobData = {
     type: "provider-data-deletion",
-    eventId: "30000000-0000-4000-8000-000000000003",
-    generation: 2,
+    eventId: randomUUID(),
+    userId: randomUUID(),
     providerId: "garmin",
-    userId: "00000000-0000-4000-8000-000000000004",
-    ...dataOverrides,
+    generation: 2,
   };
-  return {
-    data,
-    updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
-      Object.assign(data, nextData);
+  const acknowledgements = new Map<string, ProviderDeletionAcknowledgement>();
+  const published: MetricStreamProviderGenerationDeletedEvent[] = [];
+  const persist = (data: ProviderDataDeletionJobData) => {
+    stored = structuredClone(data);
+  };
+  const job = {
+    data: structuredClone(stored),
+    assertActive: vi.fn(async () => undefined),
+    updateData: vi.fn(async (data: ProviderDataDeletionJobData) => {
+      persist(data);
     }),
     updateProgress: vi.fn(
       async (_progress: Parameters<ProviderDataDeletionJob["updateProgress"]>[0]) => undefined,
     ),
+    deferUntilReceipt: vi.fn(async (): Promise<never> => {
+      throw new DelayedError();
+    }),
+  };
+  const dependencies = {
+    accountErasureAllowsWork: vi.fn(async (_kind: string) => true),
+    publishProviderGenerationDeletion: vi.fn(
+      async (command: MetricStreamProviderGenerationDeletedEvent) => {
+        expect(stored.pendingCommand?.command).toEqual(command);
+        published.push(structuredClone(command));
+      },
+    ),
+    readCommandAcknowledgement: vi.fn(
+      async (command: MetricStreamProviderGenerationDeletedEvent) =>
+        acknowledgements.get(command.commandId) ?? null,
+    ),
+    readSourcePage: vi.fn<ProviderDataDeletionDependencies["readSourcePage"]>(async () => []),
+    deleteProviderArtifacts: vi.fn(async (_user: string, _provider: string) => undefined),
+    enqueueAnalyticsRefresh: vi.fn(
+      async (_user: string, _provider: string, _event: string) => undefined,
+    ),
+    markCompleted: vi.fn(async (_event: string) => undefined),
+  };
+  const acknowledge = (effectCount: bigint) => {
+    const command = job.data.pendingCommand?.command;
+    if (!command) throw new Error("No saved command to acknowledge");
+    acknowledgements.set(command.commandId, {
+      effectCount,
+      position: {
+        transport: "kafka",
+        epoch: "unit-log",
+        topic: "unit-topic",
+        partition: 0,
+        offset: String(acknowledgements.size),
+      },
+    });
+    return command;
+  };
+  return {
+    job,
+    dependencies,
+    published,
+    acknowledgements,
+    acknowledge,
+    persist,
+    reload: () => {
+      job.data = structuredClone(stored);
+    },
+    stored: () => structuredClone(stored),
   };
 }
 
-describe("processProviderDataDeletionJob", () => {
-  it("deletes owned provider artifacts before acknowledging completion", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [] });
-    const deleteProviderArtifacts = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-    const job = makeJob();
+async function deferred(value: ReturnType<typeof fixture>) {
+  await expect(
+    processProviderDataDeletionJob(value.job, value.dependencies),
+  ).rejects.toBeInstanceOf(DelayedError);
+}
+async function terminalState(value: ReturnType<typeof fixture>) {
+  await deferred(value);
+  value.acknowledge(0n);
+  await deferred(value);
+  value.acknowledge(0n);
+}
 
-    await processProviderDataDeletionJob(job, {
-      accountErasureAllowsWork: async () => true,
-      clickHouseClient: { command, query },
-      deleteProviderArtifacts,
-      enqueueAnalyticsRefresh: async () => undefined,
-      enqueueContinuation: async () => undefined,
-      markCompleted,
-    });
-
-    expect(deleteProviderArtifacts).toHaveBeenCalledWith(job.data.userId, job.data.providerId);
-    expect(deleteProviderArtifacts.mock.invocationCallOrder[0]).toBeLessThan(
-      command.mock.invocationCallOrder[1] ?? 0,
-    );
-    expect(markCompleted).toHaveBeenCalledWith(job.data.eventId);
+describe("provider deletion durable command driver", () => {
+  it("saves and publishes a stable fence-only command before deferring for its ACK", async () => {
+    const value = fixture();
+    await deferred(value);
+    expect(value.published).toEqual([
+      expect.objectContaining({ sourceIds: [], complete: false, previousCommandId: null }),
+    ]);
+    expect(value.dependencies.readSourcePage).not.toHaveBeenCalled();
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
   });
-
-  it("does not acknowledge provider deletion if retained artifact cleanup fails", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [] });
-    const markCompleted = vi.fn(async () => undefined);
-
-    await expect(
-      processProviderDataDeletionJob(makeJob(), {
-        accountErasureAllowsWork: async () => true,
-        clickHouseClient: { command, query },
-        deleteProviderArtifacts: async () => {
-          throw new Error("Artifact cleanup failed");
-        },
-        enqueueAnalyticsRefresh: async () => undefined,
-        enqueueContinuation: async () => undefined,
-        markCompleted,
-      }),
-    ).rejects.toThrow("Artifact cleanup failed");
-    expect(command).toHaveBeenCalledOnce();
-    expect(markCompleted).not.toHaveBeenCalled();
+  it("reuses the saved command after save succeeds but its response is lost before publication", async () => {
+    const value = fixture();
+    value.job.updateData.mockImplementationOnce(async (data) => {
+      value.persist(data);
+      throw new Error("save response lost");
+    });
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "save response lost",
+    );
+    const saved = value.stored().pendingCommand?.command;
+    expect(saved).toBeDefined();
+    expect(value.published).toEqual([]);
+    value.reload();
+    await deferred(value);
+    expect(value.published).toEqual([saved]);
   });
-
-  it("stops artifact cleanup and acknowledgement when account erasure takes ownership", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [] });
-    const accountErasureAllowsWork = vi.fn(
-      async (phase: string) => phase !== "provider artifact deletion",
-    );
-    const deleteProviderArtifacts = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-
-    await processProviderDataDeletionJob(makeJob(), {
-      accountErasureAllowsWork,
-      clickHouseClient: { command, query },
-      deleteProviderArtifacts,
-      enqueueAnalyticsRefresh: async () => undefined,
-      enqueueContinuation: async () => undefined,
-      markCompleted,
+  it("reuses identical content after publication response loss and before ACK", async () => {
+    const value = fixture();
+    value.dependencies.publishProviderGenerationDeletion.mockImplementationOnce(async (command) => {
+      value.published.push(structuredClone(command));
+      throw new Error("publish response lost");
     });
-
-    expect(accountErasureAllowsWork).toHaveBeenLastCalledWith("provider artifact deletion");
-    expect(deleteProviderArtifacts).not.toHaveBeenCalled();
-    expect(command).toHaveBeenCalledOnce();
-    expect(markCompleted).not.toHaveBeenCalled();
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "publish response lost",
+    );
+    const first = value.published[0];
+    value.reload();
+    await deferred(value);
+    expect(value.published).toEqual([first, first]);
+    expect(value.dependencies.readSourcePage).not.toHaveBeenCalled();
   });
-
-  it("enqueues the next checkpoint as a separate job after one bounded batch", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [{ generation: 0, id: firstId }] })
-      .mockResolvedValueOnce({ json: async () => [tombstoneRow(firstId, 0)] });
-    const enqueueContinuation = vi.fn(async () => undefined);
-    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-    const job = makeJob();
-
-    await processProviderDataDeletionJob(job, {
-      accountErasureAllowsWork: vi.fn(async () => true),
-      deleteProviderArtifacts: async () => undefined,
-      clickHouseClient: { command, insert: vi.fn(async () => undefined), query },
-      enqueueAnalyticsRefresh,
-      enqueueContinuation,
-      markCompleted,
+  it("observes the fence ACK before enumerating even an empty provider", async () => {
+    const value = fixture();
+    await deferred(value);
+    const fence = value.acknowledge(0n);
+    await deferred(value);
+    expect(value.published[1]).toMatchObject({
+      complete: true,
+      sourceIds: [],
+      previousCommandId: fence.commandId,
     });
-
-    expect(enqueueContinuation).toHaveBeenCalledWith({
-      ...job.data,
-      checkpoint: {
-        batches: 1,
-        deletedRows: 1,
-        examinedRows: 1,
-        lastGeneration: 0,
-        lastId: firstId,
-      },
-    });
-    expect(query).toHaveBeenCalledTimes(3);
-    expect(enqueueAnalyticsRefresh).not.toHaveBeenCalled();
-    expect(markCompleted).not.toHaveBeenCalled();
-  });
-
-  it("advances the ClickHouse generation fence, checkpoints bounded batches, then acknowledges", async () => {
-    const command = vi.fn(
-      async (_options: { query: string; query_params?: Record<string, unknown> }) => undefined,
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
+    value.acknowledge(0n);
+    await processProviderDataDeletionJob(value.job, value.dependencies);
+    expect(value.dependencies.deleteProviderArtifacts).toHaveBeenCalledWith(
+      value.job.data.userId,
+      "garmin",
     );
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({
-        json: async () => [
-          { generation: 0, id: firstId },
-          { generation: 1, id: secondId },
-        ],
-      })
-      .mockResolvedValueOnce({
-        json: async () => [tombstoneRow(firstId, 0), tombstoneRow(secondId, 1)],
-      })
-      .mockResolvedValueOnce({ json: async () => [] });
-    const insert = vi.fn(async () => undefined);
-    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
-    const enqueueContinuation = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-    const job = makeJob();
-
-    await processProviderDataDeletionJob(job, {
-      accountErasureAllowsWork: vi.fn(async () => true),
-      deleteProviderArtifacts: async () => undefined,
-      clickHouseClient: { command, insert, query },
-      enqueueAnalyticsRefresh,
-      enqueueContinuation,
-      markCompleted,
-    });
-    await processProviderDataDeletionJob(job, {
-      accountErasureAllowsWork: vi.fn(async () => true),
-      deleteProviderArtifacts: async () => undefined,
-      clickHouseClient: { command, insert, query },
-      enqueueAnalyticsRefresh,
-      enqueueContinuation,
-      markCompleted,
-    });
-
-    expect(command).toHaveBeenCalledTimes(2);
-    expect(command.mock.calls[0]?.[0]).toEqual({
-      query: expect.stringContaining("INSERT INTO ingest.provider_data_generation"),
-      query_params: expect.objectContaining({ generation: 2 }),
-    });
-    expect(query.mock.calls[2]?.[0]).toEqual({
-      query: expect.stringMatching(
-        /tuple\(generation, id\) IN \{batch_keys:Array\(Tuple\(UInt64, UUID\)\)\}[\s\S]*ORDER BY generation, id, source_version DESC, ingested_at DESC[\s\S]*LIMIT 1 BY generation, id/,
-      ),
-      query_params: expect.objectContaining({
-        batch_keys: [
-          expect.objectContaining({ values: [0, firstId] }),
-          expect.objectContaining({ values: [1, secondId] }),
-        ],
-      }),
-      format: "JSONEachRow",
-    });
-    expect(insert).toHaveBeenCalledWith({
-      table: "ingest.metric_stream",
-      values: [tombstoneRow(firstId, 0), tombstoneRow(secondId, 1)],
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-    });
-    expect(query.mock.calls[0]?.[0]).toEqual({
-      query: expect.stringContaining("FROM system.parts"),
-      query_params: {
-        covering_projection_name: "by_provider_generation",
-        database_name: "ingest",
-        live_projection_name: "by_provider_live_generation",
-        table_name: "metric_stream",
-      },
-      format: "JSONEachRow",
-    });
-    expect(query.mock.calls[1]?.[0]).toEqual({
-      query: expect.stringMatching(
-        /is_deleted = 0[\s\S]*ORDER BY generation, id[\s\S]*LIMIT \{batch_size:UInt64\}[\s\S]*force_optimize_projection_name = 'by_provider_live_generation'/,
-      ),
-      query_params: expect.objectContaining({ batch_size: 1_000 }),
-      format: "JSONEachRow",
-    });
-    expect(command.mock.calls[1]?.[0]).toEqual({
-      query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
-      query_params: { event_id: job.data.eventId },
-    });
-    expect(job.updateData).toHaveBeenCalledWith(
-      expect.objectContaining({
-        checkpoint: {
-          batches: 1,
-          deletedRows: 2,
-          examinedRows: 2,
-          lastGeneration: 1,
-          lastId: secondId,
-        },
-      }),
+    expect(value.dependencies.enqueueAnalyticsRefresh).toHaveBeenCalledWith(
+      value.job.data.userId,
+      "garmin",
+      value.job.data.eventId,
     );
-    expect(enqueueContinuation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        checkpoint: {
-          batches: 1,
-          deletedRows: 2,
-          examinedRows: 2,
-          lastGeneration: 1,
-          lastId: secondId,
-        },
-      }),
+    expect(invalidateAllUserQueries).toHaveBeenCalledWith(value.job.data.userId);
+    expect(value.dependencies.markCompleted).toHaveBeenCalledWith(value.job.data.eventId);
+    expect(value.dependencies.deleteProviderArtifacts.mock.invocationCallOrder[0]).toBeLessThan(
+      value.dependencies.enqueueAnalyticsRefresh.mock.invocationCallOrder[0] ?? 0,
     );
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      checkpoint: undefined,
-      message: "Advancing provider generation fence...",
-      percentage: 0,
-    });
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      checkpoint: {
-        batches: 1,
-        deletedRows: 2,
-        examinedRows: 2,
-        lastGeneration: 1,
-        lastId: secondId,
-      },
-      message: "Checked 2 metric stream rows; deleted 2...",
-    });
-    const tombstoneProgress = job.updateProgress.mock.calls.find(
-      ([progress]) => progress.message === "Checked 2 metric stream rows; deleted 2...",
-    )?.[0];
-    expect(tombstoneProgress).not.toHaveProperty("percentage");
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      checkpoint: {
-        batches: 1,
-        deletedRows: 2,
-        examinedRows: 2,
-        lastGeneration: 1,
-        lastId: secondId,
-      },
-      message: "Provider data deletion complete.",
-      percentage: 100,
-    });
-    expect(enqueueAnalyticsRefresh).toHaveBeenCalledWith(
-      job.data.userId,
-      job.data.providerId,
-      job.data.eventId,
-    );
-    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith(job.data.userId);
-    expect(markCompleted).toHaveBeenCalledWith(job.data.eventId);
-    expect(command.mock.invocationCallOrder[1]).toBeLessThan(
-      enqueueAnalyticsRefresh.mock.invocationCallOrder[0] ?? 0,
-    );
-    expect(enqueueAnalyticsRefresh.mock.invocationCallOrder[0]).toBeLessThan(
-      mockInvalidateAllUserQueries.mock.invocationCallOrder[0] ?? 0,
-    );
-    expect(mockInvalidateAllUserQueries.mock.invocationCallOrder[0]).toBeLessThan(
-      markCompleted.mock.invocationCallOrder[0] ?? 0,
+    expect(value.dependencies.enqueueAnalyticsRefresh.mock.invocationCallOrder[0]).toBeLessThan(
+      value.dependencies.markCompleted.mock.invocationCallOrder[0] ?? 0,
     );
   });
-
-  it("does not acknowledge or enqueue analytics when a tombstone batch fails", async () => {
-    const command = vi.fn(
-      async (_options: { query: string; query_params?: Record<string, unknown> }) => undefined,
+  it("keeps a page identity and cursor stable across ACK-before-checkpoint failure", async () => {
+    const value = fixture();
+    const source = { generation: 0, id: randomUUID() };
+    value.dependencies.readSourcePage.mockResolvedValueOnce([source]).mockResolvedValue([]);
+    await deferred(value);
+    value.acknowledge(0n);
+    await deferred(value);
+    const page = value.acknowledge(1n);
+    value.job.updateData.mockRejectedValueOnce(new Error("checkpoint save failed"));
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "checkpoint save failed",
     );
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [{ generation: 0, id: firstId }] })
-      .mockResolvedValue({ json: async () => [tombstoneRow(firstId, 0)] });
-    const insert = vi.fn().mockRejectedValue(new Error("ClickHouse batch failed"));
-    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-
-    await expect(
-      processProviderDataDeletionJob(makeJob(), {
-        accountErasureAllowsWork: vi.fn(async () => true),
-        deleteProviderArtifacts: async () => undefined,
-        clickHouseClient: { command, insert, query },
-        enqueueAnalyticsRefresh,
-        enqueueContinuation: vi.fn(async () => undefined),
-        markCompleted,
-      }),
-    ).rejects.toThrow("ClickHouse batch failed");
-
-    expect(command).toHaveBeenCalledTimes(1);
-    expect(insert).toHaveBeenCalledTimes(1);
-    expect(enqueueAnalyticsRefresh).not.toHaveBeenCalled();
-    expect(markCompleted).not.toHaveBeenCalled();
-  });
-
-  it("does not checkpoint a batch when account erasure blocks its tombstone insert", async () => {
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [{ generation: 0, id: firstId }] })
-      .mockResolvedValueOnce({ json: async () => [tombstoneRow(firstId, 0)] });
-    const accountErasureAllowsWork = vi
-      .fn()
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValue(true);
-    const job = makeJob();
-    const enqueueContinuation = vi.fn(async () => undefined);
-
-    await processProviderDataDeletionJob(job, {
-      accountErasureAllowsWork,
-      deleteProviderArtifacts: async () => undefined,
-      clickHouseClient: {
-        command: vi.fn(async () => undefined),
-        insert: vi.fn(async () => undefined),
-        query,
-      },
-      enqueueAnalyticsRefresh: vi.fn(async () => undefined),
-      enqueueContinuation,
-      markCompleted: vi.fn(async () => undefined),
+    value.reload();
+    expect(value.job.data.pendingCommand?.command).toEqual(page);
+    await deferred(value);
+    expect(value.job.data.checkpoint).toMatchObject({
+      batches: 1,
+      examinedRows: 1,
+      deletedRows: 1,
+      lastGeneration: 0,
+      lastId: source.id,
     });
-
-    expect(job.updateData).not.toHaveBeenCalled();
-    expect(enqueueContinuation).not.toHaveBeenCalled();
+    expect(value.published.filter((command) => command.commandId === page.commandId)).toHaveLength(
+      1,
+    );
+    expect(value.published.at(-1)?.previousCommandId).toBe(page.commandId);
   });
-
-  it("requires an insert-capable ClickHouse client before creating tombstones", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [{ generation: 0, id: firstId }] });
-
-    await expect(
-      processProviderDataDeletionJob(makeJob(), {
-        accountErasureAllowsWork: vi.fn(async () => true),
-        deleteProviderArtifacts: async () => undefined,
-        clickHouseClient: { command, query },
-        enqueueAnalyticsRefresh: vi.fn(async () => undefined),
-        enqueueContinuation: vi.fn(async () => undefined),
-        markCompleted: vi.fn(async () => undefined),
-      }),
-    ).rejects.toThrow("Provider data deletion requires an insert-capable ClickHouse client");
-
-    expect(command).toHaveBeenCalledTimes(1);
-  });
-
-  it("resumes with keyset pagination over the provider-generation projection", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi.fn().mockResolvedValueOnce({ json: async () => [] });
-    const insert = vi.fn(async () => undefined);
-    const checkpoint = {
-      batches: 4,
-      deletedRows: 4_000,
+  it("processes more than1000 sources in bounded delayed steps of the same durable job", async () => {
+    const value = fixture();
+    const sources: ProviderDeletionSourceKey[] = Array.from({ length: 1001 }, (_, index) => ({
+      generation: index < 1000 ? 0 : 1,
+      id: randomUUID(),
+    }));
+    value.dependencies.readSourcePage
+      .mockResolvedValueOnce(sources.slice(0, 1000))
+      .mockResolvedValueOnce(sources.slice(1000))
+      .mockResolvedValue([]);
+    await deferred(value);
+    value.acknowledge(0n);
+    await deferred(value);
+    value.acknowledge(1000n);
+    await deferred(value);
+    value.acknowledge(1n);
+    await deferred(value);
+    value.acknowledge(0n);
+    await processProviderDataDeletionJob(value.job, value.dependencies);
+    expect(value.published.map((command) => command.sourceIds.length)).toEqual([0, 1000, 1, 0]);
+    expect(value.job.data.checkpoint).toMatchObject({
+      batches: 2,
+      examinedRows: 1001,
+      deletedRows: 1001,
       lastGeneration: 1,
-      lastId: firstId,
+      lastId: sources[1000]?.id,
+    });
+    expect(value.job.deferUntilReceipt).toHaveBeenCalledTimes(4);
+    expect(value.dependencies.markCompleted).toHaveBeenCalledOnce();
+  });
+  it("fails on missing committed ACK rather than resetting the chain", async () => {
+    const value = fixture();
+    await deferred(value);
+    const fence = value.acknowledge(0n);
+    await deferred(value);
+    value.job.data = { ...value.job.data, pendingCommand: undefined };
+    value.acknowledgements.delete(fence.commandId);
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "operator recovery",
+    );
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
+  });
+  it("keeps pending evidence when receipt verification fails", async () => {
+    const value = fixture();
+    await deferred(value);
+    const pending = value.stored().pendingCommand;
+    value.dependencies.readCommandAcknowledgement.mockRejectedValueOnce(
+      new Error("receipt unavailable"),
+    );
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "receipt unavailable",
+    );
+    expect(value.stored().pendingCommand).toEqual(pending);
+    expect(value.dependencies.enqueueAnalyticsRefresh).not.toHaveBeenCalled();
+  });
+  it("retains pending state when account erasure blocks publication", async () => {
+    const value = fixture();
+    value.dependencies.accountErasureAllowsWork.mockImplementation(
+      async (kind) => kind !== "provider deletion command publication",
+    );
+    await processProviderDataDeletionJob(value.job, value.dependencies);
+    expect(value.stored().pendingCommand?.command).toMatchObject({
+      sourceIds: [],
+      previousCommandId: null,
+    });
+    expect(value.published).toEqual([]);
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
+  });
+  it("stops artifacts and completion when account erasure takes ownership", async () => {
+    const value = fixture();
+    await terminalState(value);
+    value.dependencies.accountErasureAllowsWork.mockImplementation(
+      async (kind) => kind !== "provider artifact deletion",
+    );
+    await processProviderDataDeletionJob(value.job, value.dependencies);
+    expect(value.dependencies.deleteProviderArtifacts).not.toHaveBeenCalled();
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
+  });
+  it("preserves terminal source proof when retained artifact cleanup fails", async () => {
+    const value = fixture();
+    await terminalState(value);
+    value.dependencies.deleteProviderArtifacts.mockRejectedValueOnce(
+      new Error("artifact cleanup failed"),
+    );
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "artifact cleanup failed",
+    );
+    expect(value.job.data.lastCommittedCommand?.complete).toBe(true);
+    expect(value.dependencies.enqueueAnalyticsRefresh).not.toHaveBeenCalled();
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
+  });
+  it("reports progress failures while preserving completed source and artifact work", async () => {
+    const value = fixture();
+    await terminalState(value);
+    value.job.updateProgress.mockRejectedValue(new Error("progress unavailable"));
+    await processProviderDataDeletionJob(value.job, value.dependencies);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "progress unavailable" }),
+      expect.any(Object),
+    );
+    expect(value.dependencies.markCompleted).toHaveBeenCalledOnce();
+  });
+  it("fails closed on lost active ownership after publication", async () => {
+    const value = fixture();
+    value.dependencies.publishProviderGenerationDeletion.mockImplementation(async (command) => {
+      value.published.push(command);
+      value.job.assertActive.mockRejectedValue(new Error("job lock lost"));
+    });
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "job lock lost",
+    );
+    expect(value.stored().pendingCommand?.command).toEqual(value.published[0]);
+    expect(value.job.deferUntilReceipt).not.toHaveBeenCalled();
+    expect(value.dependencies.markCompleted).not.toHaveBeenCalled();
+  });
+  it("rejects pre-protocol cursor state without altering its original deletion identity", async () => {
+    const value = fixture();
+    const eventId = value.job.data.eventId;
+    value.job.data = {
+      ...value.job.data,
+      checkpoint: { batches: 1, deletedRows: 1000, lastGeneration: 0, lastId: randomUUID() },
     };
-
-    await processProviderDataDeletionJob(makeJob({ checkpoint }), {
-      accountErasureAllowsWork: vi.fn(async () => true),
-      deleteProviderArtifacts: async () => undefined,
-      clickHouseClient: { command, insert, query },
-      enqueueAnalyticsRefresh: vi.fn(async () => undefined),
-      enqueueContinuation: vi.fn(async () => undefined),
-      markCompleted: vi.fn(async () => undefined),
-    });
-
-    expect(query.mock.calls[0]?.[0]).toEqual({
-      query: expect.stringContaining(
-        "OR (generation = {last_generation:UInt64} AND id > {last_id:UUID})",
-      ),
-      query_params: expect.objectContaining({
-        last_generation: checkpoint.lastGeneration,
-        last_id: checkpoint.lastId,
-      }),
-      format: "JSONEachRow",
-    });
-  });
-
-  it("fails before scanning when historical parts lack the provider-generation projection", async () => {
-    const command = vi.fn(async () => undefined);
-    const query = vi.fn().mockResolvedValue({
-      json: async () => [{ active_parts: 12, missing_projection_parts: 12 }],
-    });
-    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-    const insert = vi.fn(async () => undefined);
-
-    await expect(
-      processProviderDataDeletionJob(makeJob(), {
-        accountErasureAllowsWork: vi.fn(async () => true),
-        deleteProviderArtifacts: async () => undefined,
-        clickHouseClient: { command, insert, query },
-        enqueueAnalyticsRefresh,
-        enqueueContinuation: vi.fn(async () => undefined),
-        markCompleted,
-      }),
-    ).rejects.toThrow(
-      "Provider data deletion requires the by_provider_generation and by_provider_live_generation projections on all active ingest.metric_stream parts; 12 of 12 parts are missing at least one",
+    await expect(processProviderDataDeletionJob(value.job, value.dependencies)).rejects.toThrow(
+      "operator redrive",
     );
-
-    expect(command).toHaveBeenCalledTimes(1);
-    expect(enqueueAnalyticsRefresh).not.toHaveBeenCalled();
-    expect(markCompleted).not.toHaveBeenCalled();
-  });
-
-  it("reports progress update failures without aborting deletion", async () => {
-    const progressError = new Error("Redis progress failed");
-    const warn = vi.spyOn(logger, "warn").mockReturnValue(logger);
-    const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValue({ json: async () => [] });
-    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
-    const markCompleted = vi.fn(async () => undefined);
-    const job = makeJob();
-    job.updateProgress.mockRejectedValue(progressError);
-
-    await processProviderDataDeletionJob(job, {
-      accountErasureAllowsWork: vi.fn(async () => true),
-      deleteProviderArtifacts: async () => undefined,
-      clickHouseClient: { command, query },
-      enqueueAnalyticsRefresh,
-      enqueueContinuation: vi.fn(async () => undefined),
-      markCompleted,
-    });
-
-    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
-      tags: { providerDataDeletionStep: "updateProgress" },
-    });
-    expect(warn).toHaveBeenCalledWith(
-      "[provider-data-deletion] Failed to update progress: Error: Redis progress failed",
-    );
-    expect(markCompleted).toHaveBeenCalledWith(job.data.eventId);
+    expect(value.job.data.eventId).toBe(eventId);
+    expect(value.published).toEqual([]);
   });
 });

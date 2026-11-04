@@ -16,9 +16,16 @@ import {
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
+  isMetricStreamProviderGenerationDeletedEvent,
   type MetricStreamDeleteScope,
   type MetricStreamRedpandaEvent,
 } from "./events.ts";
+import {
+  assertNoProviderDeletionResiduals,
+  isProviderDeletionAccountErased,
+  readProviderDeletionAcknowledgement,
+  verifyProviderDeletionPredecessor,
+} from "./provider-generation-deletion.ts";
 import type { MetricStreamPosition } from "./transport-position.ts";
 
 function effect(
@@ -92,6 +99,41 @@ export async function* prepareMetricStreamSourceEffects(
 ): AsyncGenerator<readonly AnalyticsEffect[]> {
   const client = owner.client;
   if (isMetricStreamBatchCompletedEvent(event)) return;
+  if (isMetricStreamProviderGenerationDeletedEvent(event)) {
+    if (await isProviderDeletionAccountErased(client, event)) return;
+    if (await readProviderDeletionAcknowledgement(client, event)) return;
+    await verifyProviderDeletionPredecessor(client, event, position);
+    if (event.complete) {
+      await assertNoProviderDeletionResiduals(client, event);
+      return;
+    }
+    let ordinal = 0n;
+    for (let offset = 0; offset < event.sourceIds.length; offset += 20) {
+      const placements = await resolveSourcePlacements(
+        client,
+        event.sourceIds.slice(offset, offset + 20),
+      );
+      const page: AnalyticsEffect[] = [];
+      for (const before of placements) {
+        if (
+          before.deleted ||
+          before.userId !== event.userId ||
+          before.providerId !== event.providerId ||
+          BigInt(before.generation) >= BigInt(event.generation)
+        )
+          continue;
+        page.push(
+          effect(position, ordinal++, before, {
+            ...before,
+            sourceVersion: String(BigInt(before.sourceVersion) + 1n),
+            deleted: true,
+          }),
+        );
+      }
+      if (page.length) yield page;
+    }
+    return;
+  }
   if (!isMetricStreamDeletedEvent(event)) {
     if (event.channel === "imu") return;
     const before = (await resolveSourcePlacements(client, [event.id]))[0] ?? null;
@@ -227,7 +269,11 @@ export async function applyMetricStreamSourceEffects(
   effects: readonly AnalyticsEffect[],
 ): Promise<number> {
   if (!effects.length) return 0;
-  if (!isMetricStreamDeletedEvent(event) && !isMetricStreamBatchCompletedEvent(event)) {
+  if (
+    !isMetricStreamDeletedEvent(event) &&
+    !isMetricStreamBatchCompletedEvent(event) &&
+    !isMetricStreamProviderGenerationDeletedEvent(event)
+  ) {
     const after = effects[0]?.after;
     if (!after) throw new Error("Prepared source insert has no terminal placement");
     const row = {
@@ -240,7 +286,8 @@ export async function applyMetricStreamSourceEffects(
         SELECT {id:UUID},{activity:Nullable(UUID)},{user:UUID},parseDateTime64BestEffort({recorded:String},6),{channel:String},{provider:String},
           {external:Nullable(String)},{device:Nullable(String)},{sourceType:String},{scalar:Nullable(Float32)},{vector:Array(Float32)},{point:String},{metadata:String},
           parseDateTime64BestEffort({ingested:String},9),{deleted:Int8},{version:Int64},{generation:UInt64}
-        WHERE lower(hex(SHA256(toString({user:UUID})))) NOT IN (SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL)`,
+        WHERE lower(hex(SHA256(toString({user:UUID})))) NOT IN (SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL)
+          AND ({deleted:Int8}=1 OR {generation:UInt64}>=(SELECT max(generation) FROM ${PROVIDER_DATA_GENERATION_TABLE} WHERE user_id={user:UUID} AND provider_id={provider:String}))`,
       query_params: {
         id: row.id,
         activity: row.activity_id,

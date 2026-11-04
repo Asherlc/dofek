@@ -1,10 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
+import { createMetricStreamProviderGenerationDeletedEvent } from "./events.ts";
 import {
   createKafkaMetricStreamEventPublisherForRoute,
   KafkaMetricStreamEventPublisher,
   type KafkaProducerLike,
   type KafkaProducerSendInput,
 } from "./redpanda-producer.ts";
+
+it("publishes stable provider-generation commands on the fixed provider partition key", async () => {
+  const send = vi.fn(async (_input: KafkaProducerSendInput) => undefined);
+  const publisher = new KafkaMetricStreamEventPublisher(
+    { connect: async () => undefined, disconnect: async () => undefined, send },
+    "metric-stream-live",
+  );
+  const command = createMetricStreamProviderGenerationDeletedEvent({
+    commandId: "10000000-0000-4000-8000-000000000001",
+    deletionEventId: "20000000-0000-4000-8000-000000000002",
+    userId: "30000000-0000-4000-8000-000000000003",
+    providerId: "garmin",
+    generation: 2,
+    sourceIds: [],
+    previousCommandId: null,
+    complete: false,
+  });
+  await publisher.publishProviderGenerationDeletion(command);
+  expect(send).toHaveBeenCalledWith({
+    topic: "metric-stream-live",
+    messages: [{ key: command.partitionKey, value: JSON.stringify(command) }],
+  });
+});
 
 const kafkaProducerConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerDisconnect = vi.hoisted(() => vi.fn(async () => undefined));

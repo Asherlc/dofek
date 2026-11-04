@@ -5,6 +5,8 @@ export const METRIC_STREAM_EVENT_VERSION = 2;
 export const METRIC_STREAM_DELETE_EVENT_VERSION = 3;
 export const METRIC_STREAM_DELETED_EVENT_TYPE = "metric_stream_deleted";
 export const METRIC_STREAM_BATCH_COMPLETED_EVENT_TYPE = "metric_stream_batch_completed";
+export const METRIC_STREAM_PROVIDER_GENERATION_DELETED_EVENT_TYPE =
+  "metric_stream_provider_generation_deleted";
 
 const nonEmptyStringSchema = z.string().min(1);
 const optionalNullableTextSchema = nonEmptyStringSchema.nullable().optional();
@@ -160,11 +162,49 @@ export const metricStreamBatchCompletedEventV1Schema = metricStreamProcessingCon
   })
   .strict();
 
+export const metricStreamProviderGenerationDeletedEventSchema = z
+  .object({
+    version: z.literal(1),
+    eventType: z.literal(METRIC_STREAM_PROVIDER_GENERATION_DELETED_EVENT_TYPE),
+    commandId: z.uuid(),
+    deletionEventId: z.uuid(),
+    userId: z.uuid(),
+    providerId: nonEmptyStringSchema,
+    generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    sourceIds: z.array(z.uuid()).max(1000),
+    complete: z.boolean(),
+    previousCommandId: z.uuid().nullable(),
+    partitionKey: nonEmptyStringSchema,
+  })
+  .strict()
+  .superRefine((command, context) => {
+    const invalid = (message: string) => context.addIssue({ code: z.ZodIssueCode.custom, message });
+    if (command.partitionKey !== `provider-generation:${command.userId}:${command.providerId}`)
+      invalid("Provider generation command requires its fixed owner/provider partition key");
+    if (
+      command.commandId === command.deletionEventId ||
+      command.commandId === command.previousCommandId
+    )
+      invalid(
+        "Provider generation command identity must be distinct from deletion and predecessor identities",
+      );
+    if (new Set(command.sourceIds).size !== command.sourceIds.length)
+      invalid("Provider generation command source IDs must be unique");
+    if (command.previousCommandId === null && (command.complete || command.sourceIds.length))
+      invalid("The first provider generation command must be fence-only");
+    if (
+      command.previousCommandId !== null &&
+      (command.complete ? command.sourceIds.length > 0 : command.sourceIds.length === 0)
+    )
+      invalid("Provider generation pages require IDs and terminal commands require an empty page");
+  });
+
 export const metricStreamRedpandaEventSchema = z.union([
   metricStreamDeletedEventV1Schema,
   metricStreamDeletedEventV2Schema,
   metricStreamDeletedEventV3Schema,
   metricStreamBatchCompletedEventV1Schema,
+  metricStreamProviderGenerationDeletedEventSchema,
   metricStreamEventV1Schema,
   metricStreamEventV2Schema,
 ]);
@@ -187,6 +227,28 @@ export type MetricStreamBatchCompletedEventV1 = z.infer<
   typeof metricStreamBatchCompletedEventV1Schema
 >;
 export type MetricStreamRedpandaEvent = z.infer<typeof metricStreamRedpandaEventSchema>;
+export type MetricStreamProviderGenerationDeletedEvent = z.infer<
+  typeof metricStreamProviderGenerationDeletedEventSchema
+>;
+
+export function createMetricStreamProviderGenerationDeletedEvent(
+  input: Omit<MetricStreamProviderGenerationDeletedEvent, "version" | "eventType" | "partitionKey">,
+): MetricStreamProviderGenerationDeletedEvent {
+  return metricStreamProviderGenerationDeletedEventSchema.parse({
+    ...input,
+    version: 1,
+    eventType: METRIC_STREAM_PROVIDER_GENERATION_DELETED_EVENT_TYPE,
+    partitionKey: `provider-generation:${input.userId}:${input.providerId}`,
+  });
+}
+
+export function isMetricStreamProviderGenerationDeletedEvent(
+  event: MetricStreamRedpandaEvent,
+): event is MetricStreamProviderGenerationDeletedEvent {
+  return (
+    "eventType" in event && event.eventType === METRIC_STREAM_PROVIDER_GENERATION_DELETED_EVENT_TYPE
+  );
+}
 
 function formatUuidFromBytes(bytes: Uint8Array): string {
   const hex = Array.from(bytes, (byteValue) => byteValue.toString(16).padStart(2, "0")).join("");

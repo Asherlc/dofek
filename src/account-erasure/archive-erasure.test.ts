@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
+  createMetricStreamProviderGenerationDeletedEvent,
 } from "../metric-stream/events.ts";
 import type { MetricStreamArchiveObject, MetricStreamArchiveStorage } from "./archive-erasure.ts";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
@@ -142,6 +143,35 @@ function metricEvent(userId: string, id: string): Record<string, unknown> {
 }
 
 describe("eraseMetricStreamArchive", () => {
+  it("removes owned provider-generation commands while preserving another account's command bytes", async () => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-18-19.jsonl.gz";
+    const command = (userId: string) =>
+      createMetricStreamProviderGenerationDeletedEvent({
+        commandId: "30000000-0000-4000-8000-000000001994",
+        deletionEventId: "40000000-0000-4000-8000-000000001994",
+        userId,
+        providerId: "garmin",
+        generation: 2,
+        sourceIds: [],
+        complete: false,
+        previousCommandId: null,
+      });
+    const preserved = JSON.stringify(command(otherUserId));
+    storage.objects.set(
+      key,
+      gzipSync(`${JSON.stringify(command(deletingUserId))}\n${preserved}\n`),
+    );
+    const result = await eraseMetricStreamArchive(storage, {
+      activityIds: new Set(),
+      operationIds: new Set(),
+      userId: deletingUserId,
+    });
+    expect(result.recordsRemoved).toBe(1);
+    expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
+      `${preserved}\n`,
+    );
+  });
   it("conditionally rewrites a mixed-user gzip object without buffering the archive", async () => {
     const storage = new MemoryArchiveStorage();
     const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz";

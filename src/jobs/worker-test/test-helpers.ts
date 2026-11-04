@@ -26,6 +26,7 @@ const hoisted = vi.hoisted(() => {
   const mockClose = vi.fn(() => Promise.resolve());
   const mockRun = vi.fn(() => Promise.resolve());
   const mockAddJobLog = vi.fn(() => Promise.resolve(1));
+  const mockReadJobLock = vi.fn(async (_key: string) => "provider-test-token");
   const mockDatabase = {
     $client: { end: vi.fn(() => Promise.resolve()) },
   };
@@ -116,6 +117,7 @@ const hoisted = vi.hoisted(() => {
     mockClose,
     mockRun,
     mockAddJobLog,
+    mockReadJobLock,
     mockDatabase,
     mockClickHouseClient,
     mockValidateAccountErasureLedgerKeyring,
@@ -154,13 +156,21 @@ const hoisted = vi.hoisted(() => {
 
 vi.mock("bullmq", async (importOriginal) => ({
   WaitingChildrenError: (await importOriginal<typeof import("bullmq")>()).WaitingChildrenError,
+  DelayedError: (await importOriginal<typeof import("bullmq")>()).DelayedError,
   Job: { addJobLog: hoisted.mockAddJobLog },
   UnrecoverableError: hoisted.MockUnrecoverableError,
   Worker: vi.fn(function vitestConstructor(name: string, processor: (job: unknown) => unknown) {
     const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
     hoisted.workerOnMocks[name] = on;
     hoisted.workerProcessors[name] = processor;
-    return { name, on, close: hoisted.mockClose, run: hoisted.mockRun };
+    return {
+      name,
+      on,
+      close: hoisted.mockClose,
+      run: hoisted.mockRun,
+      getBackend: () => ({ client: Promise.resolve({ get: hoisted.mockReadJobLock }) }),
+      toKey: (value: string) => `bull:${name}:${value}`,
+    };
   }),
 }));
 
@@ -343,6 +353,7 @@ vi.mock("../provider-queue-config.ts", () => ({
 }));
 
 vi.mock("../queues.ts", () => ({
+  PROVIDER_DATA_DELETION_DELAY_MS: 30_000,
   accountErasureJobDataSchema: {
     parse: vi.fn((data: unknown) => {
       if (

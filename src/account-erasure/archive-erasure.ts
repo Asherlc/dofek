@@ -19,6 +19,7 @@ import * as Sentry from "@sentry/node";
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
+  isMetricStreamProviderGenerationDeletedEvent,
   metricStreamRedpandaEventSchema,
 } from "../metric-stream/events.ts";
 import { parseMetricStreamArchiveObjectKey } from "../metric-stream/r2-replay.ts";
@@ -278,6 +279,8 @@ function belongsToAccount(
   if (isMetricStreamBatchCompletedEvent(event)) {
     return identifiers.operationIds.has(event.operationId);
   }
+  if (isMetricStreamProviderGenerationDeletedEvent(event))
+    return event.userId === identifiers.userId;
   if (isMetricStreamDeletedEvent(event)) {
     return (
       event.scope.userId === identifiers.userId ||
