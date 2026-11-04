@@ -24,15 +24,20 @@ acknowledges individual messages only after that operation returns. These
 contracts have [database recovery tests](analytics-delivery-group-coordinator.integration.test.ts)
 and [native acknowledgement tests](../metric-stream/pulsar-consumer.pulsar.integration.test.ts).
 
-Single local measurements with 469–503-byte synthetic samples, producer batches
-of 20 and a 128 MiB query budget reached 139.8 samples/s at a group of 100 and
-259.6 samples/s at 500. Both include subscription and first-group warm-up;
-the measured process high-water mark was about 311 MiB. Every measured message
-had a verified raw row, receipt, processed frontier and individual native ACK.
-These results do not meet the 300 samples/s drain qualification target and do
-not establish production throughput. The remaining sink operations still use
-20-row chunks; qualifying set operations over the finite group is the next
-performance gate. Analytics discovery pages remain bounded to 20 references.
+Initial local measurements reached 139.8 samples/s at a group of 100 and
+259.6 samples/s at 500. Replacing inherited sink-side chunks with bounded set
+operations reduced a 500-message group's ClickHouse calls from 134 to 13.
+One subsequent local run reached 984.3 samples/s in 508 ms, exceeding the
+300 samples/s sink qualification target, with a process high-water mark of
+about 311 MiB. It used 469–503-byte synthetic samples, producer batches of 20
+and the unchanged 128 MiB query budget, including subscription and first-group
+warm-up. All 500 raw rows and stable fields, receipts, processed frontier,
+individual native ACK identities and distinct ingestion timestamps were checked.
+This is a local sink result, not a production or combined-workload certification.
+The [set-operation regressions](../metric-stream/clickhouse-sink-group.integration.test.ts)
+cover groups of 1, 100 and 500. Persisted manifests authorize the larger proof
+only for simple scalar groups; multi-effect control proofs and analytics
+discovery pages remain bounded to 20 references.
 Canonical Pulsar activation and retirement of the Kafka consumer remain release
 gates; this checkpoint must not be deployed as a mixed-consumer recovery scheme.
 

@@ -48,7 +48,7 @@ export async function resolveSourcePlacements(
   client: Pick<ClickHouseClient, "query">,
   sourceIds: readonly string[],
 ): Promise<readonly SourcePlacement[]> {
-  if (sourceIds.length > 20) throw new Error("Placement lookup accepts at most 20 source IDs");
+  if (sourceIds.length > 500) throw new Error("Placement lookup accepts at most 500 source IDs");
   const ids = z.array(z.uuid()).parse(sourceIds);
   if (ids.length === 0) return [];
   const result = await client.query({

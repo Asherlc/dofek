@@ -15,63 +15,87 @@ describe("grouped metric sink application path", () => {
     await context.cleanup();
   });
 
-  it("publishesTwentyDistinctMessagesWithSetBasedRequestsAndOneRealFrontier", async () => {
-    const stream = { ...context.stream, epoch: randomUUID() };
-    const events = Array.from({ length: 20 }, (_, index) =>
-      createMetricStreamEvent(
-        {
-          id: randomUUID(),
-          userId: context.userId,
-          providerId: "group-fixture",
-          recordedAt: `2026-01-01T00:00:00.${String(index).padStart(6, "0")}Z`,
-          sourceType: "sensor",
-          channel: "heart_rate",
-          scalar: 100 + index,
+  it.each([1, 100, 500])(
+    "publishes %i distinct messages with bounded set operations and one real frontier",
+    async (count) => {
+      const stream = { ...context.stream, epoch: randomUUID() };
+      const events = Array.from({ length: count }, (_, index) =>
+        createMetricStreamEvent(
+          {
+            id: randomUUID(),
+            userId: context.userId,
+            providerId: "group-fixture",
+            recordedAt: `2026-01-01T00:00:00.${String(index).padStart(6, "0")}Z`,
+            sourceType: "sensor",
+            channel: "heart_rate",
+            scalar: 100 + index,
+          },
+          "1",
+        ),
+      );
+      const positions = events.map((_, index) => analyticsPosition(stream, BigInt(index + 1)));
+      const insert = context.client.insert?.bind(context.client);
+      if (!insert) throw new Error("Insert-capable fixture required");
+      let requests = 0;
+      const client = {
+        query: <R extends object>(options: Parameters<typeof context.client.query>[0]) => {
+          requests++;
+          return context.client.query<R>({
+            ...options,
+            clickhouse_settings: {
+              ...options.clickhouse_settings,
+              max_memory_usage: "134217728",
+              max_threads: 1,
+            },
+          });
         },
-        "1",
-      ),
-    );
-    const positions = events.map((_, index) => analyticsPosition(stream, BigInt(index + 1)));
-    const insert = context.client.insert?.bind(context.client);
-    if (!insert) throw new Error("Insert-capable fixture required");
-    let requests = 0;
-    const client = {
-      query: <R extends object>(options: Parameters<typeof context.client.query>[0]) => {
-        requests++;
-        return context.client.query<R>(options);
-      },
-      command: (options: Parameters<typeof context.client.command>[0]) => {
-        requests++;
-        return context.client.command(options);
-      },
-      insert: (options: Parameters<typeof insert>[0]) => {
-        requests++;
-        return insert(options);
-      },
-    };
-    expect(
-      await applyMetricStreamEventsToClickHouse(
-        client,
-        events,
-        {
-          topic: stream.topic,
-          partition: stream.partition,
-          positions,
-          assertActive: async () => {},
+        command: (options: Parameters<typeof context.client.command>[0]) => {
+          requests++;
+          return context.client.command({
+            ...options,
+            clickhouse_settings: {
+              ...options.clickhouse_settings,
+              max_memory_usage: "134217728",
+              max_threads: 1,
+            },
+          });
         },
-        context.database,
-      ),
-    ).toBe(20);
-    expect(requests).toBeLessThanOrEqual(20);
-    const result = await context.client.query({
-      query:
-        "SELECT count() AS rows,uniqExact(ingested_at) AS ingestion_times FROM ingest.metric_stream FINAL WHERE id IN {ids:Array(UUID)}",
-      query_params: { ids: events.map((event) => event.id) },
-      format: "JSONEachRow",
-    });
-    expect(await result.json()).toEqual([{ rows: 20, ingestion_times: 20 }]);
-    const state = await loadAnalyticsStreamState(context.database, stream);
-    expect(state?.processed).toEqual(positions.at(-1));
-    expect(state?.completedGroup?.memberCount).toBe(20);
-  });
+        insert: (options: Parameters<typeof insert>[0]) => {
+          requests++;
+          return insert({
+            ...options,
+            clickhouse_settings: {
+              ...options.clickhouse_settings,
+              max_memory_usage: "134217728",
+              max_threads: 1,
+            },
+          });
+        },
+      };
+      expect(
+        await applyMetricStreamEventsToClickHouse(
+          client,
+          events,
+          {
+            topic: stream.topic,
+            partition: stream.partition,
+            positions,
+            assertActive: async () => {},
+          },
+          context.database,
+        ),
+      ).toBe(count);
+      expect(requests).toBeLessThanOrEqual(15);
+      const result = await context.client.query({
+        query:
+          "SELECT count() AS rows,uniqExact(ingested_at) AS ingestion_times FROM ingest.metric_stream FINAL WHERE id IN {ids:Array(UUID)}",
+        query_params: { ids: events.map((event) => event.id) },
+        format: "JSONEachRow",
+      });
+      expect(await result.json()).toEqual([{ rows: count, ingestion_times: count }]);
+      const state = await loadAnalyticsStreamState(context.database, stream);
+      expect(state?.processed).toEqual(positions.at(-1));
+      expect(state?.completedGroup?.memberCount).toBe(count);
+    },
+  );
 });

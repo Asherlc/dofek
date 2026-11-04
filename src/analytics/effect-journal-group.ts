@@ -81,6 +81,14 @@ export async function verifyAnalyticsDeliveryReceipts(
       throw new Error("Durable analytics delivery receipt is missing or mismatched");
     state.set(key, { receipt, digest: createHash("sha256"), effectCount: 0n, chunkCount: 0n });
   }
+  const simpleGroup = [...state.values()].every(
+    ({ receipt }) =>
+      receipt.chunk_count === "1" &&
+      (receipt.effect_count === "0" || receipt.effect_count === "1") &&
+      receipt.stages.length === 1 &&
+      receipt.stages[0] === "scalar",
+  );
+  const referenceLimit = simpleGroup ? positions.length : RECEIPT_PAGE_SIZE;
   let after: DiscoveryReceipt | undefined;
   for (;;) {
     const page = await client.query({
@@ -89,7 +97,7 @@ export async function verifyAnalyticsDeliveryReceipts(
         ORDER BY kafka_offset,major,minor,batch,effect_ordinal,stage LIMIT {limit:UInt32}`,
       query_params: {
         ...selected.params,
-        limit: RECEIPT_PAGE_SIZE,
+        limit: simpleGroup ? referenceLimit + 1 : referenceLimit,
         ...(after
           ? {
               afterOffset: after.kafka_offset,
@@ -106,7 +114,7 @@ export async function verifyAnalyticsDeliveryReceipts(
     });
     const refs = z
       .array(discoveryReceiptSchema)
-      .max(RECEIPT_PAGE_SIZE)
+      .max(referenceLimit)
       .parse(await page.json());
     if (!refs.length) break;
     const effects = await readReferencedEffects(client, refs);
@@ -124,6 +132,7 @@ export async function verifyAnalyticsDeliveryReceipts(
       }
       after = ref;
     }
+    if (simpleGroup) break;
   }
   for (const member of state.values()) {
     if (
@@ -264,12 +273,7 @@ export async function prepareAnalyticsDeliveryGroup(
     return { positions: input.positions, effects, fresh: false };
   }
   const effects = await generate();
-  for (let offset = 0; offset < effects.length; offset += RECEIPT_PAGE_SIZE)
-    await persistAnalyticsEffectPage(
-      client,
-      effects.slice(offset, offset + RECEIPT_PAGE_SIZE),
-      "prepareFresh",
-    );
+  await persistAnalyticsEffectPage(client, effects, "prepareFresh");
   await client.insert({
     table: "analytics.delivery_receipt",
     format: "JSONEachRow",
@@ -289,12 +293,7 @@ export async function commitAnalyticsDeliveryGroup(
       await commitPreparedAnalyticsDelivery(client, position);
     return;
   }
-  for (let offset = 0; offset < prepared.effects.length; offset += RECEIPT_PAGE_SIZE)
-    await persistAnalyticsEffectPage(
-      client,
-      prepared.effects.slice(offset, offset + RECEIPT_PAGE_SIZE),
-      "commitFresh",
-    );
+  await persistAnalyticsEffectPage(client, prepared.effects, "commitFresh");
   const nonempty = new Set(
     prepared.effects.map((effect) => storageKey(deliveryParams(effect.position))),
   );

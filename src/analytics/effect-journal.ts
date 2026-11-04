@@ -717,7 +717,7 @@ export async function readReferencedEffects(
   client: Pick<ClickHouseClient, "query">,
   receipts: readonly DiscoveryReceipt[],
 ): Promise<(AnalyticsEffect | null)[]> {
-  z.number().int().max(RECEIPT_PAGE_SIZE).parse(receipts.length);
+  z.number().int().max(500).parse(receipts.length);
   const nonempty: EffectKey[] = [];
   for (const receipt of receipts) {
     if (receipt.is_empty) {

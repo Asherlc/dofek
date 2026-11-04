@@ -111,17 +111,13 @@ function fixture(
 }
 
 describe("metric-stream source-effect groups", () => {
-  it("prepares500 unique rows with25 placement reads and3 set policy reads", async () => {
+  it("prepares500 unique rows with one placement read and three set policy reads", async () => {
     const context = fixture();
     const inputs = Array.from({ length: 500 }, (_, index) => input(index + 1));
     const effects = await prepareMetricStreamSourceEffectsGroup(context.owner, inputs);
     expect(effects).toHaveLength(500);
-    expect(context.queries).toHaveLength(28);
-    expect(context.queries.slice(0, 25).map((query) => query.query_params?.ids)).toEqual(
-      Array.from({ length: 25 }, (_, index) =>
-        inputs.slice(index * 20, index * 20 + 20).map(({ event }) => event.id),
-      ),
-    );
+    expect(context.queries).toHaveLength(4);
+    expect(context.queries[0]?.query_params?.ids).toEqual(inputs.map(({ event }) => event.id));
     expect(
       effects.map((effect) => [effect.sourceVersion, effect.cursor.effectOrdinal, effect.position]),
     ).toEqual(inputs.map(({ position }) => ["9007199254740995", "0", position]));

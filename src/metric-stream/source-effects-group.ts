@@ -104,13 +104,11 @@ export async function prepareMetricStreamSourceEffectsGroup(
   const rows = validateGroup(inputs).filter(({ event }) => event.channel !== "imu");
   if (!rows.length) return [];
   const placements = new Map<string, SourcePlacement>();
-  for (let offset = 0; offset < rows.length; offset += 20) {
-    const resolved = await resolveSourcePlacements(
-      owner.client,
-      rows.slice(offset, offset + 20).map(({ event }) => event.id),
-    );
-    for (const placement of resolved) placements.set(identity(placement.sourceId), placement);
-  }
+  const resolved = await resolveSourcePlacements(
+    owner.client,
+    rows.map(({ event }) => event.id),
+  );
+  for (const placement of resolved) placements.set(identity(placement.sourceId), placement);
   for (const { event } of rows) {
     const before = placements.get(identity(event.id));
     if (before && identity(before.userId) !== identity(event.userId))

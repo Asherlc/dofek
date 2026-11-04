@@ -120,8 +120,8 @@ describe("source placement history", () => {
     await expect(
       resolveSourcePlacements(
         context.clickhouse,
-        Array.from({ length: 21 }, () => randomUUID()),
+        Array.from({ length: 501 }, () => randomUUID()),
       ),
-    ).rejects.toThrow("at most 20 source IDs");
+    ).rejects.toThrow("at most 500 source IDs");
   });
 });

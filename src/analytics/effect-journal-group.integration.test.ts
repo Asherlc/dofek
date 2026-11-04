@@ -138,7 +138,29 @@ describe("grouped delivery receipt verification", () => {
     await commitAnalyticsDeliveryGroup(client, prepared);
     expect(reads).toBe(1);
     await verifyAnalyticsDeliveryReceipts(client, positions);
-    expect(reads).toBe(5);
+    expect(reads).toBeLessThanOrEqual(5);
+  });
+
+  it("persistedMixedManifestsKeepMultiEffectProofsPagedAtTwenty", async () => {
+    const positions = group();
+    for (const [index, position] of positions.entries())
+      await appendAnalyticsDelivery(context.clickhouse, {
+        position,
+        effects: Array.from({ length: index === 2 ? 21 : 1 }, (_, ordinal) =>
+          analyticsEffect(position, BigInt(ordinal), context.userId),
+        ),
+      });
+    const limits: unknown[] = [];
+    const client = {
+      query: <R extends object>(options: Parameters<typeof context.clickhouse.query>[0]) => {
+        if (options.query.includes("FROM analytics.effect_receipt FINAL"))
+          limits.push(options.query_params?.limit);
+        return context.clickhouse.query<R>(options);
+      },
+    };
+    await verifyAnalyticsDeliveryReceipts(client, positions);
+    expect(limits.length).toBeGreaterThan(1);
+    expect(limits.every((limit) => limit === 20)).toBe(true);
   });
 
   it("reconstructsTheOriginalCompletedMembershipFromItsRetainedDescriptor", async () => {
