@@ -772,3 +772,47 @@ The source pass ended at this decisive missing mechanism. The useful lesson is
 to separate broker-ledger eligibility from physical journal reclamation and to
 resolve that release gate before building dependent integration. Production,
 existing jobs and archives, and all four safety holds remain unchanged.
+
+
+## 2026-11-04: Native evacuation remains unqualified after fixture bootstrap failures
+
+A minimal native regression now covers the proposed replacement procedure in
+`src/metric-stream/bookie-evacuation.pulsar.integration.test.ts`, with one required
+ARM CI job. It checks erased-account marker absence, complete surviving-ledger
+hashes and ensemble membership, old-bookie-offline writes, replacement restart
+and exclusive old-storage retirement. These are test assertions, **not passed
+qualification results**. Neither CI attempt reached bookie creation.
+
+The [first ARM attempt](https://github.com/Asherlc/dofek/actions/runs/41859366383)
+failed while formatting fresh metadata: Oxia returned `server not initialized
+yet` until the existing 60-second command bound. The fixture had omitted the
+native data-server registration and namespace creation already described in the
+[metadata bootstrap procedure](../deploy/pulsar/README.md). The
+[released data-server](https://github.com/oxia-db/oxia/blob/v0.18.0/cmd/admin/dataserver/create/cmd.go)
+and [namespace admin commands](https://github.com/oxia-db/oxia/blob/v0.18.0/cmd/admin/namespace/create/cmd.go)
+were added with independent configuration and shard-assignment assertions; no
+limits, retries or erasure criteria changed.
+
+The [final corrected attempt](https://github.com/Asherlc/dofek/actions/runs/41861291852)
+failed earlier, at data-server registration, with `rpc error: code = Unavailable
+desc = oxia: server not initialized yet`. Captured coordinator logs showed
+`Waiting to become leader` and no leader-ready event before cleanup. That
+establishes an unmet readiness prerequisite at the call, but does not establish
+whether the coordinator would eventually become ready. Both artifacts preserve
+the exact commands, first errors, native logs and phase; no unchanged rerun or
+longer timeout was used. Further native attempts stopped at the two-attempt
+infrastructure limit, pending direction on a reviewed readiness-gated fixture.
+
+The native evacuation mechanism has therefore neither passed nor failed its
+behavioral criteria. Production temporary-copy capacity, aggregate memory,
+Pulsar current-ledger succession, cursor/offload compatibility and complete
+physical erasure remain separate open gates. Existing jobs, R2 originals and all
+four production holds remain unchanged. The superseded first branch CI run was
+explicitly canceled after its completed native failure evidence was retained;
+no production workflow was canceled. Other branch CI failures remain unresolved
+release gates and are not represented as a successful full check run.
+
+The useful correction is to include the adjacent component's fresh bootstrap
+procedure in the fixture, and distinguish process startup, coordinator readiness,
+configuration persistence and shard assignment. This fixture has not justified
+any production cutover or weaker erasure policy.

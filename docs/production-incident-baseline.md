@@ -35725,3 +35725,16 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Containment / observations:** No test retry, operator restart, cap/deadline increase, JIT disable, log suppression, retention change or source query-shape fix followed. New-generation read-only inspection found no owned active queries or mutations, 28 raw/structural rows and zero serving scalar/dedup rows. The private failed fixture remains retained; missing query-log completion is not success. The query-log UUID/history survived without rotation. A retained trace-window read returned zero allocation rows; its earlier flush had failed. Official [allocation profiling guidance](https://clickhouse.com/docs/concepts/features/performance/allocation-profiling) distinguishes recorded samples from later inspection. Global diagnostic sampling remains disabled; native setting metadata says startup activation is required. Q11 asks direction for one instrumented local reproduction at the same image/caps, with profiling restoration, before choosing a fix. Independent source preparation continues.
 - **Production / retrospective:** Latest read-only health was ok with web 2/2, worker/analytics worker 1/1 and history sink 0/0; data free 9,975,222,272 bytes and root free 13,343,076,352 bytes. All four holds remain intentional. Future test helpers must persist query identity before every dispatch, retain terminal/unknown states and preserve fixtures after unknown cleanup. That instrumentation gap was corrected offline before further testing. Keep last completed native phase, first global fatal, allocation ownership and container termination as separate facts; use systematic debugging and native allocation evidence rather than changing buffers or query shape on a guess. No application fix or warm-resource success is claimed.
 - **Workstation push follow-up:** The earlier documentation push of `e72ac3fc7` was rejected by GitHub with `Internal Server Error` at 10:37:04 UTC. A read-only remote-ref check confirmed the old head; the identical authorized HTTPS push then succeeded. No credentials, global configuration, retry policy or application behavior changed.
+
+
+### 2026-11-04 — Native qualification CI blocked by metadata bootstrap
+
+Two ARM native qualification jobs stopped before bookie creation: first a missing
+Oxia admin bootstrap, then `Unavailable: server not initialized yet` while the
+coordinator still reported `Waiting to become leader`. The first omission was
+fixed; eventual coordinator readiness remains unproved. Exact failure artifacts
+were retained and further attempts stopped at the agreed two-attempt limit,
+without timeout/retry changes. This was CI-only: no additional production impact,
+cutover or restoration of the four existing holds. Native evacuation and other
+branch CI release gates remain unresolved. See the
+[qualification evidence and CI links](pulsar-qualification.md#2026-11-04-native-evacuation-remains-unqualified-after-fixture-bootstrap-failures).
