@@ -589,8 +589,8 @@ digest `5483460741417482121`; the candidate peak tracked memory was
 106,644,995 bytes. No production disk-exhaustion experiment was performed.
 
 The observations establish that the query setting is **not a strict physical
-temp-directory bound for this sort path**. They do not establish the internal
-accounting owner or authorize silently widening the configured allowance.
+temp-directory bound for this sort path**. The later upstream investigation below
+identifies the scope bypass; neither result authorizes widening the allowance.
 The production aggregation-limit failure therefore must not be generalized
 into a proof that every sort/merge file is physically isolated by that limit.
 The newest tested engine did not remove this qualification failure.
@@ -604,6 +604,78 @@ The next proposed strategy is bounded changed-key work items under an enforced
 physical temp-storage budget, preserving complete versions, candidate selection,
 tombstones and erasure fences. That is a separate execution-strategy decision;
 it has not been implemented or substituted for the approved plan.
+
+### Bounded-work and physical-boundary spike
+
+The user subsequently approved bounded discovery/work, physical temporary-storage
+enforcement, a throwaway isolated proof and parallel Codex investigation/review.
+The proposed durable implementation is in the
+[bounded analytics amendment](superpowers/specs/2026-11-03-bounded-analytics-design.md).
+No spike script or fixture configuration was added to production runtime.
+
+The exact external-sort bypass is documented in upstream
+[issue 105638](https://github.com/ClickHouse/ClickHouse/issues/105638) and
+[open PR 110993](https://github.com/ClickHouse/ClickHouse/pull/110993): sorting
+uses the global temporary-data scope, bypassing query/user scopes. The proposed
+fix is not a released dependency. The server-wide setting needs separate
+qualification; the query-limit counterexample does not prove that it also fails.
+Kernel isolation remains independent of those accounting paths.
+
+An isolated pinned 26.10.2.103 container had 768 MiB memory, one CPU and an
+**8 MiB tmpfs** at its temporary path. A write as its actual UID 101 failed with
+ENOSPC after **8,388,608 bytes**; only that synthetic file was removed. The full
+fixture query then failed code 243 at ClickHouse's reservation check, requesting
+16,851,247 bytes against the 8 MiB filesystem. This was not a kernel write failure
+from the query itself. tmpfs consumes memory; it does not qualify production
+disk throughput or ext4 project-quota deployment.
+
+The normalized synthetic input had **800,000 versions / 400,000 IDs / 1,000
+logical keys**, including a deleted key, nullable provenance and reported versus
+estimated candidates. A bounded-memory reference produced 1,000 outputs with
+full stable-payload SHA-256
+`6C6DF19419B568C21425A327DCCF8E0875F9FD946568249EDF3817BE574B1130`.
+The effect journal sealed positions 1–1,100 with duplicate effects; a separately
+appended effect at 1,101 shared an existing key but remained outside the seal.
+
+At 00:03:30 UTC on November 4, the runner deliberately failed after the first
+20-effect output insert and before advancing cursor zero. Only the isolated
+ClickHouse container was restarted (new start 00:03:50.967 UTC, same persistent
+volume). Resume executed 55 pages. Verification at 00:04:21 UTC found:
+
+| Evidence | Result |
+| --- | --- |
+| Complete stable payload digest | Exact reference match |
+| Output rows / tombstones / null devices / estimated winners | 1,000 / 1 / 2 / 0 |
+| Durable cursor / sealed pending / later pending | 1,100 / 0 / 1 |
+| Successful page executions / first-page executions | 56 / 2 |
+| Page exception records | 0 |
+| Peak tracked query memory | 11,319,945 bytes, below 128 MiB |
+| Page external-sort parts | 0 |
+| Temp usage after resume | 0 of 8,192 KiB |
+| Restarted container peak / OOM / OOM kills | 687,005,696 bytes / 0 / 0 |
+
+Query evidence was fenced by durable run token
+`b82b41ed-1de2-4399-b72c-2413f910c8ce`; historical runs could not satisfy replay
+or exception assertions. The pre-restart setup reached its 768 MiB cgroup ceiling
+(peak 805,310,464 bytes, memory.max pressure events) without OOM or OOM kill.
+That setup pressure is not erased by the smaller resumed-work peak.
+
+**Narrow pass:** small complete-key pages converge after insertion-before-cursor
+replay and preserve finite coverage on this static normalized fixture. This is
+process-restart evidence, not a power-loss durability proof. The later effect
+does not mutate source state, so it does not prove reconciliation across source
+changes after sealing. Transport, journal construction/sealing, CDC, scalar
+staging, activity effects, mutable identity, hot keys and erasure remain excluded.
+No full-host fit, quota maintenance, full analytics build or hold restoration
+is qualified by this result.
+
+The separate data-filesystem maintenance assessment also corrected an earlier
+overstatement: root/SSH can remain running while every data-filesystem user is
+quiesced and that separate filesystem is ordinarily unmounted. An OCI rescue
+boot is not inherently necessary. Verified accessible recovery and maintenance
+approval are still required; no filesystem feature was changed. Follow
+[tune2fs restrictions](https://man7.org/linux/man-pages/man8/tune2fs.8.html) and
+[ext4 quota documentation](https://docs.kernel.org/admin-guide/ext4.html).
 
 ### Current stable releases rechecked
 
