@@ -69,7 +69,7 @@ Define production-consumed types in `effect-journal.ts` and
 - `AnalyticsStage = 'scalar' | 'dedup' | 'activity'`.
 - `AnalyticsStream = { epoch: string; topic: string; partition: number }`.
 - `JournalDeliveryKey = { major: string; minor: string; batch: number }`: lossless decimal integer components of the qualified native delivery order, **not** a packed Kafka offset. Native serialized positions remain alongside it. Never compare base64 IDs or ingestion timestamps as transport order.
-- `AnalyticsEffectCursor = { delivery: JournalDeliveryKey; effectOrdinal: string }` within one stream/stage. Ordinals and integer components persist without JavaScript number truncation.
+- `AnalyticsEffectCursor = { delivery: JournalDeliveryKey; effectOrdinal: string }` within one stream/stage. Ordinals and integer components persist without JavaScript number truncation. Task 1 reserves cursor-only `-1` for an explicit zero-effect receipt; actual effects remain nonnegative.
 - `SensorKey = { userId: string; channel: string; recordedAt: string }`; nanosecond timestamp precision is preserved. Activity output identity additionally includes `activityId`.
 - `SourcePlacement = { sourceId: string; userId: string; providerId: string; sourceVersion: string; generation: string; key: SensorKey; activityId: string | null; deleted: boolean }`. This contains no measured scalar/vector/point value.
 - `AnalyticsEffect = { stream: AnalyticsStream; position: MetricStreamPosition; cursor: AnalyticsEffectCursor; stage: AnalyticsStage; operationId: string | null; sourceId: string; sourceVersion: string; generation: string; before: SourcePlacement | null; after: SourcePlacement | null }`.
@@ -89,15 +89,23 @@ or add a permanent undocumented fallback.
 
 **Files:** Create the effect-journal/work-store/schema files above, their colocated tests, `effect-journal.integration.test.ts`, `analytics-work-store.integration.test.ts`; modify parent transport-position module/tests and schema registries.
 
-**Interfaces:** `appendAnalyticsEffects(client, effects: readonly AnalyticsEffect[]): Promise<void>`; `readAnalyticsEffectPage(client, input: { runId: string; stage: AnalyticsStage; stream: AnalyticsStream; after: AnalyticsEffectCursor | null; limit: number }): Promise<AnalyticsEffectPage>`; `sealAnalyticsRun(database, input: { runId: string; frontiers: readonly RequiredAnalyticsFrontier[] }): Promise<void>`; `checkpointAnalyticsPage(database, input: { runId: string; stage: AnalyticsStage; stream: AnalyticsStream; expected: AnalyticsEffectCursor | null; next: AnalyticsEffectCursor }): Promise<void>`.
+**Interfaces:** `appendAnalyticsEffects(client, effects: readonly AnalyticsEffect[]): Promise<void>`; `readAnalyticsEffectPage(client, input: { runId: string; stage: AnalyticsStage; stream: AnalyticsStream; after: AnalyticsEffectCursor | null; limit: number }): Promise<AnalyticsEffectPage>` with composite page client `{clickhouse,database}`; `sealAnalyticsRun(database, input: { runId: string; frontiers: readonly RequiredAnalyticsFrontier[] }): Promise<void>`; `claimAnalyticsRunOwnership(database, input: { runId: string; expectedOwnerId: string | null; ownerId: string }): Promise<void>`; `checkpointAnalyticsPage(database, input: { runId: string; ownerId: string; stage: AnalyticsStage; stream: AnalyticsStream; expected: AnalyticsEffectCursor | null; next: AnalyticsEffectCursor }): Promise<void>`.
 
-- [ ] **Write failing position tests:** `preservesLargeNativeCoordinates`, `ordersBatchedMessagesAcrossLedgerRollover`, `rejectsComparisonAcrossEpochOrPartition`, `rejectsUnknownNativeRepresentation`. Real native messages must round-trip to the original serialized ID; do not test a hand-invented wire format alone.
-- [ ] **Run the parent position unit/integration tests red.** Missing ordering support must be the failure. Qualify it against the pinned native client/broker before selecting the ClickHouse column encoding.
-- [ ] **Write failing database tests:** `limitsEffectsBeforeDistinctKeys`, `replaysDuplicateDeliveryWithoutMissingEffects`, `cannotSealPastIncompleteReceipt`, `laterDeliveryCannotEnterAnAlreadySealedPrefix`, `cursorCompareAndSetRejectsStaleOwner`, `emptyFrontierVectorDoesNotCompleteOperation`. Include sparse delivery coordinates; integer holes are not missing messages.
-- [ ] **Run red:** `rtk proxy pnpm test:integration -- src/analytics/effect-journal.integration.test.ts src/analytics/analytics-work-store.integration.test.ts`.
-- [ ] **Implement schema and repository interfaces.** Journal order is `(epoch, topic, partition, delivery components, effect ordinal, stage)`, with replay-stable effect identity and explicit account ownership. PostgreSQL stores runs, required frontiers, stream/stage cursors and ownership only; no per-sensor work rows or raw values. Persist the contiguous **processed delivery** frontier only after all effects/receipts for that delivery exist; seals require it to cover every required frontier. Use exclusive ordered consumption per partition and reject out-of-order admission until qualified; never infer coverage from `max(position)`.
-- [ ] **Run tests green plus a real restart:** seal a finite input, append later delivery, recreate clients, read at most 20 effects and prove cursor/frontier equality persists. Missing journal/schema/config hard-fails.
-- [ ] **Review and commit/push:** inspect seal completeness, replay identities, bounded query plan and migration/erasure ownership. Do not release the schema until Task 7's ownership migration is included in the release unit.
+Implementation clarification: receipt-first discovery uses one bounded reference
+per manifest row and validates the selected effect payloads. A known receipted
+delivery with missing effects cannot appear complete. Analytics run ownership is
+distinct from the transport ingestion lease; unchanged-cursor handoff must fence
+the old analytics owner. Task 5 still supplies actual query/writer termination
+and publication fencing. These close Task 1's missing-evidence and ownership
+requirements without introducing another scheduler or a timeout-based takeover.
+
+- [x] **Write failing position tests:** `preservesLargeNativeCoordinates`, `ordersBatchedMessagesAcrossLedgerRollover`, `rejectsComparisonAcrossEpochOrPartition`, `rejectsUnknownNativeRepresentation`. Real native messages must round-trip to the original serialized ID; do not test a hand-invented wire format alone.
+- [x] **Run the parent position unit/integration tests red.** Missing ordering support must be the failure. Qualify it against the pinned native client/broker before selecting the ClickHouse column encoding.
+- [x] **Write failing database tests:** `limitsEffectsBeforeDistinctKeys`, `replaysDuplicateDeliveryWithoutMissingEffects`, `cannotSealPastIncompleteReceipt`, `laterDeliveryCannotEnterAnAlreadySealedPrefix`, `cursorCompareAndSetRejectsStaleOwner`, `emptyFrontierVectorDoesNotCompleteOperation`. Include sparse delivery coordinates; integer holes are not missing messages.
+- [x] **Run red:** `rtk proxy pnpm test:integration -- src/analytics/effect-journal.integration.test.ts src/analytics/analytics-work-store.integration.test.ts`.
+- [x] **Implement schema and repository interfaces.** Journal order is `(epoch, topic, partition, delivery components, effect ordinal, stage)`, with replay-stable effect identity and explicit account ownership. PostgreSQL stores runs, required frontiers, stream/stage cursors and ownership only; no per-sensor work rows or raw values. Persist the contiguous **processed delivery** frontier only after all effects/receipts for that delivery exist; seals require it to cover every required frontier. Use exclusive ordered consumption per partition and reject out-of-order admission until qualified; never infer coverage from `max(position)`.
+- [x] **Run tests green plus a real restart:** seal a finite input, append later delivery, recreate clients, read at most 20 effects and prove cursor/frontier equality persists. Missing journal/schema/config hard-fails.
+- [x] **Review and commit/push:** inspect seal completeness, replay identities, bounded query plan and migration/erasure ownership. Do not release the schema until Task 7's ownership migration is included in the release unit.
 
 ### Task 2: Source placement and every sink effect before acknowledgment
 
@@ -263,5 +271,6 @@ the required quick tunnel for its full lifetime.
   explicit executable prerequisite, not an assumed API.
 - Review focus: all five named risks have concrete failing cases in their owning
   tasks. No task treats model PASS alone as processing completion.
-- Remaining approval: review this implementation plan before durable code.
-  Production maintenance/cutover still require their own concrete review gates.
+- Execution approval: the user reviewed this plan and replied “y”; Q6 A is
+  recorded. Production maintenance/cutover still require their own concrete
+  review gates.
