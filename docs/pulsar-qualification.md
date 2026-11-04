@@ -317,3 +317,62 @@ for the exact failures, protocol configuration, counts and limits. The CDC
 retirement gate remains failed; the temporal gate's success on the qualified
 candidate does not replace whole-host, application compatibility or erasure
 qualification.
+
+## 2026-11-04: ClickHouse merge-buffer attribution and isolated candidate
+
+The bounded sink's warm 768 MiB/one-CPU qualification process repeatedly rejected
+small journal queries at the server-wide memory limit. A 04:24:00 UTC victim
+read nine rows and tracked about 1 MiB, which did not identify the global holder.
+Idle cache-byte gauges totalled 439,999 bytes; idle allocator fragmentation and
+persisted system-log size were different measurements and did not establish
+allocation ownership.
+
+One diagnostic startup enabled native global allocation sampling and
+failure-triggered heap dumps on the same image, volume and cap. It reproduced
+the failure and retained six native heap files. The exact heap-flush message,
+table UUID and part log tied the first dump to a six-part horizontal Wide merge
+of `system.query_log`, with 11,755 rows read and a 418,400,858-byte tracked peak.
+Simultaneous file-write and compression buffers dominated the sampled merge
+allocations. These buffers are constructed per output substream, rather than
+once per SQL column. See the released [Wide writer](https://github.com/ClickHouse/ClickHouse/blob/c6428ebcc39fdff48bb0f50e128b2078701901d5/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp)
+and [stream-buffer constructor](https://github.com/ClickHouse/ClickHouse/blob/c6428ebcc39fdff48bb0f50e128b2078701901d5/src/Storages/MergeTree/MergeTreeWriterStream.cpp).
+The diagnostic profiler was then removed and effective profiling/dump/stack
+settings verified zero; this restart was for attribution, not a qualification pass.
+
+A matched experiment used native [table clones](https://clickhouse.com/blog/table-cloning)
+of 36,048 local log rows in four identical parts. Only the disposable source
+fixture was held immutable; both measured targets and the real log table kept
+their merges enabled. Each target received one explicit operator `OPTIMIZE FINAL`
+to exercise the Wide writer. These were controlled fixtures, not natural-load
+or production operations.
+
+| Native allocation setting | Merge result | Tracked peak |
+| --- | --- | --- |
+| Default activation threshold 500 | Code 241 rejection | 381,446,352 bytes |
+| Activation threshold 1 | Completed in 148 ms | 109,104,537 bytes |
+
+The adaptive case kept the default 16 KiB initial and 1 MiB maximum buffers,
+container cap, CPU, image and data unchanged. Record count and identity digest
+matched before/after; this was not a complete payload-column checksum. All
+disposable clones were removed. Native [adaptive buffer growth](https://github.com/ClickHouse/ClickHouse/blob/c6428ebcc39fdff48bb0f50e128b2078701901d5/src/IO/BufferWithOwnMemory.h)
+reduces eager allocation for sparse streams but can still grow to the original
+maximum. It is not a whole-query or whole-host memory bound.
+
+The isolated candidate now sets only `system.query_log`'s activation threshold
+to one. Journal 21/21 and core recovery 10/10 subsequently passed without a
+restart or increased limits. Broader host fit, sustained throughput, natural
+merge overlap, physical storage enforcement and production deployment remain
+unqualified. No production setting or safety hold changed.
+
+Durable configuration requires special care: the released [SystemLog builder](https://github.com/ClickHouse/ClickHouse/blob/c6428ebcc39fdff48bb0f50e128b2078701901d5/src/Interpreters/SystemLog.cpp)
+accepts a per-log `settings` string, but a mismatched existing CREATE definition
+causes table rotation rather than in-place settings migration. The renamed
+TTL-bearing table retains its old merge settings. For the retained fixture,
+the expected setting order is `index_granularity = 8192,
+min_columns_to_activate_adaptive_write_buffer = 1`; formatted AST order is
+significant to that comparison. Existing-table ALTER plus matching configuration,
+same-UUID/history preservation across initialization and fresh canonical log
+delivery passed on the retained isolated fixture, with no new rotated table.
+Fresh-table creation, wider rotated-table inventory and production migration
+remain unqualified. This is evidence for
+26.10.2.103, not permission to add unsupported settings to production 26.6.

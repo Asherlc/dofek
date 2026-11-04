@@ -18,7 +18,7 @@
 - Keep analytics-refresh, sync-ride-with-gps and sync-strava paused and the history sink at zero until their restoration gates pass.
 - Preserve original jobs/windows, Strava's 789-ID checkpoint, source R2 archives and the retained rehearsal archive.
 - Do not increase deadlines/retries, lower safety guards, sample candidates, skip pathological keys or adopt unreleased ClickHouse patches.
-- Current qualification floor: ClickHouse 26.10.2.103, Pulsar 5.0.1, Oxia 0.18.0, Debezium 3.7.0.Final and SeaTunnel 3.0.0. Recheck latest stable releases when adding/updating artifacts. SeaTunnel's embedded Java remains an unresolved qualification gate.
+- Current qualification artifacts: ClickHouse 26.10.2.103, Pulsar 5.0.1, Oxia 0.18.0, Debezium 3.7.0.Final and official Node client 1.18.0. Recheck latest stable releases when adding/updating artifacts. The subsequently approved existing-consumer CDC assessment/spike supersedes SeaTunnel as the candidate integration path; it adds no ETL framework. Its [bounded source results and SDK limits](../../owned-cdc-assessment.md#executed-isolated-source-qualification) do not qualify the full sink or host.
 - No reduced production ClickHouse ceiling, complete host budget, production quota enablement or whole-stack soak has passed.
 - No branch switches/rebases. Prefix shell commands with `rtk`; commit and push each reviewed task. Never merge/deploy documentation just to record progress.
 - Scripts are TypeScript run with `pnpm tsx`; use the workspace Compose wrapper. No new scheduler/framework or permanent dual source of truth.
@@ -122,6 +122,26 @@ finalization for large scopes must themselves be paged. A session mutex alone
 does not fence a previously dispatched ClickHouse write; use the shared query
 ownership prerequisite and Q7's fail-closed recovery contract below.
 
+Implementation audit clarification: normal live/history contenders wait for
+cooperative ownership handoff rather than treating contention as a failed sink.
+Use native [PostgreSQL advisory-lock semantics](https://www.postgresql.org/docs/18/explicit-locking.html#ADVISORY-LOCKS), not a retry/sleep loop.
+After a cooperative failure leaves delivery B pending, an already processed
+sibling A may be acknowledged only after exact receipt and processed-frontier
+verification under a typed read-only owner operation. That operation preserves
+B's pending identity/ingestion time, forces read-only queries and cannot clear
+intent or publish. Uncertain owner/query state still blocks both paths.
+
+Every steady-state raw writer is in scope. The provider-deletion job currently
+appends raw tombstones and changes generation outside the sink; replace that
+path with real, generation-aware broker commands consumed under the same owner.
+The existing bounded job persists stable page-command identity before publishing
+and advances only after its durable receipt; it does not invent a broker
+position. Preserve newer generations and require terminal command/prefix evidence
+before final deletion acknowledgment. Account erasure already fences the account
+before synchronous physical erasure; its redundant unpositioned raw tombstone
+append can be removed with real fence/erasure regressions. Task 7 still owns
+physical erasure of every new metadata table and remains a release gate.
+
 - [ ] **Write failing tests:** `journalFailureAfterRawWritePreventsAck`, `replayReconstructsIdenticalEffects`, `scopeDeleteAndGenerationTombstonesHaveEffects`, `markerCannotOutrunPriorEffects`, `sourceMovesTwiceBeforeProjectionRetractBothFormerKeys`, `crossOwnerUuidCollisionFails`, `newestVersionOutsideOldKeyIsResolved`. Include failure after each raw/effect/receipt boundary.
 - [ ] **Run red:** focused sink/source-placement integration suites and parent native-consumer suite; verify missing journal behavior causes the failures.
 - [ ] **Implement structural placement lookup and sink integration.** Use an ID-leading projection/index over canonical source identity/history, preserving global UUID resolution and ownership. Retain enough structural history to recover every former key, even if a later delivery arrives before analytics runs. No second copy of metric values. Require bounded source-ID input; bootstrap by stable keyset traversal, not global distinct discovery.
@@ -185,7 +205,7 @@ operator recovery procedure and actual termination tests remain release gates.
 - [ ] **Run red:** focused processing/build/worker unit tests; processing coordinator/reconciler and `analytics-refresh-queue.integration.test.ts` through the real integration runner.
 - [ ] **Implement the required frontier vector and coverage gate.** Reuse existing dataset dependencies and three processing-marker destinations. Canonical PostgreSQL changes must pass capture, sink visibility, journal receipt and all dependent projection stages. A missing required evidence row throws; an existing incomplete frontier reports running. Do not create a synthetic total order across streams.
 - [ ] **Use the existing queue for bounded continuation.** Release the current job only with a durable continuation/operation link; never resolve the original `enqueueAnalyticsRefreshAndWait` promise as complete while a continuation remains. Keep native global concurrency one and existing request-during-build semantics. Cache warming and worker last-success update run only on complete coverage.
-- [ ] **Qualify native CDC-to-effect evidence, then run green across all 18 mappings and three marker destinations.** The parent CDC qualification must demonstrate that the chosen native capture/sink path preserves delivery identity, source versions, ownership and delete/placement information through durable journal receipts before its covered marker can complete. A successful mirror row write alone is insufficient. Include changed source rows while an earlier run is executing, delayed CDC, missed-delete/WAL-loss readiness and stage-impact closure. If the native path cannot supply that contract, stop this gate with exact evidence before enabling completion or retiring PeerDB; do not introduce a custom consumer or invented frontier to get around the failure.
+- [ ] **Qualify native CDC-to-effect evidence, then run green across all 16 source tables and 18 destinations, including three markers.** The parent CDC qualification must demonstrate that the chosen native capture/sink path preserves delivery identity, source versions, ownership and delete/placement information through durable journal receipts before its covered marker can complete. A successful mirror row write alone is insufficient. Include changed source rows while an earlier run is executing, delayed CDC, missed-delete/WAL-loss readiness and stage-impact closure. The user subsequently approved assessing and qualifying the existing application Consumer integration with official clients; its distinct CDC handler must use the same durable coordinator. If that path cannot supply the contract, stop this gate with exact evidence before enabling completion or retiring PeerDB; do not adopt another framework, alter capture or invent a frontier to conceal failure.
 - [ ] **Review and commit/push:** internal pending state must preserve existing web/mobile server-owned processing semantics. If visible status/copy changes, add parity fixtures/tests in both clients in this task; no client metric computation.
 
 ### Task 7: Erasure ownership and writer barriers for all new state
