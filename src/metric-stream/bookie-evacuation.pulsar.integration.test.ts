@@ -89,11 +89,14 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   const client = (...args: string[]) => compose(["exec", "-T", "client", ...args]);
   const java = (mode: string) => {
     phase = mode;
+    const metadataClientDriverProperty =
+      "bookkeeper.metadata.client.drivers=org.apache.pulsar.metadata.bookkeeper.PulsarMetadataClientDriver";
     return client(
       "java",
       "-Xms32m",
       "-Xmx192m",
       "-XX:MaxDirectMemorySize=128m",
+      `-D${metadataClientDriverProperty}`,
       "-cp",
       "/fixture:/pulsar/conf:/pulsar/lib/*",
       "BookieEvacuationFixture",
@@ -200,6 +203,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     compose(["up", "-d", "--wait", "--wait-timeout", "90", "source"], 90_000);
     expect(state("source")).toMatchObject({ running: true, readOnly: false, shuttingDown: false });
     java("initial");
+    java("preflight");
     java("seed");
     java("scan-source");
     java("delete");

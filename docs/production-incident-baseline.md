@@ -35773,3 +35773,10 @@ This overlaps delayed run/cancellation status updates; their exact internal
 cause is unconfirmed. The retained Java initialization exception is a separate
 fixture failure and is not attributed to that incident. Further CI control
 changes remain held while local work and evidence review continue.
+
+
+The native-client setup follow-up confirmed the missing JVM driver property by
+comparison with the [stock launcher](https://github.com/apache/pulsar/blob/v5.0.1/bin/bookkeeper#L262-L264).
+The narrowly reviewed fixture correction and create/read/delete preflight pass
+offline checks. Runtime qualification remains held for Actions recovery; no new
+native run, production change or resource relaxation occurred.

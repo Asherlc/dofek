@@ -851,3 +851,13 @@ conversion gates remain open.
 The useful lesson is to qualify the official client initialization path before
 building recovery assertions on it. Future fixture briefs should name that
 precondition alongside coordinator readiness and namespace assignment.
+
+
+Source comparison with the [stock Pulsar 5.0.1 launcher](https://github.com/apache/pulsar/blob/v5.0.1/bin/bookkeeper#L262-L264)
+subsequently confirmed the standalone client's missing
+`bookkeeper.metadata.client.drivers` JVM property; the exact pinned JAR already
+contains the official driver. The fixture now uses that stock property and a
+closed-ledger create/full-read/delete preflight before A/B recovery. Independent
+source review and exact-JAR offline compilation passed; native execution remains
+pending GitHub Actions recovery. No dependency, cap, deadline, quorum or erasure
+criterion changed, and no runtime success is claimed for the correction.

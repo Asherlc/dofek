@@ -155,6 +155,19 @@ public final class BookieEvacuationFixture {
                     require(identities(admin.getAvailableBookies()).equals(Set.of(OLD)), "Source not sole writable bookie");
                     require(admin.getReadOnlyBookies().isEmpty(), "Unexpected initial readonly registration");
                     break;
+                case "preflight":
+                    require(state.isEmpty(), "Preflight requires an empty synthetic manifest");
+                    require(!admin.listLedgers().iterator().hasNext(), "Preflight requires an empty ledger inventory");
+                    state.setProperty("bMarker", "client-preflight-" + UUID.randomUUID());
+                    create(client, "closed", true);
+                    verify(client, admin, OLD);
+                    client.deleteLedger(Long.parseLong(state.getProperty("closed")));
+                    require(!admin.listLedgers().iterator().hasNext(), "Preflight deletion left surviving ledgers");
+                    state.remove("closed");
+                    state.remove("closedHash");
+                    state.remove("bMarker");
+                    save();
+                    break;
                 case "seed":
                     state.setProperty("aMarker", "account-a-" + UUID.randomUUID());
                     state.setProperty("bMarker", "account-b-" + UUID.randomUUID());
