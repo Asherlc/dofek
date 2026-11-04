@@ -8,18 +8,22 @@ import {
   metricStreamPositionSchema,
 } from "../metric-stream/transport-position.ts";
 import { loadAnalyticsRunFrontier } from "./analytics-work-store.ts";
+import {
+  type JournalDeliveryKey,
+  journalDeliveryKey,
+  journalDeliveryKeySchema,
+  journalPositionColumns,
+  metricStreamPositionIdentity,
+  positionAtJournalKey,
+} from "./journal-position.ts";
 import { sourcePlacementSchema } from "./source-placement.ts";
 
 export type AnalyticsStage = "scalar" | "dedup" | "activity";
 export interface AnalyticsStream {
+  transport: MetricStreamPosition["transport"];
   epoch: string;
   topic: string;
   partition: number;
-}
-export interface JournalDeliveryKey {
-  major: string;
-  minor: string;
-  batch: number;
 }
 export interface AnalyticsEffectCursor {
   delivery: JournalDeliveryKey;
@@ -51,12 +55,13 @@ export interface AnalyticsJournalClient {
 const stageSchema = z.enum(["scalar", "dedup", "activity"]);
 const stageOrder = { scalar: 1, dedup: 2, activity: 3 } as const;
 const streamSchema = z.object({
+  transport: z.enum(["pulsar", "kafka"]),
   epoch: z.string().min(1),
   topic: z.string().min(1),
   partition: z.number().int().min(-1).max(2147483647),
 });
 const cursorSchema = z.object({
-  delivery: metricStreamPositionSchema.shape.delivery,
+  delivery: journalDeliveryKeySchema,
   effectOrdinal: z.union([z.literal("-1"), sourcePlacementSchema.shape.sourceVersion]),
 });
 const effectSchema = z.object({
@@ -79,6 +84,8 @@ const receiptSchema = z.object({
   stages: z.array(stageSchema).min(1).max(3),
 });
 const discoveryReceiptSchema = z.object({
+  transport: z.enum(["pulsar", "kafka"]),
+  kafka_offset: z.string(),
   epoch: z.string(),
   topic: z.string(),
   partition: z.number(),
@@ -98,12 +105,19 @@ const RECEIPT_PAGE_SIZE = 20;
 
 function validateEffect(input: AnalyticsEffect): AnalyticsEffect {
   const effect = effectSchema.parse(input);
-  compareMetricStreamPositions(effect.position, { ...effect.position, ...effect.stream });
+  if (effect.position.transport !== effect.stream.transport)
+    throw new Error("Analytics effect transport must match its stream");
+  compareMetricStreamPositions(effect.position, {
+    ...effect.position,
+    epoch: effect.stream.epoch,
+    topic: effect.stream.topic,
+    partition: effect.stream.partition,
+  });
   if (
-    compareMetricStreamPositions(effect.position, {
-      ...effect.position,
-      delivery: effect.cursor.delivery,
-    }) !== 0
+    compareMetricStreamPositions(
+      effect.position,
+      positionAtJournalKey(effect.position, effect.cursor.delivery),
+    ) !== 0
   )
     throw new Error("Effect cursor must identify its native delivery");
   const placements = [effect.before, effect.after].filter((placement) => placement !== null);
@@ -129,11 +143,10 @@ function validateEffectBatch(effects: readonly AnalyticsEffect[]): AnalyticsEffe
   for (const effect of validated) {
     const identity = JSON.stringify([
       effect.stream.epoch,
+      effect.stream.transport,
       effect.stream.topic,
       effect.stream.partition,
-      effect.cursor.delivery.major,
-      effect.cursor.delivery.minor,
-      effect.cursor.delivery.batch,
+      journalDeliveryKey(effect.position),
       effect.cursor.effectOrdinal,
       effect.stage,
     ]);
@@ -148,18 +161,13 @@ function effectHash(effect: AnalyticsEffect) {
   return createHash("sha256").update(JSON.stringify(effect)).digest("hex");
 }
 function deliveryParams(position: MetricStreamPosition) {
-  return { ...position, ...position.delivery };
+  return journalPositionColumns(position);
 }
 function receiptValues(position: MetricStreamPosition) {
-  return {
-    epoch: position.epoch,
-    topic: position.topic,
-    partition: position.partition,
-    ...position.delivery,
-  };
+  return journalPositionColumns(position);
 }
 const deliveryWhere =
-  "epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32} AND major={major:UInt64} AND minor={minor:UInt64} AND batch={batch:Int32}";
+  "epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32} AND transport={transport:String} AND kafka_offset={kafka_offset:UInt64} AND major={major:UInt64} AND minor={minor:UInt64} AND batch={batch:Int32}";
 const integerSettings = { output_format_json_quote_64bit_integers: 1 };
 async function readReceipt(client: ClickHouseClient, position: MetricStreamPosition) {
   const result = await client.query({
@@ -217,7 +225,8 @@ export async function appendAnalyticsEffects(
       ...receiptValues(effect.position),
       effect_ordinal: effect.cursor.effectOrdinal,
       stage: effect.stage,
-      serialized_message_id: effect.position.serializedMessageId,
+      serialized_message_id:
+        effect.position.transport === "pulsar" ? effect.position.serializedMessageId : "",
       operation_id: effect.operationId,
       user_id: owner,
       source_id: effect.sourceId,
@@ -270,7 +279,7 @@ export async function appendAnalyticsDelivery(
   for (const effect of effects)
     if (
       compareMetricStreamPositions(effect.position, input.position) !== 0 ||
-      effect.position.serializedMessageId !== input.position.serializedMessageId
+      metricStreamPositionIdentity(effect.position) !== metricStreamPositionIdentity(input.position)
     )
       throw new Error("Delivery receipt contains effects from another native message");
   const digest = createHash("sha256");
@@ -279,7 +288,8 @@ export async function appendAnalyticsDelivery(
   const previous = await readReceipt(client, input.position);
   if (
     previous &&
-    (previous.serialized_message_id !== input.position.serializedMessageId ||
+    (previous.serialized_message_id !==
+      (input.position.transport === "pulsar" ? input.position.serializedMessageId : "") ||
       previous.effect_count !== String(effects.length) ||
       previous.effect_digest !== fingerprint)
   )
@@ -307,7 +317,8 @@ export async function appendAnalyticsDelivery(
     values: [
       {
         ...receiptValues(input.position),
-        serialized_message_id: input.position.serializedMessageId,
+        serialized_message_id:
+          input.position.transport === "pulsar" ? input.position.serializedMessageId : "",
         effect_count: String(effects.length),
         chunk_count: String(Math.max(1, effects.length)),
         effect_digest: fingerprint,
@@ -318,6 +329,8 @@ export async function appendAnalyticsDelivery(
   });
 }
 const journalRowSchema = z.object({
+  transport: z.enum(["pulsar", "kafka"]),
+  kafka_offset: z.string(),
   epoch: z.string(),
   topic: z.string(),
   partition: z.number(),
@@ -359,11 +372,25 @@ async function readReferencedEffect(
     throw new Error(
       `Missing analytics journal effect referenced by receipt ${receipt.topic}/${receipt.partition}/${receipt.major}:${receipt.minor}:${receipt.batch}/${receipt.effect_ordinal}/${receipt.stage}; replay the input delivery`,
     );
-  const stream = { epoch: row.epoch, topic: row.topic, partition: row.partition };
-  const delivery = { major: row.major, minor: row.minor, batch: row.batch };
+  const stream = {
+    transport: row.transport,
+    epoch: row.epoch,
+    topic: row.topic,
+    partition: row.partition,
+  };
+  const position: MetricStreamPosition =
+    row.transport === "kafka"
+      ? { ...stream, transport: "kafka", offset: row.kafka_offset }
+      : {
+          ...stream,
+          transport: "pulsar",
+          delivery: { major: row.major, minor: row.minor, batch: row.batch },
+          serializedMessageId: row.serialized_message_id,
+        };
+  const delivery = journalDeliveryKey(position);
   const effect = validateEffect({
     stream,
-    position: { ...stream, delivery, serializedMessageId: row.serialized_message_id },
+    position,
     cursor: { delivery, effectOrdinal: row.effect_ordinal },
     stage: row.stage,
     operationId: row.operation_id,
@@ -387,7 +414,11 @@ export async function verifyAnalyticsDeliveryReceipt(
   position: MetricStreamPosition,
 ): Promise<void> {
   const receipt = await readReceipt(client, position);
-  if (!receipt || receipt.serialized_message_id !== position.serializedMessageId)
+  if (
+    !receipt ||
+    receipt.serialized_message_id !==
+      (position.transport === "pulsar" ? position.serializedMessageId : "")
+  )
     throw new Error("Durable analytics delivery receipt is missing or mismatched");
   const digest = createHash("sha256");
   let effectCount = 0n,
@@ -447,23 +478,35 @@ export async function readAnalyticsEffectPage(
   const frontier = await loadAnalyticsRunFrontier(client.database, input);
   if (
     input.after &&
-    compareMetricStreamPositions({ ...frontier, delivery: input.after.delivery }, frontier) > 0
+    compareMetricStreamPositions(positionAtJournalKey(frontier, input.after.delivery), frontier) > 0
   )
     throw new Error("Analytics page cursor exceeds its sealed frontier");
   const after = input.after;
+  const afterPosition = after
+    ? journalPositionColumns(positionAtJournalKey(frontier, after.delivery))
+    : null;
+  const upperBound =
+    frontier.transport === "kafka"
+      ? "kafka_offset<={kafka_offset:UInt64}"
+      : "(major<{major:UInt64} OR (major={major:UInt64} AND minor<{minor:UInt64}) OR (major={major:UInt64} AND minor={minor:UInt64} AND batch<={batch:Int32}))";
+  const lowerBound =
+    frontier.transport === "kafka"
+      ? "(kafka_offset>{afterOffset:UInt64} OR (kafka_offset={afterOffset:UInt64} AND effect_ordinal>{afterOrdinal:Int128}))"
+      : "(major>{afterMajor:UInt64} OR (major={afterMajor:UInt64} AND minor>{afterMinor:UInt64}) OR (major={afterMajor:UInt64} AND minor={afterMinor:UInt64} AND batch>{afterBatch:Int32}) OR (major={afterMajor:UInt64} AND minor={afterMinor:UInt64} AND batch={afterBatch:Int32} AND effect_ordinal>{afterOrdinal:Int128}))";
   const result = await client.clickhouse.query({
     query: `SELECT * FROM analytics.effect_receipt FINAL
- PREWHERE epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32}
- WHERE stage={stage:String} AND (major<{major:UInt64} OR (major={major:UInt64} AND minor<{minor:UInt64}) OR (major={major:UInt64} AND minor={minor:UInt64} AND batch<={batch:Int32}))
- ${after ? "AND (major>{afterMajor:UInt64} OR (major={afterMajor:UInt64} AND minor>{afterMinor:UInt64}) OR (major={afterMajor:UInt64} AND minor={afterMinor:UInt64} AND batch>{afterBatch:Int32}) OR (major={afterMajor:UInt64} AND minor={afterMinor:UInt64} AND batch={afterBatch:Int32} AND effect_ordinal>{afterOrdinal:Int128}))" : ""}
- ORDER BY major,minor,batch,effect_ordinal LIMIT {limit:UInt32}`,
+ PREWHERE epoch={epoch:String} AND topic={topic:String} AND partition={partition:Int32} AND transport={transport:String}
+ WHERE stage={stage:String} AND ${frontier.transport === "pulsar" ? "kafka_offset=0" : "major=0 AND minor=0 AND batch=-1"} AND ${upperBound}
+ ${after ? `AND ${lowerBound}` : ""}
+ ORDER BY kafka_offset,major,minor,batch,effect_ordinal LIMIT {limit:UInt32}`,
     query_params: {
       ...deliveryParams(frontier),
       stage: input.stage,
       limit: input.limit + 1,
-      afterMajor: after?.delivery.major,
-      afterMinor: after?.delivery.minor,
-      afterBatch: after?.delivery.batch,
+      afterOffset: afterPosition?.kafka_offset,
+      afterMajor: afterPosition?.major,
+      afterMinor: afterPosition?.minor,
+      afterBatch: afterPosition?.batch,
       afterOrdinal: after?.effectOrdinal,
     },
     format: "JSONEachRow",
@@ -481,7 +524,10 @@ export async function readAnalyticsEffectPage(
     effects,
     next: last
       ? {
-          delivery: { major: last.major, minor: last.minor, batch: last.batch },
+          delivery:
+            last.transport === "kafka"
+              ? { offset: last.kafka_offset }
+              : { major: last.major, minor: last.minor, batch: last.batch },
           effectOrdinal: last.effect_ordinal,
         }
       : input.after,

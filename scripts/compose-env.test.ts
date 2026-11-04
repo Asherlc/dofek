@@ -16,6 +16,39 @@ function parseDotenv(output: string): Record<string, string> {
 }
 
 describe("compose-env", () => {
+  it("preservesTheConfiguredLocalEpochAcrossRegeneration", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "compose-env-epoch-test-"));
+    const environmentPath = join(cwd, ".env.local");
+    writeFileSync(environmentPath, "METRIC_STREAM_TRANSPORT_EPOCH=existing-workspace-log\n");
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        execFileSync(
+          resolve("node_modules/.bin/tsx"),
+          [resolve("scripts/compose-env.ts"), "--write"],
+          {
+            cwd,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: {
+              ...process.env,
+              METRIC_STREAM_TRANSPORT_EPOCH: "another-environment-log",
+              POSTGRES_PORT: "15432",
+              CLICKHOUSE_HTTP_PORT: "18123",
+              CLICKHOUSE_NATIVE_PORT: "19000",
+              REDIS_PORT: "16379",
+              REDPANDA_PORT: "19092",
+              PEERDB_CDC_PORT: "19900",
+              PEERDB_UI_PORT: "13001",
+            },
+          },
+        );
+        expect(
+          parseDotenv(readFileSync(environmentPath, "utf8")).METRIC_STREAM_TRANSPORT_EPOCH,
+        ).toBe("existing-workspace-log");
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
   it("percent-encodes reserved characters in URL password components", () => {
     const cwd = mkdtempSync(join(tmpdir(), "compose-env-test-"));
     const postgresFixtureValue = "pg@pass:word/with?query#fragment";

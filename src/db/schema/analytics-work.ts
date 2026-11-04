@@ -23,6 +23,7 @@ export const analyticsRequiredFrontier = fitness.table(
       .references(() => processingOperation.id, { onDelete: "cascade" }),
     userId: uuid("user_id").references(() => userProfile.id, { onDelete: "cascade" }),
     datasetKey: text("dataset_key").notNull(),
+    transport: text("transport", { enum: ["pulsar", "kafka"] }).notNull(),
     epoch: text("epoch").notNull(),
     topic: text("topic").notNull(),
     partition: integer("partition").notNull(),
@@ -34,6 +35,7 @@ export const analyticsRequiredFrontier = fitness.table(
         table.runId,
         table.operationId,
         table.datasetKey,
+        table.transport,
         table.epoch,
         table.topic,
         table.partition,
@@ -45,6 +47,7 @@ export const analyticsRequiredFrontier = fitness.table(
 export const analyticsStreamState = fitness.table(
   "analytics_stream_state",
   {
+    transport: text("transport", { enum: ["pulsar", "kafka"] }).notNull(),
     epoch: text("epoch").notNull(),
     topic: text("topic").notNull(),
     partition: integer("partition").notNull(),
@@ -52,7 +55,9 @@ export const analyticsStreamState = fitness.table(
     processed: jsonb("processed").$type<MetricStreamPosition>(),
     pending: jsonb("pending").$type<MetricStreamPosition>(),
   },
-  (table) => [primaryKey({ columns: [table.epoch, table.topic, table.partition] })],
+  (table) => [
+    primaryKey({ columns: [table.transport, table.epoch, table.topic, table.partition] }),
+  ],
 );
 
 export const analyticsStageCursor = fitness.table(
@@ -62,13 +67,23 @@ export const analyticsStageCursor = fitness.table(
       .notNull()
       .references(() => analyticsRun.id, { onDelete: "cascade" }),
     stage: text("stage").notNull(),
+    transport: text("transport", { enum: ["pulsar", "kafka"] }).notNull(),
     epoch: text("epoch").notNull(),
     topic: text("topic").notNull(),
     partition: integer("partition").notNull(),
     cursor: jsonb("cursor").$type<AnalyticsEffectCursor>().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.runId, table.stage, table.epoch, table.topic, table.partition] }),
+    primaryKey({
+      columns: [
+        table.runId,
+        table.stage,
+        table.transport,
+        table.epoch,
+        table.topic,
+        table.partition,
+      ],
+    }),
     check("analytics_stage_cursor_stage", sql`${table.stage} IN ('scalar','dedup','activity')`),
   ],
 );

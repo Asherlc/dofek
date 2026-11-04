@@ -12,6 +12,7 @@ import {
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "./clickhouse-table.ts";
+import type { MetricStreamConsumerBatchContext } from "./consumer-context.ts";
 import {
   createMetricStreamConsumerReadinessServer,
   MetricStreamConsumerReadiness,
@@ -27,7 +28,6 @@ import {
 } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
-  type MetricStreamConsumerBatchContext,
   runMetricStreamEventConsumer,
 } from "./redpanda-consumer.ts";
 
@@ -131,7 +131,7 @@ async function keepMetricStreamHeartbeatAlive<T>(
       return;
     }
     heartbeatInFlight = context
-      .heartbeat()
+      .assertActive()
       .catch((error: unknown) => {
         heartbeatFailure = error;
         captureException(error, {
@@ -724,7 +724,7 @@ export async function applyMetricStreamEventsToClickHouse(
   let rowBuffer: MetricStreamRowEvent[] = [];
   const heartbeat = async (): Promise<void> => {
     if (context) {
-      await context.heartbeat();
+      await context.assertActive();
     }
   };
   const flushRows = async () => {
@@ -764,10 +764,12 @@ export async function applyMetricStreamEventsToClickHouse(
     if (!context) {
       throw new Error("metric-stream processing marker requires Kafka batch context");
     }
-    const markerOffset = context.eventOffsets[eventIndex];
-    if (markerOffset === undefined) {
+    const markerPosition = context.positions[eventIndex];
+    if (!markerPosition) {
       throw new Error("metric-stream processing marker is missing its Kafka offset");
     }
+    if (markerPosition.transport !== "kafka")
+      throw new Error("Native processing marker schema has not been installed");
     if (!client.command) {
       throw new Error(
         "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
@@ -801,7 +803,7 @@ export async function applyMetricStreamEventsToClickHouse(
         expected_event_count: event.expectedEventCount,
         topic: context.topic,
         partition: context.partition,
-        marker_offset: markerOffset,
+        marker_offset: markerPosition.offset,
       },
     });
   };
@@ -905,7 +907,7 @@ export async function runMetricStreamClickHouseSinkFromEnv(
     throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
   }
 
-  const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv();
+  const { consumer, quarantine, topic, epoch } = createKafkaMetricStreamConsumerFromEnv();
   if (!consumer.observeGroupLifecycle) {
     throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
   }
@@ -913,6 +915,7 @@ export async function runMetricStreamClickHouseSinkFromEnv(
     consumer,
     quarantine,
     topic,
+    epoch,
     lifecycleListener: readiness,
     handleEvents: async (events, context) => {
       await applyMetricStreamEventsToClickHouse(client, events, context);

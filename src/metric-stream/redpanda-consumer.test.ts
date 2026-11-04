@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
+  type MetricStreamEachBatchPayload,
   runMetricStreamEventConsumer,
 } from "./redpanda-consumer.ts";
+import { kafkaTestPositions } from "./test-helpers.ts";
 
 const captureException = vi.hoisted(() => vi.fn());
 const loggerError = vi.hoisted(() => vi.fn());
@@ -91,6 +93,103 @@ afterEach(() => {
 });
 
 describe("runMetricStreamEventConsumer", () => {
+  it("rejectsInvalidTransportMetadataBeforeHandlingOrQuarantiningPayload", async () => {
+    const actions: string[] = [];
+    await expect(
+      runMetricStreamEventConsumer({
+        epoch: "test-epoch",
+        topic: "metric-stream-v1",
+        consumer: {
+          connect: async () => undefined,
+          subscribe: async () => undefined,
+          run: async (options) => {
+            await options.eachBatch({
+              batch: {
+                topic: "metric-stream-v1",
+                partition: 2,
+                messages: [{ offset: "-1", value: Buffer.from(JSON.stringify(event)) }],
+              },
+              isRunning: () => true,
+              isStale: () => false,
+              heartbeat: async () => undefined,
+              resolveOffset: () => {
+                actions.push("ack");
+              },
+              commitOffsetsIfNecessary: async () => {
+                actions.push("commit");
+              },
+            });
+          },
+        },
+        handleEvents: async () => {
+          actions.push("handle");
+        },
+        quarantine: {
+          connect: async () => undefined,
+          write: async () => {
+            actions.push("quarantine");
+          },
+        },
+      }),
+    ).rejects.toThrow(/offset/);
+    expect(actions).toEqual([]);
+  });
+  it.each(["stopped", "stale", "heartbeat", "handler"] as const)(
+    "doesNotAcknowledgeAfterOwnershipIsLost: %s",
+    async (boundary) => {
+      let active = boundary !== "stopped";
+      let stale = boundary === "stale";
+      const acknowledged: string[] = [];
+      const handled: string[] = [];
+      const consumer = {
+        connect: async () => undefined,
+        subscribe: async () => undefined,
+        run: async (options: {
+          eachBatch(payload: MetricStreamEachBatchPayload): Promise<void>;
+        }) => {
+          await options.eachBatch({
+            batch: {
+              topic: "metric-stream-v1",
+              partition: 2,
+              messages: [{ offset: "9007199254740993", value: Buffer.from(JSON.stringify(event)) }],
+            },
+            isRunning: () => active,
+            isStale: () => stale,
+            heartbeat: async () => {
+              if (boundary === "heartbeat") active = false;
+            },
+            resolveOffset: (offset) => {
+              acknowledged.push(offset);
+            },
+            commitOffsetsIfNecessary: async () => {
+              acknowledged.push("commit");
+            },
+          });
+        },
+      };
+      await expect(
+        runMetricStreamEventConsumer({
+          consumer,
+          topic: "metric-stream-v1",
+          epoch: "test-epoch",
+          quarantine: {
+            connect: async () => undefined,
+            write: async () => {
+              throw new Error("Unexpected malformed fixture");
+            },
+          },
+          handleEvents: async (_events, context) => {
+            await context.assertActive();
+            expect(context.positions).toEqual(kafkaTestPositions(["9007199254740993"]));
+            handled.push("handled");
+            stale = boundary === "handler";
+          },
+        }),
+      ).rejects.toThrow(/ownership/);
+      expect(acknowledged).toEqual([]);
+      expect(handled).toEqual(boundary === "handler" ? ["handled"] : []);
+    },
+  );
   it("reports lag, sink latency, and deletion throughput for each consumed batch", async () => {
     vi.spyOn(performance, "now")
       .mockReturnValueOnce(1_000)
@@ -117,6 +216,8 @@ describe("runMetricStreamEventConsumer", () => {
               { offset: "21", value: Buffer.from(JSON.stringify(event)) },
             ],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat: vi.fn(async () => undefined),
           resolveOffset: vi.fn(),
@@ -128,6 +229,8 @@ describe("runMetricStreamEventConsumer", () => {
             highWatermark: "50",
             messages: [{ offset: "22", value: Buffer.from(JSON.stringify(event)) }],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat: vi.fn(async () => undefined),
           resolveOffset: vi.fn(),
@@ -136,6 +239,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents: vi.fn(async () => undefined),
       quarantine: {
@@ -186,6 +290,8 @@ describe("runMetricStreamEventConsumer", () => {
               { offset: "21", value: null },
             ],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat: vi.fn(async () => undefined),
           resolveOffset: vi.fn(),
@@ -194,6 +300,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents: vi.fn(async () => undefined),
       quarantine: { connect: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
@@ -218,6 +325,8 @@ describe("runMetricStreamEventConsumer", () => {
             highWatermark: "31",
             messages: [{ offset: "25", value: null }],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat: vi.fn(async () => undefined),
           resolveOffset: vi.fn(),
@@ -226,6 +335,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents: vi.fn(async () => undefined),
       quarantine: { connect: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
@@ -271,6 +381,8 @@ describe("runMetricStreamEventConsumer", () => {
               },
             ],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary,
           heartbeat,
           resolveOffset,
@@ -279,6 +391,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents,
       quarantine,
@@ -292,8 +405,8 @@ describe("runMetricStreamEventConsumer", () => {
     expect(handleEvents).toHaveBeenCalledWith([event], {
       topic: "metric-stream-v1",
       partition: 2,
-      eventOffsets: ["12"],
-      heartbeat,
+      positions: kafkaTestPositions(["12"]),
+      assertActive: expect.any(Function),
     });
     expect(resolveOffset).toHaveBeenCalledWith("12");
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
@@ -313,6 +426,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents: vi.fn(async () => undefined),
       lifecycleListener,
@@ -339,6 +453,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents: vi.fn(async () => undefined),
       quarantine: {
@@ -381,6 +496,8 @@ describe("runMetricStreamEventConsumer", () => {
               },
             ],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat,
           resolveOffset: vi.fn(),
@@ -389,6 +506,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents,
       quarantine,
@@ -398,8 +516,8 @@ describe("runMetricStreamEventConsumer", () => {
     expect(handleEvents).toHaveBeenCalledWith([deleteEvent, event], {
       topic: "metric-stream-v1",
       partition: 2,
-      eventOffsets: ["20", "21"],
-      heartbeat,
+      positions: kafkaTestPositions(["20", "21"]),
+      assertActive: expect.any(Function),
     });
   });
 
@@ -427,6 +545,8 @@ describe("runMetricStreamEventConsumer", () => {
               },
             ],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat: vi.fn(async () => undefined),
           resolveOffset,
@@ -436,6 +556,7 @@ describe("runMetricStreamEventConsumer", () => {
 
     await expect(
       runMetricStreamEventConsumer({
+        epoch: "test-epoch",
         consumer,
         handleEvents,
         quarantine,
@@ -466,6 +587,8 @@ describe("runMetricStreamEventConsumer", () => {
             partition: 2,
             messages: [{ offset: "13", value: null }],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary,
           heartbeat,
           resolveOffset,
@@ -474,6 +597,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents,
       quarantine,
@@ -483,7 +607,7 @@ describe("runMetricStreamEventConsumer", () => {
     expect(handleEvents).not.toHaveBeenCalled();
     expect(quarantine.write).not.toHaveBeenCalled();
     expect(resolveOffset).toHaveBeenCalledWith("13");
-    expect(heartbeat).toHaveBeenCalledOnce();
+    expect(heartbeat).toHaveBeenCalledTimes(3);
     expect(commitOffsetsIfNecessary).toHaveBeenCalledOnce();
   });
 
@@ -509,6 +633,8 @@ describe("runMetricStreamEventConsumer", () => {
             partition: 2,
             messages: [{ offset: "14", value: Buffer.from("{not-json") }],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary,
           heartbeat,
           resolveOffset,
@@ -518,6 +644,7 @@ describe("runMetricStreamEventConsumer", () => {
 
     await expect(
       runMetricStreamEventConsumer({
+        epoch: "test-epoch",
         consumer,
         handleEvents,
         quarantine,
@@ -549,7 +676,7 @@ describe("runMetricStreamEventConsumer", () => {
       }),
     );
     expect(resolveOffset).not.toHaveBeenCalled();
-    expect(heartbeat).not.toHaveBeenCalled();
+    expect(heartbeat).toHaveBeenCalledOnce();
     expect(commitOffsetsIfNecessary).not.toHaveBeenCalled();
     expect(captureException).toHaveBeenCalledWith(quarantineError, {
       extra: {
@@ -587,6 +714,8 @@ describe("runMetricStreamEventConsumer", () => {
               { offset: "15", value: Buffer.from(JSON.stringify(event)) },
             ],
           },
+          isRunning: () => true,
+          isStale: () => false,
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
           heartbeat: vi.fn(async () => undefined),
           resolveOffset,
@@ -596,6 +725,7 @@ describe("runMetricStreamEventConsumer", () => {
 
     await expect(
       runMetricStreamEventConsumer({
+        epoch: "test-epoch",
         consumer,
         handleEvents,
         quarantine,
@@ -636,6 +766,8 @@ describe("runMetricStreamEventConsumer", () => {
           commitOffsetsIfNecessary: vi.fn(async () => {
             order.push("commit");
           }),
+          isRunning: () => true,
+          isStale: () => false,
           heartbeat,
           resolveOffset,
         });
@@ -643,6 +775,7 @@ describe("runMetricStreamEventConsumer", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer,
       handleEvents,
       quarantine,
@@ -659,8 +792,8 @@ describe("runMetricStreamEventConsumer", () => {
     expect(handleEvents).toHaveBeenCalledWith([event], {
       topic: "metric-stream-v1",
       partition: 2,
-      eventOffsets: ["15"],
-      heartbeat,
+      positions: kafkaTestPositions(["15"]),
+      assertActive: expect.any(Function),
     });
     expect(order).toEqual(["quarantine", "handle", "resolve:14", "resolve:15", "commit"]);
   });
@@ -686,6 +819,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     expect(() =>
       createKafkaMetricStreamConsumerFromEnv({
         METRIC_STREAM_CONSUMER_GROUP: "history-sink",
+        METRIC_STREAM_TRANSPORT_EPOCH: "test-epoch",
         METRIC_STREAM_TOPIC: "metric-stream-v1",
       }),
     ).toThrow("REDPANDA_BROKERS is required");
@@ -704,6 +838,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     expect(() =>
       createKafkaMetricStreamConsumerFromEnv({
         METRIC_STREAM_CONSUMER_GROUP: "history-sink",
+        METRIC_STREAM_TRANSPORT_EPOCH: "test-epoch",
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " , ",
       }),
@@ -713,6 +848,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
   it.each([undefined, ""])("requires a consumer group when configured as %s", (groupId) => {
     expect(() =>
       createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_TRANSPORT_EPOCH: "test-epoch",
         METRIC_STREAM_TOPIC: "metric-stream-history-v1",
         METRIC_STREAM_CONSUMER_GROUP: groupId,
         REDPANDA_BROKERS: "redpanda:9092",
@@ -728,6 +864,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     "uses the configured $groupId identity and $topic subscription",
     async ({ topic, groupId }) => {
       const configured = createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_TRANSPORT_EPOCH: "test-epoch",
         METRIC_STREAM_TOPIC: topic,
         METRIC_STREAM_CONSUMER_GROUP: groupId,
         REDPANDA_BROKERS: "redpanda:9092",
@@ -746,6 +883,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
   it("trims broker lists and adapts KafkaJS consumer methods", async () => {
     const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv({
       METRIC_STREAM_CONSUMER_GROUP: "metric-stream-clickhouse-sink",
+      METRIC_STREAM_TRANSPORT_EPOCH: "test-epoch",
       METRIC_STREAM_TOPIC: "metric-stream-v1",
       REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
     });
@@ -807,6 +945,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
   it("forwards Kafka group lifecycle events to sink readiness", () => {
     const { consumer } = createKafkaMetricStreamConsumerFromEnv({
       METRIC_STREAM_CONSUMER_GROUP: "metric-stream-clickhouse-sink",
+      METRIC_STREAM_TRANSPORT_EPOCH: "test-epoch",
       METRIC_STREAM_TOPIC: "metric-stream-v1",
       REDPANDA_BROKERS: "redpanda:9092",
     });

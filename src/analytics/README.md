@@ -34,6 +34,33 @@ from the [pinned implementation](https://github.com/apache/pulsar-client-cpp/blo
 unknown and chunked representations fail qualification. See
 [native tests](../../docs/testing.md#native-pulsar-position-qualification).
 
+Transport evidence uses an explicit Kafka/Pulsar discriminator throughout the
+journal, frontiers, and cursors. Kafka retains its decimal offset; Pulsar retains
+its serialized ID and native ordering coordinates. The existing Kafka runtime
+requires `METRIC_STREAM_TRANSPORT_EPOCH`, an opaque identity for the current
+broker log incarnation. Preserve it across process restarts and deploys; rotate
+it only when deliberately replacing that log. Never generate a new epoch on
+consumer startup. The [position contract](../metric-stream/transport-position.ts)
+and [coexistence tests](effect-journal.integration.test.ts) specify these rules.
+Production environment rendering requires this key for all three sink services.
+For local sink runs, configure it once in `.env.local`; `compose:env` preserves
+that explicit value. Local Compose passes an absent value through as empty so
+database-only commands remain usable; the sink fails immediately if its epoch is
+missing. See the [environment renderer](../../scripts/deploy-service-environment.ts),
+[workspace environment generator](../../scripts/compose-env.ts), and
+[Docker Compose interpolation](https://docs.docker.com/reference/compose-file/interpolation/).
+
+Every consumer batch supplies typed positions and `assertActive()`. The Kafka
+adapter checks `isRunning()` and `isStale()` before and after its heartbeat,
+including before resolving or committing offsets; these APIs are documented in
+[KafkaJS batch consumption](https://kafka.js.org/docs/consuming#eachbatch).
+The final ClickHouse journal schema has one transport-aware sorting identity.
+Inactive native columns on Kafka rows use checked zero/-1 defaults and an empty
+serialized-ID field; inactive Kafka offsets on Pulsar rows are zero. Application
+positions never expose those storage placeholders. The
+[schema](../db/analytics-work-schema.ts) and
+[real-engine tests](effect-journal.integration.test.ts) enforce the invariant.
+
 Run-writer ownership is separate from transport-consumer ownership. A run owner
 is claimed by explicit compare-and-set, and checkpointing locks that same run
 row before checking its owner and cursor. Before transferring ownership, the

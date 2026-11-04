@@ -190,6 +190,7 @@ describe("metric-stream durable quarantine", () => {
       const received: string[] = [];
       try {
         await runMetricStreamEventConsumer({
+          epoch: "test-epoch",
           consumer: adaptConsumer(consumer),
           topic,
           quarantine: {
@@ -232,6 +233,7 @@ describe("metric-stream durable quarantine", () => {
     };
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer: adaptConsumer(firstConsumer),
       handleEvents: firstHandler,
       quarantine: failingQuarantine,
@@ -288,6 +290,7 @@ describe("metric-stream durable quarantine", () => {
     const replayConsumer = kafka.consumer({ groupId });
 
     await runMetricStreamEventConsumer({
+      epoch: "test-epoch",
       consumer: adaptConsumer(replayConsumer),
       handleEvents: async (events) => {
         expect(quarantineCompleted).toBe(true);

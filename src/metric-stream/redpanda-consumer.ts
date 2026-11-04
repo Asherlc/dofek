@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { Kafka } from "kafkajs";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import type { MetricStreamConsumerBatchContext } from "./consumer-context.ts";
 import {
   isMetricStreamDeletedEvent,
   type MetricStreamRedpandaEvent,
@@ -11,6 +12,10 @@ import {
   KafkaMetricStreamQuarantineWriter,
   type MetricStreamQuarantineWriter,
 } from "./redpanda-quarantine.ts";
+import {
+  kafkaMetricStreamPositionSchema,
+  type MetricStreamPosition,
+} from "./transport-position.ts";
 
 export interface MetricStreamKafkaMessage {
   offset: string;
@@ -26,6 +31,8 @@ export interface MetricStreamEachBatchPayload {
   };
   commitOffsetsIfNecessary(): Promise<void>;
   heartbeat(): Promise<void>;
+  isRunning(): boolean;
+  isStale(): boolean;
   resolveOffset(offset: string): void;
 }
 
@@ -45,6 +52,7 @@ export interface MetricStreamConsumerGroupLifecycleListener {
 }
 
 export interface RunMetricStreamEventConsumerOptions {
+  epoch: string;
   consumer: MetricStreamConsumerLike;
   handleEvents(
     events: MetricStreamRedpandaEvent[],
@@ -53,13 +61,6 @@ export interface RunMetricStreamEventConsumerOptions {
   quarantine: MetricStreamQuarantineWriter;
   lifecycleListener?: MetricStreamConsumerGroupLifecycleListener;
   topic: string;
-}
-
-export interface MetricStreamConsumerBatchContext {
-  topic: string;
-  partition: number;
-  eventOffsets: readonly string[];
-  heartbeat(): Promise<void>;
 }
 
 function parseMetricStreamMessage(
@@ -89,6 +90,7 @@ function parseMetricStreamMessage(
 export async function runMetricStreamEventConsumer(
   options: RunMetricStreamEventConsumerOptions,
 ): Promise<void> {
+  if (!options.epoch) throw new Error("Metric-stream transport epoch is required");
   const lagSamplesByPartition = new Map<number, { observedAt: number; lag: number }>();
   await options.quarantine.connect();
   await options.consumer.connect();
@@ -101,18 +103,33 @@ export async function runMetricStreamEventConsumer(
     eachBatchAutoResolve: false,
     eachBatch: async (payload) => {
       const events: MetricStreamRedpandaEvent[] = [];
-      const eventOffsets: string[] = [];
+      const positions: MetricStreamPosition[] = [];
+      const assertActive = async () => {
+        if (!payload.isRunning() || payload.isStale())
+          throw new Error("Kafka metric-stream batch ownership is no longer active");
+        await payload.heartbeat();
+        if (!payload.isRunning() || payload.isStale())
+          throw new Error("Kafka metric-stream batch ownership changed during heartbeat");
+      };
+      await assertActive();
       for (const message of payload.batch.messages) {
         if (!message.value) {
           continue;
         }
+        const position = kafkaMetricStreamPositionSchema.parse({
+          transport: "kafka",
+          epoch: options.epoch,
+          topic: payload.batch.topic,
+          partition: payload.batch.partition,
+          offset: message.offset,
+        });
         try {
           const event = parseMetricStreamMessage({
             offset: message.offset,
             value: message.value,
           });
           events.push(event);
-          eventOffsets.push(message.offset);
+          positions.push(position);
         } catch (error) {
           try {
             await options.quarantine.write({
@@ -150,8 +167,8 @@ export async function runMetricStreamEventConsumer(
         await options.handleEvents(events, {
           topic: payload.batch.topic,
           partition: payload.batch.partition,
-          eventOffsets,
-          heartbeat: payload.heartbeat,
+          positions,
+          assertActive,
         });
       }
 
@@ -195,10 +212,11 @@ export async function runMetricStreamEventConsumer(
             : (deletionEventCount * 1_000) / Math.max(sinkDurationMs, 1),
       });
 
+      await assertActive();
       for (const message of payload.batch.messages) {
         payload.resolveOffset(message.offset);
       }
-      await payload.heartbeat();
+      await assertActive();
       await payload.commitOffsetsIfNecessary();
     },
   });
@@ -206,7 +224,11 @@ export async function runMetricStreamEventConsumer(
 
 function readRequiredEnvironmentValue(
   env: NodeJS.ProcessEnv,
-  key: "METRIC_STREAM_TOPIC" | "METRIC_STREAM_CONSUMER_GROUP" | "REDPANDA_BROKERS",
+  key:
+    | "METRIC_STREAM_TOPIC"
+    | "METRIC_STREAM_CONSUMER_GROUP"
+    | "REDPANDA_BROKERS"
+    | "METRIC_STREAM_TRANSPORT_EPOCH",
 ): string {
   const value = env[key];
   if (!value) {
@@ -219,8 +241,10 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
   consumer: MetricStreamConsumerLike;
   quarantine: MetricStreamQuarantineWriter;
   topic: string;
+  epoch: string;
 } {
   const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
+  const epoch = readRequiredEnvironmentValue(env, "METRIC_STREAM_TRANSPORT_EPOCH");
   const groupId = readRequiredEnvironmentValue(env, "METRIC_STREAM_CONSUMER_GROUP");
   const brokers = readRequiredEnvironmentValue(env, "REDPANDA_BROKERS")
     .split(",")
@@ -237,6 +261,7 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
   const kafkaConsumer = kafka.consumer({ groupId });
 
   return {
+    epoch,
     consumer: {
       connect: () => kafkaConsumer.connect(),
       observeGroupLifecycle: (listener) => {

@@ -1,6 +1,10 @@
 import Pulsar from "pulsar-client";
 import { describe, expect, it } from "vitest";
-import { compareMetricStreamPositions, metricStreamPosition } from "./transport-position.ts";
+import {
+  compareMetricStreamPositions,
+  metricStreamPosition,
+  metricStreamPositionSchema,
+} from "./transport-position.ts";
 
 const stream = { epoch: "epoch-1", topic: "persistent://public/default/sensor", partition: 2 };
 
@@ -11,6 +15,46 @@ function nativeId(hex: string) {
 }
 
 describe("native metric stream position", () => {
+  it("preservesKafkaOffsetsWithoutInventingNativeCoordinates", () => {
+    const position = {
+      transport: "kafka" as const,
+      ...stream,
+      offset: "9007199254740993",
+    };
+    expect(metricStreamPositionSchema.parse(position)).toEqual(position);
+    expect(
+      compareMetricStreamPositions(position, { ...position, offset: "9007199254740994" }),
+    ).toBe(-1);
+    expect(() =>
+      compareMetricStreamPositions(
+        position,
+        metricStreamPosition(stream, nativeId("080a100018022000")),
+      ),
+    ).toThrow(/stream|transport/i);
+  });
+
+  it("tagsNativePositionsWithoutChangingTheirSerializedIdentity", () => {
+    expect(metricStreamPosition(stream, nativeId("080a100018022000"))).toMatchObject({
+      transport: "pulsar",
+    });
+  });
+  it("rejectsMixedTransportCoordinates", () => {
+    const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+    expect(() => metricStreamPositionSchema.parse({ ...native, offset: "42" })).toThrow();
+    expect(() =>
+      metricStreamPositionSchema.parse({ ...native, transport: "kafka", offset: "42" }),
+    ).toThrow();
+  });
+  it("rejectsKafkaUnpartitionedSentinel", () => {
+    expect(() =>
+      metricStreamPositionSchema.parse({
+        transport: "kafka",
+        ...stream,
+        partition: -1,
+        offset: "0",
+      }),
+    ).toThrow();
+  });
   it("preservesLargeNativeCoordinates", () => {
     const id = nativeId("08818080808080801010828080808080801018022003");
     const position = metricStreamPosition(stream, id);

@@ -23,6 +23,7 @@ import {
   type MetricStreamEventV1,
 } from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
+import { kafkaTestPositions } from "./test-helpers.ts";
 
 const captureException = vi.hoisted(() => vi.fn());
 
@@ -214,8 +215,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       {
         topic: "metric-stream-v1",
         partition: 2,
-        eventOffsets: ["42"],
-        heartbeat,
+        positions: kafkaTestPositions(["42"]),
+        assertActive: heartbeat,
       },
     );
 
@@ -249,8 +250,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       {
         topic: "metric-stream-v1",
         partition: 2,
-        eventOffsets: ["42"],
-        heartbeat,
+        positions: kafkaTestPositions(["42"]),
+        assertActive: heartbeat,
       },
     );
 
@@ -288,8 +289,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       {
         topic: "metric-stream-v1",
         partition: 2,
-        eventOffsets: ["42"],
-        heartbeat,
+        positions: kafkaTestPositions(["42"]),
+        assertActive: heartbeat,
       },
     );
 
@@ -370,8 +371,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       {
         topic: "metric-stream-v1",
         partition: 2,
-        eventOffsets: events.map((_, index) => String(index)),
-        heartbeat,
+        positions: kafkaTestPositions(events.map((_, index) => String(index))),
+        assertActive: heartbeat,
       },
     );
 
@@ -401,8 +402,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       {
         topic: "metric-stream-v1",
         partition: 2,
-        eventOffsets: ["41", "42"],
-        heartbeat,
+        positions: kafkaTestPositions(["41", "42"]),
+        assertActive: heartbeat,
       },
     );
 
@@ -470,8 +471,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         {
           topic: "metric-stream-v1",
           partition: 2,
-          eventOffsets: [],
-          heartbeat: vi.fn(async () => undefined),
+          positions: kafkaTestPositions([]),
+          assertActive: vi.fn(async () => undefined),
         },
       ),
     ).rejects.toThrow("processing marker is missing its Kafka offset");
@@ -491,8 +492,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       applyMetricStreamEventsToClickHouse({ insert: vi.fn(async () => undefined) }, [marker], {
         topic: "metric-stream-v1",
         partition: 2,
-        eventOffsets: ["42"],
-        heartbeat: vi.fn(async () => undefined),
+        positions: kafkaTestPositions(["42"]),
+        assertActive: vi.fn(async () => undefined),
       }),
     ).rejects.toThrow(
       "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
@@ -518,8 +519,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         {
           topic: "metric-stream-v1",
           partition: 2,
-          eventOffsets: ["42"],
-          heartbeat: vi.fn(async () => undefined),
+          positions: kafkaTestPositions(["42"]),
+          assertActive: vi.fn(async () => undefined),
         },
       ),
     ).resolves.toBe(0);
@@ -1183,8 +1184,8 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     await options.handleEvents([heartRateEvent], {
       topic: "metric-stream-v1",
       partition: 2,
-      eventOffsets: ["42"],
-      heartbeat: vi.fn(async () => undefined),
+      positions: kafkaTestPositions(["42"]),
+      assertActive: vi.fn(async () => undefined),
     });
     expect(client.insert).toHaveBeenCalledOnce();
   });

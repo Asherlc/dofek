@@ -15,7 +15,12 @@ const client: ClickHouseClient = {
     throw new Error("Unexpected external I/O");
   },
 };
-const stream = { epoch: "epoch-1", topic: "persistent://public/default/test", partition: -1 };
+const stream = {
+  transport: "pulsar" as const,
+  epoch: "epoch-1",
+  topic: "persistent://public/default/test",
+  partition: -1,
+};
 describe("analytics effect validation", () => {
   it.each(["identical", "conflicting"] as const)(
     "rejectsDuplicateBatchIdentitiesBeforeAnyIo: %s",

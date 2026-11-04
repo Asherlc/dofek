@@ -482,6 +482,7 @@ entity "analytics_required_frontier" {
   * run_id : uuid <<PK>>
   * operation_id : uuid <<PK>>
   * dataset_key : text <<PK>>
+  * transport : text <<PK>>
   * epoch : text <<PK>>
   * topic : text <<PK>>
   * partition : integer <<PK>>
@@ -500,6 +501,7 @@ entity "analytics_run" {
 entity "analytics_stage_cursor" {
   * run_id : uuid <<PK>>
   * stage : text <<PK>>
+  * transport : text <<PK>>
   * epoch : text <<PK>>
   * topic : text <<PK>>
   * partition : integer <<PK>>
@@ -508,6 +510,7 @@ entity "analytics_stage_cursor" {
 }
 
 entity "analytics_stream_state" {
+  * transport : text <<PK>>
   * epoch : text <<PK>>
   * topic : text <<PK>>
   * partition : integer <<PK>>

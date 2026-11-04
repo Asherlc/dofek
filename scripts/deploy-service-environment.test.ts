@@ -161,6 +161,7 @@ function completeDeployEnvironment(): Record<string, string> {
     CLOUDFLARE_API_TOKEN: "cloudflare-control-plane-token",
     OTA_PRIVATE_KEY_B64: "ota-private-key",
     METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+    METRIC_STREAM_TRANSPORT_EPOCH: "test-broker-log-epoch",
     METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
     METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
     METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
@@ -246,7 +247,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
               R2_ACCESS_KEY_ID: "r2_access_key_id-value",
               R2_SECRET_ACCESS_KEY: "r2_secret_access_key-value",
             }
-          : {}),
+          : { METRIC_STREAM_TRANSPORT_EPOCH: "test-broker-log-epoch" }),
       });
     }
   });
@@ -256,6 +257,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     "METRIC_STREAM_LIVE_TOPIC",
     "METRIC_STREAM_HISTORY_TOPIC",
     "METRIC_STREAM_R2_BUCKET",
+    "METRIC_STREAM_TRANSPORT_EPOCH",
   ])("rejects a missing %s even when a generic topic is supplied", (key) => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");

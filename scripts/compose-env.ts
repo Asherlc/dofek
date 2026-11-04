@@ -109,8 +109,9 @@ const postgresPassword = process.env.POSTGRES_PASSWORD ?? "health";
 const clickHousePassword = process.env.CLICKHOUSE_PASSWORD ?? "health";
 const postgresPasswordUrlEncoded = encodeURIComponent(postgresPassword);
 const clickHousePasswordUrlEncoded = encodeURIComponent(clickHousePassword);
+const persistedEnv = readDotenv(composeEnvironmentPath);
 const existingEnv = {
-  ...readDotenv(composeEnvironmentPath),
+  ...persistedEnv,
   ...process.env,
 };
 const databasePort = await resolvePort({
@@ -177,6 +178,9 @@ const dotenv = [
   `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v1`,
   `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v1`,
   `METRIC_STREAM_R2_BUCKET=dofek-metric-stream-archive`,
+  ...(persistedEnv.METRIC_STREAM_TRANSPORT_EPOCH
+    ? [`METRIC_STREAM_TRANSPORT_EPOCH=${persistedEnv.METRIC_STREAM_TRANSPORT_EPOCH}`]
+    : []),
   "",
 ].join("\n");
 

@@ -904,13 +904,14 @@ table fitness.analytics_required_frontier {
   operation_id uuid [not null]
   user_id uuid
   dataset_key text [not null]
+  transport text [not null]
   epoch text [not null]
   topic text [not null]
   partition integer [not null]
   position jsonb [not null]
 
   indexes {
-    (run_id, operation_id, dataset_key, epoch, topic, partition) [pk]
+    (run_id, operation_id, dataset_key, transport, epoch, topic, partition) [pk]
   }
 }
 
@@ -923,18 +924,20 @@ table fitness.analytics_run {
 table fitness.analytics_stage_cursor {
   run_id uuid [not null]
   stage text [not null]
+  transport text [not null]
   epoch text [not null]
   topic text [not null]
   partition integer [not null]
   cursor jsonb [not null]
 
   indexes {
-    (run_id, stage, epoch, topic, partition) [pk]
+    (run_id, stage, transport, epoch, topic, partition) [pk]
 
   }
 }
 
 table fitness.analytics_stream_state {
+  transport text [not null]
   epoch text [not null]
   topic text [not null]
   partition integer [not null]
@@ -943,7 +946,7 @@ table fitness.analytics_stream_state {
   pending jsonb
 
   indexes {
-    (epoch, topic, partition) [pk]
+    (transport, epoch, topic, partition) [pk]
   }
 }
 

@@ -271,24 +271,32 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     ],
   },
   metricStreamClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LEGACY_TOPIC"],
+    allowedKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_TRANSPORT_EPOCH"],
+    requiredKeys: [
+      "REDPANDA_BROKERS",
+      "METRIC_STREAM_LEGACY_TOPIC",
+      "METRIC_STREAM_TRANSPORT_EPOCH",
+    ],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_LEGACY_TOPIC",
       group: "metric-stream-clickhouse-sink",
     },
   },
   metricStreamLiveClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LIVE_TOPIC"],
+    allowedKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_TRANSPORT_EPOCH"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LIVE_TOPIC", "METRIC_STREAM_TRANSPORT_EPOCH"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_LIVE_TOPIC",
       group: "metric-stream-live-clickhouse-sink",
     },
   },
   metricStreamHistoryClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_HISTORY_TOPIC"],
+    allowedKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_TRANSPORT_EPOCH"],
+    requiredKeys: [
+      "REDPANDA_BROKERS",
+      "METRIC_STREAM_HISTORY_TOPIC",
+      "METRIC_STREAM_TRANSPORT_EPOCH",
+    ],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_HISTORY_TOPIC",
       group: "metric-stream-history-clickhouse-sink",

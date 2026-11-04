@@ -15,6 +15,7 @@ import {
   appendAnalyticsDelivery,
   appendAnalyticsEffects,
   readAnalyticsEffectPage,
+  verifyAnalyticsDeliveryReceipt,
 } from "./effect-journal.ts";
 import {
   analyticsEffect,
@@ -30,6 +31,138 @@ describe("analytics effect journal", () => {
   });
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  it("rejectsNoncanonicalInactiveTransportStorageColumns", async () => {
+    if (!context.clickhouse.insert) throw new Error("Fixture needs insert");
+    for (const transport of ["kafka", "pulsar"]) {
+      await expect(
+        context.clickhouse.insert({
+          table: "analytics.effect_receipt",
+          format: "JSONEachRow",
+          values: [
+            {
+              ...context.stream,
+              transport,
+              kafka_offset: "42",
+              major: "10",
+              minor: "0",
+              batch: -1,
+              effect_ordinal: "-1",
+              stage: "scalar",
+              effect_hash: "0".repeat(64),
+              is_empty: 1,
+              user_id: null,
+            },
+          ],
+        }),
+      ).rejects.toThrow(/constraint/i);
+    }
+  });
+
+  it("keepsKafkaAndNativeReceiptsFrontiersAndCursorsDistinctAcrossRestart", async () => {
+    const nativeStream = {
+      ...context.stream,
+      epoch: randomUUID(),
+      transport: "pulsar" as const,
+      partition: 0,
+    };
+    const nativePosition = analyticsPosition(nativeStream, 0n);
+    const nativeEffect = analyticsEffect(nativePosition, 0n, context.userId);
+    const kafkaStream = { ...nativeStream, transport: "kafka" as const };
+    const kafkaPosition = { ...kafkaStream, offset: "9007199254740993" };
+    const kafkaEffect = {
+      ...nativeEffect,
+      stream: kafkaStream,
+      position: kafkaPosition,
+      cursor: { delivery: { offset: kafkaPosition.offset }, effectOrdinal: "0" },
+    };
+    const runId = randomUUID();
+    for (const effect of [nativeEffect, kafkaEffect]) {
+      const ownerId = randomUUID();
+      await claimAnalyticsStream(context.database, {
+        stream: effect.stream,
+        ownerId,
+        expectedOwnerId: null,
+      });
+      await beginAnalyticsDelivery(context.database, {
+        stream: effect.stream,
+        ownerId,
+        expected: null,
+        position: effect.position,
+      });
+      if (effect.position.transport === "kafka") {
+        await expect(
+          sealAnalyticsRun(context.database, {
+            runId: randomUUID(),
+            frontiers: [
+              {
+                operationId: context.operation.id,
+                datasetKey: "activity",
+                stream: effect.stream,
+                position: effect.position,
+              },
+            ],
+          }),
+        ).rejects.toThrow(/processed delivery frontier/);
+      }
+      await appendAnalyticsDelivery(context.clickhouse, {
+        position: effect.position,
+        effects: [effect],
+      });
+      await completeAnalyticsDelivery(context.database, context.clickhouse, {
+        stream: effect.stream,
+        ownerId,
+        position: effect.position,
+      });
+    }
+    await sealAnalyticsRun(context.database, {
+      runId,
+      frontiers: [nativeEffect, kafkaEffect].map((effect) => ({
+        operationId: context.operation.id,
+        datasetKey: "activity" as const,
+        stream: effect.stream,
+        position: effect.position,
+      })),
+    });
+    const restarted = context.makeClient();
+    const runOwnerId = randomUUID();
+    await claimAnalyticsRunOwnership(context.database, {
+      runId,
+      ownerId: runOwnerId,
+      expectedOwnerId: null,
+    });
+    try {
+      for (const effect of [nativeEffect, kafkaEffect]) {
+        await verifyAnalyticsDeliveryReceipt(restarted, effect.position);
+        const page = await readAnalyticsEffectPage(
+          { clickhouse: restarted, database: context.database },
+          {
+            runId,
+            stream: effect.stream,
+            stage: "scalar",
+            after: null,
+            limit: 20,
+          },
+        );
+        expect(page.effects).toEqual([effect]);
+        expect(page.next).toEqual(effect.cursor);
+        expect(page.exhausted).toBe(true);
+        await checkpointAnalyticsPage(context.database, {
+          runId,
+          ownerId: runOwnerId,
+          stream: effect.stream,
+          stage: "scalar",
+          expected: null,
+          next: effect.cursor,
+        });
+      }
+      await expect(
+        verifyAnalyticsDeliveryReceipt(restarted, { ...kafkaPosition, offset: "9007199254740992" }),
+      ).rejects.toThrow(/missing/);
+    } finally {
+      await restarted.close?.();
+    }
   });
 
   it("directAppendPreservesEveryStorageIdentityComponent", async () => {
@@ -386,10 +519,15 @@ describe("analytics effect journal", () => {
     }
   });
 
-  it.each(["one-delivery", "many-deliveries"] as const)(
-    "keysetPrunesNativeDeliveryAndOrdinalGranules: %s",
-    async (shape) => {
-      const input = await seedAnalyticsKeysetFixture(context, shape);
+  it.each([
+    ["pulsar", "one-delivery"],
+    ["pulsar", "many-deliveries"],
+    ["kafka", "one-delivery"],
+    ["kafka", "many-deliveries"],
+  ] as const)(
+    "keysetPrunesTransportDeliveryAndOrdinalGranules: %s/%s",
+    async (transport, shape) => {
+      const input = await seedAnalyticsKeysetFixture(context, shape, transport);
       const queryId = randomUUID();
       let captured: Parameters<ClickHouseClient["query"]>[0] | undefined;
       const clickhouse: ClickHouseClient = {
@@ -416,7 +554,9 @@ describe("analytics effect journal", () => {
       const text = (await plan.json()).map((row) => row.explain).join("\n");
       const condition = text.split("Condition:")[1]?.split("Parts:")[0] ?? "";
       expect(text).toContain("Read type: InOrder");
-      for (const coordinate of ["major", "minor", "batch", "effect_ordinal"]) {
+      for (const coordinate of transport === "pulsar"
+        ? ["major", "minor", "batch", "effect_ordinal"]
+        : ["kafka_offset", "effect_ordinal"]) {
         expect(condition).toContain(`${coordinate} in`);
       }
       const granules = /Granules: (\d+)\/(\d+)/.exec(text);

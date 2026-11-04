@@ -18,6 +18,12 @@ import {
   type AnalyticsStream,
   verifyAnalyticsDeliveryReceipt,
 } from "./effect-journal.ts";
+import {
+  journalDeliveryKey,
+  journalDeliveryKeySchema,
+  metricStreamPositionIdentity,
+  positionAtJournalKey,
+} from "./journal-position.ts";
 
 export interface RequiredAnalyticsFrontier {
   operationId: string;
@@ -55,7 +61,7 @@ const streamStateSchema = z.object({
   pending: metricStreamPositionSchema.nullable(),
 });
 const cursorSchema = z.object({
-  delivery: metricStreamPositionSchema.shape.delivery,
+  delivery: journalDeliveryKeySchema,
   effectOrdinal: z
     .string()
     .regex(/^(-1|0|[1-9]\d*)$/)
@@ -74,17 +80,24 @@ async function lockRun(database: SchemaExecutionDatabase, runId: string) {
 }
 
 function streamWhere(stream: AnalyticsStream) {
-  return sql`epoch=${stream.epoch} AND topic=${stream.topic} AND partition=${stream.partition}`;
+  return sql`transport=${stream.transport} AND epoch=${stream.epoch} AND topic=${stream.topic} AND partition=${stream.partition}`;
 }
 function samePosition(left: MetricStreamPosition | null, right: MetricStreamPosition | null) {
   return left === null || right === null
     ? left === right
     : compareMetricStreamPositions(left, right) === 0 &&
-        left.serializedMessageId === right.serializedMessageId;
+        metricStreamPositionIdentity(left) === metricStreamPositionIdentity(right);
 }
 function assertPositionStream(position: MetricStreamPosition, stream: AnalyticsStream) {
   metricStreamPositionSchema.parse(position);
-  compareMetricStreamPositions(position, { ...position, ...stream });
+  if (position.transport !== stream.transport)
+    throw new Error("Analytics position transport must match its stream");
+  compareMetricStreamPositions(position, {
+    ...position,
+    epoch: stream.epoch,
+    topic: stream.topic,
+    partition: stream.partition,
+  });
 }
 async function lockStream(database: SchemaExecutionDatabase, stream: AnalyticsStream) {
   const [state] = await executeWithSchema(
@@ -109,7 +122,7 @@ export async function claimAnalyticsStream(
       const inserted = await executeWithSchema(
         transaction,
         changedSchema,
-        sql`INSERT INTO fitness.analytics_stream_state (epoch,topic,partition,owner_id) VALUES (${input.stream.epoch},${input.stream.topic},${input.stream.partition},${input.ownerId}) ON CONFLICT DO NOTHING RETURNING 1 AS changed`,
+        sql`INSERT INTO fitness.analytics_stream_state (transport,epoch,topic,partition,owner_id) VALUES (${input.stream.transport},${input.stream.epoch},${input.stream.topic},${input.stream.partition},${input.ownerId}) ON CONFLICT DO NOTHING RETURNING 1 AS changed`,
       );
       if (inserted.length) return;
     }
@@ -196,24 +209,24 @@ export async function sealAnalyticsRun(
         z.object({
           operation_id: z.uuid(),
           dataset_key: z.enum(PROCESSING_DATASET_KEYS),
+          transport: z.enum(["pulsar", "kafka"]),
           epoch: z.string(),
           topic: z.string(),
           partition: z.number(),
           position: metricStreamPositionSchema,
         }),
-        sql`SELECT operation_id,dataset_key,epoch,topic,partition,position FROM fitness.analytics_required_frontier WHERE run_id=${input.runId}`,
+        sql`SELECT operation_id,dataset_key,transport,epoch,topic,partition,position FROM fitness.analytics_required_frontier WHERE run_id=${input.runId}`,
       );
       const identity = (frontier: RequiredAnalyticsFrontier) =>
         JSON.stringify([
           frontier.stream.epoch,
+          frontier.stream.transport,
           frontier.stream.topic,
           frontier.stream.partition,
           frontier.operationId,
           frontier.datasetKey,
-          frontier.position.serializedMessageId,
-          frontier.position.delivery.major,
-          frontier.position.delivery.minor,
-          frontier.position.delivery.batch,
+          metricStreamPositionIdentity(frontier.position),
+          journalDeliveryKey(frontier.position),
         ]);
       const actual = existing
         .map((row) =>
@@ -241,8 +254,8 @@ export async function sealAnalyticsRun(
       const inserted = await executeWithSchema(
         transaction,
         changedSchema,
-        sql`INSERT INTO fitness.analytics_required_frontier(run_id,operation_id,user_id,dataset_key,epoch,topic,partition,position)
-        SELECT ${input.runId},id,user_id,${frontier.datasetKey},${frontier.stream.epoch},${frontier.stream.topic},${frontier.stream.partition},${JSON.stringify(frontier.position)}::jsonb FROM fitness.processing_operation
+        sql`INSERT INTO fitness.analytics_required_frontier(run_id,operation_id,user_id,dataset_key,transport,epoch,topic,partition,position)
+        SELECT ${input.runId},id,user_id,${frontier.datasetKey},${frontier.stream.transport},${frontier.stream.epoch},${frontier.stream.topic},${frontier.stream.partition},${JSON.stringify(frontier.position)}::jsonb FROM fitness.processing_operation
         WHERE id=${frontier.operationId} AND ${frontier.datasetKey}=ANY(dataset_keys) RETURNING 1 AS changed`,
       );
       if (!inserted.length)
@@ -261,7 +274,7 @@ export async function loadAnalyticsRunFrontier(
   const rows = await executeWithSchema(
     database,
     z.object({ position: metricStreamPositionSchema }),
-    sql`SELECT frontier.position FROM fitness.analytics_required_frontier AS frontier JOIN fitness.analytics_run AS run ON run.id=frontier.run_id WHERE run.id=${input.runId} AND run.sealed AND frontier.epoch=${input.stream.epoch} AND frontier.topic=${input.stream.topic} AND frontier.partition=${input.stream.partition}`,
+    sql`SELECT frontier.position FROM fitness.analytics_required_frontier AS frontier JOIN fitness.analytics_run AS run ON run.id=frontier.run_id WHERE run.id=${input.runId} AND run.sealed AND frontier.transport=${input.stream.transport} AND frontier.epoch=${input.stream.epoch} AND frontier.topic=${input.stream.topic} AND frontier.partition=${input.stream.partition}`,
   );
   let result: MetricStreamPosition | null = null;
   for (const row of rows) {
@@ -293,18 +306,18 @@ export async function checkpointAnalyticsPage(
     if (input.expected) cursorSchema.parse(input.expected);
     z.enum(["scalar", "dedup", "activity"]).parse(input.stage);
     const frontier = await loadAnalyticsRunFrontier(transaction, input);
-    const nextPosition = { ...frontier, delivery: next.delivery };
+    const nextPosition = positionAtJournalKey(frontier, next.delivery);
     if (
       compareMetricStreamPositions(nextPosition, frontier) > 0 ||
       (input.expected &&
-        (compareMetricStreamPositions(nextPosition, {
-          ...frontier,
-          delivery: input.expected.delivery,
-        }) < 0 ||
-          (compareMetricStreamPositions(nextPosition, {
-            ...frontier,
-            delivery: input.expected.delivery,
-          }) === 0 &&
+        (compareMetricStreamPositions(
+          nextPosition,
+          positionAtJournalKey(frontier, input.expected.delivery),
+        ) < 0 ||
+          (compareMetricStreamPositions(
+            nextPosition,
+            positionAtJournalKey(frontier, input.expected.delivery),
+          ) === 0 &&
             BigInt(next.effectOrdinal) <= BigInt(input.expected.effectOrdinal))))
     )
       throw new Error("Analytics cursor must advance within its sealed frontier");
@@ -313,8 +326,8 @@ export async function checkpointAnalyticsPage(
       transaction,
       changedSchema,
       input.expected === null
-        ? sql`INSERT INTO fitness.analytics_stage_cursor(run_id,stage,epoch,topic,partition,cursor)
-    VALUES (${input.runId},${input.stage},${input.stream.epoch},${input.stream.topic},${input.stream.partition},${JSON.stringify(next)}::jsonb)
+        ? sql`INSERT INTO fitness.analytics_stage_cursor(run_id,stage,transport,epoch,topic,partition,cursor)
+    VALUES (${input.runId},${input.stage},${input.stream.transport},${input.stream.epoch},${input.stream.topic},${input.stream.partition},${JSON.stringify(next)}::jsonb)
     ON CONFLICT DO NOTHING RETURNING 1 AS changed`
         : sql`UPDATE fitness.analytics_stage_cursor SET cursor=${JSON.stringify(next)}::jsonb WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} AND cursor=${expected}::jsonb RETURNING 1 AS changed`,
     );

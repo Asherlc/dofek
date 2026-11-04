@@ -161,6 +161,7 @@ services:
       REDPANDA_BROKERS: redpanda:9092
       METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-clickhouse-sink
+      METRIC_STREAM_TRANSPORT_EPOCH: ${METRIC_STREAM_TRANSPORT_EPOCH:-}
     depends_on:
       clickhouse:
         condition: service_healthy
