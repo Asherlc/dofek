@@ -376,3 +376,31 @@ delivery passed on the retained isolated fixture, with no new rotated table.
 Fresh-table creation, wider rotated-table inventory and production migration
 remain unqualified. This is evidence for
 26.10.2.103, not permission to add unsupported settings to production 26.6.
+
+## 2026-11-04: Durable sink request-cost checkpoint
+
+A finite local measurement submitted forty fresh synthetic scalar deliveries in
+two sequential twenty-record API calls through the actual
+[sink](../src/metric-stream/clickhouse-sink.ts) and
+[delivery coordinator](../src/analytics/analytics-delivery.ts). It completed in
+14,968 ms with forty visible current rows. Delegating client wrappers preserved
+the owner's query IDs and counted 1,400 ClickHouse requests: 1,200 queries,
+forty commands and 160 inserts. Setup and final verification were outside that
+request count. The local adaptive query-log candidate described above remained
+active; no resource ceiling, deadline or retry changed.
+
+This confirms substantial per-delivery request cost. It measures neither native
+Pulsar receive/ACK throughput nor PostgreSQL statement count, concurrent streams,
+latency percentiles or complete host fit. The events used synthetic Kafka fixture
+positions; this is not a native transport qualification. The unchanged
+1,001-source provider-deletion case separately exceeded its existing 30-second
+deadline and remains open. Thirteen other provider-command engine cases and the
+owner-preserving legacy profiling regression pass; the smaller cases do not
+replace that large-case gate.
+
+The next correctness check prevents a callback from swallowing an unknown
+ClickHouse request outcome and replacing its persisted query identity with a
+second request. Request-registration cost can then be reduced within the same
+fail-closed ownership protocol and measured against the retained baseline.
+Native acknowledgment, complete erasure, CDC mapping, old R2 conversion and
+whole-server resource qualification remain release gates.

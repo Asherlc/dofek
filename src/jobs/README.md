@@ -18,7 +18,7 @@ This directory contains background job processing logic using BullMQ and Redis.
   during a build form the next batch, following BullMQ's
   [deduplication pattern](https://docs.bullmq.io/patterns/deduplication) and
   [global concurrency](https://docs.bullmq.io/guide/queues/global-concurrency).
-- **Provider Data Deletion**: Advances the provider generation fence and tombstones at most 1,000 metric-stream rows per durable continuation job before acknowledging completion.
+- **Provider Data Deletion**: The [driver](process-provider-data-deletion-job.ts) publishes a fence command, pages of at most 1,000 structural source IDs and a terminal command. The [canonical sink](../metric-stream/provider-generation-deletion.ts) owns generation fencing, tombstones and durable acknowledgments. The same queue job saves each pending command and waits for its exact acknowledgment before advancing.
 
 ## Architecture
 
@@ -35,7 +35,7 @@ This directory contains background job processing logic using BullMQ and Redis.
   `worker-queues.ts` constructs queue processors, `worker-events.ts` handles
   job reporting and deletion redrive, and `worker-lifecycle.ts` handles graceful
   signal shutdown and unhandled rejection reporting.
-- **Bounded shutdown**: BullMQ workers stop accepting new jobs and wait for bounded active work. Production gives that drain 30 minutes before Docker can force-kill the task; provider requests have a two-minute deadline and multi-hour provider deletion is split across durable batch jobs. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown) and [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
+- **Bounded shutdown**: BullMQ workers stop accepting new jobs and wait for bounded active work. Production gives that drain 30 minutes before Docker can force-kill the task; provider requests have a two-minute deadline. The [provider-deletion processor](worker-queues.ts) delays the same durable job while its command acknowledgment is pending, releasing the worker between attempts. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown) and [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
 - **Processor Functions**: Each job type has a dedicated processor (e.g., `process-sync-job.ts`).
 - **Sync responsibilities**: `process-sync-job.ts` coordinates provider jobs;
   `sync-job-context.ts` resolves sync windows and manages checkpoints,
