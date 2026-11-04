@@ -145,6 +145,9 @@ Cross-provider reverse-engineering references:
   CDC assessment and follow-up qualification: verified projection/replay
   controls, timestamp regression resolved on the latest stable test engine,
   and failed whole-host capacity; not approval to retire production CDC.
+- [flink-cdc-assessment.md](flink-cdc-assessment.md): November 4, 2026 assessment
+  of released Flink/Pulsar/ClickHouse compatibility, native identity and commit
+  semantics, and existing-server budget; candidate not adopted.
 
 These files explain why the current system exists but are not current
 instructions:

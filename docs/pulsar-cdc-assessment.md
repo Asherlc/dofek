@@ -738,9 +738,10 @@ can run sub-writers concurrently, so ordinary fan-out alone is not an ordering
 proof.
 
 Dependent implementation is stopped with work preserved. No custom connector,
-fork, invented frontier or alternate framework has been adopted. Assessing Flink
-in place of SeaTunnel, while retaining Pulsar, the existing server and the
-licensing/connector constraints, was proposed for explicit user direction. Its
-capability, maintenance and resource fit have not been researched or qualified
-in this checkpoint. PeerDB remains in production; all four safety holds and the
-independent warm-memory/full-host gates remain open.
+fork, invented frontier or alternate framework has been adopted. The user then
+approved assessing Flink in place of SeaTunnel while retaining Pulsar, the
+existing server and the licensing/connector constraints. The
+[Flink assessment](flink-cdc-assessment.md) found native ID output, but rejected
+the released candidate on current-version/support, causal commit and unchanged
+host-budget gates. No Flink runtime was launched. PeerDB remains in production;
+all four safety holds and the independent warm-memory/full-host gates remain open.
