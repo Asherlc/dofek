@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import Pulsar from "pulsar-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { metricStreamPosition } from "../metric-stream/transport-position.ts";
 import {
   beginAnalyticsDelivery,
   checkpointAnalyticsPage,
@@ -9,7 +11,11 @@ import {
   completeAnalyticsDelivery,
   sealAnalyticsRun,
 } from "./analytics-work-store.ts";
-import { appendAnalyticsDelivery, readAnalyticsEffectPage } from "./effect-journal.ts";
+import {
+  appendAnalyticsDelivery,
+  appendAnalyticsEffects,
+  readAnalyticsEffectPage,
+} from "./effect-journal.ts";
 import {
   analyticsEffect,
   analyticsPosition,
@@ -25,6 +31,72 @@ describe("analytics effect journal", () => {
   afterAll(async () => {
     await context?.cleanup();
   });
+
+  it("directAppendPreservesEveryStorageIdentityComponent", async () => {
+    const stream = { ...context.stream, epoch: randomUUID() };
+    const position = analyticsPosition(stream, 0n);
+    const effect = analyticsEffect(position, 0n, context.userId);
+    const alternateEpoch = { ...stream, epoch: randomUUID() };
+    const alternateTopic = { ...stream, topic: `${stream.topic}-other` };
+    const native = (hex: string, partition = -1) =>
+      metricStreamPosition(
+        { ...stream, partition },
+        Pulsar.MessageId.deserialize(Buffer.from(hex, "hex")),
+      );
+    const effects = [
+      effect,
+      analyticsEffect(analyticsPosition(alternateEpoch, 0n), 0n, context.userId),
+      analyticsEffect(analyticsPosition(alternateTopic, 0n), 0n, context.userId),
+      analyticsEffect(native("080a10001800", 0), 0n, context.userId),
+      analyticsEffect(native("080b1000"), 0n, context.userId),
+      analyticsEffect(analyticsPosition(stream, 1n), 0n, context.userId),
+      analyticsEffect(native("080a10002000"), 0n, context.userId),
+      analyticsEffect(position, 1n, context.userId),
+      { ...effect, stage: "dedup" as const },
+    ];
+    await appendAnalyticsEffects(context.clickhouse, effects);
+    for (const table of ["effect_journal", "effect_receipt"]) {
+      const result = await context.clickhouse.query<{ row_count: string; identity_count: string }>({
+        query: `SELECT toString(count()) AS row_count,toString(uniqExact((epoch,topic,partition,major,minor,batch,effect_ordinal,stage))) AS identity_count FROM analytics.${table} FINAL WHERE epoch IN {epochs:Array(String)}`,
+        query_params: { epochs: [stream.epoch, alternateEpoch.epoch] },
+        format: "JSONEachRow",
+      });
+      expect(await result.json()).toEqual([{ row_count: "9", identity_count: "9" }]);
+    }
+  });
+
+  it.each(["identical", "conflicting"] as const)(
+    "directAppendRejectsDuplicateIdentitiesWithoutPersistingAnyWork: %s",
+    async (kind) => {
+      const stream = { ...context.stream, epoch: randomUUID() };
+      const position = analyticsPosition(stream, 0n);
+      const effect = analyticsEffect(position, 0n, context.userId);
+      if (!effect.after) throw new Error("Missing source fixture");
+      const duplicate =
+        kind === "identical"
+          ? effect
+          : {
+              ...effect,
+              sourceVersion: "9007199254740994",
+              after: { ...effect.after, sourceVersion: "9007199254740994" },
+            };
+      await expect(
+        appendAnalyticsEffects(context.clickhouse, [
+          analyticsEffect(position, 1n, context.userId),
+          effect,
+          duplicate,
+        ]),
+      ).rejects.toThrow(/duplicate effect identit/i);
+      for (const table of ["effect_journal", "effect_receipt"]) {
+        const result = await context.clickhouse.query<{ row_count: string }>({
+          query: `SELECT toString(count()) AS row_count FROM analytics.${table} WHERE epoch={epoch:String}`,
+          query_params: { epoch: stream.epoch },
+          format: "JSONEachRow",
+        });
+        expect(await result.json()).toEqual([{ row_count: "0" }]);
+      }
+    },
+  );
 
   async function sealDelivery(count: number, firstOrdinal = 0n) {
     const stream = { ...context.stream, epoch: randomUUID() };

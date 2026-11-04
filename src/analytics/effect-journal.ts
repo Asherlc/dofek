@@ -123,6 +123,27 @@ function validateEffect(input: AnalyticsEffect): AnalyticsEffect {
     throw new Error("Analytics effect source version must match its new placement");
   return effect;
 }
+function validateEffectBatch(effects: readonly AnalyticsEffect[]): AnalyticsEffect[] {
+  const validated = effects.map(validateEffect);
+  const identities = new Set<string>();
+  for (const effect of validated) {
+    const identity = JSON.stringify([
+      effect.stream.epoch,
+      effect.stream.topic,
+      effect.stream.partition,
+      effect.cursor.delivery.major,
+      effect.cursor.delivery.minor,
+      effect.cursor.delivery.batch,
+      effect.cursor.effectOrdinal,
+      effect.stage,
+    ]);
+    // Exact duplicates are also invalid within a batch; replay uses separate calls.
+    if (identities.has(identity))
+      throw new Error("Analytics effect batch contains duplicate effect identities");
+    identities.add(identity);
+  }
+  return validated;
+}
 function effectHash(effect: AnalyticsEffect) {
   return createHash("sha256").update(JSON.stringify(effect)).digest("hex");
 }
@@ -157,7 +178,7 @@ export async function appendAnalyticsEffects(
 ): Promise<void> {
   if (!client.insert)
     throw new Error("Analytics journal requires a ClickHouse insert-capable client");
-  const validated = effects.map(validateEffect);
+  const validated = validateEffectBatch(effects);
   const rows: object[] = [];
   const receipts: object[] = [];
   for (const effect of validated) {
@@ -237,7 +258,7 @@ export async function appendAnalyticsDelivery(
   metricStreamPositionSchema.parse(input.position);
   if (!client.insert)
     throw new Error("Analytics receipt requires a ClickHouse insert-capable client");
-  const effects = input.effects.map(validateEffect).sort((left, right) => {
+  const effects = validateEffectBatch(input.effects).sort((left, right) => {
     const leftOrdinal = BigInt(left.cursor.effectOrdinal),
       rightOrdinal = BigInt(right.cursor.effectOrdinal);
     return leftOrdinal === rightOrdinal
@@ -252,9 +273,6 @@ export async function appendAnalyticsDelivery(
       effect.position.serializedMessageId !== input.position.serializedMessageId
     )
       throw new Error("Delivery receipt contains effects from another native message");
-  const identities = effects.map((effect) => `${effect.cursor.effectOrdinal}:${effect.stage}`);
-  if (new Set(identities).size !== identities.length)
-    throw new Error("Delivery receipt contains duplicate effect identities");
   const digest = createHash("sha256");
   for (const effect of effects) digest.update(effectHash(effect));
   const fingerprint = digest.digest("hex");
