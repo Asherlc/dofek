@@ -1,7 +1,7 @@
 # Application-owned CDC integration assessment
 
-November 4, 2026 UTC. **Recommendation: proceed to a bounded qualification,
-not adoption or a full CDC implementation yet.** No released-client API blocker
+November 4, 2026 UTC. **The approved isolated source-contract spike passed its
+bounded fixtures; the full sink and production migration remain unqualified.** No released-client API blocker
 was found for this shape. The application can receive native delivery metadata
 and explicitly sequence its writes. The difficult source, bootstrap, coverage,
 erasure and resource contracts still need executable proof.
@@ -193,7 +193,116 @@ Only after those pass should a metric/activity/marker sink slice prove each
 prepare/raw/effect/receipt/frontier/ACK crash boundary, delayed marker coverage
 and erasure. Full 16-source/18-destination mapping, inherited/shared ownership,
 schema/WAL loss, all marker domains and full-host qualification follow. This is
-a proposed qualification, not executed evidence or implementation approval.
+a proposed qualification at assessment time. The subsequent approved execution
+and its exact limits are recorded below.
+
+## Executed isolated source qualification
+
+The user approved the spike and autonomous investigation within this approach.
+The fixture used official Debezium Server 3.7.0.Final, PostgreSQL 18.3, Pulsar
+5.0.1 and Node client 1.18.0, with four synthetic source tables and unchanged
+envelopes. No ETL framework, custom capture implementation or production service
+was added. This tests source contracts; its capture acknowledgment follows a
+local evidence-file write, not the application's intended ClickHouse/journal
+commit protocol.
+
+| Gate | Executed evidence |
+| --- | --- |
+| Snapshot inventory and values | Four tables, including two initially empty tables, produced exact native inventory/counts. Three initial rows preserved nulls, arrays, UTC microseconds and 32,768-byte externally stored text. The excluded estimate field stayed excluded. |
+| Changes and source coordinates | Transaction 820 emitted eight mutations with exact per-table counts 5/2/1, full before/after values, ownership change and a primary-key delete/create pair. That pair shared LSN 52,190,736 but had distinct ordinals 3/4. Native WAL COMMIT start 52,258,504 plus its aligned non-page-crossing record size matched emitted END 52,258,552. This alignment calculation is specific to that inspected WAL record. |
+| Actual source republication | After receiving part of COPY transaction 823, the source was killed while its persisted checkpoint still described transaction 821. On restart, 25 previously received source events reappeared with identical payloads, keys, structural headers, source coordinates and ordinals, under 25 different native delivery IDs. Runtime/trace headers are separate delivery metadata, as explained below. The completed COPY had 301 unique events; its largest shared-LSN group contained 136 rows. |
+| Broker replay distinction | Reading the retained broker history reproduced all 301 COPY events with the same native IDs. Source republication and broker replay were therefore exercised separately. |
+| Overlapping commits | Transaction 825 allocated first and committed after 826. Their END coordinates were 52,337,928 and 52,337,880 respectively, following commit order rather than raw XID order. |
+| Genuine interrupted bootstrap | A native snapshot SELECT override waited on an observed PostgreSQL advisory lock. Source process termination and termination of its blocked database backend were verified before releasing the barrier. The abandoned attempt's frozen six-topic range contained seven rows and three scan receipts, with no COMPLETED notification. One table's scan reported six rows while only five of its rows had reached the broker: scan completion alone demonstrably did not establish delivery coverage. |
+| Independent accepted bootstrap | A new prefix, notification topic, slot/publication and initially empty offset identity captured exactly 612 current rows: facts 2, related 604, marker 6, empty table 0. The abandoned attempt contained fact 10; the accepted attempt contained facts 30/40 and their changed current payloads, with no fact 10. Exact keys, values, native IDs and topic membership were checked separately per attempt. |
+| Snapshot-to-stream continuity | The completed snapshot checkpoint contained LSN 52,491,272 and `snapshot_completed=true`. With capture stopped and its slot inactive/valid, transaction 835 updated, deleted and inserted facts plus a marker. Checkpoint bytes stayed identical while those changes committed. Restart loaded the same checkpoint/slot, skipped resnapshot and delivered all four streaming ordinals with END 52,494,576 and table counts facts 3/marker 1. The hard-deleted fact 40 was absent in current Postgres but present in the captured delete before image. |
+
+For bootstrap acceptance, capture was frozen only after source termination.
+All six exact topic names were inventoried, each native tail was recorded and
+read through explicitly, and IDs were deserialized/serialized through the
+official client. Quiet receives were collection cutoffs, never completion
+evidence. Assertions rejected a missing snapshot row, a missing empty-table
+scan receipt and a missing delete ordinal. These supplement the earlier missing
+ordinal/END controls.
+
+The source's post-stream checkpoint can describe the last processed row plus
+transaction counters rather than the emitted END coordinate. In this fixture
+it recorded row LSN 52,493,544 with counts facts 3/marker 1; it must not be
+equated with END 52,494,576. The separate transaction control and complete receipt
+set remain necessary. [Released offset context](https://github.com/debezium/debezium/blob/v3.7.0.Final/debezium-connector-postgres/src/main/java/io/debezium/connector/postgresql/PostgresOffsetContext.java).
+
+Fault injection used the documented [snapshot SELECT override](https://debezium.io/documentation/reference/3.7/connectors/postgresql.html#postgresql-property-snapshot-select-statement-overrides)
+and [native PostgreSQL lock/session functions](https://www.postgresql.org/docs/18/functions-admin.html).
+No sleeps, snapshot gate, longer flush setting or operator kill hook was added
+to steady-state application code. The temporary source setting made the
+pre-checkpoint crash window observable; it was not retry/deadline tuning or a
+production durability policy.
+
+Two preliminary controls did not exercise the intended fault and were not
+counted as passes. An early kill encountered an old notification before COPY;
+another used the container's old effective flush setting and found the new
+checkpoint already persisted. The corrected test checked actual source
+configuration and target delivery before the kill. In the first interrupted
+bootstrap control, the blocked PostgreSQL session outlived the killed source
+until its lock was released; the counted repeat explicitly terminated and
+verified that backend before unlocking. Process death alone was not treated as
+database-session termination.
+
+### Native metadata and error-path findings
+
+The recorder initially serialized `getProperties()` directly. The released
+[Node binding](https://github.com/apache/pulsar-client-node/blob/v1.18.0/src/Message.cc#L104-L118)
+returns an array with named properties; ordinary array JSON serialization drops
+those names. The recorder now copies its own enumerable entries into an ordinary
+object. A real native delivery control verified four non-empty properties,
+including a numeric key and Unicode, through JSON serialization. A retained
+675-message broker range allowed the streaming metadata to be recovered by exact
+native ID, checking unchanged payload/key before attaching properties. The
+original recorder artifacts were retained, not silently replaced as evidence.
+The original bootstrap evidence retains its envelope/key/ID/count proof; it is
+not claimed as complete trace-header evidence.
+
+That reread also showed why transport metadata cannot define a stable source
+revision: runtime context and trace headers change across source republication.
+Source equality checks preserve structural old/new-key headers while excluding
+those volatile headers. Broker replay of the same native delivery must preserve
+all properties. The actual PK split carried `__debezium.newkey` with ID 10 and
+`__debezium.oldkey` with ID 1. A connector runtime ID is not a stable capture
+generation.
+
+An attempted later reread also aborted the local Node process with SIGABRT and
+an invalid-free stack in `ReaderReadNextWorker`. The released
+[Reader implementation](https://github.com/apache/pulsar-client-node/blob/v1.18.0/src/Reader.cc#L175-L206)
+wraps an uninitialized message pointer after a read error. The exact broker error
+was not captured before that abort, so no more specific error code is asserted.
+The intended application integration uses the official **Consumer** API, whose
+[worker](https://github.com/apache/pulsar-client-node/blob/v1.18.0/src/Consumer.cc#L225-L258)
+assigns the message only on success; an actual empty-consumer timeout rejected
+normally and the process survived. No native library patch or alternate client
+was installed. Reader error recovery is unqualified and must not be silently
+treated as Consumer qualification; broader Consumer disconnection/failure tests
+remain required.
+
+Some acknowledged bootstrap records were no longer available for that later
+broker reread in the disposable namespace. Their original frozen evidence files
+remain retained. This fixture did not configure or qualify archival retention;
+the result is not a broker-backup, power-loss or R2 recovery proof. Production
+archive/acknowledgment and retention gates remain mandatory.
+
+This is sufficient to advance the existing-consumer candidate to a small sink
+slice, not to certify every possible source lineage or the full migration.
+Remaining gates include database restore/XID-incarnation handling, unavailable
+WAL/slots, schema changes, large/chunked messages, concurrent snapshot writes,
+all 16 sources/18 destinations, inherited/shared ownership, ClickHouse version
+migration, actual intent/raw/effect/receipt/frontier/ACK recovery, erasure,
+whole-host fit and all old R2 conversion. The snapshot lifecycle tested here
+was ordinary `initial` followed by same-slot/offset restart; no
+`initial_only` transition was qualified. All four production holds remain.
+
+All started qualification services were stopped afterward, with their volumes
+and evidence retained. The original local application database/ClickHouse
+containers were restored on their existing volumes. No production calls or
+changes were made by this spike.
 
 Retrospective: source and code inventory checks found transaction-ID drift,
 missing attempt identity, sensor-specific types and a marker coverage gap before
@@ -201,3 +310,11 @@ another implementation. Add a source/transport/snapshot identity matrix and
 explicit mapping-count/ownership inventory to preflight guidance. Reuse native
 source review and real-engine integration tests; no new capture framework or
 broker is needed for this candidate assessment.
+
+The executed spike adds a concrete preflight improvement: verify non-empty
+native properties through the actual evidence serializer and exercise receive
+error paths before long qualification. Keep source-semantic fields separate
+from volatile publication metadata, and freeze broker ranges before treating
+notification counts as coverage. Independent review supported the narrow
+results while retaining within-transaction checkpoint, lineage and full sink
+recovery as separate gates.

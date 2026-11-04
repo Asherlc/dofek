@@ -149,8 +149,8 @@ Cross-provider reverse-engineering references:
   of released Flink/Pulsar/ClickHouse compatibility, native identity and commit
   semantics, and existing-server budget; candidate not adopted.
 - [owned-cdc-assessment.md](owned-cdc-assessment.md): November 4, 2026 assessment
-  of extending the application consumer with CDC handlers; source ordering,
-  snapshot isolation, complete mapping coverage and host fit remain gates.
+  and bounded native source qualification for extending the application consumer
+  with CDC handlers; full sink recovery, mapping coverage and host fit remain gates.
 
 These files explain why the current system exists but are not current
 instructions:
