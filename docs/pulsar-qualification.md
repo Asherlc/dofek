@@ -450,3 +450,47 @@ while preserving those headers, so a header offset cannot automatically identify
 the current first line. Task 9 still requires complete inventory, exact provenance
 and explicit resolution of overlap, deletion and ordering evidence; neither key
 endpoints nor line ordinals manufacture missing Kafka offsets.
+
+## 2026-11-04: Bounded journal reads pass the original 1,001-source gate
+
+Checkpoint `8848d6e84` batches the existing three journal proof queries over
+each existing page of at most twenty identities, then fetches exact payloads
+for a reference page together. Full storage identity, per-key ambiguity and
+missing-evidence checks, reference order and all later phase observations
+remain. Public append inputs preflight every chunk before any write. Independent
+review approved both scoped requirements and code quality, with only inherited
+test-output noise deferred. See the [journal implementation](../src/analytics/effect-journal.ts)
+and its [real-engine regressions](../src/analytics/effect-journal.integration.test.ts).
+
+The driving tests observed sixty proof reads versus three and twenty payload
+reads versus one before the fix, then the expected bounded counts afterward.
+Eighty-one distinct engine cases passed across separate invocations; this is not
+one combined 81-case run. Sixteen native query profiles read 51–13,941 rows
+against 40,000-history fixtures, with useful primary-key plans. Those physical
+read counts are granule work, not twenty physical rows or a whole-host bound.
+
+Root then ran the unchanged
+`structural1001SourceContinuationAndTwentyEffectWrites` case once with retry
+zero and bail one. It passed: the reported case duration was 26,761 ms, suite
+duration 27.51 seconds, with 1,779 observed HTTP requests and zero HTTP errors.
+The original 30-second deadline, 1,000-plus-one command split, 1,001 raw rows,
+and twenty-effect write maximum were retained. Assertions verified all 1,001
+effects, exact page/tail/terminal receipts and zero remaining live raw rows.
+Cleanup awaited the actual operations and finished in 465 ms, without a
+post-drop query failure. This closes that functional/performance gate for this
+fixture; it does not establish native broker throughput or sustained capacity.
+
+ClickHouse retained the same image, 768 MiB cap, warm process and local
+query-log buffer candidate. PostgreSQL used the separately recorded isolated
+1 GiB fixture budget. Earlier latency baselines used different PostgreSQL
+resources, so this result is not a controlled elapsed-time comparison. The
+350-message deletion gate remains open: most of its deliveries have no effects,
+and the batched loops save no calls for those deliveries. Native ACK, raw-input
+query-log privacy, writer/erasure barriers, full CDC mapping, archive conversion
+and whole-server qualification remain release gates. No production setting,
+deployment or safety hold changed.
+
+The subsequent legacy sink invocation passed fourteen cases in 54.14 seconds,
+excluding only the unchanged 350-message case. This includes the two cases
+previously left unrun after that timeout. The exclusion retains an explicit
+open gate; it is not a full fifteen-case suite pass.
