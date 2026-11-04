@@ -15,6 +15,25 @@ adjacent integration suites. Production activation requires the account-erasure
 ownership migration in the same release unit; see the
 [approved plan](../../docs/superpowers/plans/2026-11-03-bounded-analytics.md).
 
+The bounded sensor SQL qualification uses the canonical sealed page and native
+dbt compiler, retaining complete candidates at each affected key. The
+[resource fixtures](../db/deduped-sensor-read-model.integration.test.ts) compare
+all stable fields of 8,000 scalar rows and 20 deduplicated rows against an
+independent complete-key reference. Both the 800,000-version input and the
+3.2-million-version input passed the fixed 128 MiB query allowance. The latter
+used 320 unmerged raw parts and 320 normalized parts; measured scalar and dedup
+query peaks were 72,968,443 and 120,158,615 bytes. This qualifies those fixtures,
+not production throughput or whole-host memory fit.
+
+The [ARM access-plan run](https://github.com/Asherlc/dofek/actions/runs/41897085571/job/126809932687)
+and its [fixture](../db/bounded-sensor-access-plan.analytics-qualification.integration.test.ts)
+confirm key and ID pruning in the current SQL. Read cost still depends on
+overlapping parts and candidate dispersion; the large dedup case uses about 90%
+of its query allowance. A pathological complete key fails visibly within that
+allowance without restarting ClickHouse or producing output. The real executor's
+failure-state and no-checkpoint proof remain separate release gates in
+[Task 5](../../docs/superpowers/plans/2026-11-03-bounded-analytics.md#task-5-serialized-executor-query-ownership-and-output-before-cursor-recovery).
+
 Each discovery receipt contains at most one effect reference. A page reads at most 20
 references plus one lookahead before fetching the referenced effects. A missing
 payload fails the page. An explicit empty delivery uses cursor ordinal `-1`;
