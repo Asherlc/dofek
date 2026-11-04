@@ -36,16 +36,18 @@ export async function withAnalyticsQueryOwner<T>(
   return withOwnedQueries(database, clickhouse, { ...input, mode: "write" }, operation);
 }
 
-/** Receipt checks cannot mutate data, clear a pending intent, or prove recovery. */
-export async function withAnalyticsReceiptQueryOwner<T>(
+/** Verify completed receipts read-only; retire only their exact admitted intent.
+ * Unrelated pending intents are preserved. Receipt proof never proves recovery.
+ */
+export async function withAnalyticsReceiptQueryOwner(
   database: Database,
   clickhouse: ClickHouseClient,
   input: { resourceId: string },
-  operation: (owner: AnalyticsReceiptQueryOwner) => Promise<T>,
-): Promise<T> {
+  verify: (owner: AnalyticsReceiptQueryOwner) => Promise<{ completedIntentId: string }>,
+): Promise<void> {
   z.object({ resourceId: z.string().min(1) }).parse(input);
-  return withOwnedQueries(database, clickhouse, { ...input, mode: "receipt" }, (owner) =>
-    operation({ client: { query: owner.client.query }, assertActive: owner.assertActive }),
+  await withOwnedQueries(database, clickhouse, { ...input, mode: "receipt" }, (owner) =>
+    verify({ client: { query: owner.client.query }, assertActive: owner.assertActive }),
   );
 }
 
@@ -67,6 +69,7 @@ async function withOwnedQueries<T>(
   let acknowledgedQueryId: string | null = null;
   let returnedWithRequest = false;
   let admittedIntentId: string | null = null;
+  let completedIntentId: string | null = null;
   let inFlight: Promise<unknown> | null = null;
   let outcome: { value: T } | { error: unknown } | undefined;
   let releaseFailed = false;
@@ -145,10 +148,39 @@ async function withOwnedQueries<T>(
     queryTerminal = true;
   }
 
+  async function retireCompletedIntent() {
+    // A committed update with a lost proof is uncertain even if intent is NULL.
+    queryTerminal = false;
+    const result = await session.query(
+      `UPDATE fitness.analytics_query_owner SET intent_id=NULL
+       WHERE resource_id=$1 AND owner_id=$2 AND intent_id=$3
+         AND NOT quiescent AND query_terminal
+         AND query_id IS NOT DISTINCT FROM $4
+       RETURNING owner_id,intent_id,query_id`,
+      [input.resourceId, ownerId, admittedIntentId, acknowledgedQueryId],
+    );
+    const proof = z
+      .tuple([
+        z.object({
+          owner_id: z.literal(ownerId),
+          intent_id: z.null(),
+          query_id: z.literal(acknowledgedQueryId),
+        }),
+      ])
+      .safeParse(result.rows);
+    if (result.rowCount !== 1 || !proof.success)
+      throw new Error(
+        "Analytics completed-intent retirement did not confirm the exact admitted owner and intent; verified recovery is required",
+      );
+    assertSessionConnected();
+    queryTerminal = true;
+  }
+
   async function execute<R>(dispatch: (queryId: string) => Promise<R>): Promise<R> {
     if (inFlight) throw new Error("Analytics query owner requires serial requests");
     assertSessionActive();
     assertKnownRequestOutcome();
+
     const pending = (async () => {
       const queryId = randomUUID();
       // A committed registration with a lost PG response is uncertain too.
@@ -277,6 +309,10 @@ async function withOwnedQueries<T>(
     if (returnedWithRequest)
       throw new Error("Analytics owner callback returned before its request completed");
     assertKnownRequestOutcome();
+    if (input.mode === "receipt")
+      completedIntentId = z
+        .object({ completedIntentId: z.string().min(1) })
+        .parse(value).completedIntentId;
     outcome = { value };
   } catch (error) {
     returnedWithRequest ||= inFlight !== null;
@@ -290,6 +326,14 @@ async function withOwnedQueries<T>(
       if (admitted && queryTerminal && !connectionError && !returnedWithRequest) {
         if (acknowledgedQueryId !== null) await markRequestTerminal(acknowledgedQueryId);
         await assertOwnerActive();
+        if (
+          input.mode === "receipt" &&
+          outcome &&
+          "value" in outcome &&
+          admittedIntentId !== null &&
+          admittedIntentId === completedIntentId
+        )
+          await retireCompletedIntent();
         if (input.mode === "write" && outcome && "value" in outcome)
           await session.query(
             "UPDATE fitness.analytics_query_owner SET intent_id=NULL WHERE resource_id=$1 AND owner_id=$2",

@@ -2,15 +2,14 @@ import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { sql } from "drizzle-orm";
-import type { PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import type { Database } from "../db/index.ts";
 import { coordinateAnalyticsDelivery } from "./analytics-delivery.ts";
 import {
   type AnalyticsReceiptQueryOwner,
   withAnalyticsQueryOwner,
   withAnalyticsReceiptQueryOwner,
 } from "./analytics-query-owner.ts";
+import { databaseAtSessionBoundary } from "./analytics-query-owner-test-helpers.ts";
 import { loadAnalyticsStreamState } from "./analytics-work-store.ts";
 import { verifyAnalyticsDeliveryReceipt } from "./effect-journal.ts";
 import { analyticsPosition, createAnalyticsTestContext } from "./test-helpers.ts";
@@ -24,49 +23,8 @@ describe("analytics query ownership", () => {
     await context?.cleanup();
   });
 
-  function databaseAtSessionBoundary(
-    exchange: (
-      text: string,
-      dispatch: () => Promise<unknown>,
-      session: PoolClient,
-      values: unknown[],
-    ) => Promise<unknown>,
-  ): Database {
-    const pool = new Proxy(context.database.$client, {
-      get(target, key) {
-        if (key === "connect")
-          return async () => {
-            const session = await target.connect();
-            return new Proxy(session, {
-              get(client, property) {
-                if (property === "query")
-                  return (...args: unknown[]) => {
-                    if (typeof args[0] !== "string")
-                      throw new Error("Owner query fixture requires a statement string");
-                    return exchange(
-                      args[0],
-                      async () => Reflect.apply(client.query, client, args),
-                      client,
-                      Array.isArray(args[1]) ? args[1] : [],
-                    );
-                  };
-                const value = Reflect.get(client, property, client);
-                return typeof value === "function" ? value.bind(client) : value;
-              },
-            });
-          };
-        const value = Reflect.get(target, key, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-    return new Proxy(context.database, {
-      get(target, key) {
-        if (key === "$client") return pool;
-        const value = Reflect.get(target, key, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-  }
+  const atBoundary = (exchange: Parameters<typeof databaseAtSessionBoundary>[1]) =>
+    databaseAtSessionBoundary(context.database, exchange);
 
   test.each([0, 1, 3])("serialRequestsUseNPlusOneExchanges: %s", async (count) => {
     const resourceId = randomUUID(),
@@ -74,7 +32,7 @@ describe("analytics query ownership", () => {
     for (const mode of ["write", "receipt"] as const) {
       const exchanges: string[] = [],
         ids: string[] = [];
-      const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      const database = atBoundary(async (text, dispatch) => {
         if (/SET query_(id|terminal)=/.test(text)) exchanges.push(text);
         return dispatch();
       });
@@ -108,12 +66,17 @@ describe("analytics query ownership", () => {
           operation,
         );
       else
-        await withAnalyticsReceiptQueryOwner(
-          database,
-          context.clickhouse,
-          { resourceId },
-          operation,
-        );
+        await expect(
+          withAnalyticsReceiptQueryOwner(
+            database,
+            context.clickhouse,
+            { resourceId },
+            async (owner) => {
+              await operation(owner);
+              throw new Error("receipt verification intentionally incomplete");
+            },
+          ),
+        ).rejects.toThrow("receipt verification intentionally incomplete");
       expect(exchanges).toHaveLength(count === 0 ? 0 : count + 1);
       expect(new Set(ids).size).toBe(count);
       expect(
@@ -126,7 +89,7 @@ describe("analytics query ownership", () => {
 
   test("threeRequestsUseFourActualRequestExchanges", async () => {
     let exchanges = 0;
-    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+    const database = atBoundary(async (text, dispatch) => {
       if (/SET query_(id|terminal)=/.test(text)) exchanges++;
       return dispatch();
     });
@@ -148,7 +111,7 @@ describe("analytics query ownership", () => {
     let firstQueryId: unknown;
     let fail = true;
     let dispatched = 0;
-    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+    const database = atBoundary(async (text, dispatch) => {
       const result = await dispatch();
       if (fail && /\bSET\s+query_id\s*=/i.test(text)) {
         fail = false;
@@ -216,7 +179,7 @@ describe("analytics query ownership", () => {
           dispatched = 0;
         let predecessor: unknown = null,
           registered: unknown = null;
-        const database = databaseAtSessionBoundary(async (text, dispatch) => {
+        const database = atBoundary(async (text, dispatch) => {
           if (/SET query_id=/.test(text) && ++registrations === (boundary === "first" ? 1 : 2)) {
             if (committed) {
               await dispatch();
@@ -294,7 +257,7 @@ describe("analytics query ownership", () => {
         intentId = randomUUID();
       let registrations = 0,
         dispatched = 0;
-      const database = databaseAtSessionBoundary(async (text, dispatch, session, values) => {
+      const database = atBoundary(async (text, dispatch, session, values) => {
         if (/SET query_id=/.test(text) && ++registrations === (boundary === "first" ? 1 : 2)) {
           // Execute the original registration with an unexpected real RETURNING
           // column; the database result is neither mocked nor reconstructed.
@@ -358,9 +321,10 @@ describe("analytics query ownership", () => {
             );
             if (boundary === "successor")
               await owner.client.query({ query: "SELECT 2", format: "JSONEachRow" });
+            throw new Error("verification interrupted");
           },
         ),
-      ).rejects.toThrow(boundary === "successor" ? "registration" : "completion");
+      ).rejects.toThrow(boundary === "successor" ? "registration" : "verification interrupted");
       expect(
         await context.database.execute(
           sql`SELECT intent_id,query_terminal,quiescent FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
@@ -425,7 +389,7 @@ describe("analytics query ownership", () => {
         const resourceId = randomUUID(),
           intentId = randomUUID();
         let completed = false;
-        const database = databaseAtSessionBoundary(async (text, dispatch, session, values) => {
+        const database = atBoundary(async (text, dispatch, session, values) => {
           if (/SET query_terminal=true/.test(text)) {
             if (failure === "zero row")
               await context.database.execute(
@@ -486,7 +450,7 @@ describe("analytics query ownership", () => {
   test("frontierCommitsBeforeFailedFinalFlushButOuterSuccessAndReceiptReplayRemainBlocked", async () => {
     const position = analyticsPosition({ ...context.stream, epoch: randomUUID() }, 1n);
     let observed = false;
-    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+    const database = atBoundary(async (text, dispatch) => {
       if (/SET query_terminal=true/.test(text)) {
         expect((await loadAnalyticsStreamState(context.database, position))?.processed).toEqual(
           position,
@@ -536,7 +500,7 @@ describe("analytics query ownership", () => {
       let registrations = 0,
         dispatched = 0,
         firstId: unknown;
-      const database = databaseAtSessionBoundary(async (text, dispatch, session) => {
+      const database = atBoundary(async (text, dispatch, session) => {
         const result = await dispatch();
         if (
           /SET query_id=/.test(text) &&
@@ -719,7 +683,7 @@ describe("analytics query ownership", () => {
   test("finalFlushKeepsEscapedCallbacksClosed", async () => {
     let escaped: AnalyticsReceiptQueryOwner | undefined;
     let flushing = false;
-    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+    const database = atBoundary(async (text, dispatch) => {
       if (/SET query_terminal=true/.test(text)) {
         flushing = true;
         if (!escaped) throw new Error("Missing owner at final flush");
@@ -746,7 +710,7 @@ describe("analytics query ownership", () => {
     const resourceId = randomUUID(),
       intentId = randomUUID();
     let requestExchanges = 0;
-    const database = databaseAtSessionBoundary(async (text, dispatch) => {
+    const database = atBoundary(async (text, dispatch) => {
       if (/SET query_(id|terminal)=/.test(text)) requestExchanges++;
       return dispatch();
     });
@@ -847,6 +811,7 @@ describe("analytics query ownership", () => {
           sql`UPDATE fitness.analytics_query_owner SET intent_id=${changedIntent} WHERE resource_id=${resourceId}`,
         );
         await owner.client.query({ query: "SELECT 1", format: "JSONEachRow" });
+        throw new Error("verification unexpectedly reached callback end");
       };
       const result =
         mode === "write"
@@ -875,7 +840,7 @@ describe("analytics query ownership", () => {
         intentId = randomUUID(),
         changedIntent = randomUUID();
       let firstQueryId: unknown;
-      const database = databaseAtSessionBoundary(async (text, dispatch) => {
+      const database = atBoundary(async (text, dispatch) => {
         if (/\bSET\s+query_terminal\s*=\s*true\b/i.test(text)) {
           const rows = await context.database.execute(
             sql`SELECT query_id FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
@@ -954,7 +919,7 @@ describe("analytics query ownership", () => {
       intentId = randomUUID();
     let fail = true;
     let dispatched = 0;
-    const database = databaseAtSessionBoundary(async (text, dispatch, session) => {
+    const database = atBoundary(async (text, dispatch, session) => {
       const result = await dispatch();
       if (fail && /\bSET\s+query_id\s*=/i.test(text)) {
         fail = false;
@@ -1350,18 +1315,6 @@ describe("analytics query ownership", () => {
         },
       ),
     ).rejects.toThrow("known boundary failure");
-    await withAnalyticsReceiptQueryOwner(
-      context.database,
-      context.clickhouse,
-      { resourceId },
-      async (owner) => {
-        const result = await owner.client.query<{ value: number }>({
-          query: "SELECT 1 AS value",
-          format: "JSONEachRow",
-        });
-        expect(await result.json()).toEqual([{ value: 1 }]);
-      },
-    );
     await expect(
       withAnalyticsReceiptQueryOwner(
         context.database,
@@ -1373,6 +1326,7 @@ describe("analytics query ownership", () => {
             format: "JSONEachRow",
             clickhouse_settings: { readonly: 0 },
           });
+          throw new Error("read-only mutation unexpectedly succeeded");
         },
       ),
     ).rejects.toThrow(/readonly|read.only/i);

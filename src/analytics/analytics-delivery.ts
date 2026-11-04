@@ -44,6 +44,7 @@ export async function coordinateAnalyticsDelivery(
     topic: position.topic,
     partition: position.partition,
   };
+  const intentId = JSON.stringify([stream, metricStreamPositionIdentity(position)]);
   await input.assertActive();
   const observed = await loadAnalyticsStreamState(journal.database, stream);
   if (observed?.processed && compareMetricStreamPositions(position, observed.processed) <= 0) {
@@ -60,6 +61,7 @@ export async function coordinateAnalyticsDelivery(
         // original native serialized message ID and every referenced effect.
         await verifyAnalyticsDeliveryReceipt(owner.client, position);
         await input.assertActive();
+        return { completedIntentId: intentId };
       },
     );
     return;
@@ -69,7 +71,7 @@ export async function coordinateAnalyticsDelivery(
     journal.clickhouse,
     {
       resourceId: SOURCE_RESOURCE,
-      intentId: JSON.stringify([stream, metricStreamPositionIdentity(position)]),
+      intentId,
     },
     async (owner) => {
       await input.assertActive();

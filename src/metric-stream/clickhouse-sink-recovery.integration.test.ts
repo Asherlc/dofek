@@ -332,6 +332,22 @@ describe("metric stream durable recovery", () => {
       applyMetricStreamEventsToClickHouse(fault, [first, second], delivery, context.database),
     ).rejects.toThrow("second delivery boundary");
     const firstState = await raw(first.id);
+    const pendingBefore = await context.database.execute(
+      sql`SELECT intent_id,ingested_at FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`,
+    );
+    expect(pendingBefore[0]?.intent_id).toEqual(expect.any(String));
+    await applyMetricStreamEventsToClickHouse(
+      client,
+      [first],
+      { ...delivery, positions: delivery.positions.slice(0, 1) },
+      context.database,
+    );
+    expect(
+      await context.database.execute(
+        sql`SELECT intent_id,ingested_at FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`,
+      ),
+    ).toEqual(pendingBefore);
+    expect(await raw(first.id)).toEqual(firstState);
     await applyMetricStreamEventsToClickHouse(client, [first, second], delivery, context.database);
     expect(await raw(first.id)).toEqual(firstState);
     for (const position of delivery.positions)
