@@ -1,0 +1,14 @@
+
+  test("privateKnownPostFrontierFailureReplayMustAdmitNextDelivery", async()=>{
+    const fixture=await createAnalyticsTestContext();
+    try {
+      const position=analyticsPosition(fixture.stream,1n);
+      const input={position,assertActive:async()=>undefined,prepare:async function*(){yield [];},applyControl:async()=>undefined,apply:async()=>undefined,acknowledgeEffects:async()=>undefined};
+      await expect(coordinateAnalyticsDelivery(fixture,{...input,assertActive:async()=>{
+        if((await loadAnalyticsStreamState(fixture.database,fixture.stream))?.processed) throw new Error("known post-frontier cooperative failure");
+      }})).rejects.toThrow("known post-frontier cooperative failure");
+      expect(await fixture.database.execute(sql`SELECT query_terminal,quiescent,intent_id IS NOT NULL AS pending FROM fitness.analytics_query_owner WHERE resource_id='metric-stream-source'`)).toEqual([{query_terminal:true,quiescent:true,pending:true}]);
+      await expect(coordinateAnalyticsDelivery(fixture,input)).resolves.toBeUndefined();
+      await expect(coordinateAnalyticsDelivery(fixture,{...input,position:analyticsPosition(fixture.stream,2n)})).resolves.toBeUndefined();
+    } finally {await fixture.cleanup();}
+  });
